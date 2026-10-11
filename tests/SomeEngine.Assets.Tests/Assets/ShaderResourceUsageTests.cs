@@ -1,3 +1,4 @@
+using System.Buffers;
 using SlangShaderSharp;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
@@ -38,4 +39,50 @@ public sealed class ShaderResourceUsageTests
         Assert.True(shader.IsSlangParameterLocationUsed(0, "WriteSecond", SlangParameterCategory.UnorderedAccess, 2, 5));
         Assert.False(shader.IsSlangParameterLocationUsed(0, "WriteSecond", SlangParameterCategory.UnorderedAccess, 2, 3));
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SavedEntryRequiresItsCookedResourceUsage(bool includeUsage)
+    {
+        using var files = new AssetTestDirectory();
+        string sourcePath = files.File("constant-usage.slang");
+        await File.WriteAllTextAsync(sourcePath, """
+            struct Values { uint value; };
+            ConstantBuffer<Values> constants : register(b3, space2);
+            RWStructuredBuffer<uint> outputValues;
+            [shader("compute")] [numthreads(1,1,1)]
+            void ReadConstants() { outputValues[0] = constants.value; }
+            """);
+        using ShaderAsset built = ShaderTestCompilation.Compile(sourcePath);
+        Shader compiled = await ShaderTestCompilation.CreateAsync(built);
+        SessionDesc description = ShaderTestCompilation.CreateSessionDescription();
+        using (var code = new ShaderBlock())
+        {
+            for (int target = 0; target < compiled.SlangTargetCount; target++)
+            for (int entry = 0; entry < compiled.SlangEntryCount; entry++)
+            {
+                code.SetEntryCode(description, target, entry, compiled.GetSlangEntryBytes(target, entry).ToArray());
+                if (includeUsage)
+                    code.SetEntryUsage(description, target, entry, compiled.GetSlangUsedParameters(target, entry));
+            }
+            built.SetBlock(code);
+        }
+        string savedPath = files.File("constant-usage.shader.asset");
+        await built.SaveAsync(savedPath);
+        File.Delete(sourcePath);
+        using ShaderAsset reopened = await ShaderAsset.OpenAsync(savedPath);
+        if (!includeUsage)
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(() => ShaderTestCompilation.CreateAsync(reopened).AsTask());
+            return;
+        }
+        Shader restored = await ShaderTestCompilation.CreateAsync(reopened);
+        Assert.True(restored.IsSlangParameterLocationUsed(0, "ReadConstants",
+            SlangParameterCategory.ConstantBuffer, 2, 3));
+        Assert.True(restored.IsSlangParameterLocationUsed(1, "ReadConstants",
+            SlangParameterCategory.DescriptorTableSlot, 2, 3));
+        Assert.NotEmpty(restored.GetSlangEntryBytes(0, 0).ToArray());
+        Assert.NotEmpty(restored.GetSlangEntryBytes(1, 0).ToArray());
+    }
+
 }

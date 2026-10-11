@@ -122,18 +122,20 @@ public sealed partial class ShaderBlock : AssetBlock
             name,
             specializations,
             cancellationToken).ConfigureAwait(false);
+        bool missingEntryCode = false;
         for (int targetIndex = 0; targetIndex < shader.SlangTargetCount; targetIndex++)
         for (int entryIndex = 0; entryIndex < shader.SlangEntryCount; entryIndex++)
         {
-            if (copy.ContentKeys.Contains(EntryUsageKey(sessionDescription, targetIndex, entryIndex)) &&
-                copy.ContentKeys.Contains(EntryCodeKey(
-                    sessionDescription,
-                    targetIndex,
-                    entryIndex)))
+            if (!copy.ContentKeys.Contains(EntryCodeKey(sessionDescription, targetIndex, entryIndex)))
             {
+                missingEntryCode = true;
                 continue;
             }
-
+            if (!copy.ContentKeys.Contains(EntryUsageKey(sessionDescription, targetIndex, entryIndex)))
+                throw new InvalidDataException("Saved shader entry code requires its cooked resource usage metadata.");
+        }
+        if (missingEntryCode)
+        {
             return await source.CreateAsync(
                 slang,
                 sessionDescription,
