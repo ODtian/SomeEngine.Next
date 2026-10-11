@@ -15,6 +15,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
 {
     private readonly GraphicsPipeline _pipeline;
     private readonly GraphTextureId _target;
+    private readonly GraphPassId _drawPass;
     private bool _disposed;
 
     internal RuntimePresentationPipeline(
@@ -25,6 +26,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         Format inputFormat,
         int inputWidth,
         int inputHeight,
+        GraphReadbackId pageFaultReadback,
         Shader shader,
         string vertexEntryPoint,
         string pixelEntryPoint,
@@ -123,7 +125,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                         source,
                         PipelineSync.PixelShading),
                 ];
-                _ = edit.AddRasterFramePass(
+                GraphPassId pass = edit.AddRasterFramePass(
                     "Runtime tone map and present",
                     PassQueueSelection.AnyOfType(QueueType.Graphics),
                     data,
@@ -133,8 +135,10 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                     bindings,
                     RuntimePresentationPassData.Declare,
                     RuntimePresentationPassData.Record, region: region);
+                edit.OrderAfter(pass, pageFaultReadback);
                 edit.Commit();
                 _target = target;
+                _drawPass = pass;
             }
             finally
             {
@@ -151,6 +155,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
     }
 
     internal GraphTextureId Target => _target;
+    internal GraphPassId DrawPass => _drawPass;
 
     internal void Bind(
         ref RenderGraphFrame frame,

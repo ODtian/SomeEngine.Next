@@ -40,4 +40,7 @@ CPU 数据访问由 [[Frame-CPU-Overlap]] 中的 `RenderDataLock` 表达；图�
 纹理准备直接复用本帧取得的状态引用；完成处理按当帧上传事务登记上传结果。
 
 ## Relations
+
+应用的呈现 pass 通过 `OrderTextureUploadsBefore` 排在当帧纹理上传完成之后，缺页反馈的 GraphReadbackId 通过图上的显式 OrderAfter 依赖先于呈现完成。呈现与当帧图像读回由同一次交换链图像提交覆盖；首个场景帧沿这一公共路径验收。
+
 [[architecture/assets/Texture-Device-Realization]] · [[architecture/render-graph/Resource-Access]]

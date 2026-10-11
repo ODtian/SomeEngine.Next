@@ -158,6 +158,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     /// <summary>Target-view occlusion work between the two geometry phases.</summary>
     public GraphRegionId IntermediateOcclusionRegion { get; }
 
+    public GraphReadbackId PageFaultReadback => GraphData.PageFaultReadback;
+
     public int CurrentInstanceCount
     {
         get

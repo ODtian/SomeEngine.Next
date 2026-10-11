@@ -96,6 +96,19 @@ public sealed partial class ShaderSourceBlock
         if (sessionDescription.Targets is not { Length: > 0 } targets)
             throw new ArgumentException("Creating a shader requires at least one Slang target.", nameof(sessionDescription));
 
+#if !DEBUG
+        // Saved GPU code already carries the build settings. This session restores
+        // reflection and entry resource usage with Slang's required lowering passes.
+        if (!generateCode)
+            sessionDescription.CompilerOptionEntries =
+            [
+                .. sessionDescription.CompilerOptionEntries ?? [],
+                new(CompilerOptionName.DisableNonEssentialValidations, CompilerOptionValue.FromInt(1, 0)),
+                new(CompilerOptionName.MinimumSlangOptimization, CompilerOptionValue.FromInt(1, 0)),
+                new(CompilerOptionName.Optimization, CompilerOptionValue.FromInt((int)SlangOptimizationLevel.None, 0)),
+            ];
+#endif
+
         using ShaderSourceBlock copy = Duplicate();
         SemaphoreSlim frontEnd = s_slangFrontEnds.GetValue(
             slang,

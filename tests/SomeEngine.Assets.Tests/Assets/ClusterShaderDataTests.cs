@@ -360,12 +360,7 @@ public sealed class ClusterShaderDataTests
         }
         Assert.True(entryIndex >= 0, $"Entry '{entryPoint}' was not found.");
 
-        SlangResult metadataResult = shader.SlangCode.GetEntryPointMetadata(
-            entryIndex,
-            targetIndex,
-            out IMetadata metadata,
-            out ISlangBlob? diagnostics);
-        Assert.True(metadataResult.Succeeded, diagnostics?.AsString ?? metadataResult.ToString());
+        IMetadata metadata = shader.GetSlangEntryMetadataAsync(targetIndex, entryIndex).GetAwaiter().GetResult();
         VariableLayoutReflection globals = reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
         Assert.NotEqual(VariableLayoutReflection.Null, globals);

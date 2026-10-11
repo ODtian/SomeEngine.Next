@@ -18,6 +18,14 @@ public sealed partial class RenderDevice
     private readonly Dictionary<(RenderGraph.RenderGraph Graph, ulong Frame), TextureFrame> _textureFrames = [];
     private TextureRealization? _missingTexture;
 
+    /// <summary>Orders an end-of-frame consumer after texture upload completion for this frame.</summary>
+    public void OrderTextureUploadsBefore(ref RenderGraphFrame frame, GraphPassId consumer)
+    {
+        ThrowIfDisposed();
+        if (_textureTransfers.TryGetValue((frame.Owner, frame.FrameIdentity), out TextureTransfers? transfers))
+            frame.OrderAfter(consumer, transfers.CompletionPass);
+    }
+
     public RhiTexture MissingTexture
     {
         get

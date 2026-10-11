@@ -51,7 +51,7 @@ public sealed class TraceCapture : IDisposable
                 ["trace.scopes"] = options.Scopes.ToString(),
                 ["trace.bufferMegabytes"] = options.BufferMegabytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
             };
-            _file.Write(JsonSerializer.Serialize(metadata));
+            _file.Write(JsonSerializer.Serialize(metadata, TraceJsonContext.Default.DictionaryStringString));
             _fileThread = new Thread(WriteFile) { IsBackground = true, Name = "SomeEngine trace IO" };
             _fileThread.Start();
         }

@@ -21,6 +21,7 @@ public static class Application
     private static async Task<ApplicationResult> RunCoreAsync(string[] args,
         Func<SomeEngine.Resources.Material, float, bool>? animateMaterial, SceneTestPlatform? platform, SceneScript? script)
     {
+        using var startup = new ApplicationStartupTiming(System.Diagnostics.Stopwatch.GetTimestamp());
         try
         {
             if (!OperatingSystem.IsWindows())
@@ -56,8 +57,9 @@ public static class Application
 
             bool useWarp = (script is not null && !args.Contains("--hardware-adapter", StringComparer.OrdinalIgnoreCase)) || args.Any(static value =>
                 string.Equals(value, "--warp", StringComparison.OrdinalIgnoreCase));
-            int frames = await RuntimeApplication.RunAsync(options, useWarp, animateMaterial, platform, script).ConfigureAwait(false);
-            return new(ApplicationFailure.None, frames);
+            startup.StartTrace(platform?.StartupTraceOutput);
+            int frames = await RuntimeApplication.RunAsync(options, useWarp, startup, animateMaterial, platform, script).ConfigureAwait(false);
+            return new(ApplicationFailure.None, frames) { Startup = startup.Result };
         }
         catch (Exception failure)
         {
@@ -65,7 +67,7 @@ public static class Application
             if (failure is SomeEngine.Graphics.GraphicsException { Diagnostic: { Length: > 0 } diagnostic })
                 Console.Error.WriteLine(diagnostic);
             int frames = failure is ApplicationRunException run ? run.CompletedFrames : 0;
-            return new(ApplicationRunException.Classify(failure, ApplicationFailure.Startup), frames, failure);
+            return new(ApplicationRunException.Classify(failure, ApplicationFailure.Startup), frames, failure) { Startup = startup.Result };
         }
     }
 }

@@ -1,6 +1,14 @@
 using Game.Assets;
 using Game.Content;
 
+#if !DEBUG
+if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
+{
+    Console.Error.WriteLine("Build the NativeAOT Release application before launching DefaultGame.");
+    return 1;
+}
+#endif
+
 string manifestPath = Path.Combine(AppContext.BaseDirectory, "Library", "AssetManifest", SomeEngine.Assets.AssetManifest.CatalogFileName);
 if (!File.Exists(manifestPath))
 {
@@ -21,12 +29,14 @@ if (args.Length != 0)
     Console.Error.WriteLine("Use F1 for interactive settings, or --test-scene <content directory> followed by rendering options for a reproducible capture.");
     return 1;
 }
-var scenes = System.Text.Json.JsonSerializer.Deserialize<SomeEngine.Runtime.TestScene[]>(
-    File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "test-scenes.json")))!;
+var scenes = SomeEngine.Runtime.SceneTestPlatform.ReadScenes(Path.Combine(AppContext.BaseDirectory, "test-scenes.json"));
 var platform = new SomeEngine.Runtime.SceneTestPlatform(scenes.Select(scene => scene with
 {
     ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
-}).ToArray());
+}).ToArray())
+{
+    StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
+};
 return await SomeEngine.Runtime.Application.RunAsync([], static (material, seconds) =>
 {
     float roughness = 0.5f + MathF.Sin(seconds) * 0.2f;

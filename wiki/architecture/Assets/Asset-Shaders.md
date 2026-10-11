@@ -38,6 +38,10 @@ ShaderAsset
 
 释放 `ShaderAsset`、Block 副本或 `AssetFile` 后，已有 `Shader` 仍持有其 `ISession`、`IModule`、`IEntryPoint`、`IComponentType` 以及最终托管代码或直接 `ISlangBlob`。普通入口、反射和代码访问都是同步的。`Shader` 不实现 `IDisposable`，更新创建完整新实例，由消费方交换外层引用。
 
+`Shader.GetSlangEntryMetadataAsync` 在驻留 Shader 内共用每个 target/入口的直接 Slang `IMetadata` 与取得任务。材质加载可以提前启动入口准备，渲染侧从同一个 Shader 取得结果；入口准备的后台并发由这一取得路径统一限制。
+
+Cluster 的提前准备与材质阶段解析共用入口选择。着色、细分种子和细分拆分入口随材质 Shader 加载开始；光栅入口在设备创建后按编译 target、可见性模式和设备能力选择。Release 的保存代码加载会话使用 Slang 的最少优化及基础代码优化级别完成反射与入口资源分析，必要的 lowering 与资源使用分析仍由 Slang 执行。保存代码 chunk 按调用方原始编译设置读取；源编译与导入使用构建设置。
+
 `ShaderBlock` 的保存代码直接读入最终数组，通过统一 AssetByteCache 预算缓存，后续创建复用缓存结果。ShaderSourceBlock 的 CompileAsync 复用 CreateAsync 的编译主体，返回直接 Shader、序列化 Slang 数据和编译器实际读到的字节摘要。Importer 保存这些结果，并由项目核对输入版本。进程级 Importer 编译服务持有全局 Slang 会话，共同 Block 入口按会话串行访问。
 
 入口的资源使用地址与代码在同一次 Slang 编译中形成，随 `ShaderBlock` schema11 保存。
