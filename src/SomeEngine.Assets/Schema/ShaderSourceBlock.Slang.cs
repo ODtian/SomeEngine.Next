@@ -54,21 +54,19 @@ public sealed partial class ShaderSourceBlock
         CancellationToken cancellationToken = default)
     {
         using ShaderSourceBlock copy = Duplicate();
-        if (!specializations.IsEmpty || copy.Specializations.Count == 0)
-            return (await copy.CreateCoreAsync(slang, sessionDescription, name, specializations,
-                generateCode: true, saveSources: false, cancellationToken).ConfigureAwait(false)).Shader;
+        ShaderCompilation compiled = await copy.CreateCoreAsync(slang, sessionDescription, name, specializations,
+            generateCode: true, saveSources: false, cancellationToken).ConfigureAwait(false);
+        if (!specializations.IsEmpty || compiled.Specializations.Count == 0) return compiled.Shader;
 
-        Shader shader = (await copy.CreateCoreAsync(slang, sessionDescription, name, default,
-            generateCode: true, saveSources: false, cancellationToken).ConfigureAwait(false)).Shader;
-        var variants = new List<(string EntryPoint, string[] Arguments, Shader Shader)>(copy.Specializations.Count);
-        foreach (ShaderSpecialization specialization in copy.Specializations)
+        var variants = new List<(string EntryPoint, string[] Arguments, Shader Shader)>(compiled.Specializations.Count);
+        foreach (ShaderSpecialization specialization in compiled.Specializations)
         {
             Shader variant = (await copy.CreateCoreAsync(slang, sessionDescription, name,
                 specialization.ToSlangArguments(), generateCode: true, saveSources: false,
                 cancellationToken, specialization.EntryPoint).ConfigureAwait(false)).Shader;
             variants.Add((specialization.EntryPoint, specialization.Arguments.ToArray(), variant));
         }
-        return shader.WithSpecializations(variants);
+        return compiled.Shader.WithSpecializations(variants);
     }
 
     /// <summary>Compiles the current source files and returns their serialized Slang data and read-byte hashes.</summary>
@@ -245,7 +243,10 @@ public sealed partial class ShaderSourceBlock
                 linkedCode,
                 targets,
                 generateCode);
-            return new(shader, serializedSources, sourceFiles.Finish());
+            return new(shader, serializedSources, sourceFiles.Finish())
+            {
+                Specializations = generateCode && entryPoint is null ? copy.ReadSpecializations(shader) : [],
+            };
         }
         finally
         {

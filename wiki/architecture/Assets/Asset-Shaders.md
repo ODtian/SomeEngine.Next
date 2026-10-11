@@ -47,13 +47,15 @@ Cluster 的提前准备与材质阶段解析共用入口选择。着色、细分
 入口的资源使用地址与代码在同一次 Slang 编译中形成，随 `ShaderBlock` schema12 保存。
 `Shader` 同时持有此数据与入口名称/阶段索引。Cluster 安装按用户 shader 的已构建使用地址
 声明资源访问，场景切换读取同一 Shader 数据。ShaderSourceBlock 的直接编译在返回 Shader
-前形成相同资源使用数据。Importer33 与 schema12 通过资产版本重新构建现有来源。
+前形成相同资源使用数据。Importer34 与 schema12 通过资产版本重新构建现有来源。
 
 ## 入口专门化
 
 `ShaderSourceBlock.Specializations` 声明离线组合，每项包含原入口名 `EntryPoint` 和有序 Slang 表达式 `Arguments`。Importer 对每个入口单独 specialize，再与源码模块 compose/link；同一 Shader 内不同 generic 入口的参数互不拼接，nongeneric 入口按原方式构建。
 
 加载 `ShaderBlock` 时，普通入口的代码和资源使用数据与已声明的专门化组合一起驻留于同一个资产版本。未特化反射保留原入口名称和阶段。调用方用 `HasSpecializations(entryPoint)` 判断指定入口，再用 `RequireSpecialization(entryPoint, arguments)` 取得对应 Shader，并从中查询原入口。普通入口仍直接使用原 Shader；不存在隐含的首组合执行选择。
+
+公共 include 可在入口上重复使用 `[ShaderSpecialization("[\"false\"]")]` 这样的属性；一个属性的字符串是完整的有序 Slang 表达式 JSON 数组。属性类型由 `common.slang` 提供。源码编译和 Importer 共用读取逻辑，与显式 `Source.Specializations` 按入口名及完整有序参数取并集，完全重复的声明仅保留一次。原 .shader 声明仍用于导入失效判定，派生组合只写入 cooked 输出；保存代码加载仅读取该输出，不再次扫描属性或隐式编译。
 
 generic 入口未声明所需组合，或已声明组合缺少代码/资源使用数据时，加载或选择明确失败。保存代码路径不隐式退回源码编译；直接 `ShaderSourceBlock.CreateAsync` 的显式源码开发能力保留。缓存身份包含入口与有序参数，一个资产 Guid 的 resident 对象持有各自的组合，不会把不同参数误合成同一码。
 

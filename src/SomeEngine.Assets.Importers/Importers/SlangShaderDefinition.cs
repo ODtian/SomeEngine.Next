@@ -71,9 +71,11 @@ public static partial class SlangShaderImporter
             string? definitionHash = File.Exists(fullPath) ? ImportHash.FileSha256(fullPath) : null;
             TargetDesc[] targets = CreateDefaultTargets(GlobalSession);
             SessionDesc sessionDescription = CreateSessionDescription(fullPath, targets, includeDirectories);
+            string settings = DefinitionSettings(definition, fullPath, projectRoot, includeDirectories);
             string shaderName = string.IsNullOrWhiteSpace(asset.Name) ? Path.GetFileNameWithoutExtension(fullPath) : asset.Name;
             ShaderCompilation compiled = definition.CompileAsync(GlobalSession, sessionDescription, shaderName,
                 cancellationToken).AsTask().GetAwaiter().GetResult();
+            definition.Specializations = compiled.Specializations.ToArray();
             for (int index = 0; index < compiled.SerializedSources.Count; index++)
                 definition.SetSerializedSource(index, compiled.SerializedSources[index].Span);
             foreach (ulong key in code.ContentKeys.ToArray()) code.RemoveBytes(key);
@@ -117,7 +119,6 @@ public static partial class SlangShaderImporter
                 dependencies.Add(new FileDependency { RelativePath = SlangDeps.RelPath(projectRoot, fullPath), ContentHash = definitionHash });
             FileDependency[] inputs = dependencies.DistinctBy(static value => value.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .OrderBy(static value => value.RelativePath, StringComparer.Ordinal).ToArray();
-            string settings = DefinitionSettings(definition, fullPath, projectRoot, includeDirectories);
             string contentHash = ImportHash.ComputeInputHash(inputs, ImporterVersion, DefaultTargetSetting, settings);
             code.ImportTrace = CreateImportTrace(fullPath, projectRoot, contentHash, inputs);
             code.SchemaVersion = ShaderBlock.Version;

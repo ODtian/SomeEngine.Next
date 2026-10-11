@@ -6,7 +6,7 @@ namespace SomeEngine.Assets.Importers;
 
 public static partial class SlangShaderImporter
 {
-    public const uint ImporterVersion = 33;
+    public const uint ImporterVersion = 34;
 
     private static readonly Lazy<IGlobalSession> s_globalSession = new(CreateGlobalSession);
 

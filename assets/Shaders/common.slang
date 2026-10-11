@@ -5,6 +5,8 @@
 struct VertexEncodingAttribute { string compatibility; };
 [__AttributeUsage(_AttributeTargets.Function)]
 struct ConservativeBoundsAttribute { string support; };
+[__AttributeUsage(_AttributeTargets.Function)]
+struct ShaderSpecializationAttribute { string arguments; };
 
 #ifndef CLUSTER_RASTER_TWO_SIDED
 #define CLUSTER_RASTER_TWO_SIDED 0
