@@ -18,12 +18,9 @@ $project = Join-Path $repository 'tools/SomeEngine.Assets.Benchmarks/SomeEngine.
 $workRoot = Join-Path $repository 'obj/AssetStorageMeasurements'
 $coreDirectory = Join-Path $workRoot 'coreclr'
 $satoriDirectory = Join-Path $workRoot 'satori'
-$archive = Join-Path $workRoot 'satori-20260927.1-net10.0-windows_x64.zip'
-$satoriUri = 'https://github.com/hez2010/Satori/releases/download/20260927.1-net10.0/windows_x64.zip'
-$satoriHash = '7DDBA8AB054904E55D849CC3A8093EF0493B166A9C596DC16F9B682BAF44B3A7'
 
 if (![Environment]::Is64BitOperatingSystem -or ![OperatingSystem]::IsWindows()) {
-    throw 'The pinned Satori package in this runner is Windows x64.'
+    throw 'This measurement runner publishes Windows x64 applications.'
 }
 
 function Reset-MeasurementDirectory([string]$Path) {
@@ -37,25 +34,14 @@ function Reset-MeasurementDirectory([string]$Path) {
 }
 
 New-Item -ItemType Directory -Force -Path $workRoot | Out-Null
-if ('Satori' -in $Collectors) {
-    if (!(Test-Path -LiteralPath $archive)) {
-        Write-Host 'Downloading pinned Satori 20260927.1 for .NET 10...'
-        Invoke-WebRequest -Uri $satoriUri -OutFile $archive
-    }
-    $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash
-    if ($actualHash -ne $satoriHash) { throw "Satori archive checksum mismatch: $actualHash" }
-}
-
-Reset-MeasurementDirectory $coreDirectory
-Write-Host 'Publishing an isolated self-contained benchmark...'
-& dotnet publish $project -c Release -r win-x64 --self-contained true `
-    -p:PublishSingleFile=false -p:PublishReadyToRun=false -o $coreDirectory -v quiet
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
-
-if ('Satori' -in $Collectors) {
-    Reset-MeasurementDirectory $satoriDirectory
-    Copy-Item -Path (Join-Path $coreDirectory '*') -Destination $satoriDirectory -Recurse -Force
-    Expand-Archive -LiteralPath $archive -DestinationPath $satoriDirectory -Force
+foreach ($collector in $Collectors) {
+    $directory = if ($collector -eq 'Satori') { $satoriDirectory } else { $coreDirectory }
+    $useSatori = if ($collector -eq 'Satori') { 'true' } else { 'false' }
+    Reset-MeasurementDirectory $directory
+    Write-Host "Publishing an isolated $collector self-contained benchmark..."
+    & dotnet publish $project -c Release -r win-x64 --self-contained true `
+        -p:UseSatoriGC=$useSatori -p:PublishSingleFile=false -p:PublishReadyToRun=false -o $directory -v quiet
+    if ($LASTEXITCODE -ne 0) { throw "$collector publish failed with exit code $LASTEXITCODE" }
 }
 
 $resultPath = $null
