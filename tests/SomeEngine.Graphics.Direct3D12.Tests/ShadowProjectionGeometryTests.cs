@@ -9,8 +9,11 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 [Collection("Direct3D12 shader compilation")]
 public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
 {
-    [Fact]
-    public void LocalEmitterRadiusProducesTheKnownHalfPlanePenumbra()
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(31u)]
+    [InlineData(63u)]
+    public void LocalEmitterRadiusProducesTheKnownHalfPlanePenumbra(uint frameIndex)
     {
         DirectoryInfo sourceDirectory = new(AppContext.BaseDirectory);
         while (!File.Exists(Path.Combine(sourceDirectory.FullName, "assets/Noise/shadow_blue_noise.rgba8")))
@@ -43,7 +46,7 @@ public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
         }
         for (int y = 0; y < resolution; y++)
             for (int x = 0; x < resolution / 2; x++) depth[y * resolution + x] = BitConverter.SingleToUInt32Bits(1 - plane.Z / plane.W);
-        uint[][] actual = new D3D12TestCompute(compiler).ExecuteSource("""
+        uint[][] actual = new D3D12TestCompute(compiler).ExecuteSource($$"""
             #define VSM_WHOLE_PAGE_SAMPLING 1
             #define VSM_BLUE_NOISE_TEXTURE 1
             Texture2D<float4> VirtualShadowBlueNoise;
@@ -61,14 +64,14 @@ public sealed class ShadowProjectionGeometryTests(D3D12TestCompiler compiler)
                 settings.ExtrapolateMaxSlope = .05; settings.MaxSlopeBias = 50.0;
                 VirtualShadowProjectionResult projection = TraceVirtualShadowLocal(Views, Pages, Atlas,
                     thread.x, float3(-.0001,0,1), float3(0,0,-1), .001, 0.0,
-                    settings, uint2(20,30), 0u, 0.0);
+                    settings, uint2(20,30), {{frameIndex}}u, 0.0);
                 Result[thread.x] = float3(projection.Valid ? 1.0 : 0.0, projection.Visibility, projection.OccluderDistance);
             }
             """, "ReadEmitterPenumbra", new(1,1,1),
             [(MemoryMarshal.Cast<VirtualShadowView,uint>(views).ToArray(), ResourceBindingType.BufferSrv,
                 VirtualShadowView.SizeInBytes), (pages, ResourceBindingType.BufferSrv, 4),
              (new uint[6], ResourceBindingType.BufferUav,12)], new SampledImage(resolution,resolution,depth,3, ViewDimension: TextureViewDimension.Texture2DArray),
-             [new SampledImage(64,4096,noise,0,Format.R8G8B8A8UNorm)]);
+             [new SampledImage(128,8192,noise,0,Format.R8G8B8A8UNorm)]);
         float[] values = actual[0].Select(BitConverter.UInt32BitsToSingle).ToArray();
         // A point emitter sees the open side. A .01-radius disc and the z=.5
         // half plane split the known emitter area almost in half at x=-.0001.
