@@ -76,7 +76,8 @@ internal sealed class RuntimeScene : IDisposable
     internal static async ValueTask<RuntimeScene> CreateAsync(
         World world,
         AssetLoader assets,
-        Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>> loadShader)
+        Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>> loadShader,
+        Func<Shader, CancellationToken, ValueTask> prepareMaterialShader)
     {
         ArgumentNullException.ThrowIfNull(loadShader);
         Entity[] instances = Entities(world, new QueryDefinitionBuilder().Read<MeshSource>().Read<WorldTransform>());
@@ -129,7 +130,7 @@ internal sealed class RuntimeScene : IDisposable
                 {
                     using MaterialAsset file = await MaterialAsset.OpenAsync(assets, materialIds[index], cancellationToken)
                         .ConfigureAwait(false);
-                    loadedMaterials[index] = await file.CreateAsync(assets, loadShader, LoadTextureAsync,
+                    loadedMaterials[index] = await file.CreateAsync(assets, LoadMaterialShaderAsync, LoadTextureAsync,
                         cancellationToken, loadTexturesConcurrently: true).ConfigureAwait(false);
                 }).ConfigureAwait(false);
             for (int index = 0; index < materialIds.Length; index++)
@@ -222,6 +223,13 @@ internal sealed class RuntimeScene : IDisposable
             }
             if (errors.Count != 1) throw new AggregateException("Scene loading and cleanup failed.", errors);
             throw;
+        }
+
+        async ValueTask<Shader> LoadMaterialShaderAsync(AssetId<ShaderAsset> id, CancellationToken cancellationToken)
+        {
+            Shader shader = await loadShader(id, cancellationToken).ConfigureAwait(false);
+            await prepareMaterialShader(shader, cancellationToken).ConfigureAwait(false);
+            return shader;
         }
 
         async ValueTask<Texture> LoadTextureAsync(AssetId<TextureAsset> id, CancellationToken cancellationToken)

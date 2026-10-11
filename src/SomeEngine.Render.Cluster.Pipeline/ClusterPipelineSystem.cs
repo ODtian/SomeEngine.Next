@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SlangShaderSharp;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -203,6 +204,22 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
     public ClusterVisibilityMode VisibilityMode => _visibilityMode;
 
+    public static void PrepareMaterialShader(IGraphicsBackend backend, Device device, Shader shader,
+        ClusterPipelineOptions options)
+    {
+        int target = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+        foreach (var entry in ClusterMaterialEntries.MetadataEntries(
+                     backend, device, shader, options.SelectVisibilityMode(device.Capabilities)))
+            _ = shader.GetSlangEntryMetadataAsync(target, entry);
+    }
+
+    public static void PrepareMaterialShader(Shader shader, SlangCompileTarget target)
+    {
+        int targetIndex = shader.RequireSlangTarget(target);
+        foreach (var entry in ClusterMaterialEntries.CommonMetadataEntries(shader, target))
+            _ = shader.GetSlangEntryMetadataAsync(targetIndex, entry);
+    }
+
     public int CurrentInstanceCount
     {
         get
@@ -335,6 +352,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     public GraphPassId ShadeCompletePass => _shadeGroups.Count != 0
         ? _shadeGroups[_shadeGroupOrder.Max].Pass
         : _shadeResolvePass;
+
+    public GraphPassId PageFaultReadbackPass => _pageFaultReadbackPass;
 
     public void ConfigureShadeCompleteBefore(GraphPassId pass)
     {

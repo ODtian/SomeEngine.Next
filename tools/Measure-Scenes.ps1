@@ -17,6 +17,13 @@ $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
 $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
+if ($Trace) {
+    $startupTraces = Join-Path ([IO.Path]::GetDirectoryName($application)) 'Performance'
+    [void][IO.Directory]::CreateDirectory($startupTraces)
+    $start.Environment['SOMEENGINE_STARTUP_TRACE'] = Join-Path $startupTraces ('startup-' + [Guid]::NewGuid().ToString('N') + '.setrace')
+} else {
+    [void]$start.Environment.Remove('SOMEENGINE_STARTUP_TRACE')
+}
 $process = [Diagnostics.Process]::Start($start)
 $output = $process.StandardOutput.ReadToEndAsync()
 $errors = $process.StandardError.ReadToEndAsync()
@@ -59,6 +66,10 @@ if (!$report -or $applicationExitCode -ne 0) {
 }
 $result = Get-Content -LiteralPath $report.FullName -Raw | ConvertFrom-Json
 $result.Scenes | Format-Table Scene, Status, Frames, MeanMs, MedianMs, P95Ms, PrepareMs, ExecuteMs
+if ($result.Startup) {
+    $result.Startup | Format-Table ApplicationToWindowMs, WindowToFirstFrameMs, ApplicationToFirstFrameMs
+    $result.Startup.Stages | Format-Table Stage, ElapsedMs
+}
 Write-Host "Report: $($report.FullName) ($([Math]::Round($timer.Elapsed.TotalSeconds, 2)) seconds including application startup)"
 $requiredScenes = @('1024 spheres', 'Sponza', 'Amazon Bistro')
 if (!$result.Complete -or $result.Scenes.Count -ne $requiredScenes.Count -or

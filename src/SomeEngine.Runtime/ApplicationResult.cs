@@ -19,6 +19,7 @@ public enum ApplicationFailure : byte
 public sealed record ApplicationResult(ApplicationFailure Failure, int CompletedFrames, Exception? Error = null)
 {
     public bool Succeeded => Failure == ApplicationFailure.None;
+    public ApplicationStartupTimes? Startup { get; init; }
 }
 
 internal sealed class ApplicationRunException(ApplicationFailure failure, int completedFrames, Exception inner)

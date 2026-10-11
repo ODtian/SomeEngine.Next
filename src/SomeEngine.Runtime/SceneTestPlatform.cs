@@ -1,6 +1,7 @@
 using ImGuiNET;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SomeEngine.Diagnostics;
 using SomeEngine.Render.Cluster;
 
@@ -11,6 +12,9 @@ public sealed record TestScene(string Name, string ContentDirectory, bool Animat
 /// <summary>Shared scene selection and render settings for the interactive test application.</summary>
 public sealed class SceneTestPlatform
 {
+    public static TestScene[] ReadScenes(string path) =>
+        JsonSerializer.Deserialize(File.ReadAllText(path), SceneJsonContext.Default.TestSceneArray)!;
+
     public SceneTestPlatform(IReadOnlyList<TestScene> scenes)
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
@@ -42,6 +46,7 @@ public sealed class SceneTestPlatform
     private int _readyFrames;
     private TraceCapture? _trace;
     private bool _recordTrace;
+    private bool _measureAfterStartup;
     private string? _resultDirectory;
     private RuntimeStartupOptions? _interactiveOptions;
     private int _interactiveScene;
@@ -51,6 +56,8 @@ public sealed class SceneTestPlatform
     private string? _graphicsDriver;
     public bool IsMeasuring { get; private set; }
     public string? LastReport { get; private set; }
+    public string? StartupTraceOutput { get; init; }
+    public ApplicationStartupTimes? Startup { get; private set; }
     public int GeometryMemoryMegabytes { get; private set; } = 256;
     internal bool ImageRequested { get; private set; }
     internal string? LastImage { get; private set; }
@@ -77,6 +84,12 @@ public sealed class SceneTestPlatform
     public void StartMeasurements(bool recordTrace = false)
     {
         if (IsMeasuring) return;
+        if (Startup is null)
+        {
+            _recordTrace = recordTrace;
+            _measureAfterStartup = true;
+            return;
+        }
         _results.Clear();
         _recordTrace = recordTrace;
         _interactiveOptions = Options;
@@ -88,6 +101,14 @@ public sealed class SceneTestPlatform
         _testStarted = Stopwatch.GetTimestamp();
         IsMeasuring = true;
         SelectScene(0);
+    }
+
+    internal void RecordStartup(ApplicationStartupTimes times)
+    {
+        Startup = times;
+        if (!_measureAfterStartup) return;
+        _measureAfterStartup = false;
+        StartMeasurements(_recordTrace);
     }
 
     public void SelectScene(int index)
@@ -127,7 +148,7 @@ public sealed class SceneTestPlatform
     internal void RecordFrame(FrameTiming frame, ClusterRenderDiagnostics diagnostics)
     {
         if (!IsMeasuring) return;
-        if (_renderingStarted == 0)
+        if (_renderingStarted == 0 && diagnostics.Meshes.PublishedMeshes == diagnostics.Meshes.RegisteredMeshes)
         {
             _renderingStarted = Stopwatch.GetTimestamp();
             _firstFrameMs = Stopwatch.GetElapsedTime(_sceneStarted).TotalMilliseconds;
@@ -140,7 +161,7 @@ public sealed class SceneTestPlatform
         // Include the frame that submits the final uploads. Its completed CPU
         // diagnostics can already report ready, while the frame still paid for
         // those uploads and the resulting graph and command work.
-        if (!ready || _wasStreaming)
+        if (_renderingStarted != 0 && (!ready || _wasStreaming))
         {
             _streamingFrames = _renderedFrames;
             _streamingMs = Stopwatch.GetElapsedTime(_renderingStarted).TotalMilliseconds;
@@ -189,27 +210,40 @@ public sealed class SceneTestPlatform
             return;
         }
         LastReport = Path.Combine(_resultDirectory!, "results.json");
-        File.WriteAllText(LastReport, JsonSerializer.Serialize(new
+        var report = new JsonObject
         {
-            Complete = error is null && _results.Count == Scenes.Count && _results.All(result => result.Status == "Measured"),
-            CapturedAtUtc = DateTimeOffset.UtcNow,
-            GraphicsDevice = _graphicsDevice,
-            GraphicsDriver = _graphicsDriver,
-            Processor = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
-            Framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
-            TieredCompilation = AppContext.GetData("System.Runtime.TieredCompilation")?.ToString(),
-            Error = error,
-            ExpectedScenes = Scenes.Select(scene => scene.Name),
-            ElapsedSeconds = Stopwatch.GetElapsedTime(_testStarted).TotalSeconds,
-            Timing = "Presented frame elapsed time and CPU-side stage elapsed time; GPU duration is not measured",
-            TraceEnabled = _recordTrace,
-            Options.TraceDetail, Options.TraceAllocations,
-            Options.TemporalAntialiasing, Options.VirtualShadows, Options.AsyncCompute, Options.ForceHardwareRaster,
-            Options.UseInstanceGroups, Options.FixedFrameSeconds,
-            Options.SynchronousFrames, Options.ScenePlayback, Options.DisableMeshShaders, Options.DeviceValidation,
-            GeometryMemoryMegabytes,
-            Scenes = _results,
-        }, new JsonSerializerOptions { WriteIndented = true }));
+            ["Complete"] = error is null && _results.Count == Scenes.Count && _results.All(result => result.Status == "Measured"),
+            ["CapturedAtUtc"] = DateTimeOffset.UtcNow.ToString("O"),
+            ["GraphicsDevice"] = _graphicsDevice,
+            ["GraphicsDriver"] = _graphicsDriver,
+            ["Processor"] = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
+            ["Framework"] = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            ["NativeAot"] = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported,
+            ["TieredCompilation"] = AppContext.GetData("System.Runtime.TieredCompilation")?.ToString(),
+            ["TieredCompilationOverride"] = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation")
+                ?? Environment.GetEnvironmentVariable("COMPlus_TieredCompilation"),
+            ["Error"] = error,
+            ["ExpectedScenes"] = new JsonArray(Scenes.Select(scene => (JsonNode?)JsonValue.Create(scene.Name)).ToArray()),
+            ["ElapsedSeconds"] = Stopwatch.GetElapsedTime(_testStarted).TotalSeconds,
+            ["Timing"] = "Presented frame elapsed time and CPU-side stage elapsed time; GPU duration is not measured",
+            ["TraceEnabled"] = _recordTrace,
+            ["Startup"] = JsonSerializer.SerializeToNode(Startup, SceneJsonContext.Default.ApplicationStartupTimes),
+            ["TraceDetail"] = Options.TraceDetail,
+            ["TraceAllocations"] = Options.TraceAllocations,
+            ["TemporalAntialiasing"] = Options.TemporalAntialiasing,
+            ["VirtualShadows"] = Options.VirtualShadows,
+            ["AsyncCompute"] = Options.AsyncCompute,
+            ["ForceHardwareRaster"] = Options.ForceHardwareRaster,
+            ["UseInstanceGroups"] = Options.UseInstanceGroups,
+            ["FixedFrameSeconds"] = Options.FixedFrameSeconds,
+            ["SynchronousFrames"] = Options.SynchronousFrames,
+            ["ScenePlayback"] = Options.ScenePlayback,
+            ["DisableMeshShaders"] = Options.DisableMeshShaders,
+            ["DeviceValidation"] = Options.DeviceValidation,
+            ["GeometryMemoryMegabytes"] = GeometryMemoryMegabytes,
+            ["Scenes"] = JsonSerializer.SerializeToNode(_results, SceneJsonContext.Default.ListSceneTiming),
+        };
+        File.WriteAllText(LastReport, report.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Performance report: {LastReport}");
         IsMeasuring = false;
         Options = _interactiveOptions!;
@@ -291,7 +325,7 @@ public sealed class SceneTestPlatform
     }
 
     internal readonly record struct FrameTiming(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs);
-    private sealed record SceneTiming(string Scene, string Status, int Frames, double? MeanMs, double? MedianMs,
+    internal sealed record SceneTiming(string Scene, string Status, int Frames, double? MeanMs, double? MedianMs,
         double? P95Ms, double? PrepareMs, double? ReconcileMs, double? ExecuteMs,
         uint ResidentPages, uint RegisteredPages, int QueuedLoads, int ActiveLoads,
         uint GeometryUsedBytes, uint GeometryFreeBytes, ulong BackpressuredPages,

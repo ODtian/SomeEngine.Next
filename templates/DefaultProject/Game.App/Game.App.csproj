@@ -3,7 +3,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <ProjectContentRoot Condition="'$(ProjectContentRoot)' == ''">$(DefaultProjectDirectory)</ProjectContentRoot>
-    <TieredCompilation Condition="'$(Configuration)' == 'Release'">false</TieredCompilation>
+    <RuntimeIdentifier Condition="'$(Configuration)' == 'Release' and '$(RuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <PublishAot Condition="'$(Configuration)' == 'Release'">true</PublishAot>
+    <PublishAotUsingRuntimePack Condition="'$(Configuration)' == 'Release'">true</PublishAotUsingRuntimePack>
+    <SelfContained Condition="'$(Configuration)' == 'Release'">true</SelfContained>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Game.Assets/Game.Assets.csproj" />
@@ -31,5 +35,10 @@
     <ItemGroup>
       <ResolvedFileToPublish Include="$(TargetDir)test-scenes.json" RelativePath="test-scenes.json" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
+  </Target>
+  <Target Name="CompileReleaseApplication" AfterTargets="Build"
+          Condition="'$(Configuration)' == 'Release' and '$(NoBuild)' != 'true' and '$(_IsPublishing)' != 'true'">
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Publish"
+             Properties="NoBuild=true;_IsPublishing=true;PublishDir=$(TargetDir)" />
   </Target>
 </Project>

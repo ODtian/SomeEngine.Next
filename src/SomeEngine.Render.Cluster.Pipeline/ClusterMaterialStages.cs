@@ -65,6 +65,96 @@ internal static class ClusterMaterialEntries
         _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     };
 
+    internal static List<EntryPointReflection> CommonMetadataEntries(Shader shader, SlangCompileTarget target)
+    {
+        int targetIndex = shader.RequireSlangTarget(target);
+        var result = new List<EntryPointReflection>();
+        foreach (string name in new[] { Shade, TessellationSeed, TessellationSplit })
+            if (shader.TryGetSlangEntry(targetIndex, name, SlangStage.Compute, out EntryPointReflection entry))
+                result.Add(entry);
+        return result;
+    }
+
+    internal static IReadOnlyList<EntryPointReflection> MetadataEntries(
+        IGraphicsBackend backend, Device device, Shader shader, ClusterVisibilityMode visibilityMode)
+    {
+        SlangCompileTarget target = device.Capabilities.CompileTarget;
+        int targetIndex = shader.RequireSlangTarget(target);
+        var result = CommonMetadataEntries(shader, target);
+        void Queue(string name, SlangStage stage)
+        {
+            if (shader.TryGetSlangEntry(targetIndex, name, stage, out EntryPointReflection entry))
+                result.Add(entry);
+        }
+        string? softwareEntry = visibilityMode == ClusterVisibilityMode.HardwareOnly
+            ? null
+            : ClusterMaterialEntries.SoftwareRaster(visibilityMode);
+        bool softwareUsesMaterialRanges = false;
+        if (softwareEntry is not null)
+        {
+            string meshletSoftwareEntry = visibilityMode == ClusterVisibilityMode.ImageAtomic64
+                ? ClusterMaterialEntries.SoftwareMeshletImageAtomic64
+                : ClusterMaterialEntries.SoftwareMeshletBufferAtomic64;
+            softwareUsesMaterialRanges = ClusterMaterialEntries.HasEntry(
+                shader,
+                target,
+                meshletSoftwareEntry,
+                SlangStage.Compute);
+            if (softwareUsesMaterialRanges)
+                softwareEntry = meshletSoftwareEntry;
+            Queue(softwareEntry, SlangStage.Compute);
+            Queue(
+                softwareUsesMaterialRanges
+                    ? ClusterMaterialEntries.SoftwareMeshletTarget
+                    : ClusterMaterialEntries.SoftwareTarget,
+                SlangStage.Compute);
+        }
+
+        bool usesMesh = ClusterRasterPipeline.SupportsMesh(backend, device);
+        bool usesMeshlets = usesMesh &&
+            ClusterRasterPipeline.SupportsMeshlets(backend, device) &&
+            ClusterMaterialEntries.HasEntry(
+                shader,
+                target,
+                ClusterMaterialEntries.HardwareMeshlet,
+                SlangStage.Mesh);
+        string hardwareEntry = usesMeshlets
+            ? ClusterMaterialEntries.HardwareMeshlet
+            : usesMesh
+                ? ClusterMaterialEntries.HardwareMesh
+                : ClusterMaterialEntries.HardwareVertex;
+        Queue(hardwareEntry, usesMesh ? SlangStage.Mesh : SlangStage.Vertex);
+        Queue(
+            ClusterMaterialEntries.HardwarePixel(visibilityMode, usesMesh),
+            SlangStage.Fragment);
+        Queue(
+            usesMesh
+                ? ClusterMaterialEntries.HardwareMeshPixelTarget
+                : ClusterMaterialEntries.HardwarePixelTarget,
+            SlangStage.Fragment);
+
+        if (visibilityMode == ClusterVisibilityMode.HardwareOnly)
+        {
+            Queue(
+                usesMesh
+                    ? ClusterMaterialEntries.TessellationHardwareMesh
+                    : ClusterMaterialEntries.TessellationHardwareVertex,
+                usesMesh ? SlangStage.Mesh : SlangStage.Vertex);
+            Queue(
+                usesMesh
+                    ? ClusterMaterialEntries.TessellationHardwareMeshPixel
+                    : ClusterMaterialEntries.TessellationHardwarePixel,
+                SlangStage.Fragment);
+        }
+        else
+        {
+            Queue(
+                ClusterMaterialEntries.TessellationDice(visibilityMode),
+                SlangStage.Compute);
+        }
+        return result;
+    }
+
     internal static void AddResourceProperties(
         HashSet<uint> properties,
         ReadOnlySpan<ClusterMaterialStageBinding> bindings)
@@ -952,86 +1042,10 @@ internal sealed class ClusterRasterStages : IDisposable
     private void QueueEntryUsage(Material material)
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
-        SlangCompileTarget target = _device.Capabilities.CompileTarget;
-        ClusterEntryUsageSet entries = _entryUsages.Get(shader, target);
-
-        void Queue(string name, SlangStage stage)
-        {
-            if (ClusterMaterialEntries.HasEntry(shader, target, name, stage))
-                entries.Queue(name);
-        }
-
-        Queue(ClusterMaterialEntries.Shade, SlangStage.Compute);
-        string? softwareEntry = _visibilityMode == ClusterVisibilityMode.HardwareOnly
-            ? null
-            : ClusterMaterialEntries.SoftwareRaster(_visibilityMode);
-        bool softwareUsesMaterialRanges = false;
-        if (softwareEntry is not null)
-        {
-            string meshletSoftwareEntry = _visibilityMode == ClusterVisibilityMode.ImageAtomic64
-                ? ClusterMaterialEntries.SoftwareMeshletImageAtomic64
-                : ClusterMaterialEntries.SoftwareMeshletBufferAtomic64;
-            softwareUsesMaterialRanges = ClusterMaterialEntries.HasEntry(
-                shader,
-                target,
-                meshletSoftwareEntry,
-                SlangStage.Compute);
-            if (softwareUsesMaterialRanges)
-                softwareEntry = meshletSoftwareEntry;
-            Queue(softwareEntry, SlangStage.Compute);
-            Queue(
-                softwareUsesMaterialRanges
-                    ? ClusterMaterialEntries.SoftwareMeshletTarget
-                    : ClusterMaterialEntries.SoftwareTarget,
-                SlangStage.Compute);
-        }
-
-        bool usesMesh = ClusterRasterPipeline.SupportsMesh(_backend, _device);
-        bool usesMeshlets = usesMesh &&
-            ClusterRasterPipeline.SupportsMeshlets(_backend, _device) &&
-            ClusterMaterialEntries.HasEntry(
-                shader,
-                target,
-                ClusterMaterialEntries.HardwareMeshlet,
-                SlangStage.Mesh);
-        string hardwareEntry = usesMeshlets
-            ? ClusterMaterialEntries.HardwareMeshlet
-            : usesMesh
-                ? ClusterMaterialEntries.HardwareMesh
-                : ClusterMaterialEntries.HardwareVertex;
-        Queue(hardwareEntry, usesMesh ? SlangStage.Mesh : SlangStage.Vertex);
-        Queue(
-            ClusterMaterialEntries.HardwarePixel(_visibilityMode, usesMesh),
-            SlangStage.Fragment);
-        Queue(
-            usesMesh
-                ? ClusterMaterialEntries.HardwareMeshPixelTarget
-                : ClusterMaterialEntries.HardwarePixelTarget,
-            SlangStage.Fragment);
-
-        Queue(ClusterMaterialEntries.TessellationSeed, SlangStage.Compute);
-        Queue(ClusterMaterialEntries.TessellationSplit, SlangStage.Compute);
-        if (_visibilityMode == ClusterVisibilityMode.HardwareOnly)
-        {
-            Queue(
-                usesMesh
-                    ? ClusterMaterialEntries.TessellationHardwareMesh
-                    : ClusterMaterialEntries.TessellationHardwareVertex,
-                usesMesh ? SlangStage.Mesh : SlangStage.Vertex);
-            Queue(
-                usesMesh
-                    ? ClusterMaterialEntries.TessellationHardwareMeshPixel
-                    : ClusterMaterialEntries.TessellationHardwarePixel,
-                SlangStage.Fragment);
-        }
-        else
-        {
-            Queue(
-                ClusterMaterialEntries.TessellationDice(_visibilityMode),
-                SlangStage.Compute);
-        }
+        ClusterEntryUsageSet entries = _entryUsages.Get(shader, _device.Capabilities.CompileTarget);
+        foreach (EntryPointReflection entry in ClusterMaterialEntries.MetadataEntries(_backend, _device, shader, _visibilityMode))
+            entries.Queue(entry.Name);
     }
-
     private static Dictionary<string, byte> ResolveMaterialResources(
         Material material,
         ClusterLinkedStageLayout resources)
@@ -1901,9 +1915,6 @@ internal sealed class ClusterEntryUsageCache : IDisposable
 
 internal sealed class ClusterEntryUsageSet
 {
-    private static readonly SemaphoreSlim MetadataConcurrency = new(
-        Math.Max(1, Math.Min(Environment.ProcessorCount, 4)));
-
     private readonly Shader _shader;
     private readonly int _targetIndex;
     private readonly ShaderReflection _reflection;
@@ -1994,45 +2005,24 @@ internal sealed class ClusterEntryUsageSet
 
     private async Task<bool[]> ReadUsageAsync(int entryIndex, string name)
     {
-        await Task.Yield();
-        await MetadataConcurrency.WaitAsync().ConfigureAwait(false);
-        try
+        IMetadata metadata = await _shader.GetSlangEntryMetadataAsync(_targetIndex, entryIndex).ConfigureAwait(false);
+        var result = new bool[_locations.Length];
+        for (int index = 0; index < _locations.Length; index++)
         {
-            using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(
-                ClusterLinkedStageLayout.MetadataTrace);
-            SlangResult metadataResult = _shader.SlangCode.GetEntryPointMetadata(
-                entryIndex,
-                _targetIndex,
-                out IMetadata metadata,
-                out ISlangBlob? diagnostics);
-            if (metadataResult.Failed)
+            ClusterParameterLocation location = _locations[index];
+            SlangResult usageResult = metadata.IsParameterLocationUsed(
+                location.Category,
+                location.Space,
+                location.Register,
+                out result[index]);
+            if (usageResult.Failed)
             {
                 throw new InvalidDataException(
-                    $"Slang could not describe resource usage for shader '{_shader.Name}', " +
-                    $"entry '{name}': {diagnostics?.AsString ?? metadataResult.ToString()}");
+                    $"Slang could not resolve resource usage for shader '{_shader.Name}', " +
+                    $"entry '{name}': {usageResult}.");
             }
-            var result = new bool[_locations.Length];
-            for (int index = 0; index < _locations.Length; index++)
-            {
-                ClusterParameterLocation location = _locations[index];
-                SlangResult usageResult = metadata.IsParameterLocationUsed(
-                    location.Category,
-                    location.Space,
-                    location.Register,
-                    out result[index]);
-                if (usageResult.Failed)
-                {
-                    throw new InvalidDataException(
-                        $"Slang could not resolve resource usage for shader '{_shader.Name}', " +
-                        $"entry '{name}': {usageResult}.");
-                }
-            }
-            return result;
         }
-        finally
-        {
-            MetadataConcurrency.Release();
-        }
+        return result;
     }
 
 }
@@ -2040,8 +2030,6 @@ internal sealed class ClusterEntryUsageSet
 /// <summary>Bounded resource order captured from the final linked Slang program.</summary>
 internal sealed class ClusterLinkedStageLayout
 {
-    internal static readonly SomeEngine.Diagnostics.TraceSite MetadataTrace =
-        new("render", "Cluster.EntryMetadata");
     private readonly ClusterLinkedStageResource[] _resources;
 
     private ClusterLinkedStageLayout(ClusterLinkedStageResource[] resources)
@@ -2096,19 +2084,7 @@ internal sealed class ClusterLinkedStageLayout
 
             if (entryUsage is null)
             {
-                using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(MetadataTrace);
-                SlangResult metadataResult = shader.SlangCode.GetEntryPointMetadata(
-                    entryIndex,
-                    targetIndex,
-                    out IMetadata entryMetadata,
-                    out ISlangBlob? diagnostics);
-                if (metadataResult.Failed)
-                {
-                    throw new InvalidDataException(
-                        $"Slang could not describe resource usage for shader '{shader.Name}', " +
-                        $"entry '{name}': {diagnostics?.AsString ?? metadataResult.ToString()}");
-                }
-                metadata.Add(entryMetadata);
+                metadata.Add(shader.GetSlangEntryMetadataAsync(targetIndex, entryIndex).GetAwaiter().GetResult());
             }
             else entryUsage.Queue(name);
             entryLayouts.Add(entry.VarLayout);
