@@ -18,6 +18,8 @@ internal sealed class ClusterPipelineSet : IDisposable
         .Count(static role => role != ClusterShaderOperationRole.None);
 
     private readonly List<ClusterPipeline> _pipelines = [];
+    private readonly Dictionary<(bool TargetFilters, bool MultipleViews), ClusterComputePipeline> _traversals = [];
+    private readonly Func<bool, bool, ClusterComputePipeline> _createTraversal;
     private bool _disposed;
 
     internal ClusterPipelineSet(
@@ -41,8 +43,9 @@ internal sealed class ClusterPipelineSet : IDisposable
             ClusterComputePipeline Compute(
                 ClusterShaderOperationRole role,
                 string name,
-                string? entryPoint = null) =>
-                CreateCompute(backend, device, operations, _pipelines, role, name, entryPoint);
+                string? entryPoint = null,
+                string[]? specializations = null) =>
+                CreateCompute(backend, device, operations, _pipelines, role, name, entryPoint, specializations);
 
                 ClusterRasterPipeline Raster(
                     ClusterShaderOperationRole role,
@@ -75,7 +78,10 @@ internal sealed class ClusterPipelineSet : IDisposable
                         vertexEntry,
                         pixelEntry);
 
-            Traversal = Compute(ClusterShaderOperationRole.BvhTraversal, "Cluster BVH traversal");
+            _createTraversal = (targetFilters, multipleViews) => Compute(
+                ClusterShaderOperationRole.BvhTraversal,
+                $"Cluster BVH traversal (target filters: {targetFilters}, multiple views: {multipleViews})",
+                specializations: [targetFilters ? "true" : "false", multipleViews ? "true" : "false"]);
             LeafFlagFixups = Compute(ClusterShaderOperationRole.LeafFlagFixups, "Cluster streaming leaf flags");
             PageRequests = Compute(ClusterShaderOperationRole.PageRequests, "Cluster page request priorities");
             SceneBounds = Compute(ClusterShaderOperationRole.SceneBounds, "Cluster spatial scene bounds");
@@ -191,7 +197,16 @@ internal sealed class ClusterPipelineSet : IDisposable
         }
     }
 
-    internal ClusterComputePipeline Traversal { get; }
+    internal ClusterComputePipeline GetTraversal(bool targetFilters, bool multipleViews)
+    {
+        var capabilities = (targetFilters, multipleViews);
+        if (!_traversals.TryGetValue(capabilities, out ClusterComputePipeline? pipeline))
+        {
+            pipeline = _createTraversal(targetFilters, multipleViews);
+            _traversals.Add(capabilities, pipeline);
+        }
+        return pipeline;
+    }
     internal ClusterComputePipeline PageRequests { get; }
     internal ClusterComputePipeline LeafFlagFixups { get; }
     internal ClusterComputePipeline SceneBounds { get; }
@@ -230,11 +245,19 @@ internal sealed class ClusterPipelineSet : IDisposable
         List<ClusterPipeline> ownedPipelines,
         ClusterShaderOperationRole role,
         string name,
-        string? entryPoint = null)
+        string? entryPoint = null,
+        string[]? specializations = null)
     {
         ShaderOperation operation = GetOperation(operations, role);
         (Shader Shader, EntryPointReflection Entry) compute =
             GetEntry(operation, role, SlangStage.Compute);
+        string selectedEntry = entryPoint ?? compute.Entry.Name;
+        if (specializations is not null && compute.Shader.HasSpecializations(selectedEntry))
+        {
+            Shader shader = compute.Shader.RequireSpecialization(selectedEntry, specializations);
+            compute = (shader, shader.RequireSlangEntry(shader.RequireSlangTarget(device.Capabilities.CompileTarget),
+                selectedEntry, SlangStage.Compute));
+        }
 
         ownedPipelines.EnsureCapacity(checked(ownedPipelines.Count + 1));
         ClusterComputePipeline? created = null;

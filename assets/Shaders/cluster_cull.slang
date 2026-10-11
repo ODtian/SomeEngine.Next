@@ -257,7 +257,7 @@ void AppendVisibleWindow(
     uint2 rasterWindow,
     uint depthBucket,
     bool isSW,
-    uint maxCandidates, uint flags)
+    uint maxCandidates, uint flags, bool targetFilters)
 {
     CullDrawArgs base0 = LoadCullDrawArgs(BaseDrawArgs0, 0u);
     CullDrawArgs base1 = LoadCullDrawArgs(BaseDrawArgs1, 0u);
@@ -304,7 +304,7 @@ void AppendVisibleWindow(
     uint outIdx = routeBase + WaveMaskPrefix(routeMask, lane);
     if (isSW)
     {
-        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
+        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters).TargetPolicy != 0u)
             AddClusterWorkMetric(56u, 1u);
         uint globalIdx = baseSWCount + outIdx;
         if (globalIdx < maxCandidates)
@@ -314,7 +314,7 @@ void AppendVisibleWindow(
     }
     else
     {
-        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
+        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters).TargetPolicy != 0u)
             AddClusterWorkMetric(40u, 1u);
         uint hwIdx = maxCandidates - 1 - baseHWCount - outIdx;
         if (baseHWCount + outIdx < maxCandidates)
@@ -370,7 +370,8 @@ bool LoadAndFilterCandidate(
     out float boundsExpansion,
     out uint2 rasterWindow,
     out ClusterWorldBounds worldBounds,
-    out ClusterScreenBounds currentBounds)
+    out ClusterScreenBounds currentBounds,
+    bool targetFilters = true)
 {
     pageOffset = 0;
     clusterID = 0;
@@ -398,7 +399,7 @@ bool LoadAndFilterCandidate(
     clusterID = DrawRequestClusterID(candidate);
     instanceID = candidate.InstanceID;
     viewIndex = DrawRequestViewIndex(candidate);
-    view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
+    view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
     if (!IsInstanceVisibleToView(LoadInstanceFirstPerson(InstanceData, InstanceProperties, instanceID), view)) return false;
     view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
     if (threadId >= view.MaxCandidates)
@@ -443,30 +444,31 @@ bool LoadAndFilterCandidate(
 
 #if CLUSTER_CULL_PHASE == 2
 void AppendVisibleWindow(uint pageOffset, uint clusterID, uint instanceID,
-    uint viewIndex, uint2 rasterWindow, uint depthBucket, bool isSW, uint maxCandidates, uint flags);
+    uint viewIndex, uint2 rasterWindow, uint depthBucket, bool isSW, uint maxCandidates, uint flags, bool targetFilters);
 #endif
 
 // Hardware work is bounded by the target's raster window, independently of
 // its virtual resolution. Empty windows never enter the raster bins.
 void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
     uint viewIndex, uint2 rasterWindow, bool isSW, uint maxCandidates,
-    ClusterScreenBounds currentBounds, PackedCluster cluster, RenderInstanceTransform transform)
+    ClusterScreenBounds currentBounds, PackedCluster cluster, RenderInstanceTransform transform,
+    bool targetFilters = true)
 {
-    ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
+    ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
     uint depthBucket = ClusterDepthBucket(cluster, transform, view);
     uint requiredPageFlags = ClusterTargetPolicyRequiredPageFlags(currentBounds.NearDepth, view);
     uint flags = requiredPageFlags != 0u ? 2u : 0u;
     if (view.TargetPolicy == 0u)
     {
         if (view.TargetPolicy != 0u) AddClusterWorkMetric(48u, 1u);
-        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, depthBucket, isSW, maxCandidates, flags);
+        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, depthBucket, isSW, maxCandidates, flags, targetFilters);
         return;
     }
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
     uint windowSize = isSW ? 8u : target.RasterWindowPages;
     if (windowSize == 0u)
     {
-        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, depthBucket, isSW, maxCandidates, flags);
+        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, depthBucket, isSW, maxCandidates, flags, targetFilters);
         return;
     }
     uint4 pages = ClusterUnpackRasterTargetPageWindow(rasterWindow);
@@ -489,14 +491,14 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
         {
             AddClusterWorkMetric(32u, 1u);
             AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex,
-                clipped, depthBucket, isSW, maxCandidates, flags);
+                clipped, depthBucket, isSW, maxCandidates, flags, targetFilters);
         }
         else AddClusterWorkMetric(24u, 1u);
     }
 }
 
 #if CLUSTER_CULL_PHASE == 1
-void CullClusterCandidate(uint candidateIndex)
+void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
 {
     uint pageOffset;
     uint clusterID;
@@ -521,7 +523,7 @@ void CullClusterCandidate(uint candidateIndex)
             boundsExpansion,
             rasterWindow,
             worldBounds,
-            currentBounds);
+            currentBounds, targetFilters);
     if (!valid)
         return;
 
@@ -534,7 +536,7 @@ void CullClusterCandidate(uint candidateIndex)
             bool software = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, currentBounds.NearDepth,
                 view, cluster, t, boundsExpansion);
             AppendVisible(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, software,
-                view.MaxCandidates, currentBounds, cluster, t);
+                view.MaxCandidates, currentBounds, cluster, t, targetFilters);
         }
         return;
     }
@@ -566,7 +568,7 @@ void CullClusterCandidate(uint candidateIndex)
             rasterWindow,
             isSW,
             view.MaxCandidates,
-            currentBounds, cluster, t);
+            currentBounds, cluster, t, targetFilters);
     }
 }
 
@@ -588,7 +590,7 @@ void AppendVisibleWindow(
     uint2 rasterWindow,
     uint depthBucket,
     bool isSW,
-    uint maxCandidates, uint flags)
+    uint maxCandidates, uint flags, bool targetFilters)
 {
     uint localIdx;
     CullDrawArgs base0 = LoadCullDrawArgs(BaseDrawArgs0, 0u);
@@ -631,7 +633,7 @@ void AppendVisibleWindow(
     localIdx = routeBase + WaveMaskPrefix(routeMask, lane);
     if (isSW)
     {
-        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
+        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters).TargetPolicy != 0u)
             AddClusterWorkMetric(56u, 1u);
         uint globalIdx = baseSWCount + localIdx;
         if (globalIdx < maxCandidates)
@@ -641,7 +643,7 @@ void AppendVisibleWindow(
     }
     else
     {
-        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex).TargetPolicy != 0u)
+        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters).TargetPolicy != 0u)
             AddClusterWorkMetric(40u, 1u);
         uint hwIdx = maxCandidates - 1 - baseHWCount - localIdx;
         if (localIdx < maxCandidates)

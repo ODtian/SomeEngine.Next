@@ -14,6 +14,36 @@
       "Fields": {
         "SourceNames": [
           "cluster_bvh_traverse.slang"
+        ],
+        "Specializations": [
+          {
+            "EntryPoint": "CullClusterWork",
+            "Arguments": [
+              "false",
+              "false"
+            ]
+          },
+          {
+            "EntryPoint": "CullClusterWork",
+            "Arguments": [
+              "false",
+              "true"
+            ]
+          },
+          {
+            "EntryPoint": "CullClusterWork",
+            "Arguments": [
+              "true",
+              "false"
+            ]
+          },
+          {
+            "EntryPoint": "CullClusterWork",
+            "Arguments": [
+              "true",
+              "true"
+            ]
+          }
         ]
       },
       "Chunks": {}

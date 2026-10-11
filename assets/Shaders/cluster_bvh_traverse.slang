@@ -17,7 +17,7 @@ groupshared uint WorkNodesRemaining;
 groupshared uint WorkViewLanes;
 groupshared bool WorkFinished;
 
-void ClaimReadyNodes(uint thread)
+void ClaimReadyNodes(uint thread, bool multipleViews)
 {
     uint first = 0u;
     uint available = 0u;
@@ -29,7 +29,7 @@ void ClaimReadyNodes(uint thread)
         if (first < end && TraversalReady[first] != 0u)
         {
             DeviceMemoryBarrier();
-            viewLanes = ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask));
+            viewLanes = multipleViews ? ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask)) : 1u;
             available = min(CLUSTER_BVH_PARENTS_PER_GROUP / viewLanes, end - first);
         }
     }
@@ -70,12 +70,12 @@ bool ClaimReadyClusters(uint nodesRemaining, out uint batch, out uint count)
     return observed == batch;
 }
 
-void CullPersistentWork(uint thread)
+void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleViews = true)
 {
     for (;;)
     {
         GroupMemoryBarrierWithGroupSync();
-        if (WaveActiveAnyTrue(thread == 0u)) ClaimReadyNodes(thread);
+        if (WaveActiveAnyTrue(thread == 0u)) ClaimReadyNodes(thread, multipleViews);
         if (thread == 0u)
         {
             WorkClusterReady = 0u;
@@ -93,12 +93,13 @@ void CullPersistentWork(uint thread)
                 WorkNodes[thread] = TraversalNodes[WorkNodeStart + thread];
             GroupMemoryBarrierWithGroupSync();
             uint count = WorkNodeCount;
-            uint parentIndex = thread / (CLUSTER_BVH_FANOUT * WorkViewLanes);
+            uint viewLanes = multipleViews ? WorkViewLanes : 1u;
+            uint parentIndex = thread / (CLUSTER_BVH_FANOUT * viewLanes);
             uint parent = min(parentIndex, count - 1u);
             uint child = thread & (CLUSTER_BVH_FANOUT - 1u);
-            uint viewLane = (thread / CLUSTER_BVH_FANOUT) % WorkViewLanes;
+            uint viewLane = (thread / CLUSTER_BVH_FANOUT) % viewLanes;
             ProcessTraversalNode(WorkNodes[parent], parentIndex < count, child,
-                viewLane, WorkViewLanes, parentIndex * CLUSTER_BVH_FANOUT + child);
+                viewLane, viewLanes, parentIndex * CLUSTER_BVH_FANOUT + child, targetFilters, multipleViews);
             DeviceMemoryBarrierWithGroupSync();
             if (thread < count) TraversalReady[WorkNodeStart + thread] = 0u;
             DeviceMemoryBarrierWithGroupSync();
@@ -113,7 +114,7 @@ void CullPersistentWork(uint thread)
         if (count != 0u)
         {
             DeviceMemoryBarrier();
-            if (thread < count) CullClusterCandidate(WorkClusterBatch * CLUSTER_BATCH_SIZE + thread);
+            if (thread < count) CullClusterCandidate(WorkClusterBatch * CLUSTER_BATCH_SIZE + thread, targetFilters);
             DeviceMemoryBarrierWithGroupSync();
             if (thread == 0u) ClusterBatchReady[WorkClusterBatch] = 0u;
         }
@@ -122,9 +123,10 @@ void CullPersistentWork(uint thread)
     }
 }
 
+// View capabilities select an offline specialization of this shared traversal.
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void CullClusterWork(uint groupThreadIndex : SV_GroupThreadID)
+void CullClusterWork<let targetFilters : bool, let multipleViews : bool>(uint groupThreadIndex : SV_GroupThreadID)
 {
-    CullPersistentWork(groupThreadIndex);
+    CullPersistentWork(groupThreadIndex, targetFilters, multipleViews);
 }
