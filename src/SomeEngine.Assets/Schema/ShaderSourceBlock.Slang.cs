@@ -51,28 +51,49 @@ public sealed partial class ShaderSourceBlock
         SessionDesc sessionDescription,
         string name,
         ReadOnlyMemory<SpecializationArg> specializations = default,
-        CancellationToken cancellationToken = default) =>
-        (await CreateCoreAsync(
-            slang,
-            sessionDescription,
-            name,
-            specializations,
-            generateCode: true,
-            saveSources: false,
-            cancellationToken).ConfigureAwait(false)).Shader;
+        CancellationToken cancellationToken = default)
+    {
+        using ShaderSourceBlock copy = Duplicate();
+        if (!specializations.IsEmpty || copy.Specializations.Count == 0)
+            return (await copy.CreateCoreAsync(slang, sessionDescription, name, specializations,
+                generateCode: true, saveSources: false, cancellationToken).ConfigureAwait(false)).Shader;
+
+        Shader shader = (await copy.CreateCoreAsync(slang, sessionDescription, name, default,
+            generateCode: true, saveSources: false, cancellationToken).ConfigureAwait(false)).Shader;
+        var variants = new List<(string EntryPoint, string[] Arguments, Shader Shader)>(copy.Specializations.Count);
+        foreach (ShaderSpecialization specialization in copy.Specializations)
+        {
+            Shader variant = (await copy.CreateCoreAsync(slang, sessionDescription, name,
+                specialization.ToSlangArguments(), generateCode: true, saveSources: false,
+                cancellationToken, specialization.EntryPoint).ConfigureAwait(false)).Shader;
+            variants.Add((specialization.EntryPoint, specialization.Arguments.ToArray(), variant));
+        }
+        return shader.WithSpecializations(variants);
+    }
 
     /// <summary>Compiles the current source files and returns their serialized Slang data and read-byte hashes.</summary>
     public ValueTask<ShaderCompilation> CompileAsync(IGlobalSession slang, SessionDesc sessionDescription,
         string name, CancellationToken cancellationToken = default)
-        => CreateCoreAsync(slang, sessionDescription, name, default, generateCode: true,
+        => CompileAsync(slang, sessionDescription, name, default, cancellationToken);
+
+    public ValueTask<ShaderCompilation> CompileAsync(IGlobalSession slang, SessionDesc sessionDescription,
+        string name, ReadOnlyMemory<SpecializationArg> specializations, CancellationToken cancellationToken = default)
+        => CreateCoreAsync(slang, sessionDescription, name, specializations, generateCode: true,
             saveSources: true, cancellationToken);
+
+    public ValueTask<ShaderCompilation> CompileAsync(IGlobalSession slang, SessionDesc sessionDescription,
+        string name, string entryPoint, ReadOnlyMemory<SpecializationArg> specializations,
+        CancellationToken cancellationToken = default)
+        => CreateCoreAsync(slang, sessionDescription, name, specializations, generateCode: true,
+            saveSources: true, cancellationToken, entryPoint);
 
     internal async ValueTask<Shader> CreateUsingSavedCodeAsync(
         IGlobalSession slang,
         SessionDesc sessionDescription,
         string name,
         ReadOnlyMemory<SpecializationArg> specializations = default,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        string? entryPoint = null) =>
         (await CreateCoreAsync(
             slang,
             sessionDescription,
@@ -80,7 +101,7 @@ public sealed partial class ShaderSourceBlock
             specializations,
             generateCode: false,
             saveSources: false,
-            cancellationToken).ConfigureAwait(false)).Shader;
+            cancellationToken, entryPoint).ConfigureAwait(false)).Shader;
 
     private async ValueTask<ShaderCompilation> CreateCoreAsync(
         IGlobalSession slang,
@@ -89,7 +110,8 @@ public sealed partial class ShaderSourceBlock
         ReadOnlyMemory<SpecializationArg> specializations,
         bool generateCode,
         bool saveSources,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? entryPoint = null)
     {
         ArgumentNullException.ThrowIfNull(slang);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -178,38 +200,33 @@ public sealed partial class ShaderSourceBlock
                     SlangResult entryResult = sourceUnit.GetDefinedEntryPoint(entryIndex, out IEntryPoint entry);
                     if (entryResult.Failed || entry is null)
                         throw new InvalidDataException("Slang could not return a declared shader entry point.");
-                    entries.Add(entry);
+                    if (entryPoint is null || entry.GetFunctionReflection().Name == entryPoint)
+                        entries.Add(entry);
                 }
             }
 
             if (entries.Count == 0)
                 throw new InvalidDataException("The shader source block exposes no entry points.");
 
-            IComponentType[] components = sourceUnits
-                .Cast<IComponentType>()
-                .Concat(entries)
-                .ToArray();
+            var components = new List<IComponentType>(sourceUnits);
+            foreach (IEntryPoint entry in entries)
+            {
+                IComponentType component = entry;
+                if (entryPoint is not null && !specializations.IsEmpty)
+                    component = Specialize(entry, specializations);
+                components.Add(component);
+            }
             SlangResult combineResult = session.CreateCompositeComponentType(
-                components,
+                components.ToArray(),
                 out IComponentType combinedCode,
                 out ISlangBlob? combineDiagnostics);
             string combineText = DiagnosticText(combineDiagnostics);
             if (combineResult.Failed || combinedCode is null)
                 throw new InvalidDataException("Slang composition failed: " + combineText);
 
-            IComponentType codeToLink = combinedCode;
-            if (!specializations.IsEmpty)
-            {
-                SpecializationArg[] arguments = specializations.ToArray();
-                SlangResult specializationResult = combinedCode.Specialize(
-                    arguments,
-                    out IComponentType specializedCode,
-                    out ISlangBlob? specializationDiagnostics);
-                string specializationText = DiagnosticText(specializationDiagnostics);
-                if (specializationResult.Failed || specializedCode is null)
-                    throw new InvalidDataException("Slang specialization failed: " + specializationText);
-                codeToLink = specializedCode;
-            }
+            IComponentType codeToLink = entryPoint is null && !specializations.IsEmpty
+                ? Specialize(combinedCode, specializations)
+                : combinedCode;
 
             SlangResult linkResult = codeToLink.Link(
                 out IComponentType linkedCode,
@@ -234,6 +251,15 @@ public sealed partial class ShaderSourceBlock
         {
             frontEnd.Release();
         }
+    }
+
+    private static IComponentType Specialize(IComponentType code, ReadOnlyMemory<SpecializationArg> arguments)
+    {
+        SlangResult result = code.Specialize(arguments.ToArray(), out IComponentType specialized,
+            out ISlangBlob? diagnostics);
+        if (result.Failed || specialized is null)
+            throw new InvalidDataException("Slang specialization failed: " + DiagnosticText(diagnostics));
+        return specialized;
     }
 
     private static string NormalizeSourceName(string sourceName)

@@ -17,7 +17,7 @@ ShaderAsset
 
 可读 `.shader` 的 `ShaderSourceBlock.SourceNames` 指定相对于定义文件的根源码。内容构建通过 Slang 读取源码及 include/import，将每个 `IModule.Serialize` 的结果保存到 Block；二进制 Asset 从这些 Slang 数据恢复模块，无需重新打开构建机器上的源码。
 
-`ShaderBlock` 保存由 Slang 生成的代码与对应入口资源使用地址。chunk key 由实际 `SessionDesc`/`TargetDesc` 编译设置与入口序号得到；整 target 代码允许缺失，逐入口代码仍可独立取得。类型和布局由直接 Slang 反射提供；资源使用地址描述已生成代码的实际引用。
+`ShaderBlock` 保存由 Slang 生成的代码与对应入口资源使用地址。chunk key 由实际 `SessionDesc`/`TargetDesc` 编译设置、专门化入口名、有序参数与入口序号得到；整 target 代码允许缺失，逐入口代码仍可独立取得。类型和布局由直接 Slang 反射提供；资源使用地址描述已生成代码的实际引用。
 
 ## 两条取得行为
 
@@ -44,10 +44,18 @@ Cluster 的提前准备与材质阶段解析共用入口选择。着色、细分
 
 `ShaderBlock` 的保存代码直接读入最终数组，通过统一 AssetByteCache 预算缓存，后续创建复用缓存结果。ShaderSourceBlock 的 CompileAsync 复用 CreateAsync 的编译主体，返回直接 Shader、序列化 Slang 数据和编译器实际读到的字节摘要。Importer 保存这些结果，并由项目核对输入版本。进程级 Importer 编译服务持有全局 Slang 会话，共同 Block 入口按会话串行访问。
 
-入口的资源使用地址与代码在同一次 Slang 编译中形成，随 `ShaderBlock` schema11 保存。
+入口的资源使用地址与代码在同一次 Slang 编译中形成，随 `ShaderBlock` schema12 保存。
 `Shader` 同时持有此数据与入口名称/阶段索引。Cluster 安装按用户 shader 的已构建使用地址
 声明资源访问，场景切换读取同一 Shader 数据。ShaderSourceBlock 的直接编译在返回 Shader
-前形成相同资源使用数据。Importer31 与 schema11 通过资产版本重新构建现有来源。
+前形成相同资源使用数据。Importer33 与 schema12 通过资产版本重新构建现有来源。
+
+## 入口专门化
+
+`ShaderSourceBlock.Specializations` 声明离线组合，每项包含原入口名 `EntryPoint` 和有序 Slang 表达式 `Arguments`。Importer 对每个入口单独 specialize，再与源码模块 compose/link；同一 Shader 内不同 generic 入口的参数互不拼接，nongeneric 入口按原方式构建。
+
+加载 `ShaderBlock` 时，普通入口的代码和资源使用数据与已声明的专门化组合一起驻留于同一个资产版本。未特化反射保留原入口名称和阶段。调用方用 `HasSpecializations(entryPoint)` 判断指定入口，再用 `RequireSpecialization(entryPoint, arguments)` 取得对应 Shader，并从中查询原入口。普通入口仍直接使用原 Shader；不存在隐含的首组合执行选择。
+
+generic 入口未声明所需组合，或已声明组合缺少代码/资源使用数据时，加载或选择明确失败。保存代码路径不隐式退回源码编译；直接 `ShaderSourceBlock.CreateAsync` 的显式源码开发能力保留。缓存身份包含入口与有序参数，一个资产 Guid 的 resident 对象持有各自的组合，不会把不同参数误合成同一码。
 
 ## 引用与配置
 
@@ -62,9 +70,9 @@ Cluster 的提前准备与材质阶段解析共用入口选择。着色、细分
 同一 `AssetProject.BuildAsync` 导入。管线配置解析项目路径及其生成来源。引擎新增 VSM、
 驻留传播或页需求 shader 时，这一构建入口从其唯一源声明产生项目输入。
 
-`.shader` 是人类可编辑来源，只有 `SourceNames` 属于定义。构建 target 是工具选择，不进入 `Shader` 语义。`SlangShaderImporter` 使用官方 Slang API 编译、保存模块 IR 和可用代码，并记录实际读取的依赖。
+`.shader` 是人类可编辑来源，`SourceNames` 与入口 `Specializations` 属于定义。构建 target 是工具选择，不进入 `Shader` 语义。`SlangShaderImporter` 使用官方 Slang API 编译、保存模块 IR 和可用代码，并记录实际读取的依赖。
 
-默认 Vulkan target 明确使用 `spirv_1_5`，Importer 与应用加载使用同一设置，导入输入身份包含该 target。SPIR-V 1.5 是 `ShaderLayer` 核心 capability 的最低版本，允许顶点 shader 输出 `SV_RenderTargetArrayIndex`；现有 Vulkan 1.3 backend 支持该版本。无需为此提升到 1.6，也不向未使用分层输出的代码强行加入 capability。旧 target 的资产通过正常增量构建刷新。
+默认 Vulkan target 明确使用 `spirv_1_5`，Importer 与应用加载使用同一设置，导入输入身份包含该 target。SPIR-V 1.5 是 `ShaderLayer` 核心 capability 的最低版本，允许顶点 shader 输出 `SV_RenderTargetArrayIndex`；现有 Vulkan 1.3 backend 支持该版本。无需为此提升到 1.6，也不向未使用分层输出的代码强行加入 capability。内建 NativeAOT 资产 smoke 与 graphics benchmark 使用同一默认 target，benchmark 的代码身份也包含该 profile。调用方显式提供的 `SessionDesc` / `TargetDesc` 保留原值，不由资产加载或 RHI 重写。旧 target 的资产通过正常增量构建刷新：导入输入 hash 包含默认 target，保存代码的 key 包含实际 profile；加载时不匹配的保存代码明确报缺项，由正式内容构建按新设置重新生成；显式源码编译仍可由开发调用方选择。
 
 这是破坏性 schema；旧反射字段和旧代码容器没有兼容 reader。编译器、来源、依赖、Block 编码或 target 设置变化时重新构建同一资产身份。
 
