@@ -1,6 +1,8 @@
 #ifndef VSM_PROJECTION_SLANG
 #define VSM_PROJECTION_SLANG
 
+#include "depth_projection.slang"
+
 #include "vsm_sampling.slang"
 #include "vsm_receiver_projection.slang"
 
@@ -53,7 +55,8 @@ float VirtualShadowDepthRoundingRadius(float depth)
 
 float VirtualShadowReverseDepthRoundingRadius(float reverseDepth)
 {
-    // The atlas stores a rounded normalized depth followed by 1 - depth.
+    // Legacy PCSS tolerance retained while hard projection uses native reverse-Z.
+    // Its conservative forward/reverse bound is not used by the hard comparison.
     return VirtualShadowDepthRoundingRadius(1.0 - reverseDepth)
         + VirtualShadowDepthRoundingRadius(reverseDepth);
 }
@@ -176,25 +179,18 @@ VirtualShadowProjectionResult ProjectVirtualShadowHard(
     result.MipLevel = sample.MipLevel;
     result.RayCount = 1u;
     VirtualShadowMapParameters source = views[sample.ViewIndex];
-    ProjectVirtualShadowPosition(source, position, ndc, uv);
     float nativeSlopeBias = VirtualShadowOptimalSlopeBias(views, sample.ViewIndex, sample, position, normal);
     float rayBias = CalculateVirtualShadowRayStartBias(source, position, rayStartDistance);
-    float slopeBias = nativeSlopeBias + rayBias;
     float biasedDepth = sample.Depth - nativeSlopeBias - rayBias;
-    float receiverDepth = 1.0 - ndc.z;
-    precise float depthDifference = IsDirectionalVirtualShadowProjection(source)
-        ? (sample.Depth - 0.5) + CalculateVirtualShadowDirectionalDepthOffset(source, position)
-        : sample.Depth - receiverDepth;
-    float roundingRadius = IsDirectionalVirtualShadowProjection(source)
-        ? VirtualShadowReverseDepthRoundingRadius(sample.Depth) + VirtualShadowReverseDepthRoundingRadius(receiverDepth)
-        : 0.0;
-    bool blocked = IsDirectionalVirtualShadowProjection(source)
-        ? depthDifference - slopeBias > roundingRadius : biasedDepth > receiverDepth;
+    float4 receiverPosition = float4(position + source.WorldTranslation, 1.0);
+    float receiverDepth = ProjectReverseDepth(receiverPosition, source.LightViewProjection)
+        / ProjectVirtualShadowClip(source, position).w;
+    bool blocked = biasedDepth > receiverDepth;
     if (blocked)
     {
         result.Visibility = 0.0;
         result.OccluderDistance = IsDirectionalVirtualShadowProjection(source)
-            ? max(1e-6 * source.WorldUnitsPerCentimeter, depthDifference / abs(source.ProjectionDepthScale))
+            ? max(1e-6 * source.WorldUnitsPerCentimeter, (sample.Depth - receiverDepth) / abs(source.ProjectionDepthScale))
             : VirtualShadowOccluderDistance(source, biasedDepth, receiverDepth, length(position - source.LightPosition));
     }
     return result;
