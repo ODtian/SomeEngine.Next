@@ -1,8 +1,14 @@
-param([switch]$Trace, [string]$ApplicationPath)
+param([switch]$Trace, [string]$ApplicationPath, [switch]$Managed)
 $ErrorActionPreference = 'Stop'
+$defaultApplication = if ($Managed) { '../templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe' }
+    else { '../templates/DefaultProject/Game.App/bin/Release/net10.0/publish/Game.App.exe' }
 $application = if ($ApplicationPath) { [IO.Path]::GetFullPath($ApplicationPath) }
-    else { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe')) }
-if (!(Test-Path -LiteralPath $application)) { throw 'Build DefaultProject/Game.App in Release first.' }
+    else { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $defaultApplication)) }
+if (!(Test-Path -LiteralPath $application)) {
+    throw 'Build Game.App in Release for NativeAOT, or build with -p:PublishAot=false and use -Managed for diagnostics.'
+}
+$compilation = if ($Managed) { 'Managed diagnostics' } else { 'NativeAOT' }
+Write-Host "Compilation: $compilation; application: $application"
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -65,6 +71,7 @@ if (!$report -or $applicationExitCode -ne 0) {
     throw 'The scene test did not finish successfully within 60 seconds. No complete performance result is available.'
 }
 $result = Get-Content -LiteralPath $report.FullName -Raw | ConvertFrom-Json
+Write-Host "NativeAOT: $($result.NativeAot)"
 $result.Scenes | Format-Table Scene, Status, Frames, MeanMs, MedianMs, P95Ms, PrepareMs, ExecuteMs
 if ($result.Startup) {
     $result.Startup | Format-Table ApplicationToWindowMs, WindowToFirstFrameMs, ApplicationToFirstFrameMs

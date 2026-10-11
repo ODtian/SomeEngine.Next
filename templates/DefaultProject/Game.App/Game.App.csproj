@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <Sdk Name="PublishWithSatoriGC" Version="10.0.13-satori.38062657141.1" />
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
@@ -8,6 +9,7 @@
     <PublishAot Condition="'$(Configuration)' == 'Release'">true</PublishAot>
     <PublishAotUsingRuntimePack Condition="'$(Configuration)' == 'Release'">true</PublishAotUsingRuntimePack>
     <SelfContained Condition="'$(Configuration)' == 'Release'">true</SelfContained>
+    <DefineConstants Condition="'$(PublishAot)' != 'true'">$(DefineConstants);GAME_MANAGED_DIAGNOSTICS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Game.Assets/Game.Assets.csproj" />
@@ -37,8 +39,8 @@
     </ItemGroup>
   </Target>
   <Target Name="CompileReleaseApplication" AfterTargets="Build"
-          Condition="'$(Configuration)' == 'Release' and '$(NoBuild)' != 'true' and '$(_IsPublishing)' != 'true'">
+          Condition="'$(Configuration)' == 'Release' and '$(PublishAot)' == 'true' and '$(NoBuild)' != 'true' and '$(_IsPublishing)' != 'true'">
     <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Publish"
-             Properties="NoBuild=true;_IsPublishing=true;PublishDir=$(TargetDir)" />
+             Properties="NoBuild=true;_IsPublishing=true;PublishDir=$(TargetDir)publish/" />
   </Target>
 </Project>
