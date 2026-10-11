@@ -37,7 +37,99 @@ public sealed class VulkanWaveQueueSamplingTests(VulkanTestCompiler shaderCompil
         Assert.Equal(ExpectedRows(alpha), actual);
     }
 
-    private static uint[] DispatchAndRead(VulkanTestShader shader, byte alpha)
+    [Theory]
+    [InlineData((byte)0)]
+    [InlineData((byte)255)]
+    public void SampledAlphaPreservesSparseWaveConsumers(byte alpha)
+    {
+        string source = SamplingSource.Replace("READ_ALPHA",
+            "AlbedoMap.SampleLevel(MaterialSampler, float2(.5, .5), 0).a")
+            .Replace("WaveQueue::DistributeWithUniform<VisibilitySampler, SamplingWork>(work, visibility);",
+                "if ((lane & 3u) != 1u) WaveQueue::DistributeWithUniform<VisibilitySampler, SamplingWork>(work, visibility);");
+        VulkanTestShader shader = shaderCompiler.Compile(
+            ReadWaveQueue() + source, ("computeMain", SlangStage.Compute));
+
+        uint[] actual = DispatchAndRead(shader, alpha);
+
+        uint[] expected = ExpectedRows(alpha);
+        for (int producer = 1; producer < 32; producer += 4)
+            expected.AsSpan(producer * 8 * 4, 8 * 4).Fill(uint.MaxValue);
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(1u)]
+    [InlineData(7u)]
+    [InlineData(16u)]
+    [InlineData(30u)]
+    [InlineData(31u)]
+    public void OneActiveProducerWritesAllOfItsSubtasks(uint producer)
+    {
+        string source = SamplingSource.Replace("READ_ALPHA",
+            "AlbedoMap.SampleLevel(MaterialSampler, float2(.5, .5), 0).a")
+            .Replace("WaveQueue::DistributeWithUniform<VisibilitySampler, SamplingWork>(work, visibility);",
+                 $"if (lane == {producer}u) WaveQueue::DistributeWithUniform<VisibilitySampler, SamplingWork>(work, visibility);")
+            .Replace("work.Count = mode == 0u ? 0u : mode == 1u ? 1u : mode == 2u ? 3u : 7u;",
+                "work.Count = 7u;");
+        VulkanTestShader shader = shaderCompiler.Compile(
+            ReadWaveQueue() + source, ("computeMain", SlangStage.Compute));
+
+        uint[] actual = DispatchAndRead(shader, 255);
+
+        uint[] expected = ExpectedRows(255, onlyProducer: producer);
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void EmptyProducerWaveLeavesOutputUntouched()
+    {
+        string source = SamplingSource.Replace("READ_ALPHA",
+            "AlbedoMap.SampleLevel(MaterialSampler, float2(.5, .5), 0).a")
+            .Replace("work.Count = mode == 0u ? 0u : mode == 1u ? 1u : mode == 2u ? 3u : 7u;",
+                "work.Count = 0u;");
+        VulkanTestShader shader = shaderCompiler.Compile(
+            ReadWaveQueue() + source, ("computeMain", SlangStage.Compute));
+
+        uint[] actual = DispatchAndRead(shader, 255);
+
+        Assert.All(actual, value => Assert.Equal(uint.MaxValue, value));
+    }
+
+    [Theory]
+    [InlineData((byte)0)]
+    [InlineData((byte)255)]
+    public void NaturalWaveSizePreservesEveryProducerAcrossMultipleSubgroups(byte alpha)
+    {
+        const int producers = 128;
+        string source = SamplingSource.Replace("READ_ALPHA",
+            "AlbedoMap.SampleLevel(MaterialSampler, float2(.5, .5), 0).a")
+            .Replace("[numthreads(32, 1, 1)]", "[numthreads(128, 1, 1)]")
+            .Replace("[WaveSize(32)]", "")
+            .Replace("SamplingWork work;",
+                "Results[lane * 8u + 7u] = uint4(WaveGetLaneCount(), WaveGetLaneIndex(), 0u, 0u); SamplingWork work;");
+        VulkanTestShader shader = shaderCompiler.Compile(
+            ReadWaveQueue() + source, ("computeMain", SlangStage.Compute));
+
+        uint[] actual = DispatchAndRead(shader, alpha, producers);
+        var observedWidths = new HashSet<uint>();
+        for (int producer = 0; producer < producers; producer++)
+        {
+            Span<uint> description = actual.AsSpan((producer * 8 + 7) * 4, 4);
+            uint width = description[0];
+            Assert.InRange(width, 4u, 128u);
+            Assert.Equal(0u, width & (width - 1u));
+            Assert.InRange(description[1], 0u, width - 1u);
+            Assert.Equal(0u, description[2]);
+            Assert.Equal(0u, description[3]);
+            observedWidths.Add(width);
+            description.Fill(uint.MaxValue);
+        }
+        Console.WriteLine($"Executed natural subgroup widths: {string.Join(", ", observedWidths.Order())}");
+        Assert.Equal(ExpectedRows(alpha, producers), actual);
+    }
+
+    private static uint[] DispatchAndRead(VulkanTestShader shader, byte alpha, int producers = 32)
     {
         bool nativeValidation = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("VK_LAYER_PATH"));
         using IGraphicsBackend backend = new ValidationLayer(
@@ -58,7 +150,7 @@ public sealed class VulkanWaveQueueSamplingTests(VulkanTestCompiler shaderCompil
             FilterType.Linear, FilterType.Linear, FilterType.Linear,
             AddressType.Repeat, AddressType.Repeat, AddressType.Repeat));
 
-        const int resultBytes = 32 * 8 * 4 * sizeof(uint);
+        ulong resultBytes = checked((ulong)producers * 8 * 4 * sizeof(uint));
         using Buffer upload = backend.CreateBuffer(device,
             new BufferDesc(4 + resultBytes, BufferUsages.CopySource), MemoryType.Upload);
         using (MappedBuffer mapped = backend.Map(upload, MapType.Write, BufferRange.Whole))
@@ -121,13 +213,14 @@ public sealed class VulkanWaveQueueSamplingTests(VulkanTestCompiler shaderCompil
         return MemoryMarshal.Cast<byte, uint>(result.Bytes).ToArray();
     }
 
-    private static uint[] ExpectedRows(byte alpha)
+    private static uint[] ExpectedRows(byte alpha, int producers = 32, uint? onlyProducer = null)
     {
-        uint[] expected = new uint[32 * 8 * 4];
+        uint[] expected = new uint[producers * 8 * 4];
         Array.Fill(expected, uint.MaxValue);
-        for (uint producer = 0; producer < 32; producer++)
+        for (uint producer = 0; producer < producers; producer++)
         {
-            uint count = (producer & 3u) switch { 0 => 0, 1 => 1, 2 => 3, _ => 7 };
+            uint count = onlyProducer is uint selected ? (producer == selected ? 7u : 0u) :
+                (producer & 3u) switch { 0 => 0, 1 => 1, 2 => 3, _ => 7 };
             for (uint local = 0; local < count; local++)
             {
                 uint width = 1 + (producer + local) % 9;
