@@ -515,7 +515,8 @@ internal sealed unsafe partial class D3D12Backend
         {
             ThrowInvalidNativeDescriptorLocation(layout, bindingRangeIndex, descriptorRangeIndex);
         }
-        return checked((uint)(registerMarker + layoutRegister));
+        return checked((uint)SlangDescriptorLocation.FromLayout(
+            layout, contents, setIndex, descriptorRangeIndex).Register);
     }
 
     private static uint ResolveNativeRegisterSpace(
