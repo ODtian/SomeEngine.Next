@@ -42,7 +42,7 @@ internal sealed class ClusterPageFixups
         internal uint DemandPriority;
     }
 
-    private readonly Dictionary<uint, PageDependency> _dependenciesByPage = [];
+    private PageDependency?[] _dependenciesByPage = [];
     private readonly List<PageDependency> _dependencies = [];
     private ulong[] _demandWords = [];
     private int[] _demandPositions = [];
@@ -83,7 +83,9 @@ internal sealed class ClusterPageFixups
             foreach (Part part in group.ParentParts) part.ChildGroups.Add(group);
         }
         BuildPageDependencies(groups);
-        _dependenciesByPage.EnsureCapacity(checked(_dependenciesByPage.Count + (int)registration.PageCount));
+        int pageCount = checked((int)(registration.FirstPage + registration.PageCount));
+        if (_dependenciesByPage.Length < pageCount)
+            Array.Resize(ref _dependenciesByPage, pageCount);
         Reserve(_groupsByPage, groups, static group => Enumerable.Range((int)group.Data.FirstPage, (int)group.Data.PageCount).Select(static page => (uint)page));
         Reserve(_groupsByParentPage, groups, static group => group.Data.Parents.Select(static parent => parent.PageIndex).Distinct());
         _changedGroups.EnsureCapacity(checked(_groupCount + groups.Count));
@@ -243,7 +245,7 @@ internal sealed class ClusterPageFixups
         try
         {
             foreach ((uint page, uint priority) in priorities)
-                if (_dependenciesByPage.TryGetValue(page, out PageDependency? dependency))
+                if (FindPageDependency(page) is { } dependency)
                     Include(dependency, priority);
             for (int word = firstWord; word <= lastWord; word++)
                 while (_demandWords[word] != 0)
@@ -307,7 +309,7 @@ internal sealed class ClusterPageFixups
                 }
                 else if (demand.Priority > expanded[position - 1].Priority)
                     expanded[position - 1] = demand;
-                if (_dependenciesByPage.TryGetValue(demand.PageId, out PageDependency? dependency))
+                if (FindPageDependency(demand.PageId) is { } dependency)
                     Include(dependency, demand.Priority);
             }
             for (int word = firstWord; word <= lastWord; word++)
@@ -367,7 +369,7 @@ internal sealed class ClusterPageFixups
     }
 
     internal PageDependency? FindPageDependency(uint page)
-        => _dependenciesByPage.GetValueOrDefault(page);
+        => page < (uint)_dependenciesByPage.Length ? _dependenciesByPage[page] : null;
 
     internal bool HasResidentDependents(uint page, Func<uint, bool> available,
         PageDependency? evicting = null)
@@ -434,7 +436,7 @@ internal sealed class ClusterPageFixups
 
     internal void Clear()
     {
-        _dependenciesByPage.Clear(); _groupsByPage.Clear(); _groupsByParentPage.Clear(); _changedGroups.Clear(); _groupCount = 0;
+        Array.Clear(_dependenciesByPage); _groupsByPage.Clear(); _groupsByParentPage.Clear(); _changedGroups.Clear(); _groupCount = 0;
         _dependencies.Clear();
         Array.Clear(_demandWords);
         Array.Clear(_demandPositions);
