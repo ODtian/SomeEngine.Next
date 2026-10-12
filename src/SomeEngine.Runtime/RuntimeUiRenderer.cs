@@ -7,6 +7,7 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
+using SomeEngine.Render.Cluster.Pipeline;
 using SlangShaderSharp;
 using Buffer = SomeEngine.Graphics.Buffer;
 using Texture = SomeEngine.Graphics.Texture;
@@ -33,6 +34,7 @@ internal sealed class RuntimeUiRenderer : IDisposable
     private GraphBufferInput _uniform = null!;
     private GraphTextureInput _font = null!;
     private RuntimeUiPassData _passData;
+    private UiTexture[] _images = [];
     private Texture? _fontTexture;
     private Sampler? _fontSampler;
     private ImDrawDataPtr _drawData;
@@ -173,6 +175,8 @@ internal sealed class RuntimeUiRenderer : IDisposable
     internal void DrawDebugWindow(
         ref bool open,
         ref bool animateScene,
+        ref ClusterShadingPath shadingPath,
+        ref DebugViewSettings[] debugViews,
         in RuntimeUiMetrics metrics, SceneTestPlatform? platform = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -200,6 +204,30 @@ internal sealed class RuntimeUiRenderer : IDisposable
         platform?.Draw();
         ImGui.Separator();
         _ = ImGui.Checkbox("Animate scene", ref animateScene);
+        int shading = (int)shadingPath;
+        if (ImGui.Combo("Shading", ref shading, "Deferred\0Forward\0")) shadingPath = (ClusterShadingPath)shading;
+        ImGui.Separator();
+        if (ImGui.Button("Add debug view")) debugViews = [.. debugViews, new DebugViewSettings(9)];
+        ImGui.SameLine();
+        if (ImGui.Button("Close all debug views")) debugViews = [];
+        for (int index = 0; index < debugViews.Length; index++)
+        {
+            ImGui.PushID(index);
+            DebugViewSettings settings = debugViews[index];
+            int mode = checked((int)settings.Mode) - 8;
+            int viewWidth = settings.Width, viewHeight = settings.Height;
+            bool changed = ImGui.Combo("Mode", ref mode, "Barycentrics\0Normal\0UV\0Deviation\0");
+            changed |= ImGui.InputInt("Width", ref viewWidth, 16, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+            changed |= ImGui.InputInt("Height", ref viewHeight, 16, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+            if (changed && viewWidth > 0 && viewHeight > 0)
+            {
+                debugViews = debugViews.ToArray();
+                debugViews[index] = new DebugViewSettings(checked((uint)mode + 8), viewWidth, viewHeight);
+            }
+            bool remove = ImGui.Button("Close view");
+            ImGui.PopID();
+            if (remove) { debugViews = debugViews.Where((_, item) => item != index).ToArray(); break; }
+        }
         ImGui.TextUnformatted(metrics.TemporalAntialiasing
             ? "Temporal resolve: enabled (8-sample centered Halton)"
             : "Temporal resolve: disabled");
@@ -211,11 +239,38 @@ internal sealed class RuntimeUiRenderer : IDisposable
         ImGui.End();
     }
 
+    internal ScissorRect? DrawDebugViews(DebugViews views, int width, int height)
+    {
+        if (views.Images.Length == 0) return null;
+        MakeCurrent();
+        float sidebar = Math.Min(width * 0.45f, views.Settings.Max(item => item.Width) + 24f);
+        float leftWidth = width - sidebar;
+        float scale = Math.Min(leftWidth / width, 1f);
+        var main = new ScissorRect(0, (height - (int)(height * scale)) / 2,
+            Math.Max(1, (int)(width * scale)), Math.Max(1, (int)(height * scale)));
+        ImGui.SetNextWindowPos(new Vector2(leftWidth, 0), ImGuiCond.Always);
+        ImGui.SetNextWindowSize(new Vector2(sidebar, height), ImGuiCond.Always);
+        if (ImGui.Begin("Independent debug views", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize |
+            ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings))
+        {
+            for (int index = 0; index < views.Images.Length; index++)
+            {
+                DebugViewSettings settings = views.Settings[index];
+                ImGui.Text($"View {index + 1}: mode {settings.Mode} ({settings.Width} x {settings.Height})");
+                float imageScale = Math.Min(1f, Math.Max(1f, ImGui.GetContentRegionAvail().X) / settings.Width);
+                ImGui.Image(views.Images[index].Id, new Vector2(settings.Width * imageScale, settings.Height * imageScale));
+            }
+        }
+        ImGui.End();
+        return main;
+    }
+
     internal void InstallGraph(global::SomeEngine.RenderGraph.RenderGraph graph, GraphTextureId target,
-        GraphRegionId region)
+        GraphRegionId region, ReadOnlySpan<UiTexture> images = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (ReferenceEquals(_graph, graph) && _target == target && _pass != default) return;
+        if (ReferenceEquals(_graph, graph) && _target == target && _pass != default &&
+            _images.AsSpan().SequenceEqual(images)) return;
         using RenderGraphEdit edit = graph.BeginEdit();
         if (ReferenceEquals(_graph, graph) && _pass != default)
         {
@@ -228,12 +283,17 @@ internal sealed class RuntimeUiRenderer : IDisposable
         GraphColorAttachmentViewId targetView = edit.CreateColorAttachmentView(target, label: "Runtime ImGui presentation view");
         GraphTextureSrvId fontView = edit.CreateTextureSrv(font, Format.R8G8B8A8UNorm,
             SomeEngine.Graphics.TextureViewDimension.Texture2D, "Runtime ImGui font atlas view");
+        var imageViews = new UiTextureView[images.Length];
+        for (int index = 0; index < images.Length; index++)
+            imageViews[index] = new(images[index].Id, edit.CreateTextureSrv(images[index].Texture,
+                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                dimension: TextureViewDimension.Texture2D, label: "ImGui image"));
         RuntimeUiPassData data = new(this,
             _pipeline ?? throw new InvalidOperationException("The ImGui pipeline is unavailable."),
             _reflection != ShaderReflection.Null
                 ? _reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null
                 : throw new InvalidOperationException("The ImGui shader is unavailable."),
-            targetView, vertices, indices, uniform, fontView,
+            targetView, vertices, indices, uniform, fontView, imageViews,
             _fontSampler ?? throw new InvalidOperationException("The ImGui sampler is unavailable."), 0, 0);
         GraphPassId pass = edit.AddRasterFramePass("Runtime ImGui overlay",
             PassQueueSelection.AnyOfType(QueueType.Graphics), data,
@@ -248,6 +308,7 @@ internal sealed class RuntimeUiRenderer : IDisposable
         _uniform = uniform;
         _font = font;
         _passData = data;
+        _images = images.ToArray();
     }
 
     internal void Record(
@@ -575,6 +636,8 @@ internal sealed class RuntimeUiRenderer : IDisposable
         Vector2 clipScale = drawData.FramebufferScale;
         int vertexOffset = 0;
         uint indexOffset = 0;
+        nint boundTexture = FontGraphId;
+        ResourceBinding[]? imageBindings = null;
         for (int listIndex = 0; listIndex < drawData.CmdListsCount; listIndex++)
         {
             ImDrawListPtr commandList = drawData.CmdLists[listIndex];
@@ -586,8 +649,33 @@ internal sealed class RuntimeUiRenderer : IDisposable
                 if (command.ElemCount == 0)
                     continue;
                 nint textureId = command.TextureId;
-                if (textureId != 0 && textureId != FontGraphId)
-                    throw new NotSupportedException($"Runtime ImGui texture id {textureId} is not registered.");
+                if (textureId == 0) textureId = FontGraphId;
+                if (textureId != boundTexture)
+                {
+                    GraphTextureSrvId texture = parameters.Font;
+                    if (textureId != FontGraphId)
+                    {
+                        texture = default;
+                        foreach (UiTextureView image in parameters.Images)
+                            if (image.Id == textureId) { texture = image.View; break; }
+                        if (texture == default)
+                            throw new NotSupportedException($"Runtime ImGui texture id {textureId} is not registered.");
+                    }
+                    if (imageBindings is null)
+                    {
+                        BufferRegion uniform = commands.GetBufferRegion(parameters.Uniform);
+                        imageBindings =
+                        [
+                            ResourceBinding.ConstantBuffer(uniform.Buffer, uniform.Range),
+                            ResourceBinding.SampledTexture(commands.GetTextureSrv(parameters.Font)),
+                            ResourceBinding.SampledWith(parameters.FontSampler),
+                        ];
+                    }
+                    imageBindings[1] = ResourceBinding.SampledTexture(commands.GetTextureSrv(texture));
+                    commands.SetTransientParameterBindings(new ParameterBlockBindings(
+                        parameters.ParameterLayout, imageBindings, default));
+                    boundTexture = textureId;
+                }
 
                 Vector4 clip = command.ClipRect;
                 int minX = (int)MathF.Max((clip.X - clipOffset.X) * clipScale.X, 0.0f);
@@ -719,6 +807,9 @@ internal readonly record struct RuntimeUiMetrics(
     bool Focused,
     bool TemporalAntialiasing);
 
+internal readonly record struct UiTexture(nint Id, GraphTextureId Texture);
+internal readonly record struct UiTextureView(nint Id, GraphTextureSrvId View);
+
 internal readonly record struct RuntimeUiPassData(
     RuntimeUiRenderer Renderer,
     Pipeline Pipeline,
@@ -728,6 +819,7 @@ internal readonly record struct RuntimeUiPassData(
     GraphBufferInput Indices,
     GraphBufferInput Uniform,
     GraphTextureSrvId Font,
+    UiTextureView[] Images,
     Sampler FontSampler,
     int Width,
     int Height)
@@ -756,6 +848,8 @@ internal readonly record struct RuntimeUiPassData(
         _ = access.Bind(data.Uniform, PipelineSync.VertexShading);
         _ = access.Bind(data.Font, PipelineSync.PixelShading, TextureLayout.ShaderResource);
         access.Bind(data.FontSampler);
+        foreach (UiTextureView image in data.Images)
+            _ = access.Read(image.View, PipelineSync.PixelShading, TextureLayout.ShaderResource);
     }
 
     internal static void Record(ref RasterPassCommandScope commands, in RuntimeUiPassData data) =>

@@ -5,6 +5,7 @@ using SomeEngine.Resources;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Shadows;
+using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Runtime;
 
@@ -28,6 +29,8 @@ public sealed class SceneScript
         Actions = Array.AsReadOnly(ordered);
     }
 
+    public ClusterShadingPath? ShadingPath { get; init; }
+    public IReadOnlyList<DebugViewSettings>? DebugViews { get; init; }
     public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
     /// <summary>Maximum hierarchy, candidate and deferred entries retained by the geometry pipeline.</summary>
     public uint ClusterWorkCapacity { get; init; } = 1_048_576;
@@ -59,11 +62,15 @@ public sealed class SceneEdit
     internal SceneEdit(RuntimeScene scene, NativeWindow window) => (_scene, _window) = (scene, window);
     internal IReadOnlyList<Action<SceneImage>> Images => _images;
     internal IReadOnlyList<Action<SceneLinearImage>> LinearImages => _linearImages;
+    internal ClusterShadingPath? ShadingPath { get; private set; }
+    internal DebugViewSettings[]? DebugViews { get; private set; }
     internal bool FrameCanceled { get; private set; }
     internal bool CameraCut { get; private set; }
     internal bool ShadowMapRefreshRequested { get; private set; }
     internal void Begin()
     {
+        ShadingPath = null;
+        DebugViews = null;
         _images.Clear();
         _linearImages.Clear();
         FrameCanceled = CameraCut = ShadowMapRefreshRequested = false;
@@ -72,6 +79,22 @@ public sealed class SceneEdit
     internal void End() => _active = false;
 
     public IReadOnlyList<Entity> MeshEntities { get { RequireAction(); return _scene.GetMeshEntities(); } }
+
+    public void SetShadingPath(ClusterShadingPath path)
+    {
+        RequireAction();
+        if (path is not (ClusterShadingPath.Deferred or ClusterShadingPath.Forward))
+            throw new ArgumentOutOfRangeException(nameof(path));
+        ShadingPath = path;
+    }
+
+    /// <summary>Replaces the independent debug previews. An empty list removes their render work.</summary>
+    public void SetDebugViews(params DebugViewSettings[] views)
+    {
+        RequireAction();
+        ArgumentNullException.ThrowIfNull(views);
+        DebugViews = views.ToArray();
+    }
 
     public void SetOutputSize(int width, int height)
     {

@@ -17,6 +17,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
     private readonly GraphTextureId _target;
     private readonly GraphPassId _drawPass;
     private bool _disposed;
+    private RuntimePresentationPassData _passData;
 
     internal RuntimePresentationPipeline(
         IGraphicsBackend backend,
@@ -139,6 +140,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                 edit.Commit();
                 _target = target;
                 _drawPass = pass;
+                _passData = data;
             }
             finally
             {
@@ -160,10 +162,12 @@ internal sealed class RuntimePresentationPipeline : IDisposable
     internal void Bind(
         ref RenderGraphFrame frame,
         in SwapchainImage image,
-        Queue presentQueue)
+        Queue presentQueue,
+        ScissorRect? presentationRect = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         frame.BindExternalTexture(_target, image, presentQueue);
+        frame.SetPassData(_drawPass, _passData with { Rect = presentationRect });
     }
 
     public void Dispose()
@@ -177,7 +181,8 @@ internal sealed class RuntimePresentationPipeline : IDisposable
     private readonly record struct RuntimePresentationPassData(
         GraphColorAttachmentViewId Output,
         int Width,
-        int Height)
+        int Height,
+        ScissorRect? Rect = null)
     {
         internal static void Declare(
             ref PassDefinition access,
@@ -194,8 +199,9 @@ internal sealed class RuntimePresentationPipeline : IDisposable
             ref RasterPassCommandScope commands,
             in RuntimePresentationPassData data)
         {
-            commands.SetViewports([new Viewport(0, 0, data.Width, data.Height)]);
-            commands.SetScissors([new ScissorRect(0, 0, data.Width, data.Height)]);
+            ScissorRect rect = data.Rect ?? new ScissorRect(0, 0, data.Width, data.Height);
+            commands.SetViewports([new Viewport(rect.X, rect.Y, rect.Width, rect.Height)]);
+            commands.SetScissors([rect]);
             commands.Draw(new DrawArguments(3, 1, 0, 0));
         }
     }

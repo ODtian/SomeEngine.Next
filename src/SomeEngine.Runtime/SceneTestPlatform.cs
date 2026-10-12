@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using SomeEngine.Diagnostics;
 using SomeEngine.Render.Cluster;
+using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Runtime;
 
@@ -55,6 +56,9 @@ public sealed class SceneTestPlatform
     private string? _resultDirectory;
     private RuntimeStartupOptions? _interactiveOptions;
     private int _interactiveScene;
+    private ClusterShadingPath? _installedShadingPath;
+    private uint _debugMode;
+    private int _debugViewCount;
     private int _renderWidth;
     private int _renderHeight;
     private string? _graphicsDevice;
@@ -69,6 +73,9 @@ public sealed class SceneTestPlatform
 
     internal void SetRenderingInfo(int width, int height, string device, string driver)
         => (_renderWidth, _renderHeight, _graphicsDevice, _graphicsDriver) = (width, height, device, driver);
+
+    internal void SetShadingInfo(ClusterShadingPath path, uint debugMode, int debugViewCount)
+        => (_installedShadingPath, _debugMode, _debugViewCount) = (path, debugMode, debugViewCount);
 
     public void CaptureImage() => ImageRequested = true;
 
@@ -86,6 +93,11 @@ public sealed class SceneTestPlatform
         Console.WriteLine($"Frame image: {path}");
     }
 
+    internal void SetViewOptions(ClusterShadingPath shadingPath, IReadOnlyList<DebugViewSettings> debugViews)
+    {
+        if (!IsMeasuring) Options = Options with { ShadingPath = shadingPath, DebugViews = debugViews.ToArray() };
+    }
+
     public void StartMeasurements(bool recordTrace = false)
     {
         if (IsMeasuring) return;
@@ -101,7 +113,7 @@ public sealed class SceneTestPlatform
         _recordTrace = recordTrace;
         _interactiveOptions = Options;
         _interactiveScene = SelectedScene;
-        Options = Options with { WindowVSync = false, FixedFrameSeconds = 1f / 60f };
+        Options = Options with { WindowVSync = false, FixedFrameSeconds = 1f / 60f, DebugViews = [] };
         _resultDirectory = Path.Combine(AppContext.BaseDirectory, "Performance", DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
         Directory.CreateDirectory(_resultDirectory);
         _sceneStarted = 0;
@@ -272,6 +284,9 @@ public sealed class SceneTestPlatform
             ["Startup"] = JsonSerializer.SerializeToNode(Startup, SceneJsonContext.Default.ApplicationStartupTimes),
             ["TraceDetail"] = Options.TraceDetail,
             ["TraceAllocations"] = Options.TraceAllocations,
+            ["ShadingPath"] = _installedShadingPath?.ToString(),
+            ["DebugMode"] = _debugMode,
+            ["DebugViewCount"] = _debugViewCount,
             ["TemporalAntialiasing"] = Options.TemporalAntialiasing,
             ["VirtualShadows"] = Options.VirtualShadows,
             ["AsyncCompute"] = Options.AsyncCompute,

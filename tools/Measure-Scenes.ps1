@@ -1,4 +1,8 @@
-param([switch]$Trace, [string]$ApplicationPath, [switch]$Managed)
+param(
+    [switch]$Trace, [string]$ApplicationPath, [switch]$Managed,
+    [ValidateSet('deferred', 'forward')][string]$ShadingPath,
+    [string]$ExpectedScene
+)
 $ErrorActionPreference = 'Stop'
 $defaultApplication = if ($Managed) { '../templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe' }
     else { '../templates/DefaultProject/Game.App/bin/Release/net10.0/publish/Game.App.exe' }
@@ -23,6 +27,10 @@ $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
 $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
+if ($ShadingPath) {
+    $start.ArgumentList.Add('--shading-path')
+    $start.ArgumentList.Add($ShadingPath)
+}
 if ($Trace) {
     $startupTraces = Join-Path ([IO.Path]::GetDirectoryName($application)) 'Performance'
     [void][IO.Directory]::CreateDirectory($startupTraces)
@@ -78,9 +86,10 @@ if ($result.Startup) {
     $result.Startup.Stages | Format-Table Stage, ElapsedMs
 }
 Write-Host "Report: $($report.FullName) ($([Math]::Round($timer.Elapsed.TotalSeconds, 2)) seconds including application startup)"
-$requiredScenes = @('1024 spheres', 'Sponza', 'Amazon Bistro')
+# ExpectedScene validates an existing single-scene test-scenes.json; it does not select or edit content.
+$requiredScenes = if ($ExpectedScene) { @($ExpectedScene) } else { @('1024 spheres', 'Sponza', 'Amazon Bistro') }
 if (!$result.Complete -or $result.Scenes.Count -ne $requiredScenes.Count -or
     @(Compare-Object $requiredScenes @($result.Scenes.Scene)).Count -ne 0 -or
     @($result.Scenes | Where-Object Status -ne 'Measured').Count -ne 0) {
-    throw 'The multi-scene run is incomplete; do not use it as a passing performance comparison.'
+    throw 'The requested scene run is incomplete; do not use it as a passing performance comparison.'
 }

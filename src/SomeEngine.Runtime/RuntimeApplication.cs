@@ -613,7 +613,7 @@ internal static class RuntimeApplication
                 Label: "SomeEngine Runtime Render Graph"));
         GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
         GraphRegionId targetGeometryAfterRegion, shadingRegion, temporalRegion, presentationRegion, uiRegion, feedbackRegion;
-        GraphRegionId frameOutputRegion, linearOutputRegion;
+        GraphRegionId frameOutputRegion, linearOutputRegion, debugViewsRegion;
         using (RenderGraphEdit edit = renderGraph.BeginEdit())
         {
             _ = edit.AddRegion("Frame uploads");
@@ -623,6 +623,7 @@ internal static class RuntimeApplication
             targetGeometryRegion = edit.AddRegion("Target view geometry");
             targetGeometryAfterRegion = edit.AddRegion("After target view geometry");
             shadingRegion = edit.AddRegion("Shading");
+            debugViewsRegion = edit.AddRegion("Independent debug views");
             linearOutputRegion = edit.AddFrameRegion("Linear frame output");
             GraphRegionId postProcessing = edit.AddRegion("Post processing");
             temporalRegion = edit.AddRegion("Temporal", postProcessing);
@@ -661,6 +662,8 @@ internal static class RuntimeApplication
                 LocalRayCount = rayCount,
                 MaxFilterRadiusTexels = rayCount == 0 ? 0 : shadowSettings.MaxFilterRadiusTexels,
             };
+        ClusterShadingPath shadingPath = script?.ShadingPath ?? options.ShadingPath;
+        DebugViewSettings[] debugViewSettings = (script?.DebugViews ?? options.DebugViews).ToArray();
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
             metrics: options.VerifyFrameOutput || options.LinearFrameOutputPath is not null || script is not null);
@@ -689,6 +692,15 @@ internal static class RuntimeApplication
         RuntimeUiRenderer? ui = null;
         RuntimePresentationPipeline? presentation = null;
         TemporalFeature? temporal = null;
+        var debugViews = new DebugViews(renderGraph, debugViewsRegion,
+            (settings, regions) => CreatePipeline(new ClusterPipelineOutputDescription(settings.Width, settings.Height, 1),
+                metrics: false, preview: settings, previewRegions: regions),
+            receiver =>
+            {
+                var systems = new RenderFrameSystems(renderWorld, instances);
+                _ = systems.Add(receiver);
+                return systems;
+            });
         Task? nextGameUpdate = null;
         var input = new RuntimeInput();
         int width = boot.Width;
@@ -700,7 +712,9 @@ internal static class RuntimeApplication
 
         ClusterPipelineSystem CreatePipeline(
             in ClusterPipelineOutputDescription description,
-            bool metrics) => new(
+            bool metrics,
+            DebugViewSettings? preview = null,
+            ClusterGraphRegions? previewRegions = null) => new(
             backend,
             device,
             renderDevice,
@@ -710,12 +724,14 @@ internal static class RuntimeApplication
             materialAssignments,
             pipelineConfiguration,
             renderGraph,
-            new ClusterGraphRegions(primaryGeometryRegion, targetGeometryRegion, shadingRegion, feedbackRegion),
+            previewRegions ?? new ClusterGraphRegions(primaryGeometryRegion, targetGeometryRegion, shadingRegion, feedbackRegion),
             description,
             streamingFeedback,
-            stageResources,
+            preview is null ? stageResources : null,
             new ClusterPipelineOptions
             {
+                ShadingPath = shadingPath,
+                DebugMode = preview?.Mode ?? 0,
                 EnableAsyncCompute = options.AsyncCompute,
                 ForceHardwareRaster = forceHardwareRaster,
                 SoftwareRasterEdgeThreshold = rasterEdgePixels,
@@ -814,6 +830,8 @@ internal static class RuntimeApplication
                     }
                     finally { sceneEdit.End(); }
                 }
+                if (sceneEdit?.ShadingPath is { } requestedPath) shadingPath = requestedPath;
+                if (sceneEdit?.DebugViews is { } requestedViews) debugViewSettings = requestedViews;
                 input.BeginFrame();
                 if (!window.PumpMessages())
                     break;
@@ -903,9 +921,13 @@ internal static class RuntimeApplication
                     cameraTarget: scene.Camera.Target,
                     depthOfField: scene.DepthOfField, playerId: scene.PlayerId, firstPerson: scene.FirstPerson);
                 viewSystem.Stage(viewFrame.View);
+                ClusterShadingPath previousShadingPath = shadingPath;
+                DebugViewSettings[] previousDebugViews = debugViewSettings;
                 if (platform?.IsMeasuring != true) ui.DrawDebugWindow(
                     ref debugUiOpen,
                     ref animateScene,
+                    ref shadingPath,
+                    ref debugViewSettings,
                     new RuntimeUiMetrics(
                         frameIndex,
                         deltaSeconds,
@@ -916,6 +938,9 @@ internal static class RuntimeApplication
                         scene.Camera.Position,
                         window.HasFocus,
                         options.TemporalAntialiasing), platform);
+                if (shadingPath != previousShadingPath || !ReferenceEquals(debugViewSettings, previousDebugViews))
+                    platform?.SetViewOptions(shadingPath, debugViewSettings);
+                DebugViewSettings[] activeDebugViews = platform?.IsMeasuring == true ? [] : debugViewSettings;
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: applying extracted scene.");
@@ -963,8 +988,17 @@ internal static class RuntimeApplication
                 ClusterPipelineOutputs clusterOutputs;
                 using (EngineTrace.Begin(ApplicationTrace.Reconcile))
                 {
+                    pipeline.SetShadingPath(shadingPath);
+                    if (!debugViews.Matches(activeDebugViews))
+                    {
+                        if (presentation is not null && debugViews.ChangesOutputs(activeDebugViews))
+                            ui.InstallGraph(renderGraph, presentation.Target, uiRegion, debugViews.RetainedImages(activeDebugViews));
+                        debugViews.ReconcileSettings(activeDebugViews);
+                    }
                     virtualShadows.ReconcileLights(lightSystem.RequireCurrent());
                     clusterOutputs = pipeline.ReconcileGraph();
+                    debugViews.ReconcileGraph(shadingPath);
+                    platform?.SetShadingInfo(pipeline.InstalledShadingPath, pipeline.DebugMode, debugViews.Images.Length);
                 }
                 double reconcileMs = Stopwatch.GetElapsedTime(reconcileStarted).TotalMilliseconds;
                 startup.RecordStage("ReconcileGraph");
@@ -992,7 +1026,8 @@ internal static class RuntimeApplication
                     boot.PresentationPixelEntry,
                     PresentationFormat,
                     presentationRegion);
-                ui.InstallGraph(renderGraph, presentation.Target, uiRegion);
+                ui.InstallGraph(renderGraph, presentation.Target, uiRegion, debugViews.Images);
+                ScissorRect? presentationRect = ui.DrawDebugViews(debugViews, width, height);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
                 SwapchainImage? image = sceneEdit?.FrameCanceled == true
@@ -1004,7 +1039,8 @@ internal static class RuntimeApplication
                     WorldOrigin = renderWorld.WorldOrigin,
                     View = scene.Camera.View, Projection = viewFrame.View.Projection,
                     UnjitteredProjection = scene.Projection(width, height), JitterPixels = viewFrame.JitterPixels,
-                    Options = options, ShadowSettings = shadowSettings,
+                    Options = options with { ShadingPath = shadingPath, DebugViews = activeDebugViews.ToArray() },
+                    ShadowSettings = shadowSettings,
                     TemporalSettings = script?.TemporalSettings ?? TemporalResolveSettings.Default,
                     RasterEdgePixels = rasterEdgePixels,
                     ClusterWorkCapacity = script?.ClusterWorkCapacity ?? 1_048_576,
@@ -1030,6 +1066,10 @@ internal static class RuntimeApplication
                     temporal,
                     presentation,
                     ui,
+                    debugViews,
+                    renderWorld.Read<RenderView>(viewEntity),
+                    scene.Projection(width, height),
+                    presentationRect,
                     image,
                     width,
                     height,
@@ -1304,6 +1344,8 @@ internal static class RuntimeApplication
             renderDevice.WaitForTrackedSubmissions(FrameTimeout);
             outputVerifier?.Dispose();
             linearVerifier?.Dispose();
+            if (ui is not null && presentation is not null) ui.InstallGraph(renderGraph, presentation.Target, uiRegion);
+            debugViews.Dispose();
             ui?.Dispose();
             presentation?.Dispose();
             temporal?.Dispose();
@@ -1374,6 +1416,10 @@ internal static class RuntimeApplication
         TemporalFeature temporal,
         RuntimePresentationPipeline presentation,
         RuntimeUiRenderer ui,
+        DebugViews debugViews,
+        in RenderView mainView,
+        in Matrix4x4 unjitteredProjection,
+        ScissorRect? presentationRect,
         SwapchainImage? image,
         int width,
         int height,
@@ -1415,9 +1461,12 @@ internal static class RuntimeApplication
                 {
                     if (reportMilestones)
                         Console.WriteLine("First frame: recording render systems.");
-                    if (image is { } acquired) presentation.Bind(ref graphFrame, acquired, graphicsQueue);
+                    if (image is { } acquired) presentation.Bind(ref graphFrame, acquired, graphicsQueue, presentationRect);
                     using (EngineTrace.Begin(ApplicationTrace.RenderSystems))
+                    {
                         systems.Update(readScope, graphFrame);
+                        debugViews.Record(readScope, graphFrame, mainView, unjitteredProjection);
+                    }
                     renderDevice.OrderTextureUploadsBefore(ref graphFrame, presentation.DrawPass);
                     var motion = new MotionFeatureOutput(
                         clusterOutputs.MotionVectors,

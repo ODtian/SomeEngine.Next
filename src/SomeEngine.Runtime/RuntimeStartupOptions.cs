@@ -1,4 +1,5 @@
 using SomeEngine.Core.Diagnostics;
+using SomeEngine.Render.Cluster.Pipeline;
 
 
 namespace SomeEngine.Runtime;
@@ -22,6 +23,8 @@ public sealed record RuntimeStartupOptions(
     bool AsyncCompute,
     ProfilerOptions Profiler)
 {
+    public ClusterShadingPath ShadingPath { get; init; } = ClusterShadingPath.Deferred;
+    public IReadOnlyList<DebugViewSettings> DebugViews { get; init; } = [];
     public bool HideWindow { get; init; }
     public bool ForceHardwareRaster { get; init; }
     public bool UseInstanceGroups { get; init; }
@@ -140,6 +143,8 @@ public sealed record RuntimeStartupOptions(
                 defaultValue: true),
             Profiler: SomeEngine.Core.Diagnostics.Profiler.ParseOptions(args))
         {
+            ShadingPath = ParseShadingPath(ReadOptionalValue(args, "--shading-path") ?? "deferred"),
+            DebugViews = ParseDebugViews(args),
             HideWindow = args.Contains("--hidden-window", StringComparer.OrdinalIgnoreCase),
             ForceHardwareRaster = args.Contains("--hardware-raster", StringComparer.OrdinalIgnoreCase),
             UseInstanceGroups = args.Contains("--instance-groups", StringComparer.OrdinalIgnoreCase),
@@ -159,6 +164,38 @@ public sealed record RuntimeStartupOptions(
             VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
             ShadowRayCount = shadowRayCount,
         };
+    }
+
+    private static ClusterShadingPath ParseShadingPath(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "deferred" => ClusterShadingPath.Deferred,
+        "forward" => ClusterShadingPath.Forward,
+        _ => throw new ArgumentException("--shading-path requires 'deferred' or 'forward'."),
+    };
+
+    private static DebugViewSettings[] ParseDebugViews(string[] args)
+    {
+        var views = new List<DebugViewSettings>();
+        for (int index = 0; index < args.Length; index++)
+        {
+            if (args[index].Equals("--no-debug-views", StringComparison.OrdinalIgnoreCase))
+            {
+                views.Clear();
+                continue;
+            }
+            string? value = null;
+            if (args[index].StartsWith("--debug-view=", StringComparison.OrdinalIgnoreCase))
+                value = args[index]["--debug-view=".Length..];
+            else if (args[index].Equals("--debug-view", StringComparison.OrdinalIgnoreCase))
+                value = ++index < args.Length ? args[index] : throw new ArgumentException("--debug-view requires mode:widthxheight.");
+            if (value is null) continue;
+            string[] parts = value.Split([':', 'x', 'X']);
+            if (parts.Length != 3 || !uint.TryParse(parts[0], out uint mode) ||
+                !int.TryParse(parts[1], out int width) || !int.TryParse(parts[2], out int height))
+                throw new ArgumentException("--debug-view requires mode:widthxheight, for example 9:320x180.");
+            views.Add(new DebugViewSettings(mode, width, height));
+        }
+        return views.ToArray();
     }
 
     private static RuntimeGraphicsBackend ParseGraphicsBackend(string value) =>
