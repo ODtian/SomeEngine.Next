@@ -17,5 +17,6 @@ public sealed partial class VirtualShadowFeature
         if (_frameActive) throw new InvalidOperationException("Receiver layers must be set before staging a shadow frame.");
         _additionalReceiverData = receivers;
         _additionalReceiverCount = layerCount;
+        ReconcileReceiverDemand();
     }
 }

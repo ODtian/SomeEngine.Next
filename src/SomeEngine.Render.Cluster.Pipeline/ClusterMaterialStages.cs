@@ -1353,6 +1353,28 @@ internal sealed class ClusterShadeStages : IDisposable
         _featureResources = featureResources;
     }
 
+    // Called only when topology, shader resources or the selected saved entry changes.
+    internal bool SupportsPrimaryDepthReceivers(ClusterMaterialAssignmentSet assignments,
+        uint debugMode, bool exportSurfaceReceivers)
+    {
+        var checkedShaders = new HashSet<Shader>();
+        foreach (int address in assignments.ActiveOffsets)
+        {
+            if (!assignments.TryGetEntry(address, out Material material, out _)) continue;
+            Shader shader = ClusterMaterialEntries.RequireShader(material);
+            if (!checkedShaders.Add(shader)) continue;
+            string depth = ((uint)ClusterGeometryRequirements.RequireVisibilityDepth(shader))
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string mode = debugMode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (!shader.TryGetSpecialization(ClusterMaterialEntries.ForwardShade,
+                    [depth, mode, exportSurfaceReceivers ? "true" : "false"], out Shader selected) ||
+                !selected.TryGetSlangTarget(_device.Capabilities.CompileTarget, out int target) ||
+                !selected.TryGetSlangEntry(target, ClusterMaterialEntries.ForwardShade, SlangStage.Compute, out var entry) ||
+                !ClusterGeometryRequirements.UsesPrimaryDepthReceiver(entry)) return false;
+        }
+        return true;
+    }
+
     private ClusterMaterialAssignmentSet? _resolvedAssignments;
 
     internal ClusterShadeStageSet Resolve(ClusterMaterialAssignmentSet assignments,

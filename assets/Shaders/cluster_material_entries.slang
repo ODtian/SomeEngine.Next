@@ -287,6 +287,9 @@ void ClusterShadowReceiver<let visibilityDepth : uint, let debugMode : uint>(
     CSEvaluateShadowReceiver(vertex, domain, surface, tid, visibilityDepth, debugMode);
 }
 
+#if defined(CLUSTER_FORWARD_DEPTH_POSITION) && defined(CLUSTER_SURFACE_MODES)
+[PrimaryDepthReceiver]
+#endif
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -295,8 +298,12 @@ void ClusterForwardShade<let visibilityDepth : uint, let debugMode : uint, let e
     uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
 {
 #if defined(CLUSTER_SURFACE_MODES)
+#if defined(CLUSTER_FORWARD_DEPTH_POSITION)
+    StandardForwardDepthMode<debugMode, exportSurfaceReceivers> selected;
+#else
     ForwardMaterialSurfaceMode<DomainEvaluate.Surface, DomainEvaluate.TriangleData, SurfaceEvaluate,
         debugMode, exportSurfaceReceivers> selected;
+#endif
     selected.Evaluator = surface;
     CSForwardShade(vertex, domain, selected, tid, visibilityDepth, debugMode, exportSurfaceReceivers);
 #else

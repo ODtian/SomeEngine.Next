@@ -140,7 +140,7 @@ public sealed partial class ClusterPipelineSystem
         work.FramePhases = hasGeometry ? hasTargetGeometry ? 15u : 3u : 0u;
         graph.SetRegionEnabled(work.Initialization, !work.Initialized);
         bool scatter = hasGeometry && CalculateShadeBinItemCapacity(GraphData.Resources) == 0u;
-        graph.SetRegionEnabled(GraphData.EmptyReceivers, !hasGeometry);
+        graph.SetRegionEnabled(GraphData.EmptyReceivers, !hasGeometry && _installedShadeStages!.WritesReceivers);
         graph.SetRegionEnabled(GraphData.PrimaryGeometry, hasGeometry);
         graph.SetRegionEnabled(_regions.TargetGeometry, hasTargetGeometry);
         graph.SetRegionEnabled(GraphData.ShadeBinning, hasGeometry);

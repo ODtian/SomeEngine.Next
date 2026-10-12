@@ -996,6 +996,7 @@ internal static class RuntimeApplication
                         debugViews.ReconcileSettings(activeDebugViews);
                     }
                     virtualShadows.ReconcileLights(lightSystem.RequireCurrent());
+                    virtualShadows.SetPrimaryDepthReceiverRequests(true);
                     clusterOutputs = pipeline.ReconcileGraph();
                     debugViews.ReconcileGraph(shadingPath);
                     platform?.SetShadingInfo(pipeline.InstalledShadingPath, pipeline.DebugMode, debugViews.Images.Length);

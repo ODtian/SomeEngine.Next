@@ -5,7 +5,7 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic), nameof(ResidentPages), nameof(Prefilter), nameof(PrefilterRequests), nameof(PrefilterReset), nameof(PrefilterSelect), nameof(BlueNoise), nameof(FroxelBuild), nameof(FroxelArguments), nameof(FroxelMark), nameof(FroxelPixel), nameof(ProjectDirectionalLights), nameof(ProjectLocalLights))]
+[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic), nameof(ResidentPages), nameof(Prefilter), nameof(PrefilterRequests), nameof(PrefilterReset), nameof(PrefilterSelect), nameof(BlueNoise), nameof(FroxelBuild), nameof(FroxelArguments), nameof(FroxelMark), nameof(FroxelPixel), nameof(ProjectDirectionalLights), nameof(ProjectLocalLights), nameof(MarkDepthPages))]
 public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
 {
     public partial ShaderRef? ProjectDirectionalLights { get; set; }
@@ -17,6 +17,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
     public partial AssetId<TextureAsset>? BlueNoise { get; set; }
     public partial ShaderRef? ResetReceiverMasks { get; set; }
     public partial ShaderRef? ResetFrame { get; set; }
+    public partial ShaderRef? MarkDepthPages { get; set; }
     public partial ShaderRef? MarkPages { get; set; }
     public partial ShaderRef? MarkCoarsePages { get; set; }
     public partial ShaderRef? AllocatePages { get; set; }
@@ -111,6 +112,8 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
                 ResetReceiverMasks = Resolve(copy.ResetReceiverMasks),
                 ResetFrameShader = shaders[copy.ResetFrame!.Asset.Value],
                 ResetFrame = Resolve(copy.ResetFrame),
+                MarkDepthPagesShader = copy.MarkDepthPages is { } depthPages ? shaders[depthPages.Asset.Value] : null,
+                MarkDepthPages = copy.MarkDepthPages is { } depthPagesEntry ? Resolve(depthPagesEntry) : EntryPointReflection.Null,
                 MarkPagesShader = shaders[copy.MarkPages!.Asset.Value],
                 MarkPages = Resolve(copy.MarkPages),
                 MarkCoarsePagesShader = shaders[copy.MarkCoarsePages!.Asset.Value],
@@ -150,7 +153,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
     {
         ShaderRef?[] entries =
         [
-            ResetReceiverMasks, ResetFrame, MarkPages, MarkCoarsePages, AllocatePages, ClearPages,
+            ResetReceiverMasks, ResetFrame, MarkPages, MarkDepthPages, MarkCoarsePages, AllocatePages, ClearPages,
             InitializeState, InvalidateCasters, BuildPagePool, CompactViews, InitializePageHiZ,
             ReducePageHiZ, DynamicResolution, CompletePageDepth, WorkFeedback, MergeStatic,
             ResidentPages, Prefilter, PrefilterRequests, PrefilterReset, PrefilterSelect, FroxelBuild, FroxelArguments, FroxelMark, FroxelPixel, ProjectDirectionalLights, ProjectLocalLights,

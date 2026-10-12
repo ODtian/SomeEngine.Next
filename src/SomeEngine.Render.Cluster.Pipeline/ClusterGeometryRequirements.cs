@@ -70,6 +70,20 @@ internal static class ClusterGeometryRequirements
         return false;
     }
 
+    internal static bool UsesPrimaryDepthReceiver(EntryPointReflection entry)
+    {
+        FunctionReflection function = entry.Function;
+        for (uint index = 0; index < function.AttributeCount; index++)
+        {
+            AttributeReflection attribute = function.GetAttribute(index);
+            if (attribute.Name != "PrimaryDepthReceiver") continue;
+            if (attribute.ArgumentCount != 0)
+                throw new InvalidDataException($"Entry '{entry.Name}' has an invalid PrimaryDepthReceiver declaration.");
+            return true;
+        }
+        return false;
+    }
+
     private static string RequireSingleValue(
         Shader shader,
         string entryPoint,

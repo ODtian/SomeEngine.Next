@@ -390,6 +390,7 @@ public static class DefaultContent
                 ResetFrame = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_frame_reset.shader"),
                     "ResetVirtualShadowFrame"),
+                MarkDepthPages = ShaderReference(ResolveRequired(project, "assets/Shaders/generated/EngineSources/vsm_mark_depth_pages.shader"), "MarkVirtualShadowDepthPages"),
                 MarkPages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_mark_pages.shader"),
                     "MarkVirtualShadowPages"),

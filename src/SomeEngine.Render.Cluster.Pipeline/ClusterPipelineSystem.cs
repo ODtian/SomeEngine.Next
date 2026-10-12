@@ -381,9 +381,20 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool assignmentsChanged = !_graphInstalled ||
             _installedMaterialTopologyVersion != assignments.TopologyVersion;
         bool materialResourcesChanged = CollectMaterialChanges(assignments);
+        bool forward = _options.ShadingPath == ClusterShadingPath.Forward;
+        if (forward && (assignmentsChanged || materialResourcesChanged || _installedShadeStages is null ||
+            _installedShadeStages.ShadingPath != _options.ShadingPath ||
+            _installedShadeStages.DebugMode != _options.DebugMode))
+            _primaryDepthMaterialsSupported = _shadeStages!.SupportsPrimaryDepthReceivers(
+                assignments, _options.DebugMode, _options.ExportSurfaceReceivers);
+        if (forward && _surfaceReceiverRegion != default && !_evaluateSurfaceReceivers)
+            RefreshCasterInputs();
+        bool evaluateReceivers = !forward || (_surfaceReceiverRegion != default &&
+            (_evaluateSurfaceReceivers || !_primaryDepthMaterialsSupported || _hasFirstPersonReceiverMeshes));
         bool shadingChanged = _installedShadeStages is null ||
             _installedShadeStages.ShadingPath != _options.ShadingPath ||
-            _installedShadeStages.DebugMode != _options.DebugMode;
+            _installedShadeStages.DebugMode != _options.DebugMode ||
+            _installedShadeStages.HasReceiverEvaluation != evaluateReceivers;
         // User vertex/domain/visibility shaders may consume scalar inputs without
         // changing a resource binding or a raster bin. Such edits still change depth.
         bool materialDepthChanged = assignmentsChanged || assignments.ChangedMaterialIds.Any();
@@ -424,7 +435,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             else rasterStages = _installedRasterStages!;
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ShadeStagesTrace))
                 shadeStages = _shadeStages!.Resolve(assignments, _options.ShadingPath, _options.DebugMode,
-                    _options.ExportSurfaceReceivers, _options.ShadingPath == ClusterShadingPath.Deferred || _surfaceReceiverRegion != default);
+                    _options.ExportSurfaceReceivers, evaluateReceivers);
             scalars = _materialScalars.Update(shadeStages, assignments,
                 _renderDevice.GetTextureDescriptorIndex, shadingChanged
                     ? assignments.ActiveOffsets.Concat(_textureScalarChanges) : _textureScalarChanges);

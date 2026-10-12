@@ -11,6 +11,7 @@ public sealed partial class VirtualShadowFeature
     public void ReconcileLights(RenderLightSet lights)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ReconcileReceiverDemand();
         var settings = _shadowMap.Settings;
         uint lightCount = checked((uint)(lights.Directional.Count + lights.Points.Count + lights.Spots.Count));
         uint sourceViews = checked(lightCount * settings.MaximumViewsPerLight);

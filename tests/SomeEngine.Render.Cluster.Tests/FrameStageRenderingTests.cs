@@ -667,6 +667,7 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
             {
                 _statistics = diagnostics.Statistics;
                 PassLabels = diagnostics.Passes.ToArray().Select(pass => pass.Label).ToArray();
+                ObserveDepthReceiverWork(in diagnostics);
             })))
         {
             _frames.Update(frame, commands);

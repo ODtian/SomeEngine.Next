@@ -22,6 +22,13 @@ struct MaterialSurfaceDataAttribute
 {
 };
 
+// Primary ordinary receivers use the same visibility-depth position for requests and
+// final Forward lighting. This entry publishes no additional receiver layers.
+[__AttributeUsage(_AttributeTargets.Function)]
+struct PrimaryDepthReceiverAttribute
+{
+};
+
 struct SurfacePixel
 {
     uint3 PixelCoord;

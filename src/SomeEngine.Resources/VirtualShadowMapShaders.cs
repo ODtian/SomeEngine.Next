@@ -24,6 +24,8 @@ public sealed class VirtualShadowMapShaders : IDisposable
     public EntryPointReflection ResetReceiverMasks { get; init; }
     public Shader? ResetFrameShader { get; init; }
     public EntryPointReflection ResetFrame { get; init; }
+    public Shader? MarkDepthPagesShader { get; init; }
+    public EntryPointReflection MarkDepthPages { get; init; }
     public Shader? MarkPagesShader { get; init; }
     public EntryPointReflection MarkPages { get; init; }
     public Shader? MarkCoarsePagesShader { get; init; }

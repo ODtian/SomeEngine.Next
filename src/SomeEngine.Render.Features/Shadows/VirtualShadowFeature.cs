@@ -454,6 +454,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     "Mark virtual shadow pages",
                     _shadowMap.PageMarkPipeline,
                     new VirtualShadowDispatchPassData(default), region: primaryDepthAfter);
+                CreateDepthPageMarking(ref edit, primaryDepthAfter);
 
                 _poolPreparePass = AddComputePass(
                     ref edit, "Prepare virtual shadow page order",
@@ -553,6 +554,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 edit.OrderAfter(_receiverMaskResetPass, _initializePass);
                 edit.OrderAfter(_coarseMarkPass, _initializePass);
                 edit.OrderAfter(_markPass, _initializePass);
+                if (_depthMarkPass != default) edit.OrderAfter(_depthMarkPass, _initializePass);
                 edit.OrderAfter(_coarseMarkPass, _dynamicResolutionResetPass);
                 edit.OrderAfter(_poolPreparePass, _coarseMarkPass);
                 edit.OrderAfter(_poolPass, _poolPreparePass);
@@ -648,6 +650,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 BindInvalidation(ref edit, _invalidationUniforms);
                 BindCoarseMark(ref edit, _coarseDemandUniforms);
                 BindMark(ref edit, _demandUniforms);
+                BindDepthPageMarking(ref edit, _demandUniforms);
                 InstallFroxels(ref edit, shaders, primaryDepthAfter);
                 BindPool(ref edit, _poolPass, _poolUniforms);
                 BindPool(ref edit, _poolPreparePass, _poolPrepareUniforms);
@@ -673,6 +676,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 }
                 InstallWorkFeedback(ref edit, shaders, rasterViewCapacity / settings.MipLevelCount,
                     primaryDepthAfter, feedback, resolutionCopyPass);
+                OrderDepthPageMarking(ref edit);
                 InstallWorkTime(ref edit, primaryDepthAfter, targetGeometryAfter, feedback);
                 if (_prefilterPipeline is not null && _workTimeQueries is not null)
                     edit.OrderAfter(_prefilterPasses[0], _workTimeEndPass);
@@ -945,9 +949,17 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             graph.SetBufferInput(_geometryWorkStatus, new GraphBufferSlice(geometry.Geometry.WorkStatus, BufferRange.Whole));
             graph.SetBufferInput(_casterBounds, new GraphBufferSlice(geometry.Geometry.InstanceWorldBounds, BufferRange.Whole));
             graph.SetTextureInput(_receiverDepth, geometry.Depth);
+            if (_depthMarkPass != default)
+                graph.SetBufferInput(_depthReceiverViews, new GraphBufferSlice(geometry.Geometry.PackedViews, BufferRange.Whole));
             var receiverData = new GraphBufferSlice(geometry.SurfaceReceivers, BufferRange.Whole);
             graph.SetBufferInput(_surfaceReceivers, receiverData);
             _frameAdditionalReceiverCount = _additionalReceiverCount != 0u ? _additionalReceiverCount : geometry.AdditionalReceiverLayerCount;
+            UsesPrimaryDepthReceiverRequests = _primaryDepthReceiverRequests &&
+                _geometry.InstalledShadingPath == ClusterShadingPath.Forward &&
+                !_geometry.HasEarlySurfaceReceiverEvaluation;
+            if ((!UsesPrimaryDepthReceiverRequests || _frameAdditionalReceiverCount != 0u) &&
+                !_geometry.HasEarlySurfaceReceiverEvaluation)
+                throw new InvalidOperationException("Receiver demand changed after graph reconciliation; reconcile geometry before staging shadows.");
             graph.SetBufferInput(_additionalReceivers, _additionalReceiverCount != 0u ? _additionalReceiverData :
                 new GraphBufferSlice(geometry.AdditionalSurfaceReceivers, BufferRange.Whole));
 
@@ -1302,7 +1314,13 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 DivideRoundUp(receiverView.ViewportWidth, 16u),
                 DivideRoundUp(receiverView.ViewportHeight, 16u),
                 1)));
-        graph.SetPassEnabled(_markPass, viewCount != 0u);
+        graph.SetPassEnabled(_markPass, viewCount != 0u && !UsesPrimaryDepthReceiverRequests);
+        if (_depthMarkPass != default)
+        {
+            graph.SetPassDataIfChanged(_depthMarkPass, new VirtualShadowDispatchPassData(new DispatchArguments(
+                DivideRoundUp(receiverView.ViewportWidth, 16u), DivideRoundUp(receiverView.ViewportHeight, 16u), 1)));
+            graph.SetPassEnabled(_depthMarkPass, viewCount != 0u && UsesPrimaryDepthReceiverRequests);
+        }
 
         UploadPoolUniforms(ref graph, _poolPrepareUniforms, 0u);
         UploadPoolUniforms(ref graph, _poolUniforms, 1u);
@@ -1502,7 +1520,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         BindPageMarking(ref graph, ref pass, uniforms);
     }
 
-    private void BindPageMarking(ref RenderGraphEdit graph, ref PassDefinition pass, GraphBufferInput uniforms)
+    private void BindPageMarking(ref RenderGraphEdit graph, ref PassDefinition pass, GraphBufferInput uniforms, bool depthReceiver = false)
     {
         _ = pass.Bind(uniforms, PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(_frameShadowViews, structureStride: VirtualShadowView.SizeInBytes,
@@ -1519,8 +1537,13 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             structureStride: sizeof(float),
             label: "Virtual shadow dynamic resolution bias"),
             PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(_surfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading);
-        _ = pass.Bind(graph.CreateBufferSrv(_additionalReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading);
+        if (depthReceiver)
+            _ = pass.Bind(graph.CreateBufferSrv(_depthReceiverViews, structureStride: ClusterRenderContext.ViewSizeInBytes), PipelineSync.ComputeShading);
+        else
+        {
+            _ = pass.Bind(graph.CreateBufferSrv(_surfaceReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading);
+            _ = pass.Bind(graph.CreateBufferSrv(_additionalReceivers, structureStride: SurfaceReceiver.SizeInBytes), PipelineSync.ComputeShading);
+        }
         _ = pass.Bind(graph.CreateBufferUav(_requestedPages, structureStride: sizeof(uint),
             label: "Virtual shadow request flags"), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);

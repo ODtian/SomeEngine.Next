@@ -65,7 +65,7 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
         return StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;
     }
 
-    SurfaceReceiver evaluateShadowReceiver(SurfacePixel pixel, SurfaceEval surface, float3 bary, Triangle triangle)
+    SurfaceReceiver evaluateGeometryReceiver(SurfacePixel pixel, SurfaceEval surface, float3 bary, Triangle triangle)
     {
         float3 baseNormal = normalize(surface.Normal);
         SurfaceReceiver receiver = (SurfaceReceiver)0;
@@ -75,6 +75,29 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
             triangle.Position2 - triangle.Position0), baseNormal);
         if (dot(receiver.GeometricNormal, baseNormal) < 0.0) receiver.GeometricNormal = -receiver.GeometricNormal;
         receiver.Flags = SURFACE_RECEIVER_LIGHTING;
+        return receiver;
+    }
+
+    SurfaceReceiver evaluateShadowReceiver(SurfacePixel pixel, SurfaceEval surface, float3 bary, Triangle triangle)
+    {
+        SurfaceReceiver receiver = evaluateGeometryReceiver(pixel, surface, bary, triangle);
+#if defined(CLUSTER_FORWARD_DEPTH_POSITION) && defined(CLUSTER_SURFACE_MODES)
+        if ((LoadInstanceFirstPerson(InstanceData, InstanceProperties, pixel.InstanceID).x & 3u) != 1u)
+            receiver.Position = pixel.PositionFromDepth;
+#endif
+        return receiver;
+    }
+
+    [ForceInline]
+    SurfaceReceiver resolveForwardDepthPosition(SurfacePixel pixel, SurfaceEval surface, SurfaceReceiver receiver)
+    {
+        if ((LoadInstanceFirstPerson(InstanceData, InstanceProperties, pixel.InstanceID).x & 3u) == 1u)
+            return receiver;
+        receiver.Position = pixel.PositionFromDepth;
+        ClusterViewUniforms surfaceView = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties,
+            pixel.InstanceID, Views[pixel.PixelCoord.z]);
+        float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
+        receiver.DepthOffset = pixel.Depth - sourceClip.z / sourceClip.w;
         return receiver;
     }
 
@@ -101,7 +124,7 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
         float3 tangent = normalize(surface.Tangent.xyz - baseNormal * dot(baseNormal, surface.Tangent.xyz));
         float3 bitangent = cross(baseNormal, tangent) * surface.Tangent.w;
         float3 normalTS = sampleNormal(surface.TexCoord, scalars);
-        SurfaceReceiver receiver = evaluateShadowReceiver(pixel, surface, bary, triangle);
+        SurfaceReceiver receiver = evaluateGeometryReceiver(pixel, surface, bary, triangle);
         receiver.ShadingNormal = normalize(tangent * normalTS.x + bitangent * normalTS.y + baseNormal * normalTS.z);
         ClusterViewUniforms surfaceView = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties,
             pixel.InstanceID, Views[pixel.PixelCoord.z]);
@@ -152,7 +175,10 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
         SurfacePixel pixel, SurfaceEval surface, float3 bary, Triangle triangle, out SurfaceReceiver receiver)
     {
         if (debugMode == 0u)
-            return evaluateNormalSurface(pixel, surface, bary, triangle, receiver);
+        {
+            Data data = evaluateNormalSurface(pixel, surface, bary, triangle, receiver);
+            return data;
+        }
         receiver = (SurfaceReceiver)0;
         if (completeReceiver)
         {
@@ -297,6 +323,43 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
         return float4(finalColor, 1.0);
     }
 
+};
+
+
+// Concrete builtin adapter: the shared optional Modes interface remains unchanged.
+struct StandardForwardDepthMode<let debugMode : uint, let exportSurfaceReceivers : bool>
+    : IForwardSurfaceEvaluate<SurfaceEval, Triangle>
+{
+    typealias Data = StandardSurfaceData;
+    StandardMaterial Evaluator;
+
+    SurfaceReceiver evaluateShadowReceiver(SurfacePixel pixel, SurfaceEval surface, float3 bary, Triangle triangle)
+    {
+        return Evaluator.evaluateShadowReceiver(pixel, surface, bary, triangle);
+    }
+
+    [ForceInline]
+    Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary, Triangle triangle,
+        out SurfaceReceiver receiver)
+    {
+        Data data = Evaluator.evaluateSurfaceMode<debugMode, exportSurfaceReceivers || debugMode == 0u>(
+            pixel, surface, bary, triangle, receiver);
+        if (exportSurfaceReceivers || debugMode == 0u)
+            receiver = Evaluator.resolveForwardDepthPosition(pixel, surface, receiver);
+        return data;
+    }
+
+    [ForceInline]
+    float4 shadeSurface(uint3 pixelCoord, uint unusedMode, Data data, SurfaceReceiver receiver)
+    {
+        return Evaluator.shadeSurfaceMode<debugMode>(pixelCoord, data, receiver);
+    }
+
+    [ForceInline]
+    float4 shadeForwardSurface(uint3 pixelCoord, uint unusedMode, Data data, SurfaceReceiver receiver)
+    {
+        return Evaluator.shadeForwardSurfaceMode<debugMode>(pixelCoord, data, receiver);
+    }
 };
 
 #endif
