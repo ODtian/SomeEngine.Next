@@ -37,7 +37,7 @@ public unsafe partial class Shader
         int entryCount,
         ImmutableArray<ImmutableHashSet<SlangDescriptorLocation>> usedParameters,
         ImmutableArray<bool> unboundEntries,
-        ImmutableArray<(string EntryPoint, ImmutableArray<string> Arguments, Shader Shader)> specializations = default)
+        ImmutableArray<(string EntryPoint, ImmutableArray<string> Arguments, Lazy<Shader> Shader)> specializations = default)
     {
         Name = name;
         _slangGlobal = global;

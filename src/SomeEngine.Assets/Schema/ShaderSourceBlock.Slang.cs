@@ -101,6 +101,33 @@ public sealed partial class ShaderSourceBlock
             saveSources: false,
             cancellationToken, entryPoint).ConfigureAwait(false)).Shader;
 
+    internal async ValueTask<(string[] Names, byte[][] Sources)> ReadSavedSourcesAsync(CancellationToken cancellationToken)
+    {
+        string[] names = SourceNames.ToArray();
+        var sources = new byte[names.Length][];
+        for (int index = 0; index < sources.Length; index++)
+        {
+            ulong key = SerializedSourceKey(index);
+            if (!ContentKeys.Contains(key))
+                throw new InvalidDataException("Saved shader specializations require their serialized Slang source.");
+            sources[index] = (await ReadBytesAsync(key, cancellationToken).ConfigureAwait(false)).ToArray();
+            if (sources[index].Length == 0)
+                throw new InvalidDataException("Saved shader specializations have empty serialized Slang source.");
+        }
+        return (names, sources);
+    }
+
+    internal static Shader RestoreSavedEntry(IGlobalSession slang, SessionDesc description, string name,
+        string entryPoint, string[] arguments, string[] sourceNames, byte[][] sources)
+    {
+        using var source = new ShaderSourceBlock();
+        foreach (string path in sourceNames) source.SourceNames.Add(path);
+        for (int index = 0; index < sources.Length; index++) source.SetSerializedSource(index, sources[index]);
+        return source.CreateUsingSavedCodeAsync(slang, description, name,
+            arguments.Select(SpecializationArg.FromExpression).ToArray(), CancellationToken.None, entryPoint)
+            .AsTask().GetAwaiter().GetResult();
+    }
+
     private async ValueTask<ShaderCompilation> CreateCoreAsync(
         IGlobalSession slang,
         SessionDesc sessionDescription,

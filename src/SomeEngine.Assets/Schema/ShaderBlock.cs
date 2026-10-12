@@ -116,13 +116,19 @@ public sealed partial class ShaderBlock : AssetBlock
             cancellationToken).ConfigureAwait(false);
         if (inputs.Specializations.Count == 0) return shader;
 
-        var variants = new List<(string EntryPoint, string[] Arguments, Shader Shader)>(inputs.Specializations.Count);
+        var savedSources = await inputs.ReadSavedSourcesAsync(cancellationToken).ConfigureAwait(false);
+        SessionDesc description = CopySessionDescription(sessionDescription);
+        var variants = new List<(string EntryPoint, string[] Arguments, Lazy<Shader> Shader)>(inputs.Specializations.Count);
         foreach (ShaderSpecialization specialization in inputs.Specializations)
         {
+            string entryPoint = specialization.EntryPoint;
             string[] values = specialization.Arguments.ToArray();
-            Shader variant = await ReadVariantAsync(copy, inputs, slang, sessionDescription, name,
-                specialization.EntryPoint, values, cancellationToken).ConfigureAwait(false);
-            variants.Add((specialization.EntryPoint, values, variant));
+            var code = await ReadCodeAsync(copy, shader, description, name, entryPoint, values,
+                cancellationToken).ConfigureAwait(false);
+            variants.Add((entryPoint, values, new Lazy<Shader>(() =>
+                ShaderSourceBlock.RestoreSavedEntry(slang, description, name, entryPoint, values,
+                    savedSources.Names, savedSources.Sources).WithManagedCode(code.Targets, code.Entries, code.Usage),
+                LazyThreadSafetyMode.ExecutionAndPublication)));
         }
         return shader.WithSpecializations(variants);
     }
@@ -160,21 +166,36 @@ public sealed partial class ShaderBlock : AssetBlock
     {
         Shader shader = await source.CreateUsingSavedCodeAsync(slang, sessionDescription, name,
             arguments.Select(SpecializationArg.FromExpression).ToArray(), cancellationToken, entryPoint).ConfigureAwait(false);
-        var targetCode = new List<byte[]?>(shader.SlangTargetCount);
-        var entryCode = new List<byte[]>(checked(shader.SlangTargetCount * shader.SlangEntryCount));
-        var usedParameters = new List<ImmutableHashSet<SlangDescriptorLocation>>(entryCode.Capacity);
+        var code = await ReadCodeAsync(copy, shader, sessionDescription, name, entryPoint, arguments,
+            cancellationToken).ConfigureAwait(false);
+        return shader.WithManagedCode(code.Targets, code.Entries, code.Usage);
+    }
+
+    private static async ValueTask<(byte[]?[] Targets, byte[][] Entries, ImmutableHashSet<SlangDescriptorLocation>[] Usage)>
+        ReadCodeAsync(ShaderBlock copy, Shader shader, SessionDesc sessionDescription, string name,
+            string? entryPoint, string[] arguments, CancellationToken cancellationToken)
+    {
+        int entryCount = entryPoint is null ? shader.SlangEntryCount :
+            Enumerable.Range(0, shader.SlangEntryCount).Count(index =>
+                shader.GetSlangEntryPoint(index).GetFunctionReflection().Name == entryPoint);
+        if (entryCount == 0)
+            throw new InvalidDataException($"Shader '{name}' declares a specialization for an absent entry point.");
+        var targetCode = new byte[]?[shader.SlangTargetCount];
+        var entryCode = new byte[checked(shader.SlangTargetCount * entryCount)][];
+        var usedParameters = new ImmutableHashSet<SlangDescriptorLocation>[entryCode.Length];
         for (int targetIndex = 0; targetIndex < shader.SlangTargetCount; targetIndex++)
         {
             ulong targetKey = TargetCodeKey(sessionDescription, targetIndex, arguments, entryPoint);
-            targetCode.Add(copy.ContentKeys.Contains(targetKey)
+            targetCode[targetIndex] = copy.ContentKeys.Contains(targetKey)
                 ? await AcquireCodeAsync(copy, targetKey, cancellationToken).ConfigureAwait(false)
-                : null);
-            for (int entryIndex = 0; entryIndex < shader.SlangEntryCount; entryIndex++)
+                : null;
+            for (int entryIndex = 0; entryIndex < entryCount; entryIndex++)
             {
+                int index = targetIndex * entryCount + entryIndex;
                 if (entryPoint is null && shader.GetSlangEntryPoint(entryIndex).GetSpecializationParamCount() != 0)
                 {
-                    entryCode.Add([]);
-                    usedParameters.Add(ImmutableHashSet<SlangDescriptorLocation>.Empty);
+                    entryCode[index] = [];
+                    usedParameters[index] = ImmutableHashSet<SlangDescriptorLocation>.Empty;
                     continue;
                 }
                 ulong codeKey = EntryCodeKey(sessionDescription, targetIndex, entryIndex, arguments, entryPoint);
@@ -183,12 +204,25 @@ public sealed partial class ShaderBlock : AssetBlock
                     throw new InvalidDataException($"Shader '{name}' is missing cooked code for its target and entry specialization.");
                 if (!copy.ContentKeys.Contains(usageKey))
                     throw new InvalidDataException("Saved shader entry code requires its cooked resource usage metadata.");
-                entryCode.Add(await AcquireCodeAsync(copy, codeKey, cancellationToken).ConfigureAwait(false));
-                usedParameters.Add(ReadEntryUsage(await AcquireCodeAsync(copy, usageKey, cancellationToken).ConfigureAwait(false)));
+                entryCode[index] = await AcquireCodeAsync(copy, codeKey, cancellationToken).ConfigureAwait(false);
+                usedParameters[index] = ReadEntryUsage(await AcquireCodeAsync(copy, usageKey, cancellationToken).ConfigureAwait(false));
             }
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return shader.WithManagedCode(targetCode, entryCode, usedParameters);
+        return (targetCode, entryCode, usedParameters);
+    }
+
+    private static SessionDesc CopySessionDescription(SessionDesc description)
+    {
+        description.SearchPaths = description.SearchPaths?.ToArray();
+        description.PreprocessorMacros = description.PreprocessorMacros?.ToArray();
+        description.CompilerOptionEntries = description.CompilerOptionEntries?.ToArray();
+        description.Targets = description.Targets?.Select(static target =>
+        {
+            target.CompilerOptionEntries = target.CompilerOptionEntries?.ToArray();
+            return target;
+        }).ToArray();
+        return description;
     }
 
     protected override void ValidateContent()

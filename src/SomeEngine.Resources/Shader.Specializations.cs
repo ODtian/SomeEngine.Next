@@ -4,7 +4,7 @@ namespace SomeEngine.Resources;
 
 public partial class Shader
 {
-    private readonly ImmutableArray<(string EntryPoint, ImmutableArray<string> Arguments, Shader Shader)> _specializations;
+    private readonly ImmutableArray<(string EntryPoint, ImmutableArray<string> Arguments, Lazy<Shader> Shader)> _specializations;
 
     /// <summary>Whether the selected entry requires arguments or declares offline-compiled variants.</summary>
     public bool HasSpecializations(string entryPoint)
@@ -15,14 +15,14 @@ public partial class Shader
             _specializations.Any(variant => variant.EntryPoint == entryPoint);
     }
 
-    /// <summary>Returns a saved entry variant without compiling or substituting the unspecialized shader.</summary>
+    /// <summary>Restores saved entry reflection once without generating GPU code or substituting another variant.</summary>
     public bool TryGetSpecialization(string entryPoint, ReadOnlySpan<string> arguments, out Shader shader)
     {
         if (!_specializations.IsDefaultOrEmpty)
             foreach (var variant in _specializations)
                 if (variant.EntryPoint == entryPoint && arguments.SequenceEqual(variant.Arguments.AsSpan()))
                 {
-                    shader = variant.Shader;
+                    shader = variant.Shader.Value;
                     return true;
                 }
         shader = null!;
@@ -38,10 +38,13 @@ public partial class Shader
     }
 
     internal Shader WithSpecializations(IReadOnlyList<(string EntryPoint, string[] Arguments, Shader Shader)> variants) =>
+        WithSpecializations(variants.Select(static variant =>
+            (variant.EntryPoint, variant.Arguments, new Lazy<Shader>(() => variant.Shader))).ToArray());
+
+    internal Shader WithSpecializations(IReadOnlyList<(string EntryPoint, string[] Arguments, Lazy<Shader> Shader)> variants) =>
         new(Name, _slangGlobal, _slangSession, _slangUnits, _slangEntries, _slangCode,
             _slangTargets, _slangReflections, _slangTargetBlobs, _slangEntryBlobs,
             _slangTargetBytes, _slangEntryBytes, _slangEntryCount, _slangUsedParameters, _slangUnboundEntries,
             variants.Select(static variant =>
                 (variant.EntryPoint, variant.Arguments.ToImmutableArray(), variant.Shader)).ToImmutableArray());
-
 }
