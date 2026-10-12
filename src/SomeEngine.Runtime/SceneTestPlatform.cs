@@ -9,7 +9,11 @@ using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Runtime;
 
-public sealed record TestScene(string Name, string ContentDirectory, bool Animate = false);
+public sealed record TestScene(string Name, string ContentDirectory, bool Animate = false)
+{
+    /// <summary>Optional identical simulation-frame interval for repeatable animated comparisons.</summary>
+    public SimulationFrameWindow? MeasurementFrames { get; init; }
+}
 
 /// <summary>Shared scene selection and render settings for the interactive test application.</summary>
 public sealed class SceneTestPlatform
@@ -38,6 +42,9 @@ public sealed class SceneTestPlatform
     private string? _measurementError;
     private readonly List<SceneFrameWindow> _frameWindows = [];
     private int _firstSampleRenderedFrame;
+    private bool _fixedWarmupComplete;
+    private string? _fixedWindowError;
+    private bool _sceneSampleFinished;
     private long _testStarted;
     private long _sceneStarted;
     private long _sampleStarted;
@@ -147,6 +154,9 @@ public sealed class SceneTestPlatform
         _sceneStarted = Stopwatch.GetTimestamp();
         _sampleStarted = 0;
         _firstSampleRenderedFrame = 0;
+        _fixedWarmupComplete = false;
+        _fixedWindowError = null;
+        _sceneSampleFinished = false;
         _renderingStarted = 0;
         _renderedFrames = 0;
         _streamingFrames = 0;
@@ -204,29 +214,45 @@ public sealed class SceneTestPlatform
         _wasStreaming = !ready;
         _readyFrames = ready ? _readyFrames + 1 : 0;
         double elapsed = Stopwatch.GetElapsedTime(_sceneStarted).TotalSeconds;
-        if (_readyFrames >= 32 && _renderedFrames >= 128 && Stopwatch.GetElapsedTime(_renderingStarted).TotalSeconds >= 3)
+        bool warmupReady = _readyFrames >= 32 && _renderedFrames >= 128 &&
+            Stopwatch.GetElapsedTime(_renderingStarted).TotalSeconds >= 3;
+        bool sampled;
+        bool finishedWindow = false;
+        if (Current.MeasurementFrames is { } requested)
         {
-            if (_sampleStarted == 0)
-            {
-                _sampleStarted = Stopwatch.GetTimestamp();
-                _firstSampleRenderedFrame = _renderedFrames;
-            }
-            _frames.Add(frame);
+            var selection = requested.SelectFrame(frame.SimulationFrame, _frames.Count, _fixedWarmupComplete, ready);
+            if (frame.SimulationFrame < requested.FirstFrame) _fixedWarmupComplete = warmupReady;
+            _fixedWindowError ??= selection.Error;
+            if (selection.Error is not null) InvalidateMeasurements(selection.Error);
+            if (selection.Collect) CollectFrame();
+            finishedWindow = selection.Finished;
+            sampled = finishedWindow && _frames.Count == requested.FrameCount &&
+                _fixedWindowError is null && _measurementError is null;
         }
         else
         {
-            _sampleStarted = 0;
-            _firstSampleRenderedFrame = 0;
-            _frames.Clear();
-            _shadowResolutionFeedback.Clear();
+            if (warmupReady) CollectFrame();
+            else
+            {
+                _sampleStarted = 0;
+                _firstSampleRenderedFrame = 0;
+                _frames.Clear();
+                _shadowResolutionFeedback.Clear();
+            }
+            sampled = _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= 2;
         }
-        bool sampled = _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= 2;
         bool expired = elapsed >= _sceneTimeLimit || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= 45;
-        if (!sampled && !expired) return;
-        _frameWindows.Add(new SceneFrameWindow(Current.Name, _firstSampleRenderedFrame,
-            Options.FixedFrameSeconds, _frames.ToArray()));
+        if (!sampled && !expired && !finishedWindow) return;
+        if (Current.MeasurementFrames is not null && !sampled)
+        {
+            _fixedWindowError ??= "The requested simulation-frame window did not complete before measurement ended.";
+            InvalidateMeasurements(_fixedWindowError);
+        }
+        string status = sampled ? "Measured" : Current.MeasurementFrames is not null
+            ? "Incomplete" : "Not converged within time limit";
+        SceneFrameWindow sampleWindow = SaveFrameWindow(status, _fixedWindowError);
         double[] times = _frames.Select(f => f.ElapsedMs).Order().ToArray();
-        _results.Add(new(Current.Name, sampled ? "Measured" : "Not converged within time limit", times.Length,
+        _results.Add(new(Current.Name, status, times.Length,
             times.Length == 0 ? null : times.Average(),
             times.Length == 0 ? null : times[times.Length / 2],
             times.Length == 0 ? null : times[(int)((times.Length - 1) * 0.95)],
@@ -238,8 +264,33 @@ public sealed class SceneTestPlatform
             _renderWidth, _renderHeight, Options.DynamicScene,
             _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults,
             ShadowResolutionSummary.FromFeedback(shadowDynamicResolutionEnabled,
-                CollectionsMarshal.AsSpan(_shadowResolutionFeedback))));
+                CollectionsMarshal.AsSpan(_shadowResolutionFeedback)),
+            sampleWindow.RequestedSimulationWindow, sampleWindow.FirstSimulationFrame,
+            sampleWindow.LastSimulationFrame, sampleWindow.SampleWallSeconds));
         ReloadRequested = true;
+
+        void CollectFrame()
+        {
+            if (_sampleStarted == 0)
+            {
+                _sampleStarted = Stopwatch.GetTimestamp();
+                _firstSampleRenderedFrame = _renderedFrames;
+            }
+            _frames.Add(frame);
+        }
+    }
+
+    private SceneFrameWindow SaveFrameWindow(string status, string? error)
+    {
+        var window = new SceneFrameWindow(Current.Name, _firstSampleRenderedFrame,
+            Options.FixedFrameSeconds, _frames.ToArray(), Current.MeasurementFrames,
+            _frames.Count == 0 ? null : _frames[0].SimulationFrame,
+            _frames.Count == 0 ? null : _frames[^1].SimulationFrame,
+            _sampleStarted == 0 ? null : Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds,
+            status, error);
+        _frameWindows.Add(window);
+        _sceneSampleFinished = true;
+        return window;
     }
 
     internal void EndScene(string? error = null)
@@ -248,6 +299,11 @@ public sealed class SceneTestPlatform
         _trace = null;
         if (!IsMeasuring || _sceneStarted == 0) return;
         error ??= _measurementError;
+        if (Current.MeasurementFrames is not null && !_sceneSampleFinished)
+        {
+            error ??= "The requested simulation-frame window was interrupted.";
+            SaveFrameWindow("Incomplete", error);
+        }
         if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < 45)
         {
             SelectScene(SelectedScene + 1);
@@ -255,8 +311,8 @@ public sealed class SceneTestPlatform
         }
         var frameSamples = new JsonObject
         {
-            ["SchemaVersion"] = 1,
-            ["Sampling"] = "Unchanged official warmup and timed sampling; frames are contiguous from FirstRenderedFrame.",
+            ["SchemaVersion"] = 2,
+            ["Sampling"] = "Default: original warmup and wall-clock sample. Explicit MeasurementFrames: the requested zero-based simulation frames, without retiming or replacing failed frames. Each sample records its SimulationFrame.",
             ["Scenes"] = JsonSerializer.SerializeToNode(_frameWindows, SceneJsonContext.Default.ListSceneFrameWindow),
         };
         File.WriteAllText(Path.Combine(_resultDirectory!, "frame-samples.json"),
@@ -381,16 +437,20 @@ public sealed class SceneTestPlatform
         }
     }
 
-    internal readonly record struct FrameTiming(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs);
+    internal readonly record struct FrameTiming(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs,
+        int SimulationFrame);
     internal sealed record SceneTiming(string Scene, string Status, int Frames, double? MeanMs, double? MedianMs,
         double? P95Ms, double? PrepareMs, double? ReconcileMs, double? ExecuteMs,
         uint ResidentPages, uint RegisteredPages, int QueuedLoads, int ActiveLoads,
         uint GeometryUsedBytes, uint GeometryFreeBytes, ulong BackpressuredPages,
         int RenderWidth, int RenderHeight, bool AnimateScene,
         double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults,
-        ShadowResolutionSummary ShadowResolution);
+        ShadowResolutionSummary ShadowResolution, SimulationFrameWindow? RequestedSimulationWindow,
+        int? FirstSimulationFrame, int? LastSimulationFrame, double? SampleWallSeconds);
     internal sealed record SceneFrameWindow(
-        string Scene, int FirstRenderedFrame, float FixedFrameSeconds, FrameTiming[] Frames);
+        string Scene, int FirstRenderedFrame, float FixedFrameSeconds, FrameTiming[] Frames,
+        SimulationFrameWindow? RequestedSimulationWindow, int? FirstSimulationFrame, int? LastSimulationFrame,
+        double? SampleWallSeconds, string Status, string? Error);
 
 }
 

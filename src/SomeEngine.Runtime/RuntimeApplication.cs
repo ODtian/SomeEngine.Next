@@ -1218,7 +1218,7 @@ internal static class RuntimeApplication
 
                 if (platform?.IsMeasuring == true && !platform.ReloadRequested)
                     platform.RecordFrame(new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
-                        prepareMs, reconcileMs, executeMs), cluster.CaptureDiagnostics(),
+                        prepareMs, reconcileMs, executeMs, frameIndex), cluster.CaptureDiagnostics(),
                         shadowSettings.Enabled && shadowSettings.DynamicResolutionEnabled);
                 frameIndex++;
                 if (platform?.ReloadRequested == true) break;
