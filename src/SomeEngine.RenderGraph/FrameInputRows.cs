@@ -45,6 +45,7 @@ internal sealed partial class FrameExecutor
             foreach (GraphIdentity identity in index.BufferInputAccesses.GetValueOrDefault(input, []))
             {
                 PassResourceAccess source = index.Structure.Accesses.Get(identity);
+                ChangeCommandData(source.Pass);
                 if (!source.DynamicRange && FindInputAccess(identity, out int accessIndex))
                 {
                     ref FrameResourceAccess access = ref CollectionsMarshal.AsSpan(_accesses)[accessIndex];
