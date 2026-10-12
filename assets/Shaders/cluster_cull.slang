@@ -371,7 +371,8 @@ bool LoadAndFilterCandidate(
     out uint2 rasterWindow,
     out ClusterWorldBounds worldBounds,
     out ClusterScreenBounds currentBounds,
-    bool targetFilters = true)
+    bool targetFilters = true,
+    bool currentProjection = true)
 {
     pageOffset = 0;
     clusterID = 0;
@@ -426,9 +427,12 @@ bool LoadAndFilterCandidate(
     if (view.CullingEnabled != 0u)
     {
         worldBounds = TransformClusterBounds(cluster, t, boundsExpansion);
-        currentBounds = ProjectClusterScreenBounds(worldBounds, false, view, depthCacheClass);
-        if (!currentBounds.DepthAccepted)
-            return false;
+        if (currentProjection)
+        {
+            currentBounds = ProjectClusterScreenBounds(worldBounds, false, view, depthCacheClass);
+            if (!currentBounds.DepthAccepted)
+                return false;
+        }
     }
     if (view.TargetPolicy != 0u && !ClusterTargetPolicyRasterBoundsWindow(
             currentBounds.MinUv, currentBounds.MaxUv, view, rasterWindow,
@@ -500,6 +504,12 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
 #if CLUSTER_CULL_PHASE == 1
 void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
 {
+    // Target windows and the post-HiZ pass consume current bounds immediately.
+    // Primary main needs them only after surviving previous-frame occlusion.
+    bool currentProjection = targetFilters;
+#ifdef CLUSTER_PERSISTENT_CULL
+    currentProjection = currentProjection || TraversalLevel.TraversalMode == 2u;
+#endif
     uint pageOffset;
     uint clusterID;
     uint instanceID;
@@ -523,7 +533,7 @@ void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
             boundsExpansion,
             rasterWindow,
             worldBounds,
-            currentBounds, targetFilters);
+            currentBounds, targetFilters, currentProjection);
     if (!valid)
         return;
 
@@ -558,6 +568,8 @@ void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
     }
     else
     {
+        if (!currentProjection && view.CullingEnabled != 0u)
+            currentBounds = ProjectClusterScreenBounds(worldBounds, false, view);
         ClusterScreenBounds rasterBounds = currentBounds;
         bool isSW = ShouldUseSWRaster(rasterBounds.MinUv, rasterBounds.MaxUv, rasterBounds.NearDepth, view, cluster, t, boundsExpansion);
         AppendVisible(
