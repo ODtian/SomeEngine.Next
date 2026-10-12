@@ -13,6 +13,13 @@ public enum ClusterVisibilityMode : byte
     HardwareOnly,
 }
 
+/// <summary>How visible material data reaches lighting.</summary>
+public enum ClusterShadingPath : byte
+{
+    Deferred,
+    Forward,
+}
+
 /// <summary>Capacity and quality policy for Cluster visibility graph construction.</summary>
 public sealed record ClusterPipelineOptions
 {
@@ -36,6 +43,14 @@ public sealed record ClusterPipelineOptions
 
     public bool EnableAsyncCompute { get; init; }
 
+    public ClusterShadingPath ShadingPath { get; init; } = ClusterShadingPath.Deferred;
+
+    /// <summary>Exports complete receiver records for consumers across either shading path.</summary>
+    public bool ExportSurfaceReceivers { get; init; }
+
+    /// <summary>Saved shader specialization to display. Zero selects normal shading.</summary>
+    public uint DebugMode { get; init; }
+
     public bool ForceHardwareRaster { get; init; }
 
     /// <summary>Tests spatial groups before individual instances. Disabled to avoid maintaining groups unless their culling benefit warrants it.</summary>
@@ -54,6 +69,8 @@ public sealed record ClusterPipelineOptions
     internal void Validate()
     {
         ArgumentOutOfRangeException.ThrowIfZero(MaxCandidates);
+        if (ShadingPath != ClusterShadingPath.Deferred && ShadingPath != ClusterShadingPath.Forward)
+            throw new ArgumentOutOfRangeException(nameof(ShadingPath));
         if (MaxCandidates > CandidateThreadsPerGroup * PortableDispatchDimension)
         {
             throw new ArgumentOutOfRangeException(

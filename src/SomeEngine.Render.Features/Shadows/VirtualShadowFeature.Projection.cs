@@ -13,6 +13,7 @@ public sealed partial class VirtualShadowFeature
     private LightProjection _directionalProjection = null!;
     private LightProjection _localProjection = null!;
     private GraphBufferInput _projectionViews = null!;
+    private GraphBufferId _unusedProjectionData;
 
     private sealed class LightProjection
     {
@@ -34,6 +35,11 @@ public sealed partial class VirtualShadowFeature
     private void InstallProjection(ref RenderGraphEdit edit, VirtualShadowMapShaders shaders, GraphRegionId region)
     {
         _projectionViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
+        _unusedProjectionData = edit.CreateBuffer(new BufferDesc(16u,
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Inactive shadow projection binding"));
+        // Forward shading reads completed pages directly and skips the projection passes.
+        edit.OrderAfter(_frameCompletePass, _rasterCompletePass);
+        edit.OrderAfter(_frameCompletePass, _prefilterInitialize);
         _directionalProjection = InstallLightProjection(ref edit, shaders.ProjectDirectionalLightsShader,
             shaders.ProjectDirectionalLights, "Project directional virtual shadows", 4u, region);
         _localProjection = InstallLightProjection(ref edit, shaders.ProjectLocalLightsShader,
@@ -99,7 +105,24 @@ public sealed partial class VirtualShadowFeature
     private void StageProjection(ref RenderGraphFrame graph, in ClusterPipelineOutputs geometry,
         uint directionalLightCount, uint localLightCount)
     {
+        bool enabled = _geometry.InstalledShadingPath == ClusterShadingPath.Deferred;
+        graph.SetPassEnabled(_directionalProjection.Pass, enabled);
+        graph.SetPassEnabled(_localProjection.Pass, enabled);
         graph.SetBufferInput(_projectionViews, new(geometry.Geometry.PackedViews, BufferRange.Whole));
+        if (!enabled)
+        {
+            // Persistent graph views still need a current input while their passes are disabled.
+            // No active shader reads this shared descriptor placeholder.
+            GraphBufferSlice unused = new(_unusedProjectionData, BufferRange.Whole);
+            graph.SetBufferInput(_directionalProjection.Visibility, unused);
+            graph.SetBufferInput(_directionalProjection.AdditionalVisibility, unused);
+            graph.SetBufferInput(_localProjection.Visibility, unused);
+            graph.SetBufferInput(_localProjection.AdditionalVisibility, unused);
+            ProjectionUniforms uniforms = default;
+            _uniformData.Write(ref graph, _directionalProjection.Uniforms, in uniforms);
+            _uniformData.Write(ref graph, _localProjection.Uniforms, in uniforms);
+            return;
+        }
         StageLightProjection(ref graph, _directionalProjection, in geometry, directionalLightCount);
         StageLightProjection(ref graph, _localProjection, in geometry, localLightCount);
     }

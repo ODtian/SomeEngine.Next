@@ -108,8 +108,9 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             if (definition["Blocks"]![0]!["Fields"]!["Specializations"] is JsonArray specializations)
                 foreach (JsonNode? value in specializations)
                     if (value is JsonObject variant &&
-                        variant["EntryPoint"]?.GetValue<string>() == "ClusterSurfaceDataDepth")
-                        variant["Arguments"] = new JsonArray(cutoff >= 0 ? "1" : "0");
+                        variant["EntryPoint"]?.GetValue<string>() is "ClusterSurfaceDataDepth" or
+                            "ClusterSurfaceDataMode" or "ClusterShadowReceiver" or "ClusterForwardShade")
+                        ((JsonArray)variant["Arguments"]!)[0] = cutoff >= 0 ? "1" : "0";
             WriteIfChanged(definitionPath, definition.ToJsonString());
             await project.BuildAsync(definitionPath);
             _shaders.Add((cutoff, twoSided), shaderId);

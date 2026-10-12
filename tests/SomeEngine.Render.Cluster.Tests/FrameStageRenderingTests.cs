@@ -103,6 +103,9 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
     private readonly Buffer _readback;
     private readonly Buffer _depthReadback;
     private readonly GraphTextureInput _readbackDepth;
+    private Buffer? _motionReadback;
+    private GraphTextureInput _readbackMotion = null!;
+    private bool _temporalCameraCut = true;
     private readonly Entity _view;
     private readonly Entity[] _meshes;
     private readonly Entity _light;
@@ -312,6 +315,11 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
     }
 
     internal void SetView(RenderView view) => _world.Replace(_view, view);
+    internal ClusterPipelineOutputs Outputs => _pipeline.Outputs;
+    internal ClusterShadingPath InstalledShadingPath => _pipeline.InstalledShadingPath;
+    internal void SetShadingPath(ClusterShadingPath path) => _pipeline.SetShadingPath(path);
+    internal void SetDebugMode(uint mode) => _pipeline.SetDebugMode(mode);
+    internal void UseTemporalHistory() => _temporalCameraCut = false;
     internal void SetPointLight(PointLight light) => _gameWorld.Replace(_light, light);
     internal void UseSpotLight(SpotLight light)
     {
@@ -463,6 +471,39 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
     {
         await RenderAsync();
         return new RasterImage(ReadColor(), ReadDepth(), _pipeline.CaptureFrameMetrics());
+    }
+
+    internal async Task<PostProcessedImage> ReadNextPostProcessedImageAsync()
+    {
+        if (_motionReadback is null)
+        {
+            _motionReadback = _backend.CreateBuffer(_device,
+                new BufferDesc(Width * Height * 4, BufferUsages.CopyDestination), MemoryType.Readback);
+            using RenderGraphEdit edit = _graph.BeginEdit();
+            GraphRegionId region = edit.AddRegion("Test motion readback");
+            _readbackMotion = edit.CreateTextureInput();
+            GraphBufferId destination = edit.RegisterExternalBuffer(_motionReadback,
+                [new BufferBoundaryState(BufferRange.Whole, _motionReadback.InitialSync,
+                    _motionReadback.InitialAccess, ResourceContentState.Undefined)]);
+            edit.AddCopyFramePass("Read frame stage motion", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                (_readbackMotion, destination), new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition pass, ref (GraphTextureInput Motion, GraphBufferId Destination) data) =>
+                {
+                    pass.Read(data.Motion, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                        PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+                    pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy,
+                        ResourceAccess.CopyDestination, WriteCoverage.Complete);
+                },
+                static (ref CopyPassCommandScope commands, in (GraphTextureInput Motion, GraphBufferId Destination) data) =>
+                    commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Destination), 0,
+                        Width * 4, Height, commands.GetTexture(data.Motion), 0, 0, TextureAspects.Color,
+                        0, 0, 0, Width, Height, 1)), region: region);
+            edit.Commit();
+        }
+        await RenderAsync(postProcessedColor: true);
+        using MappedBuffer mapping = _backend.Map(_motionReadback, MapType.Read, BufferRange.Whole);
+        mapping.Invalidate(mapping.Range);
+        return new PostProcessedImage(ReadColor(), ReadDepth(), mapping.Bytes.ToArray());
     }
 
     internal void RemoveMaterialMesh(Entity entity) => _gameWorld.DestroyEntity(entity);
@@ -638,8 +679,9 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
             var temporalFrame = commands;
             _temporal.Record(ref temporalFrame, outputs.MaterialColor, outputs.Depth,
                 new MotionFeatureOutput(outputs.MotionVectors, Width, Height, 1),
-                TemporalResolveSettings.Default, cameraCut: true, view: _view);
+                TemporalResolveSettings.Default, cameraCut: _temporalCameraCut, view: _view);
             commands.SetTextureInput(_readbackDepth, outputs.Depth);
+            if (_motionReadback is not null) commands.SetTextureInput(_readbackMotion, outputs.MotionVectors);
             commands.SetTextureInput(_readbackColor, _readbackPipeline is { } colorPipeline
                 ? colorPipeline.Outputs.MaterialColor
                 : postProcessedColor ? _temporal.Output.ResolvedColor : outputs.MaterialColor);
@@ -704,6 +746,7 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         _lighting.Dispose();
         _readback.Dispose();
         _depthReadback.Dispose();
+        _motionReadback?.Dispose();
         Assert.True(_dataLock.TryBeginPrepare(out var shutdown));
         using (shutdown)
         {
@@ -742,3 +785,5 @@ internal sealed record RasterImage(byte[] Color, byte[] Depth, ClusterFrameMetri
             new(64, 64, Format.D32Float, actual.Depth), test + "-depth");
     }
 }
+
+internal sealed record PostProcessedImage(byte[] Color, byte[] Depth, byte[] Motion);

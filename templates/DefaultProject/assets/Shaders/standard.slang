@@ -18,4 +18,6 @@ typedef StandardMaterial SurfaceEvaluate;
 #define CLUSTER_SURFACE_RECEIVERS 1
 #define CLUSTER_SOFTWARE_MESHLET_RASTER 1
 #define CLUSTER_SURFACE_VISIBILITY_DEPTH 1
+#define CLUSTER_SURFACE_MODES 1
+#define CLUSTER_FORWARD_SHADING 1
 #include "cluster_material_entries.slang"

@@ -390,8 +390,9 @@ bool TryReadMaterialPixel(uint3 tid, out uint3 pixelCoord, out uint surfaceIndex
     return pixelCoord.x < Uniforms.ScreenWidth && pixelCoord.y < Uniforms.ScreenHeight;
 }
 
+[ForceInline]
 void CSShade<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain domain,
-    uniform TSurface surface, uint3 tid)
+    uniform TSurface surface, uint3 tid, uint debugMode = Uniforms.DebugMode)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
     where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
@@ -403,11 +404,29 @@ void CSShade<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain dom
     SurfaceReceiver receiver = SurfaceReceiverInputs[index];
     if ((receiver.Flags & SURFACE_RECEIVER_PRESENT) == 0u) return;
     TSurface.Data data = MaterialSurfaceInputs.Load<TSurface.Data>(MaterialSurfaceOffsets[Uniforms.ShadingBin] + surfaceIndex * Uniforms.SurfaceDataStride);
-    OutputColor[coord] = surface.shadeSurface(coord, Uniforms.DebugMode, data, receiver);
+    OutputColor[coord] = surface.shadeSurface(coord, debugMode, data, receiver);
 }
 
+SurfaceReceiver TransformMaterialReceiver(SurfaceReceiver receiver, TriangleInfo tri, bool shadingNormal)
+{
+    ClusterViewUniforms sourceView = Views[tri.viewIndex];
+    receiver.Position = TransformFirstPersonWorldPosition(InstanceData, InstanceProperties, tri.instanceID,
+        sourceView, receiver.Position);
+    if (shadingNormal)
+        receiver.ShadingNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, tri.instanceID,
+            sourceView, receiver.ShadingNormal);
+    receiver.GeometricNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, tri.instanceID,
+        sourceView, receiver.GeometricNormal);
+    receiver.Flags |= SURFACE_RECEIVER_PRESENT;
+    if ((LoadInstanceFirstPerson(InstanceData, InstanceProperties, tri.instanceID).x & 3u) == 1u)
+        receiver.Flags |= SURFACE_RECEIVER_FIRST_PERSON;
+    return receiver;
+}
+
+[ForceInline]
 void CSEvaluateSurface<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain domain,
-    uniform TSurface surface, uint3 tid, uint visibilityDepth = Uniforms.VisibilityDepth)
+    uniform TSurface surface, uint3 tid, uint visibilityDepth = Uniforms.VisibilityDepth,
+    uint debugMode = Uniforms.DebugMode)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
     where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
@@ -427,26 +446,89 @@ void CSEvaluateSurface<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform T
     pixel.PixelCoord = coord;
     pixel.InstanceID = tri.instanceID;
     pixel.MaterialIndex = tri.materialSlot;
-    pixel.DebugMode = Uniforms.DebugMode;
+    pixel.DebugMode = debugMode;
     pixel.VisibilityDepth = visibilityDepth;
     pixel.Depth = depth;
     pixel.PositionFromDepth = positionFromDepth;
     SurfaceReceiver receiver;
     TSurface.Data data = surface.evaluateSurface(pixel, evaluated, bary, triangle, receiver);
-    ClusterViewUniforms sourceView = Views[tri.viewIndex];
-    receiver.Position = TransformFirstPersonWorldPosition(InstanceData, InstanceProperties, tri.instanceID,
-        sourceView, receiver.Position);
-    receiver.ShadingNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, tri.instanceID,
-        sourceView, receiver.ShadingNormal);
-    receiver.GeometricNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, tri.instanceID,
-        sourceView, receiver.GeometricNormal);
-    receiver.Flags |= SURFACE_RECEIVER_PRESENT;
-    if ((LoadInstanceFirstPerson(InstanceData, InstanceProperties, tri.instanceID).x & 3u) == 1u)
-        receiver.Flags |= SURFACE_RECEIVER_FIRST_PERSON;
+    receiver = TransformMaterialReceiver(receiver, tri, true);
     uint index = (coord.z * Uniforms.ScreenHeight + coord.y) * Uniforms.ScreenWidth + coord.x;
     SurfaceReceiverOutput[index] = receiver;
     MaterialSurfaceOutputs.Store<TSurface.Data>(MaterialSurfaceOffsets[Uniforms.ShadingBin] + surfaceIndex * Uniforms.SurfaceDataStride, data);
     WriteClusterMotion<TVE, TDomain>(vertexEval, domain, tri, view, triangle, bary, coord);
+}
+
+
+void CSEvaluateShadowReceiver<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain domain,
+    uniform TSurface surface, uint3 tid, uint visibilityDepth, uint debugMode)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
+    where TSurface : IForwardSurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
+{
+    uint3 coord;
+    TriangleInfo tri;
+    ClusterViewUniforms view;
+    TDomain.TriangleData triangle;
+    float3 bary;
+    TDomain.Surface evaluated;
+    uint surfaceIndex;
+    float depth;
+    float3 positionFromDepth;
+    if (!TryEvaluateMaterialPixel<TVE, TDomain>(vertexEval, domain, tid,
+        coord, tri, view, triangle, bary, evaluated, surfaceIndex, depth, positionFromDepth)) return;
+    SurfacePixel pixel;
+    pixel.PixelCoord = coord;
+    pixel.InstanceID = tri.instanceID;
+    pixel.MaterialIndex = tri.materialSlot;
+    pixel.DebugMode = debugMode;
+    pixel.VisibilityDepth = visibilityDepth;
+    pixel.Depth = depth;
+    pixel.PositionFromDepth = positionFromDepth;
+    SurfaceReceiver receiver = surface.evaluateShadowReceiver(pixel, evaluated, bary, triangle);
+    receiver.ShadingNormal = 0.0.xxx;
+    receiver.DepthOffset = 0.0;
+    receiver = TransformMaterialReceiver(receiver, tri, false);
+    uint index = (coord.z * Uniforms.ScreenHeight + coord.y) * Uniforms.ScreenWidth + coord.x;
+    SurfaceReceiverOutput[index] = receiver;
+}
+
+[ForceInline]
+void CSForwardShade<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain domain,
+    uniform TSurface surface, uint3 tid, uint visibilityDepth, uint debugMode, bool exportSurfaceReceivers)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
+    where TSurface : IForwardSurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
+{
+    uint3 coord;
+    TriangleInfo tri;
+    ClusterViewUniforms view;
+    TDomain.TriangleData triangle;
+    float3 bary;
+    TDomain.Surface evaluated;
+    uint surfaceIndex;
+    float depth;
+    float3 positionFromDepth;
+    if (!TryEvaluateMaterialPixel<TVE, TDomain>(vertexEval, domain, tid,
+        coord, tri, view, triangle, bary, evaluated, surfaceIndex, depth, positionFromDepth)) return;
+    SurfacePixel pixel;
+    pixel.PixelCoord = coord;
+    pixel.InstanceID = tri.instanceID;
+    pixel.MaterialIndex = tri.materialSlot;
+    pixel.DebugMode = debugMode;
+    pixel.VisibilityDepth = visibilityDepth;
+    pixel.Depth = depth;
+    pixel.PositionFromDepth = positionFromDepth;
+    SurfaceReceiver receiver;
+    TSurface.Data data = surface.evaluateSurface(pixel, evaluated, bary, triangle, receiver);
+    receiver = TransformMaterialReceiver(receiver, tri, true);
+    if (exportSurfaceReceivers)
+    {
+        uint index = (coord.z * Uniforms.ScreenHeight + coord.y) * Uniforms.ScreenWidth + coord.x;
+        SurfaceReceiverOutput[index] = receiver;
+    }
+    WriteClusterMotion<TVE, TDomain>(vertexEval, domain, tri, view, triangle, bary, coord);
+    OutputColor[coord] = surface.shadeForwardSurface(coord, debugMode, data, receiver);
 }
 
 #endif

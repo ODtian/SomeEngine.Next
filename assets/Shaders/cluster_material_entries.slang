@@ -251,6 +251,60 @@ void ClusterSurfaceDataDepth<let visibilityDepth : uint>(uniform VertexEvaluate 
 }
 #endif
 
+#if defined(CLUSTER_SURFACE_MODES)
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ClusterSurfaceDataMode<let visibilityDepth : uint, let debugMode : uint>(
+    uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+{
+    MaterialSurfaceMode<DomainEvaluate.Surface, DomainEvaluate.TriangleData, SurfaceEvaluate, debugMode> selected;
+    selected.Evaluator = surface;
+    CSEvaluateSurface(vertex, domain, selected, tid, visibilityDepth, debugMode);
+}
+
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ClusterShadeMode<let debugMode : uint>(uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+{
+    MaterialSurfaceMode<DomainEvaluate.Surface, DomainEvaluate.TriangleData, SurfaceEvaluate, debugMode> selected;
+    selected.Evaluator = surface;
+    CSShade(vertex, domain, selected, tid, debugMode);
+}
+#endif
+
+#if defined(CLUSTER_FORWARD_SHADING)
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ClusterShadowReceiver<let visibilityDepth : uint, let debugMode : uint>(
+    uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+{
+    CSEvaluateShadowReceiver(vertex, domain, surface, tid, visibilityDepth, debugMode);
+}
+
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ClusterForwardShade<let visibilityDepth : uint, let debugMode : uint, let exportSurfaceReceivers : bool>(
+    uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+{
+#if defined(CLUSTER_SURFACE_MODES)
+    ForwardMaterialSurfaceMode<DomainEvaluate.Surface, DomainEvaluate.TriangleData, SurfaceEvaluate,
+        debugMode, exportSurfaceReceivers> selected;
+    selected.Evaluator = surface;
+    CSForwardShade(vertex, domain, selected, tid, visibilityDepth, debugMode, exportSurfaceReceivers);
+#else
+    CSForwardShade(vertex, domain, surface, tid, visibilityDepth, debugMode, exportSurfaceReceivers);
+#endif
+}
+#endif
+
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]

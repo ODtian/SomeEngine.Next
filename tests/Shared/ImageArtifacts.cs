@@ -83,6 +83,9 @@ internal static class ImageArtifacts
         {
             Format.R8G8B8A8UNorm => bytes[pixel * 4 + channel] / 255f,
             Format.R16G16B16A16Float => (float)BitConverter.UInt16BitsToHalf(BinaryPrimitives.ReadUInt16LittleEndian(bytes.Slice(pixel * 8 + channel * 2, 2))),
+            Format.R16G16Float => channel < 2
+                ? (float)BitConverter.UInt16BitsToHalf(BinaryPrimitives.ReadUInt16LittleEndian(bytes.Slice(pixel * 4 + channel * 2, 2)))
+                : channel == 3 ? 1 : 0,
             Format.D32Float or Format.R32Float => channel == 3 ? 1 : BinaryPrimitives.ReadSingleLittleEndian(bytes.Slice(pixel * 4, 4)),
             _ => throw new NotSupportedException($"Image evidence does not support {image.Format}."),
         };

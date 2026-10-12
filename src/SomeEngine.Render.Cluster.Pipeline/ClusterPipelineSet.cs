@@ -20,6 +20,8 @@ internal sealed class ClusterPipelineSet : IDisposable
     private readonly List<ClusterPipeline> _pipelines = [];
     private readonly Dictionary<(bool TargetFilters, bool MultipleViews), ClusterComputePipeline> _traversals = [];
     private readonly Func<bool, bool, ClusterComputePipeline> _createTraversal;
+    private readonly Dictionary<bool, ClusterComputePipeline> _shadeCounts = [];
+    private readonly Func<bool, ClusterComputePipeline> _createShadeCount;
     private bool _disposed;
 
     internal ClusterPipelineSet(
@@ -171,9 +173,10 @@ internal sealed class ClusterPipelineSet : IDisposable
                 ShadeBinClearPrepare = Compute(
                     ClusterShaderOperationRole.MaterialBinningReset,
                     "Cluster material bin clear");
-                ShadeBinCount = Compute(
+                _createShadeCount = writeReceivers => Compute(
                     ClusterShaderOperationRole.MaterialBinningCount,
-                    "Cluster material bin count");
+                    "Cluster material bin count",
+                    writeReceivers ? null : "CountShadeBinsWithoutReceivers");
                 ShadeBinReserve = Compute(
                     ClusterShaderOperationRole.MaterialBinningReserve,
                     "Cluster material bin reserve");
@@ -233,7 +236,15 @@ internal sealed class ClusterPipelineSet : IDisposable
     internal ClusterComputePipeline HiZDownsample { get; }
     internal ClusterComputePipeline HiZDownsampleTwo { get; }
     internal ClusterComputePipeline ShadeBinClearPrepare { get; }
-    internal ClusterComputePipeline ShadeBinCount { get; }
+    internal ClusterComputePipeline GetShadeBinCount(bool writeReceivers)
+    {
+        if (!_shadeCounts.TryGetValue(writeReceivers, out ClusterComputePipeline? pipeline))
+        {
+            pipeline = _createShadeCount(writeReceivers);
+            _shadeCounts.Add(writeReceivers, pipeline);
+        }
+        return pipeline;
+    }
     internal ClusterComputePipeline ShadeBinReserve { get; }
     internal ClusterComputePipeline ShadeBinScatter { get; }
     internal ClusterComputePipeline Resolve { get; }

@@ -224,29 +224,61 @@ domain 自身提供表面误差；primary 沿其已有用户配置。streaming �
 
 ## 用户表面数据
 
+每个 `ClusterPipelineSystem` 用 `ClusterShadingPath` 选择 Deferred 或 Forward；默认保留 Deferred。
+路径切换在帧边界重新选择已保存的 shader entry 和图依赖，不在像素中动态选择两套着色算法。
+两路共用用户 vertex/domain、原 visibility coverage、最终深度及运动矢量语义。
+
 `ISurfaceEvaluate<TSurface, TTriangle>` 的 `Data` 由用户定义，并以 `MaterialSurfaceData` 标记布局。
-必需的 `ClusterSurfaceData` entry 只求值一次用户 vertex/domain 和表面数据：
-`evaluateSurface` 返回紧凑着色结果，同时给出48字节 `SurfaceReceiver`。
-位置为当前Game世界原点的float位移，normal为世界轴方向；Depth是用户visibility入口写出的最终camera深度，
-DepthOffset记录该用户结果相对源表面的偏移。first-person转换沿既有view/instance输入执行。
+Deferred 的表面 entry 求值一次 `evaluateSurface`，写出用户 Data 与完整48字节 `SurfaceReceiver`。
+材质分箱计数实际像素，按目标反射取得的每材质记录尺寸分配 `MaterialSurfaces`；像素 work 保留结果索引。
+最终 `shadeSurface` 读取相同 Data 与 receiver，返回 `float4` 颜色。完整 triangle/domain 只在 producer 局部存在。
+旧的非泛型入口及 `ClusterSurfaceDataDepth` 继续支持普通 Deferred 材质。
 
-材质分箱计数实际像素，按每种材质的固定记录尺寸分配同一个 `MaterialSurfaces` 缓冲。
-像素work保留结果索引；最终 `shadeSurface` 读取相同结果与receiver，返回该像素的 `float4` 颜色。
-管线按work的唯一像素坐标写入颜色，各材质bin的核心颜色写入使用 `DisjointWrites`；用户附加资源仍按自己的访问声明同步。
-标准材质的着色记录为48字节，Unlit为24字节；完整triangle/domain只在producer局部存在。
-标准材质的NormalMap、AlbedoMap、ARMMap在producer采样；motion也在此阶段形成。
-全屏GPU材质计数遍历初始化背景与空参与数据，随后producer填入有效像素。
+Forward 材质显式实现 `IForwardSurfaceEvaluate<TSurface, TTriangle>`，并保存对应的
+`ClusterShadowReceiver` 与 `ClusterForwardShade` 变体。未声明该能力的自定义材质仍使用 Deferred；
+主动选择 Forward 而缺少能力或保存变体时报告错误，不静默切换路径。
+前置 `evaluateShadowReceiver` 只产生页请求所需的 Position、Depth、GeometricNormal 和 Flags，
+这些字段必须与同一输入的完整表面结果一致。它可计算这些字段的真实依赖，但不求完整 Data 或无关的着色输出。
+标准材质此阶段不采样法线、基础色或 ARM 贴图。随后原页请求、分配和阴影几何完成，
+最终 forward entry 再求值 vertex/domain，调用一次完整 `evaluateSurface`，将 Data 保留在寄存器局部，
+直接调用 `shadeForwardSurface` 写颜色，不保存或重读全屏 MaterialSurfaces。
 
-页请求和投射共同使用用户提供的Position、Depth、normal和lighting资格；方向/局部背面判断共用
-`surface_receiver.slang`。subsurface、hair和多normal basis通过用户flags表达对应条件。
-投射按Native对hair使用朝光方向，对subsurface保留原接收位置。
-特殊水、透明、头发及其他接收结果由调用者写入共享额外层；层中存储同一48字节查询数据。
-Froxel消费同一接收资格和最终深度，front-layer高质量条件沿既有pixel选择入口工作。
-`TrySurfaceReceiverPreviousPixel` 与 `TryReadSurfaceReceiverPreviousDepth` 继续提供当前/前帧深度接合。
+标准材质两路共用相同主光照实现。Forward 从完整 receiver 内联原 VSM 投射与采样；
+Deferred 继续读取预先投射的结果。方向光保留 float 可见性，局部光仍应用原4位量化及抖动，
+法线偏置、软采样、页回退和 first-person 阴影规则共用同一 helper。
+Forward 不消费独立的 projected-visibility 结果缓冲。旧 `VirtualShadowProjected*` 公共投影输出仅在 Deferred 路径有效；Forward 消费者使用同一内联采样接口。
 
-对应Native是Nanite材质求值后的场景表面数据与VSM消费者，固定源码
+SurfaceReceiver 的位置是当前 Game 世界原点的 float 位移，normal 为世界轴方向；
+Depth 是用户 visibility 入口写出的最终 camera 深度，DepthOffset 记录该用户结果相对源表面的偏移。
+first-person 转换沿既有 view/instance 输入执行。Forward 前置 receiver 的着色法线和 DepthOffset
+不作为最终公开数据。Forward 默认只导出真正需要的 Color、Depth 和 Motion；设置
+`ExportSurfaceReceivers` 时，已保存的编译期变体才额外写回完整48字节，供最终完成之后的公开消费者读取。
+无请求消费者且不导出 receiver 的独立小 view 不安装 early receiver 阶段，分箱计数也选择不清理 receiver 的入口。
+两路只在各自完整表面求值阶段写一次 motion，按唯一像素坐标写颜色；各材质 bin 的核心颜色写入使用
+`DisjointWrites`，用户附加资源仍按自己的访问声明同步。需要 receiver 的路径继续完整定义背景和空像素；没有消费者且不导出时不清理 receiver。
+
+特殊水、透明、头发及其他接收结果沿额外 receiver 层保存同一48字节结构。
+Forward 作者必须在页请求之前发布所有受光额外层的请求字段，不能到最终着色才补发本帧需求；
+最终阶段提供其完整字段并用同一 forward 采样函数着色。Froxel 消费接收资格和最终深度，
+front-layer 高质量条件沿既有 pixel 选择入口工作。`TrySurfaceReceiverPreviousPixel` 与
+`TryReadSurfaceReceiverPreviousDepth` 继续提供当前/前帧深度接合。
+
+现有后处理实际消费 HDR Color、visibility Depth 和 Motion；两路均额外导出这些已有公共输出，
+不为不存在的消费者保存一套完整材质数据。Deferred 的48字节 receiver 输出保留；Forward 的完整 receiver 是显式可选导出，不能将早期请求数据当作该输出。
+
+调试模式按独立 pipeline 选择已保存的编译期变体，Surface 与最终 shade 使用同一 mode。
+标准和 Unlit 显式实现 `ISurfaceEvaluateModes`，通过类型适配器把 mode 作为编译期参数传到求值和着色方法；旧自定义接口不要求实现该能力。
+mode 0 只调用普通材质求值，不生成调试颜色计算；模板复用本次输出的颜色槽，不另存 DebugColor。
+几何调试模式不求基础色或 ARM；Forward 无完整导出时也不求着色法线。Deferred 保留完整 receiver，Forward 显式完整导出时同样计算所需法线。
+独立小 view 各自拥有输出和模式，普通主 view 可保持 mode 0。一个 pipeline 的多个 array view
+仍共用该 pipeline 的模式，不能用它表达不同模式的小 view。保存变体按需恢复反射并缓存，
+加载时仍验证全部声明的已编译代码和资源用量，不在运行中生成 shader 代码。
+模板外直接引用 `StandardSurfaceData.DebugColor` 或 `UnlitSurfaceData.DebugColor` 的源码需迁移到
+本次模式的 BaseColor 或 Color 槽；独立自定义 Data 的字段和布局不变。记录尺寸始终由实际目标反射取得。
+
+对应 Native 是 Nanite 材质求值后的场景表面数据与 VSM 消费者，固定源码
 `VirtualShadowMapProjection.usf:75–105,297–355`、`VirtualShadowMapPageMarking.usf:349–414,480–612`。
-表面语义及最终光照由用户shader定义，管线持有资源并调度生产与消费。
+表面语义及最终光照由用户 shader 定义，管线持有资源并调度生产与消费。
 
 ## 相对世界坐标与 clipmap 地址
 

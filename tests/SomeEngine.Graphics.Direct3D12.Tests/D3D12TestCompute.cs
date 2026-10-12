@@ -5,7 +5,8 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
+internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler,
+    Func<IGraphicsBackend, Device>? createDevice = null)
 {
     internal sealed record BufferInput(
         string Name,
@@ -61,7 +62,7 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("compute_test", source,
             [new(entry, SlangStage.Compute)], "sm_6_0", directory ?? throw new DirectoryNotFoundException());
         using var backend = D3D12GraphicsBackend.Create();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using Device device = createDevice is null ? D3D12TestSupport.CreateWarpDevice(backend) : createDevice(backend);
         List<IDisposable> owned = [];
         try
         {

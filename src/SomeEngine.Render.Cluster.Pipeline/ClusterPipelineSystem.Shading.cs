@@ -64,7 +64,7 @@ public sealed partial class ClusterPipelineSystem
                 members.Add(new(material, property, material.GetTexture(property)));
             }
         }
-        var desired = stages.Invocations.ToDictionary(static stage => stage.BinIndex,
+        var desired = stages.Invocations.Where(stage => !receivers || stage.SurfaceShader is not null).ToDictionary(static stage => stage.BinIndex,
             stage => new ShadeGroup(receivers ? stage.SurfaceShader! : stage,
                 reads.TryGetValue(stage.BinIndex, out var members)
                     ? members.OrderBy(static value => value.Material.MaterialId).ThenBy(static value => value.Property).ToImmutableArray()
@@ -85,7 +85,7 @@ public sealed partial class ClusterPipelineSystem
                         _ = access.Read(data.Arguments, new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
                             PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
                     ClusterIndirectDispatchParameters.Record, region: region);
-                value.Uniforms = BindShadeResources(ref edit, pass, value.Stage, stages);
+                value.Uniforms = BindShadeResources(ref edit, pass, value.Stage, stages, receivers);
                 PassDefinition access = edit.GetPass(pass);
                 foreach (IndexedTextureRead read in value.TextureReads)
                 {
@@ -132,8 +132,16 @@ public sealed partial class ClusterPipelineSystem
             ? (uint)quads : 0u;
     }
 
-    private void UpdateShadeBinning(ref RenderGraphEdit graph)
+    private void UpdateShadeBinning(ref RenderGraphEdit graph, ClusterShadeStageSet stages)
     {
+        if (_installedShadeStages is { } previous && previous.WritesReceivers != stages.WritesReceivers)
+        {
+            GraphPassId previousPass = GraphData.ShadeCountPass;
+            graph.Remove(previousPass);
+            GraphData.LayerDispatches.RemoveAll(dispatch => dispatch.Pass == previousPass);
+            GraphData.ShadeCountPass = RecordShadeCount(ref graph, GraphData.Resources,
+                GraphData.ShadeBinUniforms, stages.WritesReceivers);
+        }
         Span<ClusterShadeBinUniforms> value = stackalloc ClusterShadeBinUniforms[1];
         value[0] = new ClusterShadeBinUniforms
         {

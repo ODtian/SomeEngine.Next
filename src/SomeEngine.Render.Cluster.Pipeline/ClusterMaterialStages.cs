@@ -15,6 +15,10 @@ internal static class ClusterMaterialEntries
     internal const string Shade = "ClusterShade";
     internal const string SurfaceData = "ClusterSurfaceData";
     internal const string SurfaceDataDepth = "ClusterSurfaceDataDepth";
+    internal const string SurfaceDataMode = "ClusterSurfaceDataMode";
+    internal const string ShadeMode = "ClusterShadeMode";
+    internal const string ShadowReceiver = "ClusterShadowReceiver";
+    internal const string ForwardShade = "ClusterForwardShade";
     internal const string SoftwareRasterImageAtomic64 = "ClusterRasterSoftwareImageAtomic64";
     internal const string SoftwareRasterBufferAtomic64 = "ClusterRasterSoftwareBufferAtomic64";
     internal const string SoftwareMeshletImageAtomic64 = "ClusterRasterSoftwareMeshletImageAtomic64";
@@ -1351,18 +1355,25 @@ internal sealed class ClusterShadeStages : IDisposable
 
     private ClusterMaterialAssignmentSet? _resolvedAssignments;
 
-    internal ClusterShadeStageSet Resolve(ClusterMaterialAssignmentSet assignments)
+    internal ClusterShadeStageSet Resolve(ClusterMaterialAssignmentSet assignments,
+        ClusterShadingPath shadingPath, uint debugMode, bool exportSurfaceReceivers, bool evaluateReceivers)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ResolveTrace);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (ReferenceEquals(assignments, _resolvedAssignments)) return _resolved!;
-        var addresses = _resolvedAssignments is null
+        bool shadingChanged = _resolved.ShadingPath != shadingPath || _resolved.DebugMode != debugMode ||
+            _resolved.ExportSurfaceReceivers != exportSurfaceReceivers ||
+            _resolved.HasReceiverEvaluation != evaluateReceivers;
+        if (ReferenceEquals(assignments, _resolvedAssignments) && !shadingChanged) return _resolved;
+        var addresses = _resolvedAssignments is null || shadingChanged
             ? new HashSet<int>(assignments.ActiveOffsets)
             : new HashSet<int>(assignments.ChangedOffsets);
+        if (shadingChanged && _resolvedAssignments is not null)
+            addresses.UnionWith(_resolvedAssignments.ActiveOffsets);
         foreach (long material in assignments.ChangedMaterialIds)
             addresses.UnionWith(assignments.GetMaterialOffsets(material));
         var bins = new ClusterBinIndexMap<ClusterShadeBinKey, ClusterShadeInvocation>(_binIndices);
-        var resourceProperties = _resourceProperties;
+        var resourceProperties = shadingChanged
+            ? ImmutableDictionary<long, HashSet<uint>>.Empty : _resourceProperties;
         foreach (long material in assignments.ChangedMaterialIds)
             resourceProperties = resourceProperties.Remove(material);
         var scalarLayouts = _resolved.ScalarLayouts;
@@ -1374,13 +1385,19 @@ internal sealed class ClusterShadeStages : IDisposable
                 scalarLayouts = scalarLayouts.Remove(address);
                 continue;
             }
-            ClusterShadeInvocation invocation = CreateInvocation(material, encoding);
-            invocation = invocation with { SurfaceShader = CreateInvocation(material, encoding, ClusterMaterialEntries.SurfaceData) };
+            bool forward = shadingPath == ClusterShadingPath.Forward;
+            ClusterShadeInvocation invocation = CreateInvocation(material, encoding,
+                forward ? ClusterMaterialEntries.ForwardShade : ClusterMaterialEntries.Shade, debugMode, exportSurfaceReceivers);
+            invocation = invocation with
+            {
+                SurfaceShader = evaluateReceivers ? CreateInvocation(material, encoding,
+                    forward ? ClusterMaterialEntries.ShadowReceiver : ClusterMaterialEntries.SurfaceData, debugMode, exportSurfaceReceivers) : null,
+            };
             HashSet<uint> properties = [];
             ClusterMaterialEntries.AddResourceProperties(properties, invocation.MaterialBindings);
             if (invocation.SurfaceShader is { } receiver) ClusterMaterialEntries.AddResourceProperties(properties, receiver.MaterialBindings);
             scalarLayouts = scalarLayouts.SetItem(address, invocation.Scalars.PayloadByteSize != 0u
-                ? invocation.Scalars : invocation.SurfaceShader!.Scalars);
+                ? invocation.Scalars : invocation.SurfaceShader?.Scalars ?? invocation.Scalars);
             properties.UnionWith(scalarLayouts[address].TextureProperties);
             var key = new ClusterShadeBinKey(invocation.Key, encoding,
                 invocation.Scalars.LayoutHash, invocation.Scalars.PayloadByteSize, invocation.CommandBindings,
@@ -1393,7 +1410,7 @@ internal sealed class ClusterShadeStages : IDisposable
             { BinIndex = index, SurfaceShader = stage.SurfaceShader is { } receiver ? receiver with { BinIndex = index } : null });
         var result = new ClusterShadeStageSet(bins.GetIndices(
             assignments.SlotCapacity, _resolved.BinIndices, addresses),
-            invocations, bins.Range, scalarLayouts, [.. bins.Changes], [.. addresses]);
+            invocations, bins.Range, scalarLayouts, [.. bins.Changes], [.. addresses], shadingPath, debugMode, exportSurfaceReceivers, evaluateReceivers);
         _binIndices = bins;
         _resourceProperties = resourceProperties;
         _resolvedAssignments = assignments;
@@ -1401,13 +1418,39 @@ internal sealed class ClusterShadeStages : IDisposable
         return result;
     }
 
-    private ClusterShadeInvocation CreateInvocation(Material material, string vertexEncoding, string entryPoint = ClusterMaterialEntries.Shade)
+    private ClusterShadeInvocation CreateInvocation(Material material, string vertexEncoding, string entryPoint,
+        uint debugMode, bool exportSurfaceReceivers)
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
         ClusterVisibilityDepth visibilityDepth = ClusterGeometryRequirements.RequireVisibilityDepth(shader);
-        if (entryPoint == ClusterMaterialEntries.SurfaceData &&
-            shader.TryGetSpecialization(ClusterMaterialEntries.SurfaceDataDepth,
-                [((uint)visibilityDepth).ToString(System.Globalization.CultureInfo.InvariantCulture)], out Shader specialized))
+        bool forward = entryPoint is ClusterMaterialEntries.ForwardShade or ClusterMaterialEntries.ShadowReceiver;
+        string mode = debugMode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string depth = ((uint)visibilityDepth).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string selectedEntry = entryPoint switch
+        {
+            ClusterMaterialEntries.Shade => ClusterMaterialEntries.ShadeMode,
+            ClusterMaterialEntries.SurfaceData => ClusterMaterialEntries.SurfaceDataMode,
+            _ => entryPoint,
+        };
+        string[] arguments = selectedEntry switch
+        {
+            ClusterMaterialEntries.ShadeMode => [mode],
+            ClusterMaterialEntries.ForwardShade => [depth, mode, exportSurfaceReceivers ? "true" : "false"],
+            _ => [depth, mode],
+        };
+        if (shader.TryGetSpecialization(selectedEntry, arguments, out Shader specialized))
+        {
+            shader = specialized;
+            entryPoint = selectedEntry;
+        }
+        else if (forward || debugMode != 0u)
+        {
+            throw new InvalidDataException(
+                $"Material '{material.Name}' has no cooked {selectedEntry}<{string.Join(", ", arguments)}>. " +
+                "Provide the matching material capability and saved specialization, or select normal Deferred shading.");
+        }
+        else if (entryPoint == ClusterMaterialEntries.SurfaceData &&
+            shader.TryGetSpecialization(ClusterMaterialEntries.SurfaceDataDepth, [depth], out specialized))
         {
             shader = specialized;
             entryPoint = ClusterMaterialEntries.SurfaceDataDepth;
@@ -1440,6 +1483,13 @@ internal sealed class ClusterShadeStages : IDisposable
                 shader,
                 _device.Capabilities.CompileTarget,
                 entryPoint);
+            if (forward && (resources.Contains("VirtualShadowProjectedDirectionalVisibility") ||
+                resources.Contains("VirtualShadowProjectedLocalVisibility") ||
+                resources.Contains("VirtualShadowAdditionalProjectedDirectionalVisibility") ||
+                resources.Contains("VirtualShadowAdditionalProjectedLocalVisibility")))
+                throw new NotSupportedException(
+                    $"Material '{material.Name}' forward entry consumes projected shadow results. " +
+                    "Use inline shadow sampling or select Deferred shading.");
             _linkedLayouts.Add(key, resources);
             _scalarLayouts.Add(
                 key,
@@ -1447,8 +1497,13 @@ internal sealed class ClusterShadeStages : IDisposable
                     ? ResolveScalarLayout(shader, targetIndex)
                     : ScalarLayout.Empty);
             _coreResourceLayouts.Add(key, ResolveShadeCoreResources(resources));
-            TypeLayoutReflection surfaceLayout = ResolveMaterialTypeLayout(shader, targetIndex, "MaterialSurfaceData");
-            _surfaceDataSizes.Add(key, checked(((uint)surfaceLayout.GetSize(SlangParameterCategory.Uniform) + 3u) & ~3u));
+            uint surfaceSize = 0;
+            if (!forward)
+            {
+                TypeLayoutReflection surfaceLayout = ResolveMaterialTypeLayout(shader, targetIndex, "MaterialSurfaceData");
+                surfaceSize = checked(((uint)surfaceLayout.GetSize(SlangParameterCategory.Uniform) + 3u) & ~3u);
+            }
+            _surfaceDataSizes.Add(key, surfaceSize);
         }
         ScalarLayout scalars = _scalarLayouts[key];
         ScalarLayout.ScalarMaterialLayout scalarMaterialLayout = scalars.Resolve(material);
@@ -1665,8 +1720,16 @@ internal sealed class ClusterShadeStageSet
         uint binCount,
         ImmutableDictionary<int, ScalarLayout.ScalarMaterialLayout> scalarLayouts,
         uint[]? changedBins = null,
-        int[]? changedOffsets = null)
+        int[]? changedOffsets = null,
+        ClusterShadingPath shadingPath = ClusterShadingPath.Deferred,
+        uint debugMode = 0,
+        bool exportSurfaceReceivers = false,
+        bool evaluateReceivers = true)
     {
+        ShadingPath = shadingPath;
+        DebugMode = debugMode;
+        ExportSurfaceReceivers = exportSurfaceReceivers;
+        HasReceiverEvaluation = evaluateReceivers;
         BinIndices = binIndices;
         _bins = invocations;
         BinCount = binCount;
@@ -1679,8 +1742,15 @@ internal sealed class ClusterShadeStageSet
     internal IReadOnlyList<int> ChangedOffsets { get; }
     internal IEnumerable<ClusterShadeInvocation> Invocations => _bins.Values;
     internal bool HasAdditionalReceivers => _bins.Values.Any(stage =>
-        stage.SurfaceShader?.Resources.Contains("AdditionalSurfaceReceiverOutput") == true);
-    internal uint SurfaceDataStride => Math.Max(4u, _bins.Values.Aggregate(0u, static (size, stage) => Math.Max(size, stage.SurfaceDataSize)));
+        stage.SurfaceShader?.Resources.Contains("AdditionalSurfaceReceiverOutput") == true ||
+        stage.Resources.Contains("AdditionalSurfaceReceiverOutput"));
+    internal ClusterShadingPath ShadingPath { get; }
+    internal uint DebugMode { get; }
+    internal bool ExportSurfaceReceivers { get; }
+    internal bool HasReceiverEvaluation { get; }
+    internal bool WritesReceivers => HasReceiverEvaluation || ExportSurfaceReceivers;
+    internal uint SurfaceDataStride => ShadingPath == ClusterShadingPath.Forward ? 0u :
+        Math.Max(4u, _bins.Values.Aggregate(0u, static (size, stage) => Math.Max(size, stage.SurfaceDataSize)));
     internal uint BinCount { get; }
     internal ClusterShadeInvocation GetBin(uint bin) => _bins[bin];
     internal IReadOnlyList<uint> ChangedBins { get; }

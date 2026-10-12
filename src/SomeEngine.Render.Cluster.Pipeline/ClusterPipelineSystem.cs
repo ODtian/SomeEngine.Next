@@ -51,7 +51,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ClusterPipelineOutputDescription _outputDescription;
     private readonly IGraphResourceProvider? _stageResourceProvider;
     private readonly ClusterStreamingFeedbackChannel _streamingFeedback;
-    private readonly ClusterPipelineOptions _options;
+    private ClusterPipelineOptions _options;
     private readonly ClusterVisibilityMode _visibilityMode;
     private QueryHandle _viewQuery;
     private QueryHandle _sceneQuery;
@@ -154,6 +154,27 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ? current.Groups[0].Batch : null;
 
     public ClusterVisibilityMode VisibilityMode => _visibilityMode;
+
+    public ClusterShadingPath ShadingPath => _options.ShadingPath;
+    public uint DebugMode => _options.DebugMode;
+
+    /// <summary>The shading path committed by the last successful graph reconciliation.</summary>
+    public ClusterShadingPath InstalledShadingPath => _installedShadeStages?.ShadingPath
+        ?? throw new InvalidOperationException("The Cluster retained graph has not been installed.");
+
+    /// <summary>Selects saved shaders at the next frame-boundary ReconcileGraph call.</summary>
+    public void SetShadingPath(ClusterShadingPath path)
+    {
+        if (path != ClusterShadingPath.Deferred && path != ClusterShadingPath.Forward)
+            throw new ArgumentOutOfRangeException(nameof(path));
+        if (_options.ShadingPath != path) _options = _options with { ShadingPath = path };
+    }
+
+    /// <summary>Selects a saved debug specialization at the next frame-boundary ReconcileGraph call.</summary>
+    public void SetDebugMode(uint mode)
+    {
+        if (_options.DebugMode != mode) _options = _options with { DebugMode = mode };
+    }
 
     /// <summary>Target-view occlusion work between the two geometry phases.</summary>
     public GraphRegionId IntermediateOcclusionRegion { get; }
@@ -360,10 +381,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool assignmentsChanged = !_graphInstalled ||
             _installedMaterialTopologyVersion != assignments.TopologyVersion;
         bool materialResourcesChanged = CollectMaterialChanges(assignments);
+        bool shadingChanged = _installedShadeStages is null ||
+            _installedShadeStages.ShadingPath != _options.ShadingPath ||
+            _installedShadeStages.DebugMode != _options.DebugMode;
         // User vertex/domain/visibility shaders may consume scalar inputs without
         // changing a resource binding or a raster bin. Such edits still change depth.
         bool materialDepthChanged = assignmentsChanged || assignments.ChangedMaterialIds.Any();
-        if (!assignmentsChanged && !materialResourcesChanged)
+        if (!assignmentsChanged && !materialResourcesChanged && !shadingChanged)
         {
             ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments,
                 _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
@@ -392,16 +416,23 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool rasterChanged = false;
         EditGraph((ref RenderGraphEdit edit) =>
         {
-            using (SomeEngine.Diagnostics.EngineTrace.Begin(RasterStagesTrace))
-                rasterStages = _rasterStages!.Resolve(assignments);
+            if (assignmentsChanged || materialResourcesChanged)
+            {
+                using (SomeEngine.Diagnostics.EngineTrace.Begin(RasterStagesTrace))
+                    rasterStages = _rasterStages!.Resolve(assignments);
+            }
+            else rasterStages = _installedRasterStages!;
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ShadeStagesTrace))
-                shadeStages = _shadeStages!.Resolve(assignments);
+                shadeStages = _shadeStages!.Resolve(assignments, _options.ShadingPath, _options.DebugMode,
+                    _options.ExportSurfaceReceivers, _options.ShadingPath == ClusterShadingPath.Deferred || _surfaceReceiverRegion != default);
             scalars = _materialScalars.Update(shadeStages, assignments,
-                _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
+                _renderDevice.GetTextureDescriptorIndex, shadingChanged
+                    ? assignments.ActiveOffsets.Concat(_textureScalarChanges) : _textureScalarChanges);
             cullingEnabled = _pipelines!.DefaultRasterCullingEnabled && rasterStages.HasFiniteBounds;
-            rasterChanged = _installedRasterStages is null || rasterStages.ChangedBins.Count != 0 ||
-                _installedRasterStages.BinIndices.Length != rasterStages.BinIndices.Length || _cullingEnabled != cullingEnabled;
-            bool shadeChanged = _installedShadeStages is null || shadeStages.ChangedBins.Count != 0 ||
+            rasterChanged = !ReferenceEquals(rasterStages, _installedRasterStages) &&
+                (_installedRasterStages is null || rasterStages.ChangedBins.Count != 0 ||
+                    _installedRasterStages.BinIndices.Length != rasterStages.BinIndices.Length || _cullingEnabled != cullingEnabled);
+            bool shadeChanged = shadingChanged || _installedShadeStages is null || shadeStages.ChangedBins.Count != 0 ||
                 _installedShadeStages.BinIndices.Length != shadeStages.BinIndices.Length;
             if (_graphInstalled)
             {
@@ -410,10 +441,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 {
                     uint rasterBinCount = GraphData.Resources.RasterBinCount;
                     ReconcileStageResources(ref edit, assignments, rasterStages, shadeStages);
-                    if (rasterChanged) GraphData.RasterPhases = ReconcileRasterPhases(ref edit, rasterStages);
-                    UpdateRasterBinning(ref edit, GraphData.RasterPhases);
-                    UpdateRasterCapacity(ref edit, rasterBinCount, GraphData.RasterPhases);
-                    if (shadeChanged) UpdateShadeBinning(ref edit);
+                    if (rasterChanged)
+                    {
+                        GraphData.RasterPhases = ReconcileRasterPhases(ref edit, rasterStages);
+                        UpdateRasterBinning(ref edit, GraphData.RasterPhases);
+                        UpdateRasterCapacity(ref edit, rasterBinCount, GraphData.RasterPhases);
+                    }
+                    if (shadeChanged) UpdateShadeBinning(ref edit, shadeStages);
                 }
                 else UpdateMaterialIndexBuffers(ref edit, rasterStages, shadeStages);
                 if (shadeChanged || materialResourcesChanged || assignmentsChanged)
@@ -907,6 +941,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         if (!_created)
             return;
+
         _materialBindingVersions.Clear();
         _consumedMaterialAssignments = null;
         List<Exception>? failures = null;

@@ -21,20 +21,21 @@ RWStructuredBuffer<SurfaceReceiver> AdditionalSurfaceReceivers;
 RWStructuredBuffer<uint> SurfaceCounts;
 
 
-[shader("compute")]
-[numthreads(8, 8, 1)]
-void CountShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIndex)
+void CountShadeBinsCore<let writeReceivers : bool>(uint3 threadId, uint lane)
 {
     uint bin = 0xFFFFFFFFu;
     if (threadId.x < Uniforms.ScreenWidth && threadId.y < Uniforms.ScreenHeight)
     {
-        uint receiverIndex = (threadId.z * Uniforms.ScreenHeight + threadId.y) * Uniforms.ScreenWidth + threadId.x;
-        SurfaceReceivers[receiverIndex] = (SurfaceReceiver)0;
-        uint receiverLayerSize = Uniforms.ScreenWidth * Uniforms.ScreenHeight * Uniforms.ViewCount;
-        for (uint layer = 0u; layer < Uniforms.AdditionalReceiverLayerCount; layer++)
-            AdditionalSurfaceReceivers[layer * receiverLayerSize + receiverIndex] = (SurfaceReceiver)0;
-        if (Uniforms.AdditionalReceiverLayerCount == 0u && receiverIndex == 0u)
-            AdditionalSurfaceReceivers[0] = (SurfaceReceiver)0;
+        if (writeReceivers)
+        {
+            uint receiverIndex = (threadId.z * Uniforms.ScreenHeight + threadId.y) * Uniforms.ScreenWidth + threadId.x;
+            SurfaceReceivers[receiverIndex] = (SurfaceReceiver)0;
+            uint receiverLayerSize = Uniforms.ScreenWidth * Uniforms.ScreenHeight * Uniforms.ViewCount;
+            for (uint layer = 0u; layer < Uniforms.AdditionalReceiverLayerCount; layer++)
+                AdditionalSurfaceReceivers[layer * receiverLayerSize + receiverIndex] = (SurfaceReceiver)0;
+            if (Uniforms.AdditionalReceiverLayerCount == 0u && receiverIndex == 0u)
+                AdditionalSurfaceReceivers[0] = (SurfaceReceiver)0;
+        }
         uint visibility = VisBuffer[threadId];
         if (!IsVisBufferEmpty(visibility))
         {
@@ -76,4 +77,18 @@ void CountShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIn
     work.Mask = mask;
     work.SurfaceDataIndex = surfaceIndex;
     PixelCoordinates[offset] = work;
+}
+
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void CountShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIndex)
+{
+    CountShadeBinsCore<true>(threadId, lane);
+}
+
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void CountShadeBinsWithoutReceivers(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIndex)
+{
+    CountShadeBinsCore<false>(threadId, lane);
 }

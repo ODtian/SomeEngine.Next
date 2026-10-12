@@ -21,6 +21,186 @@
             "Arguments": [
               "0"
             ]
+          },
+          {
+            "EntryPoint": "ClusterSurfaceDataMode",
+            "Arguments": [
+              "0",
+              "0"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadowReceiver",
+            "Arguments": [
+              "0",
+              "0"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "0",
+              "false"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "0",
+              "true"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadeMode",
+            "Arguments": [
+              "0"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterSurfaceDataMode",
+            "Arguments": [
+              "0",
+              "8"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadowReceiver",
+            "Arguments": [
+              "0",
+              "8"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "8",
+              "false"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "8",
+              "true"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadeMode",
+            "Arguments": [
+              "8"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterSurfaceDataMode",
+            "Arguments": [
+              "0",
+              "9"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadowReceiver",
+            "Arguments": [
+              "0",
+              "9"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "9",
+              "false"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "9",
+              "true"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadeMode",
+            "Arguments": [
+              "9"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterSurfaceDataMode",
+            "Arguments": [
+              "0",
+              "10"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadowReceiver",
+            "Arguments": [
+              "0",
+              "10"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "10",
+              "false"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "10",
+              "true"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadeMode",
+            "Arguments": [
+              "10"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterSurfaceDataMode",
+            "Arguments": [
+              "0",
+              "11"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadowReceiver",
+            "Arguments": [
+              "0",
+              "11"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "11",
+              "false"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "11",
+              "true"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadeMode",
+            "Arguments": [
+              "11"
+            ]
           }
         ]
       },

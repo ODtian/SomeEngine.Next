@@ -42,6 +42,8 @@ public sealed partial class ClusterPipelineSystem
         internal GraphRegionId SceneInitialization;
         internal GraphRegionId SceneBoundsRegion;
         internal GraphRegionId ShadeBinning;
+        internal GraphRegionId ShadeCountRegion;
+        internal GraphPassId ShadeCountPass;
         internal GraphRegionId ShadeScatter;
         internal FrameResources Resources;
         internal ClusterPipelineOutputs Outputs;

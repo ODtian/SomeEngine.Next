@@ -5,6 +5,7 @@
 #include "render_lighting.slang"
 #include "brdf.slang"
 #include "vsm_projected_sampling.slang"
+#include "vsm_forward_sampling.slang"
 
 StructuredBuffer<ClusteredLightGridParameters> LightingViews;
 StructuredBuffer<GPULight> LightBuffer;
@@ -52,10 +53,9 @@ struct StandardSurfaceData
     float3 Emissive;
     float Roughness;
     float Occlusion;
-    float3 DebugColor;
 };
 
-struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
+struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
 {
     typealias Data = StandardSurfaceData;
     SamplerState MaterialSampler;
@@ -65,26 +65,57 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         return StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;
     }
 
-    Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
-        Triangle triangle, out SurfaceReceiver receiver)
+    SurfaceReceiver evaluateShadowReceiver(SurfacePixel pixel, SurfaceEval surface, float3 bary, Triangle triangle)
     {
-        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(pixel.MaterialIndex);
         float3 baseNormal = normalize(surface.Normal);
-        float3 tangent = normalize(surface.Tangent.xyz - baseNormal * dot(baseNormal, surface.Tangent.xyz));
-        float3 bitangent = cross(baseNormal, tangent) * surface.Tangent.w;
-        float3 normalTS = sampleNormal(surface.TexCoord, scalars);
-        receiver = (SurfaceReceiver)0;
+        SurfaceReceiver receiver = (SurfaceReceiver)0;
         receiver.Position = pixel.VisibilityDepth == 2u ? pixel.PositionFromDepth : surface.Position;
         receiver.Depth = pixel.Depth;
-        receiver.ShadingNormal = normalize(tangent * normalTS.x + bitangent * normalTS.y + baseNormal * normalTS.z);
         receiver.GeometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
             triangle.Position2 - triangle.Position0), baseNormal);
         if (dot(receiver.GeometricNormal, baseNormal) < 0.0) receiver.GeometricNormal = -receiver.GeometricNormal;
         receiver.Flags = SURFACE_RECEIVER_LIGHTING;
+        return receiver;
+    }
+
+    Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
+        Triangle triangle, out SurfaceReceiver receiver)
+    {
+        Data data = evaluateNormalSurface(pixel, surface, bary, triangle, receiver);
+        if (pixel.DebugMode != 0u)
+        {
+            if (pixel.DebugMode == 8u) data.BaseColor = evaluateDebugColor<8>(pixel, surface, bary, triangle);
+            else if (pixel.DebugMode == 9u) data.BaseColor = evaluateDebugColor<9>(pixel, surface, bary, triangle);
+            else if (pixel.DebugMode == 10u) data.BaseColor = evaluateDebugColor<10>(pixel, surface, bary, triangle);
+            else if (pixel.DebugMode == 11u) data.BaseColor = evaluateDebugColor<11>(pixel, surface, bary, triangle);
+            else data.BaseColor = float3(1,0,1);
+        }
+        return data;
+    }
+
+    [ForceInline]
+    SurfaceReceiver evaluateFullReceiver(SurfacePixel pixel, SurfaceEval surface, float3 bary,
+        Triangle triangle, StandardScalars scalars)
+    {
+        float3 baseNormal = normalize(surface.Normal);
+        float3 tangent = normalize(surface.Tangent.xyz - baseNormal * dot(baseNormal, surface.Tangent.xyz));
+        float3 bitangent = cross(baseNormal, tangent) * surface.Tangent.w;
+        float3 normalTS = sampleNormal(surface.TexCoord, scalars);
+        SurfaceReceiver receiver = evaluateShadowReceiver(pixel, surface, bary, triangle);
+        receiver.ShadingNormal = normalize(tangent * normalTS.x + bitangent * normalTS.y + baseNormal * normalTS.z);
         ClusterViewUniforms surfaceView = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties,
             pixel.InstanceID, Views[pixel.PixelCoord.z]);
         float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
         receiver.DepthOffset = pixel.VisibilityDepth == 2u ? pixel.Depth - sourceClip.z / sourceClip.w : 0.0;
+        return receiver;
+    }
+
+    [ForceInline]
+    Data evaluateNormalSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
+        Triangle triangle, out SurfaceReceiver receiver)
+    {
+        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(pixel.MaterialIndex);
+        receiver = evaluateFullReceiver(pixel, surface, bary, triangle, scalars);
         float4 albedo = StandardMaterialTextures[NonUniformResourceIndex(scalars.AlbedoMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0);
         float3 arm = StandardMaterialTextures[NonUniformResourceIndex(scalars.ARMMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb;
         Data data;
@@ -93,23 +124,75 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         data.Emissive = scalars.EmissiveFactor;
         data.Roughness = max(saturate(arm.g * scalars.Roughness), .04);
         data.Occlusion = arm.r;
-        data.DebugColor = float3(1,0,1);
-        if (pixel.DebugMode == 8u) data.DebugColor = bary;
-        if (pixel.DebugMode == 9u)
-            data.DebugColor = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, pixel.InstanceID,
+        return data;
+    }
+
+    [ForceInline]
+    float3 evaluateDebugColor<let debugMode : uint>(SurfacePixel pixel, SurfaceEval surface,
+        float3 bary, Triangle triangle)
+    {
+        float3 color;
+        float3 baseNormal = normalize(surface.Normal);
+        color = float3(1,0,1);
+        if (debugMode == 8u) color = bary;
+        if (debugMode == 9u)
+            color = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, pixel.InstanceID,
                 Views[pixel.PixelCoord.z], baseNormal) * .5 + .5;
-        if (pixel.DebugMode == 10u)
+        if (debugMode == 10u)
         {
             float checker = step(.5, frac(surface.TexCoord.x * 8)) != step(.5, frac(surface.TexCoord.y * 8)) ? .8 : .2;
-            data.DebugColor = float3(surface.TexCoord, checker);
+            color = float3(surface.TexCoord, checker);
         }
-        if (pixel.DebugMode == 11u) data.DebugColor = abs(surface.Position - EvalLinearPosition(triangle, bary)) * 3;
+        if (debugMode == 11u) color = abs(surface.Position - EvalLinearPosition(triangle, bary)) * 3;
+        return color;
+    }
+
+    [ForceInline]
+    Data evaluateSurfaceMode<let debugMode : uint, let completeReceiver : bool>(
+        SurfacePixel pixel, SurfaceEval surface, float3 bary, Triangle triangle, out SurfaceReceiver receiver)
+    {
+        if (debugMode == 0u)
+            return evaluateNormalSurface(pixel, surface, bary, triangle, receiver);
+        receiver = (SurfaceReceiver)0;
+        if (completeReceiver)
+        {
+            StandardScalars scalars = LoadMaterialScalars<StandardScalars>(pixel.MaterialIndex);
+            receiver = evaluateFullReceiver(pixel, surface, bary, triangle, scalars);
+        }
+        Data data = (Data)0;
+        data.BaseColor = evaluateDebugColor<debugMode>(pixel, surface, bary, triangle);
         return data;
     }
 
     float4 shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver)
     {
-        if (debugMode != 0u) return float4(data.DebugColor,1);
+        if (debugMode != 0u) return float4(data.BaseColor, 1);
+        return shadeMaterial<false>(pixelCoord, data, receiver);
+    }
+
+    float4 shadeForwardSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver)
+    {
+        if (debugMode != 0u) return float4(data.BaseColor, 1);
+        return shadeMaterial<true>(pixelCoord, data, receiver);
+    }
+
+    [ForceInline]
+    float4 shadeSurfaceMode<let debugMode : uint>(uint3 pixelCoord, Data data, SurfaceReceiver receiver)
+    {
+        if (debugMode != 0u) return float4(data.BaseColor, 1);
+        return shadeMaterial<false>(pixelCoord, data, receiver);
+    }
+
+    [ForceInline]
+    float4 shadeForwardSurfaceMode<let debugMode : uint>(uint3 pixelCoord, Data data, SurfaceReceiver receiver)
+    {
+        if (debugMode != 0u) return float4(data.BaseColor, 1);
+        return shadeMaterial<true>(pixelCoord, data, receiver);
+    }
+
+    [ForceInline]
+    float4 shadeMaterial<let forwardShadows : bool>(uint3 pixelCoord, Data data, SurfaceReceiver receiver)
+    {
         float3 mappedNormal = receiver.ShadingNormal;
         float3 baseColor = data.BaseColor;
         float roughness = data.Roughness;
@@ -130,8 +213,14 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             GPULight light = LightBuffer[lightIndex];
             if (dot(mappedNormal, -light.Direction) <= 0.0)
                 continue;
-            float shadow = ReadVirtualShadowProjectedVisibility(pixelCoord, lightIndex,
-                uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount));
+            float shadow;
+            if (forwardShadows)
+                shadow = EvaluateVirtualShadowForwardVisibility(pixelCoord, lightIndex, light, receiver,
+                    uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount),
+                    Views[pixelCoord.z], DepthBuffer);
+            else
+                shadow = ReadVirtualShadowProjectedVisibility(pixelCoord, lightIndex,
+                    uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount));
             finalColor += EvaluateDirectionalLight(
                 baseColor,
                 metallic,
@@ -163,8 +252,14 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             if (spotLight && EvaluateSpotCone(toLight * rsqrt(max(distanceSq, MIN_DISTANCE_SQ)),
                     light.Direction, light.InnerConeCos, light.OuterConeCos) <= 0.0)
                 continue;
-            float shadow = ReadVirtualShadowProjectedVisibility(pixelCoord, lightIndex,
-                uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount));
+            float shadow;
+            if (forwardShadows)
+                shadow = EvaluateVirtualShadowForwardVisibility(pixelCoord, lightIndex, light, receiver,
+                    uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount),
+                    Views[pixelCoord.z], DepthBuffer);
+            else
+                shadow = ReadVirtualShadowProjectedVisibility(pixelCoord, lightIndex,
+                    uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount));
             float3 radiance = light.Color * (light.Intensity * shadow);
             if (spotLight)
             {

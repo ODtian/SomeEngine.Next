@@ -445,14 +445,16 @@ public sealed partial class ClusterPipelineSystem
                 }
             }
         frame.SurfaceDataStride = shadeStages.SurfaceDataStride;
-        frame.MaterialSurfaces = graph.CreateBuffer(new BufferDesc(checked((ulong)width * (ulong)height * viewCount * frame.SurfaceDataStride),
+        frame.MaterialSurfaces = graph.CreateBuffer(new BufferDesc(Math.Max(sizeof(uint), checked((ulong)width * (ulong)height * viewCount * frame.SurfaceDataStride)),
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Cluster material surfaces"));
         frame.SurfaceReceivers = graph.CreateBuffer(new BufferDesc(checked((ulong)width * (ulong)height * viewCount * SurfaceReceiver.SizeInBytes),
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, "Cluster surface receivers"));
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination |
+            (_options.ExportSurfaceReceivers ? BufferUsages.CopySource : BufferUsages.None), "Cluster surface receivers"));
         frame.AdditionalReceiverLayerCount = shadeStages.HasAdditionalReceivers ? 3u : 0u;
         frame.AdditionalSurfaceReceivers = graph.CreateBuffer(new BufferDesc(
             Math.Max((ulong)SurfaceReceiver.SizeInBytes, checked((ulong)width * (ulong)height * viewCount * SurfaceReceiver.SizeInBytes * frame.AdditionalReceiverLayerCount)),
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, "Cluster additional surface receivers"));
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination |
+            (_options.ExportSurfaceReceivers ? BufferUsages.CopySource : BufferUsages.None), "Cluster additional surface receivers"));
         frame.SceneColor = graph.CreateTexture(new TextureDesc(
                 TextureDimension.Texture2D,
                 checked((uint)width),
@@ -606,7 +608,7 @@ public sealed partial class ClusterPipelineSystem
         {
             frame.SurfaceDataStride = surfaceStride;
             SetStageBuffer(ref graph, frame.MaterialSurfaces,
-                checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount * surfaceStride),
+                Math.Max(sizeof(uint), checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount * surfaceStride)),
                 BufferUsages.None, "Cluster material surfaces");
         }
         uint additionalLayers = shadeStages.HasAdditionalReceivers ? 3u : 0u;
@@ -615,7 +617,7 @@ public sealed partial class ClusterPipelineSystem
             frame.AdditionalReceiverLayerCount = additionalLayers;
             SetStageBuffer(ref graph, frame.AdditionalSurfaceReceivers,
                 Math.Max((ulong)SurfaceReceiver.SizeInBytes, checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount * SurfaceReceiver.SizeInBytes * additionalLayers)),
-                BufferUsages.None, "Cluster additional surface receivers");
+                _options.ExportSurfaceReceivers ? BufferUsages.CopySource : BufferUsages.None, "Cluster additional surface receivers");
             GraphData.Outputs = GraphData.Outputs with { AdditionalReceiverLayerCount = additionalLayers };
         }
 
