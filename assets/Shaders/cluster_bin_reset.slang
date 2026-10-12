@@ -19,8 +19,12 @@ void ResetBins(uint3 threadId : SV_DispatchThreadID)
     CullDrawArgs args = LoadCullDrawArgs(DrawArgs, 0u);
     uint clusterCount = args.SWCount + args.HWCount;
     ClearRaster(RasterBinMeta, threadId.x, Uniforms.RasterMaxBins);
-    if (Uniforms.DepthBucketsEnabled != 0u && threadId.x < Uniforms.RasterMaxBins)
-        for (uint bucket = 0u; bucket < 512u; bucket++) DepthBuckets[threadId.x * 512u + bucket] = 0u;
+    if (Uniforms.DepthBucketsEnabled != 0u)
+    {
+        uint threadCount = ((Uniforms.RasterMaxBins + 63u) / 64u) * 64u;
+        for (uint bucket = threadId.x; bucket < Uniforms.RasterMaxBins * 512u; bucket += threadCount)
+            DepthBuckets[bucket] = 0u;
+    }
     else if (Uniforms.DepthBucketsEnabled == 0u && threadId.x == 0u)
         DepthBuckets[0] = 0u;
     if (threadId.x != 0u)
