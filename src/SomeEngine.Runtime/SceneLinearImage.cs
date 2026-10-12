@@ -65,16 +65,14 @@ public sealed record SceneLinearImage(SceneFrame Frame, ReadOnlyMemory<Half> Pix
             BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(channel * 2),
                 BitConverter.HalfToUInt16Bits(Pixels.Span[channel]));
         using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write)) file.Write(bytes);
-        File.WriteAllText(path + ".json", JsonSerializer.Serialize(Frame,
-            new JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));
+        File.WriteAllText(path + ".json", JsonSerializer.Serialize(Frame, SceneFrameJsonContext.Default.SceneFrame));
     }
 
     /// <summary>Loads retained color and frame inputs without a graphics device.</summary>
     public static SceneLinearImage Load(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        SceneFrame frame = JsonSerializer.Deserialize<SceneFrame>(File.ReadAllText(path + ".json"),
-            new JsonSerializerOptions { IncludeFields = true }) ?? throw new InvalidDataException("Missing frame inputs.");
+        SceneFrame frame = JsonSerializer.Deserialize(File.ReadAllText(path + ".json"), SceneFrameJsonContext.Default.SceneFrame) ?? throw new InvalidDataException("Missing frame inputs.");
         byte[] bytes = File.ReadAllBytes(path);
         if (frame.Width <= 0 || frame.Height <= 0 || bytes.Length != checked(frame.Width * frame.Height * 8))
             throw new InvalidDataException("Linear color dimensions do not match its frame inputs.");
