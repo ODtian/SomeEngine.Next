@@ -112,6 +112,7 @@ public class ClusterBuilderTests
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
         Assert.True(header.ClusterCount > 0);
         Assert.True(header.TotalVertexCount > 0);
+        Assert.True(AssertHierarchyBoundsContainChildren(asset) > 0);
     }
 
     [Fact]
@@ -359,6 +360,77 @@ public class ClusterBuilderTests
         Assert.NotNull(asset.GetBlock<SomeEngine.Assets.Schema.MeshBlock>().Regions);
         Assert.Single(asset.GetBlock<SomeEngine.Assets.Schema.MeshBlock>().Regions);
         Assert.Equal("region_0", asset.GetBlock<SomeEngine.Assets.Schema.MeshBlock>().Regions[0].Name);
+    }
+
+    [Fact]
+    public void ProcessRaw_HierarchyBoundsRetainAdjacentFloatEndpoints()
+    {
+        float low = MathF.BitIncrement(1f);
+        float high = MathF.BitIncrement(low);
+        float oldCenter = (low + high) * .5f;
+        float oldExtent = (high - low) * .5f;
+        Assert.True(oldCenter - oldExtent > low);
+        Check(low, high);
+        Check(-float.Epsilon, 1f);
+
+        static void Check(float low, float high)
+        {
+            using var asset = ClusterBuilder.ProcessRaw(
+                [new Vector3(low, 0, 0), new Vector3(high, 1, 0), new Vector3(low, 0, 1)],
+                new List<RawAttribute>(), [0u, 1u, 2u], ClusterBuilderTestMaterials.Slots(),
+                "Adjacent float hierarchy", new SentinelVertexEncoder());
+            AssertHierarchyBoundsContainChildren(asset);
+        }
+    }
+
+    private static int AssertHierarchyBoundsContainChildren(SomeEngine.Assets.Schema.MeshAsset asset)
+    {
+        var block = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>();
+        byte[] payload = block.Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey].ToArray();
+        ReadOnlySpan<ClusterBVHNode> nodes = MemoryMarshal.Cast<byte, ClusterBVHNode>(
+            payload.AsSpan(checked((int)block.BvhOffset), checked((int)block.BvhLength)));
+        int branches = 0, leaves = 0;
+        foreach (ref readonly ClusterBVHNode node in nodes)
+        for (int child = 0; child < ClusterBVHNode.ChildCount; child++)
+        {
+            ClusterHierarchySlice parent = node.GetChild(child);
+            if (!parent.IsEnabled) continue;
+            if (!parent.IsLeaf)
+            {
+                branches++;
+                ClusterBVHNode descendants = nodes[checked((int)parent.ChildReference)];
+                for (int index = 0; index < ClusterBVHNode.ChildCount; index++)
+                {
+                    ClusterHierarchySlice descendant = descendants.GetChild(index);
+                    if (descendant.IsEnabled) Contains(parent, descendant.BoundsCenter - descendant.BoundsExtent,
+                        descendant.BoundsCenter + descendant.BoundsExtent);
+                }
+                continue;
+            }
+            leaves++;
+            int pageOffset = checked((int)block.PageDigests[checked((int)(parent.ChildReference >> 8))].Offset);
+            MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(payload.AsSpan(pageOffset));
+            ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(
+                payload.AsSpan(pageOffset + checked((int)header.ClustersOffset),
+                    checked((int)header.ClusterCount * PackedCluster.SizeInBytes)));
+            for (uint cluster = parent.FirstCluster; cluster < parent.FirstCluster + parent.ClusterCount; cluster++)
+                Contains(parent, clusters[(int)cluster].BoundMin, clusters[(int)cluster].BoundMax);
+        }
+        Assert.True(leaves > 0);
+        return branches;
+
+        static void Contains(ClusterHierarchySlice parent, Vector3 low, Vector3 high)
+        {
+            Vector3 reconstructedLow = parent.BoundsCenter - parent.BoundsExtent;
+            Vector3 reconstructedHigh = parent.BoundsCenter + parent.BoundsExtent;
+            for (int axis = 0; axis < 3; axis++)
+            {
+                Assert.True(reconstructedLow[axis] <= low[axis],
+                    $"Parent minimum {reconstructedLow[axis]:R} exceeds child {low[axis]:R}.");
+                Assert.True(reconstructedHigh[axis] >= high[axis],
+                    $"Parent maximum {reconstructedHigh[axis]:R} precedes child {high[axis]:R}.");
+            }
+        }
     }
 
     private static List<DecodedStandardVertex> DecodeStandardVertices(

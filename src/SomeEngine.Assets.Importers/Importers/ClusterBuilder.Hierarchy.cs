@@ -36,11 +36,12 @@ public static partial class ClusterBuilder
             var range = pageRanges[initial.ParentGroupId];
             if (range.Last - range.First + 1 > 31)
                 throw new InvalidDataException("A cluster group exceeds the Native page range count.");
+            EncodeHierarchyBounds(min, max, out Vector3 center, out Vector3 extent);
             var slice = new ClusterHierarchySlice
             {
                 LODBounds = initial.LODSphere,
-                BoundsCenter = (min + max) * .5f,
-                BoundsExtent = (max - min) * .5f,
+                BoundsCenter = center,
+                BoundsExtent = extent,
                 ChildReference = (initial.PageIndex << 8) | initial.ClusterStart,
                 PageRangeKey = (range.First << 5) | (range.Last - range.First + 1) | (range.Last >= 1 ? 0x40000000u : 0u),
                 GroupPartData = ((uint)(end - first) << 16) | 0xFFFFu,
@@ -169,13 +170,42 @@ public static partial class ClusterBuilder
             minError = Math.Min(minError, value.MinLODError);
             maxError = Math.Max(maxError, value.MaxParentLODError);
         }
+        EncodeHierarchyBounds(min, max, out Vector3 center, out Vector3 extent);
         var result = new HierarchyBranch { Children = children, Slice = new ClusterHierarchySlice
         {
-            LODBounds = sphere, BoundsCenter = (min + max) * .5f, BoundsExtent = (max - min) * .5f,
+            LODBounds = sphere, BoundsCenter = center, BoundsExtent = extent,
             PageRangeKey = uint.MaxValue, GroupPartData = (511u << 16) | 0xFFFFu,
         } };
         result.Slice.SetErrors(minError, maxError);
         return result;
+    }
+
+    // The stored float center may move away from the exact midpoint. Compute the
+    // radius from that stored center, then round outward so reconstructing either
+    // endpoint in float cannot lose a source cluster or a child hierarchy bound.
+    private static void EncodeHierarchyBounds(Vector3 min, Vector3 max,
+        out Vector3 center, out Vector3 extent)
+    {
+        center = new(
+            (float)(((double)min.X + max.X) * .5),
+            (float)(((double)min.Y + max.Y) * .5),
+            (float)(((double)min.Z + max.Z) * .5));
+        extent = new(
+            Radius(min.X, max.X, center.X),
+            Radius(min.Y, max.Y, center.Y),
+            Radius(min.Z, max.Z, center.Z));
+
+        static float Radius(float low, float high, float center)
+        {
+            double required = Math.Max((double)center - low, (double)high - center);
+            float rounded = (float)required;
+            if (rounded < required) rounded = MathF.BitIncrement(rounded);
+            // A very small endpoint can disappear even in the double subtraction.
+            // Verify the actual stored-float reconstruction as the final contract.
+            if (center - rounded > low || center + rounded < high)
+                rounded = MathF.BitIncrement(rounded);
+            return rounded;
+        }
     }
 
     private static uint EncodeHierarchy(HierarchyBranch branch, List<ClusterBVHNode> nodes)
