@@ -250,10 +250,13 @@ void MarkVirtualShadowReceiverPixel(uint2 pixel, uint requiredPrimaryFlags = 0u,
 
     // Each directional family starts at face zero; regular and FP families
     // have independent level ranges and the same light index.
-    for (uint baseViewIndex = 0u; baseViewIndex < PageDemand.ViewCount; baseViewIndex++)
+    for (uint baseViewIndex = 0u, familyLevels = 1u; baseViewIndex < PageDemand.ViewCount; baseViewIndex += familyLevels)
     {
-        if (ShadowViews[baseViewIndex].LightKind != VSM_LIGHT_DIRECTIONAL || ShadowViews[baseViewIndex].FaceIndex != 0u) continue;
+        familyLevels = 1u;
         VirtualShadowMapParameters baseView = ShadowViews[baseViewIndex];
+        if (baseView.LightKind != VSM_LIGHT_DIRECTIONAL || baseView.FaceIndex != 0u) continue;
+        // Directional families contain contiguous levels; only their first view publishes requests.
+        familyLevels = baseView.ClipmapLevelCount;
         for (uint layer = 0u; layer < PageDemand.AdditionalReceiverLayerCount; layer++)
         {
             SurfaceReceiver extra = AdditionalReceiverInputs[layer * PageDemand.ReceiverWidth * PageDemand.ReceiverHeight + receiverIndex];

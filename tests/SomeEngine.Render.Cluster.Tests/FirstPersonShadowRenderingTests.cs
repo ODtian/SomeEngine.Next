@@ -16,8 +16,8 @@ public sealed class FirstPersonShadowRenderingTests
         var options = new ClusterPipelineOptions { MaxCandidates = 65536, ForceHardwareRaster = true,
             EnableFrameMetricsReadback = true };
         var settings = new VirtualShadowMapSettings { VirtualResolution = 4096, AtlasSize = 2048,
-            MaxShadowLights = 1, DirectionalFirstClipmapLevel = 10, DirectionalClipmapLevels = 1,
-            FirstPersonFirstClipmapLevel = 10, FirstPersonLastClipmapLevel = 10, DirectionalMinCameraViewportWidth = 2048,
+            MaxShadowLights = 1, DirectionalFirstClipmapLevel = 10, DirectionalClipmapLevels = 3,
+            FirstPersonFirstClipmapLevel = 10, FirstPersonLastClipmapLevel = 12, DirectionalMinCameraViewportWidth = 2048,
             DirectionalCoarsePageMode = VirtualShadowCoarsePageMode.Disabled,
             DirectionalReceiverMask = false, DirectionalResolutionLodBias = 0, DirectionalMovingResolutionLodBias = 0,
             MaxFilterRadiusTexels = 0, DynamicResolutionEnabled = false };
