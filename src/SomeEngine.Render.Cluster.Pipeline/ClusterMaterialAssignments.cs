@@ -125,6 +125,41 @@ public sealed class ClusterMaterialAssignmentSet
         return result;
     }
 
+    // Published sets share persistent dictionaries. Revisions are captured values, so a
+    // later edit to the same Material still changes _values without mutating older sets.
+    internal ClusterMaterialAssignmentSet ChangesSince(ClusterMaterialAssignmentSet? previous)
+    {
+        if (previous is not null && ReferenceEquals(_entries, previous._entries) &&
+            ReferenceEquals(_values, previous._values))
+            return _changes.IsEmpty && _changedOffsets.IsEmpty ? this : WithoutChanges();
+
+        var result = new ClusterMaterialAssignmentSet(this);
+        var materials = ImmutableHashSet.CreateBuilder<long>();
+        var offsets = ImmutableHashSet.CreateBuilder<int>();
+        if (previous is null || !ReferenceEquals(_values, previous._values))
+        {
+            foreach (var pair in _values)
+                if (previous is null || !previous._values.TryGetValue(pair.Key, out var before) ||
+                    !ReferenceEquals(pair.Value.Resource, before.Resource) || pair.Value.Revision != before.Revision)
+                    materials.Add(pair.Key);
+            if (previous is not null)
+                foreach (long id in previous._values.Keys)
+                    if (!_values.ContainsKey(id)) materials.Add(id);
+        }
+        if (previous is null || !ReferenceEquals(_entries, previous._entries))
+        {
+            foreach (var pair in _entries)
+                if (previous is null || !previous._entries.TryGetValue(pair.Key, out var before) || pair.Value != before)
+                    offsets.Add(pair.Key);
+            if (previous is not null)
+                foreach (int offset in previous._entries.Keys)
+                    if (!_entries.ContainsKey(offset)) offsets.Add(offset);
+        }
+        result._changes = materials.ToImmutable();
+        result._changedOffsets = offsets.ToImmutable();
+        return result;
+    }
+
     internal void Resolve(ReadOnlySpan<Entity> entities, Span<uint> destination)
     {
         if (destination.Length != entities.Length)

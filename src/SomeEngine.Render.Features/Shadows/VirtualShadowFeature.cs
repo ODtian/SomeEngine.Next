@@ -218,7 +218,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             {
                 _viewUploadRegion = edit.AddFrameRegion("Virtual shadow view upload", primaryDepthAfter);
                 _blueNoiseInput = edit.CreateParameterInput(ResourceBindingType.TextureSrv);
-                _geometry.ConfigureSurfaceReceivers(edit.AddRegion("Virtual shadow surface receivers", primaryDepthAfter));
+                _geometry.ConfigureSurfaceReceivers(edit, edit.AddRegion("Virtual shadow surface receivers", primaryDepthAfter));
                 ulong pageBytes = checked((ulong)settings.MaxPhysicalPages * sizeof(uint));
                 _pageOwners = edit.DeclareExternalBuffer(new BufferDesc(
                     pageBytes,

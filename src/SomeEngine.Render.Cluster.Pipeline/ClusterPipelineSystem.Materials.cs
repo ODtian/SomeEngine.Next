@@ -119,6 +119,8 @@ public sealed partial class ClusterPipelineSystem
         }
     }
 
+    private ClusterMaterialAssignmentSet? _consumedMaterialAssignments;
+
     private bool CollectMaterialChanges(ClusterMaterialAssignmentSet assignments)
     {
         foreach (Material material in assignments.ChangedMaterials)
@@ -127,7 +129,7 @@ public sealed partial class ClusterPipelineSystem
         return false;
     }
 
-    private void AcceptMaterialChanges(ClusterMaterialAssignmentSet assignments)
+    private void AcceptMaterialChanges(ClusterMaterialAssignmentSet assignments, ClusterMaterialAssignmentSet source)
     {
         foreach (long id in assignments.ChangedMaterialIds)
         {
@@ -143,7 +145,8 @@ public sealed partial class ClusterPipelineSystem
                 properties[property] = material.GetPropertyRevision(property);
             _materialBindingVersions[id] = new(material.Shader, properties);
         }
-        _materialAssignments.AcceptMaterialChanges(assignments);
+        _consumedMaterialAssignments = assignments;
+        _materialAssignments.AcceptMaterialChanges(source);
     }
 
     private static bool BindInactiveStageResource(

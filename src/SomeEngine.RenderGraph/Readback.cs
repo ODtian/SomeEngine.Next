@@ -105,6 +105,16 @@ public ref partial struct RenderGraphFrame
 
 internal sealed partial class RenderGraphFrameState
 {
+    private readonly HashSet<GraphIdentity> _savedReadbacks = [];
+
+    internal bool TryGetReadbackCompletion(GraphReadbackId readback, out QueueCompletion completion)
+    {
+        if (_savedReadbacks.Contains(readback.Value))
+            return TryGetPassCompletion(new GraphPassId(readback.Value), out completion);
+        completion = default;
+        return false;
+    }
+
     private readonly Dictionary<ReadbackCommands, (GraphPassId Pass, GraphBufferSlice Destination, ulong Tag)> _readbacks = [];
 
     internal void SetReadbackTag(GraphReadbackId readback, ulong tag)
@@ -157,6 +167,7 @@ internal sealed partial class RenderGraphFrameState
             Buffer buffer = _dynamicBuffers[data.Destination.Buffer.Value.Slot].Resource!;
             Slot.GetBufferTransfers(Graph).AddReadbackResult(buffer, data.Destination.Range,
                 commands.Description.Receiver, data.Tag);
+            _savedReadbacks.Add(data.Pass.Value);
         }
     }
 }

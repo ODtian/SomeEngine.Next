@@ -722,10 +722,10 @@ public sealed partial class ClusterPipelineSystem
         GraphData.Outputs = GraphData.Outputs with { CurrentHiZ = frame.HiZ[current] };
     }
 
-    private void RecordResidencyUploads(ref RenderGraphFrame graph, in ClusterRenderBinding binding)
+    private void RecordResidencyUploads(ref RenderGraphFrame graph, in ClusterRenderBinding binding, bool writeGeometry)
     {
-        BindLeafFlagFixups(ref graph, binding.Publication);
-        if (binding.Publication is not { } publication) return;
+        BindLeafFlagFixups(ref graph, writeGeometry ? binding.Publication : null);
+        if (!writeGeometry || binding.Publication is not { } publication) return;
         foreach (ClusterStagedUpload upload in publication.Meshes.PageUploads)
             graph.WriteBuffer(GraphData.Resources.PageHeap, upload.Offset, upload.Bytes.Span);
         foreach (ClusterStagedUpload upload in publication.Meshes.Bvh.Uploads)

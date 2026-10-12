@@ -1535,6 +1535,7 @@ internal sealed partial class RenderGraphFrameState
     {
         ClearBufferUploads();
         _readbacks.Clear();
+        _savedReadbacks.Clear();
         foreach (GraphIdentity id in _bufferData.Keys) _executor.ChangeBuffer(id, refreshViews: false);
         _bufferData.Clear();
         foreach (FramePassCallbackStore callbackStore in _callbackStores.Values) callbackStore.Reset();

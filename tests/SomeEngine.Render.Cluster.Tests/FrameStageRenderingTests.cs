@@ -76,7 +76,7 @@ public sealed class FrameStageRenderingTests
 
 // Full Cluster shading requires the hardware adapter's SM 6.6 and indirect command support.
 // All observations use the public texture output, graph copy commands and buffer mapping.
-internal sealed class FrameStageScene : IAsyncDisposable
+internal sealed partial class FrameStageScene : IAsyncDisposable
 {
     private const int Width = 64;
     private const int Height = 64;
@@ -248,6 +248,8 @@ internal sealed class FrameStageScene : IAsyncDisposable
                     0, 0, 0, Width, Height, 1)), region: imageReadbackRegion);
         edit.Commit();
         _completions = new QueueCompletion[_graph.MaximumQueueCompletionCount];
+        InitializeAdditionalViews(assignments, instanceSystem, clusterShaders, resources,
+            new ClusterGraphRegions(primary, target, shading, feedbackRegion));
     }
 
     internal static async Task<FrameStageScene> CreateAsync(string backendName, bool shadows,
@@ -566,10 +568,14 @@ internal sealed class FrameStageScene : IAsyncDisposable
         }
         _shadows.ReconcileLights(_lightSystem.RequireCurrent());
         _pipeline.ReconcileGraph();
+        _additionalPipeline?.ReconcileGraph();
         Assert.True(_dataLock.TryBeginRead(out var frame));
         using (frame)
         using (RenderGraphFrame commands = _graph.BeginFrame(nextFrame))
+        {
             _frames.Update(frame, commands);
+            _additionalFrames?.Update(frame, commands);
+        }
     }
 
     private async Task RenderAsync(bool postProcessedColor = false)
@@ -612,6 +618,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
         }
         _shadows.ReconcileLights(_lightSystem.RequireCurrent());
         ClusterPipelineOutputs outputs = _pipeline.ReconcileGraph();
+        _additionalPipeline?.ReconcileGraph();
         Assert.True(_dataLock.TryBeginRead(out var frame));
         using (frame)
         using (RenderGraphFrame commands = _graph.BeginFrame(nextFrame, new RenderGraphFrameOptions(
@@ -622,6 +629,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
             })))
         {
             _frames.Update(frame, commands);
+            _additionalFrames?.Update(frame, commands);
             commands.SetRegionEnabled(_feedbackRegion, _feedbackEnabled);
             if (_completedFrameReadback is { } completedFrameReadback)
                 commands.SetReadbackTag(completedFrameReadback, commands.FrameIdentity);
@@ -632,7 +640,9 @@ internal sealed class FrameStageScene : IAsyncDisposable
                 new MotionFeatureOutput(outputs.MotionVectors, Width, Height, 1),
                 TemporalResolveSettings.Default, cameraCut: true, view: _view);
             commands.SetTextureInput(_readbackDepth, outputs.Depth);
-            commands.SetTextureInput(_readbackColor, postProcessedColor ? _temporal.Output.ResolvedColor : outputs.MaterialColor);
+            commands.SetTextureInput(_readbackColor, _readbackPipeline is { } colorPipeline
+                ? colorPipeline.Outputs.MaterialColor
+                : postProcessedColor ? _temporal.Output.ResolvedColor : outputs.MaterialColor);
             var executionFrame = commands;
             if (_executionReceiver is not null) executionFrame.ObserveExecution(_executionReceiver);
             ulong identity = commands.FrameIdentity;
@@ -686,6 +696,7 @@ internal sealed class FrameStageScene : IAsyncDisposable
 
     public ValueTask DisposeAsync()
     {
+        CloseAdditionalView();
         _graph.Dispose();
         _frames.Dispose();
         _temporal.Dispose();

@@ -84,7 +84,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ViewCollector _viewCollector = new();
     private ulong _metricFrameIndex;
     private ClusterFrameMetrics? _latestFrameMetrics;
-    private ClusterResidencyPublication? _pendingResidencyPublication;
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
     private bool _hasPendingFrame;
     private bool _created;
@@ -131,11 +130,12 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _stagedHasPreviousView = new bool[_stagedViews.Length];
         _stagedPolicies = new uint[_stagedViews.Length];
         _stagedPolicyViewIndices = new uint[_stagedViews.Length];
-        _regions = regions;
         using RenderGraphEdit edit = graph.BeginEdit();
-        _targetPhaseOneRegion = edit.AddRegion("Cluster target first geometry", regions.TargetGeometry);
-        IntermediateOcclusionRegion = edit.AddRegion("Cluster target intermediate occlusion", regions.TargetGeometry);
-        _targetPhaseTwoRegion = edit.AddRegion("Cluster target second geometry", regions.TargetGeometry);
+        RenderGraphEdit graphEdit = edit;
+        _regions = CreateGraphRegions(ref graphEdit, regions);
+        _targetPhaseOneRegion = edit.AddRegion("Cluster target first geometry", _regions.TargetGeometry);
+        IntermediateOcclusionRegion = edit.AddRegion("Cluster target intermediate occlusion", _regions.TargetGeometry);
+        _targetPhaseTwoRegion = edit.AddRegion("Cluster target second geometry", _regions.TargetGeometry);
         edit.Commit();
     }
 
@@ -348,7 +348,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         if (!_created)
             throw new InvalidOperationException("The Cluster pipeline was not created.");
-        ClusterMaterialAssignmentSet assignments = _materialAssignments.Current;
+        if (_graphRemoved)
+            throw new InvalidOperationException("The Cluster graph has been uninstalled.");
+        ClusterMaterialAssignmentSet sourceAssignments = _materialAssignments.Current;
+        ClusterMaterialAssignmentSet assignments = sourceAssignments.ChangesSince(_consumedMaterialAssignments);
         RefreshMaterialTextures();
         if (_graphInstalled && _resources.GeometryPageCount > GraphData.Resources.PagePriorityCapacity)
             EditGraph((ref RenderGraphEdit edit) => GrowPageRequestPriorities(ref edit));
@@ -373,7 +376,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             }
             _textureScalarChanges.Clear();
             RecordMaterialCasterChanges(assignments);
-            AcceptMaterialChanges(assignments);
+            AcceptMaterialChanges(assignments, sourceAssignments);
             if (materialDepthChanged) _rasterRevision = checked(_rasterRevision + 1);
             return GraphData.Outputs;
         }
@@ -433,7 +436,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _textureScalarChanges.Clear();
         _installedMaterialTopologyVersion = assignments.TopologyVersion;
         RecordMaterialCasterChanges(assignments);
-        AcceptMaterialChanges(assignments);
+        AcceptMaterialChanges(assignments, sourceAssignments);
         _installedRasterStages = rasterStages;
         _installedShadeStages = shadeStages;
         _rasterStages!.AcceptChanges();
@@ -539,6 +542,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             context.ReadScope,
             batch,
             _instanceLayout);
+        RenderGraphFrame graph = context.Graph;
+        bool writeGeometry = BeginGeometryFrame(ref graph, binding.Publication);
         ClusterCullingHistory history = _history ?? throw new InvalidOperationException(
             "The Cluster culling history was not created.");
         bool historyPrepared = false;
@@ -617,12 +622,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 }
             }
 
-            _pendingResidencyPublication = binding.Publication;
             GraphData.Outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRange);
             _residentPageReads = GraphData.Outputs.Geometry.ResidentPageReads;
             _hasPendingFrame = true;
 
-            RenderGraphFrame graph = context.Graph;
             graph.ObserveExecution(this);
             graph.SetReadbackTag(GraphData.PageFaultReadback, graph.FrameIdentity);
             if (_options.EnableFrameMetricsReadback)
@@ -647,7 +650,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             using (SomeEngine.Diagnostics.EngineTrace.Begin(SceneBoundsTrace))
                 BindSceneBounds(ref graph, context.World, batch, policyViewCount != 0, views[0].WorldOrigin);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyUploadsTrace))
-                RecordResidencyUploads(ref graph, in binding);
+                RecordResidencyUploads(ref graph, in binding, writeGeometry);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyReadsTrace))
                 DeclareResidencyReads(ref graph, in binding);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(FrameUploadsTrace))
@@ -698,8 +701,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         }
         catch
         {
-            if (binding.Publication is { } publication)
-                _resources.RetainResidencyPublication(publication);
             if (historyPrepared)
                 history.Discard();
             ClearPendingFrame();
@@ -881,20 +882,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _sceneGeometryRevision = GeometryRevision;
                 _sceneOrigin = _frameSceneOrigin;
             }
-            if (_pendingResidencyPublication is { } publication)
-            {
-                bool uploaded = true;
-                if (publication.Meshes.PageUploads.Length != 0)
-                    uploaded &= result.TryGetPassCompletion(GraphData.PageUpload, out _);
-                if (publication.Meshes.Bvh.Uploads.Length != 0)
-                    uploaded &= result.TryGetPassCompletion(GraphData.BvhUpload, out _);
-                if (publication.Meshes.LeafFlagFixups.Length != 0)
-                    uploaded &= result.TryGetPassCompletion(GraphData.LeafFlagPass, out _);
-                if (uploaded)
-                    _resources.CommitResidencyPublication(publication, CaptureRetirementCompletions(publication));
-                else
-                    _resources.RetainResidencyPublication(publication);
-            }
         }
         finally { ClearPendingFrame(); }
     }
@@ -903,8 +890,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private void Discard()
     {
         if (!_hasPendingFrame) return;
-        if (_pendingResidencyPublication is { } publication)
-            _resources.RetainResidencyPublication(publication);
         _history?.Discard();
         ClearPendingFrame();
     }
@@ -913,7 +898,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         if (GraphData.Outputs.IsValid)
             GraphData.Outputs.Geometry.ClearFrame();
-        _pendingResidencyPublication = null;
         _residentPageReads = BufferRangeSet.Empty;
         _framePolicyViews = default;
         _hasPendingFrame = false;
@@ -924,6 +908,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         if (!_created)
             return;
         _materialBindingVersions.Clear();
+        _consumedMaterialAssignments = null;
         List<Exception>? failures = null;
         Release(ref _viewQuery, context.World, ref failures);
         Release(ref _sceneQuery, context.World, ref failures);
