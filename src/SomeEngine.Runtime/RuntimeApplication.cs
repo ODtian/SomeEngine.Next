@@ -676,6 +676,8 @@ internal static class RuntimeApplication
             targetGeometryAfterRegion,
             feedbackRegion,
             renderDevice);
+        if (platform?.IsMeasuring == true)
+            virtualShadows.ResolutionBiasCompleted += platform.RecordShadowResolutionBias;
         stageResources.Add(virtualShadows);
         RenderFrameSystems frameSystems = CreateFrameSystems(
             pipeline,
@@ -837,6 +839,7 @@ internal static class RuntimeApplication
                     debugUiOpen = !debugUiOpen;
                 if (window.IsMinimized)
                 {
+                    platform?.InvalidateMeasurements("The window was minimized during measurement.");
                     window.WaitForEvents(TimeSpan.FromMilliseconds(16));
                     previousFrameTimestamp = Stopwatch.GetTimestamp();
                     continue;
@@ -1046,6 +1049,7 @@ internal static class RuntimeApplication
                     script?.TemporalSettings ?? TemporalResolveSettings.Default);
                 if (image is null)
                 {
+                    platform?.InvalidateMeasurements("No swapchain image was rendered during measurement.");
                     frameIndex++;
                     continue;
                 }
@@ -1151,6 +1155,8 @@ internal static class RuntimeApplication
                 PresentStatus present = backend.Present(
                     backend.GetQueue(device, QueueType.Graphics),
                     image.Value);
+                if (present is not (PresentStatus.Success or PresentStatus.Suboptimal))
+                    platform?.InvalidateMeasurements($"Presentation returned {present}.");
                 if (sceneGeometryReady && startup.Result is null)
                 {
                     startup.RecordPresent(window, present, frameIndex);
@@ -1171,7 +1177,8 @@ internal static class RuntimeApplication
 
                 if (platform?.IsMeasuring == true && !platform.ReloadRequested)
                     platform.RecordFrame(new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
-                        prepareMs, reconcileMs, executeMs), cluster.CaptureDiagnostics());
+                        prepareMs, reconcileMs, executeMs), cluster.CaptureDiagnostics(),
+                        shadowSettings.Enabled && shadowSettings.DynamicResolutionEnabled);
                 frameIndex++;
                 if (platform?.ReloadRequested == true) break;
             }
@@ -1290,6 +1297,8 @@ internal static class RuntimeApplication
         }
         finally
         {
+            if (platform is not null)
+                virtualShadows.ResolutionBiasCompleted -= platform.RecordShadowResolutionBias;
             if (nextGameUpdate is not null)
                 RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
             renderDevice.WaitForTrackedSubmissions(FrameTimeout);

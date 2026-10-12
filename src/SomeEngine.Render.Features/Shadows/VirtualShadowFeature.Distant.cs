@@ -6,6 +6,9 @@ namespace SomeEngine.Render.Features.Shadows;
 
 public sealed partial class VirtualShadowFeature
 {
+    /// <summary>Completed asynchronous page-pressure LOD bias; the tag is the originating shadow frame.</summary>
+    public event Action<ulong, float>? ResolutionBiasCompleted;
+
     private GraphReadbackId _distantBiasReadback;
     private readonly Dictionary<ulong, DistantBiasFrame> _distantBiasFrames = [];
     private sealed class DistantBiasFrame
@@ -42,6 +45,7 @@ public sealed partial class VirtualShadowFeature
         if (!frame.Complete || frame.LocalBias is not { } bias) return;
         _shadowMap.UpdateGlobalLocalResolutionLodBias(bias);
         _distantBiasFrames.Remove(tag);
+        ResolutionBiasCompleted?.Invoke(tag, bias);
     }
 
     private sealed class DistantBiasReceiver(VirtualShadowFeature feature) : IGraphReadbackReceiver

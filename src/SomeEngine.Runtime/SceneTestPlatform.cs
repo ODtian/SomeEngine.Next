@@ -1,5 +1,6 @@
 using ImGuiNET;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SomeEngine.Diagnostics;
@@ -32,6 +33,8 @@ public sealed class SceneTestPlatform
     internal TestScene Current => Scenes[SelectedScene];
     private readonly List<SceneTiming> _results = [];
     private readonly List<FrameTiming> _frames = [];
+    private readonly List<(ulong Frame, float LodBias)> _shadowResolutionFeedback = [];
+    private string? _measurementError;
     private readonly List<SceneFrameWindow> _frameWindows = [];
     private int _firstSampleRenderedFrame;
     private long _testStarted;
@@ -93,6 +96,7 @@ public sealed class SceneTestPlatform
             return;
         }
         _results.Clear();
+        _measurementError = null;
         _frameWindows.Clear();
         _recordTrace = recordTrace;
         _interactiveOptions = Options;
@@ -140,6 +144,7 @@ public sealed class SceneTestPlatform
         _firstFrameMs = 0;
         _readyFrames = 0;
         _frames.Clear();
+        _shadowResolutionFeedback.Clear();
         if (_recordTrace)
             _trace = EngineTrace.Start(Path.Combine(_resultDirectory!, $"scene-{SelectedScene}.setrace"),
                 new SomeEngine.Diagnostics.TraceOptions
@@ -149,7 +154,19 @@ public sealed class SceneTestPlatform
                 });
     }
 
-    internal void RecordFrame(FrameTiming frame, ClusterRenderDiagnostics diagnostics)
+    internal void RecordShadowResolutionBias(ulong frame, float lodBias)
+    {
+        if (IsMeasuring && _sampleStarted != 0 && !ReloadRequested)
+            _shadowResolutionFeedback.Add((frame, lodBias));
+    }
+
+    internal void InvalidateMeasurements(string reason)
+    {
+        if (IsMeasuring) _measurementError ??= reason;
+    }
+
+    internal void RecordFrame(FrameTiming frame, ClusterRenderDiagnostics diagnostics,
+        bool shadowDynamicResolutionEnabled)
     {
         if (!IsMeasuring) return;
         if (_renderingStarted == 0 && diagnostics.Meshes.PublishedMeshes == diagnostics.Meshes.RegisteredMeshes)
@@ -189,6 +206,7 @@ public sealed class SceneTestPlatform
             _sampleStarted = 0;
             _firstSampleRenderedFrame = 0;
             _frames.Clear();
+            _shadowResolutionFeedback.Clear();
         }
         bool sampled = _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= 2;
         bool expired = elapsed >= _sceneTimeLimit || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= 45;
@@ -206,7 +224,9 @@ public sealed class SceneTestPlatform
             residency.ResidentPages, residency.RegisteredPages, residency.QueuedPageLoads, residency.ActivePageLoads,
             residency.PageHeapUsedBytes, residency.PageHeapFreeBytes, residency.BackpressuredPages,
             _renderWidth, _renderHeight, Options.DynamicScene,
-            _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults));
+            _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults,
+            ShadowResolutionSummary.FromFeedback(shadowDynamicResolutionEnabled,
+                CollectionsMarshal.AsSpan(_shadowResolutionFeedback))));
         ReloadRequested = true;
     }
 
@@ -215,6 +235,7 @@ public sealed class SceneTestPlatform
         _trace?.Dispose();
         _trace = null;
         if (!IsMeasuring || _sceneStarted == 0) return;
+        error ??= _measurementError;
         if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < 45)
         {
             SelectScene(SelectedScene + 1);
@@ -246,6 +267,7 @@ public sealed class SceneTestPlatform
             ["ElapsedSeconds"] = Stopwatch.GetElapsedTime(_testStarted).TotalSeconds,
             ["Timing"] = "Presented frame elapsed time and CPU-side stage elapsed time; GPU duration is not measured",
             ["TraceEnabled"] = _recordTrace,
+            ["ShadowResolutionSampling"] = "Completed asynchronous bias feedback received during the timed sample window; feedback may lag presented frames. No end-of-window GPU wait. Empty feedback has null bias statistics.",
             ["FrameSamples"] = "frame-samples.json",
             ["Startup"] = JsonSerializer.SerializeToNode(Startup, SceneJsonContext.Default.ApplicationStartupTimes),
             ["TraceDetail"] = Options.TraceDetail,
@@ -350,7 +372,8 @@ public sealed class SceneTestPlatform
         uint ResidentPages, uint RegisteredPages, int QueuedLoads, int ActiveLoads,
         uint GeometryUsedBytes, uint GeometryFreeBytes, ulong BackpressuredPages,
         int RenderWidth, int RenderHeight, bool AnimateScene,
-        double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults);
+        double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults,
+        ShadowResolutionSummary ShadowResolution);
     internal sealed record SceneFrameWindow(
         string Scene, int FirstRenderedFrame, float FixedFrameSeconds, FrameTiming[] Frames);
 
