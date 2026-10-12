@@ -217,6 +217,34 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
+    internal void ResolvePages(
+        ReadOnlySpan<ClusterPageDemand> priorities,
+        List<KeyValuePair<uint, uint>> unresolved)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            unresolved.Clear();
+            foreach (ClusterPageDemand request in priorities)
+            {
+                PageFaultResolution resolution = ResolvePageCore(request.PageId);
+                if (resolution.Kind is not (PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending))
+                    unresolved.Add(new(request.PageId, request.Priority));
+            }
+        }
+    }
+
+    internal bool TryCollectPageDependencies(
+        ReadOnlySpan<ClusterPageDemand> demands,
+        List<ClusterPageDemand> expanded)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            return _fixups.TryExpandDependencies(demands, checked((int)_pages.Count), expanded);
+        }
+    }
+
     internal void CollectPageDependencies(HashSet<uint> pages)
     {
         lock (_gate)
@@ -246,6 +274,22 @@ internal sealed partial class ClusterMeshes : IDisposable
             {
                 _referencedPages.Add(page);
                 bytes += _pages.CalculateStreamingPageBytes(page);
+            }
+            return new(bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity), complete);
+        }
+    }
+
+    internal ClusterStreamingDemand SetReferencedPages(ReadOnlySpan<ClusterPageDemand> pages, bool complete)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            _referencedPages.Clear();
+            ulong bytes = 0;
+            foreach (ClusterPageDemand page in pages)
+            {
+                _referencedPages.Add(page.PageId);
+                bytes += _pages.CalculateStreamingPageBytes(page.PageId);
             }
             return new(bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity), complete);
         }

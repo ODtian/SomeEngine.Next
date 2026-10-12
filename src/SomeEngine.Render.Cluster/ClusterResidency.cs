@@ -314,7 +314,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         _stream.Push(faults);
     }
 
-    internal void IngestDemand(ReadOnlySpan<ClusterPageDemand> demands, bool complete, ulong frameIdentity)
+    internal void IngestDemand(ReadOnlyMemory<ClusterPageDemand> demands, bool complete, ulong frameIdentity)
     {
         ThrowIfNotActive();
         _stream.PushDemand(demands, complete, frameIdentity);

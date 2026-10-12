@@ -45,6 +45,7 @@ internal sealed class ClusterPageFixups
     private readonly Dictionary<uint, PageDependency> _dependenciesByPage = [];
     private readonly List<PageDependency> _dependencies = [];
     private ulong[] _demandWords = [];
+    private int[] _demandPositions = [];
     private readonly Dictionary<uint, List<Group>> _groupsByPage = [];
     private readonly Dictionary<uint, List<Group>> _groupsByParentPage = [];
     private readonly HashSet<Group> _changedGroups = [];
@@ -279,6 +280,85 @@ internal sealed class ClusterPageFixups
         }
     }
 
+    internal bool TryExpandDependencies(
+        ReadOnlySpan<ClusterPageDemand> demands,
+        int pageCount,
+        List<ClusterPageDemand> expanded)
+    {
+        // Only positions are shared scratch. The coordinator keeps the ordered output
+        // after releasing the mesh gate, including across another stream's expansion.
+        expanded.Clear();
+        expanded.EnsureCapacity(pageCount);
+        if (_demandPositions.Length < pageCount)
+            Array.Resize(ref _demandPositions, pageCount);
+        int firstWord = _demandWords.Length;
+        int lastWord = -1;
+        bool complete = false;
+        try
+        {
+            foreach (ClusterPageDemand demand in demands)
+            {
+                if (demand.PageId >= (uint)pageCount) return false;
+                int position = _demandPositions[demand.PageId];
+                if (position == 0)
+                {
+                    expanded.Add(demand);
+                    _demandPositions[demand.PageId] = expanded.Count;
+                }
+                else if (demand.Priority > expanded[position - 1].Priority)
+                    expanded[position - 1] = demand;
+                if (_dependenciesByPage.TryGetValue(demand.PageId, out PageDependency? dependency))
+                    Include(dependency, demand.Priority);
+            }
+            for (int word = firstWord; word <= lastWord; word++)
+                while (_demandWords[word] != 0)
+                {
+                    ulong bits = _demandWords[word];
+                    int index = word * 64 + BitOperations.TrailingZeroCount(bits);
+                    _demandWords[word] = bits & (bits - 1);
+                    PageDependency dependency = _dependencies[index];
+                    uint priority = dependency.DemandPriority;
+                    foreach ((uint first, uint end) in dependency.Ranges)
+                        for (uint page = first; page < end; page++)
+                        {
+                            int position = _demandPositions[page];
+                            var demand = new ClusterPageDemand(page, priority);
+                            if (position == 0)
+                            {
+                                expanded.Add(demand);
+                                _demandPositions[page] = expanded.Count;
+                            }
+                            else expanded[position - 1] = demand;
+                        }
+                    uint parentPriority = priority == uint.MaxValue ? priority : priority + 1;
+                    foreach (PageDependency parent in dependency.Parents) Include(parent, parentPriority);
+                }
+            complete = true;
+            return true;
+        }
+        finally
+        {
+            foreach (ClusterPageDemand demand in expanded) _demandPositions[demand.PageId] = 0;
+            if (lastWord >= firstWord)
+                Array.Clear(_demandWords, firstWord, lastWord - firstWord + 1);
+            if (!complete) expanded.Clear();
+        }
+
+        void Include(PageDependency dependency, uint priority)
+        {
+            int word = dependency.Order / 64;
+            ulong bit = 1UL << (dependency.Order & 63);
+            if ((_demandWords[word] & bit) == 0)
+            {
+                _demandWords[word] |= bit;
+                dependency.DemandPriority = priority;
+                firstWord = Math.Min(firstWord, word);
+                lastWord = Math.Max(lastWord, word);
+            }
+            else if (priority > dependency.DemandPriority) dependency.DemandPriority = priority;
+        }
+    }
+
     internal void ExpandDependencies(HashSet<uint> pages)
     {
         var priorities = pages.ToDictionary(static page => page, static _ => 0u);
@@ -357,5 +437,6 @@ internal sealed class ClusterPageFixups
         _dependenciesByPage.Clear(); _groupsByPage.Clear(); _groupsByParentPage.Clear(); _changedGroups.Clear(); _groupCount = 0;
         _dependencies.Clear();
         Array.Clear(_demandWords);
+        Array.Clear(_demandPositions);
     }
 }

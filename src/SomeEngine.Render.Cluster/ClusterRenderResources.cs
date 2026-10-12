@@ -336,7 +336,7 @@ public sealed class ClusterRenderResources : IDisposable
     internal void IngestStreamingFeedback(
         ClusterReadbackTicket ticket,
         ReadOnlySpan<byte[]> payloads,
-        ReadOnlySpan<ClusterPageDemand> demands,
+        ReadOnlyMemory<ClusterPageDemand> demands,
         bool demandComplete,
         ulong frameIdentity)
     {

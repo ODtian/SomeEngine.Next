@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Serialization.Streaming;
 
@@ -23,8 +24,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         Exception? Error);
 
     private readonly ClusterPageRequest[] _faultInbox;
-    private readonly ClusterPageDemand[] _demandInbox;
-    private int _demandCount;
+    private ReadOnlyMemory<ClusterPageDemand> _demandInbox;
+    private readonly List<ClusterPageDemand> _expandedDemands = [];
     private bool _hasDemand;
     private bool _demandComplete;
     private ulong _demandFrameIdentity;
@@ -117,7 +118,6 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         _maxPendingFaultWords = maxPendingFaultWords;
         _maxQueuedPages = maxQueuedPages;
         _faultInbox = new ClusterPageRequest[maxPendingFaultWords];
-        _demandInbox = new ClusterPageDemand[maxPendingFaultWords];
         _pendingRequests.EnsureCapacity(maxPendingFaultWords);
         _queuedPages.EnsureCapacity(maxQueuedPages);
         _loadCandidates.EnsureCapacity(maxQueuedPages);
@@ -166,7 +166,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         }
     }
 
-    internal void PushDemand(ReadOnlySpan<ClusterPageDemand> demands, bool complete, ulong frameIdentity)
+    internal void PushDemand(ReadOnlyMemory<ClusterPageDemand> demands, bool complete, ulong frameIdentity)
     {
         lock (_faultGate)
         {
@@ -176,9 +176,11 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             if (frameIdentity <= _demandFrameIdentity) return;
             _demandFrameIdentity = frameIdentity;
             // Fault diagnostics retain their separate accumulation across all frames.
-            _demandCount = Math.Min(demands.Length, _demandInbox.Length);
-            demands[.._demandCount].CopyTo(_demandInbox);
-            _demandComplete = complete && _demandCount == demands.Length;
+            // The feedback channel supplies a private array that is not modified after enqueue.
+            // Retain it until this coordinator takes the demand instead of copying a second inbox.
+            int count = Math.Min(demands.Length, _maxPendingFaultWords);
+            _demandInbox = demands[..count];
+            _demandComplete = complete && count == demands.Length;
             _hasDemand = true;
         }
     }
@@ -192,9 +194,9 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         try
         {
             ThrowIfNotActive();
-            bool? demandComplete = DrainFaultInbox();
+            bool? demandComplete = DrainFaultInbox(out ReadOnlyMemory<ClusterPageDemand> demands);
             DrainCompleted(out uint stagedPages, out uint failedPages);
-            ClusterStreamingDemand? demand = QueueRequestedPages(demandComplete);
+            ClusterStreamingDemand? demand = QueueRequestedPages(demands.Span, demandComplete);
             StartQueuedPageLoads();
             _stagedPageCount = stagedPages;
             _failedPageCount = failedPages;
@@ -209,13 +211,14 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         }
     }
 
-    private bool? DrainFaultInbox()
+    private bool? DrainFaultInbox(out ReadOnlyMemory<ClusterPageDemand> demands)
     {
         _uniqueFaultLeafCount = 0;
         _knownFaultLeafCount = 0;
         _backpressuredPageCount = 0;
         _pagePriorities.Clear();
         bool? demandComplete = null;
+        demands = default;
 
         lock (_faultGate)
         {
@@ -235,11 +238,9 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             if (_hasDemand)
             {
                 demandComplete = _demandComplete;
-                foreach (ClusterPageDemand demand in _demandInbox.AsSpan(0, _demandCount))
-                    if (!_pagePriorities.TryGetValue(demand.PageId, out uint priority) || demand.Priority > priority)
-                        _pagePriorities[demand.PageId] = demand.Priority;
+                demands = _demandInbox;
+                _demandInbox = default;
                 _hasDemand = false;
-                _demandCount = 0;
             }
         }
 
@@ -248,7 +249,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         return demandComplete;
     }
 
-    private ClusterStreamingDemand? QueueRequestedPages(bool? demandComplete)
+    private ClusterStreamingDemand? QueueRequestedPages(ReadOnlySpan<ClusterPageDemand> demands, bool? demandComplete)
     {
         if (_pendingRequests.Count == 0 && !demandComplete.HasValue)
             return null;
@@ -256,11 +257,28 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         ClusterStreamingDemand? demand = null;
         if (demandComplete.HasValue)
         {
-            _resources.CollectPageDependencies(_pagePriorities);
-            demand = _resources.SetReferencedPages(_pagePriorities.Keys, demandComplete.Value);
-            _queuedPages.Clear();
-            QueueResolvedPages();
-            _pagePriorities.Clear();
+            if (_resources.TryCollectPageDependencies(demands, _expandedDemands))
+            {
+                ReadOnlySpan<ClusterPageDemand> expanded = CollectionsMarshal.AsSpan(_expandedDemands);
+                demand = _resources.SetReferencedPages(expanded, demandComplete.Value);
+                _queuedPages.Clear();
+                _resources.ResolvePages(expanded, _loadCandidates);
+                foreach ((uint page, uint priority) in _loadCandidates)
+                    QueuePageIfNeeded(page, priority);
+                _expandedDemands.Clear();
+            }
+            else
+            {
+                // Unknown/custom page IDs retain the original dictionary representation.
+                foreach (ClusterPageDemand request in demands)
+                    if (!_pagePriorities.TryGetValue(request.PageId, out uint priority) || request.Priority > priority)
+                        _pagePriorities[request.PageId] = request.Priority;
+                _resources.CollectPageDependencies(_pagePriorities);
+                demand = _resources.SetReferencedPages(_pagePriorities.Keys, demandComplete.Value);
+                _queuedPages.Clear();
+                QueueResolvedPages();
+                _pagePriorities.Clear();
+            }
         }
 
         // Fault packets may be older than the latest view. They still contribute
@@ -594,7 +612,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                     WriteSnapshot(disposing);
 
                     _pendingFaultWords = 0;
-                    _demandCount = 0;
+                    _demandInbox = default;
                     _hasDemand = false;
                     _pendingReportedFaults = 0;
                     _pendingStoredFaults = 0;
