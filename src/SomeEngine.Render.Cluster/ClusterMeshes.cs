@@ -210,6 +210,8 @@ internal sealed partial class ClusterMeshes : IDisposable
             unresolved.Clear();
             foreach (KeyValuePair<uint, uint> request in priorities)
             {
+                if (_pages.TryTouchActiveResident(request.Key))
+                    continue;
                 PageFaultResolution resolution = ResolvePageCore(request.Key);
                 if (resolution.Kind is not (PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending))
                     unresolved.Add(request);
@@ -227,6 +229,8 @@ internal sealed partial class ClusterMeshes : IDisposable
             unresolved.Clear();
             foreach (ClusterPageDemand request in priorities)
             {
+                if (_pages.TryTouchActiveResident(request.PageId))
+                    continue;
                 PageFaultResolution resolution = ResolvePageCore(request.PageId);
                 if (resolution.Kind is not (PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending))
                     unresolved.Add(new(request.PageId, request.Priority));

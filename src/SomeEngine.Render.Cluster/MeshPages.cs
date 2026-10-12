@@ -489,6 +489,22 @@ internal sealed class MeshPages
         }
     }
 
+    // Under the owning ClusterMeshes gate, membership in this LRU is exactly
+    // published residency without a pending retirement. Keep the eager recency order.
+    public bool TryTouchActiveResident(uint pageId)
+    {
+        if (pageId >= _lruNodes.Count)
+            return false;
+
+        LinkedListNode<uint> node = _lruNodes[(int)pageId];
+        if (!ReferenceEquals(node.List, _residentLru))
+            return false;
+
+        _residentLru.Remove(node);
+        _residentLru.AddLast(node);
+        return true;
+    }
+
     public void Touch(uint pageId)
     {
         if (!_residentPages.Contains(pageId) ||
