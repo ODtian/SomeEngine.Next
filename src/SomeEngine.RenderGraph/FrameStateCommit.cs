@@ -36,6 +36,7 @@ internal sealed partial class FrameExecutor
         internal bool[] Acquired = [];
         internal QueueRelease[] Releases = [];
         internal bool Initialized;
+        internal bool BoundaryChanged = true;
         internal TextureBoundaryState[] Before = [];
         internal TextureStateValue[] After = [];
         internal TextureBoundaryState[] Values = [];
@@ -53,6 +54,7 @@ internal sealed partial class FrameExecutor
         internal BufferStateStep[] Steps = [];
         internal QueueRelease[] Releases = [];
         internal bool Initialized;
+        internal bool BoundaryChanged = true;
         internal BufferBoundaryState[] Before = [];
         internal BufferStateValue[] After = [];
         internal BufferBoundaryState[] Values = [];
@@ -415,10 +417,10 @@ internal sealed partial class FrameExecutor
         BufferBoundaryState[] boundaryStates = update.Values;
         for (int item = 0; item < boundaryStates.Length; item++)
             boundaryStates[item] = update.After[item].State with { ReadyAfter = update.After[item].CompletionSource < 0 ? completion : update.Completions[item] };
-        StoreBufferStates(update.ResourceIndex, boundaryStates);
+        StoreBufferStates(update.ResourceIndex, boundaryStates, update.BoundaryChanged);
     }
 
-    private void StoreBufferStates(int resourceIndex, BufferBoundaryState[] boundaryStates)
+    private void StoreBufferStates(int resourceIndex, BufferBoundaryState[] boundaryStates, bool boundaryChanged)
     {
         ref FrameBuffer frameBuffer = ref CollectionsMarshal.AsSpan(_buffers)[resourceIndex];
         // Upload storage is reused independently for each frame in flight. Its
@@ -427,7 +429,7 @@ internal sealed partial class FrameExecutor
         {
             upload.BoundaryStates = boundaryStates;
             frameBuffer.EntryBoundaryStates = boundaryStates;
-            _changedBoundaryResources.Add((GraphAccessTargetKind.Buffer, resourceIndex));
+            if (boundaryChanged) _changedBoundaryResources.Add((GraphAccessTargetKind.Buffer, resourceIndex));
             return;
         }
         if (frameBuffer.Lifetime == RenderGraphResourceLifetime.Persistent && frameBuffer.Definition is { } resource)
@@ -440,6 +442,10 @@ internal sealed partial class FrameExecutor
             if (frameBuffer.Lifetime == RenderGraphResourceLifetime.PerFrame && frameBuffer.Resource is not null)
                 _frame.Slot.TransientResources?.StoreCachedBufferStates(frameBuffer.AllocationIdentity, frameBuffer.Resource, boundaryStates);
         }
+        // Completion values are collected independently on every frame. Caller-owned
+        // per-frame inputs still notify other frames so their boundary arrays refresh.
+        if (!boundaryChanged && (frameBuffer.Lifetime == RenderGraphResourceLifetime.Persistent ||
+            frameBuffer.Ownership == RenderGraphResourceOwnership.GraphOwned)) return;
         if (frameBuffer.Definition is not null && (frameBuffer.Lifetime == RenderGraphResourceLifetime.Persistent ||
             frameBuffer.Ownership == RenderGraphResourceOwnership.CallerOwned))
             _frame.Graph.BoundaryChanged(frameBuffer.Identity, GraphStoreKind.Buffers);
@@ -548,6 +554,9 @@ internal sealed partial class FrameExecutor
         _bufferBoundaryScratch.Sort(static (left, right) => left.State.Range.Offset.CompareTo(right.State.Range.Offset));
         PrepareArray(ref update.After, _bufferBoundaryScratch.Count);
         _bufferBoundaryScratch.CopyTo(update.After);
+        update.BoundaryChanged = current.Length != update.After.Length;
+        for (int item = 0; !update.BoundaryChanged && item < current.Length; item++)
+            update.BoundaryChanged = !BufferBoundaryMatches(current[item], update.After[item].State);
         // Published boundaries can remain in a resource cache after this update is reused.
         update.Values = new BufferBoundaryState[update.After.Length];
         PrepareArray(ref update.Completions, update.After.Length);
@@ -572,10 +581,10 @@ internal sealed partial class FrameExecutor
         TextureBoundaryState[] boundaryStates = update.Values;
         for (int item = 0; item < boundaryStates.Length; item++)
             boundaryStates[item] = update.After[item].State with { ReadyAfter = update.After[item].CompletionSource < 0 ? completion : update.Completions[item] };
-        StoreTextureStates(update.ResourceIndex, boundaryStates);
+        StoreTextureStates(update.ResourceIndex, boundaryStates, update.BoundaryChanged);
     }
 
-    private void StoreTextureStates(int resourceIndex, TextureBoundaryState[] boundaryStates)
+    private void StoreTextureStates(int resourceIndex, TextureBoundaryState[] boundaryStates, bool boundaryChanged)
     {
         ref FrameTexture frameTexture = ref CollectionsMarshal.AsSpan(_textures)[resourceIndex];
         if (frameTexture.Lifetime == RenderGraphResourceLifetime.Persistent &&
@@ -597,6 +606,8 @@ internal sealed partial class FrameExecutor
                     boundaryStates);
             }
         }
+        if (!boundaryChanged && (frameTexture.Lifetime == RenderGraphResourceLifetime.Persistent ||
+            frameTexture.Ownership == RenderGraphResourceOwnership.GraphOwned)) return;
         if (frameTexture.Definition is not null && (frameTexture.Lifetime == RenderGraphResourceLifetime.Persistent ||
             frameTexture.Ownership == RenderGraphResourceOwnership.CallerOwned))
             _frame.Graph.BoundaryChanged(frameTexture.Identity, GraphStoreKind.Textures);
@@ -662,6 +673,9 @@ internal sealed partial class FrameExecutor
                 _passes[_submissionPasses[update.Submission][0]].Queue!, ReleaseDestination(release.DestinationQueueType));
         PrepareArray(ref update.After, _textureBoundaryScratch.Count);
         _textureBoundaryScratch.CopyTo(update.After);
+        update.BoundaryChanged = current.Length != update.After.Length;
+        for (int item = 0; !update.BoundaryChanged && item < current.Length; item++)
+            update.BoundaryChanged = !TextureBoundaryMatches(current[item], update.After[item].State);
         update.Values = new TextureBoundaryState[update.After.Length];
         PrepareArray(ref update.Completions, update.After.Length);
         update.Initialized = true;
