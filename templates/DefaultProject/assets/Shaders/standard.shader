@@ -14,6 +14,26 @@
       "Fields": {
         "SourceNames": [
           "standard.slang"
+        ],
+        "Specializations": [
+          {
+            "EntryPoint": "ClusterSurfaceDataDepth",
+            "Arguments": [
+              "0"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterSurfaceDataDepth",
+            "Arguments": [
+              "1"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterSurfaceDataDepth",
+            "Arguments": [
+              "2"
+            ]
+          }
         ]
       },
       "Chunks": {}

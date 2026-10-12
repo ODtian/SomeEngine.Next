@@ -407,7 +407,7 @@ void CSShade<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain dom
 }
 
 void CSEvaluateSurface<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDomain domain,
-    uniform TSurface surface, uint3 tid)
+    uniform TSurface surface, uint3 tid, uint visibilityDepth = Uniforms.VisibilityDepth)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
     where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
@@ -428,7 +428,7 @@ void CSEvaluateSurface<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform T
     pixel.InstanceID = tri.instanceID;
     pixel.MaterialIndex = tri.materialSlot;
     pixel.DebugMode = Uniforms.DebugMode;
-    pixel.VisibilityDepth = Uniforms.VisibilityDepth;
+    pixel.VisibilityDepth = visibilityDepth;
     pixel.Depth = depth;
     pixel.PositionFromDepth = positionFromDepth;
     SurfaceReceiver receiver;

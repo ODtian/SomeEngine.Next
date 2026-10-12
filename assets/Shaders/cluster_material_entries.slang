@@ -239,6 +239,18 @@ void ClusterSurfaceData(uniform VertexEvaluate vertex, uniform DomainEvaluate do
     CSEvaluateSurface(vertex, domain, surface, tid);
 }
 
+// Optional cooked variants keep the original entry available to direct source users.
+#if defined(CLUSTER_SURFACE_VISIBILITY_DEPTH)
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ClusterSurfaceDataDepth<let visibilityDepth : uint>(uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+{
+    CSEvaluateSurface(vertex, domain, surface, tid, visibilityDepth);
+}
+#endif
+
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]

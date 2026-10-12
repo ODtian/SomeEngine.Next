@@ -14,6 +14,7 @@ internal static class ClusterMaterialEntries
 {
     internal const string Shade = "ClusterShade";
     internal const string SurfaceData = "ClusterSurfaceData";
+    internal const string SurfaceDataDepth = "ClusterSurfaceDataDepth";
     internal const string SoftwareRasterImageAtomic64 = "ClusterRasterSoftwareImageAtomic64";
     internal const string SoftwareRasterBufferAtomic64 = "ClusterRasterSoftwareBufferAtomic64";
     internal const string SoftwareMeshletImageAtomic64 = "ClusterRasterSoftwareMeshletImageAtomic64";
@@ -1403,6 +1404,14 @@ internal sealed class ClusterShadeStages : IDisposable
     private ClusterShadeInvocation CreateInvocation(Material material, string vertexEncoding, string entryPoint = ClusterMaterialEntries.Shade)
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
+        ClusterVisibilityDepth visibilityDepth = ClusterGeometryRequirements.RequireVisibilityDepth(shader);
+        if (entryPoint == ClusterMaterialEntries.SurfaceData &&
+            shader.TryGetSpecialization(ClusterMaterialEntries.SurfaceDataDepth,
+                [((uint)visibilityDepth).ToString(System.Globalization.CultureInfo.InvariantCulture)], out Shader specialized))
+        {
+            shader = specialized;
+            entryPoint = ClusterMaterialEntries.SurfaceDataDepth;
+        }
         ClusterStageTargets.RequireVertexEncoding(
             shader,
             entryPoint,
@@ -1470,7 +1479,7 @@ internal sealed class ClusterShadeStages : IDisposable
             scalarMaterialLayout,
             materialBindings,
             featureResourceBinders,
-            commandBindings) { SurfaceDataSize = _surfaceDataSizes[key], VisibilityDepth = ClusterGeometryRequirements.RequireVisibilityDepth(shader) };
+            commandBindings) { SurfaceDataSize = _surfaceDataSizes[key], VisibilityDepth = visibilityDepth };
     }
 
     private static ClusterShadeCoreResource[] ResolveShadeCoreResources(

@@ -15,13 +15,24 @@ public partial class Shader
             _specializations.Any(variant => variant.EntryPoint == entryPoint);
     }
 
-    public Shader RequireSpecialization(string entryPoint, ReadOnlySpan<string> arguments)
+    /// <summary>Returns a saved entry variant without compiling or substituting the unspecialized shader.</summary>
+    public bool TryGetSpecialization(string entryPoint, ReadOnlySpan<string> arguments, out Shader shader)
     {
-        if (!HasSpecializations(entryPoint) && arguments.IsEmpty) return this;
         if (!_specializations.IsDefaultOrEmpty)
             foreach (var variant in _specializations)
                 if (variant.EntryPoint == entryPoint && arguments.SequenceEqual(variant.Arguments.AsSpan()))
-                    return variant.Shader;
+                {
+                    shader = variant.Shader;
+                    return true;
+                }
+        shader = null!;
+        return false;
+    }
+
+    public Shader RequireSpecialization(string entryPoint, ReadOnlySpan<string> arguments)
+    {
+        if (!HasSpecializations(entryPoint) && arguments.IsEmpty) return this;
+        if (TryGetSpecialization(entryPoint, arguments, out Shader shader)) return shader;
         throw new InvalidDataException(
             $"Shader '{Name}' has no saved specialization for entry '{entryPoint}' with [{string.Join(", ", arguments.ToArray())}].");
     }
