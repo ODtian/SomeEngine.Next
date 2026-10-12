@@ -1,6 +1,15 @@
 #ifndef CLUSTER_BIN_BATCHES_SLANG
 #define CLUSTER_BIN_BATCHES_SLANG
 
+bool RasterBatchUsesSoftware(uint slotOffset, uint material, bool software)
+{
+    uint stage = GetStageSlot(RasterSlots, slotOffset, material, Uniforms.SlotCapacity);
+    // Pixel-programmable ranges use the existing meshlet raster path when it
+    // is available. Target windows and tessellated ranges keep their prior route.
+    bool pixelMeshlet = (stage & 0x50000000u) == 0x50000000u;
+    return software && (Uniforms.PolicyTarget != 0u || !pixelMeshlet);
+}
+
 void EmitRasterBatch(uint bin, uint visible, uint workIndex, bool software, bool depthBuckets, inout uint batchCount)
 {
     if (!IsBin(bin)) return;
@@ -33,8 +42,9 @@ void BuildRasterBatches(
         bool depthBuckets = Uniforms.DepthBucketsEnabled != 0u &&
             (GetStageSlot(RasterSlots, slotOffset, material, Uniforms.SlotCapacity) & 0x10000000u) != 0u;
         uint batchCount = ClusterMaterialBatchBits(PageHeap, materials, rangeIndex * 4u, 4u);
+        bool software = RasterBatchUsesSoftware(slotOffset, material, isSoftware);
         bool useVertReuseBatches = RasterUsesVertReuseBatches(
-            RasterSlots, Uniforms, slotOffset, material, isSoftware, vertexCount, triangleCount);
+            RasterSlots, Uniforms, slotOffset, material, software, vertexCount, triangleCount);
         if (!useVertReuseBatches)
         {
             uint mergedRangeCount = 1u;
@@ -45,16 +55,17 @@ void BuildRasterBatches(
                 uint next = ClusterMaterialRange(PageHeap, materials, triangleCount, nextRange);
                 uint nextMaterial = (next >> 16u) & 0xFFu;
                 uint nextBin = RasterKey(RasterSlots, Uniforms, slotOffset, nextMaterial);
+                bool nextSoftware = RasterBatchUsesSoftware(slotOffset, nextMaterial, isSoftware);
                 bool nextUsesBatches = RasterUsesVertReuseBatches(
-                    RasterSlots, Uniforms, slotOffset, nextMaterial, isSoftware, vertexCount, triangleCount);
-                if (nextBin != bin || nextUsesBatches)
+                    RasterSlots, Uniforms, slotOffset, nextMaterial, nextSoftware, vertexCount, triangleCount);
+                if (nextBin != bin || nextSoftware != software || nextUsesBatches)
                     break;
                 mergedBatchCount += ClusterMaterialBatchBits(PageHeap, materials, nextRange * 4u, 4u);
                 mergedRangeCount++;
             }
 
             EmitRasterBatch(bin, visibleIndex,
-                RasterRangeWorkIndex(rangeIndex, mergedRangeCount), isSoftware, depthBuckets, emittedBatches);
+                RasterRangeWorkIndex(rangeIndex, mergedRangeCount), software, depthBuckets, emittedBatches);
             flatBatchIndex += mergedBatchCount;
             rangeIndex += mergedRangeCount;
             uint last = ClusterMaterialRange(PageHeap, materials, triangleCount, rangeIndex - 1u);
@@ -64,7 +75,7 @@ void BuildRasterBatches(
 
         for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
         {
-            EmitRasterBatch(bin, visibleIndex, flatBatchIndex, isSoftware, depthBuckets, emittedBatches);
+            EmitRasterBatch(bin, visibleIndex, flatBatchIndex, software, depthBuckets, emittedBatches);
             triangleStart = min(
                 triangleStart + ClusterMaterialBatchBits(PageHeap, materials,
                     max(rangeCount, 3u) * 4u + flatBatchIndex * 5u, 5u) + 1u,
