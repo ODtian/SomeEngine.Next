@@ -800,11 +800,14 @@ internal static class RuntimeApplication
             while (options.FrameLimit == 0 || frameIndex < options.FrameLimit)
             {
                 long frameStarted = Stopwatch.GetTimestamp();
+                double gameUpdateWaitMs = 0;
                 if (startup.Result is not null && startup.IsTracing)
                 {
                     if (nextGameUpdate is not null)
                     {
+                        long gameUpdateWaitStarted = Stopwatch.GetTimestamp();
                         RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+                        gameUpdateWaitMs += Stopwatch.GetElapsedTime(gameUpdateWaitStarted).TotalMilliseconds;
                         nextGameUpdate = null;
                     }
                     startup.FinishTrace();
@@ -813,7 +816,9 @@ internal static class RuntimeApplication
                 // Shared asset content can change only after the Game World extraction reader exits.
                 if (nextGameUpdate is not null)
                 {
+                    long gameUpdateWaitStarted = Stopwatch.GetTimestamp();
                     RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+                    gameUpdateWaitMs += Stopwatch.GetElapsedTime(gameUpdateWaitStarted).TotalMilliseconds;
                     nextGameUpdate = null;
                 }
                 if (sceneEdit is not null)
@@ -950,8 +955,10 @@ internal static class RuntimeApplication
                         scene.Update(sceneSeconds);
                     extraction.Extract(mainWorld);
                 }
+                long frameSlotAcquireStarted = Stopwatch.GetTimestamp();
                 if (!renderGraph.TryOpenNextFrame(out RenderGraphNextFrame nextFrame, FrameTimeout))
                     throw new TimeoutException("The next rendering frame exceeded its resource wait timeout.");
+                double frameSlotAcquireMs = Stopwatch.GetElapsedTime(frameSlotAcquireStarted).TotalMilliseconds;
                 using var nextFrameResources = nextFrame;
                 renderDevice.CollectCompleted();
                 long prepareStarted = Stopwatch.GetTimestamp();
@@ -1031,8 +1038,10 @@ internal static class RuntimeApplication
                 ScissorRect? presentationRect = ui.DrawDebugViews(debugViews, width, height);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
+                long acquireImageStarted = Stopwatch.GetTimestamp();
                 SwapchainImage? image = sceneEdit?.FrameCanceled == true
                     ? null : AcquireImage(backend, swapchain, window);
+                double acquireImageMs = Stopwatch.GetElapsedTime(acquireImageStarted).TotalMilliseconds;
                 SceneFrame? capturedFrame = captureLinear ? scene.CaptureFrame(new SceneFrame
                 {
                     Frame = frameIndex, SubmittedFrame = submittedFrames, SceneSeconds = sceneSeconds,
@@ -1087,7 +1096,8 @@ internal static class RuntimeApplication
                     options.SynchronousFrames,
                     options.TemporalAntialiasing,
                     viewFrame.JitterPixels,
-                    script?.TemporalSettings ?? TemporalResolveSettings.Default);
+                    script?.TemporalSettings ?? TemporalResolveSettings.Default,
+                    out double graphExecuteMs, out double completionWaitMs);
                 if (image is null)
                 {
                     platform?.InvalidateMeasurements("No swapchain image was rendered during measurement.");
@@ -1193,9 +1203,11 @@ internal static class RuntimeApplication
 
                 if (reportMilestones)
                     Console.WriteLine("First frame: presenting.");
+                long presentStarted = Stopwatch.GetTimestamp();
                 PresentStatus present = backend.Present(
                     backend.GetQueue(device, QueueType.Graphics),
                     image.Value);
+                double presentMs = Stopwatch.GetElapsedTime(presentStarted).TotalMilliseconds;
                 if (present is not (PresentStatus.Success or PresentStatus.Suboptimal))
                     platform?.InvalidateMeasurements($"Presentation returned {present}.");
                 if (sceneGeometryReady && startup.Result is null)
@@ -1218,7 +1230,8 @@ internal static class RuntimeApplication
 
                 if (platform?.IsMeasuring == true && !platform.ReloadRequested)
                     platform.RecordFrame(new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
-                        prepareMs, reconcileMs, executeMs, frameIndex), cluster.CaptureDiagnostics(),
+                        prepareMs, reconcileMs, executeMs, frameIndex, gameUpdateWaitMs, frameSlotAcquireMs,
+                        acquireImageMs, presentMs, graphExecuteMs, completionWaitMs), cluster.CaptureDiagnostics(),
                         shadowSettings.Enabled && shadowSettings.DynamicResolutionEnabled);
                 frameIndex++;
                 if (platform?.ReloadRequested == true) break;
@@ -1437,8 +1450,12 @@ internal static class RuntimeApplication
         bool synchronousFrames,
         bool temporalAntialiasing,
         Vector2 jitterPixels,
-        TemporalResolveSettings temporalSettings)
+        TemporalResolveSettings temporalSettings,
+        out double graphExecuteMs,
+        out double completionWaitMs)
     {
+        graphExecuteMs = 0;
+        completionWaitMs = 0;
         using var trace = EngineTrace.Begin(ApplicationTrace.Execute);
         if (!dataLock.TryBeginRead(out RenderReadScope? readScope))
         {
@@ -1494,7 +1511,9 @@ internal static class RuntimeApplication
                     if (reportMilestones)
                         Console.WriteLine("First frame: analyzing and submitting render graph.");
 
+                    long graphExecuteStarted = Stopwatch.GetTimestamp();
                     int submittedQueueCount = graphFrame.Execute(completionSlots);
+                    graphExecuteMs = Stopwatch.GetElapsedTime(graphExecuteStarted).TotalMilliseconds;
                     int completionCount = CompactCompletions(
                         completionSlots,
                         completions,
@@ -1504,7 +1523,11 @@ internal static class RuntimeApplication
                     readScope.Dispose();
                     bool readOutput = outputVerifier is not null || linearVerifier is not null;
                     if (synchronousFrames || readOutput)
+                    {
+                        long completionWaitStarted = Stopwatch.GetTimestamp();
                         Wait(backend, execution, window, synchronousFrames);
+                        completionWaitMs = Stopwatch.GetElapsedTime(completionWaitStarted).TotalMilliseconds;
+                    }
                     if (outputVerifier is not null) frameOutput = outputVerifier.Read();
                     linearVerifier?.ReadPixels();
                     if (synchronousFrames || readOutput)

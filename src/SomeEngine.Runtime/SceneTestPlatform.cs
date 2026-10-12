@@ -38,6 +38,16 @@ public sealed class SceneTestPlatform
     internal TestScene Current => Scenes[SelectedScene];
     private readonly List<SceneTiming> _results = [];
     private readonly List<FrameTiming> _frames = [];
+    private const string FrameTimingScopes =
+        "All timing fields are CPU wall-clock milliseconds. ElapsedMs retains the original whole-frame boundaries. " +
+        "PrepareMs, ReconcileMs, ExecuteMs, GameUpdateWaitMs, FrameSlotAcquireMs, AcquireImageMs and PresentMs " +
+        "are disjoint intervals within that frame. FrameSlotAcquireMs covers TryOpenNextFrame, including " +
+        "completed-work collection, slot selection/waits and reset; it is not a pure GPU wait. " +
+        "GraphExecuteMs and CompletionWaitMs are nested inside ExecuteMs, not additional frame costs. " +
+        "GraphExecuteMs covers RenderGraphFrame.Execute (analysis, recording and submission). " +
+        "CompletionWaitMs covers only an already-requested synchronous/output-readback completion wait. " +
+        "OtherFrameMs is ElapsedMs minus the seven disjoint intervals, never minus the nested fields. " +
+        "It includes remaining event/UI/setup/scheduling/cleanup work and is not GPU elapsed time.";
     private readonly List<(ulong Frame, float LodBias)> _shadowResolutionFeedback = [];
     private string? _measurementError;
     private readonly List<SceneFrameWindow> _frameWindows = [];
@@ -266,7 +276,14 @@ public sealed class SceneTestPlatform
             ShadowResolutionSummary.FromFeedback(shadowDynamicResolutionEnabled,
                 CollectionsMarshal.AsSpan(_shadowResolutionFeedback)),
             sampleWindow.RequestedSimulationWindow, sampleWindow.FirstSimulationFrame,
-            sampleWindow.LastSimulationFrame, sampleWindow.SampleWallSeconds));
+            sampleWindow.LastSimulationFrame, sampleWindow.SampleWallSeconds,
+            _frames.Count == 0 ? null : _frames.Average(f => f.GameUpdateWaitMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.FrameSlotAcquireMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.AcquireImageMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.PresentMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.GraphExecuteMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.CompletionWaitMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.OtherFrameMs)));
         ReloadRequested = true;
 
         void CollectFrame()
@@ -311,7 +328,8 @@ public sealed class SceneTestPlatform
         }
         var frameSamples = new JsonObject
         {
-            ["SchemaVersion"] = 2,
+            ["SchemaVersion"] = 3,
+            ["TimingScopes"] = FrameTimingScopes,
             ["Sampling"] = "Default: original warmup and wall-clock sample. Explicit MeasurementFrames: the requested zero-based simulation frames, without retiming or replacing failed frames. Each sample records its SimulationFrame.",
             ["Scenes"] = JsonSerializer.SerializeToNode(_frameWindows, SceneJsonContext.Default.ListSceneFrameWindow),
         };
@@ -322,6 +340,8 @@ public sealed class SceneTestPlatform
         {
             ["Complete"] = error is null && _results.Count == Scenes.Count && _results.All(result => result.Status == "Measured"),
             ["CapturedAtUtc"] = DateTimeOffset.UtcNow.ToString("O"),
+            ["FrameTimingSchemaVersion"] = 3,
+            ["TimingScopes"] = FrameTimingScopes,
             ["GraphicsDevice"] = _graphicsDevice,
             ["GraphicsDriver"] = _graphicsDriver,
             ["Processor"] = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
@@ -438,7 +458,12 @@ public sealed class SceneTestPlatform
     }
 
     internal readonly record struct FrameTiming(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs,
-        int SimulationFrame);
+        int SimulationFrame, double GameUpdateWaitMs, double FrameSlotAcquireMs, double AcquireImageMs, double PresentMs,
+        double GraphExecuteMs, double CompletionWaitMs)
+    {
+        public double OtherFrameMs => ElapsedMs - PrepareMs - ReconcileMs - ExecuteMs - GameUpdateWaitMs -
+            FrameSlotAcquireMs - AcquireImageMs - PresentMs;
+    }
     internal sealed record SceneTiming(string Scene, string Status, int Frames, double? MeanMs, double? MedianMs,
         double? P95Ms, double? PrepareMs, double? ReconcileMs, double? ExecuteMs,
         uint ResidentPages, uint RegisteredPages, int QueuedLoads, int ActiveLoads,
@@ -446,7 +471,9 @@ public sealed class SceneTestPlatform
         int RenderWidth, int RenderHeight, bool AnimateScene,
         double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults,
         ShadowResolutionSummary ShadowResolution, SimulationFrameWindow? RequestedSimulationWindow,
-        int? FirstSimulationFrame, int? LastSimulationFrame, double? SampleWallSeconds);
+        int? FirstSimulationFrame, int? LastSimulationFrame, double? SampleWallSeconds,
+        double? GameUpdateWaitMs, double? FrameSlotAcquireMs, double? AcquireImageMs, double? PresentMs,
+        double? GraphExecuteMs, double? CompletionWaitMs, double? OtherFrameMs);
     internal sealed record SceneFrameWindow(
         string Scene, int FirstRenderedFrame, float FixedFrameSeconds, FrameTiming[] Frames,
         SimulationFrameWindow? RequestedSimulationWindow, int? FirstSimulationFrame, int? LastSimulationFrame,
