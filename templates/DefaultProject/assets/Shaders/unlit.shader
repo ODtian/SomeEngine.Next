@@ -21,18 +21,6 @@
             "Arguments": [
               "0"
             ]
-          },
-          {
-            "EntryPoint": "ClusterSurfaceDataDepth",
-            "Arguments": [
-              "1"
-            ]
-          },
-          {
-            "EntryPoint": "ClusterSurfaceDataDepth",
-            "Arguments": [
-              "2"
-            ]
           }
         ]
       },

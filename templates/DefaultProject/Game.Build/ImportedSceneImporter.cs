@@ -104,6 +104,12 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             definition["Fields"]!["Id"] = shaderId.ToString();
             definition["Fields"]!["Name"] = shaderName;
             definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(shaderName + ".slang");
+            // This generator emits only OpaqueVisibilityEvaluate or SceneMask, with fixed depth metadata.
+            if (definition["Blocks"]![0]!["Fields"]!["Specializations"] is JsonArray specializations)
+                foreach (JsonNode? value in specializations)
+                    if (value is JsonObject variant &&
+                        variant["EntryPoint"]?.GetValue<string>() == "ClusterSurfaceDataDepth")
+                        variant["Arguments"] = new JsonArray(cutoff >= 0 ? "1" : "0");
             WriteIfChanged(definitionPath, definition.ToJsonString());
             await project.BuildAsync(definitionPath);
             _shaders.Add((cutoff, twoSided), shaderId);
