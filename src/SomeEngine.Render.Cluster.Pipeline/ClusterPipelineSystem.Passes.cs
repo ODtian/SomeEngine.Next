@@ -661,7 +661,7 @@ public sealed partial class ClusterPipelineSystem
             CreateStorageBufferView(graph, frame.DepthBuckets, sizeof(uint)), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial));
         ClusterDispatchParameters reserve = new(new DispatchArguments(
-            Math.Max(1u, (frame.RasterBinCount + 127u) / 128u), 1, 1));
+            Math.Max(1u, (frame.RasterBinCount + 3u) / 4u), 1, 1));
         GraphPassId reservePass = AddComputePass(
             ref graph,
             phaseOne

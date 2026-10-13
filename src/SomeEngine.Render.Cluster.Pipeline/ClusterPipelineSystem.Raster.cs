@@ -282,7 +282,7 @@ public sealed partial class ClusterPipelineSystem
         var reset = new ClusterDispatchParameters(new DispatchArguments(
             Math.Max(1u, (GraphData.Resources.RasterBinCount + 63u) / 64u), 1u, 1u));
         var reserve = new ClusterDispatchParameters(new DispatchArguments(
-            Math.Max(1u, (GraphData.Resources.RasterBinCount + 127u) / 128u), 1u, 1u));
+            Math.Max(1u, (GraphData.Resources.RasterBinCount + 3u) / 4u), 1u, 1u));
         foreach (RasterBinning? binning in GraphData.RasterBinning)
         {
             if (binning is null) continue;
