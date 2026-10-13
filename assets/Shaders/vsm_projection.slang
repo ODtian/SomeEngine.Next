@@ -24,17 +24,6 @@ VirtualShadowProjectionResult EmptyVirtualShadowProjection()
     return result;
 }
 
-struct VirtualShadowDepthSample
-{
-    // Depth and sample coordinates all belong to the actual atlas source view.
-    bool Valid;
-    float Depth;
-    uint ViewIndex;
-    uint MipLevel;
-    float2 UV;
-    float2 TexelCenter;
-};
-
 bool IsDirectionalVirtualShadowProjection(VirtualShadowMapParameters view)
 {
 #ifdef VSM_PROJECT_DIRECTIONAL_LIGHTS
@@ -79,8 +68,8 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     if (IsDirectionalVirtualShadowProjection(view))
     {
 #ifdef VSM_RESIDENT_LOOKUP_ENABLED
-        sample.Valid = TryReadVirtualShadowDirectionalResidentSourceReverseDepth(views, pages,
-            VirtualShadowResidentPages, atlas, requestedView, uv, reverseDepth, sample.ViewIndex);
+        return ReadVirtualShadowDirectionalResidentSample(views, pages,
+            VirtualShadowResidentPages, atlas, requestedView, uv);
 #else
         uint remaining = view.ClipmapLevelCount - uint(view.ClipmapLevel - view.FirstClipmapLevel);
         for (uint offset = 0u; offset < remaining; offset++)
@@ -96,7 +85,6 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
             break;
         }
 
-#endif
         if (!sample.Valid) return sample;
         VirtualShadowMapParameters source = views[sample.ViewIndex];
         float4 transform = VirtualShadowClipmapScaleBias(view, source, sample.ViewIndex - requestedView);
@@ -108,6 +96,7 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
             sourcePage * source.PageSize, (sourcePage + 1u) * source.PageSize - 1u);
         sample.UV = sourceUV;
         sample.TexelCenter = (float2(pixel) + 0.5) / float(source.VirtualResolution);
+#endif
     }
     else
     {

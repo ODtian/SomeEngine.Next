@@ -57,6 +57,17 @@ struct VirtualShadowMapParameters
     float4x4 ShadowUv;
 };
 
+struct VirtualShadowDepthSample
+{
+    // Depth and sample coordinates all belong to the actual atlas source view.
+    bool Valid;
+    float Depth;
+    uint ViewIndex;
+    uint MipLevel;
+    float2 UV;
+    float2 TexelCenter;
+};
+
 // Positions passed to this file are offsets from the owning Game world's origin.
 // Users with another high/low reference can translate before projecting or sampling.
 float3 TranslateVirtualShadowWorldPosition(float3 position, float3 originHigh,
@@ -1106,10 +1117,12 @@ float SampleVirtualShadowMapFiltered(
 Texture2D<float> VirtualShadowPrefilteredAtlas;
 #endif
 
-bool TryReadVirtualShadowDirectionalResidentSourceReverseDepth(StructuredBuffer<VirtualShadowMapParameters> views,
+VirtualShadowDepthSample ReadVirtualShadowDirectionalResidentSample(StructuredBuffer<VirtualShadowMapParameters> views,
     StructuredBuffer<uint> pageTable, StructuredBuffer<uint> residentPages, Texture2DArray<uint> atlas,
-    uint requestedViewIndex, float2 uv, out float storedDepth, out uint sourceViewIndex)
+    uint requestedViewIndex, float2 uv)
 {
+    VirtualShadowDepthSample sample = (VirtualShadowDepthSample)0;
+    sample.ViewIndex = requestedViewIndex;
     VirtualShadowMapParameters requested = views[requestedViewIndex];
     uint2 basePage = min(uint2(uv * float(VirtualShadowPagesPerRow(requested))), VirtualShadowPagesPerRow(requested) - 1u);
     uint remaining = requested.ClipmapLevelCount - uint(requested.ClipmapLevel - requested.FirstClipmapLevel);
@@ -1131,15 +1144,27 @@ bool TryReadVirtualShadowDirectionalResidentSourceReverseDepth(StructuredBuffer<
         float depth;
         if (TryReadVirtualShadowMipReverseDepth(source, pageTable, atlas, 0u, pixel, depth))
         {
-            storedDepth = depth;
-            sourceViewIndex = requestedViewIndex + sourceOffset;
-            return true;
+            sample.Valid = true;
+            sample.Depth = depth;
+            sample.ViewIndex = requestedViewIndex + sourceOffset;
+            sample.UV = sourceUV;
+            sample.TexelCenter = (float2(pixel) + 0.5) / float(source.VirtualResolution);
+            return sample;
         }
         offset = sourceOffset + 1u;
     }
-    storedDepth = 0.0;
-    sourceViewIndex = requestedViewIndex;
-    return false;
+    return sample;
+}
+
+bool TryReadVirtualShadowDirectionalResidentSourceReverseDepth(StructuredBuffer<VirtualShadowMapParameters> views,
+    StructuredBuffer<uint> pageTable, StructuredBuffer<uint> residentPages, Texture2DArray<uint> atlas,
+    uint requestedViewIndex, float2 uv, out float storedDepth, out uint sourceViewIndex)
+{
+    VirtualShadowDepthSample sample = ReadVirtualShadowDirectionalResidentSample(views, pageTable,
+        residentPages, atlas, requestedViewIndex, uv);
+    storedDepth = sample.Depth;
+    sourceViewIndex = sample.ViewIndex;
+    return sample.Valid;
 }
 
 bool TryReadVirtualShadowDirectionalResidentReverseDepth(StructuredBuffer<VirtualShadowMapParameters> views,
