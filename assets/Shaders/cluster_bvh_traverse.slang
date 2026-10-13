@@ -10,9 +10,13 @@
 
 groupshared uint WorkNodeStart;
 groupshared uint WorkNodeCount;
+groupshared uint WorkNodeRead;
+groupshared uint WorkNodeEnd;
 groupshared ClusterTraversalNode WorkNodes[CLUSTER_BVH_PARENTS_PER_GROUP];
 groupshared uint WorkClusterBatch;
 groupshared uint WorkClusterReady;
+groupshared uint WorkClusterRead;
+groupshared bool WorkClusterAssigned;
 groupshared uint WorkNodesRemaining;
 groupshared uint WorkViewLanes;
 groupshared bool WorkFinished;
@@ -24,17 +28,24 @@ void ClaimReadyNodes(uint thread, bool multipleViews)
     uint viewLanes = 1u;
     if (thread == 0u)
     {
-        first = NodeIndirectArgs.Load(CLUSTER_NODE_READ);
-        uint end = min(NodeIndirectArgs.Load(CLUSTER_NODE_WRITE), TraversalLevel.MaxNodes);
-        if (first < end && TraversalReady[first] != 0u)
+        if (WorkNodeRead == WorkNodeEnd && WorkNodeEnd < TraversalLevel.MaxNodes)
+        {
+            uint begin;
+            NodeIndirectArgs.InterlockedAdd(CLUSTER_NODE_READ, CLUSTER_BVH_PARENTS_PER_GROUP, begin);
+            WorkNodeRead = min(begin, TraversalLevel.MaxNodes);
+            WorkNodeEnd = min(begin + CLUSTER_BVH_PARENTS_PER_GROUP, TraversalLevel.MaxNodes);
+        }
+        first = WorkNodeRead;
+        if (first < WorkNodeEnd && TraversalReady[first] != 0u)
         {
             DeviceMemoryBarrier();
             viewLanes = multipleViews ? ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask)) : 1u;
-            available = min(CLUSTER_BVH_PARENTS_PER_GROUP / viewLanes, end - first);
+            available = min(CLUSTER_BVH_PARENTS_PER_GROUP / viewLanes, WorkNodeEnd - first);
         }
     }
 
-    // One wave reads the bounded ready prefix together; only thread zero claims it.
+    // Each group keeps its assigned range while producers fill it.
+    // One wave reads the next ready prefix within that range.
     uint leader = WaveMaskFirstLane(WaveActiveBallot(thread == 0u));
     first = WaveReadLaneAt(first, leader);
     available = WaveReadLaneAt(available, leader);
@@ -48,30 +59,35 @@ void ClaimReadyNodes(uint thread, bool multipleViews)
     if (thread == 0u)
     {
         WorkNodeStart = first;
-        WorkNodeCount = 0u;
+        WorkNodeCount = count;
         WorkViewLanes = viewLanes;
-        if (count != 0u)
-        {
-            uint observed;
-            NodeIndirectArgs.InterlockedCompareExchange(CLUSTER_NODE_READ, first, first + count, observed);
-            if (observed == first) WorkNodeCount = count;
-        }
+        WorkNodeRead = first + count;
     }
 }
 
 bool ClaimReadyClusters(uint nodesRemaining, out uint batch, out uint count)
 {
-    batch = NodeIndirectArgs.Load(CLUSTER_BATCH_READ);
+    if (!WorkClusterAssigned)
+    {
+        NodeIndirectArgs.InterlockedAdd(CLUSTER_BATCH_READ, 1u, WorkClusterRead);
+        WorkClusterAssigned = true;
+    }
+    batch = WorkClusterRead;
     uint batches = (CandidateCount[0] + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
     count = batch < batches ? ClusterBatchReady[batch] : 0u;
     if (count != CLUSTER_BATCH_SIZE && (nodesRemaining != 0u || count == 0u)) return false;
-    uint observed;
-    NodeIndirectArgs.InterlockedCompareExchange(CLUSTER_BATCH_READ, batch, batch + 1u, observed);
-    return observed == batch;
+    WorkClusterAssigned = false;
+    return true;
 }
 
 void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleViews = true)
 {
+    if (thread == 0u)
+    {
+        WorkNodeRead = 0u;
+        WorkNodeEnd = 0u;
+        WorkClusterAssigned = false;
+    }
     for (;;)
     {
         GroupMemoryBarrierWithGroupSync();
@@ -83,7 +99,7 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
             if (WorkNodeCount == 0u && !ClaimReadyClusters(WorkNodesRemaining, WorkClusterBatch, WorkClusterReady))
                 WorkClusterReady = 0u;
             WorkFinished = WorkNodeCount == 0u && WorkClusterReady == 0u && WorkNodesRemaining == 0u &&
-                NodeIndirectArgs.Load(CLUSTER_BATCH_READ) >= (CandidateCount[0] + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
+                WorkClusterRead >= (CandidateCount[0] + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
         }
         GroupMemoryBarrierWithGroupSync();
         if (WorkNodeCount != 0u)
