@@ -17,6 +17,7 @@ public static partial class SlangShaderImporter
         SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession session);
         if (result.Failed || session is null)
             throw new InvalidOperationException($"Slang global session creation failed with {result}.");
+        session.SetDownstreamCompilerPath(SlangPassThrough.Dxc, AppContext.BaseDirectory);
         return session;
     }
 
