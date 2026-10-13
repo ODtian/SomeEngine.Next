@@ -178,6 +178,8 @@ public sealed class ClusterMaterialAssignmentSet
         private readonly ClusterMaterialAssignmentSet _result;
         private readonly RenderWorld _world;
         private readonly HashSet<long> _neededMaterials = [];
+        private ImmutableDictionary<long, (Material Resource, ulong Revision)>.Builder? _values;
+        private ImmutableHashSet<long>.Builder? _changes;
         private bool _topologyChanged;
         internal Update(ClusterMaterialAssignmentSet source, RenderWorld world)
         {
@@ -225,16 +227,20 @@ public sealed class ClusterMaterialAssignmentSet
             }
             _result._entities = _result._entities.Add(entity, sequence);
             foreach (RenderMaterialBinding binding in bindings)
-                if (!_result._values.ContainsKey(binding.MaterialId))
+                if (!ContainsMaterial(binding.MaterialId))
                     _neededMaterials.Add(binding.MaterialId);
         }
 
         internal void SetValue(Material material)
         {
             if (!_result._materialOffsets.ContainsKey(material.MaterialId)) return;
-            if (_result._values.TryGetValue(material.MaterialId, out var value) && ReferenceEquals(value.Resource, material) && value.Revision == material.Revision) return;
-            _result._values = _result._values.SetItem(material.MaterialId, (material, material.Revision));
-            _result._changes = _result._changes.Add(material.MaterialId);
+            var values = _values;
+            bool found = values is null
+                ? _result._values.TryGetValue(material.MaterialId, out var value)
+                : values.TryGetValue(material.MaterialId, out value);
+            if (found && ReferenceEquals(value.Resource, material) && value.Revision == material.Revision) return;
+            (_values ??= _result._values.ToBuilder())[material.MaterialId] = (material, material.Revision);
+            (_changes ??= _result._changes.ToBuilder()).Add(material.MaterialId);
         }
 
         internal void Remove(Entity entity)
@@ -261,19 +267,24 @@ public sealed class ClusterMaterialAssignmentSet
                 if (addresses.IsEmpty)
                 {
                     _result._materialOffsets = _result._materialOffsets.Remove(id);
-                    _result._values = _result._values.Remove(id);
-                    _result._changes = _result._changes.Add(id);
+                    (_values ??= _result._values.ToBuilder()).Remove(id);
+                    (_changes ??= _result._changes.ToBuilder()).Add(id);
                 }
                 else _result._materialOffsets = _result._materialOffsets.SetItem(id, addresses);
             }
             _topologyChanged = true;
         }
 
+        private bool ContainsMaterial(long id) =>
+            _values?.ContainsKey(id) ?? _result._values.ContainsKey(id);
+
         internal ClusterMaterialAssignmentSet Complete()
         {
             foreach (long id in _neededMaterials)
-                if (_result._materialOffsets.ContainsKey(id) && !_result._values.ContainsKey(id))
+                if (_result._materialOffsets.ContainsKey(id) && !ContainsMaterial(id))
                     SetValue(_world.ReadMaterial(id));
+            if (_values is not null) _result._values = _values.ToImmutable();
+            if (_changes is not null) _result._changes = _changes.ToImmutable();
             if (_topologyChanged) _result.TopologyVersion = checked(_source.TopologyVersion + 1);
             return _result;
         }
