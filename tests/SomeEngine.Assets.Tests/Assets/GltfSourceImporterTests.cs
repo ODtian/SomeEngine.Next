@@ -34,7 +34,7 @@ public class GltfSourceImporterTests
                 .Replace("{ \"mesh\": 0 },", "{ \"mesh\": 0, \"children\": [2] },", StringComparison.Ordinal)
                 .Replace("{ \"mesh\": 1 }", "{ \"mesh\": 1 }, { \"mesh\": 0 }", StringComparison.Ordinal);
             File.WriteAllText(source, json);
-            IReadOnlyList<ImportedAsset> imported = await ImportAsync(Game.Importing.StandardGltfSceneImporter.CreateSourceImporter(), directory, source);
+            IReadOnlyList<ImportedAsset> imported = await ImportAsync(SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter(), directory, source);
             Assert.Equal(2, imported.Count(value => value.SubAssetKey.StartsWith("mesh:")));
             ImportedAsset scene = Assert.Single(imported, value => value.SubAssetKey.StartsWith("scene:"));
             using WorldAsset asset = await WorldAsset.OpenAsync(scene.OutputPath);
@@ -66,7 +66,7 @@ public class GltfSourceImporterTests
         try
         {
             string path = WriteTestProject(directory, writeImporterSettings: false);
-            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter();
+            var importer = SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter();
             var assets = await ImportAsync(importer, directory, path);
             Assert.Contains(assets, value => value.SubAssetKey.StartsWith("texture:"));
             await ImportAsync(importer, directory, path);
@@ -115,18 +115,24 @@ public class GltfSourceImporterTests
     private const string UnlitShaderGuid = "4774aa8d-36c4-40db-9821-d982e19f9f84";
 
     [Fact]
-    public async Task Import_UsesDefaultTemplates_WhenSourceMetaLacksImporterSettings()
+    public async Task ImportUsesEngineMaterialsAndProjectShadersAndReusesCompletedAssets()
     {
         string dir = CreateTempDir();
 
         try
         {
             string gltfPath = WriteTestProject(dir, writeImporterSettings: false);
-            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter();
-
-            IReadOnlyList<ImportedAsset> imported = await ImportAsync(importer, dir, gltfPath);
-
-            Assert.Contains(imported, asset => asset.SubAssetKey.StartsWith("material:", StringComparison.Ordinal));
+            AssetProject project = AssetProjects.Create(dir);
+            IReadOnlyList<Guid> imported = await project.ImportAsync(gltfPath);
+            AssetEntry entry = project.List(MaterialAsset.FileType).Single(asset => asset.Name == "MaskedLit");
+            string path = Path.Combine(dir, entry.Path);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-5));
+            DateTime written = File.GetLastWriteTimeUtc(path);
+            Assert.Equal(imported, await project.ImportAsync(gltfPath));
+            Assert.Equal(written, File.GetLastWriteTimeUtc(path));
+            await using MaterialAsset material = await MaterialAsset.OpenAsync(path);
+            Assert.IsType<StandardMaterialAsset>(material);
+            Assert.Equal(new AssetId<ShaderAsset>(Guid.Parse(LitShaderGuid)), material.GetBlock<MaterialBlock>().Shader);
         }
         finally
         {
@@ -142,7 +148,7 @@ public class GltfSourceImporterTests
         try
         {
             string gltfPath = WriteTestProject(dir, writeImporterSettings: true);
-            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter();
+            var importer = SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter();
 
             IReadOnlyList<ImportedAsset> first = await ImportAsync(importer, dir, gltfPath);
             IReadOnlyList<ImportedAsset> second = await ImportAsync(importer, dir, gltfPath);
@@ -253,7 +259,7 @@ public class GltfSourceImporterTests
             }
             Assert.Equal(2, SharpGLTF.Schema2.ModelRoot.Load(gltfPath).LogicalMeshes.Count);
             SourceMeta sourceMeta = SourceMeta.Load(gltfPath);
-            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter();
+            var importer = SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter();
 
             ImportInputs? first = await importer.GetInputsAsync(dir, gltfPath, sourceMeta, null, default);
             Assert.NotNull(first);
@@ -305,7 +311,7 @@ public class GltfSourceImporterTests
         try
         {
             string path = WriteTestProject(dir, writeImporterSettings: false);
-            var importer = Game.Importing.StandardGltfSceneImporter.CreateSourceImporter();
+            var importer = SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter();
             IReadOnlyList<ImportedAsset> original = await ImportAsync(importer, dir, path);
             ImportedAsset first = Assert.Single(original, asset => asset.SubAssetKey == "mesh:index:0");
             string source = await File.ReadAllTextAsync(path);
@@ -337,8 +343,12 @@ public class GltfSourceImporterTests
         Directory.CreateDirectory(templateDir);
         WriteTemplate(Path.Combine(templateDir, "PbrTemplate.material.asset"), "LitTemplate", unlit: false);
         WriteTemplate(Path.Combine(templateDir, "UnlitTemplate.material.asset"), "UnlitTemplate", unlit: true);
-        WriteTemplate(Path.Combine(dir, Game.Importing.StandardGltfSceneImporter.LitTemplate), "Standard", unlit: false);
-        WriteTemplate(Path.Combine(dir, Game.Importing.StandardGltfSceneImporter.UnlitTemplate), "TestUnlit_1", unlit: true);
+        string shaderDirectory = Path.Combine(dir, "assets", "Shaders");
+        Directory.CreateDirectory(shaderDirectory);
+        using (var lit = new ShaderAsset(Guid.Parse(LitShaderGuid)))
+            lit.SaveSourceAsync(Path.Combine(shaderDirectory, "standard.shader")).AsTask().GetAwaiter().GetResult();
+        using (var unlit = new ShaderAsset(Guid.Parse(UnlitShaderGuid)))
+            unlit.SaveSourceAsync(Path.Combine(shaderDirectory, "unlit.shader")).AsTask().GetAwaiter().GetResult();
 
         string modelDir = Path.Combine(dir, "assets", "Models");
         string textureDir = Path.Combine(modelDir, "textures");

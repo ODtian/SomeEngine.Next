@@ -20,8 +20,7 @@
                       GlobalPropertiesToRemove="PublishAot" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game.Assets/Game.Assets.csproj" />
-    <Using Include="Game.Content" />
-    <Using Include="Game.Assets" />
+    <Using Include="SomeEngine.Resources" />
+    <Using Include="SomeEngine.Assets.Schema" />
   </ItemGroup>
 </Project>

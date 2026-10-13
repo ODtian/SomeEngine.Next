@@ -47,9 +47,7 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game.Importing/Game.Importing.csproj" />
-    <Using Include="Game.Content" />
-    <Using Include="Game.Assets" />
-    <Using Include="Game.Importing" />
+    <Using Include="SomeEngine.Resources" />
+    <Using Include="SomeEngine.Assets.Schema" />
   </ItemGroup>
 </Project>

@@ -26,7 +26,6 @@ public static class RenderScenarios
         destination = Path.GetFullPath(destination);
         projectSources = Path.GetFullPath(projectSources);
         engineRoot = Path.GetFullPath(engineRoot);
-        Game.Assets.MaterialTypes.Register();
         string sourceShaders = Path.Combine(projectSources, "assets", "Shaders");
         string engineShaders = Path.Combine(engineRoot, "assets", "Shaders");
         if (mode is not ("phong" or "factors" or "materials" or "wpo-alpha" or "displacement" or "sparse-motion"))
@@ -199,7 +198,7 @@ public static class RenderScenarios
                 pixel + "\ntypedef MaskVisibility VisibilityEvaluate;");
         }
         File.WriteAllText(shaderPath, shader);
-        AssetProject project = new AssetProject(destination, [Game.Importing.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat([engineShaders])]);
+        AssetProject project = new AssetProject(destination, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat([engineShaders])]);
         await project.BuildAsync(Path.ChangeExtension(shaderPath, ".shader"));
         IAssetStorage storage = project.CreateStorage();
         await using var loader = new AssetLoader(storage);

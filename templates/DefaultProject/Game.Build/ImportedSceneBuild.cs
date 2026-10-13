@@ -1,13 +1,12 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Game.Assets;
+using SomeEngine.Assets.Schema;
 using ImportedScenes;
 using Microsoft.Extensions.DependencyInjection;
 using SharpGLTF.Schema2;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
-using SomeEngine.Assets.Schema;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.Streaming;
 
@@ -21,7 +20,6 @@ public static class ImportedSceneBuild
         sourcePath = Path.GetFullPath(sourcePath);
         projectRoot = Path.GetFullPath(projectRoot);
         engineRoot = Path.GetFullPath(engineRoot);
-        MaterialTypes.Register();
         SceneMaterialAsset.Register();
         string name = Path.GetFileNameWithoutExtension(sourcePath);
         string copiedSource = Path.Combine(projectRoot, "assets", "Imported", name, Path.GetFileName(sourcePath));
@@ -43,11 +41,12 @@ public static class ImportedSceneBuild
             SourceMeta.Save(copiedSource, sourceMetadata);
         }
         GltfImporterSettings sourceSettings = sourceMetadata.GetSettings(GltfSourceImporter.SourceImporterId,
-            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings)
+            with { LitMaterialTemplate = "assets/Materials/Standard.material.asset" };
         var sceneImporter = new ImportedSceneImporter(sourceSettings);
         var importer = new GltfSourceImporter(services =>
         {
-            Game.Importing.ProjectAssetCapabilities.AddAssetCapabilities(services);
+            SomeEngine.Assets.Importers.EngineAssetCapabilities.AddAssetCapabilities(services);
             ImportedSceneCapabilities.AddAssetCapabilities(services);
             services.AddSingleton(sceneImporter);
             services.AddSingleton<IClusterVertexEncoder, SceneVertexEncoder>();

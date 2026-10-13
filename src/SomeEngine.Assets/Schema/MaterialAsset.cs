@@ -13,6 +13,11 @@ public partial class MaterialAsset : Asset
 {
     private static readonly object TypeGate = new();
     private static readonly Dictionary<Guid, (Func<Material> Value, Func<Guid, MaterialAsset> Asset)> Types = [];
+    static MaterialAsset()
+    {
+        RegisterType<StandardMaterial, StandardMaterialAsset>(static id => new(id));
+        RegisterType<UnlitMaterial, UnlitMaterialAsset>(static id => new(id));
+    }
     public const string FileType = "SomeEngine.Assets.Schema.Material";
     public const string PathSuffix = ".material.asset";
     public static ulong SchemaHash => AssetHeader.SchemaFingerprint;

@@ -39,13 +39,8 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game.Assets/Game.Assets.csproj" />
-    <Using Include="Game.Content" />
-    <Using Include="Game.Assets" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game.Assets/Game.Assets.csproj" />
-    <Using Include="Game.Content" />
-    <Using Include="Game.Assets" />
+    <ProjectReference Include="../../src/SomeEngine.Assets/SomeEngine.Assets.csproj" />
+    <Using Include="SomeEngine.Resources" />
+    <Using Include="SomeEngine.Assets.Schema" />
   </ItemGroup>
 </Project>

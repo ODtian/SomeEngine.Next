@@ -1,12 +1,6 @@
-using System.Numerics;
-using SomeEngine.Graphics;
-using SomeEngine.Serialization.Containers;
-
-using SomeEngine.Assets;
-using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
-using Game.Content;
-namespace Game.Assets;
+
+namespace SomeEngine.Assets.Schema;
 
 public sealed class UnlitMaterialAsset : MaterialAsset
 {

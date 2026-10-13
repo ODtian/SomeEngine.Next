@@ -1,5 +1,5 @@
-using Game.Assets;
-using Game.Content;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 #if !DEBUG
 if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
@@ -15,7 +15,6 @@ if (!File.Exists(manifestPath))
     Console.Error.WriteLine("Project content has not been built. Run Game.Build for this project, then rebuild Game.App.");
     return 1;
 }
-MaterialTypes.Register();
 ImportedScenes.SceneMaterialAsset.Register();
 if (args.Length != 0)
 {

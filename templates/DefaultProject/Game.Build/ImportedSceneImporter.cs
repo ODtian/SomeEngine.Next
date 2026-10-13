@@ -1,13 +1,12 @@
 using System.Globalization;
 using System.Numerics;
 using System.Text.Json.Nodes;
-using Game.Assets;
+using SomeEngine.Assets.Schema;
 using ImportedScenes;
 using SharpGLTF.Schema2;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Importing;
-using SomeEngine.Assets.Schema;
 using SomeEngine.ECS;
 using SomeEngine.Render.Components;
 using SomeEngine.Resources;
@@ -36,9 +35,9 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
                 texture, cancellationToken).ConfigureAwait(false);
             textures.Add(texture, imported.Reference);
         }
-        string templatePath = Path.IsPathRooted(sourceSettings.LitMaterialTemplate)
-            ? Path.GetFullPath(sourceSettings.LitMaterialTemplate)
-            : Path.GetFullPath(Path.Combine(context.ProjectRoot, sourceSettings.LitMaterialTemplate));
+        string templatePath = Path.IsPathRooted(sourceSettings.LitMaterialTemplate!)
+            ? Path.GetFullPath(sourceSettings.LitMaterialTemplate!)
+            : Path.GetFullPath(Path.Combine(context.ProjectRoot, sourceSettings.LitMaterialTemplate!));
         await context.ReportInputAsync(templatePath, cancellationToken).ConfigureAwait(false);
         await using MaterialAsset template = await MaterialAsset.OpenAsync(templatePath, cancellationToken).ConfigureAwait(false);
         using MaterialAsset asset = template.CreateCopy();

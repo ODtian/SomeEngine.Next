@@ -14,7 +14,6 @@
     <ProjectReference Include="..\..\src\SomeEngine.Resources\SomeEngine.Resources.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game/Game.csproj" />
-    <Using Include="Game.Content" />
+    <Using Include="SomeEngine.Resources" />
   </ItemGroup>
 </Project>
