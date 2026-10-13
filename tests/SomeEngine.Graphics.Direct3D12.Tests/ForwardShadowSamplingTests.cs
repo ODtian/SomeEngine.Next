@@ -60,11 +60,11 @@ public sealed class ForwardShadowSamplingTests(D3D12TestCompiler compiler)
                 float visibility = EvaluateVirtualShadowForwardVisibility(uint3(index,64,0), 0u,
                     light, receiver, uint3(128,128,1), view, TestDepth);
                 #else
-                // The previous projection calculation, including its material-normal bias.
+                // The projection uses the authored geometric plane of this receiver.
                 float bias = max(.02, .025 * length(receiver.Position));
                 float visibility = SampleVirtualShadowDirectionalFilteredSoft(VirtualShadowViews,
                     VirtualShadowPageTable, VirtualShadowAtlas, VirtualShadowPrefilteredAtlas,
-                    0u, 1u, receiver.Position + receiver.ShadingNormal * bias, receiver.ShadingNormal,
+                    0u, 1u, receiver.Position + receiver.GeometricNormal * bias, receiver.GeometricNormal,
                     0.0, 4u, 8u, 8.0, uint2(index,64), 31u).Visibility;
                 #endif
                 Result[index] = float2(visibility, 0.0);
@@ -138,7 +138,7 @@ public sealed class ForwardShadowSamplingTests(D3D12TestCompiler compiler)
                 float bias = max(.02, .025 * length(receiver.Position));
                 float visibility = SampleVirtualShadowLocalSoft(VirtualShadowViews,
                     VirtualShadowPageTable, VirtualShadowAtlas, 0u,
-                    receiver.Position + receiver.ShadingNormal * bias, receiver.ShadingNormal,
+                    receiver.Position + receiver.GeometricNormal * bias, receiver.GeometricNormal,
                     .001, 0.0, 4u, 8u, 8.0, uint2(index,64), 63u).Visibility;
                 // Preserve the projected local buffer's four-bit value and blue-noise dither.
                 float noise = VirtualShadowRayStepOffset(uint2(index,64), 63u);
