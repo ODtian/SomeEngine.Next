@@ -136,7 +136,7 @@ public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
     public static PassQueueSelection AnyCompatible() => new(null, default, false, true);
 }
 
-public readonly record struct BufferBoundaryState(
+public record struct BufferBoundaryState(
     BufferRange Range,
     PipelineSync Sync,
     ResourceAccess Access,
@@ -144,9 +144,27 @@ public readonly record struct BufferBoundaryState(
     Queue? Queue = null,
     QueueCompletion? ReadyAfter = null,
     BufferContentScope ContentScope = BufferContentScope.FullRange,
-    Queue? ReleasedTo = null);
+    Queue? ReleasedTo = null)
+{
+    public BufferRange Range { get; init; } = Range;
+    public PipelineSync Sync { get; init; } = Sync;
+    public ResourceAccess Access { get; init; } = Access;
+    public ResourceContentState Contents { get; init; } = Contents;
+    public Queue? Queue { get; init; } = Queue;
+    public BufferContentScope ContentScope { get; init; } = ContentScope;
+    public Queue? ReleasedTo { get; init; } = ReleasedTo;
 
-public readonly record struct TextureBoundaryState(
+    private QueueCompletion? _readyAfter = ReadyAfter;
+    public QueueCompletion? ReadyAfter
+    {
+        readonly get => _readyAfter;
+        init => _readyAfter = value;
+    }
+
+    internal void SetCompletion(QueueCompletion? completion) => _readyAfter = completion;
+}
+
+public record struct TextureBoundaryState(
     TextureSubresourceRange Range,
     PipelineSync Sync,
     ResourceAccess Access,
@@ -155,7 +173,26 @@ public readonly record struct TextureBoundaryState(
     Queue? Queue = null,
     QueueCompletion? ReadyAfter = null,
     Queue? ReleasedTo = null,
-    TextureSubresourceRange? ReleaseRange = null);
+    TextureSubresourceRange? ReleaseRange = null)
+{
+    public TextureSubresourceRange Range { get; init; } = Range;
+    public PipelineSync Sync { get; init; } = Sync;
+    public ResourceAccess Access { get; init; } = Access;
+    public TextureLayout Layout { get; init; } = Layout;
+    public ResourceContentState Contents { get; init; } = Contents;
+    public Queue? Queue { get; init; } = Queue;
+    public Queue? ReleasedTo { get; init; } = ReleasedTo;
+    public TextureSubresourceRange? ReleaseRange { get; init; } = ReleaseRange;
+
+    private QueueCompletion? _readyAfter = ReadyAfter;
+    public QueueCompletion? ReadyAfter
+    {
+        readonly get => _readyAfter;
+        init => _readyAfter = value;
+    }
+
+    internal void SetCompletion(QueueCompletion? completion) => _readyAfter = completion;
+}
 
 public readonly record struct QueryRange(uint FirstQuery, uint QueryCount);
 

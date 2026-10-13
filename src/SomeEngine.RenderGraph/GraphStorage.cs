@@ -348,16 +348,43 @@ internal sealed class GraphPersistentParameterBindings
     };
 }
 
-internal readonly record struct QueryBoundaryState(
+internal record struct QueryBoundaryState(
     QueryRange Range,
     ResourceContentState Contents,
     Queue? Queue,
-    QueueCompletion? ReadyAfter);
+    QueueCompletion? ReadyAfter)
+{
+    public QueryRange Range { get; init; } = Range;
+    public ResourceContentState Contents { get; init; } = Contents;
+    public Queue? Queue { get; init; } = Queue;
 
-internal readonly record struct RayTracingShaderTableBoundaryState(
+    private QueueCompletion? _readyAfter = ReadyAfter;
+    public QueueCompletion? ReadyAfter
+    {
+        readonly get => _readyAfter;
+        init => _readyAfter = value;
+    }
+
+    internal void SetCompletion(QueueCompletion? completion) => _readyAfter = completion;
+}
+
+internal record struct RayTracingShaderTableBoundaryState(
     ResourceContentState Contents,
     Queue? Queue,
-    QueueCompletion? ReadyAfter);
+    QueueCompletion? ReadyAfter)
+{
+    public ResourceContentState Contents { get; init; } = Contents;
+    public Queue? Queue { get; init; } = Queue;
+
+    private QueueCompletion? _readyAfter = ReadyAfter;
+    public QueueCompletion? ReadyAfter
+    {
+        readonly get => _readyAfter;
+        init => _readyAfter = value;
+    }
+
+    internal void SetCompletion(QueueCompletion? completion) => _readyAfter = completion;
+}
 
 internal sealed class GraphQueryPool
 {

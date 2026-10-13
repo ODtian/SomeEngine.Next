@@ -41,7 +41,7 @@ internal sealed partial class FrameExecutor
         internal TextureBoundaryState[] Before = [];
         internal TextureBoundaryState[]? InputStates;
         internal int[] PriorCompletionItems = [];
-        internal TextureStateValue[] After = [];
+        internal int[] CompletionSources = [];
         internal TextureBoundaryState[] Values = [];
         internal QueueCompletion?[] Completions = [];
     }
@@ -61,7 +61,7 @@ internal sealed partial class FrameExecutor
         internal BufferBoundaryState[] Before = [];
         internal BufferBoundaryState[]? InputStates;
         internal int[] PriorCompletionItems = [];
-        internal BufferStateValue[] After = [];
+        internal int[] CompletionSources = [];
         internal BufferBoundaryState[] Values = [];
         internal QueueCompletion?[] Completions = [];
     }
@@ -76,7 +76,7 @@ internal sealed partial class FrameExecutor
         internal QueryBoundaryState[] Before = [];
         internal QueryBoundaryState[]? InputStates;
         internal int[] PriorCompletionItems = [];
-        internal QueryStateValue[] After = [];
+        internal int[] CompletionSources = [];
         internal QueryBoundaryState[] Values = [];
         internal QueueCompletion?[] Completions = [];
     }
@@ -91,7 +91,7 @@ internal sealed partial class FrameExecutor
         internal RayTracingShaderTableBoundaryState[] Before = [];
         internal RayTracingShaderTableBoundaryState[]? InputStates;
         internal int[] PriorCompletionItems = [];
-        internal ShaderTableStateValue[] After = [];
+        internal int[] CompletionSources = [];
         internal RayTracingShaderTableBoundaryState[] Values = [];
         internal QueueCompletion?[] Completions = [];
     }
@@ -333,7 +333,7 @@ internal sealed partial class FrameExecutor
             if (changed) BuildBufferStateUpdate(update, current);
             update.InputStates = current;
             foreach (int item in update.PriorCompletionItems)
-                update.Completions[item] = current[update.After[item].CompletionSource].ReadyAfter;
+                update.Completions[item] = current[update.CompletionSources[item]].ReadyAfter;
         }
         foreach (TextureStateUpdate update in _submissionTextureUpdates[submission])
         {
@@ -351,7 +351,7 @@ internal sealed partial class FrameExecutor
             if (changed) BuildTextureStateUpdate(update, current);
             update.InputStates = current;
             foreach (int item in update.PriorCompletionItems)
-                update.Completions[item] = current[update.After[item].CompletionSource].ReadyAfter;
+                update.Completions[item] = current[update.CompletionSources[item]].ReadyAfter;
         }
         foreach (QueryStateUpdate update in _submissionQueryUpdates[submission])
         {
@@ -364,7 +364,7 @@ internal sealed partial class FrameExecutor
             if (changed) BuildQueryStateUpdate(update, current);
             update.InputStates = current;
             foreach (int item in update.PriorCompletionItems)
-                update.Completions[item] = current[update.After[item].CompletionSource].ReadyAfter;
+                update.Completions[item] = current[update.CompletionSources[item]].ReadyAfter;
         }
         foreach (ShaderTableStateUpdate update in _submissionShaderTableUpdates[submission])
         {
@@ -377,7 +377,7 @@ internal sealed partial class FrameExecutor
             if (changed) BuildShaderTableStateUpdate(update, current);
             update.InputStates = current;
             foreach (int item in update.PriorCompletionItems)
-                update.Completions[item] = current[update.After[item].CompletionSource].ReadyAfter;
+                update.Completions[item] = current[update.CompletionSources[item]].ReadyAfter;
         }
     }
 
@@ -405,8 +405,8 @@ internal sealed partial class FrameExecutor
         foreach (QueryStateUpdate update in _submissionQueryUpdates[submission])
         {
             for (int item = 0; item < update.Values.Length; item++)
-                update.Values[item] = update.After[item].State with
-                { ReadyAfter = update.After[item].CompletionSource < 0 ? completion : update.Completions[item] };
+                update.Values[item].SetCompletion(
+                    update.CompletionSources[item] < 0 ? completion : update.Completions[item]);
             ref FrameQueryPool pool = ref CollectionsMarshal.AsSpan(_queryPools)[update.ResourceIndex];
             pool.Definition.BoundaryStates = update.Values;
             pool.EntryBoundaryStates = update.Values;
@@ -415,8 +415,8 @@ internal sealed partial class FrameExecutor
         foreach (ShaderTableStateUpdate update in _submissionShaderTableUpdates[submission])
         {
             for (int item = 0; item < update.Values.Length; item++)
-                update.Values[item] = update.After[item].State with
-                { ReadyAfter = update.After[item].CompletionSource < 0 ? completion : update.Completions[item] };
+                update.Values[item].SetCompletion(
+                    update.CompletionSources[item] < 0 ? completion : update.Completions[item]);
             ref FrameRayTracingShaderTable table = ref CollectionsMarshal.AsSpan(_shaderTables)[update.ResourceIndex];
             table.Definition.BoundaryStates = update.Values;
             table.EntryBoundaryStates = update.Values;
@@ -428,7 +428,8 @@ internal sealed partial class FrameExecutor
     {
         BufferBoundaryState[] boundaryStates = update.Values;
         for (int item = 0; item < boundaryStates.Length; item++)
-            boundaryStates[item] = update.After[item].State with { ReadyAfter = update.After[item].CompletionSource < 0 ? completion : update.Completions[item] };
+            boundaryStates[item].SetCompletion(
+                update.CompletionSources[item] < 0 ? completion : update.Completions[item]);
         StoreBufferStates(update.ResourceIndex, boundaryStates, update.BoundaryChanged);
     }
 
@@ -564,17 +565,21 @@ internal sealed partial class FrameExecutor
             ReleaseBufferStates(_bufferBoundaryScratch, _passes[_submissionPasses[update.Submission][0]].Queue!,
                 ReleaseDestination(release.DestinationQueueType));
         _bufferBoundaryScratch.Sort(static (left, right) => left.State.Range.Offset.CompareTo(right.State.Range.Offset));
-        PrepareArray(ref update.After, _bufferBoundaryScratch.Count);
-        _bufferBoundaryScratch.CopyTo(update.After);
-        update.BoundaryChanged = current.Length != update.After.Length;
-        for (int item = 0; !update.BoundaryChanged && item < current.Length; item++)
-            update.BoundaryChanged = !BufferBoundaryMatches(current[item], update.After[item].State);
         // Published boundaries can remain in a resource cache after this update is reused.
-        update.Values = new BufferBoundaryState[update.After.Length];
-        PrepareArray(ref update.Completions, update.After.Length);
+        update.Values = new BufferBoundaryState[_bufferBoundaryScratch.Count];
+        PrepareArray(ref update.CompletionSources, update.Values.Length);
+        PrepareArray(ref update.Completions, update.Values.Length);
         _priorCompletionItems.Clear();
-        for (int item = 0; item < update.After.Length; item++)
-            if (update.After[item].CompletionSource >= 0) _priorCompletionItems.Add(item);
+        for (int item = 0; item < update.Values.Length; item++)
+        {
+            BufferStateValue value = _bufferBoundaryScratch[item];
+            update.Values[item] = value.State;
+            update.CompletionSources[item] = value.CompletionSource;
+            if (value.CompletionSource >= 0) _priorCompletionItems.Add(item);
+        }
+        update.BoundaryChanged = current.Length != update.Values.Length;
+        for (int item = 0; !update.BoundaryChanged && item < current.Length; item++)
+            update.BoundaryChanged = !BufferBoundaryMatches(current[item], update.Values[item]);
         update.PriorCompletionItems = _priorCompletionItems.ToArray();
         update.Initialized = true;
     }
@@ -596,7 +601,8 @@ internal sealed partial class FrameExecutor
     {
         TextureBoundaryState[] boundaryStates = update.Values;
         for (int item = 0; item < boundaryStates.Length; item++)
-            boundaryStates[item] = update.After[item].State with { ReadyAfter = update.After[item].CompletionSource < 0 ? completion : update.Completions[item] };
+            boundaryStates[item].SetCompletion(
+                update.CompletionSources[item] < 0 ? completion : update.Completions[item]);
         StoreTextureStates(update.ResourceIndex, boundaryStates, update.BoundaryChanged);
     }
 
@@ -687,16 +693,20 @@ internal sealed partial class FrameExecutor
         foreach (QueueRelease release in update.Releases)
             TransferTextureStates(_textureBoundaryScratch, release.TextureRange!.Value,
                 _passes[_submissionPasses[update.Submission][0]].Queue!, ReleaseDestination(release.DestinationQueueType));
-        PrepareArray(ref update.After, _textureBoundaryScratch.Count);
-        _textureBoundaryScratch.CopyTo(update.After);
-        update.BoundaryChanged = current.Length != update.After.Length;
-        for (int item = 0; !update.BoundaryChanged && item < current.Length; item++)
-            update.BoundaryChanged = !TextureBoundaryMatches(current[item], update.After[item].State);
-        update.Values = new TextureBoundaryState[update.After.Length];
-        PrepareArray(ref update.Completions, update.After.Length);
+        update.Values = new TextureBoundaryState[_textureBoundaryScratch.Count];
+        PrepareArray(ref update.CompletionSources, update.Values.Length);
+        PrepareArray(ref update.Completions, update.Values.Length);
         _priorCompletionItems.Clear();
-        for (int item = 0; item < update.After.Length; item++)
-            if (update.After[item].CompletionSource >= 0) _priorCompletionItems.Add(item);
+        for (int item = 0; item < update.Values.Length; item++)
+        {
+            TextureStateValue value = _textureBoundaryScratch[item];
+            update.Values[item] = value.State;
+            update.CompletionSources[item] = value.CompletionSource;
+            if (value.CompletionSource >= 0) _priorCompletionItems.Add(item);
+        }
+        update.BoundaryChanged = current.Length != update.Values.Length;
+        for (int item = 0; !update.BoundaryChanged && item < current.Length; item++)
+            update.BoundaryChanged = !TextureBoundaryMatches(current[item], update.Values[item]);
         update.PriorCompletionItems = _priorCompletionItems.ToArray();
         update.Initialized = true;
     }
@@ -761,13 +771,15 @@ internal sealed partial class FrameExecutor
                 foreach (PendingQueueRelease release in releases)
                     if (ReferenceEquals(release.Resource, buffer.Resource) && release.Release)
                         ReleaseBufferStates(_bufferBoundaryScratch, queue, release.DestinationQueue);
-                PrepareArray(ref update.After, _bufferBoundaryScratch.Count);
-                _bufferBoundaryScratch.CopyTo(update.After);
-                update.Values = new BufferBoundaryState[update.After.Length];
-                PrepareArray(ref update.Completions, update.After.Length);
-                for (int item = 0; item < update.After.Length; item++)
+                update.Values = new BufferBoundaryState[_bufferBoundaryScratch.Count];
+                PrepareArray(ref update.CompletionSources, update.Values.Length);
+                PrepareArray(ref update.Completions, update.Values.Length);
+                for (int item = 0; item < update.Values.Length; item++)
                 {
-                    int source = update.After[item].CompletionSource;
+                    BufferStateValue value = _bufferBoundaryScratch[item];
+                    update.Values[item] = value.State;
+                    int source = value.CompletionSource;
+                    update.CompletionSources[item] = source;
                     update.Completions[item] = source < 0 ? null : current[source].ReadyAfter;
                 }
             }
@@ -787,13 +799,15 @@ internal sealed partial class FrameExecutor
                 foreach (PendingQueueRelease release in releases)
                     if (ReferenceEquals(release.Resource, texture.Resource) && release.Release)
                         TransferTextureStates(_textureBoundaryScratch, release.TextureRange!.Value, queue, release.DestinationQueue);
-                PrepareArray(ref update.After, _textureBoundaryScratch.Count);
-                _textureBoundaryScratch.CopyTo(update.After);
-                update.Values = new TextureBoundaryState[update.After.Length];
-                PrepareArray(ref update.Completions, update.After.Length);
-                for (int item = 0; item < update.After.Length; item++)
+                update.Values = new TextureBoundaryState[_textureBoundaryScratch.Count];
+                PrepareArray(ref update.CompletionSources, update.Values.Length);
+                PrepareArray(ref update.Completions, update.Values.Length);
+                for (int item = 0; item < update.Values.Length; item++)
                 {
-                    int source = update.After[item].CompletionSource;
+                    TextureStateValue value = _textureBoundaryScratch[item];
+                    update.Values[item] = value.State;
+                    int source = value.CompletionSource;
+                    update.CompletionSources[item] = source;
                     update.Completions[item] = source < 0 ? null : current[source].ReadyAfter;
                 }
             }
@@ -852,13 +866,17 @@ internal sealed partial class FrameExecutor
                 _queryContentScratch.Clear();
             }
         }
-        PrepareArray(ref update.After, _queryBoundaryScratch.Count);
-        _queryBoundaryScratch.CopyTo(update.After);
-        update.Values = new QueryBoundaryState[update.After.Length];
-        PrepareArray(ref update.Completions, update.After.Length);
+        update.Values = new QueryBoundaryState[_queryBoundaryScratch.Count];
+        PrepareArray(ref update.CompletionSources, update.Values.Length);
+        PrepareArray(ref update.Completions, update.Values.Length);
         _priorCompletionItems.Clear();
-        for (int item = 0; item < update.After.Length; item++)
-            if (update.After[item].CompletionSource >= 0) _priorCompletionItems.Add(item);
+        for (int item = 0; item < update.Values.Length; item++)
+        {
+            QueryStateValue value = _queryBoundaryScratch[item];
+            update.Values[item] = value.State;
+            update.CompletionSources[item] = value.CompletionSource;
+            if (value.CompletionSource >= 0) _priorCompletionItems.Add(item);
+        }
         update.PriorCompletionItems = _priorCompletionItems.ToArray();
         update.Initialized = true;
     }
@@ -892,13 +910,17 @@ internal sealed partial class FrameExecutor
                         _shaderTableBoundaryScratch.RemoveAt(item);
             _shaderTableBoundaryScratch.Add(new(new RayTracingShaderTableBoundaryState(contents, queue, null), -1));
         }
-        PrepareArray(ref update.After, _shaderTableBoundaryScratch.Count);
-        _shaderTableBoundaryScratch.CopyTo(update.After);
-        update.Values = new RayTracingShaderTableBoundaryState[update.After.Length];
-        PrepareArray(ref update.Completions, update.After.Length);
+        update.Values = new RayTracingShaderTableBoundaryState[_shaderTableBoundaryScratch.Count];
+        PrepareArray(ref update.CompletionSources, update.Values.Length);
+        PrepareArray(ref update.Completions, update.Values.Length);
         _priorCompletionItems.Clear();
-        for (int item = 0; item < update.After.Length; item++)
-            if (update.After[item].CompletionSource >= 0) _priorCompletionItems.Add(item);
+        for (int item = 0; item < update.Values.Length; item++)
+        {
+            ShaderTableStateValue value = _shaderTableBoundaryScratch[item];
+            update.Values[item] = value.State;
+            update.CompletionSources[item] = value.CompletionSource;
+            if (value.CompletionSource >= 0) _priorCompletionItems.Add(item);
+        }
         update.PriorCompletionItems = _priorCompletionItems.ToArray();
         update.Initialized = true;
     }
