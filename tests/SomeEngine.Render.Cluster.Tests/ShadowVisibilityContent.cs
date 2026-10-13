@@ -5,6 +5,7 @@ using SharpGLTF.Schema2;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
@@ -47,7 +48,8 @@ internal static class ShadowVisibilityContent
         project.RegisterAsset(await material.SaveAsync(Path.Combine(content, entry.Path)));
     }
 
-    internal static async Task BuildAsync(string engine, string sourceContent, string content, IEnumerable<Guid> roots)
+    internal static async Task BuildAsync(string engine, string sourceContent, string content, IEnumerable<Guid> roots,
+        ClusterShadingPath shadingPath = ClusterShadingPath.Deferred)
     {
         _ = Registered.Value;
         string shaders = Path.Combine(content, "assets", "Shaders");
@@ -112,6 +114,7 @@ internal static class ShadowVisibilityContent
                 else
                     shader = Guid.NewGuid();
                 string source = (doubleSided ? "#define CLUSTER_RASTER_TWO_SIDED 1\n" : "") +
+                    $"#define SHADOW_FORWARD_VISIBILITY {(shadingPath == ClusterShadingPath.Forward ? 1 : 0)}\n" +
                     $"#define SHADOW_ALPHA_CUTOFF {cutoff.ToString("R", CultureInfo.InvariantCulture)}\n" +
                     $"#define SHADOW_NORMAL_SCALE {normalScale.ToString("R", CultureInfo.InvariantCulture)}\n" +
                     "#include \"shadow_visibility_material.slang\"\n";

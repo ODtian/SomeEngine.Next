@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Text.Json;
 using SomeEngine.Runtime;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
@@ -11,10 +12,20 @@ public sealed partial class DefaultGameRayShadowTests
     [InlineData("spheres")]
     [InlineData("sponza")]
     [InlineData("bistro")]
-    public async Task DefaultSoftShadowsMatchIndependentSourceEmitters(string scene)
+    public Task DefaultSoftShadowsMatchIndependentSourceEmitters(string scene) =>
+        CaptureDefaultSoftShadowsAsync(scene, ClusterShadingPath.Deferred);
+
+    [Theory]
+    [InlineData("spheres")]
+    [InlineData("sponza")]
+    [InlineData("bistro")]
+    public Task DefaultForwardSoftShadowsMatchIndependentSourceEmitters(string scene) =>
+        CaptureDefaultSoftShadowsAsync(scene, ClusterShadingPath.Forward);
+
+    private async Task CaptureDefaultSoftShadowsAsync(string scene, ClusterShadingPath shadingPath)
     {
         string engine = FindEngine();
-        using var evidence = new ShadowEvidence("soft-ray-shadow-" + scene);
+        using var evidence = new ShadowEvidence($"soft-ray-shadow-{scene}-{shadingPath.ToString().ToLowerInvariant()}");
         bool spheres = scene == "spheres";
         string sourceContent = spheres ? Path.Combine(engine, "templates", "DefaultProject")
             : Path.Combine(engine, "samples", "ImportedScenes", "Apps", scene == "sponza" ? "Sponza" : "Bistro");
@@ -27,6 +38,7 @@ public sealed partial class DefaultGameRayShadowTests
             string linear = Path.Combine(evidence.Directory, name + ".rgba16");
             string[] arguments = ["--test-scene", evidence.Content, "--frames", CaptureFrames.ToString(),
                 "--hidden-window", "--fixed-step", "0.016666667", "--no-vsync", "--no-debug-ui", "--vsm",
+                "--shading-path", shadingPath.ToString().ToLowerInvariant(),
                 spheres ? "--dynamic-scene" : "--static-scene", "--frame-output", image, "--linear-frame-output", linear];
             captures.Add(await DefaultGameCapture.RunAsync(application, arguments, image, output));
             return SceneLinearImage.Load(linear);
@@ -37,11 +49,13 @@ public sealed partial class DefaultGameRayShadowTests
                 scene == "sponza" ? "Sponza.gltf" : "Bistro.glb");
         using ApplicationSettingsAsset settings = await ApplicationSettingsAsset.OpenAsync(
             Path.Combine(sourceContent, "assets", "Runtime", "default.runtime.asset"));
-        await ShadowVisibilityContent.BuildAsync(engine, sourceContent, evidence.Content, [settings.Id]);
+        await ShadowVisibilityContent.BuildAsync(engine, sourceContent, evidence.Content, [settings.Id], shadingPath);
         SceneLinearImage visibility = await Capture("vsm-shadow");
         SceneFrame frame = visibility.Frame;
         Assert.Equal(CaptureFrames - 1, frame.Frame);
         Assert.Equal((uint)(CaptureFrames - 1), frame.SubmittedFrame);
+        Assert.Equal(shadingPath, beauty.Frame.Options.ShadingPath);
+        Assert.Equal(shadingPath, frame.Options.ShadingPath);
         Assert.Equal(beauty.Frame.View, frame.View);
         Assert.Equal(beauty.Frame.Projection, frame.Projection);
         Assert.Equal(beauty.Frame.JitterPixels, frame.JitterPixels);
@@ -73,7 +87,8 @@ public sealed partial class DefaultGameRayShadowTests
         RayShadowSoftComparison comparison = RayShadowSoftComparison.Write(evidence.Directory, reference, frame.Width, frame.Height);
         await File.WriteAllTextAsync(Path.Combine(evidence.Directory, "comparison.json"), JsonSerializer.Serialize(new
         {
-            Scene = scene, SourceCommit = Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_SOURCE"),
+            Scene = scene, ShadingPath = shadingPath.ToString(),
+            SourceCommit = Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_SOURCE"),
             Frame = frame, Captures = captures, Comparison = comparison,
             Emitter = new { SourceAngleRadians = sourceAngle, light.ShadowSettings.SourceRadius },
             Reference = "Independent source glTF BLAS/TLAS, original UV alpha masks, actual source transforms and submitted camera, geometric-normal ULP origin; uniform solid-angle integration of the authored solar disk",

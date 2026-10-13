@@ -6,6 +6,7 @@
 #include "vsm_soft_sampling.slang"
 #include "vsm_receiver_pixel.slang"
 #include "vsm_projected_sampling.slang"
+#include "vsm_forward_sampling.slang"
 
 StructuredBuffer<GPULight> LightBuffer;
 
@@ -37,7 +38,7 @@ struct ShadowVisibilityMask : IVisibilityEvaluate<StandardVertex>
 [MaterialSurfaceData]
 struct ShadowVisibilityData { uint ShadingFacesLight; };
 
-struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
+struct ShadowVisibilityMaterial : IForwardSurfaceEvaluate<SurfaceEval, Triangle>
 {
     typealias Data = ShadowVisibilityData;
     Texture2D<float4> NormalMap;
@@ -54,17 +55,28 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
             cross(normal, tangent) * surface.Tangent.w * tangentNormal.y + normal * tangentNormal.z);
     }
 
-    Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
-        Triangle triangle, out SurfaceReceiver receiver)
+    SurfaceReceiver evaluateShadowReceiver(SurfacePixel pixel, SurfaceEval surface, float3 bary,
+        Triangle triangle)
     {
-        receiver = (SurfaceReceiver)0;
+        SurfaceReceiver receiver = (SurfaceReceiver)0;
         receiver.Position = pixel.VisibilityDepth == 2u ? pixel.PositionFromDepth : surface.Position;
+#if SHADOW_FORWARD_VISIBILITY
+        if ((LoadInstanceFirstPerson(InstanceData, InstanceProperties, pixel.InstanceID).x & 3u) != 1u)
+            receiver.Position = pixel.PositionFromDepth;
+#endif
         receiver.Depth = pixel.Depth;
-        receiver.ShadingNormal = CalculateShadingNormal(surface);
         receiver.GeometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
             triangle.Position2 - triangle.Position0), normalize(surface.Normal));
         if (dot(receiver.GeometricNormal, surface.Normal) < 0.0) receiver.GeometricNormal = -receiver.GeometricNormal;
         receiver.Flags = SURFACE_RECEIVER_LIGHTING;
+        return receiver;
+    }
+
+    Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
+        Triangle triangle, out SurfaceReceiver receiver)
+    {
+        receiver = evaluateShadowReceiver(pixel, surface, bary, triangle);
+        receiver.ShadingNormal = CalculateShadingNormal(surface);
         Data data;
         data.ShadingFacesLight = dot(receiver.ShadingNormal, Views[pixel.PixelCoord.z].CameraPos - receiver.Position) > 0.0 &&
             dot(receiver.ShadingNormal, -LightBuffer[0].Direction) >= 0.15 ? 1u : 0u;
@@ -77,6 +89,13 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         return float4(visibility, 1.0, data.ShadingFacesLight != 0u ? 1.0 : 0.0, 1.0);
     }
 
+    float4 shadeForwardSurface(uint3 pixel, uint debugMode, Data data, SurfaceReceiver receiver)
+    {
+        float visibility = EvaluateVirtualShadowForwardVisibility(pixel, 0u, LightBuffer[0], receiver,
+            uint3(Uniforms.ScreenWidth, Uniforms.ScreenHeight, Uniforms.ViewCount), Views[pixel.z], DepthBuffer);
+        return float4(visibility, 1.0, data.ShadingFacesLight != 0u ? 1.0 : 0.0, 1.0);
+    }
+
 };
 
 typedef StaticVertexEval VertexEvaluate;
@@ -86,3 +105,26 @@ typedef ShadowVisibilityMaterial SurfaceEvaluate;
 #define CLUSTER_MESHLET_RASTER 1
 #define CLUSTER_SOFTWARE_MESHLET_RASTER 1
 #include "cluster_material_entries.slang"
+
+#if SHADOW_FORWARD_VISIBILITY
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ClusterShadowReceiver<let visibilityDepth : uint, let debugMode : uint>(
+    uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+{
+    CSEvaluateShadowReceiver(vertex, domain, surface, tid, visibilityDepth, debugMode);
+}
+
+[PrimaryDepthReceiver]
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ClusterForwardShade<let visibilityDepth : uint, let debugMode : uint, let exportSurfaceReceivers : bool>(
+    uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+{
+    CSForwardShade(vertex, domain, surface, tid, visibilityDepth, debugMode, exportSurfaceReceivers);
+}
+#endif
