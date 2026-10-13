@@ -11,7 +11,6 @@ internal sealed partial class FrameExecutor
     private List<QueueRelease>[] _releases = [];
     private List<AliasingResource>[] _aliasBeforeResources = [];
     private List<AliasingResource>[] _aliasAfterResources = [];
-    private List<QueueCompletion>[] _completionWaits = [];
     private List<int>[] _physicalPredecessors = [];
     private readonly List<PendingQueueRelease> _lateReleases = [];
     private readonly HashSet<Queue> _transferSources =
@@ -1145,7 +1144,6 @@ internal sealed partial class FrameExecutor
         EnsureCapacity(ref _releases, _passes.Count);
         EnsureCapacity(ref _aliasBeforeResources, _passes.Count);
         EnsureCapacity(ref _aliasAfterResources, _passes.Count);
-        EnsureCapacity(ref _completionWaits, _passes.Count);
         EnsureCapacity(ref _physicalPredecessors, _passes.Count);
         for (int pass = _synchronizationPassCount; pass < _passes.Count; pass++)
         {
@@ -1153,7 +1151,7 @@ internal sealed partial class FrameExecutor
             _beforeTextureBarriers[pass] ??= []; _afterTextureBarriers[pass] ??= [];
             _acquires[pass] ??= []; _releases[pass] ??= [];
             _aliasBeforeResources[pass] ??= []; _aliasAfterResources[pass] ??= [];
-            _completionWaits[pass] ??= []; _physicalPredecessors[pass] ??= [];
+            _physicalPredecessors[pass] ??= [];
         }
         _synchronizationPassCount = _passes.Count;
         foreach (var (key, bindingOnly) in _synchronizationChanges)
@@ -1217,7 +1215,7 @@ internal sealed partial class FrameExecutor
         }
         foreach (int pass in _changedSynchronizationPasses)
         {
-            _commandChanges.Add(pass);
+            InvalidateCommands(pass);
             _beforeBufferBarriers[pass].Clear(); _afterBufferBarriers[pass].Clear();
             _beforeTextureBarriers[pass].Clear(); _afterTextureBarriers[pass].Clear();
             _acquires[pass].Clear(); _releases[pass].Clear();
@@ -1242,14 +1240,16 @@ internal sealed partial class FrameExecutor
         _changedSynchronizationPasses.Clear();
     }
 
-    private void RefreshCompletionWaits()
+    private void RefreshCompletionWaits(int waveCount)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.WaitCollection);
+        for (int wave = 0; wave < waveCount; wave++)
+            foreach (int submission in _recordingSubmissions[wave]) _submissionWaits[submission].Clear();
         foreach ((int pass, var resources) in _initialWaitResources)
         {
-            _completionWaits[pass].Clear();
             if (!IsLive(pass)) continue;
             Queue queue = _passes[pass].Queue!;
+            List<QueueCompletion> waits = _submissionWaits[_submissionByPass[pass]];
             foreach (var key in resources)
             {
                 switch (key.Kind)
@@ -1273,7 +1273,7 @@ internal sealed partial class FrameExecutor
             void AddWait(QueueCompletion? completion)
             {
                 if (completion.HasValue && !ReferenceEquals(completion.Value.Queue, queue))
-                    AddCompletion(_completionWaits[pass], completion.Value);
+                    AddCompletion(waits, completion.Value);
             }
         }
     }
