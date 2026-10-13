@@ -16,12 +16,21 @@ struct InstancePropertyAttribute
     string accessor;
 };
 
+struct SurfacePixelInput
+{
+    uint3 PixelCoord;
+    uint InstanceID;
+    uint MaterialIndex;
+    float3 CameraPosition;
+    // World-space position differences for one screen pixel along each axis.
+    float3 PositionDx;
+    float3 PositionDy;
+};
+
 interface ISurfaceEvaluate<TSurface, TTriangle>
 {
     void evaluateSurface(
-        uint3 pixelCoord,
-        uint instanceID,
-        uint materialSlot,
+        SurfacePixelInput input,
         TSurface surface,
         float3 bary,
         TTriangle triangle,
@@ -29,9 +38,7 @@ interface ISurfaceEvaluate<TSurface, TTriangle>
 
     void evaluateDebug(
         uint debugMode,
-        uint3 pixelCoord,
-        uint instanceID,
-        uint materialSlot,
+        SurfacePixelInput input,
         TSurface surface,
         float3 bary,
         TTriangle triangle,

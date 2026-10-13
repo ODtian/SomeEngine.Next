@@ -2,6 +2,7 @@
 #ifndef CLUSTER_TESSELLATION_CORE_SLANG
 #define CLUSTER_TESSELLATION_CORE_SLANG
 
+#include "cluster_common.slang"
 #include "cluster_structures.slang"
 #include "cluster_tessellation_types.slang"
 #include "cluster_view_access.slang"

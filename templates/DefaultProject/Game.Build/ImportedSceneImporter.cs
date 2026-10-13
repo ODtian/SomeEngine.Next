@@ -84,7 +84,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(file, destination, overwrite: true);
         }
-        string surface = File.ReadAllText(Path.Combine(defaults, "standard_material.slang"));
+        string surface = File.ReadAllText(Path.Combine(engine, "assets", "Shaders", "standard_material.slang"));
         surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
         surface = Replace(surface, "Texture2D ARMMap;", "Texture2D ARMMap;\n    Texture2D OcclusionMap;\n    Texture2D EmissiveMap;");
         surface = Replace(surface, "float3 N_geom =", "normalTS.xy *= scalars.NormalScale;\n        float3 N_geom =");

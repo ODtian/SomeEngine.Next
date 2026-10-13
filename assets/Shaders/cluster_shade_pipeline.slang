@@ -1,9 +1,11 @@
 #ifndef CLUSTER_SHADE_PIPELINE_SLANG
 #define CLUSTER_SHADE_PIPELINE_SLANG
 
+#include "cluster_common.slang"
 #include "vertex_consumer_cache.slang"
 #include "material_interfaces.slang"
 #include "cluster_view.slang"
+#include "vsm_receiver_pixel.slang"
 
 struct ShadeUniforms
 {
@@ -314,13 +316,25 @@ void CSShadeCore<
         bary,
         pixelCoord);
 
+    VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
+        DepthBuffer,
+        pixelCoord,
+        uint2(view.ScreenWidth, view.ScreenHeight),
+        DepthBuffer.Load(int4(pixelCoord, 0)),
+        view.ClipToWorld);
+    SurfacePixelInput input;
+    input.PixelCoord = pixelCoord;
+    input.InstanceID = tri.instanceID;
+    input.MaterialIndex = tri.materialSlot;
+    input.CameraPosition = view.CameraPos;
+    input.PositionDx = receiver.PositionDx - receiver.Position;
+    input.PositionDy = receiver.PositionDy - receiver.Position;
+
     if (Uniforms.DebugMode != 0)
     {
         surface.evaluateDebug(
             Uniforms.DebugMode,
-            pixelCoord,
-            tri.instanceID,
-            tri.materialSlot,
+            input,
             surfaceEval,
             bary,
             triangle,
@@ -329,9 +343,7 @@ void CSShadeCore<
     }
 
     surface.evaluateSurface(
-        pixelCoord,
-        tri.instanceID,
-        tri.materialSlot,
+        input,
         surfaceEval,
         bary,
         triangle,
