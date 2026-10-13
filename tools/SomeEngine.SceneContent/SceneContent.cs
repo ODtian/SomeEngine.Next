@@ -1,5 +1,5 @@
 using System.Numerics;
-using Game.Build;
+using DefaultGame.Content;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
@@ -14,7 +14,7 @@ using SomeEngine.Resources;
 
 namespace SomeEngine.SceneContent;
 
-/// <summary>Builds self-contained scene content from the default project's sources.</summary>
+/// <summary>Builds self-contained scene content from the rendering sample's sources.</summary>
 public static class SceneContent
 {
     public static async Task GenerateDefaultAsync(string destination, string engineRoot)
@@ -23,14 +23,14 @@ public static class SceneContent
         engineRoot = Path.GetFullPath(engineRoot);
         if (Directory.Exists(destination) && Directory.EnumerateFileSystemEntries(destination).Any())
             throw new ArgumentException("Use an empty content directory.", nameof(destination));
-        string source = Path.Combine(engineRoot, "templates", "DefaultProject");
-        Copy(Path.Combine(source, "Game.Build", "Game.Build.csproj"), Path.Combine(destination, "Game.Build", "Game.Build.csproj"));
+        string source = Path.Combine(engineRoot, "samples", "DefaultGame");
+        
         foreach (string file in Directory.EnumerateFiles(Path.Combine(source, "assets", "Shaders"), "*", SearchOption.AllDirectories))
             if (Path.GetExtension(file) is ".shader" or ".slang" or ".meta")
                 Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)));
         foreach (string file in Directory.EnumerateFiles(Path.Combine(source, "assets", "Models"), "ico_sphere.glb*"))
             if (Path.GetExtension(file) != ".json") Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)));
-        await DefaultContent.BuildAsync(destination, engineRoot).ConfigureAwait(false);
+        await SampleContent.BuildAsync(destination, engineRoot).ConfigureAwait(false);
     }
 
     /// <summary>Two colored spheres with fixed transforms and camera, suitable for equivalent arrival comparisons.</summary>

@@ -86,11 +86,13 @@ Shader shader = await code.CreateAsync(
 项目根目录与 include 路径由调用方提供。默认局部构建以定义所在目录为根，不向父目录搜索工程，也不以进程当前目录猜引擎库。
 
 ```powershell
-dotnet run --project tools/SomeEngine.AssetCook/SomeEngine.AssetCook.csproj -c Release -- shader assets/Shaders/hello_triangle.shader --project <project-directory> --include <engine-directory>/assets/Shaders
+dotnet run --project <project-directory>/Game.csproj -- build assets/Shaders/standard.shader
 ```
 
-`AssetCook` 使用正常 `AssetProject`/Block 行为，并在保存后重新打开资产、恢复直接 Slang 数据和检查每个 target 的入口数。
+游戏开发构建中的 `AssetCommands` 调用 `AssetProject.BuildAsync`。编辑器直接使用同一个资产 API；Shader 行为检查通过重新打开资产、恢复 Slang 数据和取得实际入口验证结果。
 
 ## 模板边界
 
-Standard、Unlit 的具体 C#、顶层 Slang 和 `.shader` 随默认项目模板分发；创建项目后由用户维护。引擎只提供共享 Shader 算法与接口库，不补回用户删除的来源，也不静默覆盖修改。
+Standard、Unlit 的具体 C# 和共享 Slang 实现由引擎提供。顶层 Slang 和 `.shader` 随默认项目模板分发，创建项目后由用户维护。顶层来源选择通用阶段实现与管线入口；具体管线的类型、资源、布局与执行依赖由对应入口及实现持有。项目添加自己的材质与导入扩展时自行选择代码位置。
+
+游戏本体、编辑器与 CLI 通过游戏项目编译，共用引擎资产 API。编译组合和开发资产操作的边界见 [游戏项目编译与开发资产](../wiki/architecture/Assets/Project-Development.md)。

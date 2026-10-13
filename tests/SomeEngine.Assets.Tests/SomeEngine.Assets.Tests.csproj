@@ -33,7 +33,7 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\templates\DefaultProject\assets\Shaders\hello_triangle.shader.asset">
+    <Content Include="..\..\samples\DefaultGame\assets\Shaders\hello_triangle.shader.asset">
       <Link>Content\Shaders\hello_triangle.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

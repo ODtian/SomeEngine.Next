@@ -17,8 +17,7 @@ public sealed class ClusterShaderDataTests
     {
         string path = Path.Combine(
             TestProjectPaths.ProjectRoot(),
-            "templates",
-            "DefaultProject",
+            "samples", "DefaultGame",
             "assets",
             "Shaders",
             "standard.shader.asset");
@@ -314,7 +313,7 @@ public sealed class ClusterShaderDataTests
     private static async Task<(Shader Shader, string EntryPoint)> ConfiguredComputeOperation(
         ClusterShaderOperationRole role)
     {
-        string root = TestProjectPaths.DefaultProjectRoot();
+        string root = TestProjectPaths.DefaultGameRoot();
         string manifestDirectory = Path.Combine(root, "Library", "AssetManifest");
         AssetManifest manifest = AssetManifest.Load(manifestDirectory);
         AssetEntry configurationRecord = Assert.Single(
@@ -501,7 +500,7 @@ public sealed class ClusterShaderDataTests
     private static async ValueTask<Shader> ReadTemplateShader(string assetName)
     {
         await using ShaderAsset file = await ShaderAsset.OpenAsync(Path.Combine(
-            TestProjectPaths.ProjectRoot(), "templates", "DefaultProject", "assets", "Shaders", assetName));
+            TestProjectPaths.ProjectRoot(), "samples", "DefaultGame", "assets", "Shaders", assetName));
         return await ShaderTestCompilation.CreateAsync(file);
     }
 

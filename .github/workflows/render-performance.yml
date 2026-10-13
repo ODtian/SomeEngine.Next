@@ -31,4 +31,4 @@ jobs:
           retention-days: 14
           path: |
             artifacts/test-results/**
-            templates/DefaultProject/Game.App/bin/Release/net10.0/Performance/**
+            samples/DefaultGame/bin/game/Release/net10.0/Performance/**

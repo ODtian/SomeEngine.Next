@@ -1,8 +1,8 @@
 param([switch]$Trace, [string]$ApplicationPath)
 $ErrorActionPreference = 'Stop'
 $application = if ($ApplicationPath) { [IO.Path]::GetFullPath($ApplicationPath) }
-    else { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe')) }
-if (!(Test-Path -LiteralPath $application)) { throw 'Build DefaultProject/Game.App in Release first.' }
+    else { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../samples/DefaultGame/bin/game/Release/net10.0/DefaultGame.exe')) }
+if (!(Test-Path -LiteralPath $application)) { throw 'Publish samples/DefaultGame in Release first.' }
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;

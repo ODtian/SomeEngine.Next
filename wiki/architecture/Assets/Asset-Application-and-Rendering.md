@@ -6,7 +6,7 @@
 
 DefaultProject 安装到空目录，复制 C#、顶层 Shader、定义和模型来源，不复制构建资产、缓存或编译输出。安装不是更新命令，遇到非空目标明确拒绝；引擎更新不覆盖已安装项目的材质、源码或默认内容。
 
-Game.Build 使用项目源码编译 Shader，创建纹理和材质，通过项目 Importer 能力导入 glTF，然后保存 WorldAsset 和 ApplicationSettingsAsset。引擎 Shader 库只作为 include 依赖。项目之外的引用路径保留相对关系，不能退化为可能冲突的文件名。
+游戏项目的开发组合调用引擎 `AssetProject` 编译 Shader 并导入 glTF，再保存游戏需要的 WorldAsset 和 ApplicationSettingsAsset。标准材质与导入实现由引擎提供，项目按实际需求组织自己的内容与扩展。DefaultGame 样例持有渲染场景、样例纹理和材质的生成代码。引擎 Shader 库作为明确的 include 依赖，项目之外的引用路径保留相对关系。编译边界见 [游戏项目编译与开发资产](Project-Development.md)。
 
 Game.App 只使用自身输出目录的 Manifest 和构建资产。缺少构建结果时明确失败，不搜索引擎仓库或其他缓存作为回退。默认内容生成工具调用这条项目构建入口，场景工具使用同样的 Block 与材质参数 API。
 
