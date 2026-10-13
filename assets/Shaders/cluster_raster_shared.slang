@@ -46,7 +46,8 @@ bool ClusterRasterDepthAccepts(float depth, uint encodedDepth, uint earlyDepthEn
 static const uint CLUSTER_RASTER_SUBPIXEL_BITS = 8u;
 static const uint CLUSTER_RASTER_SUBPIXEL_SCALE = 1u << CLUSTER_RASTER_SUBPIXEL_BITS;
 static const float CLUSTER_RASTER_SUBPIXEL_SCALE_F = float(CLUSTER_RASTER_SUBPIXEL_SCALE);
-static const uint CLUSTER_RASTER_MAX_CLIPPED_VERTICES = 16u;
+// Clipping a convex triangle against each of seven planes adds at most one vertex.
+static const uint CLUSTER_RASTER_MAX_CLIPPED_VERTICES = 10u;
 static const uint CLUSTER_RASTER_COVERAGE_FLOAT_BOUNDS = 0u;
 static const uint CLUSTER_RASTER_COVERAGE_INTEGER = 1u;
 static const uint CLUSTER_RASTER_COVERAGE_FLOAT_PIXELS = 2u;
@@ -132,16 +133,12 @@ uint ClusterRasterClipTriangle(
     out float3 clippedSourceBarycentric[CLUSTER_RASTER_MAX_CLIPPED_VERTICES],
     bool clipDepth = true)
 {
-    float4 first[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
-    float4 second[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
-    float3 firstSourceBarycentric[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
-    float3 secondSourceBarycentric[CLUSTER_RASTER_MAX_CLIPPED_VERTICES];
-    first[0] = source[0];
-    first[1] = source[1];
-    first[2] = source[2];
-    firstSourceBarycentric[0] = float3(1.0, 0.0, 0.0);
-    firstSourceBarycentric[1] = float3(0.0, 1.0, 0.0);
-    firstSourceBarycentric[2] = float3(0.0, 0.0, 1.0);
+    clipped[0] = source[0];
+    clipped[1] = source[1];
+    clipped[2] = source[2];
+    clippedSourceBarycentric[0] = float3(1.0, 0.0, 0.0);
+    clippedSourceBarycentric[1] = float3(0.0, 1.0, 0.0);
+    clippedSourceBarycentric[2] = float3(0.0, 0.0, 1.0);
     uint count = 3u;
     if (!all(isfinite(source[0])) || !all(isfinite(source[1])) || !all(isfinite(source[2])))
         clipPlanes = 127u;
@@ -156,15 +153,20 @@ uint ClusterRasterClipTriangle(
         if (count == 0u)
             break;
 
-        float4 previous = first[count - 1u];
-        float3 previousSourceBarycentric = firstSourceBarycentric[count - 1u];
+        float4 previous = clipped[count - 1u];
+        float3 previousSourceBarycentric = clippedSourceBarycentric[count - 1u];
         float previousDistance = ClusterRasterClipDistance(previous, plane);
         bool previousInside = previousDistance >= 0.0;
+        float4 current = clipped[0];
+        float3 currentSourceBarycentric = clippedSourceBarycentric[0];
         [loop]
         for (uint index = 0u; index < count; index++)
         {
-            float4 current = first[index];
-            float3 currentSourceBarycentric = firstSourceBarycentric[index];
+            // A convex polygon enters a half-space once. Output can lead input
+            // by one vertex, so retain the next input before writing this edge.
+            float4 next = index + 1u < count ? clipped[index + 1u] : 0.0.xxxx;
+            float3 nextSourceBarycentric = index + 1u < count
+                ? clippedSourceBarycentric[index + 1u] : 0.0.xxx;
             float currentDistance = ClusterRasterClipDistance(current, plane);
             bool currentInside = currentDistance >= 0.0;
 
@@ -184,40 +186,25 @@ uint ClusterRasterClipTriangle(
                 clipPlanes |= all(isfinite(intersection)) ? ClusterRasterClipMask(intersection, clipDepth) : 127u;
                 if (outputCount < CLUSTER_RASTER_MAX_CLIPPED_VERTICES)
                 {
-                    second[outputCount++] = intersection;
-                    secondSourceBarycentric[outputCount - 1u] = sourceBarycentric;
+                    clipped[outputCount++] = intersection;
+                    clippedSourceBarycentric[outputCount - 1u] = sourceBarycentric;
                 }
             }
             if (currentInside && outputCount < CLUSTER_RASTER_MAX_CLIPPED_VERTICES)
             {
-                second[outputCount++] = current;
-                secondSourceBarycentric[outputCount - 1u] = currentSourceBarycentric;
+                clipped[outputCount++] = current;
+                clippedSourceBarycentric[outputCount - 1u] = currentSourceBarycentric;
             }
 
             previous = current;
             previousSourceBarycentric = currentSourceBarycentric;
             previousDistance = currentDistance;
             previousInside = currentInside;
+            current = next;
+            currentSourceBarycentric = nextSourceBarycentric;
         }
 
         count = outputCount;
-        [unroll]
-        for (uint index = 0u; index < CLUSTER_RASTER_MAX_CLIPPED_VERTICES; index++)
-        {
-            first[index] = index < count ? second[index] : 0.0.xxxx;
-            firstSourceBarycentric[index] = index < count
-                ? secondSourceBarycentric[index]
-                : 0.0.xxx;
-        }
-    }
-
-    [unroll]
-    for (uint index = 0u; index < CLUSTER_RASTER_MAX_CLIPPED_VERTICES; index++)
-    {
-        clipped[index] = index < count ? first[index] : 0.0.xxxx;
-        clippedSourceBarycentric[index] = index < count
-            ? firstSourceBarycentric[index]
-            : 0.0.xxx;
     }
     return count;
 }
