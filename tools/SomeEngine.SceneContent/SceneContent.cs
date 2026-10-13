@@ -24,7 +24,7 @@ public static class SceneContent
         if (Directory.Exists(destination) && Directory.EnumerateFileSystemEntries(destination).Any())
             throw new ArgumentException("Use an empty content directory.", nameof(destination));
         string source = Path.Combine(engineRoot, "samples", "DefaultGame");
-        
+
         foreach (string file in Directory.EnumerateFiles(Path.Combine(source, "assets", "Shaders"), "*", SearchOption.AllDirectories))
             if (Path.GetExtension(file) is ".shader" or ".slang" or ".meta")
                 Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)));
