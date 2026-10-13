@@ -1,6 +1,7 @@
 param(
     [switch]$Trace, [string]$ApplicationPath, [switch]$Managed,
     [ValidateSet('deferred', 'forward')][string]$ShadingPath,
+    [ValidateSet('motion', 'materials', 'camera')][string]$ScenePlayback,
     [string]$ExpectedScene
 )
 $ErrorActionPreference = 'Stop'
@@ -30,6 +31,10 @@ $start.RedirectStandardError = $true
 if ($ShadingPath) {
     $start.ArgumentList.Add('--shading-path')
     $start.ArgumentList.Add($ShadingPath)
+}
+if ($ScenePlayback) {
+    $start.ArgumentList.Add('--scene-playback')
+    $start.ArgumentList.Add($ScenePlayback)
 }
 if ($Trace) {
     $startupTraces = Join-Path ([IO.Path]::GetDirectoryName($application)) 'Performance'
@@ -87,6 +92,9 @@ if ($result.Startup) {
 }
 Write-Host "Report: $($report.FullName) ($([Math]::Round($timer.Elapsed.TotalSeconds, 2)) seconds including application startup)"
 # ExpectedScene validates an existing single-scene test-scenes.json; it does not select or edit content.
+if ($ScenePlayback -and $result.ScenePlayback -ne $ScenePlayback) {
+    throw 'The scene report does not match the requested playback.'
+}
 $requiredScenes = if ($ExpectedScene) { @($ExpectedScene) } else { @('1024 spheres', 'Sponza', 'Amazon Bistro') }
 if (!$result.Complete -or $result.Scenes.Count -ne $requiredScenes.Count -or
     @(Compare-Object $requiredScenes @($result.Scenes.Scene)).Count -ne 0 -or

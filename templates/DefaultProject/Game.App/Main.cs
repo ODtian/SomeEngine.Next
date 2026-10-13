@@ -24,11 +24,6 @@ if (args is ["--test-scene", var contentDirectory, .. var renderingArguments])
         [new("Shadow reference", Path.GetFullPath(contentDirectory))], options);
     return await SomeEngine.Runtime.Application.RunAsync(renderingArguments, platform: testPlatform);
 }
-if (args.Length != 0 && args is not ["--shading-path", _])
-{
-    Console.Error.WriteLine("Use F1 for interactive settings, --shading-path deferred|forward for the shared scene platform, or --test-scene <content directory> followed by rendering options for a reproducible capture.");
-    return 1;
-}
 var scenes = SomeEngine.Runtime.SceneTestPlatform.ReadScenes(Path.Combine(AppContext.BaseDirectory, "test-scenes.json"));
 SomeEngine.Runtime.RuntimeStartupOptions? startupOptions = args.Length == 0 ? null :
     SomeEngine.Runtime.RuntimeStartupOptions.Parse(args) with
