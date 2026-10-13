@@ -904,6 +904,8 @@ internal sealed unsafe partial class D3D12Backend
         internal DescriptorLease? Source => _source;
         internal GraphicsObject? Owner => _owner;
         internal NativeLease? Resource => _resource;
+        internal bool HasSparseResources => _primaryReferences.SparseState is not null ||
+            _secondaryReferences.SparseState is not null;
 
         internal static DescriptorRecord CreateNull(ResourceBindingType type)
             => CreateNull(new DescriptorSlotDesc(type));
@@ -1011,6 +1013,7 @@ internal sealed unsafe partial class D3D12Backend
     private sealed class DescriptorGeneration
     {
         private readonly DescriptorRecord[] _records;
+        private readonly DescriptorRecord[] _sparseRecords;
         private readonly DescriptorRecord?[] _resourceRecords;
         private readonly DescriptorRecord?[] _samplerRecords;
         private ID3D12DescriptorHeap* _resources;
@@ -1035,6 +1038,7 @@ internal sealed unsafe partial class D3D12Backend
             ResourceGpuStart = resources is null ? default : ResourceTrace.GetGPUDescriptorHandleForHeapStart(resources);
             SamplerGpuStart = samplers is null ? default : ResourceTrace.GetGPUDescriptorHandleForHeapStart(samplers);
             _records = records;
+            _sparseRecords = records.Where(static record => record.HasSparseResources).ToArray();
             // Publishing replaces these arrays; it never mutates an installed array.
             // Source records remain retained by this generation until GPU retirement.
             _resourceRecords = resourceRecords;
@@ -1149,7 +1153,7 @@ internal sealed unsafe partial class D3D12Backend
 
         internal void CaptureResources(D3D12CommandSlot commands)
         {
-            foreach (DescriptorRecord record in _records)
+            foreach (DescriptorRecord record in _sparseRecords)
                 record.CaptureResources(commands);
         }
 
