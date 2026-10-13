@@ -513,7 +513,7 @@ public sealed partial class RenderGraph : IDisposable
             if (ReferenceEquals(source.PersistentResource, destination.PersistentResource) &&
                 ReferenceEquals(source.RegisteredResource, destination.RegisteredResource) &&
                 ReferenceEquals(source.BoundResource, destination.BoundResource))
-                destination.BoundaryStates = source.BoundaryStates;
+                destination.Boundaries = source.Boundaries;
         }
         foreach (GraphIdentity identity in changes.Textures)
         {

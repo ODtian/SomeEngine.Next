@@ -1255,8 +1255,15 @@ internal sealed partial class FrameExecutor
                 switch (key.Kind)
                 {
                     case GraphAccessTargetKind.Buffer:
-                        FrameBuffer buffer = _buffers[key.Index];
-                        foreach (BufferBoundaryState state in BufferEntryStates(buffer)) AddWait(state.ReadyAfter);
+                        ref readonly FrameBuffer buffer = ref CollectionsMarshal.AsSpan(_buffers)[key.Index];
+                        ReadOnlySpan<BufferBoundaryState> states = BufferEntryStates(buffer);
+                        if (buffer.Lifetime == RenderGraphResourceLifetime.Persistent &&
+                            buffer.Definition?.Boundaries.CompletionItems is { } items)
+                        {
+                            foreach (int item in items) AddWait(states[item].ReadyAfter);
+                        }
+                        else
+                            foreach (ref readonly BufferBoundaryState state in states) AddWait(state.ReadyAfter);
                         break;
                     case GraphAccessTargetKind.Texture:
                         FrameTexture texture = _textures[key.Index];

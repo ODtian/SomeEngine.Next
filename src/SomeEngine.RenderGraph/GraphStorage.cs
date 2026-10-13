@@ -243,6 +243,14 @@ internal sealed partial class GraphStructure
     }
 }
 
+internal sealed class BufferBoundaries(BufferBoundaryState[] states, int[]? completionItems = null)
+{
+    internal BufferBoundaryState[] States { get; } = states;
+    // Each index represents the ranges fed by one completion source.
+    // Caller-supplied arrays use every item and leave this list null.
+    internal int[]? CompletionItems { get; } = completionItems;
+}
+
 internal sealed class GraphBuffer
 {
     internal required BufferDesc Description;
@@ -255,7 +263,12 @@ internal sealed class GraphBuffer
     internal Buffer? BoundResource;
     internal BufferRange? CurrentViewRange;
     internal GraphPassId BufferUploadPass;
-    internal BufferBoundaryState[] BoundaryStates = [];
+    internal BufferBoundaries Boundaries = new([]);
+    internal BufferBoundaryState[] BoundaryStates
+    {
+        get => Boundaries.States;
+        set => Boundaries = new(value);
+    }
     internal string? Label => Description.Label;
 
     internal GraphBuffer Clone() => new()
@@ -270,7 +283,7 @@ internal sealed class GraphBuffer
         RegisteredResource = RegisteredResource,
         BoundResource = BoundResource,
         CurrentViewRange = CurrentViewRange,
-        BoundaryStates = (BufferBoundaryState[])BoundaryStates.Clone(),
+        Boundaries = new((BufferBoundaryState[])BoundaryStates.Clone(), Boundaries.CompletionItems),
     };
 }
 

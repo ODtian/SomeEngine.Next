@@ -15,6 +15,8 @@ internal sealed partial class FrameExecutor
     private readonly List<QueryStateValue> _queryContentScratch = [];
     private readonly List<ShaderTableStateValue> _shaderTableBoundaryScratch = [];
     private readonly List<int> _priorCompletionItems = [];
+    private readonly HashSet<int> _bufferCompletionSources = [];
+    private readonly List<int> _bufferCompletionItems = [];
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _lateStateResources = [];
     private readonly List<BufferStateUpdate> _lateBufferStateUpdates = [];
     private readonly List<TextureStateUpdate> _lateTextureStateUpdates = [];
@@ -62,7 +64,8 @@ internal sealed partial class FrameExecutor
         internal BufferBoundaryState[]? InputStates;
         internal int[] PriorCompletionItems = [];
         internal int[] CompletionSources = [];
-        internal BufferBoundaryState[] Values = [];
+        internal BufferBoundaries Boundaries = new([]);
+        internal BufferBoundaryState[] Values => Boundaries.States;
         internal QueueCompletion?[] Completions = [];
     }
 
@@ -430,11 +433,12 @@ internal sealed partial class FrameExecutor
         for (int item = 0; item < boundaryStates.Length; item++)
             boundaryStates[item].SetCompletion(
                 update.CompletionSources[item] < 0 ? completion : update.Completions[item]);
-        StoreBufferStates(update.ResourceIndex, boundaryStates, update.BoundaryChanged);
+        StoreBufferStates(update.ResourceIndex, update.Boundaries, update.BoundaryChanged);
     }
 
-    private void StoreBufferStates(int resourceIndex, BufferBoundaryState[] boundaryStates, bool boundaryChanged)
+    private void StoreBufferStates(int resourceIndex, BufferBoundaries boundaries, bool boundaryChanged)
     {
+        BufferBoundaryState[] boundaryStates = boundaries.States;
         ref FrameBuffer frameBuffer = ref CollectionsMarshal.AsSpan(_buffers)[resourceIndex];
         // Upload storage is reused independently for each frame in flight. Its
         // last submitted state belongs to that buffer, not the graph declaration.
@@ -446,12 +450,12 @@ internal sealed partial class FrameExecutor
             return;
         }
         if (frameBuffer.Lifetime == RenderGraphResourceLifetime.Persistent && frameBuffer.Definition is { } resource)
-            resource.BoundaryStates = boundaryStates;
+            resource.Boundaries = boundaries;
         else
         {
             frameBuffer.EntryBoundaryStates = boundaryStates;
             if (frameBuffer.Ownership == RenderGraphResourceOwnership.CallerOwned && frameBuffer.Definition is not null)
-                frameBuffer.Definition.BoundaryStates = boundaryStates;
+                frameBuffer.Definition.Boundaries = boundaries;
             if (frameBuffer.Lifetime == RenderGraphResourceLifetime.PerFrame && frameBuffer.Resource is not null)
                 _frame.Slot.TransientResources?.StoreCachedBufferStates(frameBuffer.AllocationIdentity, frameBuffer.Resource, boundaryStates);
         }
@@ -566,22 +570,32 @@ internal sealed partial class FrameExecutor
                 ReleaseDestination(release.DestinationQueueType));
         _bufferBoundaryScratch.Sort(static (left, right) => left.State.Range.Offset.CompareTo(right.State.Range.Offset));
         // Published boundaries can remain in a resource cache after this update is reused.
-        update.Values = new BufferBoundaryState[_bufferBoundaryScratch.Count];
-        PrepareArray(ref update.CompletionSources, update.Values.Length);
-        PrepareArray(ref update.Completions, update.Values.Length);
+        BufferBoundaryState[] values = new BufferBoundaryState[_bufferBoundaryScratch.Count];
+        PrepareArray(ref update.CompletionSources, values.Length);
+        PrepareArray(ref update.Completions, values.Length);
         _priorCompletionItems.Clear();
-        for (int item = 0; item < update.Values.Length; item++)
+        for (int item = 0; item < values.Length; item++)
         {
             BufferStateValue value = _bufferBoundaryScratch[item];
-            update.Values[item] = value.State;
+            values[item] = value.State;
             update.CompletionSources[item] = value.CompletionSource;
             if (value.CompletionSource >= 0) _priorCompletionItems.Add(item);
         }
+        update.Boundaries = new(values, BuildBufferCompletionItems(update.CompletionSources));
         update.BoundaryChanged = current.Length != update.Values.Length;
         for (int item = 0; !update.BoundaryChanged && item < current.Length; item++)
             update.BoundaryChanged = !BufferBoundaryMatches(current[item], update.Values[item]);
         update.PriorCompletionItems = _priorCompletionItems.ToArray();
         update.Initialized = true;
+    }
+
+    private int[] BuildBufferCompletionItems(ReadOnlySpan<int> sources)
+    {
+        _bufferCompletionSources.Clear();
+        _bufferCompletionItems.Clear();
+        for (int item = 0; item < sources.Length; item++)
+            if (_bufferCompletionSources.Add(sources[item])) _bufferCompletionItems.Add(item);
+        return _bufferCompletionItems.ToArray();
     }
 
     private bool SameBufferReads(ReadOnlySpan<int> left, ReadOnlySpan<int> right)
@@ -771,17 +785,18 @@ internal sealed partial class FrameExecutor
                 foreach (PendingQueueRelease release in releases)
                     if (ReferenceEquals(release.Resource, buffer.Resource) && release.Release)
                         ReleaseBufferStates(_bufferBoundaryScratch, queue, release.DestinationQueue);
-                update.Values = new BufferBoundaryState[_bufferBoundaryScratch.Count];
-                PrepareArray(ref update.CompletionSources, update.Values.Length);
-                PrepareArray(ref update.Completions, update.Values.Length);
-                for (int item = 0; item < update.Values.Length; item++)
+                BufferBoundaryState[] values = new BufferBoundaryState[_bufferBoundaryScratch.Count];
+                PrepareArray(ref update.CompletionSources, values.Length);
+                PrepareArray(ref update.Completions, values.Length);
+                for (int item = 0; item < values.Length; item++)
                 {
                     BufferStateValue value = _bufferBoundaryScratch[item];
-                    update.Values[item] = value.State;
+                    values[item] = value.State;
                     int source = value.CompletionSource;
                     update.CompletionSources[item] = source;
                     update.Completions[item] = source < 0 ? null : current[source].ReadyAfter;
                 }
+                update.Boundaries = new(values, BuildBufferCompletionItems(update.CompletionSources));
             }
             else if (key.Kind == GraphAccessTargetKind.Texture)
             {
