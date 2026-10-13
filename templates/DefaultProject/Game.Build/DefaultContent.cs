@@ -13,7 +13,6 @@ using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Render.Cluster;
-using SomeEngine.Render.Instances;
 using SomeEngine.Serialization.Containers;
 
 namespace Game.Build;
@@ -31,7 +30,7 @@ public static class DefaultContent
             throw new DirectoryNotFoundException("Select the copied project and its engine shader library explicitly.");
         MaterialTypes.Register();
         WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"),
-            BuildRenderInstanceLayoutSource(ClusterRenderFeature.InstanceLayout));
+            ClusterShaderSources.BuildInstanceLayout(ClusterRenderFeature.InstanceLayout));
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
             sourceFormats: [new ShaderSourceFormat([engineShaders])]);
         foreach (string source in Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal))
@@ -62,68 +61,6 @@ public static class DefaultContent
         }
 
         File.WriteAllText(path, normalizedContent);
-    }
-
-    private static string BuildRenderInstanceLayoutSource(RenderInstancePropertyLayout layout)
-    {
-        int boundsExpansion = layout.Resolve<float>(ClusterRenderFeature.BoundsExpansionKey)
-            .Descriptor.MetadataWordOffset;
-        int bvhRoot = layout.Resolve<uint>(ClusterRenderFeature.BvhRootKey)
-            .Descriptor.MetadataWordOffset;
-        int materialSlotOffset = layout.Resolve<uint>(ClusterRenderFeature.MaterialSlotOffsetKey)
-            .Descriptor.MetadataWordOffset;
-        int currentTransform = FindMetadataWordOffset(
-            layout,
-            RenderInstanceTransformProperties.CurrentTransformKey);
-        int previousTransform = FindMetadataWordOffset(
-            layout,
-            RenderInstanceTransformProperties.PreviousTransformKey);
-
-        return $$"""
-            #ifndef SOMEENGINE_RENDER_INSTANCE_LAYOUT_INCLUDED
-            #define SOMEENGINE_RENDER_INSTANCE_LAYOUT_INCLUDED
-
-            // Dense metadata layout generated from this project's registered Cluster feature. Shader
-            // integration must emit one such document for each pipeline/material composition.
-            static const uint RENDER_INSTANCE_METADATA_WORD_COUNT = {{layout.MetadataWordCount}}u;
-            static const uint RENDER_INSTANCE_METADATA_VECTOR_COUNT =
-                (RENDER_INSTANCE_METADATA_WORD_COUNT + 3u) / 4u;
-
-            struct RenderInstancePropertyMetadata
-            {
-                // Constant-buffer scalar arrays have a 16-byte element stride. Packing into uint4
-                // vectors preserves the CPU-side dense uint-word layout.
-                uint4 PackedWords[RENDER_INSTANCE_METADATA_VECTOR_COUNT];
-            };
-
-            uint LoadRenderInstanceMetadata(
-                RenderInstancePropertyMetadata metadata,
-                uint wordIndex)
-            {
-                return metadata.PackedWords[wordIndex >> 2u][wordIndex & 3u];
-            }
-
-            static const uint CLUSTER_BOUNDS_EXPANSION_METADATA_WORD = {{boundsExpansion}}u;
-            static const uint CLUSTER_BVH_ROOT_METADATA_WORD = {{bvhRoot}}u;
-            static const uint CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD = {{materialSlotOffset}}u;
-            static const uint RENDER_CURRENT_TRANSFORM_METADATA_WORD = {{currentTransform}}u;
-            static const uint RENDER_PREVIOUS_TRANSFORM_METADATA_WORD = {{previousTransform}}u;
-
-            #endif
-            """;
-    }
-
-    private static int FindMetadataWordOffset(
-        RenderInstancePropertyLayout layout,
-        RenderInstancePropertyKey key)
-    {
-        foreach (RenderInstancePropertyDescriptor property in layout.Properties)
-        {
-            if (property.Key == key)
-                return property.MetadataWordOffset;
-        }
-
-        throw new InvalidOperationException($"Render-instance property '{key}' is missing from the layout.");
     }
 
     private static Guid BuildClusterShaders(AssetProject project)

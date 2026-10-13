@@ -27,7 +27,7 @@ public static class BehaviorScenes
     public static async Task CreateShaderReplacementSpheresAsync(string source, string destination, string engineRoot)
     {
         CopyContent(source, destination);
-        string material = File.ReadAllText(Path.Combine(destination, "assets/Shaders/unlit_material.slang"))
+        string material = File.ReadAllText(Path.Combine(engineRoot, "assets/Shaders/unlit_material.slang"))
             .Replace("albedoSample.rgb * scalars.BaseColorTint.rgb", "albedoSample.rgb * scalars.BaseColorTint.bgr");
         string shader = File.ReadAllText(Path.Combine(destination, "assets/Shaders/unlit.slang"))
             .Replace("#include \"unlit_material.slang\"", material);

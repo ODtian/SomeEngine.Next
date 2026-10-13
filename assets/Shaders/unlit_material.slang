@@ -1,6 +1,7 @@
-#ifndef GAME_UNLIT_MATERIAL_SLANG
-#define GAME_UNLIT_MATERIAL_SLANG
+#ifndef UNLIT_MATERIAL_SLANG
+#define UNLIT_MATERIAL_SLANG
 #include "material_interfaces.slang"
+#include "triangle_surface.slang"
 
 [MaterialScalars]
 struct UnlitScalars
@@ -35,20 +36,18 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
     SamplerState MaterialSampler;
 
     void evaluateSurface(
-        uint3 pixelCoord,
-        uint instanceID,
-        uint materialSlot,
+        SurfacePixelInput input,
         SurfaceEval surface,
         float3 bary,
         Triangle triangle,
         RWTexture2DArray<float4> outputColor)
     {
         UnlitPixelContext ctx = BuildUnlitPixelContext(
-            pixelCoord,
-            instanceID,
+            input.PixelCoord,
+            input.InstanceID,
             surface);
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
-        UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>(materialSlot);
+        UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>(input.MaterialIndex);
         outputColor[ctx.pixelCoord] = float4(
             albedoSample.rgb * scalars.BaseColorTint.rgb,
             1.0);
@@ -56,14 +55,13 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 
     void evaluateDebug(
         uint debugMode,
-        uint3 pixelCoord,
-        uint instanceID,
-        uint materialSlot,
+        SurfacePixelInput input,
         SurfaceEval surface,
         float3 bary,
         Triangle triangle,
         RWTexture2DArray<float4> outputColor)
     {
+        uint3 pixelCoord = input.PixelCoord;
         if (debugMode == 8)
         {
             outputColor[pixelCoord] = float4(bary, 1.0);
@@ -72,7 +70,7 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 
         UnlitPixelContext ctx = BuildUnlitPixelContext(
             pixelCoord,
-            instanceID,
+            input.InstanceID,
             surface);
 
         if (debugMode == 9)

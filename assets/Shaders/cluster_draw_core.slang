@@ -2,6 +2,7 @@
 #ifndef CLUSTER_DRAW_CORE_SLANG
 #define CLUSTER_DRAW_CORE_SLANG
 
+#include "cluster_common.slang"
 #include "vertex_consumer_cache.slang"
 #include "material_interfaces.slang"
 #include "cluster_view_access.slang"
