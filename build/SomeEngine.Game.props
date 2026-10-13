@@ -10,7 +10,7 @@
     <_SomeEngineBuildDirectory Condition="'$(SomeEngineDevelopment)' != 'true'">game</_SomeEngineBuildDirectory>
     <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)' == ''">obj/$(_SomeEngineBuildDirectory)/</BaseIntermediateOutputPath>
     <BaseOutputPath Condition="'$(BaseOutputPath)' == ''">bin/$(_SomeEngineBuildDirectory)/</BaseOutputPath>
-    <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/bin/**;**/obj/**</DefaultItemExcludes>
     <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0</TargetFramework>
     <OutputType Condition="'$(OutputType)' == ''">Exe</OutputType>
     <RuntimeIdentifier Condition="'$(Configuration)' == 'Release' and '$(RuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>

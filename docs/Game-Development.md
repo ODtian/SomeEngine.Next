@@ -75,6 +75,8 @@ if (AssetCommands.Matches(args))
 
 成功返回 `0`，命令用法错误返回 `2` 并输出用法。资产操作的异常和取消通过调用方已有的错误处理路径传递。
 
+glTF 默认通过 `extras.someengine_id` 保持元素身份。按元素顺序维护身份的来源在 `.meta` 中设置 `require_persistent_element_ids: false`；[小球来源配置](../samples/DefaultGame/assets/Models/ico_sphere.glb.meta) 展示该规则与已登记的元素 ID。CLI 与编辑器共用这份来源配置。
+
 编辑器资产操作直接使用同一个 `AssetProject`：
 
 ```csharp
