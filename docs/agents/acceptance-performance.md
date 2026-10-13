@@ -80,6 +80,27 @@ NativeAOT/Satori、1280×720、Forward、原 TAA/VSM/async 设置，三景均 `M
 三景驻留页为 5/5、83/83、2673/2722，queued/active loads、backpressure、dropped faults 与阴影分辨率偏置均为零。
 后续继续沿三景 P95 严格小于 1 ms 的目标优化提交与 GPU 工作。
 
+### 2026-10-13 深度分桶与单队列提交反馈
+
+源码 `94d193d4`，加遍历就绪标记在消费时清除的同步候选。包含按 wave 并行预留深度桶、
+按下游约束选择兼容队列，以及 node/cluster 消费时的组内同步整理。
+深度桶顺序 1 项、队列交接 5 项、首帧完整层级和空帧恢复 2 项公共行为检查通过，默认行为规则检查通过。
+
+执行 `tools/Measure-Scenes.ps1 -ShadingPath forward -ScenePlayback static`，包含启动共 31.18 秒。
+冻结基线配置继续采用 1280×720、NativeAOT/Satori、原 TAA/VSM/async 设置，
+运动小球采第 2048–3071 帧，静态场景采用三秒热身、两秒采样。
+三景均 `Measured`、`Complete=true`、`TraceEnabled=false`。
+
+| 场景 | 均值 ms | P95 ms | Prepare 均值 ms | GraphExecute 均值 ms | 采样帧数 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1024 运动小球 | 1.881145 | 2.0540 | 0.188961 | 0.478302 | 1024 |
+| Sponza | 2.164300 | 2.3444 | 0.095683 | 0.451557 | 924 |
+| Amazon Bistro | 2.357257 | 2.6139 | 0.245079 | 0.634763 | 848 |
+
+三景驻留页为 5/5、83/83、2673/2722，queued/active loads、backpressure、dropped faults 与阴影分辨率偏置均为零。
+本轮组合的 P95 高于上一轮，下一步按 Forward GPU 着色耗时和队列间并行关系继续改进。
+三景 P95 严格小于 1 ms 的验收条件继续沿用。
+
 ## 历史反馈
 
 以下日期与提交记录保留当时的 1/2/3ms 目标、构建配置及测量结果，不代表当前目标；历史报告不改写。
