@@ -25,7 +25,7 @@ public static class SampleApplication
                 Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")));
             return 0;
         }
-        if (args.Length > 0 && args[0] is "import" or "build" or "list")
+        if (AssetCommands.Matches(args))
         {
             AssetProject project = AssetProjects.Create(ProjectPaths.Root,
                 [ProjectPaths.EngineShaders],
@@ -39,7 +39,7 @@ public static class SampleApplication
         var platform = new SceneTestPlatform(scenes.Select(scene => scene with
         {
             ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
-        }).ToArray())
+        }).ToArray(), RuntimeStartupOptions.Parse(args))
         {
             StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
         };
@@ -52,6 +52,6 @@ public static class SampleApplication
                 case ImportedScenes.SceneMaterial imported: imported.Roughness = roughness; return true;
                 default: return false;
             }
-        }, platform);
+        }, platform.Application);
     }
 }

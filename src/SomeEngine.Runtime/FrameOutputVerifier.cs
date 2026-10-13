@@ -237,41 +237,7 @@ internal sealed class FrameOutputVerifier : IDisposable
         return new SceneImage(frame, _width, _height, pixels);
     }
 
-    internal void SaveImage(string path)
-    {
-        // A top-down 32-bit bitmap preserves the readback pixels without a codec dependency.
-        using var writer = new BinaryWriter(new FileStream(path, FileMode.CreateNew, FileAccess.Write));
-        int rowBytes = checked(_width * 4);
-        int imageBytes = checked(rowBytes * _height);
-        writer.Write((ushort)0x4D42);
-        writer.Write(checked(54 + imageBytes));
-        writer.Write(0);
-        writer.Write(54);
-        writer.Write(40);
-        writer.Write(_width);
-        writer.Write(-_height);
-        writer.Write((ushort)1);
-        writer.Write((ushort)32);
-        writer.Write(0);
-        writer.Write(imageBytes);
-        writer.Write(0);
-        writer.Write(0);
-        writer.Write(0);
-        writer.Write(0);
-        byte[] row = new byte[rowBytes];
-        for (int y = 0; y < _height; y++)
-        {
-            int offset = checked((int)(_footprint.Offset + (ulong)y * _footprint.RowPitch));
-            for (int x = 0; x < rowBytes; x += 4)
-            {
-                row[x] = _bytes[offset + x + 2];
-                row[x + 1] = _bytes[offset + x + 1];
-                row[x + 2] = _bytes[offset + x];
-                row[x + 3] = _bytes[offset + x + 3];
-            }
-            writer.Write(row);
-        }
-    }
+    internal void SaveImage(string path) => CopyImage(0).SaveBmp(path);
 
     public void Dispose()
     {

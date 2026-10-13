@@ -12,7 +12,7 @@ public sealed class AssetCommandTests : IDisposable
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
     [Fact]
-    public async Task BuildCommandCreatesShaderAndReusesItsVersion()
+    public async Task BuildCommandCreatesShader()
     {
         File.WriteAllText(Path.Combine(_root, "Surface.slang"), """
             [shader("pixel")] float4 Pixel() : SV_Target { return float4(0, 1, 0, 1); }
@@ -28,13 +28,10 @@ public sealed class AssetCommandTests : IDisposable
         await using ShaderAsset shader = await ShaderAsset.OpenAsync(Path.Combine(_root, built.Path));
         Assert.Equal("surface", shader.Name);
         Assert.Equal(definition.Id + Environment.NewLine, output.ToString());
-
-        Assert.Equal(0, await AssetCommands.RunAsync(project, ["build", "Surface.shader"], output));
-        Assert.Equal(built.Version, Assert.Single(project.List()).Version);
     }
 
     [Fact]
-    public async Task ImportCommandCreatesWorldAndReusesItsVersion()
+    public async Task ImportCommandCreatesWorld()
     {
         File.WriteAllText(Path.Combine(_root, "Town.gltf"), """
             { "asset": { "version": "2.0" }, "scene": 0, "scenes": [{ "name": "Town", "extras": { "someengine_id": "town" } }] }
@@ -47,9 +44,41 @@ public sealed class AssetCommandTests : IDisposable
         await using WorldAsset world = await WorldAsset.OpenAsync(Path.Combine(_root, imported.Path));
         Assert.Equal("Town", world.Name);
         Assert.Equal(imported.AssetGuid + Environment.NewLine, output.ToString());
+    }
 
-        Assert.Equal(0, await AssetCommands.RunAsync(project, ["import", "Town.gltf"], output));
-        Assert.Equal(imported.Version, Assert.Single(project.List()).Version);
+    [Fact]
+    public async Task RepeatedBuildCommandReusesAssetVersion()
+    {
+        File.WriteAllText(Path.Combine(_root, "Surface.slang"), """
+            [shader("pixel")] float4 Pixel() : SV_Target { return float4(0, 1, 0, 1); }
+            """);
+        using var definition = new ShaderAsset { Name = "surface" };
+        definition.GetBlock<ShaderSourceBlock>().SourceNames = ["Surface.slang"];
+        await definition.SaveSourceAsync(Path.Combine(_root, "Surface.shader"));
+        AssetProject project = AssetProjects.Create(_root);
+        using var output = new StringWriter();
+        await AssetCommands.RunAsync(project, ["build", "Surface.shader"], output);
+        Guid version = Assert.Single(project.List()).Version;
+
+        await AssetCommands.RunAsync(project, ["build", "Surface.shader"], output);
+
+        Assert.Equal(version, Assert.Single(project.List()).Version);
+    }
+
+    [Fact]
+    public async Task RepeatedImportCommandReusesAssetVersion()
+    {
+        File.WriteAllText(Path.Combine(_root, "Town.gltf"), """
+            { "asset": { "version": "2.0" }, "scene": 0, "scenes": [{ "name": "Town", "extras": { "someengine_id": "town" } }] }
+            """);
+        AssetProject project = AssetProjects.Create(_root);
+        using var output = new StringWriter();
+        await AssetCommands.RunAsync(project, ["import", "Town.gltf"], output);
+        Guid version = Assert.Single(project.List()).Version;
+
+        await AssetCommands.RunAsync(project, ["import", "Town.gltf"], output);
+
+        Assert.Equal(version, Assert.Single(project.List()).Version);
     }
 
     [Fact]

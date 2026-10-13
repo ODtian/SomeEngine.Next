@@ -76,7 +76,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
     public async Task BuildAsync(AssetProject project, ModelRoot model, string engine)
     {
         string directory = Path.Combine(project.RootPath, "assets", "Shaders");
-        string defaults = Path.Combine(engine, "templates", "DefaultProject", "assets", "Shaders");
+        string defaults = Path.Combine(engine, "samples", "DefaultGame", "assets", "Shaders");
         foreach (string file in Directory.EnumerateFiles(defaults, "*", SearchOption.AllDirectories)
             .Where(x => x.EndsWith(".slang") || x.EndsWith(".shader")))
         {

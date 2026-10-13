@@ -4,8 +4,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using SomeEngine.Diagnostics;
 using SomeEngine.Render.Cluster;
+using SomeEngine.Runtime;
 
-namespace SomeEngine.Runtime;
+namespace DefaultGame;
 
 public sealed record TestScene(string Name, string ContentDirectory, bool Animate = false);
 
@@ -15,23 +16,29 @@ public sealed class SceneTestPlatform
     public static TestScene[] ReadScenes(string path) =>
         JsonSerializer.Deserialize(File.ReadAllText(path), SceneJsonContext.Default.TestSceneArray)!;
 
-    public SceneTestPlatform(IReadOnlyList<TestScene> scenes)
+    public SceneTestPlatform(IReadOnlyList<TestScene> scenes, RuntimeStartupOptions options)
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
         Scenes = scenes.ToArray();
-        Options = RuntimeStartupOptions.Parse([]) with
+        Application = new ApplicationScene(scenes[0].ContentDirectory)
         {
-            WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true,
+            Options = options with { WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true },
+            SceneStarted = BeginScene,
+            UpdateFrame = UpdateFrame,
+            DrawDebugUi = Draw,
+            FrameCompleted = FrameCompleted,
+            SceneCompleted = result => EndScene(result.Error?.Message),
         };
     }
 
     public IReadOnlyList<TestScene> Scenes { get; }
     public int SelectedScene { get; private set; }
-    internal RuntimeStartupOptions Options { get; private set; }
-    internal bool ReloadRequested { get; private set; }
+    public ApplicationScene Application { get; }
+    private RuntimeStartupOptions Options { get => Application.Options; set => Application.Options = value; }
+    private bool ReloadRequested => Application.ReloadRequested;
     internal TestScene Current => Scenes[SelectedScene];
     private readonly List<SceneTiming> _results = [];
-    private readonly List<FrameTiming> _frames = [];
+    private readonly List<ApplicationFrameTimes> _frames = [];
     private long _testStarted;
     private long _sceneStarted;
     private long _sampleStarted;
@@ -56,25 +63,55 @@ public sealed class SceneTestPlatform
     private string? _graphicsDriver;
     public bool IsMeasuring { get; private set; }
     public string? LastReport { get; private set; }
-    public string? StartupTraceOutput { get; init; }
+    public string? StartupTraceOutput { get => Application.StartupTraceOutput; init => Application.StartupTraceOutput = value; }
     public ApplicationStartupTimes? Startup { get; private set; }
-    public int GeometryMemoryMegabytes { get; private set; } = 256;
+    public int GeometryMemoryMegabytes
+    {
+        get => (int)(Application.GeometryMemoryBytes / (1024 * 1024));
+        private set => Application.GeometryMemoryBytes = checked((uint)value * 1024 * 1024);
+    }
     internal bool ImageRequested { get; private set; }
     internal string? LastImage { get; private set; }
 
-    internal void SetRenderingInfo(int width, int height, string device, string driver)
+    private void UpdateFrame(ApplicationFrame frame)
+    {
+        SetRenderingInfo(frame.Width, frame.Height, frame.Adapter.Name, frame.Adapter.DriverVersion);
+        if (!IsMeasuring)
+        {
+            for (int index = 0; index < Math.Min(Scenes.Count, 3); index++)
+                if (frame.WasKeyPressed(0x71 + index)) SelectScene(index);
+            if (frame.WasKeyPressed(0x77)) CaptureImage();
+            if (frame.WasKeyPressed(0x78)) StartMeasurements();
+            if (frame.WasKeyPressed(0x79)) StartMeasurements(recordTrace: true);
+        }
+        if (ImageRequested)
+            frame.Scene.CaptureImage(image =>
+            {
+                string path = ImageDestination();
+                image.SaveBmp(path);
+                ImageSaved(path);
+            });
+    }
+
+    private void FrameCompleted(ApplicationFrame frame)
+    {
+        if (Startup is null && frame.Startup is { } times) RecordStartup(times);
+        if (IsMeasuring && !ReloadRequested) RecordFrame(frame.Timing, frame.GetRenderingDiagnostics());
+    }
+
+    private void SetRenderingInfo(int width, int height, string device, string driver)
         => (_renderWidth, _renderHeight, _graphicsDevice, _graphicsDriver) = (width, height, device, driver);
 
     public void CaptureImage() => ImageRequested = true;
 
-    internal string ImageDestination()
+    private string ImageDestination()
     {
         string directory = Path.Combine(AppContext.BaseDirectory, "Captures");
         Directory.CreateDirectory(directory);
         return Path.Combine(directory, $"scene-{SelectedScene}-{DateTime.Now:yyyyMMdd-HHmmss-fff}.bmp");
     }
 
-    internal void ImageSaved(string path)
+    private void ImageSaved(string path)
     {
         LastImage = path;
         ImageRequested = false;
@@ -100,6 +137,7 @@ public sealed class SceneTestPlatform
         _sceneStarted = 0;
         _testStarted = Stopwatch.GetTimestamp();
         IsMeasuring = true;
+        Application.DebugUiEnabled = false;
         SelectScene(0);
     }
 
@@ -116,16 +154,16 @@ public sealed class SceneTestPlatform
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Scenes.Count);
         SelectedScene = index;
+        Application.ContentDirectory = Current.ContentDirectory;
         Options = Options with { DynamicScene = Current.Animate };
-        ReloadRequested = true;
+        Application.Reload();
     }
 
-    internal void BeginScene()
+    private void BeginScene(long started)
     {
-        ReloadRequested = false;
         if (!IsMeasuring) return;
-        _sceneTimeLimit = (45 - Stopwatch.GetElapsedTime(_testStarted).TotalSeconds) / (Scenes.Count - SelectedScene);
-        _sceneStarted = Stopwatch.GetTimestamp();
+        _sceneTimeLimit = (45 - Stopwatch.GetElapsedTime(_testStarted, started).TotalSeconds) / (Scenes.Count - SelectedScene);
+        _sceneStarted = started;
         _sampleStarted = 0;
         _renderingStarted = 0;
         _renderedFrames = 0;
@@ -145,7 +183,7 @@ public sealed class SceneTestPlatform
                 });
     }
 
-    internal void RecordFrame(FrameTiming frame, ClusterRenderDiagnostics diagnostics)
+    private void RecordFrame(ApplicationFrameTimes frame, ClusterRenderDiagnostics diagnostics)
     {
         if (!IsMeasuring) return;
         if (_renderingStarted == 0 && diagnostics.Meshes.PublishedMeshes == diagnostics.Meshes.RegisteredMeshes)
@@ -196,7 +234,7 @@ public sealed class SceneTestPlatform
             residency.PageHeapUsedBytes, residency.PageHeapFreeBytes, residency.BackpressuredPages,
             _renderWidth, _renderHeight, Options.DynamicScene,
             _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults));
-        ReloadRequested = true;
+        Application.Reload();
     }
 
     internal void EndScene(string? error = null)
@@ -246,8 +284,10 @@ public sealed class SceneTestPlatform
         File.WriteAllText(LastReport, report.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Performance report: {LastReport}");
         IsMeasuring = false;
+        Application.DebugUiEnabled = true;
         Options = _interactiveOptions!;
         SelectedScene = _interactiveScene;
+        Application.ContentDirectory = Current.ContentDirectory;
         _interactiveOptions = null;
     }
 
@@ -288,7 +328,7 @@ public sealed class SceneTestPlatform
         if (ImGui.SliderInt("Geometry memory (MiB)", ref geometryMemory, 64, 512))
         {
             GeometryMemoryMegabytes = geometryMemory;
-            ReloadRequested = true;
+            Application.Reload();
         }
         bool taa = Options.TemporalAntialiasing;
         bool shadows = Options.VirtualShadows;
@@ -320,11 +360,10 @@ public sealed class SceneTestPlatform
                 DisableMeshShaders = !meshShaders, SynchronousFrames = synchronous, DeviceValidation = validation,
                 ScenePlayback = playback switch { 1 => "motion", 2 => "materials", 3 => "camera", _ => null },
             };
-            ReloadRequested = true;
+            Application.Reload();
         }
     }
 
-    internal readonly record struct FrameTiming(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs);
     internal sealed record SceneTiming(string Scene, string Status, int Frames, double? MeanMs, double? MedianMs,
         double? P95Ms, double? PrepareMs, double? ReconcileMs, double? ExecuteMs,
         uint ResidentPages, uint RegisteredPages, int QueuedLoads, int ActiveLoads,
