@@ -26,7 +26,7 @@ public sealed class VertexUvRenderingTests
         var shader = await source.CreateAsync(TestShaderLoading.Slang, description, "User UV depth gradient");
         var plane = await RasterTestGeometry.CreatePlaneAsync();
         var options = new ClusterPipelineOptions { EnableFrameMetricsReadback = true, ForceHardwareRaster = hardware,
-            SoftwareRasterEdgeThreshold = 64, MaxCandidates = 65536 };
+            SoftwareRasterEdgeThreshold = 65536, MaxCandidates = 65536 };
         await using var scene = await FrameStageScene.CreateAsync(backend, false, options, plane);
         Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100);
         projection.M11 = projection.M22 = 1;
@@ -35,6 +35,8 @@ public sealed class VertexUvRenderingTests
         scene.SetMeshTransform(1, new(new Vector3(20, 0, -6), Quaternion.Identity));
         scene.UseMaterial(0, scene.CreateRasterMaterial(shader, Vector4.One));
         RasterImage actual = await scene.ReadNextRasterImageAsync();
+        Console.WriteLine($"UV depth gradient {backend}, hardware={hardware}: {actual.Metrics}");
+        if (!hardware) Assert.True(actual.Metrics.SoftwareRasterBatches > 0);
         float[] expected = new float[64 * 64];
         for (int y = 0; y < 64; y++)
         for (int x = 0; x < 64; x++)

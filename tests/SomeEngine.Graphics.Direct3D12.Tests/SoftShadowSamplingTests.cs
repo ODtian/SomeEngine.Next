@@ -50,6 +50,60 @@ public sealed class SoftShadowSamplingTests(D3D12TestCompiler compiler)
     }
 
     [Fact]
+    public void ASlopedDirectionalReceiverRemainsLitWhenOnlyACoarserMapIsResident()
+    {
+        VirtualShadowView fine = new()
+        {
+            LightViewProjection = Matrix4x4.Identity, VirtualResolution = 128, PageSize = 128,
+            AtlasSize = 128, PhysicalPagesPerRow = 1, MaxPhysicalPages = 1,
+            ClipmapLevelCount = 2, MipLevelCount = 1, ProjectionDepthScale = -1,
+            WorldUnitsPerCentimeter = 1, LightDirection = Vector3.UnitZ,
+            SourceAngleRadians = .2f,
+        };
+        VirtualShadowView[] views = [fine, fine with
+        {
+            LightViewProjection = Matrix4x4.CreateScale(.5f),
+            ProjectionDepthScale = -.5f, ClipmapLevel = 1, PageTableOffset = 1,
+        }];
+        uint[] depth = Enumerable.Range(0, 128 * 128).Select(pixel =>
+        {
+            float worldX = 4f * ((pixel % 128 + .5f) / 128f) - 2f;
+            return BitConverter.SingleToUInt32Bits(1f - .5f * (.75f + .25f * worldX));
+        }).ToArray();
+        uint[][] observed = new D3D12TestCompute(compiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
+            #include "vsm_soft_sampling.slang"
+            StructuredBuffer<VirtualShadowMapParameters> Views;
+            StructuredBuffer<uint> Pages;
+            Texture2DArray<uint> Atlas;
+            RWStructuredBuffer<uint> Result;
+            [shader("compute")]
+            [numthreads(32,1,1)]
+            void ReadSlopedCoarseReceiver(uint index : SV_DispatchThreadID)
+            {
+                float x = (float(index) - 15.5) / 64.0;
+                float3 receiver = float3(x, 0, .75 + .25 * x);
+                VirtualShadowProjectionResult sample = SampleVirtualShadowSoftView(
+                    Views, Pages, Atlas, 0u, 0u, 2u, receiver, normalize(float3(-.25,0,1)),
+                    0u, 4u, 8u, 8.0, uint2(index,64), 0u);
+                Result[3u * index] = sample.Valid;
+                Result[3u * index + 1u] = asuint(sample.Visibility);
+                Result[3u * index + 2u] = sample.ViewIndex;
+            }
+            """, "ReadSlopedCoarseReceiver", new(1, 1, 1),
+            [(MemoryMarshal.Cast<VirtualShadowView, uint>(views).ToArray(), ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
+             (new uint[] { 0, VirtualShadowPageEntry.Encode(0, 1) }, ResourceBindingType.BufferSrv, 4),
+             (new uint[32 * 3], ResourceBindingType.BufferUav, 4)],
+            new SampledImage(128, 128, depth, 2, ViewDimension: TextureViewDimension.Texture2DArray));
+        for (int index = 0; index < 32; index++)
+        {
+            Assert.Equal(1u, observed[0][3 * index]);
+            Assert.Equal(1f, BitConverter.UInt32BitsToSingle(observed[0][3 * index + 1]));
+            Assert.Equal(1u, observed[0][3 * index + 2]);
+        }
+    }
+
+    [Fact]
     public void AFiniteDirectionalEmitterProducesAPenumbraAroundADepthEdge()
     {
         VirtualShadowView[] views = [new()

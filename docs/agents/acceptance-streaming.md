@@ -128,3 +128,43 @@ d813391a0b0c3782e0af8dffcd4c3f3232d2ec57f86979feb1c7c7be3b5f7adc
 SCC 冷环释放/再加载、component 外依赖保护、粗细完整交接、需求优先级与容量变化，复用已核 SHA 的 12 项原结果；跨驻留 epoch、乱序反馈各复用独立结果；SourceReadFailed 恢复与关闭复用原 2 项结果并保留其并行 GPU 窗口披露。本轮补齐 InvalidPayload 的终止自动重读与其它页继续推进。上述流送生产源码自 `1c72ccf2` 到 `791e70ae` 没有差异，本轮没有修改失败策略。
 
 仍缺公共行为证据的是多页卸载中途分配异常的整体回滚。当前公开 API 无确定性触发该异常的入口，保留前述源码审查边界，不为验收暴露生产内部接口。本页不代替 #189 的其它渲染正确性验收或 #190 性能验收。
+
+
+## 2026-10-11 当前工作树失败处理复验
+
+在现有 streaming 工作树 `e4782239d679c29697de55478bcb4fd15dff9707` 上完成一次当前程序集复验。保留既有未提交 HiZ/caster 变更、测试辅助及 import 元数据；本次没有修改生产或测试源码，也没有新增故障注入接口。
+
+- 普通 Release 增量构建：`dotnet build tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj -c Release --no-restore -m:1`，7.59 秒，0 警告、0 错误。
+- 原有 InvalidPage 与 SourceFailure 两个测试类一次正常 `dotnet test --no-build --no-restore`，**3/3 通过、0 失败、0 跳过**，默认行为规则检查 0 违规。
+- 坏页终止自动重读/健康页继续推进 12.4100423 秒；持续来源失败/关闭取消 3.8829640 秒；来源失败后细节恢复 6.2011415 秒。三项保留完整颜色与深度断言、原容量和来源计数要求。
+- 进程窗口 2026-10-11 06:20:56.277–06:21:39.611 UTC，exit 0，无 timeout。使用协调后的 GPU 窗口；开始前无 testhost/Game.App，结束后 06:21:58.829 UTC 再查仍为 0，随后释放 GPU 窗口。本轮不是性能测量。
+- 运行前后核对 69 个流送核心/接合/测试源码、26 个执行程序集和 81 个既有内容资产，均无变化；整个既有 dirty diff 的 SHA256 也保持。未重建 cook、改内容路径或添加输出树。
+- TestDLL SHA256：`0dfc9f541113bb35975ed53117580b551650353194e95e60e5e7f1aeffff13cd`；catalog SHA256：`f98ef63b03fc4275b566a86156f717372ad7cf95d8728117f8d116caacfe436e`。
+- 本次 TRX SHA256：`83c8a0e00e7431f73a7c55fcbef6362c27126506f53481bbd2e4398a75ec994f`。日志、构建、启动/退出、进程终态、源码与执行内容身份、最终核对记录保存在本页原证据目录的 `streaming-current-closure*`。
+
+同时重新计算前述 12 项、epoch、乱序、来源失败 2 项及坏页 1 项五份原 TRX 的 SHA256，全部与本页记载一致。`src/SomeEngine.Render.Cluster` 及流送反馈接合从 `1c72ccf2` 到当前工作树没有源码差异。历史结果继续按其原范围使用；本次是重测已有 3 项，不增加独立行为数量，不声称全部 17 项在当前程序集同批通过。
+
+多页卸载中途托管分配异常仍限于源码审查：`ClusterMeshes.StagePageEvictions` 的 finally 撤回全部已暂存成员；`MeshPages.StageEviction` 在修改该成员状态前扩容，取消使用已存在的链表节点，BVH patch checkpoint 回滚不分配。当前公共场景入口仍无安全且确定性的中途分配失败触发点，未运行该故障注入，也未把源读取失败测试当成它的替代。本轮已复验坏页、来源重试、恢复和关闭范围；不据此关闭 #189 全部渲染正确性或 #190 性能事项。
+
+
+## 2026-10-11 全部 17 项同批复验
+
+在同一 `e4782239` 工作树、相同 TestDLL 与本地 DefaultProject 内容上，把前述历史 17 项一次运行。此节更新当前覆盖状态；上节 3 项结果保留为先前那次独立运行的记录。
+
+- 选择 `FullyQualifiedName~GeometryStreaming`；先由正常 `dotnet test --list-tests --no-build --no-restore` 核对实际程序集，再与五份历史 TRX 逐个测试名称比较。发现与最终执行均为 17 项，缺失、额外和重复均为 0。
+- 当前同批 **17/17 通过，0 失败、0 跳过、0 超时**；默认行为规则 0 违规。包括 Handoff 11 项、Priority 1 项、Epoch 1 项、Order 1 项、SourceFailure 2 项、InvalidPage 1 项。
+- 使用前述已通过的正常增量构建，没有重复构建。进程 PID 42676 于 2026-10-11 07:47:58.975 UTC 启动、07:50:00.420 UTC 以 exit 0 结束，121.445 秒；测试报告时长 1 分 43 秒。GPU 窗口经过协调，执行后确认该进程、testhost 与 Game.App 均已退出，并已释放窗口。
+- Code Tools 请求在自己的等待上限返回 transport timeout；已落盘的正常进程退出记录、完整日志和 TRX 共同证明测试未超时且已成功结束。没有因为工具等待超时重新运行测试。
+- 执行前后 69 个相关源码、26 个程序集与 81 个内容资产逐项 SHA256 相同，原有未提交变更完整保留。8 类测试临时目录在前后检查中均为 0。没有生产/测试源码修改、cook、内容路径替换或额外程序集输出树。
+- TestDLL 和 catalog SHA256 与上节相同。本批 TRX SHA256：`33179c7e8e110f87bf496028402fe5a89e700811e5b4320918c9233c4f3405c2`。
+- 完整证据在本页原目录的 `streaming-full-current*`：baseline、selection、discovery、preflight、start、exit、log、trx 与 verification。verification 保存每项结果、源文件/程序集/资产变化集合及临时目录检查；变化集合均为空。
+
+这些用例通过正常本地 DefaultProject ApplicationSettings、ClusterShaders、材质与 shader 加载，使用公开 ClusterBuilder/MeshAsset/AssetLoader/IRangeSource 和 GameWorld→RenderingWorld→RenderGraph→颜色/深度回读链。自给几何与真实文件来源保留；实际范围是 D3D12、64×64、ForceHardwareRaster 的流送行为，并非完整应用三场景、Vulkan、VSM RT 或性能验收。来源优先级例观察真实读取顺序，其余按各测试原有图像、异常、反馈和来源终态断言执行，未改容量、时间边界或判据。
+
+本批解决“17 项只有分批历史结果”的覆盖缺口；多页卸载中途托管分配异常仍保持前述源码审查边界，没有执行不安全 OOM 注入或增加测试专用生产接口。
+
+### 最终集成携带范围
+
+07:41 UTC 只读核对既有 integration `d7c14d9b4ea6e707acff0dbf0aa9b288693b3c17` 时，33 个流送生产/接合/测试/文档文件中，生产与全部 17 项测试逻辑均已存在。epoch、乱序、来源失败及坏页提交分别已作为 `12a866c2`、`4bca9024`、`c7bf5211`、`fdd37865` 集成；坏页文件仅换行差异，不应重复重放旧提交。
+
+仅需携带本轮验收文档增量及证据。FrameStageScene 的 `SetMeshDepthCacheClass` 辅助方法是独立 caster-cache 候选所需，归对应性能变更管理。最终集成在代码、内容与方法学稳定后可使用相同 17 项 filter 复验；本批结果不得替代尚未执行的最终集成运行。

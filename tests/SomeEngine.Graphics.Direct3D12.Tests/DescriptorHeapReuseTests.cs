@@ -321,6 +321,56 @@ public sealed class DescriptorHeapReuseTests(D3D12TestCompiler shaderCompiler)
         }
     }
 
+    [Fact]
+    public void Ordinary_updates_observe_resource_replacements_and_binding_state_changes()
+    {
+        using var data = new DescriptorResources(shaderCompiler);
+        IGraphicsBackend backend = data.NativeBackend;
+        using CommandContext context = backend.CreateCommandContext(data.Device, new(QueueType.Compute, 0, 1));
+        Queue queue = backend.GetQueue(data.Device, QueueType.Compute);
+        using PersistentParameterBindings persistent = backend.CreatePersistentParameterBindings(
+            data.Device, data.Ordinary, new(data.OrdinaryLayout, data.OrdinaryResources, UInts(0, 777)));
+
+        for (uint recording = 0; recording < 2; recording++)
+        {
+            ResourceBinding[] packet = data.OrdinaryResources.ToArray();
+            backend.Begin(context, new CommandRecordingDesc(64, 32, 16));
+            backend.Barrier(context, new BufferBarrier(data.Output, PipelineSync.None,
+                PipelineSync.ComputeShading, ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
+            backend.SetPipeline(context, data.Ordinary);
+            for (uint dispatch = 0; dispatch < 6; dispatch++)
+            {
+                // Mutating the caller packet must not mutate a previously retained snapshot.
+                if (dispatch == 2) packet[0] = ResourceBinding.SampledTexture(data.SecondView);
+                if (dispatch == 3)
+                {
+                    backend.SetPipeline(context, data.Indexed);
+                    backend.SetPipeline(context, data.Ordinary);
+                }
+                if (dispatch == 4) backend.SetPersistentParameterBindings(context, persistent);
+                if (dispatch == 5) packet[0] = ResourceBinding.SampledTexture(data.FirstView);
+                backend.SetTransientParameterBindings(context, new(data.OrdinaryLayout,
+                    packet, UInts(0, recording * 10 + dispatch)));
+                backend.Dispatch(context, new(1, 1, 1));
+                backend.Barrier(context, new BufferBarrier(data.Output, PipelineSync.ComputeShading,
+                    PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
+                backend.CopyBuffer(context, new(data.Output, 0, data.Readback,
+                    (recording * 6 + dispatch) * sizeof(uint), sizeof(uint)));
+                backend.Barrier(context, new BufferBarrier(data.Output, PipelineSync.Copy,
+                    PipelineSync.ComputeShading, ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
+            }
+            using RecordedCommands commands = backend.End(context);
+            QueueCompletion completion = backend.Submit(queue, new([], [], [commands], [], []));
+            Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+            backend.CollectCompleted(data.Device);
+        }
+
+        using MappedBuffer mapped = backend.Map(data.Readback, MapType.Read, new(0, 48));
+        mapped.Invalidate(new(0, 48));
+        Assert.Equal(new uint[] { 25, 26, 77, 78, 79, 30, 35, 36, 87, 88, 89, 40 },
+            MemoryMarshal.Cast<byte, uint>(mapped.Bytes).ToArray());
+    }
+
     private static byte[] UInts(uint first, uint second)
     {
         byte[] values = new byte[8];

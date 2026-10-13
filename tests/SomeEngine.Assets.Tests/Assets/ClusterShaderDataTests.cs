@@ -1,5 +1,6 @@
 using SomeEngine.Assets;
 using System.Buffers;
+using System.Numerics;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -192,24 +193,37 @@ public sealed class ClusterShaderDataTests
         }
     }
 
-    [Fact]
-    public async Task StandardShadeEntryConsumesMaterialLightingAndVirtualShadowResources()
+    [Theory]
+    [InlineData(SlangCompileTarget.Dxil)]
+    [InlineData(SlangCompileTarget.Spirv)]
+    public async Task StandardSurfaceEntryConsumesIndexedTexturesAndWritesUserSurfaceData(SlangCompileTarget target)
     {
         Shader shader = await ReadTemplateShader("standard.shader.asset");
-        string[] resources = ResourceNames(shader, "ClusterShade");
+        string[] resources = ResourceNames(shader, "ClusterSurfaceData", target);
 
-        Assert.Contains("AlbedoMap", resources);
-        Assert.Contains("NormalMap", resources);
-        Assert.Contains("ARMMap", resources);
+        Assert.Contains("StandardMaterialTextures", resources);
         Assert.Contains("MaterialSampler", resources);
+        Assert.Contains("MaterialSurfaceOutputs", resources);
+        Assert.Contains("SurfaceReceiverOutput", resources);
+    }
+
+    [Theory]
+    [InlineData(SlangCompileTarget.Dxil)]
+    [InlineData(SlangCompileTarget.Spirv)]
+    public async Task StandardShadeEntryConsumesUserSurfaceDataLightingAndProjectedShadows(SlangCompileTarget target)
+    {
+        Shader shader = await ReadTemplateShader("standard.shader.asset");
+        string[] resources = ResourceNames(shader, "ClusterShade", target);
+
+        Assert.Contains("MaterialSurfaceInputs", resources);
+        Assert.Contains("SurfaceReceiverInputs", resources);
         Assert.Contains("LightingViews", resources);
         Assert.Contains("LightBuffer", resources);
         Assert.Contains("ClusteredLightGrid", resources);
         Assert.Contains("LightIndexList", resources);
         Assert.Contains("LightingCookieAtlas", resources);
-        Assert.Contains("VirtualShadowViews", resources);
-        Assert.Contains("VirtualShadowPageTable", resources);
-        Assert.Contains("VirtualShadowAtlas", resources);
+        Assert.Contains("VirtualShadowProjectedDirectionalVisibility", resources);
+        Assert.Contains("VirtualShadowProjectedLocalVisibility", resources);
         Assert.Contains("VirtualShadowSampling", resources);
     }
 
@@ -278,7 +292,15 @@ public sealed class ClusterShaderDataTests
     [InlineData(
         "clustered_light_grid.shader.asset",
         "BuildClusteredLightGrid",
-        "ClusteredLightGrid|LightBuffer|LightIndexList|LightingViews")]
+        "ClusteredLightGrid|LightAllocationCounters|LightAllocationStatus|LightBuffer|LightLinkList|LightingViews")]
+    [InlineData(
+        "clustered_light_grid.shader.asset",
+        "ClearClusteredLightGrid",
+        "ClusteredLightGrid|LightAllocationCounters|LightAllocationStatus|LightingViews")]
+    [InlineData(
+        "clustered_light_grid.shader.asset",
+        "CompactClusteredLightGrid",
+        "ClusteredLightGrid|LightAllocationCounters|LightIndexList|LightLinkList|LightingViews")]
     [InlineData(
         "temporal_resolve.shader.asset",
         "PSMain",
@@ -439,6 +461,12 @@ public sealed class ClusterShaderDataTests
     public async Task ShadowViewBuffersAcceptTheSameCpuDataOnBothTargets(string asset, string resource)
     {
         Shader shader = await ReadTemplateShader(asset);
+        VirtualShadowView view = new()
+        {
+            LightViewProjection = Matrix4x4.CreateLookAt(new(3, 4, 5), Vector3.Zero, Vector3.UnitY) *
+                Matrix4x4.CreatePerspectiveFieldOfView(.9f, 1.5f, .1f, 100),
+        };
+        ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref view, 1));
         foreach (SlangCompileTarget target in new[]
                  {
                      SlangCompileTarget.Dxil,
@@ -450,7 +478,22 @@ public sealed class ClusterShaderDataTests
             for (uint index = 0; index < element.FieldCount; index++)
             {
                 VariableLayoutReflection field = element.GetFieldByIndex(index);
-                Assert.Equal((nuint)Marshal.OffsetOf<VirtualShadowView>(field.Name), field.GetOffset());
+                int offset = checked((int)field.GetOffset());
+                switch (field.Name)
+                {
+                    case nameof(VirtualShadowView.LightViewProjection):
+                        Assert.Equal(view.LightViewProjection, MemoryMarshal.Read<Matrix4x4>(bytes[offset..]));
+                        break;
+                    case nameof(VirtualShadowView.ShadowUv):
+                        Assert.Equal(view.ShadowUv, MemoryMarshal.Read<Matrix4x4>(bytes[offset..]));
+                        break;
+                    case nameof(VirtualShadowView.ShadowUvNormal):
+                        Assert.Equal(view.ShadowUvNormal, MemoryMarshal.Read<Matrix4x4>(bytes[offset..]));
+                        break;
+                    default:
+                        Assert.Equal((nuint)Marshal.OffsetOf<VirtualShadowView>(field.Name), field.GetOffset());
+                        break;
+                }
             }
         }
     }

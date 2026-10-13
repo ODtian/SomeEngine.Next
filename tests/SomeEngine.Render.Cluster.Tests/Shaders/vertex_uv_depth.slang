@@ -1,7 +1,7 @@
 #include "generated/render_instance_layout.slang"
 #include "cluster_shade_pipeline.slang"
 #include "triangle_surface.slang"
-#include "unlit_material.slang"
+
 
 struct VertexUv { float2 UV : TEXCOORD0; };
 [VisibilityDepth("offset")]
@@ -26,7 +26,31 @@ struct VertexUvDepth : IVisibilityEvaluate<StandardVertex>
 typedef StaticVertexEval VertexEvaluate;
 typedef LinearSurface DomainEvaluate;
 typedef VertexUvDepth VisibilityEvaluate;
-typedef UnlitMaterial SurfaceEvaluate;
+[MaterialSurfaceData]
+struct VertexUvSurfaceData { float4 Color; };
+
+struct VertexUvSurface : ISurfaceEvaluate<SurfaceEval, Triangle>
+{
+    typealias Data = VertexUvSurfaceData;
+    Data evaluateSurface(SurfacePixel pixel, SurfaceEval surface, float3 bary,
+        Triangle triangle, out SurfaceReceiver receiver)
+    {
+        receiver = (SurfaceReceiver)0;
+        receiver.Position = surface.Position;
+        receiver.Depth = pixel.Depth;
+        receiver.ShadingNormal = surface.Normal;
+        receiver.GeometricNormal = surface.Normal;
+        Data data;
+        data.Color = float4(surface.TexCoord, surface.TexCoord.x * .5 + surface.TexCoord.y * .25, 1);
+        return data;
+    }
+    float4 shadeSurface(uint3 pixel, uint debugMode, Data data, SurfaceReceiver receiver)
+    {
+        return data.Color;
+    }
+};
+
+typedef VertexUvSurface SurfaceEvaluate;
 #define CLUSTER_MESHLET_RASTER 1
 #define CLUSTER_SOFTWARE_MESHLET_RASTER 1
 #include "cluster_material_entries.slang"

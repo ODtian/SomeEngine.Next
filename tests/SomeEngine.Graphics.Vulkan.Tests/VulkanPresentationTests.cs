@@ -18,6 +18,30 @@ public sealed class VulkanPresentationTests
     }
 
     [WindowsFact]
+    public void Presentation_and_indirect_commands_support_the_application_queue_set()
+    {
+        using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+        AdapterEnumerationOptions options = new(AdapterPreference.HighPerformance);
+        backend.TryEnumerateAdapters(options, [], out int count);
+        var adapters = new AdapterInfo[count];
+        Assert.True(backend.TryEnumerateAdapters(options, adapters, out _));
+        AdapterInfo adapter = adapters.First(item => item.HardwareAccelerated);
+        using Device device = backend.CreateDevice(new DeviceDesc(adapter.Id,
+            [new DeviceQueueDesc(QueueType.Graphics), new DeviceQueueDesc(QueueType.Compute),
+             new DeviceQueueDesc(QueueType.Copy)],
+            requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands));
+
+        Assert.True(backend.TryGetCapability(device, out Presentation? presentation));
+        Assert.NotNull(presentation);
+        Assert.True(backend.TryGetCapability(device, out IndirectCommands? indirect));
+        Assert.NotNull(indirect);
+        Assert.Equal(QueueType.Graphics, backend.GetQueue(device, QueueType.Graphics).Type);
+        Assert.Equal(QueueType.Compute, backend.GetQueue(device, QueueType.Compute).Type);
+        Assert.Equal(QueueType.Copy, backend.GetQueue(device, QueueType.Copy).Type);
+        Assert.Equal(DeviceStatus.Active, device.Status);
+    }
+
+    [WindowsFact]
     public void Presentation_requires_a_graphics_queue()
     {
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
