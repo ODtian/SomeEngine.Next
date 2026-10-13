@@ -58,7 +58,7 @@ struct ShadowVisibilityMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         Triangle triangle, out SurfaceReceiver receiver)
     {
         receiver = (SurfaceReceiver)0;
-        receiver.Position = pixel.PositionFromDepth;
+        receiver.Position = pixel.VisibilityDepth == 2u ? pixel.PositionFromDepth : surface.Position;
         receiver.Depth = pixel.Depth;
         receiver.ShadingNormal = CalculateShadingNormal(surface);
         receiver.GeometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
