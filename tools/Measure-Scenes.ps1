@@ -1,10 +1,11 @@
 param(
     [switch]$Trace, [string]$ApplicationPath, [switch]$Managed,
     [ValidateSet('deferred', 'forward')][string]$ShadingPath,
-    [ValidateSet('motion', 'materials', 'camera')][string]$ScenePlayback,
+    [ValidateSet('static', 'motion', 'materials', 'camera')][string]$ScenePlayback = 'camera',
     [string]$ExpectedScene
 )
 $ErrorActionPreference = 'Stop'
+$playback = if ($ScenePlayback -eq 'static') { $null } else { $ScenePlayback }
 $defaultApplication = if ($Managed) { '../templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe' }
     else { '../templates/DefaultProject/Game.App/bin/Release/net10.0/publish/Game.App.exe' }
 $application = if ($ApplicationPath) { [IO.Path]::GetFullPath($ApplicationPath) }
@@ -32,9 +33,9 @@ if ($ShadingPath) {
     $start.ArgumentList.Add('--shading-path')
     $start.ArgumentList.Add($ShadingPath)
 }
-if ($ScenePlayback) {
+if ($playback) {
     $start.ArgumentList.Add('--scene-playback')
-    $start.ArgumentList.Add($ScenePlayback)
+    $start.ArgumentList.Add($playback)
 }
 if ($Trace) {
     $startupTraces = Join-Path ([IO.Path]::GetDirectoryName($application)) 'Performance'
@@ -92,7 +93,7 @@ if ($result.Startup) {
 }
 Write-Host "Report: $($report.FullName) ($([Math]::Round($timer.Elapsed.TotalSeconds, 2)) seconds including application startup)"
 # ExpectedScene validates an existing single-scene test-scenes.json; it does not select or edit content.
-if ($ScenePlayback -and $result.ScenePlayback -ne $ScenePlayback) {
+if ($result.ScenePlayback -ne $playback) {
     throw 'The scene report does not match the requested playback.'
 }
 $requiredScenes = if ($ExpectedScene) { @($ExpectedScene) } else { @('1024 spheres', 'Sponza', 'Amazon Bistro') }
