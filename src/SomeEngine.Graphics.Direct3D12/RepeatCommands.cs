@@ -26,11 +26,11 @@ internal sealed unsafe partial class D3D12Backend
             bool completed = false;
             try
             {
+                using var trace = EngineTrace.Begin(RhiTrace.ReuseNativeCommands);
                 if (!recording.TryCaptureRepeatedCommands())
                 {
                     return false;
                 }
-                using var trace = EngineTrace.Begin(RhiTrace.ReuseNativeCommands);
                 ulong sequence = AllocateSequence();
                 commands = new RecordedCommands(recording.ActivateCommands(sequence), sequence);
                 completed = true;
