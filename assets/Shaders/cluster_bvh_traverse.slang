@@ -106,7 +106,10 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
         {
             DeviceMemoryBarrier();
             if (thread < WorkNodeCount)
+            {
                 WorkNodes[thread] = TraversalNodes[WorkNodeStart + thread];
+                TraversalReady[WorkNodeStart + thread] = 0u;
+            }
             GroupMemoryBarrierWithGroupSync();
             uint count = WorkNodeCount;
             uint viewLanes = multipleViews ? WorkViewLanes : 1u;
@@ -116,8 +119,6 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
             uint viewLane = (thread / CLUSTER_BVH_FANOUT) % viewLanes;
             ProcessTraversalNode(WorkNodes[parent], parentIndex < count, child,
                 viewLane, viewLanes, parentIndex * CLUSTER_BVH_FANOUT + child, targetFilters, multipleViews);
-            DeviceMemoryBarrierWithGroupSync();
-            if (thread < count) TraversalReady[WorkNodeStart + thread] = 0u;
             DeviceMemoryBarrierWithGroupSync();
             if (thread == 0u)
             {
@@ -130,9 +131,8 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
         if (count != 0u)
         {
             DeviceMemoryBarrier();
-            if (thread < count) CullClusterCandidate(WorkClusterBatch * CLUSTER_BATCH_SIZE + thread, targetFilters);
-            DeviceMemoryBarrierWithGroupSync();
             if (thread == 0u) ClusterBatchReady[WorkClusterBatch] = 0u;
+            if (thread < count) CullClusterCandidate(WorkClusterBatch * CLUSTER_BATCH_SIZE + thread, targetFilters);
         }
         else if (WorkFinished)
             break;
