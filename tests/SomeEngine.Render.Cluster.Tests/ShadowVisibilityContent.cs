@@ -123,6 +123,23 @@ internal static class ShadowVisibilityContent
                 definition["Fields"]!["Id"] = shader.ToString();
                 definition["Fields"]!["Name"] = name;
                 definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(name + ".slang");
+                if (shadingPath == ClusterShadingPath.Forward)
+                    definition["Blocks"]![0]!["Fields"]!["Specializations"] = new JsonArray(
+                        new JsonObject
+                        {
+                            ["EntryPoint"] = "ClusterShadowReceiver",
+                            ["Arguments"] = new JsonArray("1", "0"),
+                        },
+                        new JsonObject
+                        {
+                            ["EntryPoint"] = "ClusterForwardShade",
+                            ["Arguments"] = new JsonArray("1", "0", "false"),
+                        },
+                        new JsonObject
+                        {
+                            ["EntryPoint"] = "ClusterForwardShade",
+                            ["Arguments"] = new JsonArray("1", "0", "true"),
+                        });
                 await File.WriteAllTextAsync(file, definition.ToJsonString());
                 await project.BuildAsync(file);
                 variants.Add(key, shader);
