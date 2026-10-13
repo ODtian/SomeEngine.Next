@@ -1,0 +1,42 @@
+{
+  "source_guid": "3eb68767-2b54-4673-ac69-64fd05b0b4cb",
+  "importers": [
+    {
+      "importer_id": "b0c10195-d8d1-46ab-81b8-f8c54db7d0aa",
+      "settings": {
+        "require_persistent_element_ids": false
+      },
+      "enabled": true
+    },
+    {
+      "importer_id": "334ba003-337f-4298-ae72-1a5ce4861591",
+      "settings": {
+        "generate_tangents": false
+      },
+      "enabled": true
+    },
+    {
+      "importer_id": "548d394b-5600-49e0-b04a-9c9d0d53b4b0",
+      "settings": {
+        "generate_tangents": false
+      },
+      "enabled": true
+    },
+    {
+      "importer_id": "9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b",
+      "settings": {},
+      "enabled": true
+    },
+    {
+      "importer_id": "451b3ab1-e318-4ed8-aebf-9b9e11219120",
+      "settings": {},
+      "enabled": true
+    }
+  ],
+  "use_default_importers": true,
+  "element_ids": {
+    "mesh:index:0": "9cc63de3-c663-4f55-8656-bd4587b0fde5",
+    "material:index:0": "18f67d63-e2a1-4319-ad3f-411ba7b05b94",
+    "scene:index:0": "a6099bdc-aa52-4f50-a693-b922c43e5d39"
+  }
+}
