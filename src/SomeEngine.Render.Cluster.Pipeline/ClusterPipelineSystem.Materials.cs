@@ -114,11 +114,10 @@ public sealed partial class ClusterPipelineSystem
         {
             if (!ReferenceEquals(Shader, material.Shader) || Properties.Length != material.PropertyCount)
                 return false;
-            for (uint property = 0; property < Properties.Length; property++)
-                if (material.GetPropertyRevision(property) != Properties[property] &&
-                    (raster.UsesResourceProperty(material.MaterialId, property) ||
-                     shade.UsesResourceProperty(material.MaterialId, property))) return false;
-            return true;
+            // Stage resolution already retains the complete resource-property sets.
+            // Read only those revisions; scalar-only edits need no full-property scan.
+            return raster.ResourcePropertiesMatch(material, Properties) &&
+                shade.ResourcePropertiesMatch(material, Properties);
         }
         internal bool MatchesDepthInputs(Material material, HashSet<uint> properties)
         {

@@ -441,8 +441,13 @@ internal sealed class ClusterRasterStages : IDisposable
     private ImmutableDictionary<long, HashSet<uint>> _resourceProperties = ImmutableDictionary<long, HashSet<uint>>.Empty;
     private ImmutableDictionary<long, HashSet<uint>?> _depthProperties = ImmutableDictionary<long, HashSet<uint>?>.Empty;
 
-    internal bool UsesResourceProperty(long materialId, uint property) =>
-        _resourceProperties.TryGetValue(materialId, out var properties) && properties.Contains(property);
+    internal bool ResourcePropertiesMatch(Material material, ReadOnlySpan<ulong> revisions)
+    {
+        if (_resourceProperties.TryGetValue(material.MaterialId, out var properties))
+            foreach (uint property in properties)
+                if (material.GetPropertyRevision(property) != revisions[(int)property]) return false;
+        return true;
+    }
 
     internal bool TryGetMaterialDepthInputs(long materialId, out HashSet<uint> properties)
     {
@@ -1382,8 +1387,13 @@ internal sealed class ClusterShadeStages : IDisposable
             before.MaterialBindings.AsSpan().SequenceEqual(after.MaterialBindings));
     private ImmutableDictionary<long, HashSet<uint>> _resourceProperties = ImmutableDictionary<long, HashSet<uint>>.Empty;
 
-    internal bool UsesResourceProperty(long materialId, uint property) =>
-        _resourceProperties.TryGetValue(materialId, out var properties) && properties.Contains(property);
+    internal bool ResourcePropertiesMatch(Material material, ReadOnlySpan<ulong> revisions)
+    {
+        if (_resourceProperties.TryGetValue(material.MaterialId, out var properties))
+            foreach (uint property in properties)
+                if (material.GetPropertyRevision(property) != revisions[(int)property]) return false;
+        return true;
+    }
 
     private ClusterShadeStageSet _resolved = ClusterShadeStageSet.Empty;
     private bool _disposed;
