@@ -128,7 +128,7 @@ bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> vie
     precise float centerDepthDifference = IsDirectionalVirtualShadowProjection(baseView)
         ? (stored - 0.5) + plane.DepthOffset : stored - receiver;
     precise float depthDifference = centerDepthDifference + planeOffset;
-    float slopeBias = VirtualShadowOptimalSlopeBias(views, sample.ViewIndex, sample, position, normal);
+    float slopeBias = CalculateVirtualShadowSlopeBias(source, sample, plane.Gradient);
     float roundingRadius = VirtualShadowReverseDepthRoundingRadius(stored)
         + VirtualShadowReverseDepthRoundingRadius(receiver);
     float rayStartBias = CalculateVirtualShadowRayStartBias(source, position, rayStartDistance);

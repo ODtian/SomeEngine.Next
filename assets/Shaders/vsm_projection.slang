@@ -123,18 +123,22 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     return sample;
 }
 
+float CalculateVirtualShadowSlopeBias(VirtualShadowMapParameters source,
+    VirtualShadowDepthSample sample, float2 depthGradient)
+{
+    float2 slope = -depthGradient;
+    float bias = 2.0 * max(0.0, dot(slope, sample.TexelCenter - sample.UV));
+    float depthScale = IsDirectionalVirtualShadowProjection(source)
+        ? abs(source.ProjectionDepthScale) : abs(1.0 + source.ProjectionDepthScale);
+    return min(bias, 100.0 * (IsDirectionalVirtualShadowProjection(source) ? source.WorldUnitsPerCentimeter : 1.0) * depthScale);
+}
+
 float VirtualShadowOptimalSlopeBias(StructuredBuffer<VirtualShadowMapParameters> views,
     uint requestedView, VirtualShadowDepthSample sample, float3 position, float3 normal)
 {
     VirtualShadowMapParameters source = views[sample.ViewIndex];
-    float3 ndc;
-    float2 uv;
-    ProjectVirtualShadowPosition(source, position, ndc, uv);
-    float2 slope = -CalculateVirtualShadowReceiverPlaneDepthGradient(source, position, normal);
-    float bias = 2.0 * max(0.0, dot(slope, sample.TexelCenter - sample.UV));
-    float depthScale = IsDirectionalVirtualShadowProjection(source)
-        ? abs(source.ProjectionDepthScale) : abs(1.0 + source.ProjectionDepthScale);
-    bias = min(bias, 100.0 * (IsDirectionalVirtualShadowProjection(source) ? source.WorldUnitsPerCentimeter : 1.0) * depthScale);
+    float2 gradient = CalculateVirtualShadowReceiverPlaneDepthGradient(source, position, normal);
+    float bias = CalculateVirtualShadowSlopeBias(source, sample, gradient);
     if (IsDirectionalVirtualShadowProjection(source))
         bias *= exp2(float(sample.ViewIndex - requestedView));
     return bias;
