@@ -115,7 +115,7 @@ public class GltfSourceImporterTests
     private const string UnlitShaderGuid = "4774aa8d-36c4-40db-9821-d982e19f9f84";
 
     [Fact]
-    public async Task ImportUsesEngineMaterialsAndProjectShadersAndReusesCompletedAssets()
+    public async Task ImportUsesEngineMaterialsAndProjectShaders()
     {
         string dir = CreateTempDir();
 
@@ -123,13 +123,9 @@ public class GltfSourceImporterTests
         {
             string gltfPath = WriteTestProject(dir, writeImporterSettings: false);
             AssetProject project = AssetProjects.Create(dir);
-            IReadOnlyList<Guid> imported = await project.ImportAsync(gltfPath);
+            await project.ImportAsync(gltfPath);
             AssetEntry entry = project.List(MaterialAsset.FileType).Single(asset => asset.Name == "MaskedLit");
             string path = Path.Combine(dir, entry.Path);
-            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-5));
-            DateTime written = File.GetLastWriteTimeUtc(path);
-            Assert.Equal(imported, await project.ImportAsync(gltfPath));
-            Assert.Equal(written, File.GetLastWriteTimeUtc(path));
             await using MaterialAsset material = await MaterialAsset.OpenAsync(path);
             Assert.IsType<StandardMaterialAsset>(material);
             Assert.Equal(new AssetId<ShaderAsset>(Guid.Parse(LitShaderGuid)), material.GetBlock<MaterialBlock>().Shader);
@@ -138,6 +134,24 @@ public class GltfSourceImporterTests
         {
             Directory.Delete(dir, true);
         }
+    }
+
+    [Fact]
+    public async Task ImportingUnchangedSourceReusesAssetVersions()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            string source = WriteTestProject(dir, writeImporterSettings: false);
+            AssetProject project = AssetProjects.Create(dir);
+            await project.ImportAsync(source);
+            var versions = project.List().OrderBy(asset => asset.AssetGuid).Select(asset => (asset.AssetGuid, asset.Version)).ToArray();
+
+            await project.ImportAsync(source);
+
+            Assert.Equal(versions, project.List().OrderBy(asset => asset.AssetGuid).Select(asset => (asset.AssetGuid, asset.Version)));
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Fact]

@@ -36,37 +36,40 @@ internal static class RuntimeApplication
     private const Format PresentationFormat = Format.R8G8B8A8UNorm;
 
     internal static Task<int> RunAsync(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
-        Func<Material, float, bool>? animateMaterial = null, SceneTestPlatform? platform = null, SceneScript? script = null) => Task.Factory.StartNew(() =>
+        Func<Material, float, bool>? animateMaterial = null, ApplicationScene? application = null, SceneScript? script = null) => Task.Factory.StartNew(() =>
     {
         var shaderResources = new RuntimeShaderResources();
         using var display = new ApplicationDisplay();
         int frames = 0;
         do
         {
-            if (platform is not null) options = platform.Options;
-            platform?.BeginScene();
+            if (application is not null) options = application.Options;
+            if (application is not null) application.ReloadRequested = false;
             try
             {
-                frames += RunScene(options, useWarp, startup, animateMaterial, platform, display, shaderResources, script);
+                application?.SceneStarted?.Invoke(Stopwatch.GetTimestamp());
+                int sceneFrames = RunScene(options, useWarp, startup, animateMaterial, application, display, shaderResources, script);
+                frames += sceneFrames;
                 startup.FinishTrace();
-                platform?.EndScene();
+                application?.SceneCompleted?.Invoke(new(ApplicationFailure.None, sceneFrames) { Startup = startup.Result });
             }
             catch (Exception error)
             {
-                platform?.EndScene(error.Message);
+                application?.SceneCompleted?.Invoke(new(ApplicationRunException.Classify(error, ApplicationFailure.ContentLoad),
+                    error is ApplicationRunException completed ? completed.CompletedFrames : 0, error) { Startup = startup.Result });
                 throw new ApplicationRunException(ApplicationRunException.Classify(error, ApplicationFailure.ContentLoad),
                     frames + (error is ApplicationRunException run ? run.CompletedFrames : 0), error);
             }
-        } while (platform?.ReloadRequested == true);
+        } while (application?.ReloadRequested == true);
         return frames;
     }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     private static int RunScene(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
-        Func<Material, float, bool>? animateMaterial, SceneTestPlatform? platform,
+        Func<Material, float, bool>? animateMaterial, ApplicationScene? application,
         ApplicationDisplay display, RuntimeShaderResources shaderResources, SceneScript? script)
     {
         ArgumentNullException.ThrowIfNull(options);
-        string contentRoot = script?.ContentDirectory ?? platform?.Current.ContentDirectory ?? FindContentRoot();
+        string contentRoot = script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot();
         string manifestDirectory = Path.Combine(contentRoot, "Library", "AssetManifest");
         AssetManifest manifest = AssetManifest.Load(manifestDirectory);
         IReadOnlyList<AssetEntry> runtimeRecords =
@@ -237,7 +240,6 @@ internal static class RuntimeApplication
                 worldTask.Result.Dispose();
                 return 0;
             }
-            platform?.SetRenderingInfo(boot.Width, boot.Height, display.Device.Adapter.Name, display.Device.Adapter.DriverVersion);
             return RunRenderer(
                 options,
                 startup,
@@ -257,7 +259,7 @@ internal static class RuntimeApplication
                 LoadShaderAsync,
                 boot,
                 title,
-                forceHardwareRaster: useWarp || options.ForceHardwareRaster, animateMaterial, platform, script);
+                forceHardwareRaster: useWarp || options.ForceHardwareRaster, animateMaterial, application, script);
         }
         finally
         {
@@ -517,7 +519,7 @@ internal static class RuntimeApplication
         Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>> loadShader,
         ApplicationSettingsBlock boot,
         string title,
-        bool forceHardwareRaster, Func<Material, float, bool>? animateMaterial, SceneTestPlatform? platform, SceneScript? script)
+        bool forceHardwareRaster, Func<Material, float, bool>? animateMaterial, ApplicationScene? application, SceneScript? script)
     {
         using World mainWorld = loadedWorld;
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
@@ -558,11 +560,11 @@ internal static class RuntimeApplication
             coordinator,
             renderWorld,
             instances,
-            platform is null && script is null ? null : new ClusterRenderOptions
+            application is null && script is null ? null : new ClusterRenderOptions
             {
                 Residency = new ClusterResidencyOptions
                 {
-                    PageHeapCapacityBytes = script?.GeometryMemoryBytes ?? checked((uint)platform!.GeometryMemoryMegabytes * 1024 * 1024),
+                    PageHeapCapacityBytes = script?.GeometryMemoryBytes ?? application!.GeometryMemoryBytes,
                 },
             });
         var materialAssignments = new ClusterMaterialAssignments();
@@ -689,7 +691,8 @@ internal static class RuntimeApplication
 
         int frameIndex = 0;
         uint submittedFrames = 0;
-        var sceneEdit = script is null ? null : new SceneEdit(scene, window);
+        var sceneEdit = script is null && application is null ? null : new SceneEdit(scene, window);
+        var applicationFrame = application is null ? null : new ApplicationFrame(sceneEdit!, input, cluster, startup, device.Adapter);
         int actionIndex = 0;
         try
         {
@@ -706,7 +709,7 @@ internal static class RuntimeApplication
                 boot.UiPixelEntry,
                 PresentationFormat);
             Console.WriteLine(
-                $"Runtime configuration '{title}' loaded from {contentRootLabel(script?.ContentDirectory ?? platform?.Current.ContentDirectory ?? FindContentRoot())}; " +
+                $"Runtime configuration '{title}' loaded from {contentRootLabel(script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot())}; " +
                 $"sceneInstances={scene.MeshInstanceCount}, " +
                 $"sceneBounds={scene.MeshPositionMin}..{scene.MeshPositionMax}, " +
                     $"clusterPipeline={boot.Pipeline.Value}.");
@@ -792,20 +795,6 @@ internal static class RuntimeApplication
                     RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
                     nextGameUpdate = null;
                 }
-                if (sceneEdit is not null)
-                {
-                    sceneEdit.Begin();
-                    try
-                    {
-                        while (actionIndex < script!.Actions.Count && script.Actions[actionIndex].Frame == frameIndex)
-                            script.Actions[actionIndex++].Execute(sceneEdit);
-                    }
-                    catch (Exception error)
-                    {
-                        throw new ApplicationRunException(ApplicationFailure.SceneAction, checked((int)submittedFrames), error);
-                    }
-                    finally { sceneEdit.End(); }
-                }
                 input.BeginFrame();
                 if (!window.PumpMessages())
                     break;
@@ -819,14 +808,6 @@ internal static class RuntimeApplication
                     window.RequestClose();
                     continue;
                 }
-                if (platform is not null && !platform.IsMeasuring)
-                {
-                    for (int index = 0; index < Math.Min(platform.Scenes.Count, 3); index++)
-                        if (input.WasKeyPressed(0x71 + index)) platform.SelectScene(index);
-                    if (input.WasKeyPressed(0x77)) platform.CaptureImage();
-                    if (input.WasKeyPressed(0x78)) platform.StartMeasurements();
-                    if (input.WasKeyPressed(0x79)) platform.StartMeasurements(recordTrace: true);
-                }
                 if (input.WasKeyPressed(RuntimeInput.KeyF1))
                     debugUiOpen = !debugUiOpen;
                 if (window.IsMinimized)
@@ -834,6 +815,28 @@ internal static class RuntimeApplication
                     window.WaitForEvents(TimeSpan.FromMilliseconds(16));
                     previousFrameTimestamp = Stopwatch.GetTimestamp();
                     continue;
+                }
+
+                if (sceneEdit is not null)
+                {
+                    sceneEdit.Begin();
+                    try
+                    {
+                        while (script is not null && actionIndex < script.Actions.Count && script.Actions[actionIndex].Frame == frameIndex)
+                            script.Actions[actionIndex++].Execute(sceneEdit);
+                        if (applicationFrame is not null)
+                        {
+                            applicationFrame.Index = frameIndex;
+                            applicationFrame.Width = window.ClientWidth;
+                            applicationFrame.Height = window.ClientHeight;
+                            application!.UpdateFrame?.Invoke(applicationFrame);
+                        }
+                    }
+                    catch (Exception error)
+                    {
+                        throw new ApplicationRunException(ApplicationFailure.SceneAction, checked((int)submittedFrames), error);
+                    }
+                    finally { sceneEdit.End(); }
                 }
 
                 int clientWidth = window.ClientWidth;
@@ -888,7 +891,7 @@ internal static class RuntimeApplication
                     temporalResolveEnabled: options.TemporalAntialiasing,
                     cameraCut: cameraCut);
                 viewSystem.Stage(viewFrame.View);
-                if (platform?.IsMeasuring != true) ui.DrawDebugWindow(
+                if (application?.DebugUiEnabled != false) ui.DrawDebugWindow(
                     ref debugUiOpen,
                     ref animateScene,
                     new RuntimeUiMetrics(
@@ -900,7 +903,7 @@ internal static class RuntimeApplication
                         viewFrame.JitterPixels,
                         scene.Camera.Position,
                         window.HasFocus,
-                        options.TemporalAntialiasing), platform);
+                        options.TemporalAntialiasing), application?.DrawDebugUi);
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: applying extracted scene.");
@@ -912,7 +915,7 @@ internal static class RuntimeApplication
                 }
                 long prepareStarted = Stopwatch.GetTimestamp();
                 startup.RecordStage("FrameSetup");
-                if (platform?.ImageRequested == true || sceneEdit?.Images.Count > 0)
+                if (sceneEdit?.Images.Count > 0)
                     outputVerifier ??= new FrameOutputVerifier(backend, device, width, height, PresentationFormat);
                 Prepare(
                     prepareSystems,
@@ -1028,7 +1031,7 @@ internal static class RuntimeApplication
                     {
                         throw new ApplicationRunException(ApplicationFailure.ImageCallback, checked((int)submittedFrames), error);
                     }
-                    if (!options.VerifyFrameOutput && options.FrameOutputPath is null && platform?.ImageRequested != true)
+                    if (!options.VerifyFrameOutput && options.FrameOutputPath is null)
                     {
                         outputVerifier.Dispose();
                         outputVerifier = null;
@@ -1036,14 +1039,6 @@ internal static class RuntimeApplication
                 }
                 if (frameOutput is FrameOutputMetrics output)
                     verifiedOutput = output;
-                if (platform?.ImageRequested == true)
-                {
-                    string path = platform.ImageDestination();
-                    outputVerifier!.SaveImage(path);
-                    platform.ImageSaved(path);
-                    outputVerifier.Dispose();
-                    outputVerifier = null;
-                }
                 if (options.VerifyFrameOutput)
                 {
                     ClusterFrameMetrics metrics = pipeline.CaptureFrameMetrics();
@@ -1083,7 +1078,6 @@ internal static class RuntimeApplication
                 if (sceneGeometryReady && startup.Result is null)
                 {
                     startup.RecordPresent(window, present, frameIndex);
-                    if (startup.Result is { } times) platform?.RecordStartup(times);
                 }
                 if (present == PresentStatus.Occluded)
                     window.WaitForEvents(TimeSpan.FromMilliseconds(16));
@@ -1096,11 +1090,14 @@ internal static class RuntimeApplication
                         height,
                         device.Adapter.HardwareAccelerated);
 
-                if (platform?.IsMeasuring == true && !platform.ReloadRequested)
-                    platform.RecordFrame(new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
-                        prepareMs, reconcileMs, executeMs), cluster.CaptureDiagnostics());
+                if (applicationFrame is not null)
+                {
+                    applicationFrame.Timing = new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
+                        prepareMs, reconcileMs, executeMs);
+                    application!.FrameCompleted?.Invoke(applicationFrame);
+                }
                 frameIndex++;
-                if (platform?.ReloadRequested == true) break;
+                if (application?.ReloadRequested == true) break;
             }
 
             if (frameIndex > 0)

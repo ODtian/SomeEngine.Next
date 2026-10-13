@@ -4,17 +4,18 @@
 
 ## 构建配置
 
-游戏的 `Directory.Build.props` 在引擎基础配置之后导入 `build/SomeEngine.Game.props`；`Directory.Build.targets` 导入引擎基础目标和 `build/SomeEngine.Game.targets`。这样游戏应用的 `.csproj` 只需保存项目自身配置。
+游戏的 `Directory.Build.props` 在引擎基础配置之后导入 `build/SomeEngine.Game.props`；`Directory.Build.targets` 导入引擎基础目标和 `build/SomeEngine.Game.targets`。目录配置用 `SomeEngineApplicationProject` 指定应用 `.csproj` 的完整路径，共享游戏配置只应用到该项目。自定义库按各自 `.csproj` 的配置构建，目录由项目自行选择。
 
 ```xml
 <!-- Directory.Build.props；SomeEnginePath 指向引擎目录 -->
 <Project>
   <PropertyGroup>
+    <SomeEngineApplicationProject>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)Game.csproj'))</SomeEngineApplicationProject>
     <SomeEnginePath>../../</SomeEnginePath>
     <SomeEnginePath>$([System.IO.Path]::GetFullPath('$(SomeEnginePath)', '$(MSBuildThisFileDirectory)'))</SomeEnginePath>
   </PropertyGroup>
   <Import Project="$(SomeEnginePath)/Directory.Build.props" />
-  <Import Project="$(SomeEnginePath)/build/SomeEngine.Game.props" />
+  <Import Project="$(SomeEnginePath)/build/SomeEngine.Game.props" Condition="'$(MSBuildProjectFullPath)' == '$(SomeEngineApplicationProject)'" />
 </Project>
 ```
 
@@ -22,7 +23,7 @@
 <!-- Directory.Build.targets -->
 <Project>
   <Import Project="$(SomeEnginePath)/Directory.Build.targets" />
-  <Import Project="$(SomeEnginePath)/build/SomeEngine.Game.targets" />
+  <Import Project="$(SomeEnginePath)/build/SomeEngine.Game.targets" Condition="'$(MSBuildProjectFullPath)' == '$(SomeEngineApplicationProject)'" />
 </Project>
 ```
 
@@ -60,7 +61,8 @@ AssetProject assets = AssetProjects.Create(
     services => GameAssetCapabilities.AddAssetCapabilities(services),
     GameAssetCapabilities.BuildVersion);
 
-int result = await AssetCommands.RunAsync(assets, args, Console.Out);
+if (AssetCommands.Matches(args))
+    return await AssetCommands.RunAsync(assets, args, Console.Out);
 ```
 
 `AssetCommands.RunAsync` 支持以下命令，来源路径相对于资产项目根目录解析：
@@ -81,4 +83,6 @@ await assets.BuildAsync(selectedDefinition, cancellationToken: cancellationToken
 IReadOnlyList<AssetEntry> items = assets.List();
 ```
 
-依赖追踪、缓存检查、输出版本和资产登记由 `AssetProject` 维护。游戏运行通过 `AssetLoader` 及具体资产的加载 API 打开已处理资产。正式编辑器控件与状态组织继续使用 [SomeUI 规格](SomeUI-Requirements.md)。
+依赖追踪、缓存检查、输出版本和资产登记由 `AssetProject` 维护。游戏运行通过 `AssetLoader` 及具体资产的加载 API 打开已处理资产。正式编辑器控件与状态组织继续使用 SomeUI 既有规格。
+
+DefaultGame 的场景选择、快捷键、测量与报告由样例中的 `SceneTestPlatform` 持有。它把内容目录、渲染设置和回调交给 `ApplicationScene`，通过 `Application.RunAsync` 启动。场景开始回调在内容加载前执行，帧完成回调在 Present 后执行；帧回调读取输入和现有渲染诊断，截图使用 `SceneEdit.CaptureImage` 与 `SceneImage.SaveBmp`。调试面板由样例的 ImGui 绘制回调接入通用调试窗口。

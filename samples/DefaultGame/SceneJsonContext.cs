@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
+using SomeEngine.Runtime;
 
-namespace SomeEngine.Runtime;
+namespace DefaultGame;
 
 [JsonSerializable(typeof(TestScene[]))]
 [JsonSerializable(typeof(ApplicationStartupTimes))]

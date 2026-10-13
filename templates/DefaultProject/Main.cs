@@ -11,7 +11,7 @@ public static class GameApplication
     public static Task<int> Main(string[] args)
     {
 #if SOMEENGINE_DEVELOPMENT
-        if (args.Length > 0 && args[0] is "import" or "build" or "list")
+        if (AssetCommands.Matches(args))
         {
             AssetProject project = AssetProjects.Create(
                 ProjectPaths.Root,
