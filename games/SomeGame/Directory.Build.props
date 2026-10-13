@@ -1,0 +1,9 @@
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)EnginePath.props" Condition="Exists('$(MSBuildThisFileDirectory)EnginePath.props')" />
+  <PropertyGroup>
+    <SomeEnginePath Condition="'$(SomeEnginePath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../..'))</SomeEnginePath>
+    <SomeEnginePath>$([System.IO.Path]::GetFullPath('$(SomeEnginePath)', '$(MSBuildThisFileDirectory)'))</SomeEnginePath>
+  </PropertyGroup>
+  <Import Project="$(SomeEnginePath)/Directory.Build.props" />
+  <Import Project="$(SomeEnginePath)/build/SomeEngine.Game.props" />
+</Project>

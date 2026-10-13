@@ -1,6 +1,6 @@
 # Sponza and Bistro import samples
 
-These samples download glTF/GLB sources and use `Game.Build --import-scene` to run
+These samples download glTF/GLB sources and use DefaultGame's development `import-scene` command to run
 `AssetProject.ImportAsync`. The selected scene importer assembles each ECS `WorldAsset`
 in the same import as its mesh, material, and texture assets. DefaultGame loads them
 through its in-game scene selector. Each scene has its own content directory,
@@ -14,11 +14,11 @@ From the repository root on Windows:
 ./tools/Measure-Scenes.ps1
 ```
 
-The build script uses the existing, built DefaultProject application as its base and
-builds the scene path in `Game.Build`; there is no separate scene import project.
-Build that project and its content first if its Release output does not exist.
-The script builds `Game.Build` into `samples/ImportedScenes/Build`;
-it does not rebuild or replace DefaultProject's scene or its output directory.
+The build script uses the published DefaultGame application as its base and
+compiles the scene import code through `samples/DefaultGame/DefaultGame.csproj`.
+Build the sample's content and publish it first with `tools/Build.ps1`.
+The development application is built into `samples/DefaultGame/bin/development`;
+published game content is read from `samples/DefaultGame/bin/game/Release/net10.0`.
 Downloads and generated applications are excluded from Git. Source checksums
 remain beside the downloaded files; import counts and repeat-import results are
 written to `Apps/<scene>/scene-import.json`.

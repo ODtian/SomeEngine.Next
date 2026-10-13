@@ -13,7 +13,7 @@ without trace, and F10 for CPU traces of every scene. Detailed and allocation tr
 are selected in that same panel. Traced runs must be compared separately from ordinary timing runs.
 
 ```powershell
-dotnet build templates/DefaultProject/Game.App/Game.App.csproj -c Release
+./tools/Build.ps1 -Configuration Release
 ./tools/Measure-Scenes.ps1
 ./tools/Measure-Scenes.ps1 -Trace
 ```

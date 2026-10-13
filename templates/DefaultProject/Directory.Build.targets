@@ -1,3 +1,4 @@
 <Project>
   <Import Project="$(SomeEnginePath)/Directory.Build.targets" />
+  <Import Project="$(SomeEnginePath)/build/SomeEngine.Game.targets" />
 </Project>

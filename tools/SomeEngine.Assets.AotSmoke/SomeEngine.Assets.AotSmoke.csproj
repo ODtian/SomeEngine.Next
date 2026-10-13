@@ -10,7 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.9" />
-    <Content Include="../../templates/DefaultProject/assets/Shaders/triangle.shader.asset" Link="Fixtures/triangle.shader.asset" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../samples/DefaultGame/assets/Shaders/triangle.shader.asset" Link="Fixtures/triangle.shader.asset" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="../../samples/SomeEngine.Curves.Assets/SomeEngine.Curves.Assets.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="..\..\src\SomeEngine.Assets\SomeEngine.Assets.csproj"
                       GlobalPropertiesToRemove="PublishAot" />
