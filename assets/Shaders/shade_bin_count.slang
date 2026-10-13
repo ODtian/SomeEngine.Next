@@ -51,8 +51,9 @@ void CountShadeBinsCore<let writeReceivers : bool>(uint3 threadId, uint lane)
     uint mask;
     bool fullTile;
     if (!ClassifyShadeTile(bin, lane, mask, fullTile)) return;
-    uint surfaceIndex;
-    InterlockedAdd(SurfaceCounts[bin], fullTile ? 64u : countbits(mask), surfaceIndex);
+    uint surfaceIndex = 0u;
+    if (Uniforms.SurfaceDataStride != 0u)
+        InterlockedAdd(SurfaceCounts[bin], fullTile ? 64u : countbits(mask), surfaceIndex);
     uint counter = bin * 2u + (fullTile ? 0u : 1u);
     if (Uniforms.BinItemCapacity == 0u)
     {

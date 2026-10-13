@@ -3,6 +3,7 @@ using System.Numerics;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Lighting;
+using Xunit.Sdk;
 
 namespace SomeEngine.Render.Cluster.Tests;
 
@@ -41,7 +42,7 @@ public sealed class ShadingPathRenderingTests
             Assert.Equal(outputs.MotionVectors, scene.Outputs.MotionVectors);
             Assert.Same(outputs.Geometry, scene.Outputs.Geometry);
             Assert.Equal(outputs.SurfaceReceiverConsumers, scene.Outputs.SurfaceReceiverConsumers);
-            RasterImage.AssertEqual(expected, current, "switch-to-forward");
+            AssertForwardImage(expected, current);
             AssertReceiver(expectedReceiver, receiver.Value);
         }
 
@@ -60,15 +61,38 @@ public sealed class ShadingPathRenderingTests
             AssertReceiver(expectedReceiver, receiver.Value);
         }
     }
+
+    private static void AssertForwardImage(RasterImage expected, RasterImage actual)
+    {
+        ReadOnlySpan<Half> expectedColor = MemoryMarshal.Cast<byte, Half>(expected.Color);
+        ReadOnlySpan<Half> actualColor = MemoryMarshal.Cast<byte, Half>(actual.Color);
+        try
+        {
+            // Separately compiled shading entries can round to adjacent output values.
+            for (int channel = 0; channel < expectedColor.Length; channel++)
+                Assert.InRange(actualColor[channel], Half.BitDecrement(expectedColor[channel]),
+                    Half.BitIncrement(expectedColor[channel]));
+        }
+        catch (XunitException)
+        {
+            ImageArtifacts.SaveComparison(new(64, 64, Format.R16G16B16A16Float, expected.Color),
+                new(64, 64, Format.R16G16B16A16Float, actual.Color), "switch-to-forward-color");
+            throw;
+        }
+        ImageArtifacts.AssertEqual(new(64, 64, Format.D32Float, expected.Depth),
+            new(64, 64, Format.D32Float, actual.Depth), "switch-to-forward-depth");
+    }
+
     private static void AssertReceiver(SurfaceReceiver expected, SurfaceReceiver actual)
     {
         Assert.Equal(expected.Flags, actual.Flags);
         Assert.Equal(expected.Depth, actual.Depth);
-        Assert.Equal(expected.DepthOffset, actual.DepthOffset);
         // Separately compiled entries can round interpolation differently before the final image.
+        Assert.InRange(actual.DepthOffset - expected.DepthOffset, -0.000001f, 0.000001f);
         AssertVector(expected.ShadingNormal, actual.ShadingNormal);
         AssertVector(expected.GeometricNormal, actual.GeometricNormal);
-        AssertVector(expected.Position, actual.Position);
+        // Forward reconstructs position from the shared depth; deferred interpolates it.
+        Assert.InRange(Vector3.Distance(expected.Position, actual.Position), 0f, 0.00002f);
 
         static void AssertVector(Vector3 expected, Vector3 actual)
         {

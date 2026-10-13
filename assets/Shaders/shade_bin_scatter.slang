@@ -39,8 +39,9 @@ void ScatterShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_Group
     uint mask;
     bool fullTile;
     if (!ClassifyShadeTile(bin, lane, mask, fullTile)) return;
-    uint surfaceIndex;
-    InterlockedAdd(SurfaceScatterCounts[bin], fullTile ? 64u : countbits(mask), surfaceIndex);
+    uint surfaceIndex = 0u;
+    if (Uniforms.SurfaceDataStride != 0u)
+        InterlockedAdd(SurfaceScatterCounts[bin], fullTile ? 64u : countbits(mask), surfaceIndex);
     uint counter = bin * 2u + (fullTile ? 0u : 1u);
     uint2 topLeft = fullTile ? threadId.xy & ~7u.xx : threadId.xy & ~1u.xx;
     uint coordinate = (threadId.z * Uniforms.ScreenHeight + topLeft.y) * Uniforms.ScreenWidth + topLeft.x;
