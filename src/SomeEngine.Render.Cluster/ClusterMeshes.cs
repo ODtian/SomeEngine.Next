@@ -62,7 +62,6 @@ internal sealed partial class ClusterMeshes : IDisposable
     private readonly ClusterBvh _bvh;
     private readonly MeshPages _pages = new();
     private readonly ClusterPageFixups _fixups = new();
-    private readonly HashSet<uint> _referencedPages = [];
     private readonly ResidencyBudgetLedger _residency;
     private readonly IClusterPageStorage _pageStorage;
     private readonly Dictionary<uint, StagedPageLoad> _stagingLoads = new();
@@ -219,22 +218,27 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
-    internal void ResolvePages(
+    internal ClusterStreamingDemand ReferenceAndResolvePages(
         ReadOnlySpan<ClusterPageDemand> priorities,
+        bool complete,
         List<KeyValuePair<uint, uint>> unresolved)
     {
         lock (_gate)
         {
             ThrowIfDisposed();
+            _pages.ClearReferences();
             unresolved.Clear();
+            ulong bytes = 0;
             foreach (ClusterPageDemand request in priorities)
             {
+                bytes += _pages.ReferencePage(request.PageId);
                 if (_pages.TryTouchActiveResident(request.PageId))
                     continue;
                 PageFaultResolution resolution = ResolvePageCore(request.PageId);
                 if (resolution.Kind is not (PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending))
                     unresolved.Add(new(request.PageId, request.Priority));
             }
+            return new(bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity), complete);
         }
     }
 
@@ -272,29 +276,10 @@ internal sealed partial class ClusterMeshes : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
-            _referencedPages.Clear();
+            _pages.ClearReferences();
             ulong bytes = 0;
             foreach (uint page in pages)
-            {
-                _referencedPages.Add(page);
-                bytes += _pages.GetStreamingPageBytes(page);
-            }
-            return new(bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity), complete);
-        }
-    }
-
-    internal ClusterStreamingDemand SetReferencedPages(ReadOnlySpan<ClusterPageDemand> pages, bool complete)
-    {
-        lock (_gate)
-        {
-            ThrowIfDisposed();
-            _referencedPages.Clear();
-            ulong bytes = 0;
-            foreach (ClusterPageDemand page in pages)
-            {
-                _referencedPages.Add(page.PageId);
-                bytes += _pages.GetStreamingPageBytes(page.PageId);
-            }
+                bytes += _pages.ReferencePage(page);
             return new(bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity), complete);
         }
     }
@@ -593,7 +578,7 @@ internal sealed partial class ClusterMeshes : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
-            if (_referencedPages.Contains(pageID) || _fixups.HasResidentDependents(pageID, PageAvailable))
+            if (_pages.IsReferenced(pageID) || _fixups.HasResidentDependents(pageID, PageAvailable))
                 return false;
             return StagePageEvictions([pageID]);
         }
@@ -906,7 +891,7 @@ internal sealed partial class ClusterMeshes : IDisposable
 
     private bool TryEvictPage(uint protectedPageID)
     {
-        if (_pages.TryVictim(protectedPageID, page => !_referencedPages.Contains(page) &&
+        if (_pages.TryVictim(protectedPageID, page => !_pages.IsReferenced(page) &&
             !_fixups.HasResidentDependents(page, PageAvailable), out uint pageID))
             return EvictPage(pageID);
 
@@ -922,14 +907,14 @@ internal sealed partial class ClusterMeshes : IDisposable
 
         bool CanEvictDependency(uint page)
         {
-            if (_referencedPages.Contains(page) || _fixups.FindPageDependency(page) is not { } dependency ||
+            if (_pages.IsReferenced(page) || _fixups.FindPageDependency(page) is not { } dependency ||
                 dependency == protectedDependency || !examined.Add(dependency)) return false;
             pages.Clear();
             foreach ((uint first, uint end) in dependency.Ranges)
                 for (uint member = first; member < end; member++)
                 {
                     if (!PageAvailable(member)) continue;
-                    if (_referencedPages.Contains(member) || !_pages.CanEvictPage(member) ||
+                    if (_pages.IsReferenced(member) || !_pages.CanEvictPage(member) ||
                         _fixups.HasResidentDependents(member, PageAvailable, dependency)) return false;
                     pages.Add(member);
                 }
@@ -1352,7 +1337,6 @@ internal sealed partial class ClusterMeshes : IDisposable
             _pages.CommitDisposal(pageDisposal);
             cleanupFailure = _bvh.Clear();
             _fixups.Clear();
-            _referencedPages.Clear();
             _heap.Reset();
         }
 

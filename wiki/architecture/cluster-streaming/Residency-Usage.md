@@ -15,6 +15,8 @@ Traversal 为每个 active leaf 的页范围更新最大 view/category priority�
 
 消费 demand 时先补齐同组与祖先页，再刷新 resident 页的 LRU。当前已收到 demand 的全部依赖在更新的已完成帧 demand 到达前不得作为 eviction victim。截断帧只声明已收到的需求及依赖；它不延续不可见的旧请求或旧 eviction 保护，后续 traversal 会重新提交仍需要的页。可用空间不足且没有可回收页时沿用 Deferred，等待后续 demand/retirement；不会淘汰当前被引用的依赖。
 
+`MeshPages` 按注册时的连续页号保存来源、流送字节数及前后驻留页号，整数链接维护即时 LRU 顺序。当前视图的引用保护由同一对象中的紧凑位表保存；每份 demand 在 mesh 锁内清零位表，并通过一次遍历登记引用、累计流送字节、刷新驻留顺序和收集加载候选。页的注册与释放同时维护对应页记录和引用位表。
+
 quality 的压力来自完整 demand 中 resident 与尚未 resident 的可流送页总字节数，以及扣除常驻粗页后的 heap 容量。持续超预算/低预算的帧计数分别饱和在 2/30，不依赖缺页数量。
 
 ## Parent priority and shared pages

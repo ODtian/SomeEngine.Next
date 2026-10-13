@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Pipeline;
@@ -26,7 +27,6 @@ internal sealed class PreparedMeshPages
         int registrationIndex,
         MeshPayloadSource source,
         bool ownsSource,
-        LinkedListNode<uint>[] lruNodes,
         uint[] streamingPageBytes,
         int pageCount,
         uint[] lowestDetailPageIds,
@@ -37,7 +37,6 @@ internal sealed class PreparedMeshPages
         RegistrationIndex = registrationIndex;
         Source = source;
         OwnsSource = ownsSource;
-        LruNodes = lruNodes;
         StreamingPageBytes = streamingPageBytes;
         PageCount = pageCount;
         LowestDetailPageIds = lowestDetailPageIds;
@@ -49,7 +48,6 @@ internal sealed class PreparedMeshPages
     internal int RegistrationIndex { get; }
     internal MeshPayloadSource Source { get; }
     internal bool OwnsSource { get; }
-    internal LinkedListNode<uint>[] LruNodes { get; }
     internal uint[] StreamingPageBytes { get; }
     internal int PageCount { get; }
     internal uint[] LowestDetailPageIds { get; }
@@ -93,19 +91,26 @@ internal readonly struct MeshPageReadSource
 
 internal sealed class MeshPages
 {
-    private readonly record struct PageSource(int RegistrationIndex, uint StreamingBytes);
+    private struct Page(int registrationIndex, uint streamingBytes)
+    {
+        internal readonly int RegistrationIndex = registrationIndex;
+        internal readonly uint StreamingBytes = streamingBytes;
+        internal int OlderResidentPage = -1;
+        internal int NewerResidentPage = -1;
+    }
 
     private readonly FlatDictionary<Mesh, int> _registrationByMesh = new();
     private readonly List<RegisteredMeshPages> _registrations = [];
-    private readonly List<PageSource> _pageSources = [];
+    private readonly List<Page> _pages = [];
+    private readonly List<uint> _referencedPageBits = [];
     private readonly FlatDictionary<uint, ResidencyReservation> _gpuReservations = new();
     private readonly HashSet<uint> _residentPages = new();
     private readonly HashSet<uint> _pendingLoads = new();
     private readonly HashSet<uint> _pendingEvictions = new();
     private ulong _lowestDetailBytes;
     private readonly List<uint> _offsets = [];
-    private readonly List<LinkedListNode<uint>> _lruNodes = [];
-    private readonly LinkedList<uint> _residentLru = new();
+    private int _oldestResidentPage = -1;
+    private int _newestResidentPage = -1;
 
     public uint Count => (uint)_offsets.Count;
     public uint ResidentCount => (uint)_residentPages.Count;
@@ -122,7 +127,6 @@ internal sealed class MeshPages
         IReadOnlyList<MeshPayloadPage> payloadPages = streamedSource.Pages;
         EnsureCanRegister(mesh, payloadPages.Count);
         uint firstPageId = Count;
-        var lruNodes = new LinkedListNode<uint>[payloadPages.Count];
         var streamingPageBytes = new uint[payloadPages.Count];
         var lowestDetailPageIds = new uint[streamedSource.LowestDetailPageIndices.Length];
         long pageRegionLength = checked(streamedSource.Length - streamedSource.BvhLength);
@@ -139,8 +143,6 @@ internal sealed class MeshPages
                 throw new InvalidDataException($"Streamed mesh page {index} has invalid registration metadata.");
             }
 
-            uint pageId = checked(firstPageId + (uint)index);
-            lruNodes[index] = new LinkedListNode<uint>(pageId);
             streamingPageBytes[index] = PageHeap.AllocationSize(checked((uint)payloadPage.Size));
             expectedOffset = checked(payloadPage.Offset + payloadPage.Size);
         }
@@ -170,7 +172,6 @@ internal sealed class MeshPages
             _registrations.Count,
             streamedSource,
             ownsSource,
-            lruNodes,
             streamingPageBytes,
             payloadPages.Count,
             lowestDetailPageIds,
@@ -184,9 +185,9 @@ internal sealed class MeshPages
         int requiredPageCount = checked(_offsets.Count + pageCount);
         _registrationByMesh.EnsureCapacity(checked(_registrationByMesh.Count + 1));
         _registrations.EnsureCapacity(checked(_registrations.Count + 1));
-        _pageSources.EnsureCapacity(requiredPageCount);
+        _pages.EnsureCapacity(requiredPageCount);
+        _referencedPageBits.EnsureCapacity((requiredPageCount + 31) / 32);
         _offsets.EnsureCapacity(requiredPageCount);
-        _lruNodes.EnsureCapacity(requiredPageCount);
         _residentPages.EnsureCapacity(requiredPageCount);
     }
 
@@ -203,9 +204,10 @@ internal sealed class MeshPages
         for (int index = 0; index < registration.PageCount; index++)
         {
             _offsets.Add(0);
-            _lruNodes.Add(registration.LruNodes[index]);
-            _pageSources.Add(new(registration.RegistrationIndex, registration.StreamingPageBytes[index]));
+            _pages.Add(new(registration.RegistrationIndex, registration.StreamingPageBytes[index]));
         }
+        while (_referencedPageBits.Count < (_pages.Count + 31) / 32)
+            _referencedPageBits.Add(0);
         _lowestDetailBytes += registration.LowestDetailBytes;
     }
 
@@ -243,21 +245,10 @@ internal sealed class MeshPages
             registration.RegistrationIndex != _registrations.Count ||
             registration.PageCount == 0 ||
             registration.PageCount != registration.Source.Pages.Count ||
-            registration.PageCount != registration.LruNodes.Length ||
             registration.LowestDetailPageIds.Length == 0 ||
             _registrationByMesh.ContainsKey(registration.Mesh))
         {
             throw new InvalidOperationException("The prepared mesh-page registration is stale or malformed.");
-        }
-
-        for (int index = 0; index < registration.PageCount; index++)
-        {
-            uint pageId = checked(registration.FirstPageId + (uint)index);
-            if (registration.LruNodes[index].Value != pageId ||
-                registration.LruNodes[index].List is not null)
-            {
-                throw new InvalidOperationException("The prepared mesh-page registration is stale or malformed.");
-            }
         }
     }
 
@@ -287,14 +278,14 @@ internal sealed class MeshPages
 
     public bool TrySource(uint pageId, out uint size, out MeshPageReadSource source)
     {
-        if (pageId >= _pageSources.Count)
+        if (pageId >= _pages.Count)
         {
             size = 0;
             source = default;
             return false;
         }
 
-        RegisteredMeshPages registration = _registrations[_pageSources[(int)pageId].RegistrationIndex];
+        RegisteredMeshPages registration = _registrations[_pages[(int)pageId].RegistrationIndex];
         int localPageIndex = checked((int)(pageId - registration.FirstPageId));
         MeshPayloadPage descriptor = registration.Source.Pages[localPageIndex];
         size = checked((uint)descriptor.Size);
@@ -306,7 +297,20 @@ internal sealed class MeshPages
         => heapCapacity > _lowestDetailBytes ? heapCapacity - _lowestDetailBytes : 0;
 
     internal uint GetStreamingPageBytes(uint page)
-        => page < (uint)_pageSources.Count ? _pageSources[(int)page].StreamingBytes : 0;
+        => page < (uint)_pages.Count ? _pages[(int)page].StreamingBytes : 0;
+
+    internal void ClearReferences()
+        => CollectionsMarshal.AsSpan(_referencedPageBits).Clear();
+
+    internal uint ReferencePage(uint page)
+    {
+        if (page >= _pages.Count) return 0;
+        CollectionsMarshal.AsSpan(_referencedPageBits)[(int)(page / 32)] |= 1u << (int)(page & 31);
+        return _pages[(int)page].StreamingBytes;
+    }
+
+    internal bool IsReferenced(uint page)
+        => page < _pages.Count && (_referencedPageBits[(int)(page / 32)] & (1u << (int)(page & 31))) != 0;
 
     public void StageResident(
         uint pageId,
@@ -492,15 +496,27 @@ internal sealed class MeshPages
     // published residency without a pending retirement. Keep the eager recency order.
     public bool TryTouchActiveResident(uint pageId)
     {
-        if (pageId >= _lruNodes.Count)
+        if (pageId >= _pages.Count)
             return false;
 
-        LinkedListNode<uint> node = _lruNodes[(int)pageId];
-        if (!ReferenceEquals(node.List, _residentLru))
+        int index = (int)pageId;
+        Span<Page> pages = CollectionsMarshal.AsSpan(_pages);
+        ref Page page = ref pages[index];
+        int older = page.OlderResidentPage;
+        if (older < 0 && _oldestResidentPage != index)
             return false;
 
-        _residentLru.Remove(node);
-        _residentLru.AddLast(node);
+        int newer = page.NewerResidentPage;
+        if (newer < 0)
+            return true;
+
+        if (older < 0) _oldestResidentPage = newer;
+        else pages[older].NewerResidentPage = newer;
+        pages[newer].OlderResidentPage = older;
+        pages[_newestResidentPage].NewerResidentPage = index;
+        page.OlderResidentPage = _newestResidentPage;
+        page.NewerResidentPage = -1;
+        _newestResidentPage = index;
         return true;
     }
 
@@ -510,27 +526,28 @@ internal sealed class MeshPages
             _pendingEvictions.Contains(pageId))
             return;
 
-        LinkedListNode<uint> node = _lruNodes[checked((int)pageId)];
-        if (node.List is not null)
-        {
-            _residentLru.Remove(node);
-            _residentLru.AddLast(node);
+        if (TryTouchActiveResident(pageId))
             return;
-        }
 
-        _residentLru.AddLast(node);
+        int index = (int)pageId;
+        Span<Page> pages = CollectionsMarshal.AsSpan(_pages);
+        pages[index].OlderResidentPage = _newestResidentPage;
+        pages[index].NewerResidentPage = -1;
+        if (_newestResidentPage < 0) _oldestResidentPage = index;
+        else pages[_newestResidentPage].NewerResidentPage = index;
+        _newestResidentPage = index;
     }
 
     public bool TryVictim(uint protectedPageId, Func<uint, bool> canEvict, out uint pageId)
     {
-        LinkedListNode<uint>? node = _residentLru.First;
-        while (node != null)
+        int index = _oldestResidentPage;
+        while (index >= 0)
         {
-            pageId = node.Value;
-            if (pageId != protectedPageId && _pageSources[(int)pageId].StreamingBytes != 0 && canEvict(pageId))
+            pageId = (uint)index;
+            if (pageId != protectedPageId && _pages[index].StreamingBytes != 0 && canEvict(pageId))
                 return true;
 
-            node = node.Next;
+            index = _pages[index].NewerResidentPage;
         }
 
         pageId = 0;
@@ -569,14 +586,14 @@ internal sealed class MeshPages
         _gpuReservations.Clear();
         _registrationByMesh.Clear();
         _registrations.Clear();
-        _pageSources.Clear();
+        _pages.Clear();
+        _referencedPageBits.Clear();
         _residentPages.Clear();
         _lowestDetailBytes = 0;
         _pendingLoads.Clear();
         _pendingEvictions.Clear();
-        _residentLru.Clear();
+        _oldestResidentPage = _newestResidentPage = -1;
         _offsets.Clear();
-        _lruNodes.Clear();
     }
 
     private void Ensure(uint pageId)
@@ -587,11 +604,21 @@ internal sealed class MeshPages
 
     private void Remove(uint pageId)
     {
-        LinkedListNode<uint> node = _lruNodes[checked((int)pageId)];
-        if (node.List is null)
-            return;
+        int index = (int)pageId;
+        Span<Page> pages = CollectionsMarshal.AsSpan(_pages);
+        ref Page page = ref pages[index];
+        int older = page.OlderResidentPage;
+        int newer = page.NewerResidentPage;
+        if (older < 0)
+        {
+            if (_oldestResidentPage != index) return;
+            _oldestResidentPage = newer;
+        }
+        else pages[older].NewerResidentPage = newer;
 
-        _residentLru.Remove(node);
+        if (newer < 0) _newestResidentPage = older;
+        else pages[newer].OlderResidentPage = older;
+        page.OlderResidentPage = page.NewerResidentPage = -1;
     }
 }
 

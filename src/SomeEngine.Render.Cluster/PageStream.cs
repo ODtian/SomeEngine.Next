@@ -260,9 +260,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             if (_resources.TryCollectPageDependencies(demands, _expandedDemands))
             {
                 ReadOnlySpan<ClusterPageDemand> expanded = CollectionsMarshal.AsSpan(_expandedDemands);
-                demand = _resources.SetReferencedPages(expanded, demandComplete.Value);
                 _queuedPages.Clear();
-                _resources.ResolvePages(expanded, _loadCandidates);
+                demand = _resources.ReferenceAndResolvePages(expanded, demandComplete.Value, _loadCandidates);
                 foreach ((uint page, uint priority) in _loadCandidates)
                     QueuePageIfNeeded(page, priority);
                 _expandedDemands.Clear();
