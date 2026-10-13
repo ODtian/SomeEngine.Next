@@ -2,10 +2,10 @@
 #define STANDARD_SLANG
 
 #include "material_interfaces.slang"
+#include "triangle_surface.slang"
 #include "render_lighting.slang"
 #include "brdf.slang"
 #include "vsm_sampling.slang"
-#include "vsm_receiver_pixel.slang"
 
 StructuredBuffer<ClusteredLightGridParameters> LightingViews;
 StructuredBuffer<GPULight> LightBuffer;
@@ -99,24 +99,22 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
     SamplerState MaterialSampler;
 
     void evaluateSurface(
-        uint3 pixelCoord,
-        uint instanceID,
-        uint materialSlot,
+        SurfacePixelInput input,
         SurfaceEval surface,
         float3 bary,
         Triangle triangle,
         RWTexture2DArray<float4> outputColor)
     {
         StandardPixelContext ctx = BuildStandardPixelContext(
-            pixelCoord,
-            instanceID,
+            input.PixelCoord,
+            input.InstanceID,
             surface);
 
         // Sample material textures
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
         float3 armSample    = ARMMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb;
         float3 normalTS     = NormalMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb * 2.0 - 1.0;
-        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(materialSlot);
+        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(input.MaterialIndex);
 
         // TBN matrix: transform normal from tangent space to world space
         float3 N_geom = normalize(ctx.worldNormal);
@@ -131,13 +129,9 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
         ClusteredLightGridParameters lighting = LightingViews[ctx.pixelCoord.z];
         float3 viewPosition = mul(float4(ctx.surfacePosition, 1.0), lighting.View).xyz;
         float viewDepth = max(-viewPosition.z, lighting.ZParams.x);
-        ClusterViewUniforms receiverView = Views[ctx.pixelCoord.z];
-        VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
-            DepthBuffer, ctx.pixelCoord, uint2(receiverView.ScreenWidth, receiverView.ScreenHeight),
-            DepthBuffer.Load(int4(ctx.pixelCoord, 0)), receiverView.ClipToWorld);
-        float3 receiverPositionDx = ctx.surfacePosition + (receiver.PositionDx - receiver.Position);
-        float3 receiverPositionDy = ctx.surfacePosition + (receiver.PositionDy - receiver.Position);
-        float3 V = normalize(MaterialCameraPosition(ctx.pixelCoord.z) - ctx.surfacePosition);
+        float3 receiverPositionDx = ctx.surfacePosition + input.PositionDx;
+        float3 receiverPositionDy = ctx.surfacePosition + input.PositionDy;
+        float3 V = normalize(input.CameraPosition - ctx.surfacePosition);
         float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;
 
         if (dot(mappedNormal, V) <= 0.0)
@@ -302,14 +296,13 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 
     void evaluateDebug(
         uint debugMode,
-        uint3 pixelCoord,
-        uint instanceID,
-        uint materialSlot,
+        SurfacePixelInput input,
         SurfaceEval surface,
         float3 bary,
         Triangle triangle,
         RWTexture2DArray<float4> outputColor)
     {
+        uint3 pixelCoord = input.PixelCoord;
         if (debugMode == 8)
         {
             outputColor[pixelCoord] = float4(bary, 1.0);
@@ -318,7 +311,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 
         StandardPixelContext ctx = BuildStandardPixelContext(
             pixelCoord,
-            instanceID,
+            input.InstanceID,
             surface);
 
         if (debugMode == 9)
