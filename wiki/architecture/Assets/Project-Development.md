@@ -17,4 +17,4 @@
 
 ## Relations
 
-[规格 #204](https://github.com/ODtian/SomeEngine.Next/issues/204) · [材质资产](Asset-Materials.md) · [Shader 组合](../shader/Shader-Composition.md) · [导入器发现](Importer-Discovery.md)
+[规格 #204](https://github.com/ODtian/SomeEngine.Next/issues/204) · [材质资产](Asset-Materials.md) · [Shader 组合](../shader/Shader-Composition.md) · [资产代码生成](Asset-Code-Generation.md)
