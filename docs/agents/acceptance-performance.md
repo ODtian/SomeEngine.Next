@@ -6,26 +6,34 @@
 
 `tools/Measure-Scenes.ps1` 与性能报告只检查采样完整性并报告数值，没有 P95 阈值判定。`Complete=true`、三景 `Measured` 表示反馈完整，不表示达到上述目标。
 
-## 2026-10-13 固定帧窗口反馈
+## 2026-10-13 阶段反馈与基线核对
 
-本轮基线为 `0c1048f8`，集成源码为 `869fc2e5`。三份内容均从原始来源更新；对比使用
-RTX 3080、1280×720、NativeAOT/Satori、Forward、固定 1/60 秒步长及原有 TAA/VSM/async 设置。
-1024 小球保持运动，Sponza 与 Amazon Bistro 保持原静态场景。每景均指定
-`MeasurementFrames = { FirstFrame: 2400, FrameCount: 1200 }`，实际完整采样 2400–3599 帧。
+既定产品基线为 `3788fbd8`，渲染实现为 `a0c84cd8`。冻结记录位于
+`F:/AI-Workspaces/session-3884061aa3d25950/evidence/performance/product-baseline-3788-20261012/result.json`。
+配置为 RTX 3080、1280×720、NativeAOT/Satori、Forward、固定 1/60 秒步长及原有 TAA/VSM/async 设置。
+1024 小球保持运动，指定第 2048–3071 帧；Sponza 与 Amazon Bistro 保持静态，采用原三秒热身、两秒采样。
 
-基线与集成版分别通过 `tools/Measure-Scenes.ps1 -ShadingPath forward` 完成反馈，包含启动共
-38.73 秒与 37.56 秒。两轮均 `Complete=true`、三景 `Measured`，`TraceEnabled=false`。
+| 既定基线场景 | 均值 ms | P95 ms | 采样帧数 |
+| --- | ---: | ---: | ---: |
+| 1024 运动小球 | 2.01020 | 2.1575 | 1024 |
+| Sponza | 2.05374 | 2.2109 | 973 |
+| Amazon Bistro | 2.50746 | 2.7462 | 798 |
 
-| 场景 | 基线均值 ms | 集成均值 ms | 基线 P95 ms | 集成 P95 ms |
-| --- | ---: | ---: | ---: | ---: |
-| 1024 运动小球 | 2.17782 | 2.01601 | 2.9180 | 2.2368 |
-| Sponza | 2.26854 | 2.07088 | 3.0888 | 2.2554 |
-| Amazon Bistro | 2.73273 | 2.47934 | 3.6892 | 2.7649 |
+本轮曾将 `0c1048f8` 的临时重测值列作基线，并将三景采样统一改为第 2400–3599 帧。
+原 23%–27% 降幅表述撤回；该轮保留为局部实验。集成源码 `869fc2e5` 在该窗口的绝对结果如下，
+包含启动共 37.56 秒，三景各 1200 帧，`Complete=true`、`Measured`、`TraceEnabled=false`。
+后续收益比较沿既定产品基线的源码、内容与采样配置进行，验收完成条件为三景整帧 P95 均严格小于 1 ms。
+
+| 本轮阶段采样场景 | 均值 ms | P95 ms |
+| --- | ---: | ---: |
+| 1024 运动小球 | 2.01601 | 2.2368 |
+| Sponza | 2.07088 | 2.2554 |
+| Amazon Bistro | 2.47934 | 2.7649 |
 
 本轮提交将流式页字节数和读回 pass 索引移到显式变更时维护，展开需求直接写入预留缓冲，
 边界状态集中保存并只更新完成点，Forward 跳过零表面数据步长下的原子计数。
 对应提交为 `5021318d`、`53b0217e`、`269e29cf`、`869fc2e5`。
-Bistro 的 Prepare 均值从 0.364689 ms 降到 0.308432 ms；整帧结果按上述合并版本记录。
+Bistro 的 Prepare 均值为 0.308432 ms；整帧结果按上述合并版本和独立采样窗口记录。
 
 三景驻留页分别为 5/5、83/83、2673/2722；queued/active loads、backpressure、dropped faults
 和阴影分辨率偏置均为零。验证沿公共行为逐步完成：持久读回 4 项、集成流送与移动镜头阴影
