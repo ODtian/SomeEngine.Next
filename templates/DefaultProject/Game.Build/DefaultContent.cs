@@ -1,6 +1,6 @@
 using System.Numerics;
-using Game.Assets;
-using Game.Importing;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Assets.Importers;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.Core.ECS.Components;
@@ -8,9 +8,7 @@ using SomeEngine.Core.Math;
 using SomeEngine.Render;
 using SomeEngine.Render.Components;
 using SomeEngine.Assets;
-using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
-using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Instances;
@@ -29,7 +27,6 @@ public static class DefaultContent
         string engineShaders = Path.Combine(engineRoot, "assets", "Shaders");
         if (!File.Exists(Path.Combine(projectRoot, "Game.Build", "Game.Build.csproj")) || !Directory.Exists(engineShaders))
             throw new DirectoryNotFoundException("Select the copied project and its engine shader library explicitly.");
-        MaterialTypes.Register();
         WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"),
             BuildRenderInstanceLayoutSource(ClusterRenderFeature.InstanceLayout));
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],

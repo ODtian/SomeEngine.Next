@@ -1,31 +1,25 @@
 using Microsoft.Extensions.DependencyInjection;
-using Game.Assets;
-using SomeEngine.Assets;
-using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Serialization.Containers;
 using GltfMaterial = SharpGLTF.Schema2.Material;
 using GltfTexture = SharpGLTF.Schema2.Texture;
 
-namespace Game.Importing;
+namespace SomeEngine.Assets.Importers;
 
-/// <summary>Builds project Standard and Unlit materials while the base importer assembles glTF nodes.</summary>
+/// <summary>Builds Standard and Unlit materials while the base importer assembles glTF nodes.</summary>
 [AssetImporter("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
 public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSettings) : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b");
-    public const string LitTemplate = "assets/Materials/Standard.material.asset";
-    public const string UnlitTemplate = "assets/Materials/TestUnlit_1.material.asset";
-
     public static GltfSourceImporter CreateSourceImporter(Action<IServiceCollection>? configureServices = null,
         string? capabilitiesVersion = null)
         => new(services =>
         {
-            ProjectAssetCapabilities.AddAssetCapabilities(services);
+            EngineAssetCapabilities.AddAssetCapabilities(services);
             services.AddSingleton<IClusterVertexEncoder>(StandardClusterVertexEncoder.Instance);
             configureServices?.Invoke(services);
-        }, capabilitiesVersion ?? ProjectAssetCapabilities.BuildVersion, ImporterId);
+        }, capabilitiesVersion ?? EngineAssetCapabilities.BuildVersion, ImporterId);
 
     public override async ValueTask ImportMaterialAsync(GltfMaterial source, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
@@ -44,12 +38,7 @@ public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSetting
                 texture, cancellationToken).ConfigureAwait(false);
             textures.Add(texture, imported.Reference);
         }
-        string templatePath = source.Unlit ? sourceSettings.UnlitMaterialTemplate : sourceSettings.LitMaterialTemplate;
-        string fullPath = Path.IsPathRooted(templatePath)
-            ? Path.GetFullPath(templatePath) : Path.GetFullPath(Path.Combine(context.ProjectRoot, templatePath));
-        await context.ReportInputAsync(fullPath, cancellationToken).ConfigureAwait(false);
-        await using MaterialAsset template = await MaterialAsset.OpenAsync(fullPath, cancellationToken).ConfigureAwait(false);
-        using MaterialAsset material = template.CreateCopy();
+        using MaterialAsset material = await CreateMaterialAsync(source.Unlit, context, cancellationToken).ConfigureAwait(false);
         MaterialBlock content = material.GetBlock<MaterialBlock>();
         AssetId<TextureAsset> albedo = baseColor?.Texture is { } colorTexture
             && textures.TryGetValue(colorTexture, out AssetId<TextureAsset> colorId) ? colorId : default;
@@ -81,7 +70,28 @@ public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSetting
         try { output.SetBlock(block); }
         catch { block.Dispose(); throw; }
     }
+
+    private async ValueTask<MaterialAsset> CreateMaterialAsync(bool unlit, ImportContext context,
+        CancellationToken cancellationToken)
+    {
+        string? templatePath = unlit ? sourceSettings.UnlitMaterialTemplate : sourceSettings.LitMaterialTemplate;
+        if (templatePath is not null)
+        {
+            string path = GltfDeps.FullPath(context.ProjectRoot, templatePath);
+            await context.ReportInputAsync(path, cancellationToken).ConfigureAwait(false);
+            await using MaterialAsset template = await MaterialAsset.OpenAsync(path, cancellationToken).ConfigureAwait(false);
+            return template.CreateCopy();
+        }
+
+        string shaderPath = GltfDeps.FullPath(context.ProjectRoot,
+            unlit ? sourceSettings.UnlitShader : sourceSettings.LitShader);
+        await context.ReportInputAsync(shaderPath, cancellationToken).ConfigureAwait(false);
+        using ShaderAsset shader = await ShaderAsset.OpenSourceAsync(shaderPath, cancellationToken).ConfigureAwait(false);
+        MaterialAsset material = unlit ? new UnlitMaterialAsset() : new StandardMaterialAsset();
+        material.GetBlock<MaterialBlock>().Shader = shader.Reference;
+        return material;
+    }
 }
 
 [AssetCapabilities]
-public static partial class ProjectAssetCapabilities;
+public static partial class EngineAssetCapabilities;

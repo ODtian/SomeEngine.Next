@@ -11,7 +11,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SomeEngine.Serialization.Streaming;
 
-Game.Assets.MaterialTypes.Register();
 string directory = Path.Combine(Path.Combine(Directory.GetCurrentDirectory(), "obj"), $"SomeEngine-Assets-Aot-{Guid.NewGuid():N}");
 Directory.CreateDirectory(directory);
 const string relativePath = "native.texture.asset";

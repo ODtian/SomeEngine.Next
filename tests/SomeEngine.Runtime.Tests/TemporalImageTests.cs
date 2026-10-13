@@ -1,5 +1,5 @@
 using System.Numerics;
-using Game.Content;
+using SomeEngine.Resources;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Render.Frame;
 

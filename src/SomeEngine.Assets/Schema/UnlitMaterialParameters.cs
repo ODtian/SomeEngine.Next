@@ -1,10 +1,8 @@
 using System.Numerics;
-using SomeEngine.Assets;
-using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
 
-namespace Game.Assets;
+namespace SomeEngine.Assets.Schema;
 
 /// <summary>Typed access to the existing material parameter data. Missing local values keep material defaults or inherit.</summary>
 public readonly struct UnlitMaterialParameters

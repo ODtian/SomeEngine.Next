@@ -5,7 +5,6 @@ using System.Text.Json.Serialization.Metadata;
 using System.Text.Json.Nodes;
 using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
-using Game.Importing;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
@@ -21,7 +20,7 @@ public sealed class GltfExtensionBehaviorTests
     public async Task ExplicitlyDisabledTextureProducerPreservesThePreviouslyBuiltAssets()
     {
         using var files = new GltfFiles();
-        await files.WriteDefaultTemplatesAsync();
+        await files.WriteProjectShadersAsync();
         files.AddTexturedMaterial();
         files.WriteSelections(new SourceImporterSettings(ImporterId<GltfMeshImporter>(),
             JsonSerializer.SerializeToElement(new GltfMeshSettings(), GltfMeshSettingsJson.Default.GltfMeshSettings)));
@@ -43,7 +42,7 @@ public sealed class GltfExtensionBehaviorTests
     public async Task SourceWithoutPersistentElementIdsRequiresAnExplicitIdentitySetting()
     {
         using var files = new GltfFiles();
-        await files.WriteDefaultTemplatesAsync();
+        await files.WriteProjectShadersAsync();
         JsonNode source = JsonNode.Parse(File.ReadAllText(files.Source))!;
         source["scenes"]![0]!["extras"] = null;
         File.WriteAllText(files.Source, source.ToJsonString());
@@ -79,7 +78,7 @@ public sealed class GltfExtensionBehaviorTests
     public async Task AddingUnselectedCapabilitiesPreservesSavedDefaultsAndHitsTheCache()
     {
         using var files = new GltfFiles();
-        await files.WriteDefaultTemplatesAsync();
+        await files.WriteProjectShadersAsync();
         var project = new AssetProject(files.Directory, []);
         var original = StandardGltfSceneImporter.CreateSourceImporter(_ => { }, "project-services-1");
         Guid id = MeshId(project, await project.ImportAsync(files.Source, original));
@@ -141,7 +140,7 @@ public sealed class GltfExtensionBehaviorTests
     public async Task ASelectedExternalTextureProducerSuppliesTheProjectMaterialDependency()
     {
         using var files = new GltfFiles();
-        await files.WriteDefaultTemplatesAsync();
+        await files.WriteProjectShadersAsync();
         files.AddTexturedMaterial();
         files.WriteSelections(
             new SourceImporterSettings(ImporterId<GltfMeshImporter>(), JsonSerializer.SerializeToElement(new GltfMeshSettings(), GltfMeshSettingsJson.Default.GltfMeshSettings)),
@@ -279,18 +278,14 @@ public sealed class GltfExtensionBehaviorTests
                     JsonSerializer.SerializeToElement(new GltfTextureSettings(), GltfSettingsJson.Default.GltfTextureSettings)));
             SourceMeta.Save(Source, metadata);
         }
-        public async Task WriteDefaultTemplatesAsync()
+        public async Task WriteProjectShadersAsync()
         {
-            Game.Assets.MaterialTypes.Register();
-            string lit = Path.Combine(Directory, StandardGltfSceneImporter.LitTemplate), unlit = Path.Combine(Directory, StandardGltfSceneImporter.UnlitTemplate);
-            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(lit)!);
-            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(unlit)!);
-            using var standard = new Game.Assets.StandardMaterialAsset { Name = "default" };
-            using var unlitMaterial = new Game.Assets.UnlitMaterialAsset { Name = "unlit" };
-            standard.GetBlock<MaterialBlock>().Shader = new(Guid.NewGuid());
-            unlitMaterial.GetBlock<MaterialBlock>().Shader = new(Guid.NewGuid());
-            await standard.SaveAsync(lit);
-            await unlitMaterial.SaveAsync(unlit);
+            string shaderDirectory = Path.Combine(Directory, "assets", "Shaders");
+            System.IO.Directory.CreateDirectory(shaderDirectory);
+            using var standard = new ShaderAsset { Name = "standard" };
+            using var unlit = new ShaderAsset { Name = "unlit" };
+            await standard.SaveSourceAsync(Path.Combine(shaderDirectory, "standard.shader"));
+            await unlit.SaveSourceAsync(Path.Combine(shaderDirectory, "unlit.shader"));
         }
         public void AddTexturedMaterial()
         {

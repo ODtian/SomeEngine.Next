@@ -117,7 +117,7 @@ public abstract partial class Material : IDisposable
         IEnumerable<(MaterialValue Value, Texture? Texture)> values,
         Texture[] createdTextures)
     {
-        _createdTextures = createdTextures;
+        _createdTextures = [.. _createdTextures, .. createdTextures];
         _changingProperties = true;
         try
         {

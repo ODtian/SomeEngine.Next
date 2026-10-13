@@ -11,6 +11,26 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class MaterialFileTests
 {
     [Fact]
+    public async Task StandardMaterialOpensWithEngineTypeAndDefaultTextureValues()
+    {
+        using var directory = new AssetTestDirectory();
+        var project = new AssetProject(directory.Path, []);
+        using var asset = new SomeEngine.Assets.Schema.StandardMaterialAsset();
+        Guid id = project.RegisterAsset(await asset.SaveAsync(directory.File("standard.material.asset")));
+        await using var loader = new AssetLoader(project.CreateStorage());
+        await using MaterialAsset opened = await MaterialAsset.OpenAsync(loader, new(id));
+        using Material created = await opened.CreateAsync(loader);
+        var material = Assert.IsType<SomeEngine.Resources.StandardMaterial>(created);
+        Assert.Equal(SomeEngine.Serialization.BinaryTypeId.FromLogicalName("SomeEngine.Assets.Schema.StandardMaterial"), material.MaterialTypeId);
+        Assert.True(material.AlbedoMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var white));
+        Assert.Equal(new byte[] { 255, 255, 255, 255 }, white.ToArray());
+        Assert.True(material.NormalMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var normal));
+        Assert.Equal(new byte[] { 128, 128, 255, 255 }, normal.ToArray());
+        Assert.True(material.ARMMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var arm));
+        Assert.Equal(new byte[] { 255, 255, 255, 255 }, arm.ToArray());
+    }
+
+    [Fact]
     public async Task ParentAndOverridesRoundTripWithoutCreatingObjectsDuringOpen()
     {
         using var directory = new AssetTestDirectory();

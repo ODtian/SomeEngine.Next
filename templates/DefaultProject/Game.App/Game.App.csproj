@@ -10,7 +10,7 @@
     <SelfContained Condition="'$(Configuration)' == 'Release'">true</SelfContained>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../Game.Assets/Game.Assets.csproj" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Assets/SomeEngine.Assets.csproj" />
     <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
     <Content Include="$(ProjectContentRoot)/assets/**/*.asset" Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

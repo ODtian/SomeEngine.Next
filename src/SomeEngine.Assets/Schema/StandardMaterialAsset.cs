@@ -1,12 +1,6 @@
-using System.Numerics;
-using SomeEngine.Graphics;
-using SomeEngine.Serialization.Containers;
-
-using SomeEngine.Assets;
-using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
-using Game.Content;
-namespace Game.Assets;
+
+namespace SomeEngine.Assets.Schema;
 
 /// <summary>A standard material identity and its typed creation functions.</summary>
 public sealed class StandardMaterialAsset : MaterialAsset

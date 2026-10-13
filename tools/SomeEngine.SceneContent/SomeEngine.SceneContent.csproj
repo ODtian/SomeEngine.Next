@@ -3,7 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="../../templates/DefaultProject/Game.Build/Game.Build.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <Using Include="Game.Content" />
-    <Using Include="Game.Assets" />
+    <Using Include="SomeEngine.Resources" />
+    <Using Include="SomeEngine.Assets.Schema" />
   </ItemGroup>
 </Project>

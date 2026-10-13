@@ -1,7 +1,6 @@
 using System.Numerics;
-using Game.Assets;
-using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Assets;
 using SomeEngine.Serialization.Containers;
 
 namespace Game.Build;

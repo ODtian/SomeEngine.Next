@@ -1,6 +1,5 @@
 using SomeEngine.Assets.Importers;
 using System.Text.Json;
-using Game.Importing;
 using SomeEngine.Assets;
 using static SomeEngine.Tests.TestProjectPaths;
 
