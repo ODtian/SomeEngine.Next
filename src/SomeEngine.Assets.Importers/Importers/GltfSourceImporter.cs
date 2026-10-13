@@ -14,7 +14,7 @@ namespace SomeEngine.Assets.Importers;
 
 public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImportOverrides>
 {
-    public const uint ImporterVersion = 13;
+    public const uint ImporterVersion = 14;
     public static readonly Guid SourceImporterId = new("b0c10195-d8d1-46ab-81b8-f8c54db7d0aa");
     private readonly Action<IServiceCollection> _configureServices;
     private readonly string _capabilitiesVersion;

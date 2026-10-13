@@ -721,7 +721,7 @@ public static partial class ClusterBuilder
                     Simplify(mesh.Positions.AsSpan(0, mesh.VertexCount),
                         CollectionsMarshal.AsSpan(mergedIndices), locks, parentCount * targetClusterSize * 3,
                         attributes.Values, attributeWeights, out float reductionError, reducedIndices);
-                    error = Math.Max(error, reductionError);
+                    error = groupBounds.Error + reductionError;
                     parents.Clear();
                     parentIndices.Clear();
                     Clusterize(config, CollectionsMarshal.AsSpan(reducedIndices),
