@@ -289,8 +289,9 @@ internal sealed class ClusterPageFixups
     {
         // Only positions are shared scratch. The coordinator keeps the ordered output
         // after releasing the mesh gate, including across another stream's expansion.
-        expanded.Clear();
-        expanded.EnsureCapacity(pageCount);
+        CollectionsMarshal.SetCount(expanded, pageCount);
+        Span<ClusterPageDemand> output = CollectionsMarshal.AsSpan(expanded);
+        int count = 0;
         if (_demandPositions.Length < pageCount)
             Array.Resize(ref _demandPositions, pageCount);
         int firstWord = _demandWords.Length;
@@ -304,11 +305,11 @@ internal sealed class ClusterPageFixups
                 int position = _demandPositions[demand.PageId];
                 if (position == 0)
                 {
-                    expanded.Add(demand);
-                    _demandPositions[demand.PageId] = expanded.Count;
+                    output[count++] = demand;
+                    _demandPositions[demand.PageId] = count;
                 }
-                else if (demand.Priority > expanded[position - 1].Priority)
-                    expanded[position - 1] = demand;
+                else if (demand.Priority > output[position - 1].Priority)
+                    output[position - 1] = demand;
                 if (FindPageDependency(demand.PageId) is { } dependency)
                     Include(dependency, demand.Priority);
             }
@@ -327,10 +328,10 @@ internal sealed class ClusterPageFixups
                             var demand = new ClusterPageDemand(page, priority);
                             if (position == 0)
                             {
-                                expanded.Add(demand);
-                                _demandPositions[page] = expanded.Count;
+                                output[count++] = demand;
+                                _demandPositions[page] = count;
                             }
-                            else expanded[position - 1] = demand;
+                            else output[position - 1] = demand;
                         }
                     uint parentPriority = priority == uint.MaxValue ? priority : priority + 1;
                     foreach (PageDependency parent in dependency.Parents) Include(parent, parentPriority);
@@ -340,10 +341,10 @@ internal sealed class ClusterPageFixups
         }
         finally
         {
-            foreach (ClusterPageDemand demand in expanded) _demandPositions[demand.PageId] = 0;
+            foreach (ClusterPageDemand demand in output[..count]) _demandPositions[demand.PageId] = 0;
             if (lastWord >= firstWord)
                 Array.Clear(_demandWords, firstWord, lastWord - firstWord + 1);
-            if (!complete) expanded.Clear();
+            CollectionsMarshal.SetCount(expanded, complete ? count : 0);
         }
 
         void Include(PageDependency dependency, uint priority)
