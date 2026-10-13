@@ -20,6 +20,7 @@ public sealed partial class ClusterPipelineSystem
         ClusterShadeStageSet shadeStages)
     {
         FrameResources frame = CreateFrameResources(ref graph, in output, assignments, rasterStages, shadeStages);
+        RasterBin[] rasterBins = CreateRasterBins(rasterStages, shadeStages);
         GraphData.Resources = frame;
         AuthorHistoryInitialization(ref graph, frame);
         frame.PackedViews = graph.DeclareExternalBuffer(new BufferDesc(
@@ -36,7 +37,7 @@ public sealed partial class ClusterPipelineSystem
         RecordWorkSeed(ref graph, frame, frame.PackedViews, frame.ViewCount, 0u, "primary", primaryTraversal);
         RecordPersistentCull(ref graph, frame, frame.PackedViews, 0u, frame.DrawArgs,
             frame.ReadOffsetZero, frame.ReadOffsetZero, frame.ReadOffsetZero, false, 0, "primary", primaryTraversal);
-        RasterPhase first = RecordRasterPhase(ref graph, frame, rasterStages, frame.DrawArgs,
+        RasterPhase first = RecordRasterPhase(ref graph, frame, rasterBins, frame.DrawArgs,
             frame.ReadOffsetZero, frame.ReadOffsetZero, frame.ReadOffsetZero, 0, true);
         GraphRegionId firstHiZ = graph.AddRegion("Cluster first HiZ", GraphData.PrimaryGeometry);
         RecordHiZ(ref graph, frame, true, firstHiZ);
@@ -45,12 +46,12 @@ public sealed partial class ClusterPipelineSystem
         RecordDeferredResume(ref graph, frame, frame.Phase2DrawArgs, "primary post-HiZ", primaryDeferredTraversal);
         RecordPersistentCull(ref graph, frame, frame.PackedViews, 2u, frame.Phase2DrawArgs,
             frame.DrawArgs, frame.ReadOffsetZero, frame.ReadOffsetZero, false, 1, "primary post-HiZ", primaryDeferredTraversal);
-        RasterPhase second = RecordRasterPhase(ref graph, frame, rasterStages, frame.Phase2DrawArgs,
+        RasterPhase second = RecordRasterPhase(ref graph, frame, rasterBins, frame.Phase2DrawArgs,
             frame.DrawArgs, frame.ReadOffsetZero, frame.ReadOffsetZero, 1, false);
         GraphPassId geometryComplete = RecordHiZ(ref graph, frame, false,
             graph.AddRegion("Cluster second HiZ", GraphData.PrimaryGeometry));
         var phases = ImmutableDictionary<int, RasterPhase>.Empty.Add(0, first).Add(1, second);
-        phases = RecordContinuation(ref graph, frame, rasterStages, frame.PackedViews, phases);
+        phases = RecordContinuation(ref graph, frame, rasterBins, frame.PackedViews, phases);
         RecordShade(ref graph, frame, shadeStages);
         GraphRegionId? receiverConsumers = _options.ExportSurfaceReceivers
             ? graph.AddRegion("Cluster surface receiver consumers", _regions.Shading) : null;
@@ -76,7 +77,7 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private ImmutableDictionary<int, RasterPhase> RecordContinuation(
-        ref RenderGraphEdit graph, in FrameResources frame, ClusterRasterStageSet rasterStages,
+        ref RenderGraphEdit graph, in FrameResources frame, RasterBin[] rasterBins,
         GraphBufferId packedViews, ImmutableDictionary<int, RasterPhase> phases)
     {
         if (!_renderContext.IsValid) return phases;
@@ -93,13 +94,13 @@ public sealed partial class ClusterPipelineSystem
         RecordWorkSeed(ref graph, targets, packedViews, _renderContext.MaximumInvocationCount, 1u, "continuation", targetTraversal);
         RecordPersistentCull(ref graph, targets, packedViews, 1u, targets.ContinuationDrawArgs,
             targets.ReadOffsetZero, targets.ReadOffsetZero, targets.ReadOffsetZero, true, 2, "continuation", targetTraversal);
-        RasterPhase first = RecordRasterPhase(ref graph, targets, rasterStages, targets.ContinuationDrawArgs,
+        RasterPhase first = RecordRasterPhase(ref graph, targets, rasterBins, targets.ContinuationDrawArgs,
             targets.ReadOffsetZero, targets.ReadOffsetZero, targets.ReadOffsetZero, 2, true);
         GraphRegionId targetDeferredTraversal = graph.AddRegion("Cluster target deferred traversal", GraphData.TargetSecondReference);
         RecordDeferredResume(ref graph, targets, targets.ContinuationPostDrawArgs, "continuation post-HiZ", targetDeferredTraversal);
         RecordPersistentCull(ref graph, targets, packedViews, 2u, targets.ContinuationPostDrawArgs,
             targets.ReadOffsetZero, targets.ReadOffsetZero, targets.ContinuationDrawArgs, true, 3, "continuation post-HiZ", targetDeferredTraversal);
-        RasterPhase second = RecordRasterPhase(ref graph, targets, rasterStages, targets.ContinuationPostDrawArgs,
+        RasterPhase second = RecordRasterPhase(ref graph, targets, rasterBins, targets.ContinuationPostDrawArgs,
             targets.ReadOffsetZero, targets.ReadOffsetZero, targets.ContinuationDrawArgs, 3, false);
         return phases.Add(2, first).Add(3, second);
     }
@@ -448,7 +449,7 @@ public sealed partial class ClusterPipelineSystem
     private RasterPhase RecordRasterPhase(
         ref RenderGraphEdit graph,
         in FrameResources frame,
-        ClusterRasterStageSet rasterStages,
+        RasterBin[] rasterBins,
         GraphBufferId drawArgs,
         GraphBufferId readOffsetArgs0,
         GraphBufferId readOffsetArgs1,
@@ -478,7 +479,7 @@ public sealed partial class ClusterPipelineSystem
             new GraphRegionMap<TessellationSplitKey, bool>(groups),
             ImmutableDictionary<TessellationSplitKey, TessellationGroup>.Empty,
             new GraphRegionMap<int, RasterInputs>(patches), phaseOne, epoch >= 2);
-        data = ReconcileRasterPhase(ref graph, data, rasterStages);
+        data = ReconcileRasterPhase(ref graph, data, rasterBins);
         if (epoch < 2 && _visibilityMode != ClusterVisibilityMode.HardwareOnly)
             RecordWinnerResolve(ref graph, raster, phaseOne, graph.AddRegion("Visibility resolve", phase));
         return data;

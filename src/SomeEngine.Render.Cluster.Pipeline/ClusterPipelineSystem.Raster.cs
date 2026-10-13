@@ -11,6 +11,7 @@ public sealed partial class ClusterPipelineSystem
 
     private sealed class RasterInputs
     {
+        internal ImmutableArray<IndexedTextureRead> TextureReads = [];
         internal readonly List<GraphBufferId> Buffers = [];
         internal readonly List<GraphBufferSlice> Uniforms = [];
         internal GraphBufferSlice? SoftwareUniforms;
@@ -34,7 +35,8 @@ public sealed partial class ClusterPipelineSystem
         internal static readonly RasterBinComparer Instance = new();
         public bool Equals(RasterBin? left, RasterBin? right) =>
             ReferenceEquals(left, right) || left is not null && right is not null &&
-            SameRasterStage(left.Stage, right.Stage);
+            SameRasterStage(left.Stage, right.Stage) &&
+            left.Inputs.TextureReads.AsSpan().SequenceEqual(right.Inputs.TextureReads.AsSpan());
         public int GetHashCode(RasterBin value) => value.Stage.BinIndex.GetHashCode();
     }
 
@@ -48,7 +50,8 @@ public sealed partial class ClusterPipelineSystem
         internal static readonly TessellationSplitComparer Instance = new();
         public bool Equals(TessellationSplitStage? left, TessellationSplitStage? right) =>
             ReferenceEquals(left, right) || left is not null && right is not null &&
-            left.SharedBins == right.SharedBins && SameRasterStage(left.Stage, right.Stage);
+            left.SharedBins == right.SharedBins && SameRasterStage(left.Stage, right.Stage) &&
+            left.Inputs.TextureReads.AsSpan().SequenceEqual(right.Inputs.TextureReads.AsSpan());
         public int GetHashCode(TessellationSplitStage value) => value.Stage.BinIndex.GetHashCode();
     }
 
@@ -76,10 +79,11 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private GraphRegionMap<uint, RasterBin> ReconcileRasterBins(ref RenderGraphEdit graph,
-        GraphRegionMap<uint, RasterBin> previous, ClusterRasterInvocation[] stages,
+        GraphRegionMap<uint, RasterBin> previous, RasterBin[] bins,
         GraphRegionBuilder<uint, RasterBin> build)
     {
-        var desired = stages.ToDictionary(static stage => stage.BinIndex, static stage => new RasterBin(stage));
+        var desired = bins.ToDictionary(static bin => bin.Stage.BinIndex,
+            static bin => new RasterBin(bin.Stage) { Inputs = { TextureReads = bin.Inputs.TextureReads } });
         foreach (RasterBin bin in previous.Values)
             if (!desired.TryGetValue(bin.Stage.BinIndex, out RasterBin? next) ||
                 !RasterBinComparer.Instance.Equals(bin, next))
@@ -88,21 +92,28 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private ImmutableDictionary<int, RasterPhase> ReconcileRasterPhases(ref RenderGraphEdit graph,
-        ClusterRasterStageSet stages)
+        ClusterRasterStageSet stages, ClusterShadeStageSet shadeStages)
     {
+        RasterBin[] bins = CreateRasterBins(stages, shadeStages);
         var phases = GraphData.RasterPhases;
         foreach ((int phase, RasterPhase data) in GraphData.RasterPhases)
-            phases = phases.SetItem(phase, ReconcileRasterPhase(ref graph, data, stages));
+            phases = phases.SetItem(phase, ReconcileRasterPhase(ref graph, data, bins));
         return phases;
     }
 
-    private RasterPhase ReconcileRasterPhase(ref RenderGraphEdit graph, RasterPhase data,
-        ClusterRasterStageSet stages)
+    private RasterBin[] CreateRasterBins(ClusterRasterStageSet stages, ClusterShadeStageSet shadeStages)
     {
-        ClusterRasterInvocation[] bins = stages.Invocations.ToArray();
-        var splitStages = bins.Where(static stage => stage.Tessellation is not null)
-            .GroupBy(static stage => new TessellationSplitKey(stage.Tessellation!.Split,
-                stage.Tessellation.SplitBindings))
+        var reads = CollectIndexedTextureReads(stages.BinIndices, shadeStages, 0x0fffffffu);
+        return stages.Invocations.Select(stage => new RasterBin(stage)
+            { Inputs = { TextureReads = stage.ReadsMaterialScalars ? reads.GetValueOrDefault(stage.BinIndex, []) : [] } }).ToArray();
+    }
+
+    private RasterPhase ReconcileRasterPhase(ref RenderGraphEdit graph, RasterPhase data,
+        RasterBin[] bins)
+    {
+        var splitStages = bins.Where(static bin => bin.Stage.Tessellation is not null)
+            .GroupBy(static bin => new TessellationSplitKey(bin.Stage.Tessellation!.Split,
+                bin.Stage.Tessellation.SplitBindings))
             .ToDictionary(static group => group.Key, static group => group.ToArray());
         var tessellationGroups = data.TessellationGroups;
         foreach ((TessellationSplitKey key, TessellationGroup group) in data.TessellationGroups)
@@ -119,13 +130,13 @@ public sealed partial class ClusterPipelineSystem
                 GraphRegionId reset = edit.AddRegion("Reset", region);
                 GraphRegionId seeds = edit.AddRegion("Seeds", region);
                 GraphRegionId split = edit.AddRegion("Split", region);
-                RecordTessellationLevelReset(ref edit, GraphData.Resources, splitStages[key][0].BinIndex,
+                RecordTessellationLevelReset(ref edit, GraphData.Resources, splitStages[key][0].Stage.BinIndex,
                     data.PhaseOne, reset);
                 tessellationGroups = tessellationGroups.Add(key, new TessellationGroup(
                     new GraphRegionMap<uint, RasterBin>(seeds, RasterBinComparer.Instance),
                     new GraphRegionMap<int, TessellationSplitStage>(split, TessellationSplitComparer.Instance)));
             });
-        foreach ((TessellationSplitKey key, ClusterRasterInvocation[] seeds) in splitStages)
+        foreach ((TessellationSplitKey key, RasterBin[] seeds) in splitStages)
         {
             TessellationGroup group = tessellationGroups[key];
             GraphRegionMap<uint, RasterBin> seedRegions = ReconcileRasterBins(ref graph, group.Seeds, seeds,
@@ -138,9 +149,13 @@ public sealed partial class ClusterPipelineSystem
                 });
             // Keep the representative while its bin survives; additional seeds reuse its bindings.
             TessellationSplitStage? before = group.Split.Values.FirstOrDefault();
-            ClusterRasterInvocation representative = seeds.FirstOrDefault(stage =>
-                stage.BinIndex == before?.Stage.BinIndex) ?? seeds[0];
-            var next = new TessellationSplitStage(representative, seeds.Length > 1);
+            ClusterRasterInvocation representative = seeds.Select(static bin => bin.Stage).FirstOrDefault(stage =>
+                stage.BinIndex == before?.Stage.BinIndex) ?? seeds[0].Stage;
+            var next = new TessellationSplitStage(representative, seeds.Length > 1)
+            {
+                Inputs = { TextureReads = seeds.SelectMany(static bin => bin.Inputs.TextureReads).Distinct()
+                    .OrderBy(static read => read.Material.MaterialId).ThenBy(static read => read.Property).ToImmutableArray() },
+            };
             if (before is not null && !TessellationSplitComparer.Instance.Equals(before, next))
                 ReleaseRasterInputs(ref graph, before.Inputs);
             GraphRegionMap<int, TessellationSplitStage> splitRegions = group.Split.Reconcile(ref graph,

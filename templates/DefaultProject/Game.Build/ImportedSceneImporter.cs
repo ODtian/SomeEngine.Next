@@ -181,7 +181,6 @@ struct SceneMaskVarying { float2 UV : TEXCOORD0; };
 struct SceneMask : IVisibilityEvaluate<StandardVertex>
 {
     typealias Varying = SceneMaskVarying;
-    Texture2D<float4> AlbedoMap;
     SamplerState MaterialSampler;
     Varying makeVarying(StandardVertex vertex, VisibilityVertexInput input)
     { Varying result; result.UV = vertex.uv0; return result; }
@@ -200,7 +199,14 @@ struct SceneMask : IVisibilityEvaluate<StandardVertex>
             result.Visible = 0u;
             return result;
         }
-        result.Visible = AlbedoMap.SampleLevel(MaterialSampler, varying.UV, 0.0).a >= ALPHA_CUTOFF ? 1u : 0u;
+        DrawRequest cluster = VisibleClusterRequest(VisibleClusters[input.VisibleClusterIndex]);
+        uint clusterOffset = cluster.PageOffset + PageHeap.Load(cluster.PageOffset + 16u) +
+            DrawRequestClusterID(cluster) * PACKED_CLUSTER_STRIDE_BYTES;
+        uint materialIndex = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.InstanceID) +
+            LocalMaterial(PageHeap, clusterOffset, cluster.PageOffset, input.TriangleID);
+        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(materialIndex);
+        result.Visible = StandardMaterialTextures[NonUniformResourceIndex(scalars.AlbedoMap)]
+            .SampleLevel(MaterialSampler, varying.UV, 0.0).a >= ALPHA_CUTOFF ? 1u : 0u;
         return result;
     }
 };

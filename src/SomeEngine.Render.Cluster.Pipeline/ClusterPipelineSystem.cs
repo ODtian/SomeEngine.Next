@@ -448,19 +448,20 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             if (_graphInstalled)
             {
                 UpdateScalarBuffers(ref edit, scalars);
+                uint rasterBinCount = GraphData.Resources.RasterBinCount;
                 if (rasterChanged || shadeChanged)
                 {
-                    uint rasterBinCount = GraphData.Resources.RasterBinCount;
                     ReconcileStageResources(ref edit, assignments, rasterStages, shadeStages);
-                    if (rasterChanged)
-                    {
-                        GraphData.RasterPhases = ReconcileRasterPhases(ref edit, rasterStages);
-                        UpdateRasterBinning(ref edit, GraphData.RasterPhases);
-                        UpdateRasterCapacity(ref edit, rasterBinCount, GraphData.RasterPhases);
-                    }
                     if (shadeChanged) UpdateShadeBinning(ref edit, shadeStages);
                 }
                 else UpdateMaterialIndexBuffers(ref edit, rasterStages, shadeStages);
+                if (rasterChanged || shadeChanged || materialResourcesChanged || assignmentsChanged)
+                    GraphData.RasterPhases = ReconcileRasterPhases(ref edit, rasterStages, shadeStages);
+                if (rasterChanged)
+                {
+                    UpdateRasterBinning(ref edit, GraphData.RasterPhases);
+                    UpdateRasterCapacity(ref edit, rasterBinCount, GraphData.RasterPhases);
+                }
                 if (shadeChanged || materialResourcesChanged || assignmentsChanged)
                     GraphData.ShadeGroups = UpdateShadeGroups(ref edit, shadeStages);
             }

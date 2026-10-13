@@ -1249,6 +1249,15 @@ internal sealed record ClusterRasterInvocation(
     internal bool UsesEarlyDepth => VisibilityDepth != ClusterVisibilityDepth.Offset;
     internal ClusterRasterTargetStages? TargetStages { get; init; }
 
+    internal bool ReadsMaterialScalars =>
+        ReadsScalars(SoftwareResources) || ReadsScalars(HardwareResources) ||
+        ReadsScalars(TargetStages?.SoftwareResources) || ReadsScalars(TargetStages?.HardwareResources) ||
+        ReadsScalars(Tessellation?.SeedResources) || ReadsScalars(Tessellation?.SplitResources) ||
+        ReadsScalars(Tessellation?.DiceResources) || ReadsScalars(Tessellation?.HardwareResources);
+
+    private static bool ReadsScalars<TCore>(ClusterRasterStageResources<TCore>? stage) where TCore : struct, Enum =>
+        stage?.Resources.Contains("MaterialScalarRegion") == true;
+
     internal bool HasSameBindings(ClusterRasterInvocation other) =>
         SameBindings(SoftwareResources, other.SoftwareResources) &&
         SameBindings(HardwareResources, other.HardwareResources) &&

@@ -31,8 +31,11 @@ public sealed partial class ClusterPipelineSystem
         }
     }
 
-    private void BindRasterMaterialScalars(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
+    private void BindRasterMaterialScalars(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
+    {
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.ShadeScalars), sync);
+        ReadIndexedMaterialTextures(ref graph, ref pass, _rasterInputs!.TextureReads, sync);
+    }
 
     private void BindRasterMaterialOffsets(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.ShadeScalarOffsets, structureStride: sizeof(uint)), sync);

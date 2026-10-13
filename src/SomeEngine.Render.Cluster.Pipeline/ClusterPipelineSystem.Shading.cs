@@ -50,25 +50,10 @@ public sealed partial class ClusterPipelineSystem
     private GraphRegionMap<uint, ShadeGroup> UpdateMaterialGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages,
         GraphRegionMap<uint, ShadeGroup> previousGroups, bool receivers)
     {
-        var reads = new Dictionary<uint, HashSet<IndexedTextureRead>>();
-        Span<byte> binBytes = stackalloc byte[sizeof(uint)];
-        foreach (int address in _materialAssignments.Current.ActiveOffsets)
-        {
-            if (!stages.ScalarLayouts.TryGetValue(address, out var scalarLayout)) continue;
-            _materialAssignments.Current.TryGetEntry(address, out var material, out _);
-            stages.BinIndices.CopyTo(binBytes, address * sizeof(uint));
-            uint bin = BinaryPrimitives.ReadUInt32LittleEndian(binBytes);
-            foreach (uint property in scalarLayout.TextureProperties)
-            {
-                if (!reads.TryGetValue(bin, out var members)) reads.Add(bin, members = []);
-                members.Add(new(material, property, material.GetTexture(property)));
-            }
-        }
+        var reads = CollectIndexedTextureReads(stages.BinIndices, stages);
         var desired = stages.Invocations.Where(stage => !receivers || stage.SurfaceShader is not null).ToDictionary(static stage => stage.BinIndex,
             stage => new ShadeGroup(receivers ? stage.SurfaceShader! : stage,
-                reads.TryGetValue(stage.BinIndex, out var members)
-                    ? members.OrderBy(static value => value.Material.MaterialId).ThenBy(static value => value.Property).ToImmutableArray()
-                    : []));
+                reads.GetValueOrDefault(stage.BinIndex, [])));
         foreach (ShadeGroup group in previousGroups.Values)
             if (!desired.TryGetValue(group.Stage.BinIndex, out ShadeGroup? next) ||
                 !ShadeGroupComparer.Instance.Equals(group, next))
@@ -87,12 +72,7 @@ public sealed partial class ClusterPipelineSystem
                     ClusterIndirectDispatchParameters.Record, region: region);
                 value.Uniforms = BindShadeResources(ref edit, pass, value.Stage, stages, receivers);
                 PassDefinition access = edit.GetPass(pass);
-                foreach (IndexedTextureRead read in value.TextureReads)
-                {
-                    MaterialInput input = GetMaterialInput(ref edit, read.Material, read.Property,
-                        read.Material.Properties[checked((int)read.Property)].Name, ResourceBindingType.TextureSrv);
-                    access.Read(input.Input, PipelineSync.ComputeShading);
-                }
+                ReadIndexedMaterialTextures(ref edit, ref access, value.TextureReads, PipelineSync.ComputeShading);
             });
         if (_installedShadeStages is { } previous &&
             (previous.BinCount != stages.BinCount || previous.BinIndices.Length != stages.BinIndices.Length ||
@@ -106,6 +86,38 @@ public sealed partial class ClusterPipelineSystem
             }
         }
         return groups;
+    }
+
+    private Dictionary<uint, ImmutableArray<IndexedTextureRead>> CollectIndexedTextureReads(
+        ClusterBytes binIndices, ClusterShadeStageSet stages, uint binMask = uint.MaxValue)
+    {
+        var reads = new Dictionary<uint, HashSet<IndexedTextureRead>>();
+        Span<byte> binBytes = stackalloc byte[sizeof(uint)];
+        foreach (int address in _materialAssignments.Current.ActiveOffsets)
+        {
+            if (!stages.ScalarLayouts.TryGetValue(address, out var scalarLayout)) continue;
+            _materialAssignments.Current.TryGetEntry(address, out var material, out _);
+            binIndices.CopyTo(binBytes, address * sizeof(uint));
+            uint bin = BinaryPrimitives.ReadUInt32LittleEndian(binBytes) & binMask;
+            foreach (uint property in scalarLayout.TextureProperties)
+            {
+                if (!reads.TryGetValue(bin, out var members)) reads.Add(bin, members = []);
+                members.Add(new(material, property, material.GetTexture(property)));
+            }
+        }
+        return reads.ToDictionary(static pair => pair.Key, static pair => pair.Value
+            .OrderBy(static value => value.Material.MaterialId).ThenBy(static value => value.Property).ToImmutableArray());
+    }
+
+    private void ReadIndexedMaterialTextures(ref RenderGraphEdit graph, ref PassDefinition pass,
+        ImmutableArray<IndexedTextureRead> reads, PipelineSync sync)
+    {
+        foreach (IndexedTextureRead read in reads)
+        {
+            MaterialInput input = GetMaterialInput(ref graph, read.Material, read.Property,
+                read.Material.Properties[checked((int)read.Property)].Name, ResourceBindingType.TextureSrv);
+            pass.Read(input.Input, sync);
+        }
     }
 
     private ClusterShadeUniforms ShadeUniforms(uint bin, ClusterShadeStageSet stages) => new()
