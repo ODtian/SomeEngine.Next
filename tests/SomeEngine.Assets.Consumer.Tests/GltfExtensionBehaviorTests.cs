@@ -59,19 +59,24 @@ public sealed class GltfExtensionBehaviorTests
     }
 
     [Fact]
-    public async Task LibrarySourceImporterUsesGeneratedProjectServicesWithoutProjectTraversalCode()
+    public async Task AssetCommandUsesGeneratedProjectImporterAndReusesItsVersion()
     {
         using var files = new GltfFiles();
         files.WriteSelections(new SourceImporterSettings(ImporterId<ExtensionGltfImporter>(),
             JsonSerializer.SerializeToElement(new ExtensionGltfSettings(29, "library source"), ExtensionGltfSettingsJson.Default.ExtensionGltfSettings)));
-        var importer = StandardGltfSceneImporter.CreateSourceImporter(
-            services => ConsumerAssetCapabilities.AddAssetCapabilities(services), ConsumerAssetCapabilities.BuildVersion);
-        var project = new AssetProject(files.Directory, []);
-        Guid id = MeshId(project, await project.ImportAsync(files.Source, importer));
+        AssetProject project = AssetProjects.Create(files.Directory,
+            configureServices: services => ConsumerAssetCapabilities.AddAssetCapabilities(services),
+            capabilitiesVersion: ConsumerAssetCapabilities.BuildVersion);
+        using var output = new StringWriter();
+        Assert.Equal(0, await AssetCommands.RunAsync(project, ["import", files.Source], output));
+        AssetEntry meshEntry = Assert.Single(project.List(MeshAsset.FileType));
+        Guid id = meshEntry.AssetGuid;
         using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
         ExtensionGltfBlock block = await mesh.GetBlockAsync<ExtensionGltfBlock>();
         Assert.Equal("library source", block.Label);
         Assert.False(mesh.ContainsBlock<ClusterMeshBlock>());
+        Assert.Equal(0, await AssetCommands.RunAsync(project, ["import", files.Source], output));
+        Assert.Equal(meshEntry.Version, Assert.Single(project.List(MeshAsset.FileType)).Version);
     }
 
     [Fact]
