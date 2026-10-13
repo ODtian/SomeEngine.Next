@@ -194,10 +194,13 @@ internal sealed partial class FrameExecutor
         {
             int consumer = _consumerPasses[index];
             PassQueueSelection selection = _passes[consumer].QueuePolicy;
-            if (selection.AllowsAnyType && RenderGraph.QueueSupports(_passes[consumer].Kind, queue.Type))
-                AddConsumers(consumer);
-            else if (selection.IsExact ? !ReferenceEquals(selection.Queue, queue) :
-                selection.AllowsAnyType || selection.Type != queue.Type)
+            if (selection.AllowsAnyType)
+            {
+                if (!RenderGraph.QueueSupports(_passes[consumer].Kind, queue.Type)) transfers++;
+                else if (_passes[consumer].Kind is GraphPassKind.Copy or GraphPassKind.Compute)
+                    AddConsumers(consumer);
+            }
+            else if (selection.IsExact ? !ReferenceEquals(selection.Queue, queue) : selection.Type != queue.Type)
                 transfers++;
         }
         return transfers;
