@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <SomeEnginePath Condition="'$(SomeEnginePath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..'))</SomeEnginePath>
+    <SomeEngineProjectRoot Condition="'$(SomeEngineProjectRoot)' == ''">$(MSBuildProjectDirectory)</SomeEngineProjectRoot>
+    <SomeEngineProjectRoot>$([System.IO.Path]::GetFullPath('$(SomeEngineProjectRoot)', '$(MSBuildProjectDirectory)'))</SomeEngineProjectRoot>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <SomeEngineDevelopment Condition="'$(SomeEngineDevelopment)' == '' and '$(Configuration)' == 'Debug'">true</SomeEngineDevelopment>
+    <SomeEngineDevelopment Condition="'$(SomeEngineDevelopment)' == ''">false</SomeEngineDevelopment>
+    <_SomeEngineBuildDirectory Condition="'$(SomeEngineDevelopment)' == 'true'">development</_SomeEngineBuildDirectory>
+    <_SomeEngineBuildDirectory Condition="'$(SomeEngineDevelopment)' != 'true'">game</_SomeEngineBuildDirectory>
+    <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)' == ''">obj/$(_SomeEngineBuildDirectory)/</BaseIntermediateOutputPath>
+    <BaseOutputPath Condition="'$(BaseOutputPath)' == ''">bin/$(_SomeEngineBuildDirectory)/</BaseOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0</TargetFramework>
+    <OutputType Condition="'$(OutputType)' == ''">Exe</OutputType>
+    <RuntimeIdentifier Condition="'$(Configuration)' == 'Release' and '$(RuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
+    <PublishAot Condition="'$(Configuration)' == 'Release' and '$(PublishAot)' == ''">true</PublishAot>
+    <PublishAotUsingRuntimePack Condition="'$(PublishAot)' == 'true' and '$(PublishAotUsingRuntimePack)' == ''">true</PublishAotUsingRuntimePack>
+    <SelfContained Condition="'$(PublishAot)' == 'true' and '$(SelfContained)' == ''">true</SelfContained>
+  </PropertyGroup>
+</Project>
