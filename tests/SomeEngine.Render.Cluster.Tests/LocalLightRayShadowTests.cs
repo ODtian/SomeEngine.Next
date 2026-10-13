@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Security.Cryptography;
 using System.Text.Json;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
@@ -76,7 +75,7 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
     [Theory]
     [InlineData("point")]
     [InlineData("spot")]
-    public async Task LocalLightPagePressureRecoversAfterMovingCasterAndCanceledRefresh(string light)
+    public async Task LocalLightPagePressureRecoversAfterCameraAndCasterMovementAndCanceledRefresh(string light)
     {
         ShadowReferenceInputs inputs = CreateInputs(world =>
         {
@@ -91,34 +90,54 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
             MaxShadowLights = 1, DynamicResolutionEnabled = false,
             MaxFilterRadiusTexels = 0,
         };
+        Vector3[] cameraPositions = Enumerable.Range(0, 64).Select(frame =>
+            new Vector3(.6f * frame / 63, .15f * MathF.Sin(MathF.PI * frame / 63), 0)).ToArray();
+        Quaternion[] cameraRotations = Enumerable.Range(0, 64).Select(frame =>
+            Quaternion.CreateFromYawPitchRoll(MathF.PI + .075f * frame / 63,
+                .015f * MathF.Sin(MathF.PI * frame / 63), 0)).ToArray();
+        SceneAction[] cameraActions = Enumerable.Range(0, 64).Select(frame =>
+            new SceneAction(frame, edit => edit.SetCameraTransform(cameraPositions[frame], cameraRotations[frame]))).ToArray();
+        var moveCaster = new SceneAction(32, edit =>
+        {
+            edit.SetEntityTransform(edit.MeshEntities[1], new TransformQvvs(new(-1, 0, -6), Quaternion.Identity, .6f));
+            edit.RefreshShadowMaps();
+            edit.CancelFrame();
+        });
         SceneAction[] actions =
         [
+            .. cameraActions,
             new(31, edit => edit.CaptureLinearImage(image => image.Save(Path.Combine(scene.Directory, "old-footprint.rgba16")))),
-            new(32, edit =>
-            {
-                edit.SetEntityTransform(edit.MeshEntities[1], new TransformQvvs(new(-1, 0, -6), Quaternion.Identity, .6f));
-                edit.RefreshShadowMaps();
-                edit.CancelFrame();
-            }),
+            moveCaster,
         ];
         SceneLinearImage shadowed = await scene.CaptureAsync("shadowed", new(scene.Content, 64, actions)
             { WaitForFrames = false, ShadowSettings = settings });
         SceneLinearImage unshadowed = await scene.CaptureAsync("unshadowed", new(scene.Content, 64,
         [
+            .. cameraActions,
             new(31, edit => edit.CaptureLinearImage(image => image.Save(Path.Combine(scene.Directory, "unshadowed-old.rgba16")))),
-            actions[1],
+            moveCaster,
         ]) { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
         await ShadowReferenceScene.WriteWorldAsync(scene.Content, inputs with { AddLights = null });
         SceneLinearImage ambient = await scene.CaptureAsync("ambient", new(scene.Content, 64,
         [
+            .. cameraActions,
             new(31, edit => edit.CaptureLinearImage(image => image.Save(Path.Combine(scene.Directory, "ambient-old.rgba16")))),
-            actions[1],
+            moveCaster,
         ]) { WaitForFrames = false, ShadowSettings = settings }, "--no-vsm");
+        SceneLinearImage oldShadowed = SceneLinearImage.Load(Path.Combine(scene.Directory, "old-footprint.rgba16"));
+        Assert.Equal(31, oldShadowed.Frame.Frame);
+        Assert.Equal(31u, oldShadowed.Frame.SubmittedFrame);
+        Assert.Equal(cameraPositions[31], oldShadowed.Frame.CameraPosition);
+        Assert.Equal(cameraPositions[63], shadowed.Frame.CameraPosition);
+        Assert.NotEqual(oldShadowed.Frame.CameraPosition, shadowed.Frame.CameraPosition);
+        Assert.NotEqual(new Vector3(oldShadowed.Frame.View.M13, oldShadowed.Frame.View.M23, oldShadowed.Frame.View.M33),
+            new Vector3(shadowed.Frame.View.M13, shadowed.Frame.View.M23, shadowed.Frame.View.M33));
+        Assert.True(oldShadowed.Frame.SceneSeconds < shadowed.Frame.SceneSeconds);
         Assert.Equal(63, shadowed.Frame.Frame);
         Assert.Equal(62u, shadowed.Frame.SubmittedFrame);
         RayShadowComparison comparison = await scene.CompareAsync(shadowed, unshadowed, ambient);
         RayShadowComparison oldFootprint = await scene.CompareAsync(
-            SceneLinearImage.Load(Path.Combine(scene.Directory, "old-footprint.rgba16")),
+            oldShadowed,
             SceneLinearImage.Load(Path.Combine(scene.Directory, "unshadowed-old.rgba16")),
             SceneLinearImage.Load(Path.Combine(scene.Directory, "ambient-old.rgba16")), "old-footprint");
         AssertAccuracy(comparison);
@@ -231,17 +250,10 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
                 "--frames", script.FrameCount.ToString(),
                 "--no-debug-ui", "--fixed-step", "0.016666667", "--linear-frame-output", raw,
                 "--frame-output", Path.Combine(directory, name + ".bmp"), .. options];
-            var contentFiles = System.IO.Directory.EnumerateFiles(Path.Combine(Content, "assets"), "*.asset", SearchOption.AllDirectories)
-                .Append(Path.Combine(Content, "Library/AssetManifest/catalog.json"))
-                .OrderBy(path => path, StringComparer.Ordinal).Select(path => new
-                {
-                    File = Path.GetRelativePath(Content, path),
-                    Sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))),
-                }).ToArray();
             ApplicationResult result = await Application.RunAsync(arguments, script);
             var capture = new { Arguments = arguments, result.Succeeded, result.CompletedFrames, result.Failure,
                 SourceCommit = Environment.GetEnvironmentVariable("SOMEENGINE_SHADOW_SOURCE"),
-                ContentFiles = contentFiles, script.FrameCount,
+                script.FrameCount,
                 Actions = script.Actions.Select(action => action.Frame).ToArray(), script.WaitForFrames, script.ShadowSettings };
             _captures.Add(capture);
             await File.WriteAllTextAsync(Path.Combine(directory, name + ".capture.json"),
@@ -254,6 +266,15 @@ public sealed class LocalLightRayShadowTests(ITestOutputHelper output)
             SceneLinearImage unshadowed, SceneLinearImage ambient, string? evidenceName = null)
         {
             SceneFrame frame = shadowed.Frame;
+            foreach (SceneFrame compared in new[] { unshadowed.Frame, ambient.Frame })
+            {
+                Assert.Equal(frame.Frame, compared.Frame);
+                Assert.Equal(frame.SubmittedFrame, compared.SubmittedFrame);
+                Assert.Equal(frame.SceneSeconds, compared.SceneSeconds);
+                Assert.Equal(frame.View, compared.View);
+                Assert.Equal(frame.CameraPosition, compared.CameraPosition);
+                Assert.Equal(frame.JitterPixels, compared.JitterPixels);
+            }
             Assert.Equal(frame.Projection, unshadowed.Frame.Projection);
             Assert.Equal(frame.Projection, ambient.Frame.Projection);
             Assert.Equal(frame.Meshes, unshadowed.Frame.Meshes);
