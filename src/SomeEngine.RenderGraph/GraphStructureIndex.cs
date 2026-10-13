@@ -14,6 +14,7 @@ internal sealed class GraphStructureIndex
     internal GraphTable<GraphIdentity> ShaderTableIds => Structure.ShaderTables.Identities;
     internal GraphTable<GraphIdentity> ViewIds => Structure.Views.Identities;
     internal GraphTable<GraphIdentity> PassIds => Structure.Passes.Identities;
+    internal GraphIdentity[] ReadbackPasses { get; private init; } = [];
     internal GraphTable<GraphIdentity> AccessIds => Structure.Accesses.Identities;
     internal ImmutableDictionary<Resource, GraphIdentity> ResourceIdentities { get; private set; } =
         ImmutableDictionary.Create<Resource, GraphIdentity>(ReferenceEqualityComparer.Instance);
@@ -169,6 +170,7 @@ internal sealed class GraphStructureIndex
         statistics = new GraphIndexUpdateStatistics(0, 0, reordered.Count, 0);
         return new GraphStructureIndex(structure)
         {
+            ReadbackPasses = UpdateReadbackPasses(previous.ReadbackPasses, structure.Passes, changes.Passes),
             ParameterInputAccesses = UpdateInputs(previous.ParameterInputAccesses, previous.Structure.Accesses, structure.Accesses, changes.Accesses, static row => row.ParameterInput),
             TextureInputViews = UpdateInputs(previous.TextureInputViews, previous.Structure.Views, structure.Views, changes.Views, static row => row.TextureInput),
             TextureInputAccesses = UpdateInputs(previous.TextureInputAccesses, previous.Structure.Accesses, structure.Accesses, changes.Accesses, static row => row.TextureInput),
@@ -187,6 +189,23 @@ internal sealed class GraphStructureIndex
             OrderPositions = positions.ToImmutable(),
             TransientResources = transientResources.ToImmutable(),
         };
+    }
+
+    private static GraphIdentity[] UpdateReadbackPasses(GraphIdentity[] previous,
+        GraphRows<GraphPass> passes, HashSet<GraphIdentity> changes)
+    {
+        if (changes.Count == 0) return previous;
+        var readbacks = new List<GraphIdentity>(previous);
+        foreach (GraphIdentity identity in changes)
+        {
+            if (passes.Contains(identity) && passes.Get(identity).CallbackStorage is ReadbackCommands)
+            {
+                if (!readbacks.Contains(identity)) readbacks.Add(identity);
+            }
+            else readbacks.Remove(identity);
+        }
+        readbacks.Sort((left, right) => passes.DenseIndex(left).CompareTo(passes.DenseIndex(right)));
+        return readbacks.ToArray();
     }
 
     private static ImmutableDictionary<TInput, GraphIdentity[]> UpdateInputs<TRow, TInput>(

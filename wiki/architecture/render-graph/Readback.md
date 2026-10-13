@@ -17,6 +17,9 @@ receiver, label, region, options)` 安装持久复制 pass，并返回 `GraphRea
 `SetReadbackEnabled` 控制复制 pass 的启用状态，所在区段的启用状态共同控制执行。
 `RenderGraphEdit.Remove(GraphReadbackId)` 沿 pass 编辑路径移除复制及其访问。
 
+结构索引随 pass 的显式编辑维护回读 pass 列表，帧准备直接遍历该列表，为启用的回读
+分配目标范围。列表按图中的 pass 顺序保存，并随回读安装、删除和替换更新。
+
 ## Completion and memory
 
 目标内存来自对应帧槽位的回读页，同一帧的回读共享页内空间。复制使用普通源范围读取和

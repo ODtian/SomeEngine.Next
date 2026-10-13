@@ -27,6 +27,7 @@ internal sealed class PreparedMeshPages
         MeshPayloadSource source,
         bool ownsSource,
         LinkedListNode<uint>[] lruNodes,
+        uint[] streamingPageBytes,
         int pageCount,
         uint[] lowestDetailPageIds,
         ulong lowestDetailBytes)
@@ -37,6 +38,7 @@ internal sealed class PreparedMeshPages
         Source = source;
         OwnsSource = ownsSource;
         LruNodes = lruNodes;
+        StreamingPageBytes = streamingPageBytes;
         PageCount = pageCount;
         LowestDetailPageIds = lowestDetailPageIds;
         LowestDetailBytes = lowestDetailBytes;
@@ -48,6 +50,7 @@ internal sealed class PreparedMeshPages
     internal MeshPayloadSource Source { get; }
     internal bool OwnsSource { get; }
     internal LinkedListNode<uint>[] LruNodes { get; }
+    internal uint[] StreamingPageBytes { get; }
     internal int PageCount { get; }
     internal uint[] LowestDetailPageIds { get; }
     internal ulong LowestDetailBytes { get; }
@@ -90,14 +93,15 @@ internal readonly struct MeshPageReadSource
 
 internal sealed class MeshPages
 {
+    private readonly record struct PageSource(int RegistrationIndex, uint StreamingBytes);
+
     private readonly FlatDictionary<Mesh, int> _registrationByMesh = new();
     private readonly List<RegisteredMeshPages> _registrations = [];
-    private readonly List<int> _pageRegistrationIndices = [];
+    private readonly List<PageSource> _pageSources = [];
     private readonly FlatDictionary<uint, ResidencyReservation> _gpuReservations = new();
     private readonly HashSet<uint> _residentPages = new();
     private readonly HashSet<uint> _pendingLoads = new();
     private readonly HashSet<uint> _pendingEvictions = new();
-    private readonly HashSet<uint> _lowestDetailPageIds = new();
     private ulong _lowestDetailBytes;
     private readonly List<uint> _offsets = [];
     private readonly List<LinkedListNode<uint>> _lruNodes = [];
@@ -119,6 +123,7 @@ internal sealed class MeshPages
         EnsureCanRegister(mesh, payloadPages.Count);
         uint firstPageId = Count;
         var lruNodes = new LinkedListNode<uint>[payloadPages.Count];
+        var streamingPageBytes = new uint[payloadPages.Count];
         var lowestDetailPageIds = new uint[streamedSource.LowestDetailPageIndices.Length];
         long pageRegionLength = checked(streamedSource.Length - streamedSource.BvhLength);
         long expectedOffset = 0;
@@ -136,6 +141,7 @@ internal sealed class MeshPages
 
             uint pageId = checked(firstPageId + (uint)index);
             lruNodes[index] = new LinkedListNode<uint>(pageId);
+            streamingPageBytes[index] = PageHeap.AllocationSize(checked((uint)payloadPage.Size));
             expectedOffset = checked(payloadPage.Offset + payloadPage.Size);
         }
         for (int index = 0; index < lowestDetailPageIds.Length; index++)
@@ -154,8 +160,8 @@ internal sealed class MeshPages
         foreach (uint pageId in lowestDetailPageIds.Distinct())
         {
             int pageIndex = checked((int)(pageId - firstPageId));
-            uint size = checked((uint)payloadPages[pageIndex].Size);
-            lowestDetailBytes += PageHeap.AllocationSize(size);
+            lowestDetailBytes += streamingPageBytes[pageIndex];
+            streamingPageBytes[pageIndex] = 0;
         }
 
         return new PreparedMeshPages(
@@ -165,6 +171,7 @@ internal sealed class MeshPages
             streamedSource,
             ownsSource,
             lruNodes,
+            streamingPageBytes,
             payloadPages.Count,
             lowestDetailPageIds,
             lowestDetailBytes);
@@ -177,12 +184,10 @@ internal sealed class MeshPages
         int requiredPageCount = checked(_offsets.Count + pageCount);
         _registrationByMesh.EnsureCapacity(checked(_registrationByMesh.Count + 1));
         _registrations.EnsureCapacity(checked(_registrations.Count + 1));
-        _pageRegistrationIndices.EnsureCapacity(requiredPageCount);
+        _pageSources.EnsureCapacity(requiredPageCount);
         _offsets.EnsureCapacity(requiredPageCount);
         _lruNodes.EnsureCapacity(requiredPageCount);
         _residentPages.EnsureCapacity(requiredPageCount);
-        _lowestDetailPageIds.EnsureCapacity(checked(
-            _lowestDetailPageIds.Count + registration.LowestDetailPageIds.Length));
     }
 
     public void CommitRegistration(PreparedMeshPages registration)
@@ -199,10 +204,8 @@ internal sealed class MeshPages
         {
             _offsets.Add(0);
             _lruNodes.Add(registration.LruNodes[index]);
-            _pageRegistrationIndices.Add(registration.RegistrationIndex);
+            _pageSources.Add(new(registration.RegistrationIndex, registration.StreamingPageBytes[index]));
         }
-        foreach (uint pageId in registration.LowestDetailPageIds)
-            _lowestDetailPageIds.Add(pageId);
         _lowestDetailBytes += registration.LowestDetailBytes;
     }
 
@@ -284,14 +287,14 @@ internal sealed class MeshPages
 
     public bool TrySource(uint pageId, out uint size, out MeshPageReadSource source)
     {
-        if (pageId >= _pageRegistrationIndices.Count)
+        if (pageId >= _pageSources.Count)
         {
             size = 0;
             source = default;
             return false;
         }
 
-        RegisteredMeshPages registration = _registrations[_pageRegistrationIndices[(int)pageId]];
+        RegisteredMeshPages registration = _registrations[_pageSources[(int)pageId].RegistrationIndex];
         int localPageIndex = checked((int)(pageId - registration.FirstPageId));
         MeshPayloadPage descriptor = registration.Source.Pages[localPageIndex];
         size = checked((uint)descriptor.Size);
@@ -302,12 +305,8 @@ internal sealed class MeshPages
     internal ulong CalculateStreamingCapacityBytes(uint heapCapacity)
         => heapCapacity > _lowestDetailBytes ? heapCapacity - _lowestDetailBytes : 0;
 
-    internal uint CalculateStreamingPageBytes(uint page)
-    {
-        if (_lowestDetailPageIds.Contains(page) || !TrySource(page, out uint size, out _))
-            return 0;
-        return PageHeap.AllocationSize(size);
-    }
+    internal uint GetStreamingPageBytes(uint page)
+        => page < (uint)_pageSources.Count ? _pageSources[(int)page].StreamingBytes : 0;
 
     public void StageResident(
         uint pageId,
@@ -357,7 +356,7 @@ internal sealed class MeshPages
     }
 
     internal bool CanEvictPage(uint pageId)
-        => !_lowestDetailPageIds.Contains(pageId) &&
+        => GetStreamingPageBytes(pageId) != 0 &&
             _residentPages.Contains(pageId) && !_pendingEvictions.Contains(pageId);
 
     public bool StageEviction(uint pageId, out PageRetirement retirement)
@@ -528,7 +527,7 @@ internal sealed class MeshPages
         while (node != null)
         {
             pageId = node.Value;
-            if (pageId != protectedPageId && !_lowestDetailPageIds.Contains(pageId) && canEvict(pageId))
+            if (pageId != protectedPageId && _pageSources[(int)pageId].StreamingBytes != 0 && canEvict(pageId))
                 return true;
 
             node = node.Next;
@@ -570,9 +569,8 @@ internal sealed class MeshPages
         _gpuReservations.Clear();
         _registrationByMesh.Clear();
         _registrations.Clear();
-        _pageRegistrationIndices.Clear();
+        _pageSources.Clear();
         _residentPages.Clear();
-        _lowestDetailPageIds.Clear();
         _lowestDetailBytes = 0;
         _pendingLoads.Clear();
         _pendingEvictions.Clear();

@@ -129,11 +129,11 @@ internal sealed partial class RenderGraphFrameState
     private void PrepareReadbacks()
     {
         GraphStructure structure = StructureIndex.Structure;
-        for (int index = 0; index < structure.Passes.Count; index++)
+        foreach (GraphIdentity identity in StructureIndex.ReadbackPasses)
         {
-            GraphPass pass = structure.Passes.Rows[index];
-            if (!pass.Enabled || !structure.IsRegionEnabled(pass.Region) ||
-                pass.CallbackStorage is not ReadbackCommands commands) continue;
+            GraphPass pass = structure.Passes.Get(identity);
+            if (!pass.Enabled || !structure.IsRegionEnabled(pass.Region)) continue;
+            var commands = (ReadbackCommands)pass.CallbackStorage!;
             FrameBufferTransfers transfers = Slot.GetBufferTransfers(Graph);
             ulong size = commands.Description.Range.Size;
             if (commands.Description.Input is { } input)
@@ -149,7 +149,7 @@ internal sealed partial class RenderGraphFrameState
             var allocation = transfers.ReserveReadback(size);
             BufferRegion destination = allocation.Destination;
             GraphBufferId buffer = Import(destination.Buffer, allocation.BoundaryStates);
-            GraphPassId id = new(structure.Passes.IdentityAt(Graph.Identity, index));
+            GraphPassId id = new(identity);
             PassDefinition definition = GetPass(id);
             definition.Write(buffer, destination.Range, PipelineSync.Copy, ResourceAccess.CopyDestination,
                 WriteCoverage.Complete);

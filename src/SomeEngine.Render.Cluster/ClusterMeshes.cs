@@ -277,7 +277,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             foreach (uint page in pages)
             {
                 _referencedPages.Add(page);
-                bytes += _pages.CalculateStreamingPageBytes(page);
+                bytes += _pages.GetStreamingPageBytes(page);
             }
             return new(bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity), complete);
         }
@@ -293,7 +293,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             foreach (ClusterPageDemand page in pages)
             {
                 _referencedPages.Add(page.PageId);
-                bytes += _pages.CalculateStreamingPageBytes(page.PageId);
+                bytes += _pages.GetStreamingPageBytes(page.PageId);
             }
             return new(bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity), complete);
         }
