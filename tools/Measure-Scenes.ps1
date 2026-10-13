@@ -2,9 +2,13 @@ param(
     [switch]$Trace, [string]$ApplicationPath, [switch]$Managed,
     [ValidateSet('deferred', 'forward')][string]$ShadingPath,
     [ValidateSet('static', 'motion', 'materials', 'camera')][string]$ScenePlayback = 'camera',
-    [string]$ExpectedScene
+    [string]$ExpectedScene,
+    [ValidateNotNullOrEmpty()][string]$Scene
 )
 $ErrorActionPreference = 'Stop'
+if ($Scene -and $ExpectedScene -and $Scene -ne $ExpectedScene) {
+    throw 'Scene and ExpectedScene must name the same scene when both are supplied.'
+}
 $playback = if ($ScenePlayback -eq 'static') { $null } else { $ScenePlayback }
 $defaultApplication = if ($Managed) { '../templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe' }
     else { '../templates/DefaultProject/Game.App/bin/Release/net10.0/publish/Game.App.exe' }
@@ -29,6 +33,10 @@ $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
 $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
+if ($Scene) {
+    $start.ArgumentList.Add('--measure-scene')
+    $start.ArgumentList.Add($Scene)
+}
 if ($ShadingPath) {
     $start.ArgumentList.Add('--shading-path')
     $start.ArgumentList.Add($ShadingPath)
@@ -92,11 +100,13 @@ if ($result.Startup) {
     $result.Startup.Stages | Format-Table Stage, ElapsedMs
 }
 Write-Host "Report: $($report.FullName) ($([Math]::Round($timer.Elapsed.TotalSeconds, 2)) seconds including application startup)"
-# ExpectedScene validates an existing single-scene test-scenes.json; it does not select or edit content.
+# Scene selects one entry without editing test-scenes.json or its measurement window.
+# ExpectedScene remains a validation-only option for existing single-scene configurations.
 if ($result.ScenePlayback -ne $playback) {
     throw 'The scene report does not match the requested playback.'
 }
-$requiredScenes = if ($ExpectedScene) { @($ExpectedScene) } else { @('1024 spheres', 'Sponza', 'Amazon Bistro') }
+$requiredScenes = if ($Scene) { @($Scene) } elseif ($ExpectedScene) { @($ExpectedScene) }
+    else { @('1024 spheres', 'Sponza', 'Amazon Bistro') }
 if (!$result.Complete -or $result.Scenes.Count -ne $requiredScenes.Count -or
     @(Compare-Object $requiredScenes @($result.Scenes.Scene)).Count -ne 0 -or
     @($result.Scenes | Where-Object Status -ne 'Measured').Count -ne 0) {

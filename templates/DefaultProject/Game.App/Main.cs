@@ -24,7 +24,14 @@ if (args is ["--test-scene", var contentDirectory, .. var renderingArguments])
         [new("Shadow reference", Path.GetFullPath(contentDirectory))], options);
     return await SomeEngine.Runtime.Application.RunAsync(renderingArguments, platform: testPlatform);
 }
-var scenes = SomeEngine.Runtime.SceneTestPlatform.ReadScenes(Path.Combine(AppContext.BaseDirectory, "test-scenes.json"));
+string? measuredScene = null;
+if (args is ["--measure-scene", var sceneName, .. var measurementArguments])
+{
+    measuredScene = sceneName;
+    args = measurementArguments;
+}
+var scenes = SomeEngine.Runtime.SceneTestPlatform.ReadScenes(
+    Path.Combine(AppContext.BaseDirectory, "test-scenes.json"), measuredScene);
 SomeEngine.Runtime.RuntimeStartupOptions? startupOptions = args.Length == 0 ? null :
     SomeEngine.Runtime.RuntimeStartupOptions.Parse(args) with
     {

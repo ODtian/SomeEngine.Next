@@ -18,8 +18,16 @@ public sealed record TestScene(string Name, string ContentDirectory, bool Animat
 /// <summary>Shared scene selection and render settings for the interactive test application.</summary>
 public sealed class SceneTestPlatform
 {
-    public static TestScene[] ReadScenes(string path) =>
-        JsonSerializer.Deserialize(File.ReadAllText(path), SceneJsonContext.Default.TestSceneArray)!;
+    public static TestScene[] ReadScenes(string path, string? sceneName = null)
+    {
+        TestScene[] scenes = JsonSerializer.Deserialize(File.ReadAllText(path), SceneJsonContext.Default.TestSceneArray)!;
+        if (sceneName is null) return scenes;
+        TestScene[] selected = scenes.Where(scene =>
+            string.Equals(scene.Name, sceneName, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (selected.Length != 1)
+            throw new ArgumentException("The requested scene name must identify one configured scene.", nameof(sceneName));
+        return selected;
+    }
 
     public SceneTestPlatform(IReadOnlyList<TestScene> scenes, RuntimeStartupOptions? options = null)
     {

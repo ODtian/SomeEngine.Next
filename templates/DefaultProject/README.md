@@ -11,6 +11,15 @@ dotnet build <project>/Game.App/Game.App.csproj -c Release
 
 The Release build compiles Game.App as NativeAOT with the pinned .NET 10 PublishWithSatoriGC SDK and writes the native executable to the output directory’s `publish` subdirectory. `tools/Measure-Scenes.ps1` uses that native output by default. For managed diagnostics, build with `-p:PublishAot=false` and pass `-Managed` to the measurement script. The application reads its scene configuration through generated JSON code. Use F1 for settings, F9 for the three-scene measurement, and F10 for traces. The measurement completes the initial scene startup before switching scenes and records the window-to-scene-frame time separately from scene reload times.
 
+Use `pwsh -File tools/Measure-Scenes.ps1 -Scene "Amazon Bistro" -ShadingPath deferred` to measure one configured scene.
+`-Scene` forwards `--measure-scene <name>` to DefaultGame, selecting exactly one entry from its existing
+`test-scenes.json` without rewriting content, animation or `MeasurementFrames`. Unknown or ambiguous names fail.
+The default remains the full three-scene run; `-ExpectedScene` only validates an already single-scene configuration.
+The script defaults to reproducible `camera` playback; use `-ScenePlayback static` only for an explicitly static comparison.
+Each invocation retains the 60-second script limit and the application's 45-second measurement budget.
+An incomplete fixed-frame window fails even when a partial report exists. A single-scene result is diagnostic
+until matching successful results exist for all three required scenes.
+
 `Game.Build` compiles every project `.shader`, creates the default textures and materials from the declarations in `DefaultTextures.cs` and `DefaultMaterials.cs`, and imports the copied glTF model through the project's importer capabilities. The glTF importer produces the source scene and shared mesh assets. `DefaultContent` then builds the separate 1024-instance test world from that mesh and writes application settings pointing to the test world. `DefaultContentIds.cs` holds identities for code-defined assets; changing a display name keeps its identity. The glTF source has its own persisted import identities and settings after the first import.
 
 `StandardGltfSceneImporter` is the ordinary glTF scene importer for this project. It assembles the scene through the shared base class and directly builds this project's Standard and Unlit materials. A different scene importer can replace it when a scene needs different material or world content. The selected importer requests shared mesh assets; mesh materials and textures are reused by source identity. Saved worlds contain mesh references and node transforms, while each mesh asset holds ordered material references.

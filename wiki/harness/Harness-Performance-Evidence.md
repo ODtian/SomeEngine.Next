@@ -42,3 +42,25 @@ wall-clock sample duration and each frame's simulation index. `ElapsedMs` keeps
 its original frame-start-through-presentation boundary. Unconfigured scenes use
 the previous timed sampling behavior. Historical reports without explicit
 matching frame windows retain their original comparability limits.
+
+## Separate scene invocations
+
+The generated DefaultGame configuration requests simulation frames 2048 through 3071
+for each scene. `tools/Measure-Scenes.ps1` defaults to camera playback and accepts
+`-Scene "1024 spheres"`, `-Scene "Sponza"` or `-Scene "Amazon Bistro"` to select one
+existing configuration entry. Names are matched without case sensitivity; missing
+or duplicate matches fail. Selection never rewrites the configuration, shifts the
+window or uses the separate `--test-scene` capture path.
+
+The default three-scene invocation still shares the original 45-second application
+measurement budget. Separate invocations each have that original budget and the
+script's 60-second startup-to-exit limit. This changes only the surrounding wait
+budget, not frame timing, warmup, scene behavior, quality or slow-frame inclusion.
+Use the same scene, shading path, camera playback, fixed timestep and requested
+window for each A/B pair. Keep resolution and all other render settings equal.
+
+A result must be `Complete` with the requested scene `Measured`; `Incomplete`,
+unready, missing or interrupted windows fail. Check both reports and frame samples
+for identical requested and actual simulation-frame ranges. One successful scene
+is not the three-scene performance acceptance: retain successful matching reports
+for 1024 spheres, Sponza and Amazon Bistro before drawing that conclusion.
