@@ -69,7 +69,16 @@ internal sealed class FrameBufferTransfers : IDisposable
 
     internal BufferUpload ReserveUpload(GraphBufferId buffer, ulong offset, int length)
     {
+        // Reject invalid ranges before reserving page bytes. A negative length must never
+        // move Used backwards and alias bytes already assigned to an earlier upload.
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        if (offset > ulong.MaxValue - (ulong)length)
+            throw new ArgumentOutOfRangeException(nameof(offset));
         long size = ((long)length + 3) & ~3L;
+        // Pages round up to 64 KiB and must still fit in the int-sized mapped span.
+        const long maximumMappedPageSize = int.MaxValue & ~65535L;
+        if (size > maximumMappedPageSize)
+            throw new ArgumentOutOfRangeException(nameof(length));
         UploadPage? target = Volatile.Read(ref _uploadPage);
         ulong start;
         if (target is null || !target.TryReserve(size, out start))
