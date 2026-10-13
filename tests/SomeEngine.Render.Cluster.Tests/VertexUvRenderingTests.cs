@@ -43,5 +43,20 @@ public sealed class VertexUvRenderingTests
             expected[y * 64 + x] = .5f * ((x + .5f) / 64) + .25f * (1 - (y + .5f) / 64);
         ImageArtifacts.AssertEqual(new(64, 64, Format.D32Float, MemoryMarshal.AsBytes(expected.AsSpan()).ToArray()),
             new(64, 64, Format.D32Float, actual.Depth));
+        // Observe the user-owned vertex payload after triangle sharing, surface
+        // evaluation, opaque surface storage, and final-shade consumption.
+        Half[] expectedColor = new Half[64 * 64 * 4];
+        for (int y = 0; y < 64; y++)
+        for (int x = 0; x < 64; x++)
+        {
+            int pixel = y * 64 + x;
+            expectedColor[pixel * 4] = (Half)((x + .5f) / 64);
+            expectedColor[pixel * 4 + 1] = (Half)(1 - (y + .5f) / 64);
+            expectedColor[pixel * 4 + 2] = (Half)expected[pixel];
+            expectedColor[pixel * 4 + 3] = (Half)1;
+        }
+        ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float,
+                MemoryMarshal.AsBytes(expectedColor.AsSpan()).ToArray()),
+            new(64, 64, Format.R16G16B16A16Float, actual.Color));
     }
 }

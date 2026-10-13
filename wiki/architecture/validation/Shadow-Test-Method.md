@@ -16,7 +16,7 @@ caster controls. These controls reject missing occlusion, false self-shadow,
 incorrect depth convention, and ignored user visibility/alpha behavior without
 requiring shadow-map edges to equal camera-origin ray-traced edges.
 
-## Bistro quality regression
+## Source-geometry accuracy gate
 
 DefaultGameRayShadowTests retains its original-GLB ray reference and every raw
 comparison metric. That reference traces camera-pixel-center rays against original
@@ -27,12 +27,19 @@ queries. The retained four actual-caster observations establish intentional LOD
 and texel-center footprint differences for those four samples only. They do not
 classify every image disagreement as correct.
 
-For the calibrated Bistro/default configuration, the former absolute 2% comparison remains visible as
-MeetsSourceGeometryAccuracyThresholds in comparison.json. It is a source-quality
-diagnostic, not the implementation-correctness verdict. No receiver mask is
-expanded and no source-geometry mismatch is silently removed.
+All current scene/mode cases require source-geometry mismatch and mean visibility
+error at or below 2%, alongside the existing receiver-coverage and self-hit checks.
+DefaultGameRayShadowTests asserts those limits directly;
+MeetsSourceGeometryAccuracyThresholds in comparison.json records the same limits.
+The selected-geometry/texel-center distinction does not waive any source receiver
+or relax the accuracy gate.
 
-The checked-in Bistro/default profile records three explicitly reviewed captures.
+## Historical Bistro profile (inactive)
+
+The profile and its CPU policy tests below remain as historical diagnostic evidence.
+They are not called by the current renderer acceptance test and do not replace its 2% limits.
+
+The checked-in Bistro/default profile records three historical captures.
 The two historical attribution captures have 36,556 mismatches out of 795,215
 receivers. A fresh capture of the final original-queue implementation has 36,557:
 only one additional missed shadow, at reference-boundary pixel (1073, 291). The
@@ -41,7 +48,7 @@ error count are unchanged. The mapped-normal diagnostic flag also changes at
 that boundary pixel. This bounds the observed difference but does not establish
 a floating-point or triangle-ordering root cause.
 
-The reviewed envelope is 30,963 missed shadows, 5,592 false shadows, two missing
+The historical profile envelope is 30,963 missed shadows, 5,592 false shadows, two missing
 rendered receivers and 36,557 total mismatches, with the recorded mean-error
 maximum. Interior and boundary populations and error channels are also checked
 independently: interior remains limited to 1,701 mismatches (1,620 missed and 81
@@ -49,8 +56,8 @@ false), while boundary is limited to 34,856 (29,343 missed and 5,511 false). Mov
 the one accepted boundary difference into the interior fails even if global
 totals do not change. No boundary mask is enlarged and no pixel is excluded.
 
-This is an explicit reviewed baseline update for the accepted original-queue
-implementation, not proof that every differing pixel is correct. The three
+This historical profile is not a current acceptance baseline or proof that every
+differing pixel is correct. The three
 observations do not establish a universal run-to-run noise distribution. Each
 channel uses its observed maximum without percentage padding; an improvement
 in one channel or region cannot pay for a regression in another.
@@ -59,10 +66,10 @@ The profile is never updated by a test. The source geometry hash, fixed frame
 configuration, mesh asset IDs and transform bits, resolution, backend, camera,
 lights, shadow/temporal options, and
 machine profile must match before it is used. A changed configuration needs a
-separately reviewed baseline. The other five scene/mode cases retain their original 2% mismatch and mean-error
-accuracy limits, in addition to their coverage/self-hit checks. They do not inherit
-this Bistro-specific numeric bound; any future replacement needs its own reviewed
-method and data. CPU controls exercise both unprofiled 2% boundaries.
+separately reviewed baseline. All current scene/mode cases, including Bistro/default,
+retain their original 2% mismatch and mean-error accuracy limits, in addition to
+their coverage/self-hit checks. They do not use this Bistro-specific numeric bound.
+Any future acceptance change requires explicit review; CPU controls alone do not authorize it.
 
 CPU policy tests accept all three recorded normal observations and reject the retained
 37,758-mismatch earlier result, changed eligible population, each independently
