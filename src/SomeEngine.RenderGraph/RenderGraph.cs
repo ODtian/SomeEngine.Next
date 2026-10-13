@@ -343,7 +343,7 @@ public sealed partial class RenderGraph : IDisposable
                 : $"No registered {policy.Type} Queue can execute the pass.");
     }
 
-    private static bool QueueSupports(GraphPassKind kind, QueueType queueType) => kind switch
+    internal static bool QueueSupports(GraphPassKind kind, QueueType queueType) => kind switch
     {
         GraphPassKind.Raster => queueType == QueueType.Graphics,
         GraphPassKind.Compute => queueType is QueueType.Graphics or QueueType.Compute,

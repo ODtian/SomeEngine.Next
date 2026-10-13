@@ -12,6 +12,9 @@ internal sealed partial class FrameExecutor
     private readonly Dictionary<Queue, SortedSet<(long Position, int Pass)>> _queuePasses = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<int, (Queue Queue, long Position)> _passQueuePositions = [];
     private readonly HashSet<int> _queueNeighborChanges = [];
+    private readonly List<int> _queueSelectionChanges = [];
+    private readonly List<int> _consumerPasses = [];
+    private readonly HashSet<int> _visitedConsumerPasses = [];
     private int[] _componentFinish = [], _sameQueueSuccessor = [];
     private bool _scheduleInitialized;
 
@@ -45,18 +48,21 @@ internal sealed partial class FrameExecutor
         }
         else
         {
+            ExpandQueueChanges();
             long first = long.MaxValue;
             long last = long.MinValue;
             foreach (int seed in _scheduleSeeds)
             {
                 if (!IsLive(seed)) continue;
-                RetainQueue(seed);
                 foreach (int predecessor in _predecessors[seed])
                     if (IsLive(predecessor)) IncludeConflict(predecessor, seed);
                 foreach (int successor in _successors[seed])
                     if (IsLive(successor)) IncludeConflict(seed, successor);
             }
             if (first <= last) RepairOrder(first, last);
+            _queueSelectionChanges.Sort((left, right) =>
+                _executionOrder.Position(left).CompareTo(_executionOrder.Position(right)));
+            foreach (int pass in _queueSelectionChanges) RetainQueue(pass);
 
             void IncludeConflict(int predecessor, int consumer)
             {
@@ -123,19 +129,39 @@ internal sealed partial class FrameExecutor
         _scheduleSeeds.Clear();
     }
 
+    private void ExpandQueueChanges()
+    {
+        _queueSelectionChanges.Clear();
+        foreach (int pass in _scheduleSeeds)
+            if (IsLive(pass)) _queueSelectionChanges.Add(pass);
+        for (int index = 0; index < _queueSelectionChanges.Count; index++)
+        {
+            int pass = _queueSelectionChanges[index];
+            foreach (int predecessor in _predecessors[pass]) Add(predecessor);
+            foreach (int consumer in _successors[pass]) Add(consumer);
+        }
+        return;
+
+        void Add(int pass)
+        {
+            if (IsLive(pass) && _passes[pass].QueuePolicy.AllowsAnyType && _scheduleSeeds.Add(pass))
+                _queueSelectionChanges.Add(pass);
+        }
+    }
+
     private void RetainQueue(int pass)
     {
         FramePass row = _passes[pass];
         _frame.Graph.ResolveQueueCandidates(row.QueuePolicy, row.Kind, _queueCandidateScratch);
-        bool chooseCopyQueue = row.Kind == GraphPassKind.Copy && row.QueuePolicy.AllowsAnyType;
-        if (!chooseCopyQueue && row.Queue is not null && _queueCandidateScratch.Contains(row.Queue)) return;
+        bool chooseCompatibleQueue = row.QueuePolicy.AllowsAnyType;
+        if (!chooseCompatibleQueue && row.Queue is not null && _queueCandidateScratch.Contains(row.Queue)) return;
         Queue? chosen = null;
         int producerTransfers = int.MaxValue;
         int consumerTransfers = int.MaxValue;
         foreach (Queue candidate in _queueCandidateScratch)
         {
-            int producers = chooseCopyQueue ? CountPredecessorQueueTransfers(pass, candidate) : 0;
-            int consumers = chooseCopyQueue ? CountConsumerQueueTransfers(pass, candidate) : 0;
+            int producers = chooseCompatibleQueue ? CountPredecessorQueueTransfers(pass, candidate) : 0;
+            int consumers = chooseCompatibleQueue ? CountConsumerQueueTransfers(pass, candidate) : 0;
             if (producers > producerTransfers || producers == producerTransfers && consumers > consumerTransfers) continue;
             bool equal = producers == producerTransfers && consumers == consumerTransfers;
             if (equal && (ReferenceEquals(chosen, row.Queue) ||
@@ -160,17 +186,27 @@ internal sealed partial class FrameExecutor
 
     private int CountConsumerQueueTransfers(int pass, Queue queue)
     {
-        if (_passes[pass].Kind != GraphPassKind.Copy) return 0;
+        _consumerPasses.Clear();
+        _visitedConsumerPasses.Clear();
+        AddConsumers(pass);
         int transfers = 0;
-        foreach (int consumer in _successors[pass])
+        for (int index = 0; index < _consumerPasses.Count; index++)
         {
-            if (!_live[consumer]) continue;
+            int consumer = _consumerPasses[index];
             PassQueueSelection selection = _passes[consumer].QueuePolicy;
-            if (selection.AllowsAnyType) continue;
-            if (selection.IsExact ? !ReferenceEquals(selection.Queue, queue) : selection.Type != queue.Type)
+            if (selection.AllowsAnyType && RenderGraph.QueueSupports(_passes[consumer].Kind, queue.Type))
+                AddConsumers(consumer);
+            else if (selection.IsExact ? !ReferenceEquals(selection.Queue, queue) :
+                selection.AllowsAnyType || selection.Type != queue.Type)
                 transfers++;
         }
         return transfers;
+
+        void AddConsumers(int source)
+        {
+            foreach (int consumer in _successors[source])
+                if (_live[consumer] && _visitedConsumerPasses.Add(consumer)) _consumerPasses.Add(consumer);
+        }
     }
 
     private void RepairOrder(long first, long last)
@@ -290,7 +326,8 @@ internal sealed partial class FrameExecutor
                         if (!ReferenceEquals(_passes[predecessor].Queue, queue)) transfers++;
                     }
                     if (transfers > minimumTransfers) continue;
-                    if (CountConsumerQueueTransfers(pass, queue) > minimumConsumerTransfers) continue;
+                    if (_passes[pass].QueuePolicy.AllowsAnyType &&
+                        CountConsumerQueueTransfers(pass, queue) > minimumConsumerTransfers) continue;
                     long start = Math.Max(queueAvailable, predecessorFinish);
                     int rank = criticalRanks[pass];
                     long declaration = _passes[pass].DeclarationOrdinal;
