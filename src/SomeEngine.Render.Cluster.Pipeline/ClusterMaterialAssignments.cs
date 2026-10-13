@@ -71,14 +71,14 @@ public sealed class ClusterMaterialAssignmentSet
     internal IEnumerable<int> ActiveOffsets => _entries.Keys;
     internal IEnumerable<int> ChangedOffsets => _changedOffsets;
     internal IEnumerable<Entity> Entities => _entities.Keys;
-    internal void CollectChangedEntities(HashSet<Entity> entities)
+    internal void CollectChangedEntities(HashSet<Entity> entities, HashSet<long> changedMaterials)
     {
         foreach ((Entity entity, ClusterMaterialSequence sequence) in _entities)
         {
             uint offset = _sequences[sequence].Offset;
             for (int index = 0; index < sequence.Count; index++)
                 if (_changedOffsets.Contains(checked((int)offset + index)) ||
-                    _changes.Contains(sequence.MaterialAt(index)))
+                    changedMaterials.Contains(sequence.MaterialAt(index)))
                 {
                     entities.Add(entity);
                     break;

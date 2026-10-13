@@ -10,6 +10,7 @@
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterSoftwareImageAtomic64(
     uniform VertexEvaluate vertex,
     uniform VisibilityEvaluate visibility,
@@ -25,6 +26,7 @@ void ClusterRasterSoftwareImageAtomic64(
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterSoftwareBufferAtomic64(
     uniform VertexEvaluate vertex,
     uniform VisibilityEvaluate visibility,
@@ -45,6 +47,7 @@ void ClusterRasterSoftwareBufferAtomic64(
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterSoftwareMeshletImageAtomic64(
     uniform VertexEvaluate vertex, uniform VisibilityEvaluate visibility,
     uint3 groupID : SV_GroupID, uint groupThreadIndex : SV_GroupThreadID)
@@ -58,6 +61,7 @@ void ClusterRasterSoftwareMeshletImageAtomic64(
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterSoftwareMeshletBufferAtomic64(
     uniform VertexEvaluate vertex, uniform VisibilityEvaluate visibility,
     uint3 groupID : SV_GroupID, uint groupThreadIndex : SV_GroupThreadID)
@@ -72,6 +76,7 @@ void ClusterRasterSoftwareMeshletBufferAtomic64(
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
 [ConservativeBounds("finite")]
 [shader("vertex")]
+[RasterMaterialInputs("evaluators")]
 ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterRasterVertex(
     uniform VertexEvaluate vertex,
     uniform VisibilityEvaluate visibility,
@@ -87,6 +92,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterRasterVertex(
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(32, 1, 1)]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterMesh(
     uniform VertexEvaluate vertex,
     uniform VisibilityEvaluate visibility,
@@ -106,6 +112,7 @@ void ClusterRasterMesh(
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(32, 1, 1)]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterMeshlet(
     uniform VertexEvaluate vertex,
     uniform VisibilityEvaluate visibility,
@@ -315,6 +322,7 @@ void ClusterForwardShade<let visibilityDepth : uint, let debugMode : uint, let e
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterMeshPixelImageAtomic64(
     uniform VisibilityEvaluate visibility,
     ClusterRasterVertexData<VisibilityEvaluate.Varying> vertex,
@@ -327,6 +335,7 @@ void ClusterRasterMeshPixelImageAtomic64(
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterMeshPixelBufferAtomic64(
     uniform VisibilityEvaluate visibility,
     ClusterRasterVertexData<VisibilityEvaluate.Varying> vertex,
@@ -339,6 +348,7 @@ void ClusterRasterMeshPixelBufferAtomic64(
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
+[RasterMaterialInputs("evaluators")]
 PSVisBufferOutput ClusterRasterMeshPixelHardwareOnly(
     uniform VisibilityEvaluate visibility,
     ClusterRasterVertexData<VisibilityEvaluate.Varying> vertex,
@@ -352,6 +362,7 @@ PSVisBufferOutput ClusterRasterMeshPixelHardwareOnly(
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterPixelImageAtomic64(
     uniform VisibilityEvaluate visibility,
     ClusterRasterPixelInput<VisibilityEvaluate.Varying> input)
@@ -361,6 +372,7 @@ void ClusterRasterPixelImageAtomic64(
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterPixelBufferAtomic64(
     uniform VisibilityEvaluate visibility,
     ClusterRasterPixelInput<VisibilityEvaluate.Varying> input)
@@ -370,6 +382,7 @@ void ClusterRasterPixelBufferAtomic64(
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
+[RasterMaterialInputs("evaluators")]
 PSVisBufferOutput ClusterRasterPixelHardwareOnly(
     uniform VisibilityEvaluate visibility,
     ClusterRasterPixelInput<VisibilityEvaluate.Varying> input)
@@ -383,6 +396,7 @@ PSVisBufferOutput ClusterRasterPixelHardwareOnly(
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterSoftwareTarget(
     uniform VertexEvaluate vertex, uniform VisibilityEvaluate visibility,
     uint3 groupID : SV_GroupID, uint groupThreadIndex : SV_GroupThreadID)
@@ -397,6 +411,7 @@ void ClusterRasterSoftwareTarget(
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterSoftwareMeshletTarget(
     uniform VertexEvaluate vertex,
     uniform VisibilityEvaluate visibility,
@@ -434,6 +449,7 @@ void EvaluateClusterRasterPixelTarget(
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterPixelTarget(
     uniform VisibilityEvaluate visibility,
     ClusterRasterPixelInput<VisibilityEvaluate.Varying> input)
@@ -443,6 +459,7 @@ void ClusterRasterPixelTarget(
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
+[RasterMaterialInputs("evaluators")]
 void ClusterRasterMeshPixelTarget(
     uniform VisibilityEvaluate visibility,
     ClusterRasterVertexData<VisibilityEvaluate.Varying> vertex,

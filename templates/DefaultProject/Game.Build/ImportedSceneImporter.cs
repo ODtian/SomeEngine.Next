@@ -178,6 +178,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
     private const string MaskShader = """
 struct SceneMaskVarying { float2 UV : TEXCOORD0; };
 [VisibilityDepth("masked")]
+[MaterialDepthInputs("AlbedoMap,MaterialSampler")]
 struct SceneMask : IVisibilityEvaluate<StandardVertex>
 {
     typealias Varying = SceneMaskVarying;

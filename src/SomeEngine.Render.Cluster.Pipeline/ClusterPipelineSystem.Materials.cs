@@ -105,14 +105,14 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private readonly Dictionary<SamplerDesc, Sampler> _materialSamplers = [];
-    // Only GPU binding dependencies are remembered; scalar values stay on the Material.
+    // Observed property revisions serve GPU bindings and declared depth inputs; values stay on Material.
     private readonly Dictionary<long, MaterialBindingVersions> _materialBindingVersions = [];
     private sealed record MaterialBindingVersions(
         Shader? Shader, ulong[] Properties)
     {
         internal bool Matches(Material material, ClusterRasterStages raster, ClusterShadeStages shade)
         {
-            if (!ReferenceEquals(Shader, material.Shader))
+            if (!ReferenceEquals(Shader, material.Shader) || Properties.Length != material.PropertyCount)
                 return false;
             for (uint property = 0; property < Properties.Length; property++)
                 if (material.GetPropertyRevision(property) != Properties[property] &&
@@ -120,16 +120,36 @@ public sealed partial class ClusterPipelineSystem
                      shade.UsesResourceProperty(material.MaterialId, property))) return false;
             return true;
         }
+        internal bool MatchesDepthInputs(Material material, HashSet<uint> properties)
+        {
+            foreach (uint property in properties)
+                if (material.GetPropertyRevision(property) != Properties[property]) return false;
+            return true;
+        }
     }
 
     private ClusterMaterialAssignmentSet? _consumedMaterialAssignments;
 
-    private bool CollectMaterialChanges(ClusterMaterialAssignmentSet assignments)
+    private bool CollectMaterialChanges(ClusterMaterialAssignmentSet assignments, bool topologyChanged)
     {
-        foreach (Material material in assignments.ChangedMaterials)
-            if (!_materialBindingVersions.TryGetValue(material.MaterialId, out var versions) ||
-                !versions.Matches(material, _rasterStages!, _shadeStages!)) return true;
-        return false;
+        _rasterChangedMaterials.Clear();
+        bool resourcesChanged = false;
+        foreach (long id in assignments.ChangedMaterialIds)
+        {
+            if (!assignments.TryGetMaterial(id, out Material material))
+            {
+                _rasterChangedMaterials.Add(id);
+                continue;
+            }
+            bool resourcesMatch = _materialBindingVersions.TryGetValue(id, out var versions) &&
+                versions.Matches(material, _rasterStages!, _shadeStages!);
+            resourcesChanged |= !resourcesMatch;
+            if (topologyChanged || !resourcesMatch ||
+                !_rasterStages!.TryGetMaterialDepthInputs(id, out var properties) ||
+                !versions!.MatchesDepthInputs(material, properties))
+                _rasterChangedMaterials.Add(id);
+        }
+        return resourcesChanged;
     }
 
     private void AcceptMaterialChanges(ClusterMaterialAssignmentSet assignments, ClusterMaterialAssignmentSet source)
@@ -141,7 +161,10 @@ public sealed partial class ClusterPipelineSystem
                 _materialBindingVersions.Remove(id);
                 continue;
             }
-            if (_materialBindingVersions.TryGetValue(id, out var versions) && versions.Matches(material, _rasterStages!, _shadeStages!))
+            if (_materialBindingVersions.TryGetValue(id, out var versions) &&
+                versions.Matches(material, _rasterStages!, _shadeStages!) &&
+                (!_rasterStages!.TryGetMaterialDepthInputs(id, out var propertiesRead) ||
+                 versions.MatchesDepthInputs(material, propertiesRead)))
                 continue;
             var properties = new ulong[material.PropertyCount];
             for (uint property = 0; property < material.PropertyCount; property++)

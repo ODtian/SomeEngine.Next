@@ -1,6 +1,8 @@
 #ifndef VISIBILITY_EVALUATE_SLANG
 #define VISIBILITY_EVALUATE_SLANG
 
+#include "common.slang"
+
 [__AttributeUsage(_AttributeTargets.Struct)]
 struct VisibilityDepthAttribute { string behavior; };
 
@@ -82,6 +84,7 @@ struct EmptyVisibilityVarying
 };
 
 [VisibilityDepth("opaque")]
+[MaterialDepthInputs("")]
 struct OpaqueVisibilityEvaluate<TVertex> : IVisibilityEvaluate<TVertex>
 {
     typealias Varying = EmptyVisibilityVarying;

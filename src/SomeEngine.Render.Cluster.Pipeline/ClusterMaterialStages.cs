@@ -439,9 +439,21 @@ internal sealed class ClusterRasterStages : IDisposable
         new(static (before, after) => ReferenceEquals(before.Material, after.Material) &&
             before.HasSameBindings(after) && before.Bounds == after.Bounds);
     private ImmutableDictionary<long, HashSet<uint>> _resourceProperties = ImmutableDictionary<long, HashSet<uint>>.Empty;
+    private ImmutableDictionary<long, HashSet<uint>?> _depthProperties = ImmutableDictionary<long, HashSet<uint>?>.Empty;
 
     internal bool UsesResourceProperty(long materialId, uint property) =>
         _resourceProperties.TryGetValue(materialId, out var properties) && properties.Contains(property);
+
+    internal bool TryGetMaterialDepthInputs(long materialId, out HashSet<uint> properties)
+    {
+        if (_depthProperties.TryGetValue(materialId, out var found) && found is not null)
+        {
+            properties = found;
+            return true;
+        }
+        properties = null!;
+        return false;
+    }
 
     private ClusterRasterStageSet? _resolved;
 
@@ -483,8 +495,12 @@ internal sealed class ClusterRasterStages : IDisposable
             addresses.UnionWith(assignments.GetMaterialOffsets(material));
         var bins = new ClusterBinIndexMap<ClusterRasterBinKey, ClusterRasterInvocation>(_binIndices);
         var resourceProperties = _resourceProperties;
+        var depthProperties = _depthProperties;
         foreach (long material in assignments.ChangedMaterialIds)
+        {
             resourceProperties = resourceProperties.Remove(material);
+            depthProperties = depthProperties.Remove(material);
+        }
         foreach (int address in addresses)
         {
             if (!assignments.TryGetEntry(address, out Material material, out string encoding))
@@ -492,7 +508,7 @@ internal sealed class ClusterRasterStages : IDisposable
                 bins.Remove(address);
                 continue;
             }
-            ClusterRasterInvocation invocation = ResolveInvocation(material, encoding);
+            ClusterRasterInvocation invocation = ResolveInvocation(material, encoding, out uint[]? materialDepthInputs);
             HashSet<uint> properties = [];
             if (invocation.SoftwareResources is { } software)
                 ClusterMaterialEntries.AddResourceProperties(properties, software.MaterialBindings);
@@ -513,6 +529,13 @@ internal sealed class ClusterRasterStages : IDisposable
             var key = new ClusterRasterBinKey(invocation.Key, encoding, invocation.CommandBindings);
             if (resourceProperties.TryGetValue(material.MaterialId, out var existing)) properties.UnionWith(existing);
             resourceProperties = resourceProperties.SetItem(material.MaterialId, properties);
+            HashSet<uint>? depthInputs = materialDepthInputs is { } inputs ? [.. inputs] : null;
+            if (depthProperties.TryGetValue(material.MaterialId, out var previousInputs))
+            {
+                if (depthInputs is not null && previousInputs is not null) depthInputs.UnionWith(previousInputs);
+                else depthInputs = null;
+            }
+            depthProperties = depthProperties.SetItem(material.MaterialId, depthInputs);
             bins.Set(address, key, invocation);
         }
         var invocations = bins.GetStages(static (stage, index) => stage with { BinIndex = index });
@@ -527,12 +550,14 @@ internal sealed class ClusterRasterStages : IDisposable
             invocations, bins.Range, [.. bins.Changes], [.. addresses], _resolved);
         _binIndices = bins;
         _resourceProperties = resourceProperties;
+        _depthProperties = depthProperties;
         _resolvedAssignments = assignments;
         _resolved = result;
         return result;
     }
 
-    private ClusterRasterInvocation ResolveInvocation(Material material, string vertexEncoding)
+    private ClusterRasterInvocation ResolveInvocation(Material material, string vertexEncoding,
+        out uint[]? materialDepthInputs)
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
         SlangCompileTarget target = _device.Capabilities.CompileTarget;
@@ -655,7 +680,8 @@ internal sealed class ClusterRasterStages : IDisposable
             hasVisibilityRaster ? shader : null,
             hasTessellationOverride ? shader : null,
             softwareEntry,
-            softwareUsesMaterialRanges);
+            softwareUsesMaterialRanges,
+            out materialDepthInputs);
     }
 
     private ClusterRasterInvocation CreateInvocation(
@@ -667,7 +693,8 @@ internal sealed class ClusterRasterStages : IDisposable
         Shader? visibilityShader,
         Shader? tessellationShader,
         string? softwareEntry,
-        bool softwareUsesMaterialRanges)
+        bool softwareUsesMaterialRanges,
+        out uint[]? materialDepthInputs)
     {
         ClusterRasterStageResources<ClusterSoftwareRasterCoreResource>? softwareResources = software is null
             ? null
@@ -835,6 +862,17 @@ internal sealed class ClusterRasterStages : IDisposable
             StageAbiRevision: 4,
             TargetSoftware: targetStages?.Software,
             TargetHardware: targetStages?.Hardware);
+        materialDepthInputs = visibilityShader is not null && tessellation is null
+            ? ClusterGeometryRequirements.ReadMaterialDepthInputs(material, visibilityShader,
+                visibilityShader.RequireSlangTarget(_device.Capabilities.CompileTarget),
+                software is null ? null : softwareEntry,
+                hardware.GeometryEntry, ClusterMaterialEntries.HardwarePixel(_visibilityMode, hardware.UsesMesh),
+                targetStages?.Software is null ? null : softwareUsesMaterialRanges
+                    ? ClusterMaterialEntries.SoftwareMeshletTarget : ClusterMaterialEntries.SoftwareTarget,
+                targetStages?.Hardware?.GeometryEntry,
+                targetStages?.Hardware is null ? null : targetStages.Hardware.UsesMesh
+                    ? ClusterMaterialEntries.HardwareMeshPixelTarget : ClusterMaterialEntries.HardwarePixelTarget)
+            : null;
         return new ClusterRasterInvocation(
             0,
             material,

@@ -34,6 +34,59 @@ internal static class ClusterGeometryRequirements
                 $"{subject} entry '{entryPoint}' declares unsupported conservative bounds '{value}'."),
         };
 
+    internal static uint[]? ReadMaterialDepthInputs(Material material, Shader shader, int targetIndex,
+        params string?[] entryNames)
+    {
+        foreach (string? name in entryNames)
+        {
+            if (name is null) continue;
+            if (!shader.TryGetSlangEntry(targetIndex, name, out EntryPointReflection entry)) return null;
+            FunctionReflection function = entry.Function;
+            bool declared = false;
+            for (uint index = 0; index < function.AttributeCount; index++)
+            {
+                AttributeReflection attribute = function.GetAttribute(index);
+                if (attribute.Name != "RasterMaterialInputs") continue;
+                if (declared || attribute.ArgumentCount != 1 ||
+                    attribute.GetArgumentValueString(0) != "evaluators") return null;
+                declared = true;
+            }
+            if (!declared) return null;
+        }
+
+        ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+        var properties = new HashSet<uint>();
+        foreach (string name in new[] { "VertexEvaluate", "DomainEvaluate", "VisibilityEvaluate" })
+        {
+            if (reflection.FindTypeByName(name) is not { } type) return null;
+            bool declared = false;
+            for (uint index = 0; index < type.AttributeCount; index++)
+            {
+                AttributeReflection attribute = type.GetAttribute(index);
+                if (attribute.Name != "MaterialDepthInputs") continue;
+                if (declared || attribute.ArgumentCount != 1) return null;
+                declared = true;
+                string names = attribute.GetArgumentValueString(0);
+                if (names.Length == 0) continue;
+                foreach (string propertyName in names.Split(',', StringSplitOptions.TrimEntries))
+                {
+                    bool found = false;
+                    foreach (MaterialPropertyDefinition property in material.Properties)
+                        if (property.Name == propertyName)
+                        {
+                            properties.Add(property.Index);
+                            found = true;
+                            break;
+                        }
+                    // Expressions, misspellings and unavailable properties cannot grant reuse.
+                    if (!found) return null;
+                }
+            }
+            if (!declared) return null;
+        }
+        return [.. properties];
+    }
+
     internal static ClusterVisibilityDepth RequireVisibilityDepth(Shader shader)
     {
         TypeReflection type = shader.GetSlangReflection(0).FindTypeByName("VisibilityEvaluate")

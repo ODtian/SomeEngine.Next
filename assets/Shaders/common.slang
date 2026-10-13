@@ -8,6 +8,15 @@ struct ConservativeBoundsAttribute { string support; };
 [__AttributeUsage(_AttributeTargets.Function)]
 struct ShaderSpecializationAttribute { string arguments; };
 
+// Complete material-property dependencies of a vertex, domain, or visibility evaluator.
+// An empty list declares no material inputs. Missing/unknown declarations remain conservative.
+[__AttributeUsage(_AttributeTargets.Struct)]
+struct MaterialDepthInputsAttribute { string properties; };
+// Selected raster entries with this declaration read material data only through the
+// VertexEvaluate, DomainEvaluate and VisibilityEvaluate implementations.
+[__AttributeUsage(_AttributeTargets.Function)]
+struct RasterMaterialInputsAttribute { string source; };
+
 #ifndef CLUSTER_RASTER_TWO_SIDED
 #define CLUSTER_RASTER_TWO_SIDED 0
 #endif

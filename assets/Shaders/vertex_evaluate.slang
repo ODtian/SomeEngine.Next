@@ -136,6 +136,7 @@ struct StandardVertex
     float2 uv0;
 };
 
+[MaterialDepthInputs("")]
 struct StaticVertexEval : IVertexEvaluate
 {
     typedef StandardVertex Vertex;

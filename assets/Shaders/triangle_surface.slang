@@ -175,6 +175,7 @@ float3 EvalLinearPosition(Triangle triangle, float3 barycentric)
         triangle.Position2 * barycentric.z;
 }
 
+[MaterialDepthInputs("")]
 struct LinearSurface : IDomainEvaluate<StandardVertex>
 {
     typealias TriangleData = Triangle;

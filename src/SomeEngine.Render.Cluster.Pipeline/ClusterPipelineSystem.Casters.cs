@@ -83,11 +83,13 @@ public sealed partial class ClusterPipelineSystem
         if (_casterChanges.Count > 64) _casterChanges.RemoveAt(0);
     }
 
+    private readonly HashSet<long> _rasterChangedMaterials = [];
+
     private void RecordMaterialCasterChanges(ClusterMaterialAssignmentSet assignments)
     {
-        if (!assignments.ChangedMaterialIds.Any() && !assignments.ChangedOffsets.Any()) return;
+        if (_rasterChangedMaterials.Count == 0 && !assignments.ChangedOffsets.Any()) return;
         var entities = new HashSet<Entity>();
-        assignments.CollectChangedEntities(entities);
+        assignments.CollectChangedEntities(entities, _rasterChangedMaterials);
         RecordCasterChange([], entities);
     }
 
@@ -102,6 +104,15 @@ public sealed partial class ClusterPipelineSystem
             raster.CommandBindings.CollectTextures(textures);
             if (textures.Overlaps(changed)) materials.Add(raster.Material.MaterialId);
         }
+        // Indexed textures live in the material scalar payload, not the direct command
+        // binding key. Their contents can change without replacing the material property.
+        foreach (Material material in _materialAssignments.Current.DistinctMaterials)
+            foreach (MaterialPropertyDefinition property in material.Properties)
+                if (material.GetTexture(property.Index) is { } texture && changed.Contains(texture))
+                {
+                    materials.Add(material.MaterialId);
+                    break;
+                }
         var entities = new HashSet<Entity>();
         _materialAssignments.Current.CollectMaterialEntities(materials, entities);
         RecordCasterChange([], entities);

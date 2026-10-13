@@ -380,7 +380,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             EditGraph((ref RenderGraphEdit edit) => GrowRasterWork(ref edit));
         bool assignmentsChanged = !_graphInstalled ||
             _installedMaterialTopologyVersion != assignments.TopologyVersion;
-        bool materialResourcesChanged = CollectMaterialChanges(assignments);
+        bool materialResourcesChanged = CollectMaterialChanges(assignments, assignmentsChanged);
         bool forward = _options.ShadingPath == ClusterShadingPath.Forward;
         if (forward && (assignmentsChanged || materialResourcesChanged || _installedShadeStages is null ||
             _installedShadeStages.ShadingPath != _options.ShadingPath ||
@@ -395,9 +395,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _installedShadeStages.ShadingPath != _options.ShadingPath ||
             _installedShadeStages.DebugMode != _options.DebugMode ||
             _installedShadeStages.HasReceiverEvaluation != evaluateReceivers;
-        // User vertex/domain/visibility shaders may consume scalar inputs without
-        // changing a resource binding or a raster bin. Such edits still change depth.
-        bool materialDepthChanged = assignmentsChanged || assignments.ChangedMaterialIds.Any();
+        // Unknown evaluators remain conservative. Complete declarations let shading-only
+        // edits preserve depth while the ordinary scalar upload still carries their new values.
+        bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
         if (!assignmentsChanged && !materialResourcesChanged && !shadingChanged)
         {
             ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments,
