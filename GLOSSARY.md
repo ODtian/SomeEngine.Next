@@ -71,3 +71,5 @@
 **Shader 输入 Block**：`ShaderInputBlock`。在同一个 `ShaderAsset` 中保存一组 Slang 源码名称和实际序列化 IR，具体材质与管线入口由强类型 Block 表达。
 
 **共同输入顺序**：`ShaderSourceBlock.Inputs` 保存的 `ShaderInputLocation` 清单。每项通过所在 Block 的持久类型 ID 和源码序号定位实际 IR，Slang 按此顺序恢复全部所选输入并共同链接。
+
+**Shader 输入版本**：`ShaderInputVersion`。共同代码保存输入位置和所在 Block 的持久 `DataVersion`，与输入顺序及实际编译设置一起配对发布字节码。

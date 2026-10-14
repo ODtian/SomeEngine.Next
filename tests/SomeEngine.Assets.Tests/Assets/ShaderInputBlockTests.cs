@@ -44,7 +44,7 @@ public sealed class ShaderInputBlockTests
         using var materialAsset = new MaterialAsset { Name = "Standard" };
         materialAsset.GetBlock<MaterialBlock>().Shader = new(id);
         _ = new StandardMaterialParameters(materialAsset.GetBlock<MaterialBlock>()) { Roughness = 0.37f };
-        using StandardMaterial instance = await materialAsset.CreateAsync<StandardMaterial>(loader);
+        StandardMaterial instance = await materialAsset.CreateAsync<StandardMaterial>(loader);
         Shader shader = Assert.IsType<Shader>(instance.Shader);
         Assert.Same(shader, await loader.GetShaderAsync(new(id)));
         Assert.Equal(0.37f, instance.Roughness);

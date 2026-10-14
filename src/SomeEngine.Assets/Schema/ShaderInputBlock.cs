@@ -40,12 +40,12 @@ public abstract class ShaderInputBlock : AssetBlock
         await source.ReadIntoAsync(data, cancellationToken).ConfigureAwait(false);
         _sourceNames = data.SourceNames;
         _inputs = data.Inputs;
-        AttachSource(source);
+        AttachSource(source, data.DataVersion);
     }
 
     protected async ValueTask WriteInputDataAsync(AssetBlockWriter writer, CancellationToken cancellationToken)
     {
-        writer.WriteMetadata(BlockId, new ShaderInputData { SourceNames = _sourceNames, Inputs = _inputs });
+        writer.WriteMetadata(BlockId, new ShaderInputData { SourceNames = _sourceNames, Inputs = _inputs, DataVersion = DataVersion });
         await WriteChunksAsync(writer, cancellationToken).ConfigureAwait(false);
     }
 }
@@ -56,11 +56,12 @@ public abstract class ShaderInputBlock : AssetBlock
 public readonly partial record struct ShaderInputLocation(Guid BlockTypeId, int SourceIndex);
 
 [BinarySerializable]
-[BinaryFields(nameof(SourceNames), nameof(Inputs))]
+[BinaryFields(nameof(SourceNames), nameof(Inputs), nameof(DataVersion))]
 internal sealed partial class ShaderInputData
 {
     public IList<string> SourceNames { get; set; } = [];
     public IList<ShaderInputLocation> Inputs { get; set; } = [];
+    public Guid DataVersion { get; set; }
 }
 
-internal readonly record struct ShaderInputSource(string Name, ReadOnlyMemory<byte> Serialized);
+internal readonly record struct ShaderInputSource(string Name, ReadOnlyMemory<byte> Serialized, ShaderInputVersion Version);

@@ -11,13 +11,14 @@ namespace SomeEngine.Assets.Schema;
 /// sibling source block; saved chunks are materialized into immutable managed arrays.
 /// </summary>
 [AssetBlock("SomeEngine.Assets.Schema.ShaderBlock"), BinarySerializable]
-[BinaryFields(nameof(ImportTrace), nameof(SchemaVersion))]
+[BinaryFields(nameof(ImportTrace), nameof(SchemaVersion), nameof(InputVersions))]
 public sealed partial class ShaderBlock : AssetBlock
 {
-    public const uint Version = 10;
+    public const uint Version = 11;
 
     public partial ImportTrace? ImportTrace { get; set; }
     public partial uint SchemaVersion { get; set; }
+    public partial IList<ShaderInputVersion> InputVersions { get; set; }
 
     partial void Initialize() => SchemaVersion = Version;
 
@@ -77,6 +78,13 @@ public sealed partial class ShaderBlock : AssetBlock
         using ShaderBlock copy = Duplicate();
         copy.ValidateContent();
 
+        if ((copy.InputVersions.Count > 0 && copy.InputVersions.Any(input =>
+                input.Input.BlockTypeId != ShaderSourceBlock.BlockTypeId || input.DataVersion != source.DataVersion))
+            || Enumerable.Range(0, sessionDescription.Targets!.Length).Any(target =>
+                !copy.ContentKeys.Contains(EntryCodeKey(sessionDescription, target, 0))))
+            return await source.CreateAsync(slang, sessionDescription, name,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
         Shader shader = await source.CreateUsingSavedCodeAsync(
             slang,
             sessionDescription,
@@ -101,22 +109,33 @@ public sealed partial class ShaderBlock : AssetBlock
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
+        return await copy.ReadCodeAsync(shader, sessionDescription, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal bool MatchesInputs(IEnumerable<ShaderInputVersion> inputs, SessionDesc sessionDescription)
+        => InputVersions.SequenceEqual(inputs)
+            && Enumerable.Range(0, sessionDescription.Targets!.Length)
+                .All(target => ContentKeys.Contains(EntryCodeKey(sessionDescription, target, 0)));
+
+    internal async ValueTask<Shader> ReadCodeAsync(
+        Shader shader, SessionDesc sessionDescription, CancellationToken cancellationToken)
+    {
         var targetCode = new List<byte[]?>(shader.SlangTargetCount);
         var entryCode = new List<byte[]>(
             checked(shader.SlangTargetCount * shader.SlangEntryCount));
         for (int targetIndex = 0; targetIndex < shader.SlangTargetCount; targetIndex++)
         {
             ulong targetKey = TargetCodeKey(sessionDescription, targetIndex);
-            targetCode.Add(copy.ContentKeys.Contains(targetKey)
+            targetCode.Add(ContentKeys.Contains(targetKey)
                 ? await AcquireCodeAsync(
-                    copy,
+                    this,
                     targetKey,
                     cancellationToken).ConfigureAwait(false)
                 : null);
             for (int entryIndex = 0; entryIndex < shader.SlangEntryCount; entryIndex++)
             {
                 entryCode.Add(await AcquireCodeAsync(
-                    copy,
+                    this,
                     EntryCodeKey(sessionDescription, targetIndex, entryIndex),
                     cancellationToken).ConfigureAwait(false));
             }
@@ -253,3 +272,7 @@ public sealed partial class ShaderBlock : AssetBlock
         return code.ToArray();
     }
 }
+
+[BinarySerializable, BinaryValue]
+[BinaryFields(nameof(Input), nameof(DataVersion))]
+public readonly partial record struct ShaderInputVersion(ShaderInputLocation Input, Guid DataVersion);
