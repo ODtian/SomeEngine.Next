@@ -259,7 +259,7 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null,
         VirtualShadowMapSettings? shadowSettings = null, DeviceFeatures optionalFeatures = DeviceFeatures.None,
         ClusterResidencyOptions? residencyOptions = null, ClusterStreamingFeedbackChannel? feedbackChannel = null,
-        uint graphicsQueueCount = 1, bool nativeVulkanValidation = false)
+        uint graphicsQueueCount = 1, bool nativeVulkanValidation = false, Shader? lightingKernel = null)
     {
         string content = Path.Combine(FindRoot(), "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
@@ -276,7 +276,7 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         VirtualShadowMapShaders shadowShaders = await shadowFile.GetBlock<VirtualShadowMapShadersBlock>().CreateAsync(
             shadowFile.Name, assets, TestShaderLoading.Slang, TestShaderLoading.CreateSessionDescription(target));
         using ShaderAsset lightingFile = await ShaderAsset.OpenAsync(assets, settings.LightingShader);
-        Shader lightingShader = await TestShaderLoading.CreateAsync(lightingFile, target);
+        Shader lightingShader = lightingKernel ?? await TestShaderLoading.CreateAsync(lightingFile, target);
         using ShaderAsset temporalFile = await ShaderAsset.OpenAsync(assets, settings.TemporalShader);
         Shader temporalShader = await TestShaderLoading.CreateAsync(temporalFile, target);
         Mesh mesh;

@@ -15,6 +15,16 @@ RWStructuredBuffer<uint> LightAllocationCounters;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> LightAllocationStatus;
 
+
+[__AttributeUsage(_AttributeTargets.Function)]
+struct ClusteredSinglePointDirectAttribute
+{
+    string Role;
+};
+
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
+RWStructuredBuffer<uint4> SinglePointBounds;
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void ClearClusteredLightGrid(uint3 dispatchThreadId : SV_DispatchThreadID)
@@ -228,6 +238,7 @@ void AssignClusteredLightCell(ClusteredLightGridParameters parameters, uint view
     InterlockedAdd(ClusteredLightGrid[cell].y, 1u);
 }
 
+[ClusteredSinglePointDirect("build-v1")]
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void BuildClusteredLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_GroupIndex)
@@ -283,4 +294,50 @@ void CompactClusteredLightGrid(uint3 dispatchThreadId : SV_DispatchThreadID)
         }
     }
     ClusteredLightGrid[cell] = uint2(first, head.y);
+}
+
+[ClusteredSinglePointDirect("prepare-v1")]
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void PrepareSinglePointLightGrid(uint3 tid : SV_DispatchThreadID)
+{
+    ClusteredLightGridParameters parameters = LightingViews[0];
+    uint3 minimum, extent;
+    GetClusteredLightCellBounds(parameters, LightBuffer[parameters.DirectionalCount], minimum, extent);
+    uint count = extent.x * extent.y * extent.z;
+    SinglePointBounds[0] = uint4(minimum, count);
+    SinglePointBounds[1] = uint4(extent, parameters.DirectionalCount);
+    LightAllocationCounters[0] = count;
+    LightAllocationCounters[1] = count;
+    LightAllocationStatus[0] = 0u;
+}
+
+[ClusteredSinglePointDirect("fill-v1")]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void FillSinglePointLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_GroupIndex)
+{
+    ClusteredLightGridParameters parameters = LightingViews[0];
+    uint group = groupId.x + groupId.y * 65535u;
+    uint groups = parameters.CellCountPerView / 64u + (parameters.CellCountPerView % 64u != 0u ? 1u : 0u);
+    if (group >= groups) return;
+    uint cell = group * 64u + threadIndex;
+    if (cell >= parameters.CellCountPerView) return;
+    uint4 bounds = SinglePointBounds[0];
+    uint4 shape = SinglePointBounds[1];
+    uint x = cell % parameters.TileCountX;
+    uint yz = cell / parameters.TileCountX;
+    uint y = yz % parameters.TileCountY;
+    uint z = yz / parameters.TileCountY;
+    uint3 coordinate = uint3(x, y, z);
+    uint3 relative = coordinate - bounds.xyz;
+    if (all(coordinate >= bounds.xyz) && all(relative < shape.xyz))
+    {
+        uint ordinal = (relative.z * shape.y + relative.y) * shape.x + relative.x;
+        ClusteredLightGrid[cell] = uint2(ordinal, 1u);
+        LightIndexList[ordinal] = shape.w;
+        // Retain the existing private link-prefix/counter protocol for the strict gate.
+        LightLinkList[ordinal] = uint2(shape.w, 0xffffffffu);
+    }
+    else ClusteredLightGrid[cell] = uint2(0u, 0u);
 }

@@ -1,9 +1,11 @@
 using System.Numerics;
+using SlangShaderSharp;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
+using SomeEngine.Render;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Lighting;
 using SomeEngine.RenderGraph;
@@ -40,6 +42,14 @@ public readonly record struct LightingFeatureResources(
 public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRenderGraphFrameExecutionObserver
 {
     private const uint ThreadCount = 64;
+    private readonly LinkedComputePipeline? _singlePointPreparePipeline;
+    private readonly LinkedComputePipeline? _singlePointFillPipeline;
+    private readonly GraphPassId _singlePointPreparePass;
+    private readonly GraphPassId _singlePointFillPass;
+    private readonly GraphBufferId _singlePointBounds;
+    private readonly uint _entryCapacity;
+    private readonly bool _supportsSinglePoint;
+
     private readonly LinkedComputePipeline _pipeline;
     private readonly LinkedComputePipeline _clearPipeline;
     private readonly LinkedComputePipeline _compactPipeline;
@@ -102,6 +112,8 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         uint lightEntryCapacity = checked(cellsPerView * _viewCount * _settings.MaxLightsPerCell);
         ulong indexBytes = (ulong)lightEntryCapacity * sizeof(uint);
 
+        _entryCapacity = lightEntryCapacity;
+        LinkedComputePipeline? singlePointPrepare = null, singlePointFill = null;
         LinkedComputePipeline? pipeline = null;
         LinkedComputePipeline? clearPipeline = null;
         LinkedComputePipeline? compactPipeline = null;
@@ -117,9 +129,19 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                 backend, device, shader, "ClearClusteredLightGrid", "Clear clustered lighting counts");
             compactPipeline = LinkedComputePipeline.Create(
                 backend, device, shader, "CompactClusteredLightGrid", "Compact clustered lighting lists");
+            _supportsSinglePoint = HasSinglePointRole(pipeline.EntryPoint.Function, "build-v1") &&
+                HasSinglePointEntry(pipeline.Reflection, "PrepareSinglePointLightGrid", "prepare-v1") &&
+                HasSinglePointEntry(pipeline.Reflection, "FillSinglePointLightGrid", "fill-v1");
+            if (_supportsSinglePoint)
+            {
+                singlePointPrepare = LinkedComputePipeline.Create(backend, device, shader, "PrepareSinglePointLightGrid", "Prepare singleton cell bounds");
+                singlePointFill = LinkedComputePipeline.Create(backend, device, shader, "FillSinglePointLightGrid", "Fill singleton final grid");
+            }
             RenderGraphEdit edit = graph.BeginEdit();
             try
             {
+                _singlePointBounds = edit.CreateBuffer(new BufferDesc(32,
+                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Single point bounds"));
                 _frameLights = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _frameViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _grid = edit.CreateBuffer(new BufferDesc(
@@ -219,6 +241,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                             ("LightLinkList", ResourceBindingType.BufferUav) => 4,
                             ("LightAllocationCounters", ResourceBindingType.BufferUav) => 5,
                             ("LightAllocationStatus", ResourceBindingType.BufferUav) => 6,
+                            ("SinglePointBounds", ResourceBindingType.BufferUav) => 7,
                             _ => null,
                         });
                     foreach (int resource in resources)
@@ -255,6 +278,10 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                                     WriteCoverage.Partial, resultContents: ResourceContentState.Defined,
                                     contentScope: BufferContentScope.CountBoundedPrefix);
                                 break;
+                            case 7:
+                                pass.Bind(GraphParameterResourceBinding.WritableBufferDescriptor(
+                                    edit.CreateBufferUav(_singlePointBounds, structureStride: 16)));
+                                break;
                             case 5:
                             case 6:
                                 _ = pass.Bind(edit.CreateBufferUav(resource == 5 ? _allocationCounters : _allocationStatus,
@@ -271,12 +298,76 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                             resultContents: ResourceContentState.Defined,
                             contentScope: BufferContentScope.CountBoundedPrefix);
                 }
+                if (_supportsSinglePoint)
+                {
+                    _singlePointPreparePass = AddSinglePointPass(ref edit, singlePointPrepare!, true);
+                    _singlePointFillPass = AddSinglePointPass(ref edit, singlePointFill!, false);
+                    edit.OrderAfter(_singlePointFillPass, _singlePointPreparePass);
+                }
                 edit.Commit();
+
+                GraphPassId AddSinglePointPass(ref RenderGraphEdit edit, LinkedComputePipeline linked, bool prepare)
+                {
+                    GraphPassId id = edit.AddComputeFramePass(
+                        prepare ? "Prepare single point grid" : "Fill single point grid",
+                        PassQueueSelection.AnyCompatible(), new LightingBuildPassData(default),
+                        new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                        linked.Pipeline, linked.ParameterLayout, default,
+                        static (ref PassDefinition _, ref LightingBuildPassData _) => { },
+                        (ref ComputePassCommandScope commands, in LightingBuildPassData data) =>
+                        {
+                            commands.Dispatch(data.Dispatch);
+                        }, region: region);
+                    PassDefinition pass = edit.GetPass(id);
+                    var resources = ShaderResourceLayout.Resolve<(string Name, ResourceBindingType Type)>(
+                        linked.ParameterLayout, static (name, type) => (name, type));
+                    foreach (var input in resources)
+                    {
+                        switch (input.Name)
+                        {
+                            case "LightingViews":
+                                pass.Bind(edit.CreateBufferSrv(_frameViews, structureStride: ClusteredLightGridParameters.SizeInBytes), PipelineSync.ComputeShading); break;
+                            case "LightBuffer":
+                                var lightView = edit.CreateBufferSrv(_frameLights, structureStride: GpuLight.SizeInBytes);
+                                if (prepare) pass.Bind(lightView, PipelineSync.ComputeShading);
+                                else pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(lightView));
+                                break;
+                            case "ClusteredLightGrid":
+                                BindOutput(ref edit, ref pass, _grid, 8, !prepare, WriteCoverage.Complete, BufferContentScope.FullRange); break;
+                            case "LightIndexList":
+                                BindOutput(ref edit, ref pass, _lightIndices, 4, !prepare, WriteCoverage.Partial, BufferContentScope.CountBoundedPrefix); break;
+                            case "LightLinkList":
+                                BindOutput(ref edit, ref pass, _lightLinks, 8, !prepare, WriteCoverage.Partial, BufferContentScope.CountBoundedPrefix); break;
+                            case "LightAllocationCounters":
+                                BindOutput(ref edit, ref pass, _allocationCounters, 4, prepare, WriteCoverage.Complete, BufferContentScope.FullRange); break;
+                            case "LightAllocationStatus":
+                                BindOutput(ref edit, ref pass, _allocationStatus, 4, prepare, WriteCoverage.Complete, BufferContentScope.FullRange); break;
+                            case "SinglePointBounds":
+                                pass.Bind(edit.CreateBufferUav(_singlePointBounds, structureStride: 16), PipelineSync.ComputeShading,
+                                    prepare ? GraphAccessMode.Write : GraphAccessMode.Read,
+                                    prepare ? WriteCoverage.Complete : WriteCoverage.Partial); break;
+                            default: throw new InvalidDataException("Unknown direct grid binding " + input.Name);
+                        }
+                    }
+                    return id;
+                    void BindOutput(ref RenderGraphEdit bindingEdit, ref PassDefinition bindingPass, GraphBufferId buffer, uint stride,
+                        bool writes, WriteCoverage coverage, BufferContentScope scope)
+                    {
+                        var view = bindingEdit.CreateBufferUav(buffer, structureStride: stride);
+                        if (writes) bindingPass.Bind(view, PipelineSync.ComputeShading, GraphAccessMode.Write, coverage,
+                            resultContents: ResourceContentState.Defined, contentScope: scope);
+                        else bindingPass.Bind(GraphParameterResourceBinding.WritableBufferDescriptor(view));
+                    }
+                }
             }
             finally
             {
                 edit.Dispose();
             }
+            _singlePointPreparePipeline = singlePointPrepare;
+            _singlePointFillPipeline = singlePointFill;
+            singlePointPrepare = null;
+            singlePointFill = null;
             _pipeline = pipeline;
             _clearPipeline = clearPipeline;
             _compactPipeline = compactPipeline;
@@ -294,6 +385,8 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         }
         catch
         {
+            singlePointPrepare?.Dispose();
+            singlePointFill?.Dispose();
             pipeline?.Dispose();
             clearPipeline?.Dispose();
             compactPipeline?.Dispose();
@@ -368,11 +461,25 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                 parameters[0].GroupsPerLight)));
         graph.SetPassData(_compactPass, new LightingBuildPassData(new DispatchArguments(
             DivideRoundUp(Resources.CellCountPerView, ThreadCount), checked((uint)views.Length), 1)));
-        graph.SetPassEnabled(_clearPass, true);
+        bool useSinglePoint = _supportsSinglePoint && enabled && _viewCount == 1 && views.Length == 1 &&
+            lights.Points.Count == 1 && lights.Spots.Count == 0 &&
+            parameters[0].TileCountX != 0 && parameters[0].TileCountY != 0 && parameters[0].DepthSliceCount != 0 &&
+            Resources.CellCountPerView % parameters[0].DepthSliceCount == 0 &&
+            (ulong)parameters[0].TileCountX * parameters[0].TileCountY == Resources.CellCountPerView / parameters[0].DepthSliceCount &&
+            _entryCapacity >= Resources.CellCountPerView;
+        if (_supportsSinglePoint)
+        {
+            uint groups = Resources.CellCountPerView / ThreadCount + (Resources.CellCountPerView % ThreadCount != 0 ? 1u : 0u);
+            graph.SetPassData(_singlePointPreparePass, new LightingBuildPassData(new DispatchArguments(1, 1, 1)));
+            graph.SetPassData(_singlePointFillPass, new LightingBuildPassData(new DispatchArguments(Math.Min(groups, 65535u), (groups + 65534u) / 65535u, 1)));
+            graph.SetPassEnabled(_singlePointPreparePass, useSinglePoint);
+            graph.SetPassEnabled(_singlePointFillPass, useSinglePoint);
+        }
+        graph.SetPassEnabled(_clearPass, !useSinglePoint);
         graph.SetPassEnabled(_cookieInitializePass, !_cookieInitialized);
         if (!_cookieInitialized) graph.ObserveExecution(this);
-        graph.SetPassEnabled(_buildPass, enabled && nonDirectionalCount != 0);
-        graph.SetPassEnabled(_compactPass, enabled && nonDirectionalCount != 0);
+        graph.SetPassEnabled(_buildPass, !useSinglePoint && enabled && nonDirectionalCount != 0);
+        graph.SetPassEnabled(_compactPass, !useSinglePoint && enabled && nonDirectionalCount != 0);
     }
 
     void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
@@ -541,12 +648,41 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     {
         if (_disposed)
             return;
+        _singlePointPreparePipeline?.Dispose();
+        _singlePointFillPipeline?.Dispose();
         _pipeline.Dispose();
         _clearPipeline.Dispose();
         _compactPipeline.Dispose();
         _gpuLights.Clear();
         Array.Clear(_viewParameters);
         _disposed = true;
+    }
+
+    private static bool HasSinglePointRole(FunctionReflection function, string role)
+    {
+        int count = 0;
+        bool valid = false;
+        for (uint i = 0; i < function.AttributeCount; i++)
+        {
+            var attribute = function.GetAttribute(i);
+            if (attribute.Name != "ClusteredSinglePointDirect") continue;
+            count++;
+            valid = attribute.ArgumentCount == 1 && attribute.GetArgumentValueString(0) == role;
+        }
+        return count == 1 && valid;
+    }
+    private static bool HasSinglePointEntry(ShaderReflection reflection, string name, string role)
+    {
+        int matches = 0;
+        bool valid = false;
+        for (uint i = 0; i < reflection.EntryPointCount; i++)
+        {
+            var entry = reflection.GetEntryPointByIndex(i);
+            if (entry.Name != name) continue;
+            matches++;
+            valid = entry.Stage == SlangStage.Compute && HasSinglePointRole(entry.Function, role);
+        }
+        return matches == 1 && valid;
     }
 
     private readonly record struct LightingBuildPassData(DispatchArguments Dispatch)
