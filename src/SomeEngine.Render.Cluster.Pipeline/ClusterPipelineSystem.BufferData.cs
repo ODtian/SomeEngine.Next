@@ -46,10 +46,23 @@ public sealed partial class ClusterPipelineSystem
         scoped ReadOnlySpan<BufferRange> changes)
     {
         var writes = GraphData.BufferWrites.GetValueOrDefault(buffer, ImmutableList<BufferWrite>.Empty);
-        foreach (BufferRange range in changes)
+        if (changes.Length > 1)
         {
-            if (range.Size == 0) continue;
-            writes = writes.Add(new BufferWrite(range, bytes));
+            var builder = writes.ToBuilder();
+            foreach (BufferRange range in changes)
+            {
+                if (range.Size == 0) continue;
+                builder.Add(new BufferWrite(range, bytes));
+            }
+            writes = builder.ToImmutable();
+        }
+        else
+        {
+            foreach (BufferRange range in changes)
+            {
+                if (range.Size == 0) continue;
+                writes = writes.Add(new BufferWrite(range, bytes));
+            }
         }
         GraphData.BufferWrites = GraphData.BufferWrites.SetItem(buffer, writes);
     }

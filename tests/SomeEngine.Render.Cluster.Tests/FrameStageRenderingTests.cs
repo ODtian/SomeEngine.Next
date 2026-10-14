@@ -78,9 +78,9 @@ public sealed class FrameStageRenderingTests
 // All observations use the public texture output, graph copy commands and buffer mapping.
 internal sealed partial class FrameStageScene : IAsyncDisposable
 {
-    private const int Width = 64;
-    private const int Height = 64;
-    private const uint RowPitch = Width * 8;
+    private readonly int Width;
+    private readonly int Height;
+    private uint RowPitch => (uint)Width * 8;
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly World _gameWorld = new();
@@ -130,8 +130,9 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         VirtualShadowMapShaders shadowShaders, Shader lightingShader, Shader temporalShader,
         ApplicationSettingsBlock settings, bool shadows, ClusterPipelineOptions? pipelineOptions, string backendName,
         VirtualShadowMapSettings? shadowSettings, ClusterResidencyOptions? residencyOptions,
-        ClusterStreamingFeedbackChannel? feedbackChannel)
+        ClusterStreamingFeedbackChannel? feedbackChannel, RenderInstanceOptions? instanceOptions, int imageSize)
     {
+        Width = Height = imageSize;
         _backend = backend;
         _backendName = backendName;
         _mesh = mesh;
@@ -146,12 +147,12 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         ];
         _light = _gameWorld.CreateEntity(new PointLight(new Vector3(-4, 2, -3), 20, Vector3.One, 30));
         _view = _world.CreateEntity(new RenderView(Matrix4x4.Identity,
-            Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), Width, Height));
+            Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), (uint)Width, (uint)Height));
         _extraction = new RenderExtractionSystems(_world, new MeshRenderExtractor(), new LightRenderExtractor());
         _renderDevice = new RenderDevice(backend, device);
         _dataLock = new RenderDataLock();
         _instances = new RenderInstanceStorageSystem(backend, device, _world,
-            ClusterRenderFeature.InstanceLayout, new RenderInstanceOptions { RowCapacity = 16, BatchCapacity = 8 });
+            ClusterRenderFeature.InstanceLayout, instanceOptions ?? new RenderInstanceOptions { RowCapacity = 16, BatchCapacity = 8 });
         _cluster = new ClusterRenderResources(backend, device, _world, _instances,
             new ClusterRenderOptions { Residency = residencyOptions ?? new ClusterResidencyOptions
                 { PageHeapCapacityBytes = 1048576, BvhCapacityBytes = 65536, PageFaultCapacity = 16 } });
@@ -210,9 +211,9 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         _temporal = new TemporalFeature(backend, device, _graph, Width, Height,
             temporalShader, settings.TemporalVertexEntry, settings.TemporalPixelEntry, region: post);
         _readback = backend.CreateBuffer(device,
-            new BufferDesc(RowPitch * Height, BufferUsages.CopyDestination), MemoryType.Readback);
+            new BufferDesc((ulong)RowPitch * (uint)Height, BufferUsages.CopyDestination), MemoryType.Readback);
         _depthReadback = backend.CreateBuffer(device,
-            new BufferDesc(Width * Height * 4, BufferUsages.CopyDestination), MemoryType.Readback);
+            new BufferDesc((ulong)Width * (uint)Height * 4, BufferUsages.CopyDestination), MemoryType.Readback);
         using RenderGraphEdit edit = _graph.BeginEdit();
         GraphRegionId imageReadbackRegion = edit.AddRegion("Test image readback");
         _readbackDepth = edit.CreateTextureInput();
@@ -220,35 +221,35 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
             [new BufferBoundaryState(BufferRange.Whole, _depthReadback.InitialSync, _depthReadback.InitialAccess,
                 ResourceContentState.Undefined)]);
         edit.AddCopyFramePass("Read frame stage depth", PassQueueSelection.AnyOfType(QueueType.Graphics),
-            (_readbackDepth, depthDestination), new PassOptions(Culling: PassCullingMode.NeverCull),
-            static (ref PassDefinition pass, ref (GraphTextureInput Depth, GraphBufferId Destination) data) =>
+            (_readbackDepth, depthDestination, Width, Height), new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition pass, ref (GraphTextureInput Depth, GraphBufferId Destination, int Width, int Height) data) =>
             {
                 pass.Read(data.Depth, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth),
                     PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
                 pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination,
                     WriteCoverage.Complete);
             },
-            static (ref CopyPassCommandScope commands, in (GraphTextureInput Depth, GraphBufferId Destination) data) =>
+            static (ref CopyPassCommandScope commands, in (GraphTextureInput Depth, GraphBufferId Destination, int Width, int Height) data) =>
                 commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Destination), 0,
-                    Width * 4, Height, commands.GetTexture(data.Depth), 0, 0, TextureAspects.Depth,
-                    0, 0, 0, Width, Height, 1)), region: imageReadbackRegion);
+                    (uint)data.Width * 4, (uint)data.Height, commands.GetTexture(data.Depth), 0, 0, TextureAspects.Depth,
+                    0, 0, 0, (uint)data.Width, (uint)data.Height, 1)), region: imageReadbackRegion);
         _readbackColor = edit.CreateTextureInput();
         GraphBufferId destination = edit.RegisterExternalBuffer(_readback,
             [new BufferBoundaryState(BufferRange.Whole, _readback.InitialSync, _readback.InitialAccess,
                 ResourceContentState.Undefined)]);
         edit.AddCopyFramePass("Read frame stage color", PassQueueSelection.AnyOfType(QueueType.Copy),
-            (_readbackColor, destination), new PassOptions(Culling: PassCullingMode.NeverCull),
-            static (ref PassDefinition pass, ref (GraphTextureInput Color, GraphBufferId Destination) data) =>
+            (_readbackColor, destination, Width, Height), new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition pass, ref (GraphTextureInput Color, GraphBufferId Destination, int Width, int Height) data) =>
             {
                 pass.Read(data.Color, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
                     PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
                 pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination,
                     WriteCoverage.Complete);
             },
-            static (ref CopyPassCommandScope commands, in (GraphTextureInput Color, GraphBufferId Destination) data) =>
+            static (ref CopyPassCommandScope commands, in (GraphTextureInput Color, GraphBufferId Destination, int Width, int Height) data) =>
                 commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Destination), 0,
-                    RowPitch, Height, commands.GetTexture(data.Color), 0, 0, TextureAspects.Color,
-                    0, 0, 0, Width, Height, 1)), region: imageReadbackRegion);
+                    (uint)data.Width * 8, (uint)data.Height, commands.GetTexture(data.Color), 0, 0, TextureAspects.Color,
+                    0, 0, 0, (uint)data.Width, (uint)data.Height, 1)), region: imageReadbackRegion);
         edit.Commit();
         _completions = new QueueCompletion[_graph.MaximumQueueCompletionCount];
         InitializeAdditionalViews(assignments, instanceSystem, clusterShaders, resources,
@@ -259,7 +260,8 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         ClusterPipelineOptions? pipelineOptions = null, Mesh? geometryMesh = null,
         VirtualShadowMapSettings? shadowSettings = null, DeviceFeatures optionalFeatures = DeviceFeatures.None,
         ClusterResidencyOptions? residencyOptions = null, ClusterStreamingFeedbackChannel? feedbackChannel = null,
-        uint graphicsQueueCount = 1, bool nativeVulkanValidation = false, Shader? lightingKernel = null)
+        uint graphicsQueueCount = 1, bool nativeVulkanValidation = false, Shader? lightingKernel = null,
+        RenderInstanceOptions? instanceOptions = null, int imageSize = 64)
     {
         string content = Path.Combine(FindRoot(), "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
@@ -311,7 +313,7 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
             requiredFeatures: DeviceFeatures.IndirectCommands, optionalFeatures: optionalFeatures));
         return new FrameStageScene(backend, device, mesh, standard, unlit, clusterShaders,
             shadowShaders, lightingShader, temporalShader, settings, shadows, pipelineOptions, backendName, shadowSettings,
-            residencyOptions, feedbackChannel);
+            residencyOptions, feedbackChannel, instanceOptions, imageSize);
     }
 
     internal void SetView(RenderView view) => _world.Replace(_view, view);
@@ -470,15 +472,18 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
     internal async Task<RasterImage> ReadNextRasterImageAsync()
     {
         await RenderAsync();
-        return new RasterImage(ReadColor(), ReadDepth(), _pipeline.CaptureFrameMetrics());
+        return ReadCurrentRasterImage();
     }
+
+    internal RasterImage ReadCurrentRasterImage() =>
+        new(ReadColor(), ReadDepth(), _pipeline.CaptureFrameMetrics());
 
     internal async Task<PostProcessedImage> ReadNextPostProcessedImageAsync()
     {
         if (_motionReadback is null)
         {
             _motionReadback = _backend.CreateBuffer(_device,
-                new BufferDesc(Width * Height * 4, BufferUsages.CopyDestination), MemoryType.Readback);
+                new BufferDesc((ulong)Width * (uint)Height * 4, BufferUsages.CopyDestination), MemoryType.Readback);
             using RenderGraphEdit edit = _graph.BeginEdit();
             GraphRegionId region = edit.AddRegion("Test motion readback");
             _readbackMotion = edit.CreateTextureInput();
@@ -486,18 +491,18 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
                 [new BufferBoundaryState(BufferRange.Whole, _motionReadback.InitialSync,
                     _motionReadback.InitialAccess, ResourceContentState.Undefined)]);
             edit.AddCopyFramePass("Read frame stage motion", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                (_readbackMotion, destination), new PassOptions(Culling: PassCullingMode.NeverCull),
-                static (ref PassDefinition pass, ref (GraphTextureInput Motion, GraphBufferId Destination) data) =>
+                (_readbackMotion, destination, Width, Height), new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition pass, ref (GraphTextureInput Motion, GraphBufferId Destination, int Width, int Height) data) =>
                 {
                     pass.Read(data.Motion, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
                         PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
                     pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy,
                         ResourceAccess.CopyDestination, WriteCoverage.Complete);
                 },
-                static (ref CopyPassCommandScope commands, in (GraphTextureInput Motion, GraphBufferId Destination) data) =>
+                static (ref CopyPassCommandScope commands, in (GraphTextureInput Motion, GraphBufferId Destination, int Width, int Height) data) =>
                     commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Destination), 0,
-                        Width * 4, Height, commands.GetTexture(data.Motion), 0, 0, TextureAspects.Color,
-                        0, 0, 0, Width, Height, 1)), region: region);
+                        (uint)data.Width * 4, (uint)data.Height, commands.GetTexture(data.Motion), 0, 0, TextureAspects.Color,
+                        0, 0, 0, (uint)data.Width, (uint)data.Height, 1)), region: region);
             edit.Commit();
         }
         await RenderAsync(postProcessedColor: true);
@@ -594,7 +599,7 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         _executionReceiver = null;
     }
 
-    internal async Task DiscardNextFrameAsync()
+    internal async Task<ulong> DiscardNextFrameAsync(IRenderGraphFrameExecutionObserver? observer = null)
     {
         _extraction.Extract(_gameWorld);
         Assert.True(_graph.TryOpenNextFrame(out var nextFrame, TimeSpan.FromSeconds(20)));
@@ -614,8 +619,11 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         using (frame)
         using (RenderGraphFrame commands = _graph.BeginFrame(nextFrame))
         {
+            var observedFrame = commands;
+            if (observer is not null) observedFrame.ObserveExecution(observer);
             _frames.Update(frame, commands);
             _additionalFrames?.Update(frame, commands);
+            return commands.FrameIdentity;
         }
     }
 
