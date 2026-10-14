@@ -11,7 +11,6 @@ public sealed class Mesh
     private ReadOnlyMemory<byte>[] _pages = [];
     private ReadOnlyMemory<byte> _bvh;
     private Mesh? _capturedContent;
-    public event Action<Mesh>? Changed;
     public string? Name { get; private set; }
     public Bounds? Bounds { get; private set; }
     public string VertexEncoding { get; private set; } = "";
@@ -128,7 +127,6 @@ public sealed class Mesh
                 _capturedContent = null;
             }
         }
-        if (changed) Changed?.Invoke(this);
     }
     public void Update(Mesh replacement)
     {
@@ -142,6 +140,5 @@ public sealed class Mesh
             _pages = data._pages; _bvh = data._bvh;
             Revision = checked(Revision + 1); _capturedContent = null;
         }
-        Changed?.Invoke(this);
     }
 }

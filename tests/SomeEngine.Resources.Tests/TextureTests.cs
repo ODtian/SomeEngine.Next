@@ -43,11 +43,13 @@ public sealed class TextureTests
         initial.Add(new(coarse, Enumerable.Repeat((byte)7, 16).ToArray()));
         using var texture = Create([fine, coarse], initial);
         ulong revision = texture.Revision;
+        ulong pixelsRevision = texture.PixelsRevision;
         var additional = new List<TexturePixels>();
         additional.Add(new(fine, Enumerable.Repeat((byte)9, 64).ToArray()));
         additional.Add(new(coarse, new byte[16]));
         texture.AddPixels(additional, revision);
         Assert.Equal(revision, texture.Revision);
+        Assert.Equal(pixelsRevision + 1, texture.PixelsRevision);
         Assert.True(texture.TryGetTile(fine.ChunkKey, out ReadOnlyMemory<byte> fineRead));
         Assert.Equal(Enumerable.Repeat((byte)9, 64), fineRead.ToArray());
         Assert.True(texture.TryGetTile(coarse.ChunkKey, out ReadOnlyMemory<byte> oldRead));

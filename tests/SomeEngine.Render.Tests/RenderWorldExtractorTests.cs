@@ -20,7 +20,33 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
 {
     private readonly TestAssets assets = new();
     [Fact]
-    public void SharedMaterialEditsKeepTheSameResourceAndDoNotExtractEntityChanges()
+    public void MeshPagesApplyTheirRevisionThroughExtraction()
+    {
+        using World game = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
+        Mesh complete = MeshAsset(810, 1);
+        Mesh mesh = Mesh.Create("streamed mesh", complete.VertexEncoding, complete.PageDigests, complete.Bvh);
+        Entity source = AddMeshSource(game, mesh, 0, Vector3.Zero);
+        ExtractAndApply(extraction, game, render);
+        Entity mirror = extraction.RequireMirror(source);
+        Mesh before = render.Read<RenderMesh>(mirror).Mesh;
+        Assert.True(complete.TryGetPage(0, out var page));
+
+        mesh.AddPages([(0, page)], mesh.Revision);
+        extraction.Extract(game);
+        Assert.Same(before, render.Read<RenderMesh>(mirror).Mesh);
+        graphics.Apply(extraction, render);
+
+        Mesh after = render.Read<RenderMesh>(mirror).Mesh;
+        Assert.Equal(mesh.Revision, after.Revision);
+        Assert.True(after.TryGetPage(0, out var supplied));
+        Assert.Equal(page.ToArray(), supplied.ToArray());
+        Assert.False(before.TryGetPage(0, out _));
+    }
+
+    [Fact]
+    public void SharedMaterialEditsApplyTheirVersionAtExtraction()
     {
         using World main = new();
         using RenderWorld render = new();
@@ -33,16 +59,19 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         }
         ExtractAndApply(extraction, main, render);
         Material before = render.ReadMaterial(material.MaterialId);
+        ulong materialVersion = render.ReadMaterialRevision(material.MaterialId);
         uint version = render.AcquireSystemVersion();
         int materialWrites = 0;
         render.Hooks<RenderMaterialReference>().OnReplace((DeferredWorld _, Entity _, in RenderMaterialReference _) => materialWrites++);
         material.Roughness = 0.9f;
         extraction.Extract(main);
         Assert.Same(before, render.ReadMaterial(material.MaterialId));
+        Assert.Equal(materialVersion, render.ReadMaterialRevision(material.MaterialId));
         graphics.Apply(extraction, render);
         Assert.Same(material, render.ReadMaterial(material.MaterialId));
         Assert.Equal(0.9f, Assert.IsType<StandardMaterial>(render.ReadMaterial(material.MaterialId)).Roughness);
-        Assert.Equal(0, materialWrites);
+        Assert.Equal(material.Revision, render.ReadMaterialRevision(material.MaterialId));
+        Assert.Equal(1, materialWrites);
         QueryHandle query = render.Query(new QueryDefinitionBuilder().ReadBuffer<RenderMaterialBinding>());
         try
         {
@@ -84,7 +113,7 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
     }
 
     [Fact]
-    public async Task TextureContentChangesKeepMaterialAndCookieReferencesWithoutEntityWrites()
+    public async Task TextureContentVersionsCrossExtractionWithSharedReferences()
     {
         using World main = new();
         using RenderWorld render = new();
@@ -102,11 +131,15 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         render.Hooks<RenderLightCookie>().OnReplace((DeferredWorld _, Entity _, in RenderLightCookie _) => writes++);
         ulong materialRevision = material.Revision;
         ulong textureRevision = texture.Revision;
+        TextureVersions before = render.ReadTextureVersions(texture);
         await texture.UpdateAsync(TextureAsset(92, 1));
-        ExtractAndApply(extraction, main, render);
+        extraction.Extract(main);
+        Assert.Equal(before, render.ReadTextureVersions(texture));
+        graphics.Apply(extraction, render);
         Assert.Equal(textureRevision + 1, texture.Revision);
         Assert.Equal(materialRevision, material.Revision);
         Assert.Equal(0, writes);
+        Assert.Equal(texture.Versions, render.ReadTextureVersions(texture));
         Assert.Same(material, render.ReadMaterial(material.MaterialId));
         Assert.Same(texture, material.AlbedoMap);
         Assert.Same(texture, render.Read<RenderLightCookie>(mirror).Texture);

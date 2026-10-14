@@ -59,6 +59,22 @@ public sealed partial class AssetLoader
         }
     }
 
+    public async ValueTask<Shader> RefreshShaderAsync(AssetId<ShaderAsset> id,
+        CancellationToken cancellationToken = default)
+    {
+        await using ShaderAsset asset = await ShaderAsset.OpenAsync(this, id, cancellationToken).ConfigureAwait(false);
+        Shader shader = await asset.CreateAsync(_slang!, _sessionDescription, _specializations,
+            cancellationToken).ConfigureAwait(false);
+        var read = new TaskCompletionSource<Shader>(TaskCreationOptions.RunContinuationsAsynchronously);
+        read.SetResult(shader);
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_closed, this);
+            _shaders[id.Value] = read;
+        }
+        return shader;
+    }
+
     public async ValueTask<Texture> GetTextureAsync(AssetId<TextureAsset> id,
         CancellationToken cancellationToken = default)
     {
@@ -92,5 +108,16 @@ public sealed partial class AssetLoader
             read.TrySetException(error);
             _ = read.Task.Exception;
         }
+    }
+
+    public async ValueTask<Texture> RefreshTextureAsync(AssetId<TextureAsset> id,
+        CancellationToken cancellationToken = default)
+    {
+        Texture texture = await GetTextureAsync(id, cancellationToken).ConfigureAwait(false);
+        await using TextureAsset asset = await TextureAsset.OpenAsync(this, id, cancellationToken).ConfigureAwait(false);
+        TextureBlock pixels = await asset.GetBlockAsync<TextureBlock>(cancellationToken).ConfigureAwait(false);
+        Texture replacement = await pixels.CreateAsync(asset.Name, cancellationToken).ConfigureAwait(false);
+        await texture.UpdateAsync(replacement, cancellationToken).ConfigureAwait(false);
+        return texture;
     }
 }

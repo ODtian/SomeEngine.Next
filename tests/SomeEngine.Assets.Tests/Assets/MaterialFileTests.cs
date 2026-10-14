@@ -11,6 +11,32 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class MaterialFileTests
 {
     [Fact]
+    public async Task TextureRefreshUpdatesTheObjectSharedByBusinessMaterials()
+    {
+        using var directory = new AssetTestDirectory();
+        var project = new AssetProject(directory.Path, []);
+        AssetId<TextureAsset> id = await SaveColorAsync(project, directory, "shared", [3, 3, 3, 255]);
+        using var asset = new MaterialAsset();
+        _ = new StandardMaterialParameters(asset.GetBlock<MaterialBlock>()) { AlbedoMap = id };
+        await using var loader = new AssetLoader(project.CreateStorage());
+        using StandardMaterial first = await asset.CreateAsync<StandardMaterial>(loader);
+        using StandardMaterial second = await asset.CreateAsync<StandardMaterial>(loader);
+        Texture texture = first.AlbedoMap!;
+        ulong version = texture.Revision;
+        using TextureAsset changed = await TextureAsset.OpenAsync(directory.File("shared.texture.asset"));
+        changed.GetBlock<TextureBlock>().SetBytes(TextureTiles.ChunkKey(0, 0, 0), new byte[] { 9, 9, 9, 255 });
+        project.RegisterAsset(await changed.SaveAsync(directory.File("shared.texture.asset")));
+
+        Texture refreshed = await loader.RefreshTextureAsync(id);
+
+        Assert.Same(texture, refreshed);
+        Assert.Same(refreshed, second.AlbedoMap);
+        Assert.Equal(version + 1, refreshed.Revision);
+        Assert.True(refreshed.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var pixels));
+        Assert.Equal(new byte[] { 9, 9, 9, 255 }, pixels.ToArray());
+    }
+
+    [Fact]
     public async Task MaterialTemplatesSupplySharedWhiteAndFlatNormalAssets()
     {
         using var directory = new AssetTestDirectory();
@@ -124,7 +150,7 @@ public sealed class MaterialFileTests
     }
 
     [Fact]
-    public async Task ThrowingObserverDoesNotDestroyCommittedTexturesOrSkipOtherObservers()
+    public async Task AssetUpdatePreservesTheInstanceAndSharedTexture()
     {
         using var directory = new AssetTestDirectory();
         var project = new AssetProject(directory.Path, []);
@@ -147,16 +173,14 @@ public sealed class MaterialFileTests
         };
         await using var loader = new AssetLoader(project.CreateStorage());
         using var material = new StandardMaterial { Name = "before" };
-        int notifications = 0;
-        material.Changed += _ => throw new InvalidOperationException("test observer failure");
-        material.Changed += _ => notifications++;
-
-        await Assert.ThrowsAsync<AggregateException>(() => file.UpdateAsync(material, loader).AsTask());
-        Assert.Equal(1, notifications);
+        long identity = material.MaterialId;
+        await file.UpdateAsync(material, loader);
+        Assert.Equal(identity, material.MaterialId);
         Assert.Equal("after", material.Name);
         Assert.Equal(0.7f, material.Roughness);
         Assert.True(material.AlbedoMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
         Assert.Equal(new byte[] { 73 }, bytes.ToArray());
+        Assert.Same(material.AlbedoMap, await loader.GetTextureAsync(new(id)));
     }
 
     private static async ValueTask<AssetId<TextureAsset>> SaveColorAsync(

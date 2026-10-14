@@ -7,6 +7,7 @@ using SomeEngine.Resources;
 namespace SomeEngine.Render.Systems;
 
 internal readonly record struct RenderMaterialIndex(ImmutableDictionary<long, Entity> Entities) : IComponent;
+internal readonly record struct RenderTextureVersions(ImmutableDictionary<Texture, TextureVersions> Textures) : IComponent;
 
 /// <summary>
 /// Independent render ECS. It contains extracted snapshots as well as render-only entities and
@@ -16,16 +17,28 @@ internal readonly record struct RenderMaterialIndex(ImmutableDictionary<long, En
 public sealed class RenderWorld : World
 {
     private readonly Entity _materialIndexEntity;
+    private readonly Entity _textureVersionsEntity;
 
     public RenderWorld(int initialEntityCapacity = 256, WorldExecution? execution = null)
         : base(initialEntityCapacity, execution)
     {
         _materialIndexEntity = CreateEntity(new RenderMaterialIndex(ImmutableDictionary<long, Entity>.Empty));
+        _textureVersionsEntity = CreateEntity(new RenderTextureVersions(ImmutableDictionary<Texture, TextureVersions>.Empty));
     }
 
     /// <summary>Reads the shared material referenced through this world's extraction boundary.</summary>
     public Material ReadMaterial(long materialId) =>
         Read<RenderMaterialReference>(Read<RenderMaterialIndex>(_materialIndexEntity).Entities[materialId]).Material;
+    public ulong ReadMaterialRevision(long materialId) => ReadMaterialReference(materialId).Revision;
+    internal RenderMaterialReference ReadMaterialReference(long materialId) =>
+        Read<RenderMaterialReference>(Read<RenderMaterialIndex>(_materialIndexEntity).Entities[materialId]);
+
+    public TextureVersions ReadTextureVersions(Texture texture) =>
+        Read<RenderTextureVersions>(_textureVersionsEntity).Textures[texture];
+    internal ImmutableDictionary<Texture, TextureVersions> TextureVersions =>
+        Read<RenderTextureVersions>(_textureVersionsEntity).Textures;
+    internal void UpdateTextureVersions(ImmutableDictionary<Texture, TextureVersions> textures) =>
+        Replace(_textureVersionsEntity, new RenderTextureVersions(textures));
 
     internal bool TryReadMaterial(long materialId, out Material? data)
     {
@@ -38,7 +51,7 @@ public sealed class RenderWorld : World
         return false;
     }
 
-    internal void UpdateMaterials(IEnumerable<Material> values, IEnumerable<long> removed)
+    internal void UpdateMaterials(IEnumerable<RenderMaterialReference> values, IEnumerable<long> removed)
     {
         var before = Read<RenderMaterialIndex>(_materialIndexEntity).Entities;
         var entities = before;
@@ -48,15 +61,14 @@ public sealed class RenderWorld : World
                 DestroyEntity(entity);
                 entities = entities.Remove(id);
             }
-        foreach (Material data in values)
+        foreach (RenderMaterialReference data in values)
         {
-            if (entities.TryGetValue(data.MaterialId, out Entity entity))
+            if (entities.TryGetValue(data.Material.MaterialId, out Entity entity))
             {
-                if (!ReferenceEquals(Read<RenderMaterialReference>(entity).Material, data))
-                    Replace(entity, new RenderMaterialReference(data));
+                if (Read<RenderMaterialReference>(entity) != data) Replace(entity, data);
             }
             else
-                entities = entities.Add(data.MaterialId, CreateEntity(new RenderMaterialReference(data)));
+                entities = entities.Add(data.Material.MaterialId, CreateEntity(data));
         }
         if (!ReferenceEquals(before, entities)) Replace(_materialIndexEntity, new RenderMaterialIndex(entities));
     }

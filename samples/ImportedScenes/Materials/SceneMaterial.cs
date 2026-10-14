@@ -7,7 +7,6 @@ using Texture = SomeEngine.Resources.Texture;
 
 namespace ImportedScenes;
 
-[MaterialType("ImportedScenes.SceneMaterial")]
 public sealed partial class SceneMaterial : Material
 {
     public partial Texture? AlbedoMap { get; set; }
