@@ -97,9 +97,43 @@ public sealed class SinglePointGridRenderingTests
         Assert.True(combined.Link(out IComponentType linked, out diagnostics).Succeeded, Message(diagnostics));
         ShaderReflection reflection = linked.GetLayout(0, out diagnostics);
         Assert.Equal((uint)entryNames.Length, reflection.EntryPointCount);
+        Assert.Equal(new[] { "LightingViews", "LightBuffer", "ClusteredLightGrid", "LightIndexList",
+            "LightLinkList", "LightAllocationCounters", "LightAllocationStatus" },
+            ResourceNames(reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null));
         for (uint i = 0; i < reflection.EntryPointCount; i++)
-            Assert.Equal(entryNames[i], reflection.GetEntryPointByIndex(i).Name);
+        {
+            EntryPointReflection entry = reflection.GetEntryPointByIndex(i);
+            Assert.Equal(entryNames[i], entry.Name);
+            string? expectedRole = entry.Name switch
+            {
+                "BuildClusteredLightGrid" => "build-v2",
+                "PrepareSinglePointLightGrid" => "prepare-v2",
+                "FillSinglePointLightGrid" => "fill-v2",
+                _ => null,
+            };
+            var roles = new List<string>();
+            for (uint attributeIndex = 0; attributeIndex < entry.Function.AttributeCount; attributeIndex++)
+            {
+                var attribute = entry.Function.GetAttribute(attributeIndex);
+                if (attribute.Name != "ClusteredSinglePointDirect") continue;
+                Assert.Equal(1u, attribute.ArgumentCount);
+                roles.Add(attribute.GetArgumentValueString(0));
+            }
+            Assert.Equal(expectedRole is null ? Array.Empty<string>() : new[] { expectedRole }, roles);
+            Assert.Equal(i < 3 ? Array.Empty<string>() : new[] { "SinglePointBounds" }, ResourceNames(entry.VarLayout));
+        }
         return Shader.CreateFromSlang("Single point grid", slang, session, [unit!], entries, linked, description.Targets);
+    }
+
+    private static string[] ResourceNames(VariableLayoutReflection variable)
+    {
+        TypeLayoutReflection layout = variable.TypeLayout.UnwrapArray();
+        if (layout.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
+            layout = layout.ElementTypeLayout.UnwrapArray();
+        var names = new List<string>();
+        for (nint i = 0; i < layout.BindingRangeCount; i++)
+            names.Add(layout.GetBindingRangeLeafVariable(i).Name);
+        return names.ToArray();
     }
 
     private static string Message(ISlangBlob? value) => value is null ? "" : Encoding.UTF8.GetString(value.Buffer);

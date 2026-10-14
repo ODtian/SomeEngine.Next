@@ -94,7 +94,6 @@ public sealed class ClusteredLightingTests(D3D12TestCompiler shaderCompiler)
                 new("LightLinkList", state[2], ResourceBindingType.BufferUav, 8),
                 new("LightAllocationCounters", state[3], ResourceBindingType.BufferUav, 4),
                 new("LightAllocationStatus", state[4], ResourceBindingType.BufferUav, 4),
-                new("SinglePointBounds", new uint[8], ResourceBindingType.BufferUav, 16),
             });
     }
 

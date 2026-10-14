@@ -22,8 +22,6 @@ struct ClusteredSinglePointDirectAttribute
     string Role;
 };
 
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
-RWStructuredBuffer<uint4> SinglePointBounds;
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -238,7 +236,7 @@ void AssignClusteredLightCell(ClusteredLightGridParameters parameters, uint view
     InterlockedAdd(ClusteredLightGrid[cell].y, 1u);
 }
 
-[ClusteredSinglePointDirect("build-v1")]
+[ClusteredSinglePointDirect("build-v2")]
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void BuildClusteredLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_GroupIndex)
@@ -296,10 +294,11 @@ void CompactClusteredLightGrid(uint3 dispatchThreadId : SV_DispatchThreadID)
     ClusteredLightGrid[cell] = uint2(first, head.y);
 }
 
-[ClusteredSinglePointDirect("prepare-v1")]
+[ClusteredSinglePointDirect("prepare-v2")]
 [shader("compute")]
 [numthreads(1, 1, 1)]
-void PrepareSinglePointLightGrid(uint3 tid : SV_DispatchThreadID)
+void PrepareSinglePointLightGrid(uint3 tid : SV_DispatchThreadID,
+    uniform RWStructuredBuffer<uint4> SinglePointBounds)
 {
     ClusteredLightGridParameters parameters = LightingViews[0];
     uint3 minimum, extent;
@@ -312,10 +311,11 @@ void PrepareSinglePointLightGrid(uint3 tid : SV_DispatchThreadID)
     LightAllocationStatus[0] = 0u;
 }
 
-[ClusteredSinglePointDirect("fill-v1")]
+[ClusteredSinglePointDirect("fill-v2")]
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void FillSinglePointLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_GroupIndex)
+void FillSinglePointLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_GroupIndex,
+    uniform RWStructuredBuffer<uint4> SinglePointBounds)
 {
     ClusteredLightGridParameters parameters = LightingViews[0];
     uint group = groupId.x + groupId.y * 65535u;
