@@ -36,6 +36,8 @@ target/profile 与特化属于一次具体编译调用：调用方直接提供 S
 5. 保存可取得的整 target 代码和每个入口代码到 `ShaderBlock`；
 6. 写入实际依赖、内容摘要和 importer 版本。
 
+`SlangShaderImporter` 通过 `ShaderAsset.CompileAsync` 完成上述编译与代码保存。预先准备好的强类型入口 IR 也使用这个公开入口生成共同发布字节码；固定管线发布与版本配对规则见 [Shader 资产](../wiki/architecture/Assets/Asset-Shaders.md#固定管线发布)。
+
 二进制 `ShaderSourceBlock` 因此包含用户机器可取得的 Slang 输入，不依赖构建机器的源码路径。`ShaderBlock` 只保存代码 chunk，不保存入口、资源、类型、布局或属性的引擎副本。
 
 整 target blob 是可选的；Slang 对多入口组合不提供整 blob 时，逐入口代码仍是有效产物。
@@ -55,19 +57,7 @@ Shader shader = await asset.CreateAsync(
 
 `CreateAsync` 异步取得 IR，在新 `ISession` 中恢复 `IModule`，取得 `IEntryPoint`，compose/specialize/link/codegen，并返回驻留完成的 `Shader`。`Shader` 直接持有必要 Slang 接口、反射句柄和生成的 `ISlangBlob`，不为统一形式把 blob 复制进页。它不实现 `IDisposable`，调用方通过普通 GC 引用保持使用期限。
 
-如果保存代码适用于本次 Slang 设置，可由 `ShaderBlock.CreateAsync` 取得：
-
-```csharp
-ShaderSourceBlock source = await asset.GetBlockAsync<ShaderSourceBlock>(cancellationToken);
-ShaderBlock code = await asset.GetBlockAsync<ShaderBlock>(cancellationToken);
-Shader shader = await code.CreateAsync(
-    source,
-    slangGlobal,
-    sessionDescription,
-    asset.Name,
-    specializations,
-    cancellationToken);
-```
+`ShaderAsset.CreateAsync` 同时选择匹配的保存代码。`ShaderBlock.CreateAsync(source, ...)` 继续服务独立源码 Block 的直接取得；资产中选出的多个入口通过共同资产创建入口消费。
 
 这条路径恢复相同的直接 Slang 对象，并将所需代码交给最终 `byte[]`，由 `Shader` 通过普通引用持有。Asset 和文件随后可以释放，Shader 继续持有其代码及直接 Slang 对象。
 

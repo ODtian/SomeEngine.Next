@@ -64,8 +64,7 @@ public sealed partial class ShaderAsset : Asset
     {
         using ShaderAsset copy = Duplicate();
         ShaderSourceBlock source = await copy.GetBlockAsync<ShaderSourceBlock>(cancellationToken).ConfigureAwait(false);
-        if (source.Inputs.Count == 0 && Enumerable.Range(0, source.SourceNames.Count)
-            .Any(index => !source.ContentKeys.Contains(ShaderInputBlock.SerializedSourceKey(index))))
+        if (source.Inputs.Count == 0 && !source.HasSerializedSources)
         {
             return await source.CreateAsync(slang, sessionDescription, copy.Name,
                 specializations, cancellationToken).ConfigureAwait(false);
@@ -91,7 +90,7 @@ public sealed partial class ShaderAsset : Asset
         ShaderSourceBlock source = await copy.GetBlockAsync<ShaderSourceBlock>(cancellationToken).ConfigureAwait(false);
         ShaderCompilation compiled;
         ShaderInputSource[] inputs;
-        if (source.Inputs.Count == 0)
+        if (source.Inputs.Count == 0 && !source.HasSerializedSources)
         {
             compiled = await source.CompileAsync(slang, sessionDescription, copy.Name, cancellationToken).ConfigureAwait(false);
             for (int index = 0; index < compiled.SerializedSources.Count; index++)

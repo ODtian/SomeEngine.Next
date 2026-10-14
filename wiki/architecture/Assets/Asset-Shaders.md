@@ -55,6 +55,24 @@ dotnet run --project tools/ExportShaderInputs/SomeEngine.ExportShaderInputs.cspr
 
 输出位于 `assets/Shaders/Inputs/*.slang-module`，对应导出来源是同目录的 `*.ir.slang`。
 
+## 固定管线发布
+
+发布内容确定管线入口集合后，调用 `ShaderAsset.CompileAsync(slang, sessionDescription)` 编译全部所选输入并替换共同 `ShaderBlock`。返回的 `ShaderCompilation.Shader` 持有这次 Slang 链接生成的直接代码 blob；源码定义的编译同时保存序列化 IR 并返回实际读取的文件记录。已经准备好的 IR 继续由各输入 Block 持有。
+
+共同 `ShaderBlock` 保存可取得的整 target 代码及全部逐入口代码。`InputVersions` 按输入顺序记录 `ShaderInputLocation` 与所在 Block 的 `DataVersion`。共同 IR 编码保存同一 `DataVersion`，文件重开恢复该内容版本；字节修改、字段替换与入口选择通过现有修改方法推进版本。输入位置、顺序与内容版本共同决定保存代码对应的输入。
+
+`ShaderAsset.CreateAsync` 在链接前依据输入版本和现有代码设置寻址选择保存代码或 IR 代码生成。匹配保存代码时，同一组 IR 恢复直接 Slang 对象及反射，代码 chunk 取得为最终托管数组。IR 分发、额外特化以及编译设置变化使用共同输入生成 Slang blob。两条路径都按所选顺序链接一次，并返回同一种 `Shader`。
+
+```csharp
+await asset.CompileAsync(slang, sessionDescription, cancellationToken);
+await asset.SaveAsync(releasePath, cancellationToken);
+using ShaderAsset published = await ShaderAsset.OpenAsync(releasePath, cancellationToken);
+Shader shader = await published.CreateAsync(slang, sessionDescription,
+    cancellationToken: cancellationToken);
+```
+
+共同字节码服务固定管线发布内容的玩家启动。业务添加、替换或重排入口后重新调用 `CompileAsync`，同一资产身份取得新的共同代码。仅 IR 的分发内容保留完整输入，玩家机器通过相同 `CreateAsync` 完成编译。
+
 `ShaderBlock` 保存由 Slang 生成的代码 chunk。chunk key 由实际 `SessionDesc`/`TargetDesc` 编译设置与入口序号得到；整 target 代码允许缺失，逐入口代码仍可独立取得。Block 不保存入口、阶段、资源、类型或布局的引擎副本。
 
 ## 两条取得行为
