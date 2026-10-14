@@ -16,13 +16,13 @@
 
 | 作用域 | 保存的事实 | 生效位置 |
 | --- | --- | --- |
-| 项目引用与能力 | 当前项目有哪些 Block、Importer、依赖服务和编解码能力 | 编译时发现，生成 Microsoft DI 注册及能力描述 |
+| 项目引用与能力 | 当前项目有哪些 Block、Importer、导入组合和静态编解码能力 | 编译时发现，生成 Microsoft DI 注册及能力描述 |
 | 来源文件配置 | 实际启用的 Importer、各自参数、来源身份及输出身份对应关系 | 完整源文件名加 `.meta`，参与重新导入 |
 | 单次调用覆盖 | 本次调用选择或参数覆盖 | 只作用于本次执行，不自动改写持久设置 |
 
 SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩展调用或执行顺序。编辑器读取生成的能力描述，向用户呈现可选能力；这些描述不是业务载荷的弱类型解释器。设置的 JSON 只是持久表达，经对应静态设置读取器成为强类型参数，再进入 Importer。
 
-新增来源、Importer 或 Block 不需要修改引擎中央类型分支。依赖服务通过普通 Microsoft DI 构造注入。每次导入使用明确的服务作用域，同一作用域解析到同一 Importer；作用域与来源内容的释放跟随该次导入。
+来源通过 `AssetSource<TSource, TAsset>` 的实际方法提供元素身份、资产创建与输出路径。每次导入在 Importer DI 作用域取得具体 Importer，同一作用域共用同一实例；设置从 `.meta` 和本次覆盖进入 Context。Importer、能力描述与组合描述的注册范围见 [Importer Discovery](Importer-Discovery.md)。
 
 该服务作用域保持到输出保存完成。`AssetProject.ImportAsync` 在保存和提交期间保留 `ImportContext`；Context 关闭时先取消并等待真实执行结束，再释放资产草稿和通过 `Hold` 保留的本次服务。来源对象在 Context 关闭后释放。Block 可以在保存时才取得来源数据，失败及取消也沿用这个清理顺序。
 
@@ -36,15 +36,15 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 几何生产者提供 `MeshBlock`，Cluster 生产者提供 `ClusterMeshBlock`。需要依赖的生产者可以通过 `context.GetBlockAsync<TBlock>(output.Target)` 请求对应数据；Context 按需执行生产者，执行顺序不依赖来源遍历顺序。当前 Cluster 转换直接读取原生 glTF 几何。每个生产者通过 `output.SetBlock` 交付自己的 Block，完整来源流程通过 `GetAssetAsync` 取得完成的语义资产。
 
-`IClusterVertexEncoder` 由项目通过 Microsoft DI 明确提供，管线不据此引入默认顶点属性布局。替换只针对本次隔离的资产草稿，失败不登记输出。
+Cluster Importer 在自己的代码中选择顶点编码实现，扩展包通过另一种 Importer 提供自己的编码。`ClusterBuilder.Process` 接收实际材质字典，`ProcessMesh` 接收实际材质列表；构建阶段从这些数据读取区段材料。
 
 ## 完整流程与失败处理
 
-`IAssetSourceImporter<TSource, TSettings>` 连接格式读取及遍历。`AssetProject` 读取来源配置、创建 Context 并组织保存提交；`ImportContext` 通过 `ConfigureAssets`、`EnableImporter` 和 `GetAssetAsync` 维护子元素到语义 Asset 的对应、输出草稿和本次执行期限。局部 Importer 不自行保存文件。
+`IAssetSourceImporter<TSource, TSettings>` 连接格式读取及遍历。`AssetProject` 读取来源配置、创建 Context 并组织保存提交；`ImportContext` 通过 `ConfigureAssets(new SourceType())`、`EnableImporter(importer)` 和 `GetAssetAsync` 维护子元素身份、实际来源、设置、目标 Asset 及执行数据。保存通过来源描述的 `SaveAsync` 方法调用资产自己的 `SaveAsync`，各强类型资产及源生成入口使用同一固定 Block 编码。
 
 `AssetProject.ImportAsync` 选择来源及配置，读取来源，执行遍历和递归依赖，检查实际输入仍与本次读取一致，然后保存全部草稿。实现位于该 partial 类型的 `Importing/AssetImportProject.cs`。来源、设置、工具或扩展版本变化均参与重新导入判断。实际读取产生的依赖与构建记录分开保存，失败任务的依赖不冒充成功构建结果。
 
-`.meta` 仅保存人工来源身份、Importer 选择、参数和元素 ID 映射；`.import.json` 保存可丢弃的输入及输出验证记录。删除或损坏后者不得改变来源或已保存元素身份，也不得从构建输出补回人工身份。目录重建从 .meta 的 ElementIds 恢复产物归属；来源保存直接维护主要身份映射。每个被选择的 Importer 都由本项目已注册能力解析。设置必须不可变，并以完整导入语义实现值相等。
+`.meta` 保存人工来源身份、导入组合选择、展开后的 Importer 选择、参数和元素 ID 映射；`.import.json` 保存可丢弃的输入及输出验证记录。删除或损坏后者不得改变来源或已保存元素身份，也不得从构建输出补回人工身份。目录重建从 .meta 的 ElementIds 恢复产物归属；来源保存直接维护主要身份映射。每个被选择的 Importer 都由本项目已注册能力解析。设置必须不可变，并以完整导入语义实现值相等。
 
 输出、来源描述、构建记录和目录先在临时位置生成，检查身份与冲突，再沿现有文件替换流程提交。失败或取消会回退本次已经替换的文件，旧的有效目录保持可用。该保证覆盖进程内可观察的失败；不声称多个独立文件在断电或并发外部写入下具有文件系统整体原子性。
 
@@ -58,7 +58,7 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 ## 保存、目录和读取
 
-来源移动和复制不能把格式内的相对路径当成无关字节。通用 `CopySourceAsync` 只允许同目录复制，创建新的来源及元素身份并保留人工选择；跨目录请求在写入任何文件前拒绝。原生资产的跨目录移动通过认识相应 Block 的强类型路径编辑函数完成。其他来源格式需要自己的引用改写，不以目标目录恰好有同名依赖作为正确性依据。
+来源移动和复制不能把格式内的相对路径当成无关字节。通用 `CopySourceAsync` 只允许同目录复制，创建新的来源及元素身份并保留人工选择；跨目录请求在写入任何文件前拒绝。原生资产的跨目录移动通过 `AssetBlockPathEditor<TBlock>.Relocate` 的强类型方法完成。`CopyAssetAsync(asset, destination)` 通过资产自己的保存方法创建新身份的文件。其他来源格式需要自己的引用改写，不以目标目录恰好有同名依赖作为正确性依据。
 
 `AssetManifest` 是已登记条目的主数据；路径、来源输出和反向依赖是派生索引。目录查询不触发导入或编译。直接保存资产返回 `AssetEntry`，需要目录可见时由调用方明确登记；项目构建流程则统一完成这些步骤。
 

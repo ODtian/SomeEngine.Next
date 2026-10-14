@@ -32,9 +32,11 @@ Block 的持久类型 ID 由 `[AssetBlock]` 的语义名称静态生成，与文
 
 Importer 使用 `[AssetImporter]` 声明持久 ID、生产的 Block 以及可选的强类型设置提供者，并实现 `IAssetImporter<TSource, TSettings>`。项目声明 `[AssetCapabilities]` 的 partial 静态类型后，SG 检查本项目及其引用中的扩展，生成 `AddAssetCapabilities(IServiceCollection)`。
 
-生成代码注册 Importer、强类型设置工厂和能力描述，使用 Microsoft DI 的正常构造注入与作用域；重复注册保持幂等。能力描述可供编辑器显示来源类型、设置类型、产出 Block 和实现版本。安装多个替代生产者是合法项目能力，不等于一次导入同时启用它们。
+生成代码向 Microsoft DI 注册 Importer、Importer 能力描述和导入组合描述。Importer 使用公开无参构造，每次来源导入的作用域共用一个实例；重复注册保持幂等。能力描述用具体泛型类型直接取得 Importer，并通过设置提供者的静态 JSON 编码生成强类型设置。编辑器从能力描述读取来源、设置、Block 和实现版本，来源选择决定实际执行的生产者。注册范围见 [Importer Discovery](Importer-Discovery.md)。
 
-SG 不遍历来源文件，不创建完整流程，不决定默认选择，不生成依赖业务调用或保存登记。来源持久设置与单次覆盖由项目流程解释，生产者竞争由 Context 在一次调用内检查。
+`[AssetImporterSet]` 声明包提供的导入组合，生成的 `ImporterSets` 数据保存组合身份、Importer 身份、中立与默认选择。来源集成将组合展开为逐个 Importer 写入 `.meta`。完整来源遍历、依赖执行和保存登记由来源集成与 Context 的对象方法完成，生产者竞争在一次导入中处理。
+
+设置提供者通过 `GetDefaults(SourceMeta)` 取得来源的初始设置，组合展开将这些值保存到实际 Importer 项；已有项继续提供该 Importer 的明确参数。glTF 几何设置沿用来源中的切线生成默认值，后续执行读取自己的已选参数。
 
 项目同时生成 `BlockKind`、`ImporterKind` 两个 enum，`BlockChoices`、`ImporterChoices` 提供编译时确定的 GUI 选择数据，含枚举值、显示名称和持久 ID。`SelectImporter` 将选择变成来源配置；`ContainsBlock` 和 `GetBlockAsync` 接受 Block 枚举，并以生成的强类型分支调用对应 API。GUI 无需扫描程序集或反射枚举类型。enum 数值只在当前项目编译结果中有效，文件保存持久 ID。
 
@@ -44,7 +46,7 @@ var selection = ProjectAssetCapabilities.SelectImporter(
 var choices = ProjectAssetCapabilities.ImporterChoices;
 ```
 
-Importer 是在库中完整编译的普通类，不要求 partial，也不由消费项目 SG 补全。glTF 来源遍历及各 Block 的通用转换均由 Importers 库实现；项目仅提供自己的材质解释和明确的顶点编码服务。
+Importer 是在库中完整编译的普通类。glTF 来源遍历及各 Block 的通用转换由 Importers 库实现；项目通过自己的 Importer 表达材质解释、算法和顶点编码。编译器会话及其它外部资源由使用它们的 Importer 创建与持有，跟随本次导入作用域释放。
 
 ## 材质与使用边界
 

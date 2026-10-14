@@ -105,13 +105,18 @@ public sealed class MeshPayloadSource : IDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             cancellationToken.ThrowIfCancellationRequested();
             if (TryGetArray(range, out byte[]? bytes)) return ValueTask.FromResult<ReadOnlyMemory<byte>>(bytes!);
-            return GetCache().ReadAsync(GetByteKey(range), (Source: this, Range: range), static async input =>
-            {
-                using MeshPayloadSource read = input.Source.Retain();
-                byte[] result = new byte[input.Range.Length];
-                await read.ReadIntoAsync(input.Range, result, default).ConfigureAwait(false);
-                return result;
-            }, cancellationToken);
+            return GetCache().ReadAsync(GetByteKey(range), new MeshSourceBytes(this, range), cancellationToken);
+        }
+    }
+
+    private readonly struct MeshSourceBytes(MeshPayloadSource source, MeshByteRange range) : IAssetByteRead
+    {
+        public async ValueTask<byte[]> ReadAsync()
+        {
+            using MeshPayloadSource read = source.Retain();
+            byte[] bytes = new byte[range.Length];
+            await read.ReadIntoAsync(range, bytes, default).ConfigureAwait(false);
+            return bytes;
         }
     }
     public void Dispose()

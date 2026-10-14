@@ -287,12 +287,11 @@ public sealed class ImportContextTests
     [Fact]
     public async Task MissingSelectionDoesNotCreateAnAsset()
     {
-        int created = 0;
         await using var context = new ImportContext();
-        context.ConfigureAssets<Source, TestAsset>(source => source.Key,
-            (_, id) => { created++; return new TestAsset(id); }, (_, id) => id + ".asset", Save);
+        var sources = new TestSources();
+        context.ConfigureAssets<Source, TestAsset>(sources);
         await Assert.ThrowsAsync<InvalidOperationException>(() => context.GetAssetAsync<Source, TestAsset>(new("mesh")).AsTask());
-        Assert.Equal(0, created);
+        Assert.Equal(0, sources.Created);
         Assert.Empty(context.Assets);
     }
 
@@ -300,13 +299,17 @@ public sealed class ImportContextTests
     {
         var context = metadata is null ? new ImportContext(cancellationToken)
             : new ImportContext(Directory.GetCurrentDirectory(), "", metadata, cancellationToken);
-        context.ConfigureAssets<Source, TestAsset>(source => source.Key,
-            static (_, id) => new TestAsset(id), static (_, id) => id + ".asset", Save);
+        context.ConfigureAssets<Source, TestAsset>(new TestSources());
         return context;
     }
 
-    private static ValueTask<AssetEntry> Save(TestAsset asset, string path, CancellationToken token)
-        => ValueTask.FromResult(new AssetEntry(asset.Id, "test", 1, Guid.NewGuid()) { Path = path });
+    private sealed class TestSources : AssetSource<Source, TestAsset>
+    {
+        public int Created { get; private set; }
+        public override string GetElementKey(Source source) => source.Key;
+        public override TestAsset CreateAsset(Source source, Guid id) { Created++; return new(id); }
+        public override string GetOutputPath(Source source, Guid id) => id + ".asset";
+    }
 
     private static void Select(ImportContext context, Guid[] blocks,
         Func<Source, ImportContext, ImportOutput, CancellationToken, ValueTask> convert)

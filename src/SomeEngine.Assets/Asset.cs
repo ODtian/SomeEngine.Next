@@ -98,6 +98,12 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
 
     public abstract Asset Duplicate();
 
+    public virtual async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+    {
+        using Asset copy = Duplicate();
+        return await copy.SaveBlockContentAsync(path, ".asset", cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Shares content with a new independent identity. Source chunks remain available for later saving.</summary>
     public virtual Asset CreateCopy(Guid id = default)
     {
@@ -128,23 +134,13 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         if (!path.EndsWith(pathSuffix, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"Asset path '{path}' must end with '{pathSuffix}'.");
-        Guid version = await WriteFileAsync(path, async (stream, token) =>
-        {
-            await writer.WriteAsync(stream, cancellationToken: token).ConfigureAwait(false);
-            return await BinaryDocument.ReadVersionAsync(stream, token).ConfigureAwait(false);
-        }, async (destination, token) =>
-        {
-            await using BinaryDocument existing = await BinaryDocument.OpenAsync(FileRangeSource.Open(destination),
-                writer.RootDescriptor, ownsSource: true, cancellationToken: token).ConfigureAwait(false);
-            if (existing.CreateRootReader().ReadGuid() != entry.AssetGuid)
-                throw new InvalidDataException("The destination path belongs to a different asset identity.");
-        }, cancellationToken).ConfigureAwait(false);
+        Guid version = await WriteFileAsync(path, new BinaryAssetFileWriter(writer, entry.AssetGuid),
+            cancellationToken).ConfigureAwait(false);
         return entry with { Path = Path.GetFullPath(path), Version = version };
     }
 
     internal static async ValueTask<TResult> WriteFileAsync<TResult>(string path,
-        Func<FileStream, CancellationToken, ValueTask<TResult>> write,
-        Func<string, CancellationToken, ValueTask> checkDestination, CancellationToken cancellationToken)
+        IAssetFileWriter<TResult> writer, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         string fullPath = Path.GetFullPath(path);
@@ -157,13 +153,13 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
             await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.ReadWrite,
                 FileShare.None, 128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
             {
-                result = await write(stream, cancellationToken).ConfigureAwait(false);
+                result = await writer.WriteAsync(stream, cancellationToken).ConfigureAwait(false);
                 stream.Flush(flushToDisk: true);
             }
             cancellationToken.ThrowIfCancellationRequested();
             if (File.Exists(fullPath))
             {
-                await checkDestination(fullPath, cancellationToken).ConfigureAwait(false);
+                await writer.CheckDestinationAsync(fullPath, cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 File.Replace(temporaryPath, fullPath, null);
             }
@@ -174,6 +170,23 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
         {
             if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
             throw;
+        }
+    }
+
+    private sealed class BinaryAssetFileWriter(BinaryDocumentWriter writer, Guid id) : IAssetFileWriter<Guid>
+    {
+        public async ValueTask<Guid> WriteAsync(FileStream stream, CancellationToken cancellationToken)
+        {
+            await writer.WriteAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return await BinaryDocument.ReadVersionAsync(stream, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask CheckDestinationAsync(string destination, CancellationToken cancellationToken)
+        {
+            await using BinaryDocument existing = await BinaryDocument.OpenAsync(FileRangeSource.Open(destination),
+                writer.RootDescriptor, ownsSource: true, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (existing.CreateRootReader().ReadGuid() != id)
+                throw new InvalidDataException("The destination path belongs to a different asset identity.");
         }
     }
 
@@ -220,4 +233,10 @@ public abstract partial class Asset : IDisposable, IAsyncDisposable
         finally { _blockReadCancellation?.Dispose(); }
         if (contentError is not null) ExceptionDispatchInfo.Capture(contentError).Throw();
     }
+}
+
+internal interface IAssetFileWriter<TResult>
+{
+    ValueTask<TResult> WriteAsync(FileStream stream, CancellationToken cancellationToken);
+    ValueTask CheckDestinationAsync(string path, CancellationToken cancellationToken);
 }

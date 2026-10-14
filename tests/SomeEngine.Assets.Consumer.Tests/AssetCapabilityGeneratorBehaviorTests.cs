@@ -11,6 +11,15 @@ namespace SomeEngine.Assets.Consumer.Tests;
 
 public sealed class AssetCapabilityGeneratorBehaviorTests
 {
+    [Fact]
+    public void ImporterConstructorServicesProduceACompilerDiagnostic()
+    {
+        var result = Compile(ExtensionSource.Replace("public Importer() { Number = 47; }",
+            "public Importer(Dependency dependency) { Number = dependency.Number; }", StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, value => value.Id == "SEAC001"
+            && value.Severity == DiagnosticSeverity.Error);
+    }
+
     private const string ExtensionSource = """
         using System;
         using System.Threading;
@@ -27,7 +36,7 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
         [AssetImporter("bcc64662-e334-49b1-b559-55d89b06e351", typeof(Data))]
         public class Importer : IAssetImporter<Source, Settings>
         {
-            public Importer(Dependency dependency) { Number = dependency.Number; }
+            public Importer() { Number = 47; }
             public int Number { get; }
             public ValueTask ImportAsync(Source source, Settings settings, ImportContext context,
                 ImportOutput output, CancellationToken cancellationToken) => ValueTask.CompletedTask;
@@ -73,7 +82,6 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
                 public static bool Execute()
                 {
                     var services = new ServiceCollection();
-                    services.AddSingleton(new Extension.Dependency());
                     ProjectAssets.AddAssetCapabilities(services);
                     using var provider = services.BuildServiceProvider();
                     using var scope = provider.CreateScope();
@@ -175,8 +183,7 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
     [InlineData("bcc64662-e334-49b1-b559-55d89b06e351", "not-an-identity")]
     [InlineData("typeof(Data)", "typeof(string)")]
     [InlineData("typeof(Data)", "typeof(Data), typeof(Data)")]
-    [InlineData("public Importer(Dependency dependency)", "private Importer(Dependency dependency)")]
-    [InlineData("public int Number { get; }", "public int Number { get; } public Importer() { }")]
+    [InlineData("public Importer()", "private Importer()")]
     public void UnavailableDeclarationsHaveActionableDiagnostics(string original, string replacement)
     {
         var result = Compile(ExtensionSource.Replace(original, replacement, StringComparison.Ordinal));
@@ -186,26 +193,12 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
     }
 
     [Fact]
-    public void ExplicitConstructorSelectionIsUsedByGeneratedServices()
+    public void ImporterConstructorSelectionWithServicesProducesACompilerDiagnostic()
     {
-        string source = ExtensionSource.Replace("public Importer(Dependency dependency)",
-            "public Importer() { Number = -1; } [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor] public Importer(Dependency dependency)", StringComparison.Ordinal)
-            + """
-
-            [AssetCapabilities] public static partial class ProjectAssets;
-            public static class Consumer
-            {
-                public static bool Execute()
-                {
-                    var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
-                    Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton(services, new Dependency());
-                    ProjectAssets.AddAssetCapabilities(services);
-                    using var provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
-                    return Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Importer>(provider).Number == 47;
-                }
-            }
-            """;
-        Assert.True((bool)Execute(Emit(Compile(source)))!);
+        var result = Compile(ExtensionSource.Replace("public Importer() { Number = 47; }",
+            "public Importer() { Number = -1; } [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor] public Importer(Dependency dependency) { Number = dependency.Number; }",
+            StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, value => value.Id == "SEAC001" && value.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]

@@ -9,17 +9,16 @@ namespace SomeEngine.Assets.Importers;
 
 /// <summary>Builds Standard and Unlit materials while the base importer assembles glTF nodes.</summary>
 [AssetImporter("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
-public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSettings) : GltfSceneImporter
+public sealed class StandardGltfSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b");
-    public static GltfSourceImporter CreateSourceImporter(Action<IServiceCollection>? configureServices = null,
+    public static GltfSourceImporter CreateSourceImporter(IServiceCollection? importers = null,
         string? capabilitiesVersion = null)
-        => new(services =>
-        {
-            EngineAssetCapabilities.AddAssetCapabilities(services);
-            services.AddSingleton<IClusterVertexEncoder>(StandardClusterVertexEncoder.Instance);
-            configureServices?.Invoke(services);
-        }, capabilitiesVersion ?? EngineAssetCapabilities.BuildVersion, ImporterId);
+    {
+        importers ??= new ServiceCollection();
+        EngineAssetCapabilities.AddAssetCapabilities(importers);
+        return new(importers, capabilitiesVersion ?? EngineAssetCapabilities.BuildVersion, ImporterId);
+    }
 
     public override async ValueTask ImportMaterialAsync(GltfMaterial source, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
@@ -71,6 +70,8 @@ public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSetting
     private async ValueTask<MaterialAsset> CreateMaterialAsync(bool unlit, ImportContext context,
         CancellationToken cancellationToken)
     {
+        GltfImporterSettings sourceSettings = context.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
         string? templatePath = unlit ? sourceSettings.UnlitMaterialTemplate : sourceSettings.LitMaterialTemplate;
         if (templatePath is not null)
         {
@@ -92,3 +93,12 @@ public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSetting
 
 [AssetCapabilities]
 public static partial class EngineAssetCapabilities;
+
+[AssetImporterSet("589ba3b6-1e92-46f1-8fc4-4d859399c4b8", typeof(GltfMeshImporter), typeof(GltfTextureImporter), Neutral = true)]
+public static class GltfNeutralImporters;
+
+[AssetImporterSet("e92cb1c2-a37f-4a54-933e-691b52b744b4", typeof(ClusterGltfMeshImporter), Default = true)]
+public static class ClusterGltfImporters;
+
+[AssetImporterSet("53066392-e022-4fbd-9f1e-559a25ac25c4", typeof(StandardGltfSceneImporter), Default = true)]
+public static class StandardGltfSceneImporters;
