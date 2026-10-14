@@ -21,6 +21,7 @@ public sealed class ShaderInputBlockTests
         consumer.SetSerializedSource(0, await SerializeConsumerEntryAsync(slang, description, material));
         Guid id = Guid.NewGuid();
         string path = files.File("material.shader.asset");
+        var project = new AssetProject(files.Path, []);
         using (var asset = new ShaderAsset(id) { Name = "material" })
         {
             asset.SetBlock(material);
@@ -29,17 +30,24 @@ public sealed class ShaderInputBlockTests
             asset.SelectInputs<ShaderSourceBlock>();
             asset.SelectInputs<ClusterMaterialEntriesBlock>();
             asset.SelectInputs<ConsumerMaterialEntriesBlock>();
-            await asset.SaveAsync(path);
+            project.RegisterAsset(await asset.SaveAsync(path));
         }
 
-        Shader shader;
         using (ShaderAsset asset = await ShaderAsset.OpenAsync(path))
         {
             Assert.Equal(id, asset.Id);
             ConsumerMaterialEntriesBlock entries = await asset.GetBlockAsync<ConsumerMaterialEntriesBlock>();
             Assert.Equal("consumer_material.slang", Assert.Single(entries.SourceNames));
-            shader = await asset.CreateAsync(slang, description);
         }
+
+        await using var loader = new AssetLoader(project.CreateStorage(), slang, description);
+        using var materialAsset = new MaterialAsset { Name = "Standard" };
+        materialAsset.GetBlock<MaterialBlock>().Shader = new(id);
+        _ = new StandardMaterialParameters(materialAsset.GetBlock<MaterialBlock>()) { Roughness = 0.37f };
+        using StandardMaterial instance = await materialAsset.CreateAsync<StandardMaterial>(loader);
+        Shader shader = Assert.IsType<Shader>(instance.Shader);
+        Assert.Same(shader, await loader.GetShaderAsync(new(id)));
+        Assert.Equal(0.37f, instance.Roughness);
 
         Assert.True(shader.TryGetSlangEntry(0, "ClusterShade", SlangStage.Compute, out EntryPointReflection clusterEntry));
         Assert.True(shader.TryGetSlangEntry(0, "ConsumerShade", SlangStage.Compute, out EntryPointReflection consumerEntry));
