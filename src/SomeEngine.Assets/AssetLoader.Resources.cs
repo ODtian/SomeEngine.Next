@@ -51,12 +51,7 @@ public sealed partial class AssetLoader
                 _specializations, _stop.Token).ConfigureAwait(false);
             read.TrySetResult(shader);
         }
-        catch (OperationCanceledException canceled) { read.TrySetCanceled(canceled.CancellationToken); }
-        catch (Exception error)
-        {
-            read.TrySetException(error);
-            _ = read.Task.Exception;
-        }
+        catch (Exception error) { CompleteFailedResourceRead(_shaders, id.Value, read, error); }
     }
 
     public async ValueTask<Shader> RefreshShaderAsync(AssetId<ShaderAsset> id,
@@ -102,11 +97,23 @@ public sealed partial class AssetLoader
             TextureBlock pixels = await asset.GetBlockAsync<TextureBlock>(_stop.Token).ConfigureAwait(false);
             read.TrySetResult(await pixels.CreateAsync(asset.Name, _stop.Token).ConfigureAwait(false));
         }
-        catch (OperationCanceledException canceled) { read.TrySetCanceled(canceled.CancellationToken); }
-        catch (Exception error)
+        catch (Exception error) { CompleteFailedResourceRead(_textures, id.Value, read, error); }
+    }
+
+    private void CompleteFailedResourceRead<T>(Dictionary<Guid, TaskCompletionSource<T>> reads,
+        Guid id, TaskCompletionSource<T> read, Exception error)
+    {
+        lock (_gate)
         {
-            read.TrySetException(error);
-            _ = read.Task.Exception;
+            if (reads.TryGetValue(id, out TaskCompletionSource<T>? current) && ReferenceEquals(current, read))
+                reads.Remove(id);
+            if (error is OperationCanceledException canceled)
+                read.TrySetCanceled(canceled.CancellationToken);
+            else
+            {
+                read.TrySetException(error);
+                _ = read.Task.Exception;
+            }
         }
     }
 

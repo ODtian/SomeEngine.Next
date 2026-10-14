@@ -30,6 +30,26 @@ public sealed class MaterialReloadTests
     }
 
     [Fact]
+    public async Task ShaderCanBeRequestedAgainAfterItsFileIsRestored()
+    {
+        using var directory = new AssetTestDirectory();
+        var project = new AssetProject(directory.Path, []);
+        AssetId<ShaderAsset> id = await SaveShaderAsync(project, directory);
+        string path = directory.File("shared.shader.asset");
+        byte[] bytes = await File.ReadAllBytesAsync(path);
+        File.Delete(path);
+        await using var loader = new AssetLoader(project.CreateStorage(), ShaderTestCompilation.Slang,
+            ShaderTestCompilation.CreateSessionDescription());
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() => loader.GetShaderAsync(id).AsTask());
+        await File.WriteAllBytesAsync(path, bytes);
+        Shader shader = await loader.GetShaderAsync(id);
+
+        Assert.Same(shader, await loader.GetShaderAsync(id));
+        Assert.True(shader.TryGetSlangTarget(SlangShaderSharp.SlangCompileTarget.Dxil, out _));
+    }
+
+    [Fact]
     public async Task ShaderRefreshChangesTheSharedShaderAtTheBusinessUpdate()
     {
         using var directory = new AssetTestDirectory();
