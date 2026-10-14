@@ -65,3 +65,9 @@
 **导入组合**：包声明的一组 Importer，用于选择与默认值；`.meta` 中展开为逐个 Importer。
 
 **布局协议**：`ILayout`。布局数据实现自己的测量与摆放，布局系统按类型分派，不识别具体布局。
+
+## Shader
+
+**Shader 输入 Block**：`ShaderInputBlock`。在同一个 `ShaderAsset` 中保存一组 Slang 源码名称和实际序列化 IR，具体材质与管线入口由强类型 Block 表达。
+
+**共同输入顺序**：`ShaderSourceBlock.Inputs` 保存的 `ShaderInputLocation` 清单。每项通过所在 Block 的持久类型 ID 和源码序号定位实际 IR，Slang 按此顺序恢复全部所选输入并共同链接。

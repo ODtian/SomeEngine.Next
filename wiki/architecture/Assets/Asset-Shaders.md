@@ -8,14 +8,52 @@
 
 ```text
 ShaderAsset
-  +-- ShaderSourceBlock  可异步取得的 Slang 编译输入
-  +-- ShaderBlock        可异步取得的已生成代码
-             \\          /
-              \\        /
-               -> Shader   同步、驻留的使用对象
+  +-- ShaderSourceBlock           共享 IR、所选输入的位置与顺序
+  +-- ClusterMaterialEntriesBlock Cluster 入口 IR
+  +-- 业务自己的 ShaderInputBlock 业务管线入口 IR
+  +-- ShaderBlock                 可异步取得的已生成代码
+               -> Shader         同步、驻留的共同链接结果
 ```
 
 可读 `.shader` 的 `ShaderSourceBlock.SourceNames` 指定相对于定义文件的根源码。内容构建通过 Slang 读取源码及 include/import，将每个 `IModule.Serialize` 的结果保存到 Block；二进制 Asset 从这些 Slang 数据恢复模块，无需重新打开构建机器上的源码。
+
+`ShaderInputBlock` 统一保存 `SourceNames` 与逐份序列化 Slang IR。`ShaderSourceBlock`、`ClusterMaterialEntriesBlock` 与消费者派生的入口 Block 使用同一 `ShaderInputData` 编码。消费者声明 `[AssetBlock("业务的持久名称")]` 的具体 partial 类；`AssetBlockGenerator` 生成该类型的复制、静态 `ReadAsync` 和保存方法，恢复为业务指定的具体类型。
+
+`ShaderSourceBlock.Inputs` 保存共同输入清单。每个 `ShaderInputLocation` 用 `BlockTypeId` 与 `SourceIndex` 指向所在 Block 的实际 IR，清单顺序决定 Slang 输入与入口顺序。业务通过 `ShaderAsset.SelectInputs<TBlock>()` 选择已经取得的强类型 Block。各 Block 持有自己的字节，共同清单只持有位置。
+
+## 共享材质与入口准备
+
+`StandardMaterialInputs.Create()` 返回含引擎材质接口及 `StandardMaterial` 序列化 IR 的 `ShaderSourceBlock`。`ClusterMaterialEntriesBlock.Create()` 返回 Cluster 的入口 IR。业务入口沿 Slang 的 `import material_interfaces`、`import standard_material` 使用这些公开类型，并将自己 `IModule.Serialize` 的结果放入具体入口 Block。
+
+```csharp
+[AssetBlock("Game.ForwardMaterialEntries")]
+public sealed partial class ForwardMaterialEntriesBlock : ShaderInputBlock;
+```
+
+```csharp
+using var asset = new ShaderAsset { Name = "Standard" };
+using ShaderSourceBlock material = StandardMaterialInputs.Create();
+using ClusterMaterialEntriesBlock cluster = ClusterMaterialEntriesBlock.Create();
+using var forward = new ForwardMaterialEntriesBlock { SourceNames = ["forward_material.slang"] };
+forward.SetSerializedSource(0, forwardIr.Span);
+asset.SetBlock(material);
+asset.SetBlock(cluster);
+asset.SetBlock(forward);
+asset.SelectInputs<ShaderSourceBlock>();
+asset.SelectInputs<ClusterMaterialEntriesBlock>();
+asset.SelectInputs<ForwardMaterialEntriesBlock>();
+Shader shader = await asset.CreateAsync(slang, sessionDescription);
+```
+
+`ShaderAsset.CreateAsync` 按共同清单异步取得 IR，使用同一个 `ISession` 恢复 Slang 对象，compose/specialize/link 一次，返回一个包含全部所选入口的 `Shader`。持久 Block 的共同编码由 Asset 的目录与静态数据读取能力直接取得，业务的具体入口类型由泛型 Block 入口确定。`Inputs` 为空时，已有单个 `ShaderSourceBlock` 的取得行为继续作为默认输入。
+
+引擎 IR 通过固定版本 Slang 导出并嵌入资产程序集。修改相关 Slang 实现后执行：
+
+```powershell
+dotnet run --project tools/ExportShaderInputs/SomeEngine.ExportShaderInputs.csproj -- .
+```
+
+输出位于 `assets/Shaders/Inputs/*.slang-module`，对应导出来源是同目录的 `*.ir.slang`。
 
 `ShaderBlock` 保存由 Slang 生成的代码 chunk。chunk key 由实际 `SessionDesc`/`TargetDesc` 编译设置与入口序号得到；整 target 代码允许缺失，逐入口代码仍可独立取得。Block 不保存入口、阶段、资源、类型或布局的引擎副本。
 
@@ -52,8 +90,8 @@ Cluster 的提前准备与材质阶段解析共用入口选择。着色、细分
 
 ## 构建与失效
 
-`.shader` 是人类可编辑来源，只有 `SourceNames` 属于定义。构建 target 是工具选择，不进入 `Shader` 语义。`SlangShaderImporter` 使用官方 Slang API 编译、保存模块 IR 和可用代码，并记录实际读取的依赖。
+`.shader` 是人类可编辑来源，`SourceNames` 与 `Inputs` 表达实际编译输入。构建 target 由工具选择。`SlangShaderImporter` 使用官方 Slang API 编译、保存模块 IR 和可用代码，并记录实际读取的依赖。
 
 这是破坏性 schema；旧反射字段和旧代码容器没有兼容 reader。编译器、来源、依赖、Block 编码或 target 设置变化时重新构建同一资产身份。
 
-实现入口：[ShaderAsset](../../../src/SomeEngine.Assets/Schema/ShaderAsset.cs)、[ShaderSourceBlock](../../../src/SomeEngine.Assets/Schema/ShaderSourceBlock.cs)、[ShaderBlock](../../../src/SomeEngine.Assets/Schema/ShaderBlock.cs)、[Shader](../../../src/SomeEngine.Resources/Shader.cs)、[项目来源说明](../../../docs/ShaderSources.md)。
+实现入口：[ShaderAsset](../../../src/SomeEngine.Assets/Schema/ShaderAsset.cs)、[ShaderInputBlock](../../../src/SomeEngine.Assets/Schema/ShaderInputBlock.cs)、[ShaderSourceBlock](../../../src/SomeEngine.Assets/Schema/ShaderSourceBlock.cs)、[ClusterMaterialEntriesBlock](../../../src/SomeEngine.Assets/Schema/ClusterMaterialEntriesBlock.cs)、[ShaderBlock](../../../src/SomeEngine.Assets/Schema/ShaderBlock.cs)、[Shader](../../../src/SomeEngine.Resources/Shader.cs)、[项目来源说明](../../../docs/ShaderSources.md)。
