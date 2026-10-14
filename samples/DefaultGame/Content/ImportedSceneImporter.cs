@@ -121,16 +121,9 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
         var old = template.GetBlock<MaterialBlock>();
         var previous = new StandardMaterialParameters(old);
         _white = previous.AlbedoMap;
-        // The template is a project asset. Its concrete type is registered by the
-        // sample viewer; the engine still sees an ordinary user material.
-        if (old.MaterialTypeId != SceneMaterial.TypeId)
-        {
-            using var replacement = new SceneMaterialAsset(template.Id) { Name = "Imported scene material" };
-            var block = replacement.GetBlock<MaterialBlock>();
-            foreach (var parameter in old.Parameters) block.SetParameter(parameter);
-            block.Shader = new(_shaders.Values.First());
-            project.RegisterAsset(await replacement.SaveAsync(templatePath));
-        }
+        old.Shader = new(_shaders.Values.First());
+        template.Name = "Imported scene material";
+        project.RegisterAsset(await template.SaveAsync(templatePath));
     }
 
     protected override ValueTask AddSceneContentAsync(World world, Scene scene, ImportContext context,

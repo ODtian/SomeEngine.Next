@@ -20,7 +20,6 @@ public static class ImportedSceneBuild
         sourcePath = Path.GetFullPath(sourcePath);
         projectRoot = Path.GetFullPath(projectRoot);
         engineRoot = Path.GetFullPath(engineRoot);
-        SceneMaterialAsset.Register();
         string name = Path.GetFileNameWithoutExtension(sourcePath);
         string copiedSource = Path.Combine(projectRoot, "assets", "Imported", name, Path.GetFileName(sourcePath));
         if (!File.Exists(Path.Combine(projectRoot, "Library", "AssetManifest", AssetManifest.CatalogFileName)))
