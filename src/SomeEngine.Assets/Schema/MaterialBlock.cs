@@ -5,31 +5,27 @@ using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets.Schema;
 
-/// <summary>Material type, references and local parameter overrides, encoded with the material parameter codec.</summary>
+/// <summary>Shader and parent references with local material parameter overrides.</summary>
 [AssetBlock("SomeEngine.Assets.MaterialBlock")]
 [BinarySerializable(LogicalName = "SomeEngine.Assets.MaterialBlock")]
 public sealed partial class MaterialBlock : AssetBlock, IAssetBlockWriter,
     IBinarySerializable<MaterialBlock>, IBinaryObjectReader<MaterialBlock>
 {
-    private Guid _materialType;
     private AssetId<ShaderAsset> _shader;
     private AssetId<MaterialAsset> _parent;
     private readonly List<MaterialParameter> _parameters = [];
     public static Guid TypeId { get; } = BinaryTypeId.FromLogicalName("SomeEngine.Assets.MaterialBlock");
-    public static ulong SchemaFingerprint => 0x4D41544276310001UL;
+    public static ulong SchemaFingerprint => 0x4D41544276320001UL;
     public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
-    public static uint SchemaEpoch => 1;
+    public static uint SchemaEpoch => 2;
 
     public MaterialBlock() { }
-    public MaterialBlock(Guid materialType) => _materialType = materialType;
     private MaterialBlock(MaterialBlock source, object? syncRoot = null) : base(source, syncRoot)
     {
-        _materialType = source._materialType;
         _shader = source._shader;
         _parent = source._parent;
         _parameters.AddRange(source._parameters);
     }
-    public Guid MaterialTypeId => _materialType;
     public AssetId<ShaderAsset> Shader { get => _shader; set { _shader = value; MarkChanged(); } }
     public AssetId<MaterialAsset> Parent { get => _parent; set { _parent = value; MarkChanged(); } }
     public IList<MaterialParameter> Parameters => _parameters;
@@ -76,7 +72,6 @@ public sealed partial class MaterialBlock : AssetBlock, IAssetBlockWriter,
 
     public static void Write(ref BinaryDataWriter writer, MaterialBlock value)
     {
-        writer.WriteGuid(value.MaterialTypeId);
         writer.WriteGuid(value.Shader.Value);
         writer.WriteGuid(value.Parent.Value);
         writer.WriteInt32(value._parameters.Count);
@@ -100,10 +95,6 @@ public sealed partial class MaterialBlock : AssetBlock, IAssetBlockWriter,
     }
     public static void ReadInto(ref BinaryDataReader reader, MaterialBlock target)
     {
-        Guid type = reader.ReadGuid();
-        if (target.MaterialTypeId != Guid.Empty && target.MaterialTypeId != type)
-            throw new InvalidDataException("The block contains a different concrete material type.");
-        target._materialType = type;
         target.Shader = new(reader.ReadGuid());
         target.Parent = new(reader.ReadGuid());
         int count = reader.ReadCollectionCount("material parameters", Unsafe.SizeOf<MaterialParameter>(), 0);

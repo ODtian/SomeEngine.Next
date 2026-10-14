@@ -34,7 +34,6 @@ public static class SampleApplication
             return await AssetCommands.RunAsync(project, args, Console.Out);
         }
 #endif
-        ImportedScenes.SceneMaterialAsset.Register();
         var scenes = SceneTestPlatform.ReadScenes(Path.Combine(AppContext.BaseDirectory, "test-scenes.json"));
         var platform = new SceneTestPlatform(scenes.Select(scene => scene with
         {

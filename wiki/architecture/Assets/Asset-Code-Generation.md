@@ -48,7 +48,7 @@ Importer 是在库中完整编译的普通类，不要求 partial，也不由消
 
 ## 材质与使用边界
 
-材质生成器由项目的强类型材质声明生成参数访问和转换。Standard、Unlit 的具体声明随模板交给项目维护，不内置为引擎的全局材料假设。参数访问针对 MaterialBlock，不恢复旧的嵌套资产属性模型。
+材质生成器由具体材料声明生成属性、参数解释和 `IMaterial<TMaterial>.Create` 静态实现。该实现直接构造具体材料，保留类字段默认值并应用已解析的参数与实际纹理引用。`MaterialAsset.CreateAsync<TMaterial>` 通过该静态接口返回完整对象。Standard、Unlit 位于引擎 Resources，参数访问针对 MaterialBlock。
 
 针对明确声明的使用对象，分析器检查静态成员中直接或间接泄漏 Asset 及资产引用。导入、编辑、工具代码仍可正常使用资产，不用方法名猜测职责。业务程序集无须依赖 Assets。
 
