@@ -45,7 +45,7 @@ public sealed partial class ShaderAsset : Asset
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
 
-    public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+    public override async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
         using ShaderAsset copy = Duplicate();
         return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);
@@ -87,9 +87,13 @@ public sealed partial class ShaderAsset : Asset
         return await ReadFileAsync(file, id.Value, cancellationToken).ConfigureAwait(false);
     }
 
-    public ValueTask<AssetEntry> SaveSourceAsync(string path, IReadOnlyDictionary<ulong, string>? chunkFiles = null,
+    public async ValueTask<AssetEntry> SaveSourceAsync(string path, IReadOnlyDictionary<ulong, string>? chunkFiles = null,
         CancellationToken cancellationToken = default)
-        => AssetText.SaveAsync(path, this, (writer, asset) => writer.WriteBlock(asset.GetBlock<ShaderSourceBlock>(), chunkFiles), cancellationToken);
+    {
+        using var writer = AssetText.Create(this);
+        writer.WriteBlock<ShaderSourceBlock>(chunkFiles);
+        return await writer.SaveAsync(path, cancellationToken).ConfigureAwait(false);
+    }
 
     public static async ValueTask<ShaderAsset> OpenSourceAsync(string path, CancellationToken cancellationToken = default)
     {

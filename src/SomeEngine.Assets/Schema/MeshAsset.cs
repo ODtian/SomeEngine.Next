@@ -34,7 +34,7 @@ public sealed partial class MeshAsset : Asset
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
 
-    public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+    public override async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
         using MeshAsset copy = Duplicate();
         return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);

@@ -18,24 +18,19 @@ public abstract class AssetBlockPathEditor
     internal abstract ulong Schema { get; }
     internal abstract void WriteFields(Utf8JsonWriter writer, JsonElement fields, string sourceDirectory, string destinationDirectory);
 
-    public static AssetBlockPathEditor Create<TBlock>(Action<TBlock, string, string> edit)
-        where TBlock : AssetBlock, IAssetBlock<TBlock>, IBinarySerializable<TBlock>, ITextSerializable<TBlock>
-    {
-        ArgumentNullException.ThrowIfNull(edit);
-        return new TypedEditor<TBlock>(edit);
-    }
+}
 
-    private sealed class TypedEditor<TBlock>(Action<TBlock, string, string> edit) : AssetBlockPathEditor
-        where TBlock : AssetBlock, IAssetBlock<TBlock>, IBinarySerializable<TBlock>, ITextSerializable<TBlock>
+public class AssetBlockPathEditor<TBlock> : AssetBlockPathEditor
+    where TBlock : AssetBlock, IAssetBlock<TBlock>, IBinarySerializable<TBlock>, ITextSerializable<TBlock>
+{
+    public override Guid BlockTypeId => TBlock.BlockTypeId;
+    internal override ulong Schema => TBlock.SchemaFingerprint;
+    protected virtual void Relocate(TBlock fields, string sourceDirectory, string destinationDirectory) { }
+    internal override void WriteFields(Utf8JsonWriter writer, JsonElement data, string sourceDirectory, string destinationDirectory)
     {
-        public override Guid BlockTypeId => TBlock.BlockTypeId;
-        internal override ulong Schema => TBlock.SchemaFingerprint;
-        internal override void WriteFields(Utf8JsonWriter writer, JsonElement data, string sourceDirectory, string destinationDirectory)
-        {
-            using TBlock fields = TBlock.ReadText(data);
-            edit(fields, sourceDirectory, destinationDirectory);
-            TBlock.WriteText(writer, fields);
-        }
+        using TBlock fields = TBlock.ReadText(data);
+        Relocate(fields, sourceDirectory, destinationDirectory);
+        TBlock.WriteText(writer, fields);
     }
 }
 
@@ -145,14 +140,13 @@ public sealed partial class AssetProject
     public ValueTask MoveAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
         => MoveFilesAsync(sourcePath, destinationPath, null, cancellationToken);
 
-    /// <summary>Moves a typed block source. The callback relocates any relative paths within its business fields.</summary>
+    /// <summary>Moves a typed block source and relocates its external chunk paths.</summary>
     /// <remarks>The standard external chunk paths are rewritten automatically without reading their payloads.</remarks>
     public ValueTask MoveAsync<TBlock>(string sourcePath, string destinationPath,
-        Action<TBlock, string, string> relocateFields, CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
         where TBlock : AssetBlock, IAssetBlock<TBlock>, IBinarySerializable<TBlock>, ITextSerializable<TBlock>
     {
-        ArgumentNullException.ThrowIfNull(relocateFields);
-        return MoveAsync(sourcePath, destinationPath, [AssetBlockPathEditor.Create(relocateFields)], cancellationToken);
+        return MoveAsync(sourcePath, destinationPath, [new AssetBlockPathEditor<TBlock>()], cancellationToken);
     }
 
     public ValueTask MoveAsync(string sourcePath, string destinationPath, IReadOnlyList<AssetBlockPathEditor> blockEditors,
@@ -160,12 +154,11 @@ public sealed partial class AssetProject
     {
         ArgumentNullException.ThrowIfNull(blockEditors);
         Dictionary<Guid, AssetBlockPathEditor> editors = blockEditors.ToDictionary(static editor => editor.BlockTypeId);
-        return MoveFilesAsync(sourcePath, destinationPath,
-            (source, stage, token) => RelocateSourceAsync(source, stage, editors, token), cancellationToken);
+        return MoveFilesAsync(sourcePath, destinationPath, editors, cancellationToken);
     }
 
     private async ValueTask MoveFilesAsync(string sourcePath, string destinationPath,
-        Func<string, string, CancellationToken, ValueTask>? relocate, CancellationToken cancellationToken)
+        IReadOnlyDictionary<Guid, AssetBlockPathEditor>? editors, CancellationToken cancellationToken)
     {
         await _importGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         AssetImportFiles? files = null;
@@ -173,18 +166,18 @@ public sealed partial class AssetProject
         {
             string source = RequireProjectPath(_projectRoot, sourcePath), destination = RequireProjectPath(_projectRoot, destinationPath);
             if (PathsEqual(source, destination)) return;
-            if (relocate is null && !PathsEqual(Path.GetDirectoryName(source)!, Path.GetDirectoryName(destination)!))
+            if (editors is null && !PathsEqual(Path.GetDirectoryName(source)!, Path.GetDirectoryName(destination)!))
                 throw new NotSupportedException("Moving a source or asset to another directory requires migrating its external references. Rename it within its directory or use an importer-aware project move.");
             RequireNewPath(destination);
             bool hasMetadata = File.Exists(SourceMeta.GetMetaPath(source));
             if (hasMetadata) { RequireNewPath(SourceMeta.GetMetaPath(destination)); RequireNewPath(SourceMeta.GetBuildPath(destination)); }
             files = new AssetImportFiles();
-            if (relocate is null) await StageCopyAsync(files, source, destination, cancellationToken).ConfigureAwait(false);
+            if (editors is null) await StageCopyAsync(files, source, destination, cancellationToken).ConfigureAwait(false);
             else
             {
                 string stage = files.CreateStagePath(destination);
                 files.AddFile(destination, stage);
-                await relocate(source, stage, cancellationToken).ConfigureAwait(false);
+                await RelocateSourceAsync(source, stage, editors, cancellationToken).ConfigureAwait(false);
             }
             files.AddDelete(source);
             AssetManifest next;
@@ -250,7 +243,7 @@ public sealed partial class AssetProject
             var metadata = new SourceMeta
             {
             SourceGuid = SourceGuid.New(),
-                Importers = previous.Importers.ToList(), UseDefaultImporters = previous.UseDefaultImporters,
+                Importers = previous.Importers.ToList(), ImporterSets = previous.ImporterSets.ToList(), UseDefaultImporters = previous.UseDefaultImporters,
                 ElementIds = previous.ElementIds.ToDictionary(static item => item.Key, static _ => Guid.NewGuid(), StringComparer.Ordinal),
             };
             files = new AssetImportFiles();
@@ -269,7 +262,7 @@ public sealed partial class AssetProject
 
     /// <summary>Copies a typed asset to a new identity using its own codec and registers the result.</summary>
     public async ValueTask<Guid> CopyAssetAsync<TAsset>(TAsset source, string destinationPath,
-        Func<TAsset, string, CancellationToken, ValueTask<AssetEntry>> save, CancellationToken cancellationToken = default) where TAsset : Asset
+        CancellationToken cancellationToken = default) where TAsset : Asset
     {
         await _importGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         AssetImportFiles? files = null;
@@ -281,7 +274,7 @@ public sealed partial class AssetProject
             files = new AssetImportFiles();
             string stage = files.CreateStagePath(destination);
             files.AddFile(destination, stage);
-            AssetEntry entry = await save(copy, stage, cancellationToken).ConfigureAwait(false);
+            AssetEntry entry = await copy.SaveAsync(stage, cancellationToken).ConfigureAwait(false);
             if (entry.AssetGuid != copy.Id || !PathsEqual(Path.GetFullPath(entry.Path), stage))
                 throw new InvalidDataException("The copied asset identity or saved path differs from the requested copy.");
             AssetManifest next;

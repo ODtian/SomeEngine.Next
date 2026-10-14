@@ -69,7 +69,7 @@ public sealed class AssetByteCache
     }
 
     internal ValueTask<ReadOnlyMemory<byte>> ReadAsync<T>(AssetByteKey key, T input,
-        Func<T, ValueTask<byte[]>> readBytes, CancellationToken cancellationToken)
+        CancellationToken cancellationToken) where T : IAssetByteRead
     {
         cancellationToken.ThrowIfCancellationRequested();
         Task<byte[]> read;
@@ -86,7 +86,7 @@ public sealed class AssetByteCache
                 _reads.Add(key, read);
             }
         }
-        if (completion is not null) _ = ReadCoreAsync(key, input, readBytes, completion, revision);
+        if (completion is not null) _ = ReadCoreAsync(key, input, completion, revision);
         return AwaitAsync(read, cancellationToken);
     }
 
@@ -103,12 +103,12 @@ public sealed class AssetByteCache
             ? await read.WaitAsync(token).ConfigureAwait(false)
             : await read.ConfigureAwait(false);
 
-    private async Task ReadCoreAsync<T>(AssetByteKey key, T input, Func<T, ValueTask<byte[]>> readBytes,
-        TaskCompletionSource<byte[]> completion, long revision)
+    private async Task ReadCoreAsync<T>(AssetByteKey key, T input,
+        TaskCompletionSource<byte[]> completion, long revision) where T : IAssetByteRead
     {
         try
         {
-            byte[] bytes = await readBytes(input).ConfigureAwait(false);
+            byte[] bytes = await input.ReadAsync().ConfigureAwait(false);
             lock (_gate)
             {
                 if (revision == _clearRevision) Add(key, bytes);
@@ -220,3 +220,8 @@ public sealed class AssetByteCache
 }
 
 internal readonly record struct AssetByteKey(Guid Source, ulong ChunkKey, long Offset, int Length);
+
+internal interface IAssetByteRead
+{
+    ValueTask<byte[]> ReadAsync();
+}

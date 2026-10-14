@@ -15,6 +15,7 @@ namespace SomeEngine.Generators;
 public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
 {
     private const string ImporterAttribute = "SomeEngine.Assets.AssetImporterAttribute";
+    private const string ImporterSetAttribute = "SomeEngine.Assets.AssetImporterSetAttribute";
     private const string BlockAttribute = "SomeEngine.Assets.AssetBlockAttribute";
     private const string CapabilitiesAttribute = "SomeEngine.Assets.AssetCapabilitiesAttribute";
     private const string ImporterInterface = "SomeEngine.Assets.Importing.IAssetImporter<TSource, TSettings>";
@@ -41,6 +42,7 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         if (compilation.GetTypeByMetadataName(ImporterAttribute) is null) return;
         INamedTypeSymbol[] local = Types(compilation.Assembly.GlobalNamespace).ToArray();
         var importers = new List<Importer>();
+        var sets = new List<INamedTypeSymbol>(local.Where(type => Attribute(type, ImporterSetAttribute) is not null));
         bool valid = true;
         foreach (INamedTypeSymbol type in local.Where(type => Attribute(type, ImporterAttribute) is not null))
         {
@@ -61,6 +63,7 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
             foreach (INamedTypeSymbol type in Types(assembly.GlobalNamespace).Where(IsPublic))
             {
                 if (IsBlock(type)) blocks.Add(type);
+                if (Attribute(type, ImporterSetAttribute) is not null) sets.Add(type);
                 if (Attribute(type, ImporterAttribute) is null) continue;
                 Importer? importer = ReadImporter(output, type, false, null);
                 if (importer is null) valid = false;
@@ -106,7 +109,7 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
             if (!valid) continue;
             output.AddSource(Hint(registration) + ".Capabilities.g.cs", EmitRegistration(registration,
                 indexedBlocks,
-                importers.OrderBy(importer => importer.Id).ToArray(), buildVersion));
+                importers.OrderBy(importer => importer.Id).ToArray(), sets.ToArray(), buildVersion));
         }
     }
 
@@ -144,15 +147,12 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         if (blocks.Count == 0)
         { Error("declare at least one produced block"); return null; }
 
-        IMethodSymbol[] constructors = type.InstanceConstructors.Where(constructor => constructor.DeclaredAccessibility == Accessibility.Public).ToArray();
-        IMethodSymbol[] selected = constructors.Where(constructor => Attribute(constructor,
-            "Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructorAttribute") is not null).ToArray();
-        IMethodSymbol? constructor = selected.Length == 1 ? selected[0] : selected.Length == 0 && constructors.Length == 1 ? constructors[0] : null;
+        IMethodSymbol? constructor = type.InstanceConstructors.SingleOrDefault(value =>
+            value.DeclaredAccessibility == Accessibility.Public && value.Parameters.Length == 0);
         if (constructor is null)
-        { Error("provide one public constructor, or mark one public constructor with ActivatorUtilitiesConstructor"); return null; }
-        if (constructor.Parameters.Any(parameter => parameter.RefKind != RefKind.None || parameter.Type.IsRefLikeType
-            || parameter.Type.TypeKind == TypeKind.Pointer || parameter.Type.TypeKind == TypeKind.FunctionPointer))
-        { Error("constructor parameters must be ordinary service types passed by value"); return null; }
+        { Error("provide a public parameterless constructor; read source and settings from the import context"); return null; }
+        if (type.InstanceConstructors.Any(value => value.Parameters.Length != 0))
+        { Error("importer constructors must have no parameters; keep algorithms and resources in the importer"); return null; }
         INamedTypeSymbol? provider = attribute.NamedArguments.FirstOrDefault(argument => argument.Key == "SettingsProvider").Value.Value as INamedTypeSymbol;
         if (provider is not null && (!IsPublic(provider) || provider.IsAbstract || provider.Arity != 0
             || !provider.InstanceConstructors.Any(value => value.DeclaredAccessibility == Accessibility.Public && value.Parameters.Length == 0)
@@ -179,17 +179,16 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
             using SHA256 versionHash = SHA256.Create();
             version = BitConverter.ToString(versionHash.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n", versions)))).Replace("-", "");
         }
-        return new Importer(type, id, interfaces[0], constructor, blocks.ToArray(), provider, version);
+        return new Importer(type, id, interfaces[0], blocks.ToArray(), provider, version);
     }
 
-    private static string EmitRegistration(INamedTypeSymbol registration, INamedTypeSymbol[] blocks, Importer[] importers, string buildVersion)
+    private static string EmitRegistration(INamedTypeSymbol registration, INamedTypeSymbol[] blocks, Importer[] importers, INamedTypeSymbol[] sets, string buildVersion)
     {
         var code = Begin(registration);
         code.Append("public static partial class @").Append(registration.Name).AppendLine(" {");
         code.Append("public const string BuildVersion = ").Append(Literal(buildVersion)).AppendLine(";");
         EmitBlockIdentity(code);
         EmitSelections(code, blocks, importers);
-        code.AppendLine("private sealed class AssetServicesAdded { }");
         code.AppendLine("public static global::System.Collections.Generic.IReadOnlyList<global::SomeEngine.Assets.AssetBlockCapability> BlockCapabilities { get; } = global::System.Array.AsReadOnly(new global::SomeEngine.Assets.AssetBlockCapability[] {");
         foreach (INamedTypeSymbol block in blocks)
             code.Append("new(GetAssetBlockIdentity<").Append(Type(block)).Append(">(), typeof(").Append(Type(block)).AppendLine(")),");
@@ -197,62 +196,53 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         code.AppendLine("public static global::System.Collections.Generic.IReadOnlyList<global::SomeEngine.Assets.AssetImporterCapability> ImporterCapabilities { get; } = global::System.Array.AsReadOnly(new global::SomeEngine.Assets.AssetImporterCapability[] {");
         foreach (Importer importer in importers)
         {
-            code.Append("new(new global::System.Guid(").Append(Literal(importer.Id.ToString())).Append("), typeof(").Append(Type(importer.Type))
-                .Append("), typeof(").Append(Type(importer.Service.TypeArguments[0])).Append("), typeof(").Append(Type(importer.Service.TypeArguments[1]))
+            code.Append("new global::SomeEngine.Assets.AssetImporterCapability<").Append(Type(importer.Type)).Append(", ")
+                .Append(Type(importer.Service.TypeArguments[0])).Append(", ").Append(Type(importer.Service.TypeArguments[1]))
+                .Append(">(new global::System.Guid(").Append(Literal(importer.Id.ToString()))
                 .Append("), global::System.Array.AsReadOnly(new global::SomeEngine.Assets.AssetBlockCapability[] {");
             foreach (INamedTypeSymbol block in importer.Blocks)
                 code.Append("new(GetAssetBlockIdentity<").Append(Type(block)).Append(">(), typeof(").Append(Type(block)).Append(")),");
-            code.Append("}), ").Append(Literal(importer.ImplementationVersion));
-            if (importer.SettingsProvider is { } provider)
+            code.Append("}), ");
+            if (importer.SettingsProvider is { } provider) code.Append("new ").Append(Type(provider)).Append("()");
+            else code.Append("null");
+            code.Append(", ").Append(Literal(importer.ImplementationVersion)).AppendLine("),");
+        }
+        code.AppendLine("});");
+        code.AppendLine("public static global::System.Collections.Generic.IReadOnlyList<global::SomeEngine.Assets.AssetImporterSetCapability> ImporterSets { get; } = global::System.Array.AsReadOnly(new global::SomeEngine.Assets.AssetImporterSetCapability[] {");
+        foreach (INamedTypeSymbol set in sets)
+        {
+            AttributeData attribute = Attribute(set, ImporterSetAttribute)!;
+            code.Append("new(new global::System.Guid(").Append(Literal((string)attribute.ConstructorArguments[0].Value!))
+                .Append("), ").Append(Literal(set.Name)).Append(", global::System.Array.AsReadOnly(new global::System.Guid[] {");
+            foreach (TypedConstant member in attribute.ConstructorArguments[1].Values)
             {
-                code.Append(", static (services, settings) => global::SomeEngine.Assets.Importing.AssetImporter.Bind<")
-                    .Append(Type(importer.Service.TypeArguments[0])).Append(", ").Append(Type(importer.Service.TypeArguments[1]))
-                    .Append(">(new global::System.Guid(").Append(Literal(importer.Id.ToString()))
-                    .Append("), global::System.Array.AsReadOnly(new global::System.Guid[] {");
-                foreach (INamedTypeSymbol block in importer.Blocks)
-                    code.Append("GetAssetBlockIdentity<").Append(Type(block)).Append(">(),");
-                code.Append("}), global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<")
-                    .Append(Type(importer.Type)).Append(">(services), new ").Append(Type(provider)).Append("(), settings)");
+                Importer importer = importers.Single(value => SymbolEqualityComparer.Default.Equals(value.Type, member.Value as INamedTypeSymbol));
+                code.Append("new global::System.Guid(").Append(Literal(importer.Id.ToString())).Append("),");
             }
-            code.AppendLine("),");
+            bool neutral = attribute.NamedArguments.Any(value => value.Key == "Neutral" && value.Value.Value is true);
+            bool defaultSet = attribute.NamedArguments.Any(value => value.Key == "Default" && value.Value.Value is true);
+            code.Append("}), ").Append(neutral ? "true" : "false").Append(", ").Append(defaultSet ? "true" : "false").AppendLine("),");
         }
         code.AppendLine("});");
         code.AppendLine("public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddAssetCapabilities(global::Microsoft.Extensions.DependencyInjection.IServiceCollection services) {");
         code.AppendLine("global::System.ArgumentNullException.ThrowIfNull(services);");
-        code.AppendLine("foreach (var existing in services) if (existing.ServiceType == typeof(AssetServicesAdded)) return services;");
-        code.AppendLine("var blockIdentities = new global::System.Collections.Generic.Dictionary<global::System.Guid, global::SomeEngine.Assets.AssetBlockCapability>();");
-        code.AppendLine("foreach (var block in BlockCapabilities) {");
-        code.AppendLine("if (block.Id == global::System.Guid.Empty) throw new global::System.InvalidOperationException($\"Block {block.BlockType} has an empty persistent identity.\");");
-        code.AppendLine("if (blockIdentities.TryGetValue(block.Id, out var previous)) throw new global::System.InvalidOperationException($\"Block identity {block.Id} is shared by {previous.BlockType} and {block.BlockType}.\");");
-        code.AppendLine("blockIdentities.Add(block.Id, block);");
-        code.AppendLine("}");
-        code.AppendLine("foreach (var existing in services) { if (existing.ImplementationInstance is global::SomeEngine.Assets.AssetBlockCapability registeredBlock && blockIdentities.TryGetValue(registeredBlock.Id, out var declared) && registeredBlock.BlockType != declared.BlockType) throw new global::System.InvalidOperationException($\"Block identity {registeredBlock.Id} is shared by {registeredBlock.BlockType} and {declared.BlockType}.\"); }");
-        code.AppendLine("var installedBlocks = new global::System.Collections.Generic.HashSet<global::System.Guid>();");
         code.AppendLine("var installedImporters = new global::System.Collections.Generic.Dictionary<global::System.Guid, global::SomeEngine.Assets.AssetImporterCapability>();");
-        code.AppendLine("foreach (var existing in services) { if (existing.ImplementationInstance is global::SomeEngine.Assets.AssetBlockCapability block) installedBlocks.Add(block.Id); if (existing.ImplementationInstance is global::SomeEngine.Assets.AssetImporterCapability importer) installedImporters[importer.Id] = importer; }");
+        code.AppendLine("var installedSets = new global::System.Collections.Generic.HashSet<global::System.Guid>();");
+        code.AppendLine("foreach (var existing in services) { if (existing.ImplementationInstance is global::SomeEngine.Assets.AssetImporterCapability importer) installedImporters[importer.Id] = importer; if (existing.ImplementationInstance is global::SomeEngine.Assets.AssetImporterSetCapability set) installedSets.Add(set.Id); }");
         code.AppendLine("foreach (var importer in ImporterCapabilities) if (installedImporters.TryGetValue(importer.Id, out var previous) && previous.ImporterType != importer.ImporterType) throw new global::System.InvalidOperationException($\"Importer identity {importer.Id} is shared by {previous.ImporterType} and {importer.ImporterType}.\");");
-        code.AppendLine("services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton(new AssetServicesAdded()));");
         foreach (Importer importer in importers)
         {
             code.Append("if (!installedImporters.ContainsKey(new global::System.Guid(").Append(Literal(importer.Id.ToString())).AppendLine("))) {");
             code.Append("global::Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAdd(services, global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Scoped<")
                 .Append(Type(importer.Type)).Append(">(static services => new ").Append(Type(importer.Type)).Append('(');
-            for (int index = 0; index < importer.Constructor.Parameters.Length; index++)
-            {
-                if (index != 0) code.Append(", ");
-                IParameterSymbol parameter = importer.Constructor.Parameters[index];
-                if (parameter.Type.ToDisplayString() == "System.IServiceProvider") code.Append("services");
-                else code.Append("global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<")
-                    .Append(Type(parameter.Type)).Append(">(services)");
-            }
             code.AppendLine(")));");
             code.Append("services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Scoped<").Append(Type(importer.Service))
                 .Append(">(static services => global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<")
                 .Append(Type(importer.Type)).AppendLine(">(services)));");
             code.AppendLine("}");
         }
-        code.AppendLine("foreach (var block in BlockCapabilities) if (!installedBlocks.Contains(block.Id)) services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton(block));");
         code.AppendLine("foreach (var importer in ImporterCapabilities) if (!installedImporters.ContainsKey(importer.Id)) services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton(importer));");
+        code.AppendLine("foreach (var set in ImporterSets) if (!installedSets.Contains(set.Id)) services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton(set));");
         code.AppendLine("return services;");
         code.AppendLine("}");
         code.AppendLine("}");
@@ -402,12 +392,11 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
 
     private sealed class Importer
     {
-        public Importer(INamedTypeSymbol type, Guid id, INamedTypeSymbol service, IMethodSymbol constructor, INamedTypeSymbol[] blocks, INamedTypeSymbol? settingsProvider, string implementationVersion)
-        { Type = type; Id = id; Service = service; Constructor = constructor; Blocks = blocks; SettingsProvider = settingsProvider; ImplementationVersion = implementationVersion; }
+        public Importer(INamedTypeSymbol type, Guid id, INamedTypeSymbol service, INamedTypeSymbol[] blocks, INamedTypeSymbol? settingsProvider, string implementationVersion)
+        { Type = type; Id = id; Service = service; Blocks = blocks; SettingsProvider = settingsProvider; ImplementationVersion = implementationVersion; }
         public INamedTypeSymbol Type { get; }
         public Guid Id { get; }
         public INamedTypeSymbol Service { get; }
-        public IMethodSymbol Constructor { get; }
         public INamedTypeSymbol[] Blocks { get; }
         public INamedTypeSymbol? SettingsProvider { get; }
         public string ImplementationVersion { get; }

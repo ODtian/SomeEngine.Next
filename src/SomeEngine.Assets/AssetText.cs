@@ -27,64 +27,87 @@ public static class AssetText
         catch { document.Dispose(); throw; }
     }
 
-    public static void Write<TAsset>(IBufferWriter<byte> destination, TAsset asset, Action<BlockWriter, TAsset> writeBlocks)
-        where TAsset : Asset, IBinarySerializable<TAsset>
-    {
-        using var copy = (TAsset)asset.Duplicate();
-        using var writer = new Utf8JsonWriter(destination, new() { Indented = true });
-        Write(writer, copy, writeBlocks);
-        writer.Flush();
-    }
+    public static SourceWriter<TAsset> Create<TAsset>(TAsset asset)
+        where TAsset : Asset, IBinarySerializable<TAsset> => new(asset);
 
-    /// <summary>Writes explicitly selected typed blocks. Other blocks can keep their own storage and codec.</summary>
-    public static async ValueTask<AssetEntry> SaveAsync<TAsset>(string path, TAsset asset,
-        Action<BlockWriter, TAsset> writeBlocks, CancellationToken cancellationToken = default)
+    /// <summary>Encodes explicitly selected typed blocks and saves their actual data.</summary>
+    public sealed class SourceWriter<TAsset> : IDisposable, IAssetFileWriter<AssetEntry>
         where TAsset : Asset, IBinarySerializable<TAsset>
     {
-        ArgumentNullException.ThrowIfNull(writeBlocks);
-        using var copy = (TAsset)asset.Duplicate();
-        string directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
-        return await Asset.WriteFileAsync(path, async (stream, token) =>
+        private readonly TAsset _asset;
+        private readonly ArrayBufferWriter<byte> _bytes = new();
+        private readonly Utf8JsonWriter _writer;
+        private readonly BlockWriter _blocks;
+        private readonly List<BlockFiles> _files = [];
+        private bool _completed;
+        private string _path = "";
+        private Exception? _failure;
+
+        internal SourceWriter(TAsset asset)
         {
-            var selected = new List<BlockFiles>();
-            Exception? failure = null;
-            try
-            {
-                using var writer = new Utf8JsonWriter(stream, new() { Indented = true });
-                Write(writer, copy, writeBlocks, selected);
-                await writer.FlushAsync(token).ConfigureAwait(false);
-                foreach (BlockFiles content in selected)
-                    await CheckFilesAsync(content, directory, token).ConfigureAwait(false);
-                return new AssetEntry(copy.Id, copy.AssetType, TAsset.SchemaFingerprint, Guid.Empty)
-                    { Name = copy.Name, Path = Path.GetFullPath(path) };
-            }
-            catch (Exception error) { failure = error; throw; }
-            finally { ReleaseFiles(selected, failure); }
-        }, async (destination, token) =>
+            _asset = (TAsset)asset.Duplicate();
+            _writer = new(_bytes, new() { Indented = true });
+            _writer.WriteStartObject();
+            _writer.WriteString("Format", BlockFormat);
+            _writer.WriteString("TypeId", TAsset.TypeId);
+            _writer.WriteString("Schema", TAsset.SchemaFingerprint.ToString("X16", CultureInfo.InvariantCulture));
+            _writer.WriteStartObject("Fields");
+            _writer.WriteString("Id", _asset.Id);
+            _writer.WriteString("Name", _asset.Name);
+            _writer.WriteString("AssetType", _asset.AssetType);
+            _writer.WriteEndObject();
+            _writer.WriteStartArray("Blocks");
+            _blocks = new(_writer, _files);
+        }
+
+        public void WriteBlock<TBlock>(IReadOnlyDictionary<ulong, string>? chunkFiles = null)
+            where TBlock : AssetBlock, IAssetBlock<TBlock>, IBinarySerializable<TBlock>, ITextSerializable<TBlock>
+            => _blocks.WriteBlock(_asset.GetBlock<TBlock>(), chunkFiles);
+
+        public void Write(IBufferWriter<byte> destination)
         {
-            AssetEntry existing = Describe(await File.ReadAllBytesAsync(destination, token).ConfigureAwait(false));
-            if (existing.AssetGuid != copy.Id || existing.AssetType != copy.AssetType)
+            Complete();
+            destination.Write(_bytes.WrittenSpan);
+        }
+
+        public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+        {
+            Complete();
+            _path = Path.GetFullPath(path);
+            try { return await Asset.WriteFileAsync(path, this, cancellationToken).ConfigureAwait(false); }
+            catch (Exception error) { _failure = error; throw; }
+        }
+
+        async ValueTask<AssetEntry> IAssetFileWriter<AssetEntry>.WriteAsync(FileStream stream, CancellationToken cancellationToken)
+        {
+            await stream.WriteAsync(_bytes.WrittenMemory, cancellationToken).ConfigureAwait(false);
+            string directory = Path.GetDirectoryName(_path)!;
+            foreach (BlockFiles content in _files)
+                await CheckFilesAsync(content, directory, cancellationToken).ConfigureAwait(false);
+            return new(_asset.Id, _asset.AssetType, TAsset.SchemaFingerprint, Guid.Empty) { Name = _asset.Name, Path = _path };
+        }
+
+        async ValueTask IAssetFileWriter<AssetEntry>.CheckDestinationAsync(string destination, CancellationToken cancellationToken)
+        {
+            AssetEntry existing = Describe(await File.ReadAllBytesAsync(destination, cancellationToken).ConfigureAwait(false));
+            if (existing.AssetGuid != _asset.Id || existing.AssetType != _asset.AssetType)
                 throw new InvalidDataException("The destination source belongs to another asset identity or type.");
-        }, cancellationToken).ConfigureAwait(false);
-    }
+        }
 
-    private static void Write<TAsset>(Utf8JsonWriter writer, TAsset asset, Action<BlockWriter, TAsset> writeBlocks,
-        List<BlockFiles>? selected = null)
-        where TAsset : Asset, IBinarySerializable<TAsset>
-    {
-        writer.WriteStartObject();
-        writer.WriteString("Format", BlockFormat);
-        writer.WriteString("TypeId", TAsset.TypeId);
-        writer.WriteString("Schema", TAsset.SchemaFingerprint.ToString("X16", CultureInfo.InvariantCulture));
-        writer.WriteStartObject("Fields");
-        writer.WriteString("Id", asset.Id);
-        writer.WriteString("Name", asset.Name);
-        writer.WriteString("AssetType", asset.AssetType);
-        writer.WriteEndObject();
-        writer.WriteStartArray("Blocks");
-        writeBlocks(new(writer, selected), asset);
-        writer.WriteEndArray();
-        writer.WriteEndObject();
+        private void Complete()
+        {
+            if (_completed) return;
+            _writer.WriteEndArray();
+            _writer.WriteEndObject();
+            _writer.Flush();
+            _completed = true;
+        }
+
+        public void Dispose()
+        {
+            try { ReleaseFiles(_files, _failure); }
+            finally { _writer.Dispose(); _asset.Dispose(); }
+        }
     }
 
     public sealed class BlockWriter
