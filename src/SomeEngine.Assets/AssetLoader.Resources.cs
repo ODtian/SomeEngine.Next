@@ -47,17 +47,8 @@ public sealed partial class AssetLoader
             if (_slang is null)
                 throw new InvalidOperationException("Shader creation requires Slang settings in the AssetLoader constructor.");
             await using ShaderAsset asset = await ShaderAsset.OpenAsync(this, id, _stop.Token).ConfigureAwait(false);
-            ShaderSourceBlock source = await asset.GetBlockAsync<ShaderSourceBlock>(_stop.Token).ConfigureAwait(false);
-            Shader shader;
-            if (asset.ContainsBlock<ShaderBlock>())
-            {
-                ShaderBlock code = await asset.GetBlockAsync<ShaderBlock>(_stop.Token).ConfigureAwait(false);
-                shader = await code.CreateAsync(source, _slang, _sessionDescription, asset.Name,
-                    _specializations, _stop.Token).ConfigureAwait(false);
-            }
-            else
-                shader = await source.CreateAsync(_slang, _sessionDescription, asset.Name,
-                    _specializations, _stop.Token).ConfigureAwait(false);
+            Shader shader = await asset.CreateAsync(_slang, _sessionDescription,
+                _specializations, _stop.Token).ConfigureAwait(false);
             read.TrySetResult(shader);
         }
         catch (OperationCanceledException canceled) { read.TrySetCanceled(canceled.CancellationToken); }
