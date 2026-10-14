@@ -8,17 +8,6 @@ namespace SomeEngine.Resources;
 [MaterialType("SomeEngine.Assets.Schema.StandardMaterial")]
 public sealed partial class StandardMaterial : Material
 {
-    public StandardMaterial()
-    {
-        Texture white = MaterialTextures.Create("White", [255, 255, 255, 255]);
-        Texture normal = MaterialTextures.Create("Flat normal", [128, 128, 255, 255]);
-        InitializeContent(null, null,
-            [(new(nameof(AlbedoMap), MaterialParameterKind.Texture), white),
-             (new(nameof(NormalMap), MaterialParameterKind.Texture), normal),
-             (new(nameof(ARMMap), MaterialParameterKind.Texture), white)],
-            [white, normal]);
-    }
-
     public partial Texture? AlbedoMap { get; set; }
 
     public partial Texture? NormalMap { get; set; }

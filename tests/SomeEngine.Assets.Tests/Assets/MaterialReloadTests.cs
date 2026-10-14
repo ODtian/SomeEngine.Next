@@ -6,46 +6,42 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class MaterialReloadTests
 {
     [Fact]
-    public async Task ReloadUsesTheSameExplicitShaderLoaderAsCreation()
+    public async Task ReloadUsesTheSharedShaderFromTheLoader()
     {
         using var directory = new AssetTestDirectory();
-        await using var loader = new AssetLoader(new LooseAssetStorage(directory.Path, new AssetManifest()));
-        using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(SomeEngine.Tests.TestProjectPaths.BuiltShaderPath("hello_triangle.shader.asset"));
-        Shader shader = await ShaderTestCompilation.CreateAsync(shaderFile);
+        var project = new AssetProject(directory.Path, []);
+        AssetId<ShaderAsset> id = await SaveShaderAsync(project, directory);
+        await using var loader = new AssetLoader(project.CreateStorage(), ShaderTestCompilation.Slang,
+            ShaderTestCompilation.CreateSessionDescription());
+        Shader shader = await loader.GetShaderAsync(id);
         using MaterialAsset file = new StandardMaterialAsset { Name = "after" };
-        Guid id = Guid.NewGuid();
-        file.GetBlock<MaterialBlock>().Shader = new(id);
+        file.GetBlock<MaterialBlock>().Shader = id;
         using var material = new StandardMaterial { Name = "before" };
-        await file.UpdateAsync(material, loader, (selected, _) =>
-        {
-            Assert.Equal(id, selected.Value);
-            return ValueTask.FromResult(shader);
-        }, null);
+        await file.UpdateAsync(material, loader);
         Assert.Same(shader, material.Shader);
         Assert.Equal("after", material.Name);
     }
 
     [Fact]
-    public async Task MaterialsKeepDirectShaderReferencesWithoutTakingTheirLifetime()
+    public async Task BusinessMaterialsShareTheLoaderShaderAndKeepTheirInstanceIdentity()
     {
         using var directory = new AssetTestDirectory();
-        await using var loader = new AssetLoader(new LooseAssetStorage(directory.Path, new AssetManifest()));
-        await using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(
-            SomeEngine.Tests.TestProjectPaths.BuiltShaderPath("hello_triangle.shader.asset"));
-        Shader shader = await ShaderTestCompilation.CreateAsync(shaderFile);
+        var project = new AssetProject(directory.Path, []);
+        AssetId<ShaderAsset> id = await SaveShaderAsync(project, directory);
+        await using var loader = new AssetLoader(project.CreateStorage(), ShaderTestCompilation.Slang,
+            ShaderTestCompilation.CreateSessionDescription());
+        Shader shader = await loader.GetShaderAsync(id);
         using MaterialAsset file = new StandardMaterialAsset();
-        file.GetBlock<MaterialBlock>().Shader = new(Guid.NewGuid());
-        using Material first = await file.CreateAsync(loader, (_, _) => ValueTask.FromResult(shader), null);
-        using Material second = await file.CreateAsync(loader, (_, _) => ValueTask.FromResult(shader), null);
+        file.GetBlock<MaterialBlock>().Shader = id;
+        using StandardMaterial first = await file.CreateAsync<StandardMaterial>(loader);
+        using StandardMaterial second = await file.CreateAsync<StandardMaterial>(loader);
         Assert.Same(shader, first.Shader);
         Assert.Same(shader, second.Shader);
         first.Dispose();
-        ulong revision = second.Revision;
-        Shader replacement = await ShaderTestCompilation.CreateAsync(shaderFile);
-        second.Shader = replacement;
-        Assert.Same(replacement, second.Shader);
-        Assert.Equal(revision + 1, second.Revision);
-        second.Dispose();
+        long identity = second.MaterialId;
+        second.Roughness = 0.7f;
+        Assert.Equal(identity, second.MaterialId);
+        Assert.Equal(0.7f, second.Roughness);
         Assert.True(shader.TryGetSlangTarget(SlangShaderSharp.SlangCompileTarget.Dxil, out _));
     }
 
@@ -87,5 +83,19 @@ public sealed class MaterialReloadTests
         material.Roughness = 0.75f;
         material.Roughness = 0.75f;
         Assert.Equal(1, notifications);
+    }
+
+    private static async ValueTask<AssetId<ShaderAsset>> SaveShaderAsync(
+        AssetProject project, AssetTestDirectory directory)
+    {
+        string path = directory.File("shared.slang");
+        await File.WriteAllTextAsync(path, """
+            RWStructuredBuffer<uint> Output;
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void Shade(uint3 thread : SV_DispatchThreadID) { Output[thread.x] = 3; }
+            """);
+        using ShaderAsset asset = ShaderTestCompilation.Compile(path);
+        return new(project.RegisterAsset(await asset.SaveAsync(directory.File("shared.shader.asset"))));
     }
 }

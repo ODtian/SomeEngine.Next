@@ -5,7 +5,7 @@ namespace SomeEngine.Assets.Schema;
 public sealed class UnlitMaterialAsset : MaterialAsset
 {
     public UnlitMaterialAsset() : this(Guid.Empty) { }
-    public UnlitMaterialAsset(Guid id = default) : base(id, UnlitMaterial.TypeId) { }
+    public UnlitMaterialAsset(Guid id = default) : base(id) { }
     private UnlitMaterialAsset(UnlitMaterialAsset source) : base(source) { }
     public override UnlitMaterialAsset Duplicate()
     {
@@ -15,6 +15,6 @@ public sealed class UnlitMaterialAsset : MaterialAsset
     public new static ValueTask<UnlitMaterialAsset> OpenAsync(AssetLoader loader, AssetId<MaterialAsset> id,
         CancellationToken cancellationToken = default) => OpenTypedAsync<UnlitMaterialAsset>(loader, id, cancellationToken);
     public new static ValueTask<UnlitMaterialAsset> OpenAsync(string path, CancellationToken cancellationToken = default) => OpenTypedAsync<UnlitMaterialAsset>(path, cancellationToken);
-    public new async ValueTask<UnlitMaterial> CreateAsync(AssetLoader loader, CancellationToken cancellationToken = default)
-        => (UnlitMaterial)await base.CreateAsync(loader, cancellationToken).ConfigureAwait(false);
+    public ValueTask<UnlitMaterial> CreateAsync(AssetLoader loader, CancellationToken cancellationToken = default)
+        => CreateAsync<UnlitMaterial>(loader, cancellationToken);
 }

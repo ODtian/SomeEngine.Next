@@ -1,27 +1,38 @@
 # 材质资产、强类型参数与继承
 
-2026-09-16。`MaterialAsset` 提供语义身份，`MaterialBlock` 保存材质类型、父材质、Shader 引用以及明确的参数覆盖。材质资产家族共用 `AssetId<MaterialAsset>`。使用对象是普通 Material 及项目的具体材质类型，不依赖资产加载设施。
+`MaterialAsset` 提供语义身份，`MaterialBlock` 保存父材质、Shader 引用以及明确的参数覆盖。材质资产家族共用 `AssetId<MaterialAsset>`。业务在 `CreateAsync<TMaterial>` 指定具体 C# 类型，并持有返回的实际对象。
 
-Standard、Unlit 的 C# 声明、配套资产类型与共享 Slang 实现由引擎提供。项目持有 Shader 定义、顶层组合入口与实际材质资产。生成的强类型参数入口访问 MaterialBlock，例如 `StandardMaterialParameters`。项目有定制需求时提供自己的具体材质实现，代码位置由项目决定。
+Standard、Unlit 的 C# 声明、配套资产类型与共享 Slang 实现由引擎提供。生成的强类型参数入口访问 MaterialBlock，例如 `StandardMaterialParameters`。项目的具体材质声明也由 MaterialGen 生成 `IMaterial<TMaterial>.Create`；静态实现直接构造指定类型，使用类字段默认值并应用参数。
 
-标准材质对象位于 Resources，资产类型与参数入口位于 Assets 的 Schema。MaterialAsset 静态登记引擎标准类型。标准材质持有自己的缺省白色、法线与 ARM 内存纹理，并通过既有材质生命周期释放。
+标准材质对象位于 Resources，资产类型与参数入口位于 Assets 的 Schema。标准材质的图片默认值来自实际 TextureAsset 与材料模板。DefaultGame 的 Standard 模板让 AlbedoMap 和 ARMMap 引用同一个白图，让 NormalMap 引用平法线图；Unlit 模板引用同一个白图。标量默认值由具体材料类的字段初始化表达。
 
-## 覆盖不是默认值比较
+```csharp
+await using var loader = new AssetLoader(storage, slang, sessionDescription);
+using MaterialAsset asset = await MaterialAsset.OpenAsync(loader, materialId);
+using StandardMaterial material = await asset.CreateAsync<StandardMaterial>(loader);
+material.Roughness = 0.25f;
+```
 
-未填写参数表示不覆盖父级；没有父级时使用具体材质声明的默认值。显式零值是覆盖，显式空纹理引用是清除继承纹理。Reset 移除覆盖事实，重新遵循父级或默认值。HasOverride 查询是否明确填写，而不是检查数值是否等于默认值。
+## 局部覆盖与父级合并
 
-覆盖位是材质内容自身的业务数据，不是字段 COW 计数。父级合并发生在明确的加载边界；查询资产参数不会隐式打开父材质。父链循环与类型不相容必须在解析时失败。
+每个参数记录一项局部覆盖。父资产先提供完整参数集合，当前资产逐项替换对应参数；类字段初始化提供其余值。显式零值是覆盖，显式空纹理引用是清除继承纹理。Reset 移除覆盖事实，重新遵循父级或类字段默认值。HasOverride 查询该参数的局部记录。
+
+父级合并发生在 `CreateAsync<TMaterial>` 的明确加载边界，具体类型在生成代码中解释最终参数。父链循环在解析时报告资产数据错误。
 
 ## Shader 和引用
 
-一个 Material 保持一个 Shader 资产引用。项目顶层 Shader 将材质算法与所需管线入口组合；对应管线入口持有具体管线依赖，并经阶段接口提供求值数据。材质解释自己的字段和曲面。更换 Material 的 Shader 引用意味着明确更换实现。
+MaterialBlock 保存 Shader 资产引用，Material 保存实际 Shader 对象引用。Shader 输入组合见 [Shader 资产](Asset-Shaders.md)。对应管线通过共同 Shader 取得自己的入口，材质解释自己的字段和曲面。
 
-当前直接依赖来自 MaterialBlock 中的父材质、Shader 以及显式纹理引用。继承后实际使用的资源集合是加载结果，不混入直接依赖的含义。具体材质类型由静态登记的构造与参数代码处理，不扫描反射或逐字段构建动态操作表。
+直接依赖来自 MaterialBlock 中的父材质、Shader 以及显式纹理引用。继承后实际使用的资源集合由加载结果表达。
 
 ## 创建、更新和释放
 
-资产侧完成父级解析、覆盖合并和资源取得，然后返回可直接使用的 Material。更新保留对象身份；切换前失败保留旧内容，切换后通知失败不能导致新纹理被临时对象释放。独立创建的两个材质各自持有自己的资源使用期限，Loader 关闭不销毁它们。
+资产侧完成父级解析、覆盖合并和资源取得，然后通过静态入口返回完整具体材料。AssetLoader 在构造时接收 Slang 全局会话与一份编译设置，`GetShaderAsync` 和 `GetTextureAsync` 按资产身份共享它创建的实际对象。不同 Material 实例保存这些普通引用，MaterialId 区分业务材料实例。
 
-渲染仍通过既有 Game world 提取和资源完成机制保护旧帧，不另建材质资产专用提交路径。行为证据见 [本次验收](Asset-Verification-2026-09-16.md)。
+业务控制 Material 的使用期，AssetLoader 控制其创建的共享 Texture 的使用期。材料释放结束该业务实例的使用；加载器释放等待资源创建结束并关闭共享 Texture。Shader 通过普通 GC 引用保存 Slang 对象与代码。
+
+`UpdateAsync<TMaterial>` 从完整资产内容创建同类型替换字段，再写入已有实例。业务修改继续经过 Game world → Rendering world 的既有提取与资源完成机制。
+
+2026-10-14 行为证据：MaterialCreationBehaviorTests 的消费者静态创建检查通过；MaterialFileTests、MaterialReloadTests 与 MaterialInheritanceTests 的 9 项检查通过，覆盖父级合并、局部覆盖、模板像素、实际 Shader/Texture 共享和业务实例使用。
 
 实现：[MaterialAsset](../../../src/SomeEngine.Assets/Schema/MaterialAsset.cs)、[MaterialBlock](../../../src/SomeEngine.Assets/Schema/MaterialBlock.cs)、[标准材质](../../../src/SomeEngine.Resources/StandardMaterial.cs)、[材质生成器](../../../src/SomeEngine.Generators/MaterialGen.cs)。

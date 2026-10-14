@@ -47,7 +47,7 @@ public sealed class AssetArchitectureAcceptanceTests
                 shader => Assert.Equal(new AssetId<ShaderAsset>(shaderGuid), shader.Asset)));
         await using MaterialAsset materialFile = await MaterialAsset.OpenAsync(materialPath);
         await using var loader = new AssetLoader(new LooseAssetStorage(directory.Path, new AssetManifest()));
-        using Material instance = await materialFile.CreateAsync(loader);
+        using Material instance = await materialFile.CreateAsync<StandardMaterial>(loader);
         StandardMaterial standard = Assert.IsType<StandardMaterial>(instance);
         Assert.Equal(materialGuid, materialFile.Id);
         Assert.Equal("strong material", standard.Name);
