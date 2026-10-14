@@ -126,7 +126,7 @@ public class GltfSourceImporterTests
             AssetEntry entry = project.List(MaterialAsset.FileType).Single(asset => asset.Name == "MaskedLit");
             string path = Path.Combine(dir, entry.Path);
             await using MaterialAsset material = await MaterialAsset.OpenAsync(path);
-            Assert.IsType<StandardMaterialAsset>(material);
+            Assert.IsType<MaterialAsset>(material);
             Assert.Equal(new AssetId<ShaderAsset>(Guid.Parse(LitShaderGuid)), material.GetBlock<MaterialBlock>().Shader);
         }
         finally

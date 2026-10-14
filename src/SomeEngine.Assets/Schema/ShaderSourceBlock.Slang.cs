@@ -1,46 +1,12 @@
-using System.Buffers;
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using SlangShaderSharp;
 using SomeEngine.Resources;
-using SomeEngine.Serialization;
-using SomeEngine.Serialization.Containers;
-using SomeEngine.Serialization.IO;
 
 namespace SomeEngine.Assets.Schema;
 
 public sealed partial class ShaderSourceBlock
 {
     private static readonly ConditionalWeakTable<IGlobalSession, SemaphoreSlim> s_slangFrontEnds = new();
-
-    public static ulong SerializedSourceKey(int sourceIndex)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(sourceIndex);
-        return BinaryFieldKey.FromName(
-            "SomeEngine.Assets.Schema.Shader.Source.Slang." +
-            sourceIndex.ToString(CultureInfo.InvariantCulture));
-    }
-
-    public void SetSerializedSource(int sourceIndex, ReadOnlySpan<byte> bytes)
-    {
-        if (bytes.IsEmpty)
-            throw new ArgumentException("Serialized Slang source cannot be empty.", nameof(bytes));
-        lock (SyncRoot)
-        {
-            RequireIdle();
-            if ((uint)sourceIndex >= (uint)SourceNames.Count)
-                throw new ArgumentOutOfRangeException(nameof(sourceIndex));
-        }
-
-        byte[] content = bytes.ToArray();
-        lock (SyncRoot)
-        {
-            RequireIdle();
-            if ((uint)sourceIndex >= (uint)SourceNames.Count)
-                throw new InvalidOperationException("The shader source list changed while its Slang data was encoded.");
-            SetBytes(SerializedSourceKey(sourceIndex), content);
-        }
-    }
 
     /// <summary>
     /// Acquires the selected source files, compiles them with Slang, and returns a resident shader.
@@ -82,6 +48,17 @@ public sealed partial class ShaderSourceBlock
             saveSources: false,
             cancellationToken).ConfigureAwait(false)).Shader;
 
+    internal async ValueTask<Shader> CreateSelectedAsync(
+        IReadOnlyList<ShaderInputSource> inputs,
+        IGlobalSession slang,
+        SessionDesc sessionDescription,
+        string name,
+        ReadOnlyMemory<SpecializationArg> specializations,
+        bool generateCode,
+        CancellationToken cancellationToken) =>
+        (await CreateCoreAsync(slang, sessionDescription, name, specializations,
+            generateCode, saveSources: false, cancellationToken, inputs).ConfigureAwait(false)).Shader;
+
     private async ValueTask<ShaderCompilation> CreateCoreAsync(
         IGlobalSession slang,
         SessionDesc sessionDescription,
@@ -89,7 +66,8 @@ public sealed partial class ShaderSourceBlock
         ReadOnlyMemory<SpecializationArg> specializations,
         bool generateCode,
         bool saveSources,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<ShaderInputSource>? inputs = null)
     {
         ArgumentNullException.ThrowIfNull(slang);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -116,10 +94,12 @@ public sealed partial class ShaderSourceBlock
         await frontEnd.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (copy.SourceNames.Count == 0)
+            if (inputs is null && copy.SourceNames.Count == 0)
                 throw new InvalidDataException("The shader source block contains no source files.");
 
-            string[] paths = copy.SourceNames.Select(NormalizeSourceName).ToArray();
+            string[] paths = inputs is null
+                ? copy.SourceNames.Select(NormalizeSourceName).ToArray()
+                : inputs.Select(static input => input.Name).ToArray();
             if (paths.Distinct(StringComparer.OrdinalIgnoreCase).Count() != paths.Length)
                 throw new InvalidDataException("The shader source block contains duplicate source files.");
 
@@ -138,13 +118,13 @@ public sealed partial class ShaderSourceBlock
                 ulong serializedKey = SerializedSourceKey(sourceIndex);
                 IModule? sourceUnit;
                 ISlangBlob? diagnostics;
-                if (!saveSources && copy.ContentKeys.Contains(serializedKey))
+                if (!saveSources && (inputs is not null || copy.ContentKeys.Contains(serializedKey)))
                 {
-                    ReadOnlyMemory<byte> serialized = await copy.ReadBytesAsync(serializedKey, cancellationToken).ConfigureAwait(false);
+                    ReadOnlyMemory<byte> serialized = inputs is not null ? inputs[sourceIndex].Serialized
+                        : await copy.ReadBytesAsync(serializedKey, cancellationToken).ConfigureAwait(false);
                     ISlangBlob source = Slang.CreateBlob(serialized.Span);
                     sourceUnit = session.LoadModuleFromIRBlob(Path.GetFileNameWithoutExtension(paths[sourceIndex]),
                         paths[sourceIndex], source, out diagnostics);
-                    if (saveSources) serializedSources.Add(serialized);
                 }
                 else
                 {

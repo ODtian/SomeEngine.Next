@@ -4,8 +4,8 @@ using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets;
 
-/// <summary>Opens disk content. It does not create, cache, or release domain objects.</summary>
-public sealed class AssetLoader : IAsyncDisposable
+/// <summary>Opens asset files and holds the shared shaders and textures it creates.</summary>
+public sealed partial class AssetLoader : IAsyncDisposable
 {
     private readonly IAssetStorage _storage;
     private readonly AssetLoaderOptions _options;
@@ -220,18 +220,33 @@ public sealed class AssetLoader : IAsyncDisposable
                 return new(_close);
             _closed = true;
             FileRead[] reads = [.. _files.Values];
+            Task<Shader>[] shaders = [.. _shaders.Values.Select(static read => read.Task)];
+            Task<Texture>[] textures = [.. _textures.Values.Select(static read => read.Task)];
             _files.Clear();
+            _shaders.Clear();
+            _textures.Clear();
             _cachedRootBytes = 0;
-            _close = CloseAsync(reads, _cleanup);
+            _close = CloseAsync(reads, shaders, textures, _cleanup);
             return new(_close);
         }
     }
 
-    private async Task CloseAsync(FileRead[] reads, Task cleanup)
+    private async Task CloseAsync(FileRead[] reads, Task<Shader>[] shaders, Task<Texture>[] textures, Task cleanup)
     {
         await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try { await _stop.CancelAsync().ConfigureAwait(false); }
         catch (Exception error) { lock (_gate) _closeErrors.Add(error); }
+        foreach (Task<Shader> read in shaders)
+            try { await read.ConfigureAwait(false); }
+            catch { }
+        foreach (Task<Texture> read in textures)
+        {
+            Texture texture;
+            try { texture = await read.ConfigureAwait(false); }
+            catch { continue; }
+            try { await texture.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception error) { lock (_gate) _closeErrors.Add(error); }
+        }
         await cleanup.ConfigureAwait(false);
         foreach (FileRead read in reads)
         {

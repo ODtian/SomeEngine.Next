@@ -1,4 +1,3 @@
-using System.Numerics;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Assets;
 using SomeEngine.Serialization.Containers;
@@ -22,11 +21,7 @@ internal static class SampleMaterials
         {
             AlbedoMap = new(SampleAssetIds.WhiteTexture),
             NormalMap = new(SampleAssetIds.NormalTexture),
-            ARMMap = new(SampleAssetIds.ArmTexture),
-            BaseColorTint = Vector4.One,
-            MetallicFactor = 0,
-            Roughness = 0.5f,
-            EmissiveFactor = Vector3.Zero,
+            ARMMap = new(SampleAssetIds.WhiteTexture),
         };
         standard.GetBlock<MaterialBlock>().Shader = new(standardShader);
         AssetEntry standardEntry = await standard.SaveAsync(Path.Combine(project.RootPath, "assets/Materials/Standard.material.asset"), cancellationToken).ConfigureAwait(false);
@@ -38,7 +33,6 @@ internal static class SampleMaterials
         _ = new UnlitMaterialParameters(unlit.GetBlock<MaterialBlock>())
         {
             AlbedoMap = new(SampleAssetIds.WhiteTexture),
-            BaseColorTint = Vector4.One,
         };
         unlit.GetBlock<MaterialBlock>().Shader = new(unlitShader);
         AssetEntry unlitEntry = await unlit.SaveAsync(Path.Combine(project.RootPath, "assets/Materials/TestUnlit_1.material.asset"), cancellationToken).ConfigureAwait(false);

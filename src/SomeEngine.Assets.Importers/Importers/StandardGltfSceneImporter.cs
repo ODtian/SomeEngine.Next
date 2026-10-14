@@ -41,29 +41,26 @@ public sealed class StandardGltfSceneImporter : GltfSceneImporter
         MaterialBlock content = material.GetBlock<MaterialBlock>();
         AssetId<TextureAsset> albedo = baseColor?.Texture is { } colorTexture
             && textures.TryGetValue(colorTexture, out AssetId<TextureAsset> colorId) ? colorId : default;
-        switch (material)
+        if (source.Unlit)
         {
-            case StandardMaterialAsset:
-                var standard = new StandardMaterialParameters(content);
-                var emissive = source.FindChannel("Emissive");
-                standard.BaseColorTint = baseColor?.Color ?? System.Numerics.Vector4.One;
-                standard.MetallicFactor = metallicRoughness?.GetFactor("MetallicFactor") ?? 1;
-                standard.Roughness = metallicRoughness?.GetFactor("RoughnessFactor") ?? 1;
-                System.Numerics.Vector4 emission = emissive?.Color ?? System.Numerics.Vector4.Zero;
-                standard.EmissiveFactor = new(emission.X, emission.Y, emission.Z);
-                if (!albedo.IsEmpty) standard.AlbedoMap = albedo;
-                if (source.FindChannel("Normal")?.Texture is { } normal
-                    && textures.TryGetValue(normal, out AssetId<TextureAsset> normalId)) standard.NormalMap = normalId;
-                if (surface is not null && textures.TryGetValue(surface, out AssetId<TextureAsset> surfaceId))
-                    standard.ARMMap = surfaceId;
-                break;
-            case UnlitMaterialAsset:
-                var unlit = new UnlitMaterialParameters(content);
-                unlit.BaseColorTint = baseColor?.Color ?? System.Numerics.Vector4.One;
-                if (!albedo.IsEmpty) unlit.AlbedoMap = albedo;
-                break;
-            default:
-                throw new InvalidDataException($"Unsupported glTF material type '{content.MaterialTypeId}'.");
+            var unlit = new UnlitMaterialParameters(content);
+            unlit.BaseColorTint = baseColor?.Color ?? System.Numerics.Vector4.One;
+            if (!albedo.IsEmpty) unlit.AlbedoMap = albedo;
+        }
+        else
+        {
+            var standard = new StandardMaterialParameters(content);
+            var emissive = source.FindChannel("Emissive");
+            standard.BaseColorTint = baseColor?.Color ?? System.Numerics.Vector4.One;
+            standard.MetallicFactor = metallicRoughness?.GetFactor("MetallicFactor") ?? 1;
+            standard.Roughness = metallicRoughness?.GetFactor("RoughnessFactor") ?? 1;
+            System.Numerics.Vector4 emission = emissive?.Color ?? System.Numerics.Vector4.Zero;
+            standard.EmissiveFactor = new(emission.X, emission.Y, emission.Z);
+            if (!albedo.IsEmpty) standard.AlbedoMap = albedo;
+            if (source.FindChannel("Normal")?.Texture is { } normal
+                && textures.TryGetValue(normal, out AssetId<TextureAsset> normalId)) standard.NormalMap = normalId;
+            if (surface is not null && textures.TryGetValue(surface, out AssetId<TextureAsset> surfaceId))
+                standard.ARMMap = surfaceId;
         }
         MaterialBlock block = content.Duplicate();
         try { output.SetBlock(block); }

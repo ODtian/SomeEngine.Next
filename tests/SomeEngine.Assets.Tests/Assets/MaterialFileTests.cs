@@ -11,27 +11,42 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class MaterialFileTests
 {
     [Fact]
-    public async Task StandardMaterialOpensWithEngineTypeAndDefaultTextureValues()
+    public async Task MaterialTemplatesSupplySharedWhiteAndFlatNormalAssets()
     {
         using var directory = new AssetTestDirectory();
         var project = new AssetProject(directory.Path, []);
-        using var asset = new SomeEngine.Assets.Schema.StandardMaterialAsset();
+        AssetId<TextureAsset> whiteId = await SaveColorAsync(project, directory, "white", [255, 255, 255, 255]);
+        AssetId<TextureAsset> normalId = await SaveColorAsync(project, directory, "normal", [128, 128, 255, 255]);
+        using var template = new MaterialAsset { Name = "Standard template" };
+        _ = new StandardMaterialParameters(template.GetBlock<MaterialBlock>())
+        {
+            AlbedoMap = whiteId, ARMMap = whiteId, NormalMap = normalId,
+        };
+        project.RegisterAsset(await template.SaveAsync(directory.File("template.material.asset")));
+        using var asset = new StandardMaterialAsset();
+        asset.GetBlock<MaterialBlock>().Parent = template.Reference;
         Guid id = project.RegisterAsset(await asset.SaveAsync(directory.File("standard.material.asset")));
         await using var loader = new AssetLoader(project.CreateStorage());
         await using MaterialAsset opened = await MaterialAsset.OpenAsync(loader, new(id));
-        using Material created = await opened.CreateAsync(loader);
-        var material = Assert.IsType<SomeEngine.Resources.StandardMaterial>(created);
-        Assert.Equal(SomeEngine.Serialization.BinaryTypeId.FromLogicalName("SomeEngine.Assets.Schema.StandardMaterial"), material.MaterialTypeId);
+        using StandardMaterial material = await opened.CreateAsync<StandardMaterial>(loader);
+        Assert.Equal(0.5f, material.Roughness);
+        Assert.Same(material.AlbedoMap, material.ARMMap);
         Assert.True(material.AlbedoMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var white));
         Assert.Equal(new byte[] { 255, 255, 255, 255 }, white.ToArray());
         Assert.True(material.NormalMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var normal));
         Assert.Equal(new byte[] { 128, 128, 255, 255 }, normal.ToArray());
         Assert.True(material.ARMMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var arm));
         Assert.Equal(new byte[] { 255, 255, 255, 255 }, arm.ToArray());
+
+        using var unlitTemplate = new MaterialAsset { Name = "Unlit template" };
+        _ = new UnlitMaterialParameters(unlitTemplate.GetBlock<MaterialBlock>()) { AlbedoMap = whiteId };
+        project.RegisterAsset(await unlitTemplate.SaveAsync(directory.File("unlit.material.asset")));
+        using UnlitMaterial unlit = await unlitTemplate.CreateAsync<UnlitMaterial>(loader);
+        Assert.Same(material.AlbedoMap, unlit.AlbedoMap);
     }
 
     [Fact]
-    public async Task ParentAndOverridesRoundTripWithoutCreatingObjectsDuringOpen()
+    public async Task ParentAndOverridesRoundTripWithSharedTextureReferences()
     {
         using var directory = new AssetTestDirectory();
         var project = new AssetProject(directory.Path, []);
@@ -68,22 +83,24 @@ public sealed class MaterialFileTests
         await using MaterialAsset copy = await MaterialAsset.OpenAsync(copied);
         Assert.Equal(opened.Id, copy.Id);
         Assert.Equal([parentId], copy.Describe().Dependencies);
-        using Material first = await opened.CreateAsync(loader);
-        using Material second = await copy.CreateAsync(loader);
+        using Material first = await opened.CreateAsync<StandardMaterial>(loader);
+        using Material second = await copy.CreateAsync<StandardMaterial>(loader);
         StandardMaterial a = Assert.IsType<StandardMaterial>(first);
         StandardMaterial b = Assert.IsType<StandardMaterial>(second);
-        using Material shared = await copy.CreateAsync(loader, null, (_, _) => ValueTask.FromResult(b.AlbedoMap!));
+        using Material shared = await copy.CreateAsync<StandardMaterial>(loader);
         Assert.Same(b.AlbedoMap, Assert.IsType<StandardMaterial>(shared).AlbedoMap);
         shared.Dispose();
         Assert.Equal(0.8f, a.Roughness);
         Assert.Equal(new Vector4(0.2f, 0.4f, 0.6f, 1f), a.BaseColorTint);
-        Assert.NotSame(a.AlbedoMap, b.AlbedoMap);
+        Assert.Same(a.AlbedoMap, b.AlbedoMap);
         await opened.DisposeAsync();
         await copy.DisposeAsync();
-        await loader.DisposeAsync();
         first.Dispose();
         Assert.True(b.AlbedoMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
         Assert.Equal(new byte[] { 19 }, bytes.ToArray());
+        await loader.DisposeAsync();
+        Assert.True(b.AlbedoMap.IsDisposed);
+        Assert.False(second.IsDisposed);
     }
 
     [Fact]
@@ -138,8 +155,28 @@ public sealed class MaterialFileTests
         Assert.Equal(1, notifications);
         Assert.Equal("after", material.Name);
         Assert.Equal(0.7f, material.Roughness);
-        await loader.DisposeAsync();
         Assert.True(material.AlbedoMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
         Assert.Equal(new byte[] { 73 }, bytes.ToArray());
+    }
+
+    private static async ValueTask<AssetId<TextureAsset>> SaveColorAsync(
+        AssetProject project, AssetTestDirectory directory, string name, byte[] rgba)
+    {
+        using var pixels = new TextureBlock
+        {
+            Dimension = TextureDimension.Texture2D,
+            Width = 1, Height = 1, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
+            Format = Format.R8G8B8A8UNorm, SampledFormat = Format.R8G8B8A8UNorm,
+            SampledDimension = TextureViewDimension.Texture2D,
+            MipTiles = [new TextureMipTile
+            {
+                Width = 1, Height = 1, RowPitch = 4, SlicePitch = 4,
+                ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 4,
+            }],
+        };
+        pixels.SetBytes(pixels.MipTiles[0].ChunkKey, rgba);
+        using var asset = new TextureAsset { Name = name };
+        asset.SetBlock(pixels);
+        return new(project.RegisterAsset(await asset.SaveAsync(directory.File(name + ".texture.asset"))));
     }
 }

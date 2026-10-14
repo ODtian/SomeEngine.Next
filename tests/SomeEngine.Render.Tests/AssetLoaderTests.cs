@@ -81,7 +81,7 @@ public sealed class AssetLoaderTests
         Assert.True(mesh.TryGetPage(0, out _));
         await meshFile.GetBlock<ClusterMeshBlock>().LoadPagesAsync(mesh, [0]);
         await using MaterialAsset materialFile = await MaterialAsset.OpenAsync(loader, new AssetId<MaterialAsset>(materialId));
-        using Material material = await materialFile.CreateAsync(loader);
+        using Material material = await materialFile.CreateAsync<StandardMaterial>(loader);
         StandardMaterial standard = Assert.IsType<StandardMaterial>(material);
         Assert.NotNull(standard.AlbedoMap);
         Assert.NotSame(texture, standard.AlbedoMap);

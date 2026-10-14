@@ -16,7 +16,6 @@ public abstract partial class Material : IDisposable
 {
     private ulong[]? _changes;
     private bool _changingProperties;
-    private Texture[] _createdTextures = [];
     private int _disposed;
     private Shader? _shader;
     private static long _nextMaterialId;
@@ -81,7 +80,6 @@ public abstract partial class Material : IDisposable
         previousFields.Name = Name;
         previousFields.Shader = Shader;
         previousFields.CopyProperties(this);
-        Texture[] previous = _createdTextures;
         _changingProperties = true;
         try
         {
@@ -98,26 +96,18 @@ public abstract partial class Material : IDisposable
         }
         finally { _changingProperties = false; }
 
-        // User notification must not allow replacement.Dispose to destroy the new fields.
-        _createdTextures = replacement._createdTextures;
-        replacement._createdTextures = [];
         Revision = revision;
         var errors = new List<Exception>();
         NotifyChanged(errors);
-        CloseContent(previous, errors);
         if (errors.Count != 0)
             throw new AggregateException("Material content was updated, but notification or old-content cleanup failed.", errors);
     }
 
-    // Called on a newly created, unpublished material. The dependencies transfer before setters run,
-    // so a failed initialization is cleaned up by disposing that material.
-    internal void InitializeContent(
+    protected void InitializeContent(
         string? name,
         Shader? shader,
-        IEnumerable<(MaterialValue Value, Texture? Texture)> values,
-        Texture[] createdTextures)
+        IEnumerable<(MaterialValue Value, Texture? Texture)> values)
     {
-        _createdTextures = [.. _createdTextures, .. createdTextures];
         _changingProperties = true;
         try
         {
@@ -129,11 +119,7 @@ public abstract partial class Material : IDisposable
     }
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        var errors = new List<Exception>();
-        CloseContent(Interlocked.Exchange(ref _createdTextures, []), errors);
-        if (errors.Count != 0)
-            throw new AggregateException("Some material content could not be closed.", errors);
+        Interlocked.Exchange(ref _disposed, 1);
     }
 
     protected abstract Material CreateEmpty();
@@ -155,12 +141,6 @@ public abstract partial class Material : IDisposable
             catch (Exception error) { errors.Add(error); }
     }
 
-    private static void CloseContent(Texture[] textures, List<Exception> errors)
-    {
-        foreach (Texture texture in textures)
-            try { texture.Dispose(); }
-            catch (Exception error) { errors.Add(error); }
-    }
 }
 
 public readonly record struct MaterialPropertyDefinition(uint Index, string Name, Type ValueType);
