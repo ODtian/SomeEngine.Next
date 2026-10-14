@@ -54,7 +54,7 @@ public sealed partial class ClusterPipelineSystem
             }
             else textures = textures.Add(texture, RegisterMaterialTexture(ref edit, texture, change));
         }
-        return textures;
+        return RefreshMaterialTextures(ref edit, textures);
     }
 
     private MaterialTexture RegisterMaterialTexture(ref RenderGraphEdit edit, EngineTexture texture, int references)
@@ -72,29 +72,37 @@ public sealed partial class ClusterPipelineSystem
 
     private void RefreshMaterialTextures()
     {
-        var changes = _materialTextures.Where(pair =>
+        bool changed = _materialTextures.Any(pair =>
         {
             TextureVersions version = _renderWorld.ReadTextureVersions(pair.Key);
             return version != pair.Value.Versions || version.Content != version.Replacement;
-        }).ToArray();
-        if (changes.Length == 0) return;
-        var textures = _materialTextures;
+        });
+        if (!changed) return;
         RenderGraphEdit edit = _graph.BeginEdit();
         try
         {
-            foreach ((EngineTexture asset, MaterialTexture current) in changes)
+            var textures = RefreshMaterialTextures(ref edit, _materialTextures);
+            edit.Commit();
+            AcceptMaterialTextures(textures);
+        }
+        finally { edit.Dispose(); }
+    }
+
+    private ImmutableDictionary<EngineTexture, MaterialTexture> RefreshMaterialTextures(
+        ref RenderGraphEdit edit, ImmutableDictionary<EngineTexture, MaterialTexture> textures)
+    {
+        foreach ((EngineTexture asset, MaterialTexture current) in textures)
+        {
+            TextureVersions version = _renderWorld.ReadTextureVersions(asset);
+            if (version == current.Versions && version.Content == version.Replacement) continue;
+            if (ReferenceEquals(_renderDevice.GetTexture(asset), current.Texture))
+                textures = textures.SetItem(asset, current with { Versions = version });
+            else
             {
-                if (ReferenceEquals(_renderDevice.GetTexture(asset), current.Texture))
-                {
-                    textures = textures.SetItem(asset, current with { Versions = _renderWorld.ReadTextureVersions(asset) });
-                    continue;
-                }
                 if (current.RegisteredHere) edit.Remove(current.Id);
                 textures = textures.SetItem(asset, RegisterMaterialTexture(ref edit, asset, current.References));
             }
-            edit.Commit();
-            _materialTextures = textures;
         }
-        finally { edit.Dispose(); }
+        return textures;
     }
 }

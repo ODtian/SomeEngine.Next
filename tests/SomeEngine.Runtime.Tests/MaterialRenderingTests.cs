@@ -263,6 +263,29 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
 
     [SceneTheory]
     [InlineData("d3d12")]
+    public async Task ReplacingTheLastMaterialTextureReferenceMatchesStartingWithReplacement(string backend)
+    {
+        using Texture original = CreateColorTexture(255);
+        using Texture replacement = CreateColorTexture(128);
+        SceneImage? before = null, changed = null, expected = null;
+        await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 12,
+        [
+            new(0, edit => ((UnlitMaterial)edit.GetMaterial(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere"))).AlbedoMap = original),
+            new(7, edit => edit.CaptureImage(image => before = image)),
+            new(8, edit => ((UnlitMaterial)edit.GetMaterial(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere"))).AlbedoMap = replacement),
+            new(11, edit => edit.CaptureImage(image => changed = image)),
+        ]), "--no-taa", "--no-vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 12,
+        [
+            new(0, edit => ((UnlitMaterial)edit.GetMaterial(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere"))).AlbedoMap = replacement),
+            new(11, edit => edit.CaptureImage(image => expected = image)),
+        ]), "--no-taa", "--no-vsm");
+        Assert.NotEqual(before!.Pixels.ToArray(), changed!.Pixels.ToArray());
+        SceneImages.AssertEqual(expected!, changed);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
     [InlineData("vulkan")]
     public async Task ShaderContentReplacementMatchesStartingWithTheReplacementShader(string backend)
     {

@@ -183,6 +183,27 @@ public sealed class MaterialFileTests
         Assert.Same(material.AlbedoMap, await loader.GetTextureAsync(new(id)));
     }
 
+    [Fact]
+    public async Task TextureCanBeRequestedAgainAfterItsFileIsRestored()
+    {
+        using var directory = new AssetTestDirectory();
+        var project = new AssetProject(directory.Path, []);
+        byte[] rgba = [73, 125, 211, 255];
+        AssetId<TextureAsset> id = await SaveColorAsync(project, directory, "restored", rgba);
+        string path = directory.File("restored.texture.asset");
+        byte[] bytes = await File.ReadAllBytesAsync(path);
+        File.Delete(path);
+        await using var loader = new AssetLoader(project.CreateStorage());
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() => loader.GetTextureAsync(id).AsTask());
+        await File.WriteAllBytesAsync(path, bytes);
+        Texture texture = await loader.GetTextureAsync(id);
+
+        Assert.Same(texture, await loader.GetTextureAsync(id));
+        Assert.True(texture.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var pixels));
+        Assert.Equal(rgba, pixels.ToArray());
+    }
+
     private static async ValueTask<AssetId<TextureAsset>> SaveColorAsync(
         AssetProject project, AssetTestDirectory directory, string name, byte[] rgba)
     {
