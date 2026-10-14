@@ -99,6 +99,16 @@ public partial class MaterialAsset : Asset
         return result;
     }
 
+    /// <summary>Gets the ancestor template identity used by the game's concrete material selection.</summary>
+    public async ValueTask<AssetId<MaterialAsset>> GetTemplateAsync(AssetLoader loader,
+        CancellationToken cancellationToken = default)
+    {
+        MaterialBlock content = await GetBlockAsync<MaterialBlock>(cancellationToken).ConfigureAwait(false);
+        if (content.Parent.IsEmpty) return Reference;
+        using MaterialAsset parent = await OpenAsync(loader, content.Parent, cancellationToken).ConfigureAwait(false);
+        return await parent.GetTemplateAsync(loader, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Resolves complete content and creates the concrete material chosen by the caller.</summary>
     public async ValueTask<TMaterial> CreateAsync<TMaterial>(AssetLoader loader,
         CancellationToken cancellationToken = default) where TMaterial : Material, IMaterial<TMaterial>

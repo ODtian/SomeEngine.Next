@@ -62,6 +62,7 @@ public static class SceneContent
         for (int index = 0; index < 2; index++)
         {
             using var material = template.CreateCopy();
+            material.GetBlock<MaterialBlock>().Parent = template.Reference;
             material.Name = index == 0 ? "red sphere" : "green sphere";
             new UnlitMaterialParameters(material.GetBlock<MaterialBlock>()).BaseColorTint = index == 0 ? new(1, 0, 0, 1) : new(0, 1, 0, 1);
             project.RegisterAsset(await material.SaveAsync(Path.Combine(destination, $"assets/Materials/sphere-{index}.material.asset")));

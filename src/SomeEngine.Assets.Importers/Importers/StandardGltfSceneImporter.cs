@@ -72,21 +72,13 @@ public sealed class StandardGltfSceneImporter : GltfSceneImporter
     {
         GltfImporterSettings sourceSettings = context.GetSettings(GltfSourceImporter.SourceImporterId,
             new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
-        string? templatePath = unlit ? sourceSettings.UnlitMaterialTemplate : sourceSettings.LitMaterialTemplate;
-        if (templatePath is not null)
-        {
-            string path = GltfDeps.FullPath(context.ProjectRoot, templatePath);
-            await context.ReportInputAsync(path, cancellationToken).ConfigureAwait(false);
-            await using MaterialAsset template = await MaterialAsset.OpenAsync(path, cancellationToken).ConfigureAwait(false);
-            return template.CreateCopy();
-        }
-
-        string shaderPath = GltfDeps.FullPath(context.ProjectRoot,
-            unlit ? sourceSettings.UnlitShader : sourceSettings.LitShader);
-        await context.ReportInputAsync(shaderPath, cancellationToken).ConfigureAwait(false);
-        using ShaderAsset shader = await ShaderAsset.OpenSourceAsync(shaderPath, cancellationToken).ConfigureAwait(false);
-        MaterialAsset material = unlit ? new UnlitMaterialAsset() : new StandardMaterialAsset();
-        material.GetBlock<MaterialBlock>().Shader = shader.Reference;
+        string templatePath = unlit ? sourceSettings.UnlitMaterialTemplate ?? MaterialTemplates.UnlitPath
+            : sourceSettings.LitMaterialTemplate ?? MaterialTemplates.StandardPath;
+        string path = GltfDeps.FullPath(context.ProjectRoot, templatePath);
+        await context.ReportInputAsync(path, cancellationToken).ConfigureAwait(false);
+        using MaterialAsset template = await MaterialAsset.OpenAsync(path, cancellationToken).ConfigureAwait(false);
+        var material = new MaterialAsset();
+        material.GetBlock<MaterialBlock>().Parent = template.Reference;
         return material;
     }
 }

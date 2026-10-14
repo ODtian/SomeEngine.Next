@@ -10,4 +10,11 @@ public sealed partial class ClusterMaterialEntriesBlock : ShaderInputBlock
         result.SetBytes(SerializedSourceKey(0), StandardMaterialInputs.Read("cluster_material"));
         return result;
     }
+
+    public static ClusterMaterialEntriesBlock CreateUnlit()
+    {
+        var result = new ClusterMaterialEntriesBlock { SourceNames = ["cluster_unlit_material.slang"] };
+        result.SetSerializedSource(0, StandardMaterialInputs.Read("cluster_unlit_material"));
+        return result;
+    }
 }

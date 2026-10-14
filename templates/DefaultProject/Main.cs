@@ -2,6 +2,7 @@ using SomeEngine.Runtime;
 #if SOMEENGINE_DEVELOPMENT
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
+using Microsoft.Extensions.DependencyInjection;
 #endif
 
 namespace Game;
@@ -11,18 +12,27 @@ public static class GameApplication
     public static Task<int> Main(string[] args)
     {
 #if SOMEENGINE_DEVELOPMENT
-        if (AssetCommands.Matches(args))
+        if (args is ["prepare-materials"] || AssetCommands.Matches(args))
         {
             AssetProject project = AssetProjects.Create(
                 ProjectPaths.Root,
                 [ProjectPaths.EngineShaders],
-                static services => GameAssetCapabilities.AddAssetCapabilities(services),
+                GameAssetCapabilities.AddAssetCapabilities(new ServiceCollection()),
                 GameAssetCapabilities.BuildVersion);
-            return AssetCommands.RunAsync(project, args, Console.Out).AsTask();
+            return args is ["prepare-materials"] ? PrepareMaterialsAsync(project)
+                : AssetCommands.RunAsync(project, args, Console.Out).AsTask();
         }
 #endif
-        return Application.RunAsync(args);
+        return Application.RunAsync<EngineSceneMaterials>(args);
     }
+
+#if SOMEENGINE_DEVELOPMENT
+    private static async Task<int> PrepareMaterialsAsync(AssetProject project)
+    {
+        await MaterialAssets.PrepareAsync(project);
+        return 0;
+    }
+#endif
 }
 
 #if SOMEENGINE_DEVELOPMENT

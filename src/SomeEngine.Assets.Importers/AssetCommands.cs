@@ -35,7 +35,17 @@ public static class AssetCommands
         {
             for (int index = 1; index < arguments.Count; index++)
             {
-                Guid id = await project.BuildAsync(arguments[index], cancellationToken: cancellationToken).ConfigureAwait(false);
+                string input = Path.GetFullPath(arguments[index], project.RootPath);
+                Guid id;
+                if (input.EndsWith(Schema.ShaderAsset.PathSuffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    using Schema.ShaderAsset shader = await Schema.ShaderAsset.OpenAsync(input, cancellationToken).ConfigureAwait(false);
+                    var slang = SlangShaderImporter.GlobalSession;
+                    var settings = SlangShaderImporter.CreateSessionDescription(input, SlangShaderImporter.CreateDefaultTargets(slang));
+                    await shader.CompileAsync(slang, settings, cancellationToken).ConfigureAwait(false);
+                    id = project.RegisterAsset(await shader.SaveAsync(input, cancellationToken).ConfigureAwait(false));
+                }
+                else id = await project.BuildAsync(input, cancellationToken: cancellationToken).ConfigureAwait(false);
                 await output.WriteLineAsync(id.ToString()).ConfigureAwait(false);
             }
             return 0;
@@ -48,7 +58,7 @@ public static class AssetCommands
             return 0;
         }
 
-        await output.WriteLineAsync("Usage: import <source>... | build <definition>... | list [asset-type]").ConfigureAwait(false);
+        await output.WriteLineAsync("Usage: import <source>... | build <definition-or-shader-asset>... | list [asset-type]").ConfigureAwait(false);
         return 2;
     }
 }

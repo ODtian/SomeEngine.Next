@@ -316,6 +316,7 @@ public sealed class GltfExtensionBehaviorTests
             using var unlit = new ShaderAsset { Name = "unlit" };
             await standard.SaveSourceAsync(Path.Combine(shaderDirectory, "standard.shader"));
             await unlit.SaveSourceAsync(Path.Combine(shaderDirectory, "unlit.shader"));
+            await MaterialTemplates.SaveAsync(new AssetProject(Directory, []), standard.Reference, unlit.Reference);
         }
         public void AddTexturedMaterial()
         {

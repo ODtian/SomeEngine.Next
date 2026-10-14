@@ -4,7 +4,7 @@
 
 Standard、Unlit 的 C# 声明、配套资产类型与共享 Slang 实现由引擎提供。生成的强类型参数入口访问 MaterialBlock，例如 `StandardMaterialParameters`。项目的具体材质声明也由 MaterialGen 生成 `IMaterial<TMaterial>.Create`；静态实现直接构造指定类型，使用类字段默认值并应用参数。
 
-标准材质对象位于 Resources，资产类型与参数入口位于 Assets 的 Schema。标准材质的图片默认值来自实际 TextureAsset 与材料模板。DefaultGame 的 Standard 模板让 AlbedoMap 和 ARMMap 引用同一个白图，让 NormalMap 引用平法线图；Unlit 模板引用同一个白图。标量默认值由具体材料类的字段初始化表达。
+标准材质对象位于 Resources，资产类型与参数入口位于 Assets 的 Schema。`MaterialTemplates.SaveAsync(project, standardShader, unlitShader)` 保存实际白图、平法线图和两份材质模板。Standard 的 AlbedoMap 和 ARMMap 引用同一个白图，NormalMap 引用平法线图；Unlit 引用同一个白图。项目可通过 `CreateStandard`、`CreateUnlit` 取得模板内容并编辑。标量默认值由具体材料类的字段初始化表达。
 
 ```csharp
 await using var loader = new AssetLoader(storage, slang, sessionDescription);
@@ -18,6 +18,10 @@ material.Roughness = 0.25f;
 每个参数记录一项局部覆盖。父资产先提供完整参数集合，当前资产逐项替换对应参数；类字段初始化提供其余值。显式零值是覆盖，显式空纹理引用是清除继承纹理。Reset 移除覆盖事实，重新遵循父级或类字段默认值。HasOverride 查询该参数的局部记录。
 
 父级合并发生在 `CreateAsync<TMaterial>` 的明确加载边界，具体类型在生成代码中解释最终参数。父链循环在解析时报告资产数据错误。
+
+`GetTemplateAsync(loader)` 从材质资产的父关系取得祖先模板身份。glTF Standard、Unlit 导入将模板保存为 `MaterialBlock.Parent`，参数只表达来源覆盖。实际纹理及 Shader 通过创建时的父级解析取得。
+
+游戏通过 `ISceneMaterials` 的静态 `CreateAsync` 选择具体材质，公开启动为 `Application.RunAsync<GameMaterials>(args)`。`EngineSceneMaterials` 根据 Standard 与 Unlit 模板引用分别调用具体的 `CreateAsync<StandardMaterial>`、`CreateAsync<UnlitMaterial>`。DefaultGame 的 `SampleSceneMaterials` 使用 Imported 模板引用创建实际 `SceneMaterial`，其余材料继续使用引擎模板。
 
 ## Shader 和引用
 
@@ -36,5 +40,7 @@ MaterialBlock 保存 Shader 资产引用，Material 保存实际 Shader 对象�
 共享 Shader 的显式刷新由 `AssetLoader.RefreshShaderAsync` 推进当前引用，材料在业务更新时取得该引用。共享 Texture 由 `RefreshTextureAsync` 保持业务对象身份并完成设备更新，见 [更新边界](Asset-Update-Boundary.md)。
 
 2026-10-14 行为证据：MaterialCreationBehaviorTests 的消费者静态创建检查通过；MaterialFileTests、MaterialReloadTests 与 MaterialInheritanceTests 的 9 项检查通过，覆盖父级合并、局部覆盖、模板像素、实际 Shader/Texture 共享和业务实例使用。
+
+同日 #216 集成检查：MaterialTemplateTests 与 glTF 具体创建检查通过；SharedMaterialEntryTests 从同一个 StandardMaterial 经既有提取与公开 GPU 参数绑定，验证两个入口组在业务参数修改前后的实际读回结果，覆盖 IR 和 CLI 保存的共同代码。资产 NativeAOT 原生程序完成下游自定义材料的静态创建、更新、默认值恢复与共享 Shader 使用。
 
 实现：[MaterialAsset](../../../src/SomeEngine.Assets/Schema/MaterialAsset.cs)、[MaterialBlock](../../../src/SomeEngine.Assets/Schema/MaterialBlock.cs)、[标准材质](../../../src/SomeEngine.Resources/StandardMaterial.cs)、[材质生成器](../../../src/SomeEngine.Generators/MaterialGen.cs)。
