@@ -55,6 +55,9 @@ public abstract class AssetBlock : IDisposable, IAsyncDisposable
     internal void ValidateForWrite() => ValidateContent();
 
     protected void AttachSource(AssetBlockSource source)
+        => AttachSource(source, source.Version);
+
+    protected void AttachSource(AssetBlockSource source, Guid dataVersion)
     {
         lock (SyncRoot)
         {
@@ -63,7 +66,7 @@ public abstract class AssetBlock : IDisposable, IAsyncDisposable
                 throw new InvalidDataException("The source describes a different block type.");
             if (_source is not null) throw new InvalidOperationException("The block already has a source.");
             _source = source.Retain();
-            DataVersion = source.Version;
+            DataVersion = dataVersion;
         }
     }
 
