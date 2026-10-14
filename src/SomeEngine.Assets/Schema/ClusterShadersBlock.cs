@@ -15,9 +15,6 @@ public sealed partial class ClusterShadersBlock : AssetBlock
     public async ValueTask<ClusterShaders> CreateAsync(
         string name,
         AssetLoader loader,
-        IGlobalSession slang,
-        SessionDesc sessionDescription,
-        ReadOnlyMemory<SpecializationArg> specializations = default,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(loader);
@@ -27,9 +24,6 @@ public sealed partial class ClusterShadersBlock : AssetBlock
         Dictionary<Guid, Shader> shaders = await ShaderRef.LoadAsync(
             copy.References(),
             loader,
-            slang,
-            sessionDescription,
-            specializations,
             cancellationToken).ConfigureAwait(false);
         var result = new ClusterShaders
         {

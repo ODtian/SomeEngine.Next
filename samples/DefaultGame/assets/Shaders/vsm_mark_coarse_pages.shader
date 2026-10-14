@@ -10,7 +10,7 @@
   "Blocks": [
     {
       "TypeId": "def46de0-7af8-87e0-75b9-660aaa202b94",
-      "Schema": "B7BA7FC20330279C",
+      "Schema": "807616378EC9A0BF",
       "Fields": {
         "SourceNames": [
           "Pipeline/build_vsm_mark_coarse_pages.slang"

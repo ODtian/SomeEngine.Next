@@ -61,7 +61,7 @@ Shader shader = await asset.CreateAsync(
 
 这条路径恢复相同的直接 Slang 对象，并将所需代码交给最终 `byte[]`，由 `Shader` 通过普通引用持有。Asset 和文件随后可以释放，Shader 继续持有其代码及直接 Slang 对象。
 
-内部 `ShaderRef.LoadAsync` 与公共材质/管线配置创建 API 也要求调用边界显式提供 Slang 参数或 Shader 加载行为。`AssetLoader` 不推断设备 target。材质 UpdateAsync 同样接收显式 Slang 参数或 Shader、Texture 加载行为，完整取得替代内容后在既有更新边界更新 Material。
+`AssetLoader` 在构造时接收实际 Slang 全局会话和一份 `SessionDesc`。材质与 Cluster、VirtualShadowMap 配置通过同一加载器取得实际共享 Shader，配置创建为 `block.CreateAsync(name, loader)`。`MaterialAsset.UpdateAsync<TMaterial>(material, loader)` 完整取得替代内容，并由具体材质生成代码更新原对象。
 
 ## 增量构建与失败
 
@@ -76,10 +76,11 @@ Shader shader = await asset.CreateAsync(
 项目根目录与 include 路径由调用方提供。默认局部构建以定义所在目录为根，不向父目录搜索工程，也不以进程当前目录猜引擎库。
 
 ```powershell
-dotnet run --project <project-directory>/Game.csproj -- build assets/Shaders/standard.shader
+dotnet run --project <project-directory>/Game.csproj -- prepare-materials
+dotnet run --project <project-directory>/Game.csproj -- build assets/Shaders/standard.shader.asset
 ```
 
-游戏开发构建中的 `AssetCommands` 调用 `AssetProject.BuildAsync`。编辑器直接使用同一个资产 API；Shader 行为检查通过重新打开资产、恢复 Slang 数据和取得实际入口验证结果。
+游戏的 `prepare-materials` 通过强类型 Block 选择本项目的 Standard、Unlit 与 Cluster IR，调用 `CompileAsync` 保存共同代码及实际模板。通用 `AssetCommands build` 对 `.shader` 调用 `AssetProject.BuildAsync`，对 `.shader.asset` 编译资产中已经选择的 IR 集合并保存结果。编辑器使用同一公开资产入口。
 
 ## 模板边界
 

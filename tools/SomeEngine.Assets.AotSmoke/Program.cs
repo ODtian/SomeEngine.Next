@@ -136,7 +136,6 @@ try
     if (textDecoded.Values[SmokeTextMode.Linear] is not SmokeTextNumber { Number: 3 }
         || textDecoded.Values[SmokeTextMode.Constant] is not null)
         throw new InvalidOperationException("Static text dictionary, enum or union encoding failed.");
-    using var shaderFile = await ShaderAsset.OpenAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "triangle.shader.asset"));
     SlangResult slangResult = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession slang);
     if (slangResult.Failed || slang is null)
         throw new InvalidOperationException($"Slang global-session creation failed with {slangResult}.");
@@ -156,6 +155,7 @@ try
     SessionDesc sessionDescription = new()
     {
         Targets = targets,
+        SearchPaths = [directory],
         DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
         CompilerOptionEntries =
         [
@@ -165,15 +165,36 @@ try
             new(CompilerOptionName.ExperimentalFeature, CompilerOptionValue.FromInt(1, 0)),
         ],
     };
-    Shader shader = await shaderFile.GetBlock<ShaderBlock>().CreateAsync(
-        shaderFile.GetBlock<ShaderSourceBlock>(),
-        slang,
-        sessionDescription,
-        shaderFile.Name);
-    shaderFile.Dispose();
-    if (shader.SlangTargetCount != 2 || shader.SlangEntryCount == 0)
-        throw new InvalidOperationException("Built shader code did not survive its file closing.");
-    Console.WriteLine($"assets-nativeaot-smoke:ok schema={TextureAsset.SchemaHash:X16} instances=2 independent-open=ok ready-after-close=ok update=ok extension=ok mesh-file=ok material-inheritance=ok world=ok curve-source=ok text-shapes=ok shader-file=ok");
+    string shaderSource = Path.Combine(directory, "coating.slang");
+    await File.WriteAllTextAsync(shaderSource, """
+        RWStructuredBuffer<float> Result;
+        [shader("compute")]
+        [numthreads(1, 1, 1)]
+        void CoatingShade(uniform float Thickness) { Result[0] = Thickness; }
+        """);
+    using var shaderFile = new ShaderAsset { Name = "Coating" };
+    shaderFile.GetBlock<ShaderSourceBlock>().SourceNames = ["coating.slang"];
+    await shaderFile.CompileAsync(slang, sessionDescription);
+    project.RegisterAsset(await shaderFile.SaveAsync(Path.Combine(directory, "coating.shader.asset")));
+    await using var coatingLoader = new AssetLoader(project.CreateStorage(), slang, sessionDescription);
+    using var coatingAsset = new MaterialAsset { Name = "Consumer coating" };
+    coatingAsset.GetBlock<MaterialBlock>().Shader = shaderFile.Reference;
+    coatingAsset.GetBlock<MaterialBlock>().SetParameter(new(nameof(SmokeCoatingMaterial.Thickness), MaterialParameterKind.Float) { Float = .75f });
+    AssetEntry coatingEntry = await coatingAsset.SaveAsync(Path.Combine(directory, "coating.material.asset"));
+    using MaterialAsset coatingRead = await MaterialAsset.OpenAsync(coatingEntry.Path);
+    using SmokeCoatingMaterial coating = await coatingRead.CreateAsync<SmokeCoatingMaterial>(coatingLoader);
+    long coatingIdentity = coating.MaterialId;
+    Shader shader = coating.Shader!;
+    if (coating.Thickness != .75f || coating.Roughness != .4f
+        || !ReferenceEquals(shader, await coatingLoader.GetShaderAsync(shaderFile.Reference))
+        || !shader.TryGetSlangEntry(0, "CoatingShade", SlangStage.Compute, out _)
+        || shader.SlangTargetCount != 2)
+        throw new InvalidOperationException("Custom static material creation or shared shader loading failed.");
+    coatingRead.GetBlock<MaterialBlock>().Reset(nameof(SmokeCoatingMaterial.Thickness));
+    await coatingRead.UpdateAsync(coating, coatingLoader);
+    if (coating.MaterialId != coatingIdentity || coating.Thickness != .2f || coating.Roughness != .4f)
+        throw new InvalidOperationException("Custom static material updating lost defaults or instance identity.");
+    Console.WriteLine("assets-nativeaot-smoke:ok instances=2 independent-open=ok ready-after-close=ok update=ok extension=ok mesh-file=ok material-inheritance=ok world=ok curve-source=ok text-shapes=ok custom-material=ok shared-shader=ok");
 }
 finally
 {
@@ -322,6 +343,12 @@ public struct SmokeWorldValue : SomeEngine.ECS.IComponent
 {
     public int Number;
     public ExternalReferenceKey Reference;
+}
+
+public sealed partial class SmokeCoatingMaterial : Material
+{
+    public partial float Thickness { get; set; } = .2f;
+    public partial float Roughness { get; set; } = .4f;
 }
 
 public struct SmokeWorldCodec : ICanonicalComponentCodec<SmokeWorldValue>

@@ -26,50 +26,12 @@ public sealed partial record ShaderRef
     internal static async ValueTask<Dictionary<Guid, Shader>> LoadAsync(
         IEnumerable<Guid> references,
         AssetLoader loader,
-        IGlobalSession slang,
-        SessionDesc sessionDescription,
-        ReadOnlyMemory<SpecializationArg> specializations = default,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(loader);
-        ArgumentNullException.ThrowIfNull(slang);
-        if (sessionDescription.Targets is not { Length: > 0 })
-            throw new ArgumentException("Shader loading requires at least one Slang target.", nameof(sessionDescription));
-
         var shaders = new Dictionary<Guid, Shader>();
         foreach (Guid id in references.Where(static id => id != Guid.Empty).Distinct())
         {
-            await using ShaderAsset file = await ShaderAsset.OpenAsync(
-                loader,
-                new AssetId<ShaderAsset>(id),
-                cancellationToken).ConfigureAwait(false);
-            Shader shader;
-            if (file.ContainsBlock<ShaderBlock>())
-            {
-                ShaderBlock code = await file.GetBlockAsync<ShaderBlock>(cancellationToken)
-                    .ConfigureAwait(false);
-                ShaderSourceBlock source = await file.GetBlockAsync<ShaderSourceBlock>(cancellationToken)
-                    .ConfigureAwait(false);
-                shader = await code.CreateAsync(
-                    source,
-                    slang,
-                    sessionDescription,
-                    file.Name,
-                    specializations,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                ShaderSourceBlock source = await file.GetBlockAsync<ShaderSourceBlock>(cancellationToken)
-                    .ConfigureAwait(false);
-                shader = await source.CreateAsync(
-                    slang,
-                    sessionDescription,
-                    file.Name,
-                    specializations,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            shaders.Add(id, shader);
+            shaders.Add(id, await loader.GetShaderAsync(new(id), cancellationToken).ConfigureAwait(false));
         }
         cancellationToken.ThrowIfCancellationRequested();
         return shaders;

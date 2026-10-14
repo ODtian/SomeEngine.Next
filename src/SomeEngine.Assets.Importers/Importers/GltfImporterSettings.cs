@@ -7,15 +7,13 @@ namespace SomeEngine.Assets.Importers;
 
 public sealed record GltfImporterSettings
 {
-    public string LitShader { get; init; } = "assets/Shaders/standard.shader";
-    public string UnlitShader { get; init; } = "assets/Shaders/unlit.shader";
     public string? LitMaterialTemplate { get; init; }
     public string? UnlitMaterialTemplate { get; init; }
     public bool GenerateTangents { get; init; }
     public bool RequirePersistentElementIds { get; init; } = true;
     public string PersistentIdProperty { get; init; } = "someengine_id";
     /// <summary>Project code or build input version. Bump when project conversion behavior changes.</summary>
-    public string BuildVersion { get; init; } = "standard-gltf-7";
+    public string BuildVersion { get; init; } = "standard-gltf-8";
 }
 
 public sealed record GltfImportOverrides(GltfImporterSettings? Settings = null, IReadOnlyList<SourceImporterSettings>? Importers = null);

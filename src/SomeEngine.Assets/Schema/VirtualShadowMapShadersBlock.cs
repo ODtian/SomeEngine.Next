@@ -27,9 +27,6 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
     public async ValueTask<VirtualShadowMapShaders> CreateAsync(
         string name,
         AssetLoader loader,
-        IGlobalSession slang,
-        SessionDesc sessionDescription,
-        ReadOnlyMemory<SpecializationArg> specializations = default,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(loader);
@@ -39,9 +36,6 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
         Dictionary<Guid, Shader> shaders = await ShaderRef.LoadAsync(
             copy.References(),
             loader,
-            slang,
-            sessionDescription,
-            specializations,
             cancellationToken).ConfigureAwait(false);
         EntryPointReflection Resolve(ShaderRef reference)
         {

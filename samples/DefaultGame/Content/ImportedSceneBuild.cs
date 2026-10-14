@@ -39,17 +39,14 @@ public static class ImportedSceneBuild
                     GltfSettingsJson.Default.GltfImporterSettings)));
             SourceMeta.Save(copiedSource, sourceMetadata);
         }
-        GltfImporterSettings sourceSettings = sourceMetadata.GetSettings(GltfSourceImporter.SourceImporterId,
-            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings)
-            with { LitMaterialTemplate = "assets/Materials/Standard.material.asset" };
-        var sceneImporter = new ImportedSceneImporter(sourceSettings);
-        var importer = new GltfSourceImporter(services =>
-        {
-            SomeEngine.Assets.Importers.EngineAssetCapabilities.AddAssetCapabilities(services);
-            ImportedSceneCapabilities.AddAssetCapabilities(services);
-            services.AddSingleton(sceneImporter);
-            services.AddSingleton<IClusterVertexEncoder, SceneVertexEncoder>();
-        }, "imported-scenes-3;" + ImportedSceneCapabilities.BuildVersion, ImportedSceneImporter.ImporterId);
+        var sceneImporter = new ImportedSceneImporter();
+        var services = new ServiceCollection();
+        SomeEngine.Assets.Importers.EngineAssetCapabilities.AddAssetCapabilities(services);
+        ImportedSceneCapabilities.AddAssetCapabilities(services);
+        services.AddSingleton(sceneImporter);
+        services.AddSingleton<IClusterVertexEncoder, SceneVertexEncoder>();
+        var importer = new GltfSourceImporter(services, "imported-scenes-4;" + ImportedSceneCapabilities.BuildVersion,
+            ImportedSceneImporter.ImporterId);
         var project = new AssetProject(projectRoot, [importer],
             sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);
         AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
