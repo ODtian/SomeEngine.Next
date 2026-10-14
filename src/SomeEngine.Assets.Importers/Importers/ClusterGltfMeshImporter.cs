@@ -13,10 +13,8 @@ public sealed class ClusterGltfMeshImporter : IAssetImporter<GltfMesh, GltfMeshS
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        GltfImporterSettings sourceSettings = context.GetSettings(GltfSourceImporter.SourceImporterId,
-            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
         using MeshAsset built = ClusterBuilder.ProcessMesh(source, [], source.Name ?? "Mesh",
-            new ClusterBuilderOptions { GenerateMissingTangents = settings.GenerateTangents || sourceSettings.GenerateTangents,
+            new ClusterBuilderOptions { GenerateMissingTangents = settings.GenerateTangents,
                 VertexEncoder = StandardClusterVertexEncoder.Instance });
         cancellationToken.ThrowIfCancellationRequested();
         ClusterMeshBlock clusters = built.GetBlock<ClusterMeshBlock>().Duplicate();

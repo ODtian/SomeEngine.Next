@@ -36,6 +36,8 @@ Importer 使用 `[AssetImporter]` 声明持久 ID、生产的 Block 以及可选
 
 `[AssetImporterSet]` 声明包提供的导入组合，生成的 `ImporterSets` 数据保存组合身份、Importer 身份、中立与默认选择。来源集成将组合展开为逐个 Importer 写入 `.meta`。完整来源遍历、依赖执行和保存登记由来源集成与 Context 的对象方法完成，生产者竞争在一次导入中处理。
 
+设置提供者通过 `GetDefaults(SourceMeta)` 取得来源的初始设置，组合展开将这些值保存到实际 Importer 项；已有项继续提供该 Importer 的明确参数。glTF 几何设置沿用来源中的切线生成默认值，后续执行读取自己的已选参数。
+
 项目同时生成 `BlockKind`、`ImporterKind` 两个 enum，`BlockChoices`、`ImporterChoices` 提供编译时确定的 GUI 选择数据，含枚举值、显示名称和持久 ID。`SelectImporter` 将选择变成来源配置；`ContainsBlock` 和 `GetBlockAsync` 接受 Block 枚举，并以生成的强类型分支调用对应 API。GUI 无需扫描程序集或反射枚举类型。enum 数值只在当前项目编译结果中有效，文件保存持久 ID。
 
 ```csharp

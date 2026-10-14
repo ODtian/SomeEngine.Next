@@ -135,7 +135,7 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         if (!hasScene && metadata.UseDefaultImporters && sceneImporterId is { } requestedScene)
         {
             AssetImporterCapability selected = available.Single(capability => capability.Id == requestedScene);
-            metadata.Importers.Add(new(selected.Id, selected.GetDefaultSettings()));
+            metadata.Importers.Add(new(selected.Id, selected.GetDefaultSettings(metadata)));
         }
         IEnumerable<AssetImporterSetCapability> selectedSets = sets.Where(set => set.Neutral
             || metadata.ImporterSets.Contains(set.Id)
@@ -148,7 +148,7 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
                 if (metadata.Importers.Any(selection => selection.Enabled && available.Any(capability =>
                     capability.Id == selection.ImporterId && capability.ProducedBlocks.Any(block =>
                         importer.ProducedBlocks.Any(produced => produced.Id == block.Id))))) continue;
-                metadata.Importers.Add(new(importer.Id, importer.GetDefaultSettings()));
+                metadata.Importers.Add(new(importer.Id, importer.GetDefaultSettings(metadata)));
             }
     }
 

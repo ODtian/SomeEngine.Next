@@ -51,7 +51,7 @@ public abstract class AssetImporterCapability(
     public IReadOnlyList<AssetBlockCapability> ProducedBlocks { get; } = producedBlocks;
     public string ImplementationVersion { get; } = implementationVersion;
     public abstract object GetImporter(IServiceProvider services);
-    public abstract JsonElement GetDefaultSettings();
+    public abstract JsonElement GetDefaultSettings(SourceMeta source);
     protected abstract object BindImporter(IServiceProvider services, JsonElement? settings);
 
     public IAssetImporter<TSource> Bind<TSource>(IServiceProvider services, JsonElement? settings = null)
@@ -71,8 +71,8 @@ public sealed class AssetImporterCapability<TImporter, TSource, TSettings>(Guid 
     where TImporter : class, IAssetImporter<TSource, TSettings> where TSource : class where TSettings : notnull
 {
     public override object GetImporter(IServiceProvider services) => services.GetRequiredService<TImporter>();
-    public override JsonElement GetDefaultSettings() => settings is null ? default
-        : JsonSerializer.SerializeToElement(settings.DefaultSettings, settings.TypeInfo);
+    public override JsonElement GetDefaultSettings(SourceMeta source) => settings is null ? default
+        : JsonSerializer.SerializeToElement(settings.GetDefaults(source), settings.TypeInfo);
 
     protected override object BindImporter(IServiceProvider services, JsonElement? value)
         => AssetImporter.Bind(Id, ProducedBlocks.Select(static block => block.Id).ToArray(), services.GetRequiredService<TImporter>(),
