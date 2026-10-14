@@ -7,9 +7,9 @@ public static class AssetProjects
 {
     public static AssetProject Create(string projectRoot,
         IReadOnlyList<string>? shaderIncludeDirectories = null,
-        Action<IServiceCollection>? configureServices = null,
+        IServiceCollection? importers = null,
         string? capabilitiesVersion = null)
         => new(projectRoot,
-            [StandardGltfSceneImporter.CreateSourceImporter(configureServices, capabilitiesVersion)],
+            [StandardGltfSceneImporter.CreateSourceImporter(importers, capabilitiesVersion)],
             sourceFormats: [new ShaderSourceFormat(shaderIncludeDirectories)]);
 }

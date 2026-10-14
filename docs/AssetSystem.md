@@ -34,7 +34,7 @@ Loader 与存储按已选条目取得字节范围，不缓存唯一业务实例�
 
 扩展实现 IAssetImporter<TSource,TSettings>，直接接收原生来源库对象。多个 Importer 可向同一 Asset 写不同 Block。每个 Block 在同次结果中只能有一个生产者；冲突由配置或明确检查解决，不以执行顺序覆盖。Context 合并遍历与依赖调用，处理循环、取消和结果释放。
 
-项目引用决定能力，SG 生成 Microsoft DI 注册、静态设置读取和编辑器能力描述。来源配置与本次覆盖分别生效。标准 glTF 集成位于引擎 `SomeEngine.Assets.Importers`；外部扩展示例位于 `samples/SomeEngine.Curves.Assets`。
+项目引用决定能力，SG 为 Importer、Importer 能力描述和导入组合生成 Microsoft DI 注册。Importer 使用无参构造，实际来源和设置由导入上下文提供；其余资产操作通过对象方法和静态编码完成。来源配置与本次覆盖分别生效。标准 glTF 集成位于引擎 `SomeEngine.Assets.Importers`；外部扩展示例位于 `samples/SomeEngine.Curves.Assets`。
 
 ## 项目模板与工具
 

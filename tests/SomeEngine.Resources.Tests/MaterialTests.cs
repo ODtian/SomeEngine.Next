@@ -1,15 +1,13 @@
 using System.Numerics;
-using SomeEngine.Serialization;
 
 namespace SomeEngine.Resources.Tests;
 
 public sealed class MaterialTests
 {
     [Fact]
-    public void MaterialPropertiesKeepTheirTypeIdentityAndRecordOnlyActualChanges()
+    public void MaterialPropertiesKeepDefaultsAndRecordActualChanges()
     {
         using var material = new StandardMaterial();
-        Assert.Equal(BinaryTypeId.FromLogicalName("SomeEngine.Assets.Schema.StandardMaterial"), material.MaterialTypeId);
         Assert.Equal(0.5f, material.Roughness);
         uint index = material.Properties.Single(property => property.Name == nameof(StandardMaterial.Roughness)).Index;
         ulong revision = material.Revision;
@@ -25,34 +23,24 @@ public sealed class MaterialTests
     }
 
     [Fact]
-    public void UpdatePreservesIdentityAndNotifiesEveryObserverAfterChangingProperties()
+    public void ConcreteUpdatePreservesIdentityAndAdvancesOneContentRevision()
     {
         using var material = new StandardMaterial { Name = "before", Roughness = 0.25f };
         using var replacement = new StandardMaterial { Name = "after", Roughness = 0.75f };
         ulong revision = material.Revision;
-        int notifications = 0;
-        material.Changed += _ => throw new InvalidOperationException("observer");
-        material.Changed += current =>
-        {
-            Assert.Same(material, current);
-            Assert.Equal("after", current.Name);
-            Assert.Equal(0.75f, material.Roughness);
-            notifications++;
-        };
-        Assert.Throws<AggregateException>(() => material.Update(replacement));
-        Assert.Equal(1, notifications);
+        long identity = material.MaterialId;
+        material.Update(replacement);
+        Assert.Equal(identity, material.MaterialId);
+        Assert.Equal("after", material.Name);
         Assert.Equal(revision + 1, material.Revision);
         Assert.Equal(0.75f, material.Roughness);
     }
 
     [Fact]
-    public void InvalidReplacementAndParameterKindsLeaveExistingValuesUnchanged()
+    public void InvalidParameterKindsPreserveExistingValues()
     {
         using var material = new StandardMaterial { Roughness = 0.25f };
-        using var other = new UnlitMaterial();
         ulong revision = material.Revision;
-        Assert.Throws<InvalidDataException>(() => material.Update(other));
-        Assert.Throws<ArgumentException>(() => material.Update(material));
         Assert.Throws<InvalidDataException>(() => material.ApplyParameter(
             new(nameof(StandardMaterial.Roughness), MaterialParameterKind.Vector4) { Vector4 = Vector4.One }, null));
         Assert.Equal(0.25f, material.Roughness);

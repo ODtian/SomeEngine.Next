@@ -52,7 +52,7 @@ public sealed partial class CurveAsset : Asset
     public override CurveAsset CreateCopy(Guid id = default) => (CurveAsset)base.CreateCopy(id);
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
-    public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+    public override async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
         using CurveAsset copy = Duplicate();
         return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);
@@ -71,8 +71,12 @@ public sealed partial class CurveAsset : Asset
         }
         catch { asset.Dispose(); throw; }
     }
-    public ValueTask<AssetEntry> SaveSourceAsync(string path, CancellationToken cancellationToken = default)
-        => AssetText.SaveAsync(path, this, static (writer, asset) => writer.WriteBlock(asset.GetBlock<CurveBlock>()), cancellationToken);
+    public async ValueTask<AssetEntry> SaveSourceAsync(string path, CancellationToken cancellationToken = default)
+    {
+        using var writer = AssetText.Create(this);
+        writer.WriteBlock<CurveBlock>();
+        return await writer.SaveAsync(path, cancellationToken).ConfigureAwait(false);
+    }
     public static async ValueTask<CurveAsset> OpenSourceAsync(string path, CancellationToken cancellationToken = default)
     {
         using AssetText.SourceReader source = await AssetText.OpenAsync(path, cancellationToken).ConfigureAwait(false);
@@ -107,7 +111,7 @@ public sealed partial class ConstantCurveAsset : Asset
     public override ConstantCurveAsset CreateCopy(Guid id = default) => (ConstantCurveAsset)base.CreateCopy(id);
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
-    public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+    public override async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
         using ConstantCurveAsset copy = Duplicate();
         return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);
@@ -126,8 +130,12 @@ public sealed partial class ConstantCurveAsset : Asset
         }
         catch { asset.Dispose(); throw; }
     }
-    public ValueTask<AssetEntry> SaveSourceAsync(string path, CancellationToken cancellationToken = default)
-        => AssetText.SaveAsync(path, this, static (writer, asset) => writer.WriteBlock(asset.GetBlock<ConstantCurveBlock>()), cancellationToken);
+    public async ValueTask<AssetEntry> SaveSourceAsync(string path, CancellationToken cancellationToken = default)
+    {
+        using var writer = AssetText.Create(this);
+        writer.WriteBlock<ConstantCurveBlock>();
+        return await writer.SaveAsync(path, cancellationToken).ConfigureAwait(false);
+    }
     public static async ValueTask<ConstantCurveAsset> OpenSourceAsync(string path, CancellationToken cancellationToken = default)
     {
         using AssetText.SourceReader source = await AssetText.OpenAsync(path, cancellationToken).ConfigureAwait(false);

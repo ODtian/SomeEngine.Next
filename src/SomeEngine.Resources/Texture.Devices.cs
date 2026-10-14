@@ -87,10 +87,7 @@ public sealed partial class Texture
             Texture replacement = _replacement;
             completion = _updateCompletion!;
             _committingUpdate = true;
-            // ApplyReloadAsync switches fields and detaches the replacement's byte sources
-            // before its first asynchronous cleanup. Later cancellation cannot undo commit.
-            // Content has already switched when observer or cleanup callbacks fail.
-            // Keep completing the update boundary and report those failures to its caller.
+            // All devices accepted the replacement. Commit its fields and finish old device data.
             try { cleanup = ApplyReloadAsync(this, replacement, CancellationToken.None).AsTask(); }
             catch (Exception error) { cleanup = Task.FromException(error); }
             foreach (ITextureDeviceData data in _devices.Values)

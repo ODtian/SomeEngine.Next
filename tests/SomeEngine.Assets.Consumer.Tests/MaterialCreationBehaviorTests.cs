@@ -6,6 +6,26 @@ namespace SomeEngine.Assets.Consumer.Tests;
 public sealed class MaterialCreationBehaviorTests
 {
     [Fact]
+    public void ConcreteUpdatePreservesTheConsumerMaterialIdentity()
+    {
+        using var material = new ConsumerCoatingMaterial { Name = "before", Thickness = 0.4f };
+        using var replacement = new ConsumerCoatingMaterial { Name = "after", Thickness = 0.8f };
+        long identity = material.MaterialId;
+        ulong version = material.Revision;
+
+        ApplyReplacement(material, replacement);
+
+        Assert.Equal(identity, material.MaterialId);
+        Assert.Equal(version + 1, material.Revision);
+        Assert.Equal("after", material.Name);
+        Assert.Equal(0.8f, material.Thickness);
+        Assert.Equal(0.2f, material.Roughness);
+    }
+
+    private static void ApplyReplacement<TMaterial>(TMaterial material, TMaterial replacement)
+        where TMaterial : Material, IMaterial<TMaterial> => TMaterial.Update(material, replacement);
+
+    [Fact]
     public async Task OpenedAssetCreatesTheChosenConsumerMaterialWithOverridesAndFieldDefaults()
     {
         string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

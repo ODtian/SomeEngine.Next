@@ -31,7 +31,9 @@ MaterialBlock 保存 Shader 资产引用，Material 保存实际 Shader 对象�
 
 业务控制 Material 的使用期，AssetLoader 控制其创建的共享 Texture 的使用期。材料释放结束该业务实例的使用；加载器释放等待资源创建结束并关闭共享 Texture。Shader 通过普通 GC 引用保存 Slang 对象与代码。
 
-`UpdateAsync<TMaterial>` 从完整资产内容创建同类型替换字段，再写入已有实例。业务修改继续经过 Game world → Rendering world 的既有提取与资源完成机制。
+`UpdateAsync<TMaterial>` 从完整资产内容创建同类型替换字段，再通过 MaterialGen 生成的 `IMaterial<TMaterial>.Update` 直接写入已有具体实例，保留 MaterialId，并恢复 Reset 后的父级与类字段默认值。字段版本与材料 Revision 表达修改；Rendering world 保存已应用的材料 Revision。业务修改继续经过 Game world → Rendering world 的既有提取与资源完成机制。
+
+共享 Shader 的显式刷新由 `AssetLoader.RefreshShaderAsync` 推进当前引用，材料在业务更新时取得该引用。共享 Texture 由 `RefreshTextureAsync` 保持业务对象身份并完成设备更新，见 [更新边界](Asset-Update-Boundary.md)。
 
 2026-10-14 行为证据：MaterialCreationBehaviorTests 的消费者静态创建检查通过；MaterialFileTests、MaterialReloadTests 与 MaterialInheritanceTests 的 9 项检查通过，覆盖父级合并、局部覆盖、模板像素、实际 Shader/Texture 共享和业务实例使用。
 

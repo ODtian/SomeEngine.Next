@@ -5,7 +5,6 @@ using SomeEngine.Graphics;
 namespace SomeEngine.Resources;
 
 /// <summary>Standard material with metalness and roughness parameters.</summary>
-[MaterialType("SomeEngine.Assets.Schema.StandardMaterial")]
 public sealed partial class StandardMaterial : Material
 {
     public partial Texture? AlbedoMap { get; set; }

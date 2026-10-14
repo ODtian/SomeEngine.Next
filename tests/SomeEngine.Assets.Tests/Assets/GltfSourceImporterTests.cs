@@ -85,11 +85,10 @@ public class GltfSourceImporterTests
             var source = model.LogicalMeshes[0];
             source.Primitives[0].Material = null;
             await using var context = new ImportContext();
-            context.ConfigureAssets<SharpGLTF.Schema2.Mesh, MeshAsset>(mesh => $"mesh/{mesh.LogicalIndex}",
-                (_, id) => new MeshAsset(id),
-                (_, id) => id + ".mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
+            context.ConfigureAssets<SharpGLTF.Schema2.Mesh, MeshAsset>(new GltfMeshSource(
+                new GltfImporterSettings { RequirePersistentElementIds = false }, path));
             var geometry = new GltfMeshImporter();
-            var clusters = new ClusterGltfMeshImporter(StandardClusterVertexEncoder.Instance);
+            var clusters = new ClusterGltfMeshImporter();
             var settings = new GltfMeshSettings();
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
                 new Guid("548d394b-5600-49e0-b04a-9c9d0d53b4b0"), [ClusterMeshBlock.BlockTypeId], clusters, settings));

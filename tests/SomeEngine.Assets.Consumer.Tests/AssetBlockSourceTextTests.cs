@@ -73,17 +73,12 @@ public sealed class AssetBlockSourceTextTests : IDisposable
         byte[] previous = await File.ReadAllBytesAsync(path);
         asset.Name = "cancelled";
         using var cancellation = new CancellationTokenSource();
-        bool encoded = false;
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-            await AssetText.SaveAsync(path, asset, (writer, copy) =>
-            {
-                writer.WriteBlock(copy.GetBlock<TextureBlock>(), files);
-                encoded = true;
-                cancellation.Cancel();
-            }, cancellation.Token));
+        using var writer = AssetText.Create(asset);
+        writer.WriteBlock<TextureBlock>(files);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await writer.SaveAsync(path, cancellation.Token));
 
-        Assert.True(encoded);
         Assert.Equal(previous, await File.ReadAllBytesAsync(path));
         Assert.Equal(new[] { "paint.texture", "pixels-0.bin" }, Directory.GetFiles(_directory).Select(Path.GetFileName).Order());
     }
@@ -143,7 +138,9 @@ public sealed class AssetBlockSourceTextTests : IDisposable
         var files = new Dictionary<ulong, string> { [key] = "not-created.bin" };
         var encoded = new ArrayBufferWriter<byte>();
 
-        AssetText.Write(encoded, asset, (writer, copy) => writer.WriteBlock(copy.GetBlock<TextureBlock>(), files));
+        using var writer = AssetText.Create(asset);
+        writer.WriteBlock<TextureBlock>(files);
+        writer.Write(encoded);
 
         Assert.Equal(asset.Id, AssetText.Describe(encoded.WrittenMemory).AssetGuid);
         string path = Path.Combine(_directory, "missing.texture");
@@ -193,6 +190,10 @@ public sealed class AssetBlockSourceTextTests : IDisposable
         return files;
     }
 
-    private static ValueTask<AssetEntry> SaveAsync(string path, TextureAsset asset, IReadOnlyDictionary<ulong, string> files)
-        => AssetText.SaveAsync(path, asset, (writer, copy) => writer.WriteBlock(copy.GetBlock<TextureBlock>(), files));
+    private static async ValueTask<AssetEntry> SaveAsync(string path, TextureAsset asset, IReadOnlyDictionary<ulong, string> files)
+    {
+        using var writer = AssetText.Create(asset);
+        writer.WriteBlock<TextureBlock>(files);
+        return await writer.SaveAsync(path);
+    }
 }

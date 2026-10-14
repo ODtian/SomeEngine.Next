@@ -16,10 +16,7 @@ internal static class ImportingSmoke
 {
     internal static async Task RunAsync(string directory)
     {
-        var counts = new SmokeImportCounts();
         var services = new ServiceCollection();
-        services.AddSingleton(counts);
-        services.AddScoped(static provider => new SmokeImportService(provider.GetRequiredService<SmokeImportCounts>()));
         ImportingCapabilities.AddAssetCapabilities(services);
         int registrations = services.Count;
         ImportingCapabilities.AddAssetCapabilities(services);
@@ -33,13 +30,13 @@ internal static class ImportingSmoke
             Check(capabilities.Length == 3 && capabilities.All(value => value.SettingsType == typeof(SmokeImportSettings)),
                 "Available importer descriptions lost a source, settings type or unselected alternative.");
             Check(capabilities.All(value => !string.IsNullOrWhiteSpace(value.ImplementationVersion)), "Missing implementation versions.");
-            Check(provider.GetServices<AssetBlockCapability>().Any(value => value.BlockType == typeof(TextureBlock)
+            Check(ImportingCapabilities.BlockCapabilities.Any(value => value.BlockType == typeof(TextureBlock)
                 && value.Id == TextureBlock.BlockTypeId), "A referenced block was not discovered.");
             await using (var scope = provider.CreateAsyncScope())
             {
                 var number = scope.ServiceProvider.GetRequiredService<SmokeNumberImporter>();
                 var label = scope.ServiceProvider.GetRequiredService<SmokeLabelImporter>();
-                Check(ReferenceEquals(number.Dependency, label.Dependency), "Importers did not share their scoped dependency.");
+                var alternative = scope.ServiceProvider.GetRequiredService<SmokeAlternativeImporter>();
                 Check(ReferenceEquals(number, scope.ServiceProvider.GetServices<IAssetImporter<SmokeImportSource, SmokeImportSettings>>()
                     .Single(value => value is SmokeNumberImporter)), "Typed registration created another importer.");
                 await using (var another = provider.CreateAsyncScope())
@@ -64,7 +61,7 @@ internal static class ImportingSmoke
                     MeshAsset target = results[0];
                     Check(results.All(value => ReferenceEquals(target, value)), "Concurrent requests returned different assets.");
                     Check(ReferenceEquals(target, await context.GetAssetAsync<SmokeImportSource, MeshAsset>(source)), "A later request rebuilt the asset.");
-                    Check(counts.NumberRuns == 1 && counts.LabelRuns == 1 && counts.AlternativeRuns == 0, "Repeated conversion or unwanted producer execution.");
+                    Check(number.Runs == 1 && label.Runs == 1 && alternative.Runs == 0, "Repeated conversion or unwanted producer execution.");
                     Check(target.Id == assetId && target.GetBlock<SmokeNumberBlock>().Value == 21
                         && target.GetBlock<SmokeLabelBlock>().Text == "native:v1:21", "The completed asset lacks its typed blocks.");
                     Check(ImportingCapabilities.ContainsBlock(target, ImportingCapabilities.BlockKind.SmokeNumberBlock)
@@ -82,11 +79,9 @@ internal static class ImportingSmoke
                     bool rejected = false;
                     try { await conflict.GetAssetAsync<SmokeImportSource, MeshAsset>(source); }
                     catch (InvalidOperationException) { rejected = true; }
-                    Check(rejected && counts.NumberRuns == 1 && counts.AlternativeRuns == 0, "Competing producers ran before rejection.");
+                    Check(rejected && number.Runs == 1 && alternative.Runs == 0, "Competing producers ran before rejection.");
                 }
-                Check(!number.Dependency.IsDisposed, "The scope closed before saving finished.");
             }
-            Check(counts.ScopesCreated == 2 && counts.ScopesClosed == 2, "The service scopes were not released.");
         }
         using (var reopened = await MeshAsset.OpenAsync(path).ConfigureAwait(false))
         {
@@ -104,8 +99,7 @@ internal static class ImportingSmoke
         {
             var metadata = new SourceMeta { SourceGuid = SourceGuid.New(), ElementIds = new() { ["mesh"] = assetId } };
             var context = new ImportContext(directory, "", metadata);
-            context.ConfigureAssets<SmokeImportSource, MeshAsset>(_ => "mesh", (_, id) => new MeshAsset(id),
-                (_, _) => "imported.mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
+            context.ConfigureAssets<SmokeImportSource, MeshAsset>(new SmokeMeshSource());
             return context;
         }
     }
@@ -170,54 +164,21 @@ public sealed class SmokeImportSettingsCodec : IAssetImporterSettings<SmokeImpor
 [JsonSerializable(typeof(SmokeImportSettings))]
 internal partial class ImportingJson : JsonSerializerContext;
 
-public sealed class SmokeImportCounts
+public sealed class SmokeMeshSource : AssetSource<SmokeImportSource, MeshAsset>
 {
-    internal int NumberRuns;
-    internal int LabelRuns;
-    internal int AlternativeRuns;
-    internal int ScopesCreated;
-    internal int ScopesClosed;
-}
-
-public sealed class SmokeImportService : IDisposable
-{
-    private readonly SmokeImportCounts _counts;
-    private int _disposed;
-    public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
-    public SmokeImportService(SmokeImportCounts counts)
-    {
-        _counts = counts;
-        Interlocked.Increment(ref counts.ScopesCreated);
-    }
-    public void CountNumber()
-    {
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
-        Interlocked.Increment(ref _counts.NumberRuns);
-    }
-    public void CountLabel()
-    {
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
-        Interlocked.Increment(ref _counts.LabelRuns);
-    }
-    public void CountAlternative()
-    {
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
-        Interlocked.Increment(ref _counts.AlternativeRuns);
-    }
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) == 0) Interlocked.Increment(ref _counts.ScopesClosed);
-    }
+    public override string GetElementKey(SmokeImportSource source) => "mesh";
+    public override MeshAsset CreateAsset(SmokeImportSource source, Guid id) => new(id);
+    public override string GetOutputPath(SmokeImportSource source, Guid id) => "imported.mesh.asset";
 }
 
 [AssetImporter("c701741a-6fc8-4c5a-87ed-06dc60729e69", typeof(SmokeNumberBlock), SettingsProvider = typeof(SmokeImportSettingsCodec))]
-public sealed class SmokeNumberImporter(SmokeImportService dependency) : IAssetImporter<SmokeImportSource, SmokeImportSettings>
+public sealed class SmokeNumberImporter : IAssetImporter<SmokeImportSource, SmokeImportSettings>
 {
-    public SmokeImportService Dependency { get; } = dependency;
+    public int Runs { get; private set; }
     public async ValueTask ImportAsync(SmokeImportSource source, SmokeImportSettings settings, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
     {
-        Dependency.CountNumber();
+        Runs++;
         await Task.Yield();
         cancellationToken.ThrowIfCancellationRequested();
         var block = new SmokeNumberBlock() { Value = checked(source.Value * settings.Multiplier) };
@@ -227,14 +188,14 @@ public sealed class SmokeNumberImporter(SmokeImportService dependency) : IAssetI
 }
 
 [AssetImporter("79d14e52-32d8-43ae-91b8-8f450c574c35", typeof(SmokeLabelBlock), SettingsProvider = typeof(SmokeImportSettingsCodec))]
-public sealed class SmokeLabelImporter(SmokeImportService dependency)
+public sealed class SmokeLabelImporter
     : IAssetImporter<SmokeImportSource, SmokeImportSettings>
 {
-    public SmokeImportService Dependency { get; } = dependency;
+    public int Runs { get; private set; }
     public async ValueTask ImportAsync(SmokeImportSource source, SmokeImportSettings settings, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
     {
-        Dependency.CountLabel();
+        Runs++;
         SmokeNumberBlock numberBlock = await context.GetBlockAsync<SmokeNumberBlock>(output.Target, cancellationToken).ConfigureAwait(false);
         var block = new SmokeLabelBlock()
         {
@@ -246,12 +207,13 @@ public sealed class SmokeLabelImporter(SmokeImportService dependency)
 }
 
 [AssetImporter("9b9e4b20-996d-4bb9-9734-83dd9c261090", typeof(SmokeNumberBlock), SettingsProvider = typeof(SmokeImportSettingsCodec))]
-public sealed class SmokeAlternativeImporter(SmokeImportService dependency) : IAssetImporter<SmokeImportSource, SmokeImportSettings>
+public sealed class SmokeAlternativeImporter : IAssetImporter<SmokeImportSource, SmokeImportSettings>
 {
+    public int Runs { get; private set; }
     public ValueTask ImportAsync(SmokeImportSource source, SmokeImportSettings settings, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
     {
-        dependency.CountAlternative();
+        Runs++;
         throw new InvalidOperationException("This alternative is available but must not execute without selection.");
     }
 }

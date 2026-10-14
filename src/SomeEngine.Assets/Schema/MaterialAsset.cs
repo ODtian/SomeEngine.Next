@@ -36,7 +36,7 @@ public partial class MaterialAsset : Asset
     public override MaterialAsset CreateCopy(Guid id = default) => (MaterialAsset)base.CreateCopy(id);
     public AssetEntry Describe() => Describe(SchemaHash, References());
     public IEnumerable<Guid> References() => BlockReferences();
-    public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+    public override async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
         using MaterialAsset copy = Duplicate();
         return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);
@@ -124,6 +124,6 @@ public partial class MaterialAsset : Asset
     {
         using TMaterial replacement = await CreateAsync<TMaterial>(loader, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        material.Update(replacement);
+        TMaterial.Update(material, replacement);
     }
 }

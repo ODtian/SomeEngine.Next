@@ -38,7 +38,7 @@ public sealed partial class WorldAsset : Asset
         CancellationToken cancellationToken = default)
         => GetBlock<WorldBlock>().LoadAsync(registry, options, cancellationToken);
     public AssetEntry Describe() => Describe(SchemaHash, BlockReferences());
-    public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+    public override async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
         using WorldAsset copy = Duplicate();
         return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);

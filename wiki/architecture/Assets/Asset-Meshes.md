@@ -20,7 +20,7 @@ Cluster 的多个几何页是同一个 payload chunk 内的范围，BVH 有自�
 
 同一 Block 的未变分支共享几何范围描述。页和 BVH 的实际长度数组采用统一预算缓存，Mesh 直接强引用已加载内容；重复创建复用缓存数据。TryGetPage 返回普通 ReadOnlyMemory，Bvh 提供已取得的托管视图；Mesh 不实现托管数据释放协议。
 
-新增几何页会更新 Mesh 的变更状态并使提取缓存失效。旧 CaptureData 仍保留原数据，新提取能够观察新页；Mesh 不保存所有历史提取结果。最低表示规则见 [Bootstrap](Bootstrap-Streaming.md)。
+新增几何页推进 Mesh.Revision 并更新当前可提取数据。MeshRenderExtractor 将源 Mesh 的 Revision 与 Rendering world 已取得的数据版本比较，在下一次提取应用中取得新页。旧 CaptureData 保留原数据。最低表示规则见 [Bootstrap](Bootstrap-Streaming.md)。
 
 只改名字或元数据的保存可以复制原有 payload 编码，不先解压完整几何。实际修改 payload 时，偏移、长度、页摘要与 BVH 必须继续相符，通过 SetPayload 替换完整数据并重新建立相应摘要，不原地覆写已共享字节。
 
