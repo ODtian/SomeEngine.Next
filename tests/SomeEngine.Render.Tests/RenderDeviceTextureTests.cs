@@ -326,7 +326,7 @@ public sealed class RenderDeviceTextureTests
             Assert.Equal(4, mipZeroLayerOne.Length);
         }
 
-        _ = ExecuteTextureFrame(graph, renderDevice, asset);
+        Assert.Same(resource, ExecuteTextureFrame(graph, renderDevice, asset));
         TextureSrv refinedView = renderDevice.GetTextureSrv(asset);
         Assert.Equal(0u, refinedView.Description.Range.FirstMipLevel);
         Assert.Equal(2u, refinedView.Description.Range.MipLevelCount);

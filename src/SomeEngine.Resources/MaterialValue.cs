@@ -3,13 +3,6 @@ using SomeEngine.Graphics;
 
 namespace SomeEngine.Resources;
 
-/// <summary>Explicit identity for a material type, independent of its C# namespace.</summary>
-[AttributeUsage(AttributeTargets.Class, Inherited = false)]
-public sealed class MaterialTypeAttribute(string name) : Attribute
-{
-    public string Name { get; } = name;
-}
-
 public enum MaterialParameterKind : byte
 {
     Texture = 1, Sampler = 2, Float = 3, Int = 4, UInt = 5, Bool = 6,

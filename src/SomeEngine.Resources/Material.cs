@@ -1,16 +1,10 @@
-using Texture = SomeEngine.Resources.Texture;
-using System.ComponentModel;
 using System.Numerics;
 using SomeEngine.Graphics;
-using SomeEngine.Serialization;
 
 namespace SomeEngine.Resources;
 
 /// <summary>A material has concrete properties and actual shader and texture references.</summary>
-/// <remarks>
-/// Shared by game and rendering worlds. Change its fields after CPU frame recording completes
-/// and before the next render preparation. Extraction transfers references, not property copies.
-/// </remarks>
+/// <remarks>Business changes fields between CPU frame recording and the next extraction.</remarks>
 [SomeEngine.Serialization.AssetUse]
 public abstract partial class Material : IDisposable
 {
@@ -21,7 +15,6 @@ public abstract partial class Material : IDisposable
     private static long _nextMaterialId;
     private readonly long _materialId = Interlocked.Increment(ref _nextMaterialId);
     public long MaterialId => _materialId;
-
     public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
     public string? Name { get; set; }
     public Shader? Shader
@@ -29,30 +22,24 @@ public abstract partial class Material : IDisposable
         get => _shader;
         set
         {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
             if (ReferenceEquals(_shader, value)) return;
             _shader = value;
-            if (!_changingProperties) { Revision++; RaiseChanged(); }
+            if (!_changingProperties) Revision++;
         }
     }
     public ulong Revision { get; private set; } = 1;
-    public event Action<Material>? Changed;
-    public abstract Guid MaterialTypeId { get; }
     public abstract IReadOnlyList<MaterialPropertyDefinition> Properties { get; }
     public int PropertyCount => Properties.Count;
 
     protected void SetProperty<T>(ref T field, T value, uint index)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         if (EqualityComparer<T>.Default.Equals(field, value)) return;
         field = value;
         _changes ??= new ulong[PropertyCount];
         _changes[index]++;
-        if (!_changingProperties)
-        {
-            Revision++;
-            RaiseChanged();
-        }
+        if (!_changingProperties) Revision++;
     }
 
     public ulong GetPropertyRevision(uint index) => _changes?[index] ?? 0;
@@ -61,86 +48,20 @@ public abstract partial class Material : IDisposable
     public virtual SamplerDesc GetSampler(uint index) => default;
     public virtual Vector4 GetFloatComponents(uint index) => default;
     public virtual uint GetInteger(uint index) => 0;
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public abstract void ApplyParameter(MaterialValue parameter, Texture? texture);
-    protected abstract void CopyProperties(Material source);
 
-    /// <summary>Applies new fields at the caller's update boundary. Observers run only after commit.</summary>
-    public void Update(Material replacement)
+    protected void BeginContent() => _changingProperties = true;
+    protected void FinishContent() => _changingProperties = false;
+    protected void BeginUpdate()
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        ArgumentNullException.ThrowIfNull(replacement);
-        if (ReferenceEquals(this, replacement)) throw new ArgumentException("A material cannot replace itself.", nameof(replacement));
-        ObjectDisposedException.ThrowIf(replacement.IsDisposed, replacement);
-        if (MaterialTypeId != replacement.MaterialTypeId)
-            throw new InvalidDataException("A material update cannot change its concrete type.");
-        ulong revision = checked(Revision + 1);
-        using Material previousFields = CreateEmpty();
-        previousFields._changingProperties = true;
-        previousFields.Name = Name;
-        previousFields.Shader = Shader;
-        previousFields.CopyProperties(this);
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         _changingProperties = true;
-        try
-        {
-            Name = replacement.Name;
-            Shader = replacement.Shader;
-            CopyProperties(replacement);
-        }
-        catch
-        {
-            Name = previousFields.Name;
-            Shader = previousFields.Shader;
-            CopyProperties(previousFields);
-            throw;
-        }
-        finally { _changingProperties = false; }
-
-        Revision = revision;
-        var errors = new List<Exception>();
-        NotifyChanged(errors);
-        if (errors.Count != 0)
-            throw new AggregateException("Material content was updated, but notification or old-content cleanup failed.", errors);
     }
-
-    protected void InitializeContent(
-        string? name,
-        Shader? shader,
-        IEnumerable<(MaterialValue Value, Texture? Texture)> values)
+    protected void FinishUpdate()
     {
-        _changingProperties = true;
-        try
-        {
-            Name = name;
-            Shader = shader;
-            foreach (var value in values) ApplyParameter(value.Value, value.Texture);
-        }
-        finally { _changingProperties = false; }
+        _changingProperties = false;
+        Revision++;
     }
-    public void Dispose()
-    {
-        Interlocked.Exchange(ref _disposed, 1);
-    }
-
-    protected abstract Material CreateEmpty();
-
-    private void RaiseChanged()
-    {
-        if (Changed is null) return;
-        var errors = new List<Exception>();
-        NotifyChanged(errors);
-        if (errors.Count != 0)
-            throw new AggregateException("Material fields changed, but one or more observers failed.", errors);
-    }
-
-    private void NotifyChanged(List<Exception> errors)
-    {
-        if (Changed is not { } changed) return;
-        foreach (Action<Material> notify in changed.GetInvocationList())
-            try { notify(this); }
-            catch (Exception error) { errors.Add(error); }
-    }
-
+    public void Dispose() => Interlocked.Exchange(ref _disposed, 1);
 }
 
 public readonly record struct MaterialPropertyDefinition(uint Index, string Name, Type ValueType);

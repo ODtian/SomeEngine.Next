@@ -30,7 +30,11 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     public GraphicsViewDimension SampledDimension { get; private set; }
     public ImmutableList<TextureMipTile> MipTiles { get; private set; } = [];
     public ulong Revision { get; private set; } = 1;
-    public event Action<Texture>? Changed;
+    public ulong PixelsRevision { get; private set; } = 1;
+    public TextureVersions Versions
+    {
+        get { lock (_deviceGate) return new(Revision, PixelsRevision, _replacement?.Revision ?? Revision); }
+    }
     public uint BootstrapMipLevel => MipLevelCount - 1;
     public bool HasBootstrap
     {
@@ -104,15 +108,23 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
             if (Revision != expectedRevision || _updateCompletion is not null)
                 throw new InvalidOperationException("The texture changed while its additional pixels were being acquired.");
             var replacement = (ReadOnlyMemory<byte>[])_pixels.Clone();
+            bool changed = false;
             foreach (TexturePixels input in pixels)
             {
                 int index = FindTile(input.Tile.ChunkKey);
                 ValidatePixels(index, input.Bytes);
-                if (replacement[index].IsEmpty) replacement[index] = input.Bytes;
+                if (replacement[index].IsEmpty)
+                {
+                    replacement[index] = input.Bytes;
+                    changed = true;
+                }
             }
-            _pixels = replacement;
+            if (changed)
+            {
+                _pixels = replacement;
+                PixelsRevision++;
+            }
         }
-        RaiseChanged();
     }
 
     private int FindTile(ulong key)
@@ -169,19 +181,8 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         current._pixels = replacement._pixels;
         current.DataVersion = replacement.DataVersion;
         current.Revision = revision;
-        current.RaiseChanged();
+        current.PixelsRevision++;
         return ValueTask.CompletedTask;
-    }
-
-    private void RaiseChanged()
-    {
-        if (Changed is not { } changed) return;
-        List<Exception>? errors = null;
-        foreach (Action<Texture> notify in changed.GetInvocationList())
-            try { notify(this); }
-            catch (Exception error) { (errors ??= []).Add(error); }
-        if (errors is not null)
-            throw new AggregateException("Texture contents changed, but one or more observers failed.", errors);
     }
 
     public void Dispose()
