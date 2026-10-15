@@ -19,6 +19,7 @@ public abstract partial class Material : IDisposable
     private Texture[] _createdTextures = [];
     private int _disposed;
     private Shader? _shader;
+    private MaterialState _state = MaterialState.Default;
     private static long _nextMaterialId;
     private readonly long _materialId = Interlocked.Increment(ref _nextMaterialId);
     public long MaterialId => _materialId;
@@ -37,6 +38,17 @@ public abstract partial class Material : IDisposable
         }
     }
     public ulong Revision { get; private set; } = 1;
+    public MaterialState State
+    {
+        get => _state;
+        set
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            if (_state == value) return;
+            _state = value;
+            if (!_changingProperties) { Revision++; RaiseChanged(); }
+        }
+    }
     public event Action<Material>? Changed;
     public abstract Guid MaterialTypeId { get; }
     public abstract IReadOnlyList<MaterialPropertyDefinition> Properties { get; }
@@ -80,6 +92,7 @@ public abstract partial class Material : IDisposable
         previousFields._changingProperties = true;
         previousFields.Name = Name;
         previousFields.Shader = Shader;
+        previousFields.State = State;
         previousFields.CopyProperties(this);
         Texture[] previous = _createdTextures;
         _changingProperties = true;
@@ -87,12 +100,14 @@ public abstract partial class Material : IDisposable
         {
             Name = replacement.Name;
             Shader = replacement.Shader;
+            State = replacement.State;
             CopyProperties(replacement);
         }
         catch
         {
             Name = previousFields.Name;
             Shader = previousFields.Shader;
+            State = previousFields.State;
             CopyProperties(previousFields);
             throw;
         }
