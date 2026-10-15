@@ -443,6 +443,8 @@ internal sealed unsafe partial class D3D12Backend
             command.NativeBackend.UseQueueSpecificCommonLayouts,
             layoutBefore,
             layoutAfter,
+            accessBefore,
+            accessAfter,
             out BarrierLayout nativeLayoutBefore,
             out BarrierLayout nativeLayoutAfter);
         if (range.Aspects == TextureAspects.Color &&

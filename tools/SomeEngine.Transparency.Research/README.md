@@ -1,0 +1,86 @@
+# 透明 visibility 与 OIT 研究
+
+当前实现采用 16×16 tile、共享图元缓存与每像素寄存器队列，提供硬件光栅和软件光栅两条入口。软件覆盖与合成融合为一个 compute pass，硬件路径使用 early depth、wave 合并覆盖与同一合成器。排序通过 wave shuffle 交换局部键，通过 shared memory 交换跨 wave 引用，计数复用排序存储。处理持续到几何耗尽或剩余颜色贡献满足误差阈值。实现、片上数据分工和同机证据见 [Tile visibility OIT](../../wiki/architecture/rendering/Transparency-Tile-Visibility.md)。
+
+覆盖树版本同时保留作为演进对照。完整几何形成连续树，投影互斥证明支持一次覆盖区间，命中后直接跳过整段；深度交叠部分按最近覆盖点推进。覆盖方程、树节点、覆盖区间和共享颜色表存储于一块 GPU 缓冲，逐像素状态保存在寄存器中，颜色直接合成进现有场景图。
+
+通用材质的主要评价采用模型内部随光照变化的颜色，常色合并收益独立作为专项优化记录。
+
+实现和当次证据见 [透明覆盖遍历 OIT](../../wiki/architecture/rendering/Transparency-Coverage-Traversal.md)。
+
+运行颜色与 GPU 时间测量：
+
+```powershell
+dotnet run --project tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj -c Release -- wiki/architecture/rendering/Transparency-Optimization-2026-10-14.json
+```
+
+运行两种 tile 光栅、覆盖树遍历、WBOIT、四阶与六阶 FP32 moments、完整片元 PPLL 排序的同负载对照：
+
+```powershell
+dotnet run --project tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj -c Release -- --compare wiki/architecture/rendering/Transparency-Tile-Comparison-2026-10-15.json
+```
+
+该命令测量十三种透明负载与八种实现。GPU 计时为 1280×720，图像误差为 128×128，参考为全部覆盖点的标准排序合成。各方法包含自身清空、透明绘制、屏障与最终合成；固定投影几何和共同背景由测量入口交付。每组先累计至少 250 ms GPU 预热，各方法再连续提交 32 帧预热和 24 帧采样。异色交叠球体同时检查重复帧与倒序提交的输出颜色。
+
+首轮八种方法的测量保存在 `Transparency-Tile-Comparison-2026-10-15.json`。本轮 11 个优化配置及最终 52 条配对结果见 [优化证据](../../wiki/architecture/rendering/Transparency-Tile-Optimization-2026-10-15.json)；覆盖树版本的历次测量按原日期保留。
+
+将待比较的 resolver shader 路径传给 `--tile-reference`，测量入口会在当前硬件与软件实现之前分别执行对应参考版本，使用同一份几何、质量参考及预热方式：
+
+```powershell
+dotnet run --project tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj -c Release -- --compare artifacts/tile-comparison.json --tiles-only --tile-reference=C:/OitReference/tile_visibility_resolve.slang
+```
+
+参考 shader 的 include 从研究项目 shader 目录解析，传入的文件保存 resolver 主体。结果中的 `ReferenceShaderSource` 同时保存参考源码；最终优化报告的最后一项实验包含本轮原版源码。测量完成后，将需留存的数据归档并清理临时文件。
+
+Lucid 原生参考与 tile 路径采用同一 RGBA8 输入时，分别执行：
+
+```powershell
+python tools/SomeEngine.Transparency.Research/References/MeasureLucid.py
+dotnet run --project tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj -c Release -- --compare wiki/architecture/rendering/Transparency-Lucid-Tile-2026-10-15.json --rgba8 --tiles-only
+```
+
+原生参考构建依赖 Windows、Visual Studio C++ 工具链、Clang、CMake、Ninja 和 Vulkan 驱动。复现工具在独立临时目录构建作者固定版本，依次运行 depth filter 3、8、16，保存完整设置与缓存几何两组计时，并在结束时清理构建目录。参考驱动及补丁遵循作者的 GNU GPL v3；它们作为独立比较工具构建。
+
+指定几何名称可选择对应的输入。保持球体形状与深度位置，只改变光照颜色的对照命令为：
+
+```powershell
+dotnet run --project tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj -c Release -- --compare wiki/architecture/rendering/Transparency-Material-Comparison-2026-10-15.json spheres "shaded separated spheres"
+```
+
+PPLL 节点池按硬件光栅统计的完整覆盖量分配。峰值覆盖数在 32 以内时采用局部插入排序，较大覆盖量采用链表归并排序，合成遍历全部片元。四阶、六阶 moment 重建函数来自 [作者的 CC0 shader 代码](https://momentsingraphics.de/I3D2018.html)，保留于 `Shaders/moment_reconstruction.slang`。权函数与精度配置见对应 shader 及测量 JSON。
+
+DefaultGame 在 opaque visibility 着色之后、TAA 之前安装持久颜色 pass。研究场景由 8 个内部随法线光照变化的交叠球体网格组成，alpha 为 0.5、模型深度间隔为 0.025；每个球体包含 168 个三角形。场景几何在初始化时形成，帧内执行覆盖查询与合成。
+
+```powershell
+dotnet publish samples/DefaultGame/DefaultGame.csproj -c Release -o samples/DefaultGame/bin/game/Release/net10.0 -p:ValidateExecutableReferencesMatchSelfContained=false
+pwsh -NoProfile -File tools/Measure-Scenes.ps1
+pwsh -NoProfile -File tools/Measure-Scenes.ps1 -ApplicationArguments '--transparency-research'
+pwsh -NoProfile -File tools/Measure-Scenes.ps1 -ApplicationArguments '--transparency-tiles-hardware'
+pwsh -NoProfile -File tools/Measure-Scenes.ps1 -ApplicationArguments '--transparency-tiles-software'
+```
+
+行为检查通过公共 C# API 比较排序合成颜色，并验证改变输入顺序后的颜色：
+
+```powershell
+dotnet test tests/SomeEngine.Render.Tests/SomeEngine.Render.Tests.csproj -c Release --filter FullyQualifiedName~TransparencyBehaviorTests
+```
+
+## Forward+ cluster 的 X-ray 与贴花实验
+
+四条路径共用投影几何、材质函数、opaque 深度和 FP16 场景颜色：硬件前向、二维 tile、每帧刷新深度索引的 XYZ cluster、复用静态深度索引的 XYZ cluster。X-ray 与贴花的硬件前向开启只读 early depth，并继续采样同一张深度图执行效果区间条件。材质包含 64×64 图案、插值法线、漫反射和高光；贴花执行带图案和边缘淡出的颜色混合。
+
+```powershell
+dotnet run --project tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj -c Release -- --blend-effects wiki/architecture/rendering/Transparency-Cluster-Effects-2026-10-15.json
+dotnet run --project tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj -c Release -- --blend-effects artifacts/blend-validation.json --validate "Xray panels 32" "Xray spheres 8" "Decals 128"
+```
+
+`--validate` 开启统一 RHI validation 和原生验证入口，执行图像及重复帧检查。性能模式按每条路径的 GPU 估算时间设置目标 250 ms 的连续预热帧数，再采样 24 帧，GPU 时间包含每帧深度索引刷新、屏障、覆盖、材质和混合。静态投影几何与 CPU 二维引用构建发生在初始化阶段，耗时单列于结果。
+
+```powershell
+pwsh -NoProfile -Command "& 'tools/Measure-Scenes.ps1' -ApplicationArguments @('--blend-effect=Xray','--blend-method=Forward')"
+pwsh -NoProfile -Command "& 'tools/Measure-Scenes.ps1' -ApplicationArguments @('--blend-effect=Xray','--blend-method=Cluster')"
+pwsh -NoProfile -Command "& 'tools/Measure-Scenes.ps1' -ApplicationArguments @('--blend-effect=Decals','--blend-method=Forward')"
+pwsh -NoProfile -Command "& 'tools/Measure-Scenes.ps1' -ApplicationArguments @('--blend-effect=Decals','--blend-method=Cluster')"
+```
+
+`--blend-method` 同时支持 `Tile` 和 `ClusterCached`。统一场景分别使用 32 个 X-ray 面板和 128 个颜色贴花，接在 opaque visibility 着色之后、TAA 之前；三场景继续提供各自实际 opaque 深度。深度索引每图元 4 B，wave 先归约实际 Z 占用位集，再以 ballot 生成完整候选掩码，resolver 的像素状态保存在寄存器。32 个 Z 分区控制空间分辨率，处理数量由实际图元决定。实测表、总显存和图像误差见 [实验记录](../../wiki/architecture/rendering/Transparency-Tile-Visibility.md#x-ray-与贴花的-cluster-实测)。

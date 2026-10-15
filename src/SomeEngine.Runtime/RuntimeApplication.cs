@@ -692,6 +692,7 @@ internal static class RuntimeApplication
         RuntimeUiRenderer? ui = null;
         RuntimePresentationPipeline? presentation = null;
         TemporalFeature? temporal = null;
+        IApplicationColorFeature? colorFeature = null;
         var debugViews = new DebugViews(renderGraph, debugViewsRegion,
             (settings, regions) => CreatePipeline(new ClusterPipelineOutputDescription(settings.Width, settings.Height, 1),
                 metrics: false, preview: settings, previewRegions: regions),
@@ -1010,6 +1011,10 @@ internal static class RuntimeApplication
                 }
                 double reconcileMs = Stopwatch.GetElapsedTime(reconcileStarted).TotalMilliseconds;
                 startup.RecordStage("ReconcileGraph");
+                bool connectColorFeature = temporal is null;
+                if (connectColorFeature && platform?.CreateColorFeature is { } createColorFeature)
+                    colorFeature = createColorFeature(new(backend, device, renderGraph, boot.Width, boot.Height,
+                        viewFrame.View.Projection), platform.Current);
                 temporal ??= new TemporalFeature(
                     backend,
                     device,
@@ -1020,6 +1025,13 @@ internal static class RuntimeApplication
                     boot.TemporalVertexEntry,
                     boot.TemporalPixelEntry,
                     region: temporalRegion);
+                if (connectColorFeature && colorFeature is not null)
+                {
+                    using RenderGraphEdit edit = renderGraph.BeginEdit();
+                    colorFeature.OrderAfter(ref edit, pipeline.ShadeCompletePass);
+                    temporal.OrderAfter(ref edit, colorFeature.CompletePass);
+                    edit.Commit();
+                }
                 presentation ??= new RuntimePresentationPipeline(
                     backend,
                     device,
@@ -1073,6 +1085,7 @@ internal static class RuntimeApplication
                     streamingConsumer,
                     virtualShadows,
                     clusterOutputs,
+                    colorFeature,
                     temporal,
                     presentation,
                     ui,
@@ -1363,6 +1376,7 @@ internal static class RuntimeApplication
             ui?.Dispose();
             presentation?.Dispose();
             temporal?.Dispose();
+            colorFeature?.Dispose();
             frameSystems.Dispose();
             Shutdown(prepareSystems, cluster, instances, dataLock);
             scene.Dispose();
@@ -1427,6 +1441,7 @@ internal static class RuntimeApplication
         ClusterStreamingFeedbackConsumer streamingConsumer,
         VirtualShadowFeature virtualShadows,
         in ClusterPipelineOutputs clusterOutputs,
+        IApplicationColorFeature? colorFeature,
         TemporalFeature temporal,
         RuntimePresentationPipeline presentation,
         RuntimeUiRenderer ui,
@@ -1496,7 +1511,8 @@ internal static class RuntimeApplication
                     using (EngineTrace.Begin(ApplicationTrace.TemporalRecording))
                         temporal.Record(
                             ref graphFrame,
-                            clusterOutputs.MaterialColor,
+                            colorFeature?.Record(ref graphFrame, clusterOutputs.MaterialColor, clusterOutputs.Depth)
+                                ?? clusterOutputs.MaterialColor,
                             clusterOutputs.Depth,
                             motion,
                             temporalSettings,

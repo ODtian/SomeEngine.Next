@@ -841,6 +841,8 @@ internal sealed partial class FrameExecutor
             _accesses[index] = access;
             return;
         }
+        if (access.TargetKind == GraphAccessTargetKind.Texture)
+            InvalidateRasterRendering(access.PassIndex);
         _stateConnectionChanges.Add((access.TargetKind, access.ResourceIndex));
         DetachAccess(index);
         List<int> passAccesses = _passAccesses[access.PassIndex];

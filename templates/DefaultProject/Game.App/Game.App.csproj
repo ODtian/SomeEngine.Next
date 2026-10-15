@@ -15,6 +15,7 @@
     <ProjectReference Include="../Game.Assets/Game.Assets.csproj" />
     <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
+    <ProjectReference Include="$(SomeEnginePath)/tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />
     <Content Include="$(ProjectContentRoot)/assets/**/*.asset" Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(ProjectContentRoot)/Library/AssetManifest/**/*" Link="Library/AssetManifest/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(SomeEnginePath)/external/dxc/bin/x64/dxcompiler.dll;$(SomeEnginePath)/external/dxc/bin/x64/dxil.dll" DependencyBinary="true"

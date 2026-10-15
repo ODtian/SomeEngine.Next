@@ -1,9 +1,139 @@
+using System.Numerics;
+using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
 
 namespace SomeEngine.RenderGraph.Tests;
 
 public sealed class InputResourceTests
 {
+    [Fact]
+    public void ReadOnlyDepthAttachmentSupportsSamplingAndPreservesDepth()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
+        using Buffer result = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(256, BufferUsages.CopyDestination), MemoryType.Readback);
+        TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Depth);
+        GraphTextureInput input;
+        GraphTextureId texture;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            texture = edit.CreatePersistentTexture(new TextureDesc(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
+                Format.D32Float, TextureUsages.DepthStencilAttachment | TextureUsages.Sampled | TextureUsages.CopySource));
+            input = edit.CreateTextureInput();
+            GraphDepthStencilViewId write = edit.CreateDepthStencilView(input, range, Format.D32Float, TextureViewDimension.Texture2D);
+            GraphDepthStencilViewId read = edit.CreateDepthStencilView(input, range, Format.D32Float, TextureViewDimension.Texture2D,
+                readOnlyDepth: true);
+            GraphTextureSrvId sampled = edit.CreateTextureSrv(input, range, Format.D32Float, TextureViewDimension.Texture2D);
+            GraphTextureId color = edit.CreatePersistentTexture(new TextureDesc(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
+                Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment));
+            GraphColorAttachmentViewId colorView = edit.CreateColorAttachmentView(color, new(0, 1, 0, 1, TextureAspects.Color),
+                Format.R8G8B8A8UNorm, TextureViewDimension.Texture2D);
+            GraphPassId clear = edit.AddRasterFramePass("clear depth", PassQueueSelection.AnyOfType(QueueType.Graphics), write,
+                default,
+                (ref PassDefinition pass, ref GraphDepthStencilViewId target) =>
+                {
+                    pass.DepthStencilAttachment(target, LoadType.Clear, StoreType.Store, WriteCoverage.Complete, .25f,
+                        LoadType.Discard, StoreType.Discard, WriteCoverage.Partial, 0);
+                    pass.ColorAttachment(0, colorView, LoadType.Clear, StoreType.Store, WriteCoverage.Complete, Vector4.Zero);
+                },
+                static (ref RasterPassCommandScope _, in GraphDepthStencilViewId _) => { });
+            GraphPassId sample = edit.AddRasterFramePass("sample read-only depth", PassQueueSelection.AnyOfType(QueueType.Graphics), read,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                (ref PassDefinition pass, ref GraphDepthStencilViewId target) =>
+                {
+                    pass.DepthStencilAttachment(target, LoadType.Load, StoreType.Store, WriteCoverage.Partial, 0,
+                        LoadType.Discard, StoreType.Discard, WriteCoverage.Partial, 0);
+                    pass.Read(sampled, PipelineSync.PixelShading, TextureLayout.DepthStencilRead);
+                    pass.ColorAttachment(0, colorView, LoadType.Load, StoreType.Store, WriteCoverage.Partial, Vector4.Zero);
+                }, static (ref RasterPassCommandScope _, in GraphDepthStencilViewId _) => { });
+            GraphBufferId output = edit.RegisterExternalBuffer(result,
+                [new BufferBoundaryState(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphPassId copy = edit.AddCopyFramePass("read depth", PassQueueSelection.AnyOfType(QueueType.Graphics), output,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                (ref PassDefinition pass, ref GraphBufferId destination) =>
+                {
+                    pass.Read(input, range, PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+                    pass.Write(destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Partial);
+                },
+                (ref CopyPassCommandScope commands, in GraphBufferId destination) =>
+                    commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(destination), 0, 256, 1,
+                        commands.GetTexture(input), 0, 0, TextureAspects.Depth, 0, 0, 0, 1, 1, 1)));
+            edit.OrderAfter(sample, clear);
+            edit.OrderAfter(copy, sample);
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        using (RenderGraphFrame frame = graph.BeginFrame())
+        {
+            frame.SetTextureInput(input, texture);
+            frame.Execute(completions);
+        }
+        support.Wait(completions);
+        using MappedBuffer mapping = support.Backend.Map(result, MapType.Read, BufferRange.Whole);
+        mapping.Invalidate(mapping.Range);
+        Assert.Equal(.25f, MemoryMarshal.Read<float>(mapping.Bytes));
+    }
+
+    [Fact]
+    public void ColorAttachmentInputClearsTheTextureSelectedForEachFrame()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        using Buffer result = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(256, BufferUsages.CopyDestination), MemoryType.Readback);
+        TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
+        GraphTextureInput input;
+        GraphTextureId first, second;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            TextureDesc description = new(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
+                Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment | TextureUsages.CopySource);
+            first = edit.CreatePersistentTexture(description);
+            second = edit.CreatePersistentTexture(description);
+            input = edit.CreateTextureInput();
+            GraphColorAttachmentViewId view = edit.CreateColorAttachmentView(input, range,
+                Format.R8G8B8A8UNorm, TextureViewDimension.Texture2D);
+            GraphPassId clear = edit.AddRasterFramePass("clear selected color", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                view, new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition pass, ref GraphColorAttachmentViewId target) =>
+                    pass.ColorAttachment(0, target, LoadType.Clear, StoreType.Store, WriteCoverage.Complete,
+                        new Vector4(1, .5f, 0, 1)),
+                static (ref RasterPassCommandScope _, in GraphColorAttachmentViewId _) => { });
+            GraphBufferId output = edit.RegisterExternalBuffer(result,
+                [new BufferBoundaryState(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphPassId copy = edit.AddCopyFramePass("read selected color", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                output, new PassOptions(Culling: PassCullingMode.NeverCull),
+                (ref PassDefinition pass, ref GraphBufferId destination) =>
+                {
+                    pass.Read(input, range, PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+                    pass.Write(destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Partial);
+                },
+                (ref CopyPassCommandScope commands, in GraphBufferId destination) =>
+                    commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(destination), 0, 256, 1,
+                        commands.GetTexture(input), 0, 0, TextureAspects.Color, 0, 0, 0, 1, 1, 1)));
+            edit.OrderAfter(copy, clear);
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        foreach (GraphTextureId texture in new[] { first, second })
+        {
+            using (RenderGraphFrame frame = graph.BeginFrame())
+            {
+                frame.SetTextureInput(input, texture);
+                frame.Execute(completions);
+            }
+            support.Wait(completions);
+            using MappedBuffer mapping = support.Backend.Map(result, MapType.Read, BufferRange.Whole);
+            mapping.Invalidate(mapping.Range);
+            Assert.Equal(255, mapping.Bytes[0]);
+            Assert.InRange(mapping.Bytes[1], (byte)127, (byte)128);
+            Assert.Equal(0, mapping.Bytes[2]);
+            Assert.Equal(255, mapping.Bytes[3]);
+        }
+    }
+
     [Fact]
     public void BufferInputsRefreshViewsAndCopySlicesAcrossFrames()
     {

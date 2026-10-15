@@ -1,5 +1,5 @@
 param(
-    [switch]$Trace, [string]$ApplicationPath, [switch]$Managed,
+    [switch]$Trace, [string]$ApplicationPath, [switch]$Managed, [string[]]$ApplicationArguments,
     [ValidateSet('deferred', 'forward')][string]$ShadingPath,
     [ValidateSet('static', 'motion', 'materials', 'camera')][string]$ScenePlayback = 'camera',
     [string]$ExpectedScene,
@@ -33,6 +33,7 @@ $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
 $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
+foreach ($argument in $ApplicationArguments) { $start.ArgumentList.Add($argument) }
 if ($Scene) {
     $start.ArgumentList.Add('--measure-scene')
     $start.ArgumentList.Add($Scene)

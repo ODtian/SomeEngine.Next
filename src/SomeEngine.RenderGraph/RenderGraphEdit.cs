@@ -1069,6 +1069,15 @@ public ref partial struct RenderGraphEdit
         Format format, TextureViewDimension dimension, string? label = null) =>
         new(AddTextureInputView(GraphViewKind.TextureUav, input, range, format, dimension, label));
 
+    public GraphColorAttachmentViewId CreateColorAttachmentView(GraphTextureInput input, TextureSubresourceRange range,
+        Format format, TextureViewDimension dimension, string? label = null) =>
+        new(AddTextureInputView(GraphViewKind.ColorAttachment, input, range, format, dimension, label));
+
+    public GraphDepthStencilViewId CreateDepthStencilView(GraphTextureInput input, TextureSubresourceRange range,
+        Format format, TextureViewDimension dimension, bool readOnlyDepth = false, bool readOnlyStencil = false,
+        string? label = null) =>
+        new(AddTextureInputView(GraphViewKind.DepthStencil, input, range, format, dimension, label, readOnlyDepth, readOnlyStencil));
+
     public GraphTextureSrvId CreateTextureSrv(GraphTextureInput input,
         Format format, TextureViewDimension dimension, string? label = null) =>
         new(AddTextureInputView(GraphViewKind.TextureSrv, input, null, format, dimension, label));
@@ -1094,7 +1103,8 @@ public ref partial struct RenderGraphEdit
     }
 
     private GraphIdentity AddTextureInputView(GraphViewKind kind, GraphTextureInput input,
-        TextureSubresourceRange? range, Format format, TextureViewDimension dimension, string? label)
+        TextureSubresourceRange? range, Format format, TextureViewDimension dimension, string? label,
+        bool readOnlyDepth = false, bool readOnlyStencil = false)
     {
         ValidateTextureInput(input);
         GraphIdentity identity = Staging.Views.Add(Graph.Identity, new GraphView
@@ -1104,6 +1114,8 @@ public ref partial struct RenderGraphEdit
             TextureRange = range ?? default,
             TextureFormat = format,
             Dimension = dimension,
+            ReadOnlyDepth = readOnlyDepth,
+            ReadOnlyStencil = readOnlyStencil,
             Label = label,
         });
         Changes.TouchView(identity, membership: true);

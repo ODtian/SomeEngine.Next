@@ -1,0 +1,450 @@
+{
+  "Baseline": {
+    "Complete": true,
+    "CapturedAtUtc": "2026-10-14T19:04:20.7029698+08:00",
+    "GraphicsDevice": "NVIDIA GeForce RTX 3080",
+    "GraphicsDriver": "32.0.16.1074",
+    "Processor": "Intel64 Family 6 Model 63 Stepping 2, GenuineIntel",
+    "Framework": ".NET 10.0.13",
+    "NativeAot": true,
+    "TieredCompilation": null,
+    "TieredCompilationOverride": null,
+    "Error": null,
+    "ExpectedScenes": [
+      "1024 spheres",
+      "Sponza",
+      "Amazon Bistro"
+    ],
+    "ElapsedSeconds": 26.7489605,
+    "Timing": "Presented frame elapsed time and CPU-side stage elapsed time; GPU duration is not measured",
+    "TraceEnabled": false,
+    "Startup": {
+      "FirstSceneFrame": 1,
+      "ApplicationToFirstFrameMs": 2333.6366,
+      "ApplicationToWindowMs": 641.5229,
+      "WindowToFirstFrameMs": 1692.1137,
+      "Stages": [
+        {
+          "Stage": "ContentReadsStarted",
+          "StartedMs": 0,
+          "CompletedMs": 514.4182,
+          "ElapsedMs": 514.4182
+        },
+        {
+          "Stage": "WorldLoad",
+          "StartedMs": 514.4008,
+          "CompletedMs": 550.9519,
+          "ElapsedMs": 36.55110000000002
+        },
+        {
+          "Stage": "DeviceCreation",
+          "StartedMs": 514.4182,
+          "CompletedMs": 1278.2986,
+          "ElapsedMs": 763.8804000000001
+        },
+        {
+          "Stage": "SceneResources",
+          "StartedMs": 550.9565,
+          "CompletedMs": 1305.0431,
+          "ElapsedMs": 754.0866000000001
+        },
+        {
+          "Stage": "ContentWait",
+          "StartedMs": 1278.2986,
+          "CompletedMs": 1312.2793,
+          "ElapsedMs": 33.98069999999984
+        },
+        {
+          "Stage": "RenderResources",
+          "StartedMs": 1312.2793,
+          "CompletedMs": 1521.5196,
+          "ElapsedMs": 209.24030000000016
+        },
+        {
+          "Stage": "FrameSetup",
+          "StartedMs": 1521.5196,
+          "CompletedMs": 1525.4969,
+          "ElapsedMs": 3.977300000000014
+        },
+        {
+          "Stage": "Prepare",
+          "StartedMs": 1525.4969,
+          "CompletedMs": 1607.729,
+          "ElapsedMs": 82.23209999999995
+        },
+        {
+          "Stage": "ReconcileGraph",
+          "StartedMs": 1607.729,
+          "CompletedMs": 2163.5859,
+          "ElapsedMs": 555.8569
+        },
+        {
+          "Stage": "PostProcessing",
+          "StartedMs": 2163.5859,
+          "CompletedMs": 2168.0073,
+          "ElapsedMs": 4.421400000000176
+        },
+        {
+          "Stage": "ExecuteFrame",
+          "StartedMs": 2168.0073,
+          "CompletedMs": 2304.6756,
+          "ElapsedMs": 136.66829999999982
+        },
+        {
+          "Stage": "FrameSetup",
+          "StartedMs": 2304.6756,
+          "CompletedMs": 2312.6243,
+          "ElapsedMs": 7.948699999999917
+        },
+        {
+          "Stage": "Prepare",
+          "StartedMs": 2312.6243,
+          "CompletedMs": 2313.2664,
+          "ElapsedMs": 0.6421000000000276
+        },
+        {
+          "Stage": "ReconcileGraph",
+          "StartedMs": 2313.2664,
+          "CompletedMs": 2313.2757,
+          "ElapsedMs": 0.00930000000016662
+        },
+        {
+          "Stage": "PostProcessing",
+          "StartedMs": 2313.2757,
+          "CompletedMs": 2313.2916,
+          "ElapsedMs": 0.015899999999874126
+        },
+        {
+          "Stage": "ExecuteFrame",
+          "StartedMs": 2313.2916,
+          "CompletedMs": 2332.1343,
+          "ElapsedMs": 18.84270000000015
+        },
+        {
+          "Stage": "Present",
+          "StartedMs": 2332.1343,
+          "CompletedMs": 2333.6355,
+          "ElapsedMs": 1.5011999999996988
+        }
+      ]
+    },
+    "TraceDetail": false,
+    "TraceAllocations": false,
+    "TemporalAntialiasing": true,
+    "VirtualShadows": true,
+    "AsyncCompute": true,
+    "ForceHardwareRaster": false,
+    "UseInstanceGroups": false,
+    "FixedFrameSeconds": 0.016666668,
+    "SynchronousFrames": false,
+    "ScenePlayback": null,
+    "DisableMeshShaders": false,
+    "DeviceValidation": false,
+    "GeometryMemoryMegabytes": 256,
+    "TransparencyResearch": "",
+    "Scenes": [
+      {
+        "Scene": "1024 spheres",
+        "Status": "Measured",
+        "Frames": 515,
+        "MeanMs": 3.889399805825244,
+        "MedianMs": 3.845,
+        "P95Ms": 4.3428,
+        "PrepareMs": 0.20673300970873795,
+        "ReconcileMs": 0.004004271844660209,
+        "ExecuteMs": 0.6769794174757284,
+        "ResidentPages": 6,
+        "RegisteredPages": 6,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 724160,
+        "GeometryFreeBytes": 267711296,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": true,
+        "FirstFrameMs": 307.8862,
+        "StreamingFrames": 3,
+        "StreamingMs": 37.0625,
+        "StreamingMaxFrameMs": 26.4094,
+        "DroppedPageFaults": 0
+      },
+      {
+        "Scene": "Sponza",
+        "Status": "Measured",
+        "Frames": 639,
+        "MeanMs": 3.134972143974959,
+        "MedianMs": 3.0836,
+        "P95Ms": 3.5772,
+        "PrepareMs": 0.0726489827856025,
+        "ReconcileMs": 0.003820031298904545,
+        "ExecuteMs": 0.8946353677621278,
+        "ResidentPages": 94,
+        "RegisteredPages": 94,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 12245072,
+        "GeometryFreeBytes": 256190384,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": false,
+        "FirstFrameMs": 2439.683,
+        "StreamingFrames": 4,
+        "StreamingMs": 116.0678,
+        "StreamingMaxFrameMs": 52.414,
+        "DroppedPageFaults": 0
+      },
+      {
+        "Scene": "Amazon Bistro",
+        "Status": "Measured",
+        "Frames": 304,
+        "MeanMs": 6.602575328947369,
+        "MedianMs": 6.4922,
+        "P95Ms": 8.0812,
+        "PrepareMs": 0.11529967105263153,
+        "ReconcileMs": 0.005123355263157899,
+        "ExecuteMs": 2.333461513157896,
+        "ResidentPages": 2080,
+        "RegisteredPages": 2372,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 116857552,
+        "GeometryFreeBytes": 151577904,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": false,
+        "FirstFrameMs": 8657.8094,
+        "StreamingFrames": 5,
+        "StreamingMs": 384.7161,
+        "StreamingMaxFrameMs": 163.673,
+        "DroppedPageFaults": 0
+      }
+    ]
+  },
+  "Candidate": {
+    "Complete": true,
+    "CapturedAtUtc": "2026-10-14T19:36:58.3477275+08:00",
+    "GraphicsDevice": "NVIDIA GeForce RTX 3080",
+    "GraphicsDriver": "32.0.16.1074",
+    "Processor": "Intel64 Family 6 Model 63 Stepping 2, GenuineIntel",
+    "Framework": ".NET 10.0.13",
+    "NativeAot": true,
+    "TieredCompilation": null,
+    "TieredCompilationOverride": null,
+    "Error": null,
+    "ExpectedScenes": [
+      "1024 spheres",
+      "Sponza",
+      "Amazon Bistro"
+    ],
+    "ElapsedSeconds": 27.4938763,
+    "Timing": "Presented frame elapsed time and CPU-side stage elapsed time; GPU duration is not measured",
+    "TraceEnabled": false,
+    "Startup": {
+      "FirstSceneFrame": 1,
+      "ApplicationToFirstFrameMs": 2704.0352,
+      "ApplicationToWindowMs": 597.7693,
+      "WindowToFirstFrameMs": 2106.2659,
+      "Stages": [
+        {
+          "Stage": "ContentReadsStarted",
+          "StartedMs": 0,
+          "CompletedMs": 463.3957,
+          "ElapsedMs": 463.3957
+        },
+        {
+          "Stage": "WorldLoad",
+          "StartedMs": 463.3902,
+          "CompletedMs": 501.2682,
+          "ElapsedMs": 37.877999999999986
+        },
+        {
+          "Stage": "DeviceCreation",
+          "StartedMs": 463.3957,
+          "CompletedMs": 1197.0473,
+          "ElapsedMs": 733.6515999999999
+        },
+        {
+          "Stage": "SceneResources",
+          "StartedMs": 501.2726,
+          "CompletedMs": 1229.931,
+          "ElapsedMs": 728.6584
+        },
+        {
+          "Stage": "ContentWait",
+          "StartedMs": 1197.0473,
+          "CompletedMs": 1231.2469,
+          "ElapsedMs": 34.199600000000146
+        },
+        {
+          "Stage": "RenderResources",
+          "StartedMs": 1231.2469,
+          "CompletedMs": 1432.6401,
+          "ElapsedMs": 201.39319999999998
+        },
+        {
+          "Stage": "FrameSetup",
+          "StartedMs": 1432.6401,
+          "CompletedMs": 1434.1764,
+          "ElapsedMs": 1.536299999999983
+        },
+        {
+          "Stage": "Prepare",
+          "StartedMs": 1434.1764,
+          "CompletedMs": 1490.9273,
+          "ElapsedMs": 56.7509
+        },
+        {
+          "Stage": "ReconcileGraph",
+          "StartedMs": 1490.9273,
+          "CompletedMs": 1986.4817,
+          "ElapsedMs": 495.5544
+        },
+        {
+          "Stage": "PostProcessing",
+          "StartedMs": 1986.4817,
+          "CompletedMs": 2588.4396,
+          "ElapsedMs": 601.9579000000001
+        },
+        {
+          "Stage": "ExecuteFrame",
+          "StartedMs": 2588.4396,
+          "CompletedMs": 2681.3885,
+          "ElapsedMs": 92.94889999999987
+        },
+        {
+          "Stage": "FrameSetup",
+          "StartedMs": 2681.3885,
+          "CompletedMs": 2685.9418,
+          "ElapsedMs": 4.553300000000036
+        },
+        {
+          "Stage": "Prepare",
+          "StartedMs": 2685.9418,
+          "CompletedMs": 2686.6891,
+          "ElapsedMs": 0.7472999999999956
+        },
+        {
+          "Stage": "ReconcileGraph",
+          "StartedMs": 2686.6891,
+          "CompletedMs": 2686.6981,
+          "ElapsedMs": 0.009000000000014552
+        },
+        {
+          "Stage": "PostProcessing",
+          "StartedMs": 2686.6981,
+          "CompletedMs": 2686.7133,
+          "ElapsedMs": 0.015199999999822467
+        },
+        {
+          "Stage": "ExecuteFrame",
+          "StartedMs": 2686.7133,
+          "CompletedMs": 2702.2983,
+          "ElapsedMs": 15.585000000000036
+        },
+        {
+          "Stage": "Present",
+          "StartedMs": 2702.2983,
+          "CompletedMs": 2704.0325,
+          "ElapsedMs": 1.7341999999998734
+        }
+      ]
+    },
+    "TraceDetail": false,
+    "TraceAllocations": false,
+    "TemporalAntialiasing": true,
+    "VirtualShadows": true,
+    "AsyncCompute": true,
+    "ForceHardwareRaster": false,
+    "UseInstanceGroups": false,
+    "FixedFrameSeconds": 0.016666668,
+    "SynchronousFrames": false,
+    "ScenePlayback": null,
+    "DisableMeshShaders": false,
+    "DeviceValidation": false,
+    "GeometryMemoryMegabytes": 256,
+    "TransparencyResearch": "8 projected sphere meshes; 168 triangles per mesh; alpha 0.5; color error 1/255",
+    "Scenes": [
+      {
+        "Scene": "1024 spheres",
+        "Status": "Measured",
+        "Frames": 520,
+        "MeanMs": 3.855893461538461,
+        "MedianMs": 3.8184,
+        "P95Ms": 4.2645,
+        "PrepareMs": 0.21021634615384632,
+        "ReconcileMs": 0.0042553846153846235,
+        "ExecuteMs": 0.6926501923076929,
+        "ResidentPages": 6,
+        "RegisteredPages": 6,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 724160,
+        "GeometryFreeBytes": 267711296,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": true,
+        "FirstFrameMs": 566.6863,
+        "StreamingFrames": 3,
+        "StreamingMs": 55.133,
+        "StreamingMaxFrameMs": 41.2043,
+        "DroppedPageFaults": 0
+      },
+      {
+        "Scene": "Sponza",
+        "Status": "Measured",
+        "Frames": 621,
+        "MeanMs": 3.2262887278582935,
+        "MedianMs": 3.1619,
+        "P95Ms": 3.9094,
+        "PrepareMs": 0.07605845410628019,
+        "ReconcileMs": 0.003861030595813213,
+        "ExecuteMs": 0.8966982286634461,
+        "ResidentPages": 94,
+        "RegisteredPages": 94,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 12245072,
+        "GeometryFreeBytes": 256190384,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": false,
+        "FirstFrameMs": 2644.4781,
+        "StreamingFrames": 4,
+        "StreamingMs": 112.5059,
+        "StreamingMaxFrameMs": 54.886,
+        "DroppedPageFaults": 0
+      },
+      {
+        "Scene": "Amazon Bistro",
+        "Status": "Measured",
+        "Frames": 309,
+        "MeanMs": 6.512737864077675,
+        "MedianMs": 6.4239,
+        "P95Ms": 7.284,
+        "PrepareMs": 0.10061779935275081,
+        "ReconcileMs": 0.0041766990291262195,
+        "ExecuteMs": 1.9776310679611635,
+        "ResidentPages": 2074,
+        "RegisteredPages": 2372,
+        "QueuedLoads": 0,
+        "ActiveLoads": 0,
+        "GeometryUsedBytes": 116280160,
+        "GeometryFreeBytes": 152155296,
+        "BackpressuredPages": 0,
+        "RenderWidth": 1280,
+        "RenderHeight": 720,
+        "AnimateScene": false,
+        "FirstFrameMs": 8919.1565,
+        "StreamingFrames": 10,
+        "StreamingMs": 473.5309,
+        "StreamingMaxFrameMs": 158.4941,
+        "DroppedPageFaults": 0
+      }
+    ]
+  }
+}

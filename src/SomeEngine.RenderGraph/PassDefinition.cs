@@ -749,15 +749,14 @@ public ref partial struct PassDefinition
         GraphAccessMode mode = load == LoadType.Load
             ? GraphAccessMode.ReadWrite
             : GraphAccessMode.Write;
-        _ = AddTextureAccess(
-            new GraphTextureId(view.Texture),
+        _ = AddAttachmentAccess(
+            view,
             mode,
             coverage,
             PipelineSync.RenderTarget,
             ResourceAccess.RenderTarget,
             TextureLayout.RenderTarget,
             view.TextureRange,
-            false,
             store == StoreType.Discard ? ResourceContentState.Undefined : null);
 
         if (resolveView.Value.IsValid)
@@ -802,7 +801,6 @@ public ref partial struct PassDefinition
             viewId.Value, depthLoad, depthStore, depthCoverage, clearDepth,
             stencilLoad, stencilStore, stencilCoverage, clearStencil, region));
 
-        GraphTextureId texture = new(view.Texture);
         if ((view.TextureRange.Aspects & TextureAspects.Depth) != 0)
         {
             TextureSubresourceRange range = new(
@@ -812,8 +810,8 @@ public ref partial struct PassDefinition
                 view.TextureRange.ArrayLayerCount,
                 TextureAspects.Depth);
             bool readOnly = view.ReadOnlyDepth;
-            _ = AddTextureAccess(
-                texture,
+            _ = AddAttachmentAccess(
+                view,
                 readOnly ? GraphAccessMode.Read :
                     depthLoad == LoadType.Load ? GraphAccessMode.ReadWrite : GraphAccessMode.Write,
                 readOnly ? WriteCoverage.Partial : depthCoverage,
@@ -821,7 +819,6 @@ public ref partial struct PassDefinition
                 readOnly ? ResourceAccess.DepthStencilRead : ResourceAccess.DepthStencilWrite,
                 readOnly ? TextureLayout.DepthStencilRead : TextureLayout.DepthStencilWrite,
                 range,
-                false,
                 depthStore == StoreType.Discard ? ResourceContentState.Undefined : null);
         }
         if ((view.TextureRange.Aspects & TextureAspects.Stencil) != 0)
@@ -833,8 +830,8 @@ public ref partial struct PassDefinition
                 view.TextureRange.ArrayLayerCount,
                 TextureAspects.Stencil);
             bool readOnly = view.ReadOnlyStencil;
-            _ = AddTextureAccess(
-                texture,
+            _ = AddAttachmentAccess(
+                view,
                 readOnly ? GraphAccessMode.Read :
                     stencilLoad == LoadType.Load ? GraphAccessMode.ReadWrite : GraphAccessMode.Write,
                 readOnly ? WriteCoverage.Partial : stencilCoverage,
@@ -842,10 +839,16 @@ public ref partial struct PassDefinition
                 readOnly ? ResourceAccess.DepthStencilRead : ResourceAccess.DepthStencilWrite,
                 readOnly ? TextureLayout.DepthStencilRead : TextureLayout.DepthStencilWrite,
                 range,
-                false,
                 stencilStore == StoreType.Discard ? ResourceContentState.Undefined : null);
         }
     }
+
+    private GraphTextureAccessId AddAttachmentAccess(FrameView view, GraphAccessMode mode, WriteCoverage coverage,
+        PipelineSync sync, ResourceAccess access, TextureLayout layout, TextureSubresourceRange range,
+        ResourceContentState? resultContents) =>
+        view.TextureInput is { } input
+            ? AddTextureInputAccess(input, mode, coverage, sync, access, layout, range, resultContents)
+            : AddTextureAccess(new GraphTextureId(view.Texture), mode, coverage, sync, access, layout, range, false, resultContents);
 
     private GraphBufferAccessId AddBufferAccess(
         GraphBufferId buffer,

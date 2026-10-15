@@ -92,6 +92,8 @@ public sealed class SceneTestPlatform
     public string? LastReport { get; private set; }
     public string? StartupTraceOutput { get; init; }
     public ApplicationStartupTimes? Startup { get; private set; }
+    public Func<ApplicationRendering, TestScene, IApplicationColorFeature>? CreateColorFeature { get; init; }
+    public IReadOnlyDictionary<string, string>? ColorFeatureSettings { get; init; }
     public int GeometryMemoryMegabytes { get; private set; } = 256;
     internal bool ImageRequested { get; private set; }
     internal string? LastImage { get; private set; }
@@ -382,6 +384,8 @@ public sealed class SceneTestPlatform
             ["DisableMeshShaders"] = Options.DisableMeshShaders,
             ["DeviceValidation"] = Options.DeviceValidation,
             ["GeometryMemoryMegabytes"] = GeometryMemoryMegabytes,
+            ["ColorFeature"] = ColorFeatureSettings is { } settings
+                ? new JsonObject(settings.Select(static pair => new KeyValuePair<string, JsonNode?>(pair.Key, JsonValue.Create(pair.Value)))) : null,
             ["Scenes"] = JsonSerializer.SerializeToNode(_results, SceneJsonContext.Default.ListSceneTiming),
         };
         File.WriteAllText(LastReport, report.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
