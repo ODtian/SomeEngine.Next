@@ -92,6 +92,8 @@ public sealed class SceneTestPlatform
     public string? LastReport { get; private set; }
     public string? StartupTraceOutput { get; init; }
     public ApplicationStartupTimes? Startup { get; private set; }
+    /// <summary>Edits the loaded Game world before the first extraction of each selected scene.</summary>
+    public Action<SceneEdit, TestScene>? InitializeScene { get; init; }
     public Func<ApplicationRendering, TestScene, IApplicationColorFeature>? CreateColorFeature { get; init; }
     public IReadOnlyDictionary<string, string>? ColorFeatureSettings { get; init; }
     public int GeometryMemoryMegabytes { get; private set; } = 256;

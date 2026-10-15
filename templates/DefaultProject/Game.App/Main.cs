@@ -51,12 +51,14 @@ string? oitScene = args.FirstOrDefault(static value => value.StartsWith("--oit-s
 SomeEngine.Transparency.Research.TransparencyComparison? tileRaster = args.Contains("--transparency-tiles-hardware")
     ? TransparencyComparison.TileHardware : args.Contains("--transparency-tiles-software") ? TransparencyComparison.TileSoftware : null;
 if (oitScene is not null) tileRaster ??= TransparencyComparison.TileSoftware;
+using var clusterOit = args.Contains("--cluster-oit") ? new ClusterOitScene() : null;
 var platform = new SomeEngine.Runtime.SceneTestPlatform(scenes.Select(scene => scene with
 {
     ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
 }).ToArray(), startupOptions)
 {
     StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
+    InitializeScene = clusterOit is null ? null : clusterOit.Initialize,
     CreateColorFeature = workload is { } selectedWorkload
         ? (rendering, scene) => new BlendEffectColorFeature(rendering,
             selectedWorkload.CreateData(rendering.Width, rendering.Height, scene.Name == "1024 spheres"
@@ -73,8 +75,8 @@ var platform = new SomeEngine.Runtime.SceneTestPlatform(scenes.Select(scene => s
     ColorFeatureSettings = new Dictionary<string, string>
     {
         ["Effect"] = workload?.Effect.ToString() ?? "OIT",
-        ["Workload"] = workload?.Name ?? oitScene ?? "Shaded spheres",
-        ["Method"] = workload is not null ? blendMethod.ToString() : tileRaster?.ToString() ?? "Opaque",
+        ["Workload"] = clusterOit is not null ? "32 scene meshes with glass materials" : workload?.Name ?? oitScene ?? "Shaded spheres",
+        ["Method"] = clusterOit is not null ? "Cluster OIT" : workload is not null ? blendMethod.ToString() : tileRaster?.ToString() ?? "Opaque",
         ["Shader"] = blendShader is null ? "Current" : "Reference",
     },
 };
