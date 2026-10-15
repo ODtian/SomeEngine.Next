@@ -44,6 +44,7 @@ public static class DefaultContent
         }
         await DefaultTextures.BuildAsync(project, engineRoot, cancellationToken).ConfigureAwait(false);
         await DefaultMaterials.BuildAsync(project, cancellationToken).ConfigureAwait(false);
+        await DefaultBlendContent.BuildAsync(project, cancellationToken).ConfigureAwait(false);
         Guid pipeline = BuildClusterShaders(project);
         Guid shadows = BuildShadowShaders(project);
         IReadOnlyList<Guid> imported = await project.ImportAsync("assets/Models/ico_sphere.glb", cancellationToken).ConfigureAwait(false);
