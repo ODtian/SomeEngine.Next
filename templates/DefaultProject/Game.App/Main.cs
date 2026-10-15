@@ -75,7 +75,7 @@ var platform = new SomeEngine.Runtime.SceneTestPlatform(scenes.Select(scene => s
     ColorFeatureSettings = new Dictionary<string, string>
     {
         ["Effect"] = workload?.Effect.ToString() ?? "OIT",
-        ["Workload"] = clusterOit is not null ? "32 scene meshes with glass materials" : workload?.Name ?? oitScene ?? "Shaded spheres",
+        ["Workload"] = clusterOit is not null ? "8 scene meshes with glass materials" : workload?.Name ?? oitScene ?? "Shaded spheres",
         ["Method"] = clusterOit is not null ? "Cluster OIT" : workload is not null ? blendMethod.ToString() : tileRaster?.ToString() ?? "Opaque",
         ["Shader"] = blendShader is null ? "Current" : "Reference",
     },

@@ -10,7 +10,7 @@ internal sealed class ClusterOitScene : IDisposable
     {
         Dispose();
         var copies = new Dictionary<Material, Material>();
-        foreach (var entity in edit.MeshEntities.Take(32))
+        foreach (var entity in edit.MeshEntities.Take(8))
         {
             Material source = edit.GetMaterial(entity);
             if (!copies.TryGetValue(source, out Material? material))
