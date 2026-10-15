@@ -96,6 +96,8 @@ public sealed partial class SceneTestPlatform
     public ApplicationStartupTimes? Startup { get; private set; }
     /// <summary>Edits the loaded Game world before the first extraction of each selected scene.</summary>
     public Action<SceneEdit, TestScene>? InitializeScene { get; init; }
+    /// <summary>Applies Game-world scene behavior before extraction of each numbered simulation frame.</summary>
+    public Action<SceneEdit, TestScene, int>? UpdateScene { get; init; }
     /// <summary>Collects completed GPU phase times and resource sizes alongside the scene samples.</summary>
     public bool MeasureBlending { get; init; }
     public Func<ApplicationRendering, TestScene, IApplicationColorFeature>? CreateColorFeature { get; init; }

@@ -9,7 +9,7 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class SceneInitializationTests(SceneContentFixture content)
 {
     [Fact]
-    public async Task InitializingASceneMatchesTheSameGameEditsInAScript()
+    public async Task SceneInitializationAndFrameEditsMatchTheSameScriptedScene()
     {
         string directory = Path.Combine(Path.GetTempPath(), "SomeEngine-scene-initialization-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -26,7 +26,17 @@ public sealed class SceneInitializationTests(SceneContentFixture content)
                 {
                     var red = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere");
                     ((UnlitMaterial)edit.GetMaterial(red)).BaseColorTint = new(.1f, .8f, .2f, 1);
-                    edit.AddEntity(red, new(new Vector3(0, 0, 3), Quaternion.Identity, .35f));
+                    edit.AddEntity(edit.GetMesh(red), [edit.GetMaterial(red)],
+                        new(new Vector3(0, 0, 3), Quaternion.Identity, .35f));
+                },
+                UpdateScene = (edit, _, frame) =>
+                {
+                    var red = edit.MeshEntities.First(entity => edit.GetMaterial(entity).Name == "red sphere");
+                    if (frame == 6)
+                        edit.AddEntity(edit.GetMesh(red), [edit.GetMaterial(red)],
+                            new(new Vector3(0, 1, 4), Quaternion.Identity, .3f));
+                    if (frame == 9)
+                        ((UnlitMaterial)edit.GetMaterial(red)).BaseColorTint = new(.7f, .2f, .9f, 1);
                 },
             };
             Assert.Equal(0, await Application.RunAsync(arguments, platform: platform));
@@ -39,6 +49,16 @@ public sealed class SceneInitializationTests(SceneContentFixture content)
                     var red = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere");
                     ((UnlitMaterial)edit.GetMaterial(red)).BaseColorTint = new(.1f, .8f, .2f, 1);
                     edit.AddEntity(red, new(new Vector3(0, 0, 3), Quaternion.Identity, .35f));
+                }),
+                new(6, edit =>
+                {
+                    var red = edit.MeshEntities.First(entity => edit.GetMaterial(entity).Name == "red sphere");
+                    edit.AddEntity(red, new(new Vector3(0, 1, 4), Quaternion.Identity, .3f));
+                }),
+                new(9, edit =>
+                {
+                    var red = edit.MeshEntities.First(entity => edit.GetMaterial(entity).Name == "red sphere");
+                    ((UnlitMaterial)edit.GetMaterial(red)).BaseColorTint = new(.7f, .2f, .9f, 1);
                 }),
                 new(11, edit => edit.CaptureLinearImage(image => expected = image)),
             ]) { RasterEdgePixels = 32, WaitForFrames = false }, "--hardware-raster", "--no-taa", "--no-vsm");

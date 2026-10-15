@@ -552,7 +552,7 @@ internal static class RuntimeApplication
             if (options.ScenePlayback is not null)
                 scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
                     orbitCamera: options.ScenePlayback == "camera");
-            if (platform?.InitializeScene is null) extraction.Extract(mainWorld);
+            if (platform?.InitializeScene is null && platform?.UpdateScene is null) extraction.Extract(mainWorld);
         }
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
             scene.Camera.View,
@@ -571,7 +571,7 @@ internal static class RuntimeApplication
             device,
             renderWorld,
             ClusterRenderFeature.InstanceLayout,
-            script is null && platform?.InitializeScene is null ? new RenderInstanceOptions
+            script is null && platform?.InitializeScene is null && platform?.UpdateScene is null ? new RenderInstanceOptions
             {
                 RowCapacity = Math.Max(1, scene.MeshInstanceCount),
                 BatchCapacity = 1,
@@ -772,7 +772,8 @@ internal static class RuntimeApplication
 
         int frameIndex = 0;
         uint submittedFrames = 0;
-        var sceneEdit = script is not null || platform?.InitializeScene is not null ? new SceneEdit(scene, window) : null;
+        var sceneEdit = script is not null || platform?.InitializeScene is not null || platform?.UpdateScene is not null
+            ? new SceneEdit(scene, window) : null;
         int actionIndex = 0;
         int? captureFrame = options.CaptureFrame ?? (options.FrameLimit > 0 ? options.FrameLimit - 1 : null);
         bool outputSaved = false, linearOutputSaved = false;
@@ -834,6 +835,8 @@ internal static class RuntimeApplication
                     {
                         if (frameIndex == 0 && platform?.InitializeScene is { } initializeScene)
                             initializeScene(sceneEdit, platform.Current);
+                        if (platform?.UpdateScene is { } updateScene)
+                            updateScene(sceneEdit, platform.Current, frameIndex);
                         if (script is not null)
                             while (actionIndex < script.Actions.Count && script.Actions[actionIndex].Frame == frameIndex)
                                 script.Actions[actionIndex++].Execute(sceneEdit);
@@ -958,7 +961,8 @@ internal static class RuntimeApplication
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: applying extracted scene.");
-                if (options.SynchronousFrames || script is not null || (frameIndex == 0 && platform?.InitializeScene is not null))
+                if (options.SynchronousFrames || script is not null || platform?.UpdateScene is not null ||
+                    (frameIndex == 0 && platform?.InitializeScene is not null))
                 {
                     if (animateScene && options.ScenePlayback is null)
                         scene.Update(sceneSeconds);
@@ -1222,7 +1226,7 @@ internal static class RuntimeApplication
                                 orbitCamera: options.ScenePlayback == "camera");
                         else if (updateScene)
                             scene.Update(nextSceneTime);
-                        if (script is null) extraction.Extract(mainWorld);
+                        if (script is null && platform?.UpdateScene is null) extraction.Extract(mainWorld);
                     });
                 }
 

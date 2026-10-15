@@ -79,6 +79,7 @@ public sealed class SceneEdit
     internal void End() => _active = false;
 
     public IReadOnlyList<Entity> MeshEntities { get { RequireAction(); return _scene.GetMeshEntities(); } }
+    public Matrix4x4 CameraView { get { RequireAction(); return _scene.Camera.View; } }
 
     public void SetShadingPath(ClusterShadingPath path)
     {
