@@ -36,7 +36,7 @@ var scenes = SomeEngine.Runtime.SceneTestPlatform.ReadScenes(
 SomeEngine.Runtime.RuntimeStartupOptions? startupOptions = args.Length == 0 ? null :
     SomeEngine.Runtime.RuntimeStartupOptions.Parse(args) with
     {
-        WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true,
+        WindowVSync = false, DynamicScene = scenes[0].Animate,
     };
 BlendEffect? surfaceEffect = Enum.TryParse(args.FirstOrDefault(static value => value.StartsWith("--blend-effect="))?["--blend-effect=".Length..],
     true, out BlendEffect effect) ? effect : null;

@@ -16,7 +16,7 @@ public sealed record TestScene(string Name, string ContentDirectory, bool Animat
 }
 
 /// <summary>Shared scene selection and render settings for the interactive test application.</summary>
-public sealed class SceneTestPlatform
+public sealed partial class SceneTestPlatform
 {
     public static TestScene[] ReadScenes(string path, string? sceneName = null)
     {
@@ -46,6 +46,7 @@ public sealed class SceneTestPlatform
     internal TestScene Current => Scenes[SelectedScene];
     private readonly List<SceneTiming> _results = [];
     private readonly List<FrameTiming> _frames = [];
+    private readonly Dictionary<int, ClusterBlendMetrics> _blendFrames = [];
     private const string FrameTimingScopes =
         "All timing fields are CPU wall-clock milliseconds. ElapsedMs retains the original whole-frame boundaries. " +
         "PrepareMs, ReconcileMs, ExecuteMs, GameUpdateWaitMs, FrameSlotAcquireMs, AcquireImageMs and PresentMs " +
@@ -94,6 +95,8 @@ public sealed class SceneTestPlatform
     public ApplicationStartupTimes? Startup { get; private set; }
     /// <summary>Edits the loaded Game world before the first extraction of each selected scene.</summary>
     public Action<SceneEdit, TestScene>? InitializeScene { get; init; }
+    /// <summary>Collects completed GPU phase times and resource sizes alongside the scene samples.</summary>
+    public bool MeasureBlending { get; init; }
     public Func<ApplicationRendering, TestScene, IApplicationColorFeature>? CreateColorFeature { get; init; }
     public IReadOnlyDictionary<string, string>? ColorFeatureSettings { get; init; }
     public int GeometryMemoryMegabytes { get; private set; } = 256;
@@ -188,6 +191,7 @@ public sealed class SceneTestPlatform
         _firstFrameMs = 0;
         _readyFrames = 0;
         _frames.Clear();
+        _blendFrames.Clear();
         _shadowResolutionFeedback.Clear();
         if (_recordTrace)
             _trace = EngineTrace.Start(Path.Combine(_resultDirectory!, $"scene-{SelectedScene}.setrace"),
@@ -202,6 +206,11 @@ public sealed class SceneTestPlatform
     {
         if (IsMeasuring && _sampleStarted != 0 && !ReloadRequested)
             _shadowResolutionFeedback.Add((frame, lodBias));
+    }
+
+    internal void RecordBlendFrame(ClusterBlendMetrics frame)
+    {
+        if (IsMeasuring) _blendFrames[frame.SimulationFrame] = frame;
     }
 
     internal void InvalidateMeasurements(string reason)
@@ -333,6 +342,18 @@ public sealed class SceneTestPlatform
             error ??= "The requested simulation-frame window was interrupted.";
             SaveFrameWindow("Incomplete", error);
         }
+        if (MeasureBlending && _sceneSampleFinished)
+        {
+            SceneFrameWindow window = _frameWindows[^1];
+            ClusterBlendMetrics[] gpu = window.Frames
+                .Where(frame => _blendFrames.ContainsKey(frame.SimulationFrame))
+                .Select(frame => _blendFrames[frame.SimulationFrame]).ToArray();
+            _frameWindows[^1] = window with { BlendFrames = gpu };
+            if (_results.Count > 0)
+                _results[^1] = _results[^1] with { Blending = SceneBlendTiming.FromFrames(gpu) };
+            if (gpu.Length != window.Frames.Length)
+                error ??= "The GPU blend samples did not cover the complete scene-frame window.";
+        }
         if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < 45)
         {
             SelectScene(SelectedScene + 1);
@@ -342,6 +363,7 @@ public sealed class SceneTestPlatform
         {
             ["SchemaVersion"] = 3,
             ["TimingScopes"] = FrameTimingScopes,
+            ["BlendTimingScopes"] = MeasureBlending ? BlendTimingScopes : null,
             ["Sampling"] = "Default: original warmup and wall-clock sample. Explicit MeasurementFrames: the requested zero-based simulation frames, without retiming or replacing failed frames. Each sample records its SimulationFrame.",
             ["Scenes"] = JsonSerializer.SerializeToNode(_frameWindows, SceneJsonContext.Default.ListSceneFrameWindow),
         };
@@ -354,6 +376,7 @@ public sealed class SceneTestPlatform
             ["CapturedAtUtc"] = DateTimeOffset.UtcNow.ToString("O"),
             ["FrameTimingSchemaVersion"] = 3,
             ["TimingScopes"] = FrameTimingScopes,
+            ["BlendTimingScopes"] = MeasureBlending ? BlendTimingScopes : null,
             ["GraphicsDevice"] = _graphicsDevice,
             ["GraphicsDriver"] = _graphicsDriver,
             ["Processor"] = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
@@ -365,7 +388,9 @@ public sealed class SceneTestPlatform
             ["Error"] = error,
             ["ExpectedScenes"] = new JsonArray(Scenes.Select(scene => (JsonNode?)JsonValue.Create(scene.Name)).ToArray()),
             ["ElapsedSeconds"] = Stopwatch.GetElapsedTime(_testStarted).TotalSeconds,
-            ["Timing"] = "Presented frame elapsed time and CPU-side stage elapsed time; GPU duration is not measured",
+            ["Timing"] = MeasureBlending
+                ? "Presented frame elapsed time, CPU stage times and completed GPU blend phase times"
+                : "Presented frame elapsed time and CPU-side stage elapsed time",
             ["TraceEnabled"] = _recordTrace,
             ["ShadowResolutionSampling"] = "Completed asynchronous bias feedback received during the timed sample window; feedback may lag presented frames. No end-of-window GPU wait. Empty feedback has null bias statistics.",
             ["FrameSamples"] = "frame-samples.json",
@@ -487,11 +512,17 @@ public sealed class SceneTestPlatform
         ShadowResolutionSummary ShadowResolution, SimulationFrameWindow? RequestedSimulationWindow,
         int? FirstSimulationFrame, int? LastSimulationFrame, double? SampleWallSeconds,
         double? GameUpdateWaitMs, double? FrameSlotAcquireMs, double? AcquireImageMs, double? PresentMs,
-        double? GraphExecuteMs, double? CompletionWaitMs, double? OtherFrameMs);
+        double? GraphExecuteMs, double? CompletionWaitMs, double? OtherFrameMs)
+    {
+        public SceneBlendTiming? Blending { get; init; }
+    }
     internal sealed record SceneFrameWindow(
         string Scene, int FirstRenderedFrame, float FixedFrameSeconds, FrameTiming[] Frames,
         SimulationFrameWindow? RequestedSimulationWindow, int? FirstSimulationFrame, int? LastSimulationFrame,
-        double? SampleWallSeconds, string Status, string? Error);
+        double? SampleWallSeconds, string Status, string? Error)
+    {
+        public ClusterBlendMetrics[]? BlendFrames { get; init; }
+    }
 
 }
 
