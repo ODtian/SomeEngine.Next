@@ -65,6 +65,8 @@ public sealed record ClusterPipelineOptions
     public bool EnableDepthBuckets { get; init; } = true;
 
     public bool EnableFrameMetricsReadback { get; init; }
+    /// <summary>Measures blend phases on the graphics queue and reads back their work and resource sizes.</summary>
+    public bool MeasureBlending { get; init; }
 
     internal void Validate()
     {

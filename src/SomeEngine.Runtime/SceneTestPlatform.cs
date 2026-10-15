@@ -37,6 +37,7 @@ public sealed partial class SceneTestPlatform
         {
             WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true,
         };
+        MeasureBlending = Options.MeasureBlending;
     }
 
     public IReadOnlyList<TestScene> Scenes { get; }

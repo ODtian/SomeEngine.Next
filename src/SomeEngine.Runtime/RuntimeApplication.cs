@@ -43,7 +43,7 @@ internal static class RuntimeApplication
         int frames = 0;
         do
         {
-            if (platform is not null) options = platform.Options;
+            if (platform is not null) options = platform.Options with { MeasureBlending = platform.MeasureBlending };
             platform?.BeginScene();
             try
             {
@@ -336,7 +336,8 @@ internal static class RuntimeApplication
             Device = Backend.CreateDevice(new DeviceDesc(
                 adapterId,
                 queues,
-                requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands,
+                requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands |
+                    (options.MeasureBlending ? DeviceFeatures.CalibratedTimestamps : DeviceFeatures.None),
                 optionalFeatures: options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders,
                 label: "SomeEngine Runtime Device"));
             Swapchain = Backend.CreateSwapchain(Device, new SwapchainDesc(
@@ -668,6 +669,8 @@ internal static class RuntimeApplication
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
             metrics: options.VerifyFrameOutput || options.LinearFrameOutputPath is not null || script is not null);
+        if (platform is not null && options.MeasureBlending)
+            pipeline.BlendFrameCompleted += platform.RecordBlendFrame;
         using var virtualShadows = new VirtualShadowFeature(
             backend,
             device,
@@ -740,6 +743,7 @@ internal static class RuntimeApplication
                 MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
                 UseInstanceGroups = options.UseInstanceGroups,
                 EnableFrameMetricsReadback = metrics,
+                MeasureBlending = preview is null && options.MeasureBlending,
             });
 
         void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
@@ -1077,6 +1081,7 @@ internal static class RuntimeApplication
                 }) : null;
                 VirtualShadowFrameQuality? shadowQuality = null;
                 long executeStarted = Stopwatch.GetTimestamp();
+                pipeline.SetMeasurementFrame(frameIndex);
                 startup.RecordStage("PostProcessing");
                 FrameOutputMetrics? frameOutput = ExecuteFrame(
                     backend,
@@ -1372,7 +1377,10 @@ internal static class RuntimeApplication
         finally
         {
             if (platform is not null)
+            {
                 virtualShadows.ResolutionBiasCompleted -= platform.RecordShadowResolutionBias;
+                pipeline.BlendFrameCompleted -= platform.RecordBlendFrame;
+            }
             if (nextGameUpdate is not null)
                 RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
             renderDevice.WaitForTrackedSubmissions(FrameTimeout);
