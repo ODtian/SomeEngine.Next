@@ -122,6 +122,12 @@ public sealed class SceneEdit
         return _scene.GetMaterial(entity, index);
     }
 
+    public Mesh GetMesh(Entity entity)
+    {
+        RequireAction();
+        return _scene.GetMesh(entity);
+    }
+
     public void ReplaceMaterial(Entity entity, Material material, int index = 0)
     {
         RequireAction();
@@ -134,6 +140,14 @@ public sealed class SceneEdit
     {
         RequireAction();
         return _scene.AddEntity(source, transform);
+    }
+
+    /// <summary>Adds caller-supplied, ready geometry and materials to the Game world.</summary>
+    public Entity AddEntity(Mesh mesh, IReadOnlyList<Material> materials, TransformQvvs transform)
+    {
+        RequireAction();
+        return _scene.AddEntity(new MeshInstance { Mesh = mesh },
+            materials.Select(material => new MeshMaterialBinding(material)).ToArray(), transform);
     }
 
     public void SetEntityTransform(Entity entity, TransformQvvs transform)
