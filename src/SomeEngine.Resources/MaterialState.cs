@@ -1,34 +1,12 @@
-namespace SomeEngine.Resources;
+using SomeEngine.Graphics;
 
-public enum CompareOperation
-{
-    Never,
-    Less,
-    Equal,
-    LessOrEqual,
-    Greater,
-    NotEqual,
-    GreaterOrEqual,
-    Always,
-}
+namespace SomeEngine.Resources;
 
 public enum SurfaceMode
 {
     Opaque,
     Masked,
     Translucent,
-}
-
-public enum StencilOp
-{
-    Keep,
-    Zero,
-    Replace,
-    IncrementSaturate,
-    DecrementSaturate,
-    Invert,
-    IncrementWrap,
-    DecrementWrap,
 }
 
 public readonly record struct MaterialState
@@ -43,13 +21,13 @@ public readonly record struct MaterialState
     public float MaximumError { get; init; }
     public byte StencilRef { get; init; }
     public CompareOperation StencilCompare { get; init; }
-    public StencilOp StencilPass { get; init; }
+    public StencilOperation StencilPass { get; init; }
 
     public static MaterialState Default => new()
     {
         Surface = SurfaceMode.Opaque,
         ColorLimit = 1,
         StencilCompare = CompareOperation.Always,
-        StencilPass = StencilOp.Keep,
+        StencilPass = StencilOperation.Keep,
     };
 }
