@@ -429,7 +429,17 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 
 ### 验收与接入
 
-本轮通过 4 项透明行为检查、2 项附件输入与只读深度行为检查，测试命令执行了项目行为规则自动检查。正式接入继续沿用户材质、世界提取、现有几何和持久 RenderGraph 推进；规格将覆盖 OIT、动态细分、Forward+ XYZ、完整材质 X-ray、材质属性贴花、有序混合与 stencil，以及统一场景验收。
+本轮通过 4 项透明行为检查、2 项附件输入与只读深度行为检查，测试命令执行了项目行为规则自动检查。正式接入沿用户材质、世界提取、现有几何和持久 RenderGraph 推进，规格为 [#221](https://github.com/ODtian/SomeEngine.Next/issues/221)，实现集成分支为 `codex/tile-blending-221`。
+
+| 任务 | 交付行为 | 阻塞它的任务 |
+| --- | --- | --- |
+| [#222](https://github.com/ODtian/SomeEngine.Next/issues/222) | 完整材质 OIT | 可立即开始 |
+| [#223](https://github.com/ODtian/SomeEngine.Next/issues/223) | 硬软光栅与动态细分 | #222 |
+| [#224](https://github.com/ODtian/SomeEngine.Next/issues/224) | GPU 构建 Forward+ XYZ 混合候选 | #222 |
+| [#225](https://github.com/ODtian/SomeEngine.Next/issues/225) | 完整用户材质 X-ray | #224 |
+| [#226](https://github.com/ODtian/SomeEngine.Next/issues/226) | 多层材质贴花 | #224 |
+| [#227](https://github.com/ODtian/SomeEngine.Next/issues/227) | 手动混合与 stencil | #224 |
+| [#228](https://github.com/ODtian/SomeEngine.Next/issues/228) | 统一场景验收并启用正式功能 | #223、#225、#226、#227 |
 
 - [效果专项原始数据及两份 resolver 源码](Transparency-Workloads-2026-10-16.json)
 - [优化过程中的配对数据](Transparency-Workload-Variants-2026-10-16.json)
