@@ -12,9 +12,10 @@ public sealed class BlendEffectColorFeature : IApplicationColorFeature
     private readonly BlendEffectResources _effect;
     private readonly GraphTextureInput _color, _depth;
 
-    public BlendEffectColorFeature(ApplicationRendering rendering, BlendEffectData data, BlendMethod method, float xrayDistance)
+    public BlendEffectColorFeature(ApplicationRendering rendering, BlendEffectData data, BlendMethod method, float xrayDistance,
+        ComparisonShaders? shaders = null)
     {
-        _effect = new(rendering.Backend, rendering.Device, data, method, rendering.Projection, xrayDistance, new());
+        _effect = new(rendering.Backend, rendering.Device, data, method, rendering.Projection, xrayDistance, shaders ?? new());
         using RenderGraphEdit edit = rendering.Graph.BeginEdit();
         _color = edit.CreateTextureInput();
         _depth = edit.CreateTextureInput();
@@ -41,7 +42,7 @@ public sealed class BlendEffectColorFeature : IApplicationColorFeature
             buildPass = edit.AddComputeFramePass("Build blend depth cells", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new DispatchArguments(((uint)data.Bounds.Length + 63) / 64, 1, 1), new PassOptions(RepeatCommands: true),
                 build.Pipeline, build.ParameterLayout, default, static (ref PassDefinition _, ref DispatchArguments _) => { },
-                static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch));
+                static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch), region: rendering.Region);
             Bind(edit.GetPass(buildPass), build.ParameterLayout, PipelineSync.ComputeShading, true);
         }
         if (method == BlendMethod.Forward)
@@ -55,7 +56,7 @@ public sealed class BlendEffectColorFeature : IApplicationColorFeature
                     commands.SetViewports([new(0, 0, size.Width, size.Height)]);
                     commands.SetScissors([new(0, 0, (int)size.Width, (int)size.Height)]);
                     commands.Draw(new(size.Vertices, 1, 0, 0));
-                });
+                }, region: rendering.Region);
             Bind(edit.GetPass(CompletePass), _effect.DrawLayout, PipelineSync.VertexShading | PipelineSync.PixelShading, false);
             GraphColorAttachmentViewId target = edit.CreateColorAttachmentView(_color, ColorRange,
                 Format.R16G16B16A16Float, TextureViewDimension.Texture2D);
@@ -71,7 +72,7 @@ public sealed class BlendEffectColorFeature : IApplicationColorFeature
             CompletePass = edit.AddComputeFramePass("Resolve blend effects", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new DispatchArguments((uint)data.TileColumns, (uint)data.TileRows, 1), new PassOptions(RepeatCommands: true),
                 resolve.Pipeline, resolve.ParameterLayout, default, static (ref PassDefinition _, ref DispatchArguments _) => { },
-                static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch));
+                static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch), region: rendering.Region);
             Bind(edit.GetPass(CompletePass), resolve.ParameterLayout, PipelineSync.ComputeShading, false);
         }
         if (buildPass != default) edit.OrderAfter(CompletePass, buildPass);

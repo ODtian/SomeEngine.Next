@@ -80,6 +80,8 @@
     <Project Path="tests/SomeEngine.Graphics.Benchmarks.Tests/SomeEngine.Graphics.Benchmarks.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />
+    <Project Path="tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj" />
     <Project Path="tools/TestRules/SomeEngine.TestRules.csproj" />
     <Project Path="tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAssets.csproj" />
     <Project Path="tools/SomeEngine.Job.Benchmarks/SomeEngine.Job.Benchmarks.csproj" />

@@ -70,7 +70,7 @@ public sealed class TileVisibilityColorFeature : IApplicationColorFeature
                 new DispatchArguments(((uint)tiles.Associations.Length * 8 + 255) / 256, 1, 1),
                 new PassOptions(RepeatCommands: true), clear.Pipeline, clear.ParameterLayout, default,
                 static (ref PassDefinition _, ref DispatchArguments _) => { },
-                static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch));
+                static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch), region: rendering.Region);
             Bind(edit.GetPass(_firstPass), clear.ParameterLayout, PipelineSync.ComputeShading, GraphAccessMode.Write);
         }
 
@@ -100,7 +100,7 @@ public sealed class TileVisibilityColorFeature : IApplicationColorFeature
                     commands.SetViewports([new(0, 0, dimensions.Width, dimensions.Height)]);
                     commands.SetScissors([new(0, 0, (int)dimensions.Width, (int)dimensions.Height)]);
                     commands.Draw(new(dimensions.VertexCount, 1, 0, 0));
-                });
+                }, region: rendering.Region);
             Bind(edit.GetPass(coveragePass), layout, PipelineSync.VertexShading | PipelineSync.PixelShading, GraphAccessMode.ReadWrite);
             GraphDepthStencilViewId depthView = edit.CreateDepthStencilView(_depth,
                 new(0, 1, 0, 1, TextureAspects.Depth), Format.D32Float, TextureViewDimension.Texture2D, readOnlyDepth: true);
@@ -116,7 +116,7 @@ public sealed class TileVisibilityColorFeature : IApplicationColorFeature
         CompletePass = edit.AddComputeFramePass("Resolve transparency visibility", PassQueueSelection.AnyOfType(QueueType.Graphics),
             dispatch, new PassOptions(RepeatCommands: true), resolve.Pipeline, resolve.ParameterLayout, default,
             static (ref PassDefinition _, ref DispatchArguments _) => { },
-            static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch));
+            static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch), region: rendering.Region);
         Bind(edit.GetPass(CompletePass), resolve.ParameterLayout, PipelineSync.ComputeShading, GraphAccessMode.Read);
         if (raster == TransparencyComparison.TileHardware) edit.OrderAfter(CompletePass, coveragePass);
         else _firstPass = CompletePass;

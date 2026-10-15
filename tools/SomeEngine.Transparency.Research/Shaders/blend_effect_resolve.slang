@@ -14,7 +14,12 @@ uint DepthMask(uint lower, uint upper)
 [WaveSize(32)]
 void ResolveBlendEffect(uint3 group : SV_GroupID, uint3 thread : SV_GroupThreadID)
 {
-    uint2 pixel = group.xy * 16 + thread.xy;
+    uint2 tile = TileWords[group.y * Settings.TileColumns + group.x];
+    if (tile.y == 0) return;
+    uint localIndex = thread.y * 16 + thread.x;
+    uint2 localPixel = uint2((localIndex & 7) + ((localIndex >> 5) & 1) * 8,
+        ((localIndex >> 3) & 3) + (localIndex >> 6) * 4);
+    uint2 pixel = group.xy * 16 + localPixel;
     bool valid = all(pixel < uint2(Settings.Width, Settings.Height));
     float opaque = valid ? ViewDepth(OpaqueDepth.Load(int4(pixel, 0, 0))) : 0;
 #ifdef BLEND_CLUSTERED
@@ -27,18 +32,33 @@ void ResolveBlendEffect(uint3 group : SV_GroupID, uint3 thread : SV_GroupThreadI
     uint occupiedDepths = WaveActiveBitOr(valid ? DepthMask(lower, upper) : 0);
 #endif
     float2 point = BlendPixelPoint(pixel);
+#ifdef BLEND_XRAY
+    float2 waveMinimum = WaveActiveMin(point);
+    float2 waveMaximum = WaveActiveMax(point);
+#endif
+#ifdef BLEND_XRAY
     float4 color = valid ? SceneColor[uint3(pixel, 0)] : 0;
-    uint2 tile = TileWords[group.y * Settings.TileColumns + group.x];
+#else
+    float4 color = 0;
+#endif
+    bool changed = false;
+    uint sourceLane = WaveGetLaneIndex();
     for (uint wordIndex = tile.x; wordIndex < tile.x + tile.y; wordIndex++)
     {
         uint2 word = Words[wordIndex];
-#ifdef BLEND_CLUSTERED
-        uint sourceLane = WaveGetLaneIndex();
+        uint sourceItem = sourceLane < word.y ? References[word.x + sourceLane] : 0;
+#if defined(BLEND_XRAY) || defined(BLEND_CLUSTERED)
         bool accepts = false;
         if (sourceLane < word.y)
         {
-            uint slices = CellSlices[References[word.x + sourceLane]];
-            accepts = (occupiedDepths & DepthMask(slices & 255, slices >> 8)) != 0;
+            accepts = true;
+#ifdef BLEND_XRAY
+            float4 rectangle = Bounds[sourceItem].Rectangle;
+            accepts = all(rectangle.xy <= waveMaximum) && all(rectangle.zw >= waveMinimum);
+#endif
+#ifdef BLEND_CLUSTERED
+            accepts = accepts && (occupiedDepths & CellSlices[sourceItem]) != 0;
+#endif
         }
         uint bits = WaveActiveBallot(accepts).x;
 #else
@@ -48,27 +68,42 @@ void ResolveBlendEffect(uint3 group : SV_GroupID, uint3 thread : SV_GroupThreadI
         {
             uint bit = firstbitlow(bits);
             bits &= bits - 1;
+#ifdef BLEND_XRAY
             uint index = References[word.x + bit];
+#else
+            uint index = WaveReadLaneAt(sourceItem, bit);
+#endif
+            bool acceptsPixel = valid;
             float4 surface = 0;
 #ifdef BLEND_XRAY
-            ProjectedTriangle coverage = Coverage[index];
-            float depth;
-            if (valid && Covers(coverage, point, depth) && depth > opaque && depth <= opaque + Settings.XrayDistance)
+            if (acceptsPixel)
             {
-                float3 bary = float3(dot(coverage.EdgeA.xyz, float3(point, 1)),
-                    dot(coverage.EdgeB.xyz, float3(point, 1)), dot(coverage.EdgeC.xyz, float3(point, 1)));
-                BlendTriangle triangle = Triangles[index];
-                float3 normal = triangle.A.Normal * bary.x + triangle.B.Normal * bary.y + triangle.C.Normal * bary.z;
-                float2 uv = float2(triangle.A.U, triangle.A.V) * bary.x + float2(triangle.B.U, triangle.B.V) * bary.y +
-                    float2(triangle.C.U, triangle.C.V) * bary.z;
-                surface = ShadeXray(normal, uv, Bounds[index].MaterialIndex, depth, opaque);
+                ProjectedTriangle coverage = Coverage[index];
+                float depth;
+                if (Covers(coverage, point, depth) && depth > opaque && depth <= opaque + Settings.XrayDistance)
+                {
+                    float3 bary = float3(dot(coverage.EdgeA.xyz, float3(point, 1)),
+                        dot(coverage.EdgeB.xyz, float3(point, 1)), dot(coverage.EdgeC.xyz, float3(point, 1)));
+                    BlendTriangle triangle = Triangles[index];
+                    float3 normal = triangle.A.Normal * bary.x + triangle.B.Normal * bary.y + triangle.C.Normal * bary.z;
+                    float2 uv = float2(triangle.A.U, triangle.A.V) * bary.x + float2(triangle.B.U, triangle.B.V) * bary.y +
+                        float2(triangle.C.U, triangle.C.V) * bary.z;
+                    surface = ShadeXray(normal, uv, Bounds[index].MaterialIndex, depth, opaque);
+                }
             }
 #else
-            if (valid) surface = ShadeDecal(index, point, opaque);
+            if (acceptsPixel) surface = ShadeDecal(index, point, opaque);
 #endif
-            color.rgb = surface.rgb + (1 - surface.a) * color.rgb;
-            color.rgb = f16tof32(f32tof16(color.rgb));
+            if (surface.a > 0)
+            {
+#ifndef BLEND_XRAY
+                if (!changed) color = SceneColor[uint3(pixel, 0)];
+#endif
+                color.rgb = surface.rgb + (1 - surface.a) * color.rgb;
+                color.rgb = f16tof32(f32tof16(color.rgb));
+                changed = true;
+            }
         }
     }
-    if (valid) SceneColor[uint3(pixel, 0)] = color;
+    if (changed) SceneColor[uint3(pixel, 0)] = color;
 }

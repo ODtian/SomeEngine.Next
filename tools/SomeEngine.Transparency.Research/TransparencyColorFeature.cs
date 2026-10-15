@@ -37,7 +37,7 @@ public sealed class TransparencyColorFeature : IApplicationColorFeature
             new DispatchArguments((uint)(rendering.Width + 7) / 8, (uint)(rendering.Height + 7) / 8, 1),
             new PassOptions(RepeatCommands: true), _pipeline.Pipeline, _pipeline.ParameterLayout, default,
             static (ref PassDefinition _, ref DispatchArguments _) => { },
-            static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch));
+            static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch), region: rendering.Region);
         PassDefinition pass = edit.GetPass(CompletePass);
         TypeLayoutReflection root = _pipeline.ParameterLayout.TypeLayout;
         if (root.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock) root = root.ElementTypeLayout;

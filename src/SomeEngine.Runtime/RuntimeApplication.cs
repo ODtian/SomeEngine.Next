@@ -613,7 +613,7 @@ internal static class RuntimeApplication
                 Label: "SomeEngine Runtime Render Graph"));
         GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
         GraphRegionId targetGeometryAfterRegion, shadingRegion, temporalRegion, presentationRegion, uiRegion, feedbackRegion;
-        GraphRegionId frameOutputRegion, linearOutputRegion, debugViewsRegion;
+        GraphRegionId frameOutputRegion, linearOutputRegion, debugViewsRegion, colorEffectsRegion;
         using (RenderGraphEdit edit = renderGraph.BeginEdit())
         {
             _ = edit.AddRegion("Frame uploads");
@@ -626,6 +626,7 @@ internal static class RuntimeApplication
             debugViewsRegion = edit.AddRegion("Independent debug views");
             linearOutputRegion = edit.AddFrameRegion("Linear frame output");
             GraphRegionId postProcessing = edit.AddRegion("Post processing");
+            colorEffectsRegion = edit.AddRegion("Surface effects", postProcessing);
             temporalRegion = edit.AddRegion("Temporal", postProcessing);
             presentationRegion = edit.AddRegion("Presentation", postProcessing);
             uiRegion = edit.AddRegion("UI", postProcessing);
@@ -1014,7 +1015,7 @@ internal static class RuntimeApplication
                 bool connectColorFeature = temporal is null;
                 if (connectColorFeature && platform?.CreateColorFeature is { } createColorFeature)
                     colorFeature = createColorFeature(new(backend, device, renderGraph, boot.Width, boot.Height,
-                        viewFrame.View.Projection), platform.Current);
+                        viewFrame.View.Projection, colorEffectsRegion), platform.Current);
                 temporal ??= new TemporalFeature(
                     backend,
                     device,
@@ -1027,10 +1028,13 @@ internal static class RuntimeApplication
                     region: temporalRegion);
                 if (connectColorFeature && colorFeature is not null)
                 {
-                    using RenderGraphEdit edit = renderGraph.BeginEdit();
-                    colorFeature.OrderAfter(ref edit, pipeline.ShadeCompletePass);
-                    temporal.OrderAfter(ref edit, colorFeature.CompletePass);
-                    edit.Commit();
+                    RenderGraphEdit edit = renderGraph.BeginEdit();
+                    try
+                    {
+                        temporal.OrderAfter(ref edit, colorFeature.CompletePass);
+                        edit.Commit();
+                    }
+                    finally { edit.Dispose(); }
                 }
                 presentation ??= new RuntimePresentationPipeline(
                     backend,

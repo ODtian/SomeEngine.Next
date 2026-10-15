@@ -3,7 +3,7 @@
 struct BlendSettings
 {
     uint Width, Height, TileColumns, TileRows;
-    uint ItemCount, WordCount, DepthSlices, Padding;
+    uint ItemCount, WordCount, DepthSlices, Scene;
     float4 DepthProjection;
     float NearDepth, FarDepth, XrayDistance, Alpha;
 };

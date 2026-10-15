@@ -14,7 +14,8 @@ public static class BlendEffectApplication
         string output = Path.GetFullPath(args.Length == 0
             ? "wiki/architecture/rendering/Transparency-Cluster-Effects-2026-10-15.json" : args[0]);
         bool validate = args.Contains("--validate");
-        string[] selected = args.Skip(1).Where(static value => value != "--validate").ToArray();
+        string? referencePath = args.FirstOrDefault(static value => value.StartsWith("--blend-reference="))?["--blend-reference=".Length..];
+        string[] selected = args.Skip(1).Where(static value => !value.StartsWith("--")).ToArray();
         using IGraphicsBackend backend = validate
             ? new ValidationLayer(D3D12GraphicsBackend.Create(new(Validation: new(DisableGpuBasedValidation: true))))
             : D3D12GraphicsBackend.Create();
@@ -24,10 +25,18 @@ public static class BlendEffectApplication
         AdapterInfo adapter = adapters.First(static value => value.HardwareAccelerated);
         using Device device = backend.CreateDevice(new(adapter.Id, [new(QueueType.Graphics)], requiredFeatures: DeviceFeatures.CalibratedTimestamps));
         var shaders = new ComparisonShaders();
+        var methods = Enum.GetValues<BlendMethod>().Select(method =>
+            (Name: method.ToString(), Method: method, Shaders: shaders)).ToList();
+        if (referencePath is not null)
+        {
+            var referenceShaders = new ComparisonShaders(Path.GetFullPath(referencePath));
+            methods.Insert(1, ("Tile reference", BlendMethod.Tile, referenceShaders));
+            methods.Insert(2, ("Cluster reference", BlendMethod.Cluster, referenceShaders));
+        }
         var results = new List<object>();
         var qualityChecks = new List<object>();
         bool correct = true;
-        BlendCase[] cases =
+        BlendWorkload[] cases =
         [
             new("Xray panels 8", BlendEffect.Xray, 8, 4),
             new("Xray panels 32", BlendEffect.Xray, 32, 4),
@@ -38,18 +47,28 @@ public static class BlendEffectApplication
             new("Decals 32", BlendEffect.Decals, 32, 4),
             new("Decals 128", BlendEffect.Decals, 128, 4),
         ];
-        foreach (BlendCase sample in cases.Where(value => selected.Length == 0 || selected.Contains(value.Name)))
+        foreach (BlendWorkload sample in cases.Concat(BlendWorkloads.Scenes).Where(value => selected.Length == 0 || selected.Contains(value.Name)))
         {
             const int qualitySize = 128;
-            var qualityData = new BlendEffectData(sample.Effect, sample.Count, qualitySize, qualitySize, sample.Spheres);
+            var qualityData = sample.CreateData(qualitySize, qualitySize);
             Vector4[] reference = [];
             var errors = new List<(double Rmse, float Maximum, float Repeated)>();
-            foreach (BlendMethod method in Enum.GetValues<BlendMethod>())
+            int affectedPixels = 0;
+            foreach (var method in methods)
             {
-                using var renderer = new BlendEffectRenderer(backend, device, qualityData, method, sample.Distance, shaders);
+                using var renderer = new BlendEffectRenderer(backend, device, qualityData, method.Method, sample.Distance, method.Shaders);
                 renderer.Render();
                 Vector4[] colors = renderer.ReadColors();
-                if (method == BlendMethod.Forward) reference = colors;
+                if (method.Method == BlendMethod.Forward)
+                {
+                    reference = colors;
+                    for (int pixel = 0; pixel < colors.Length; pixel++)
+                    {
+                        Vector3 background = new((float)(Half)(.08f + .2f * (pixel % qualitySize * 4 / qualitySize) / 3f),
+                            (float)(Half)(.08f + .2f * (pixel / qualitySize * 4 / qualitySize) / 3f), (float)(Half).18f);
+                        if (Vector3.Distance(new(colors[pixel].X, colors[pixel].Y, colors[pixel].Z), background) > .001f) affectedPixels++;
+                    }
+                }
                 double squared = 0;
                 float maximum = 0;
                 for (int pixel = 0; pixel < colors.Length; pixel++)
@@ -62,10 +81,11 @@ public static class BlendEffectApplication
                 float repeated = colors.Zip(renderer.ReadColors(), static (a, b) => Vector4.Distance(a, b)).Max();
                 double rmse = Math.Sqrt(squared / (colors.Length * 3));
                 errors.Add((rmse, maximum, repeated));
-                qualityChecks.Add(new { sample.Name, Method = method.ToString(), Width = qualitySize, Height = qualitySize,
+                qualityChecks.Add(new { sample.Name, Scene = sample.Scene.ToString(), Method = method.Name, Width = qualitySize, Height = qualitySize,
+                    AffectedPixels = affectedPixels,
                     Rmse = rmse, MaximumError = maximum, RepeatedFrameMaximumDifference = repeated });
                 correct &= float.IsFinite(maximum) && maximum <= .003f && rmse <= .0005 && repeated == 0;
-                Console.WriteLine($"{sample.Name} | {method}: RMSE {rmse:F7}, max {maximum:F7}, repeated {repeated}");
+                Console.WriteLine($"{sample.Name} | {method.Name}: RMSE {rmse:F7}, max {maximum:F7}, repeated {repeated}; affected {affectedPixels}");
                 if (maximum > .003f)
                 {
                     int pixel = Enumerable.Range(0, colors.Length).MaxBy(index => Vector4.Distance(reference[index], colors[index]));
@@ -74,10 +94,10 @@ public static class BlendEffectApplication
             }
             if (validate) continue;
             long started = Stopwatch.GetTimestamp();
-            var data = new BlendEffectData(sample.Effect, sample.Count, 1280, 720, sample.Spheres);
+            var data = sample.CreateData(1280, 720);
             double setupMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-            var renderers = Enum.GetValues<BlendMethod>().Select(method =>
-                new BlendEffectRenderer(backend, device, data, method, sample.Distance, shaders)).ToArray();
+            var renderers = methods.Select(method =>
+                new BlendEffectRenderer(backend, device, data, method.Method, sample.Distance, method.Shaders)).ToArray();
             try
             {
                 double warmupMs = 0;
@@ -93,7 +113,8 @@ public static class BlendEffectApplication
                     results.Add(new
                     {
                         sample.Name, Effect = sample.Effect.ToString(), sample.Count, sample.Distance, sample.Spheres,
-                        Method = ((BlendMethod)index).ToString(), Width = 1280, Height = 720,
+                        Scene = sample.Scene.ToString(), Method = methods[index].Name, Width = 1280, Height = 720,
+                        ItemCount = data.Bounds.Length, ReferenceCount = data.References.Length, AffectedPixels = affectedPixels,
                         QualityWidth = qualitySize, QualityHeight = qualitySize,
                         error.Rmse, MaximumError = error.Maximum, RepeatedFrameMaximumDifference = error.Repeated,
                         MedianGpuMs = times.TotalMs[12], P95GpuMs = times.TotalMs[22],
@@ -101,10 +122,10 @@ public static class BlendEffectApplication
                         renderer.GeometryBytes, renderer.IntermediateBytes,
                         AdditionalGpuBytes = renderer.GeometryBytes + renderer.IntermediateBytes,
                         CpuGeometrySetupMs = setupMs, CommonWarmupGpuMs = warmupMs,
-                        WarmupFrames = warmupFrames, RefreshDepthCellsEachFrame = (BlendMethod)index == BlendMethod.Cluster,
+                        WarmupFrames = warmupFrames, RefreshDepthCellsEachFrame = methods[index].Method == BlendMethod.Cluster,
                         GpuClockState = ReadClocks(),
                     });
-                    Console.WriteLine($"  {sample.Name} | {(BlendMethod)index}: {times.TotalMs[12]:F6} ms; build {times.FirstPassMs[12]:F6}; effect {times.ResolveMs[12]:F6}");
+                    Console.WriteLine($"  {sample.Name} | {methods[index].Name}: {times.TotalMs[12]:F6} ms; build {times.FirstPassMs[12]:F6}; effect {times.ResolveMs[12]:F6}");
                 }
             }
             finally { foreach (var renderer in renderers) renderer.Dispose(); }
@@ -117,11 +138,13 @@ public static class BlendEffectApplication
             MinimumWarmupGpuMsPerMethod = validate ? 0 : 250, Samples = validate ? 0 : 24,
             Geometry = "Static projected triangles with interpolated UV and normals; colored screen/view-depth decal projectors",
             Material = "Shared 64x64 RGBA pattern, interpolated normals, diffuse and specular lighting for occluded Xray; textured color decals after opaque shading",
-            Cluster = "16x16 XY tiles, 32 logarithmic view-depth slices; 4-byte slice interval per item; source-order candidate masks generated by wave ballots",
+            Cluster = "16x16 XY tiles, 32 logarithmic view-depth slices; current shader uses 4-byte depth occupancy masks and 8x4 wave pixel regions; reference uses packed slice intervals; source-order candidates generated by wave ballots",
             Forward = "One hardware raster draw in source order; Xray and decals use conservative far-bound hardware early depth, then sampled-depth interval testing and shared materials; comparison follows the projection depth direction; alpha-zero pixels discard before fixed-function premultiplied FP16 blending",
             Quality = "128x128 RGB comparison against Forward; maximum <= .003, RMSE <= .0005, repeated-frame difference zero; per-fragment FP16 rounding in compute",
             Timing = "GPU timestamps include barriers, shading and blending; Cluster also refreshes all depth intervals each frame. ClusterCached builds intervals during static setup. Common background and static projected geometry/XY reference construction precede timing",
             Memory = "Explicit effect data, uniforms and cell masks; common opaque color/depth are inputs",
+            ReferenceShaderSource = referencePath is null ? null : File.ReadAllText(referencePath),
+            ShaderSource = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", "blend_effect_resolve.slang")),
             QualityChecks = qualityChecks,
             Measurements = results,
         }, new JsonSerializerOptions { WriteIndented = true }));
@@ -139,5 +162,4 @@ public static class BlendEffectApplication
         return result;
     }
 
-    private sealed record BlendCase(string Name, BlendEffect Effect, int Count, float Distance, bool Spheres = false);
 }

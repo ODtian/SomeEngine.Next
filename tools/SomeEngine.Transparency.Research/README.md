@@ -1,5 +1,7 @@
 # 透明 visibility 与 OIT 研究
 
+2026-10-16 的研究分支为 `codex/tile-effects`，基线已 rebase 到渲染性能分支的 `bb453878`。当前 DefaultGame 入口由 `templates/DefaultProject/Game.App` 提供。效果专项与统一三场景的本轮设置、结果见 [新场景与性能基线](../../wiki/architecture/rendering/Transparency-Tile-Visibility.md#2026-10-16-性能基线与效果场景)。
+
 当前实现采用 16×16 tile、共享图元缓存与每像素寄存器队列，提供硬件光栅和软件光栅两条入口。软件覆盖与合成融合为一个 compute pass，硬件路径使用 early depth、wave 合并覆盖与同一合成器。排序通过 wave shuffle 交换局部键，通过 shared memory 交换跨 wave 引用，计数复用排序存储。处理持续到几何耗尽或剩余颜色贡献满足误差阈值。实现、片上数据分工和同机证据见 [Tile visibility OIT](../../wiki/architecture/rendering/Transparency-Tile-Visibility.md)。
 
 覆盖树版本同时保留作为演进对照。完整几何形成连续树，投影互斥证明支持一次覆盖区间，命中后直接跳过整段；深度交叠部分按最近覆盖点推进。覆盖方程、树节点、覆盖区间和共享颜色表存储于一块 GPU 缓冲，逐像素状态保存在寄存器中，颜色直接合成进现有场景图。
@@ -84,3 +86,23 @@ pwsh -NoProfile -Command "& 'tools/Measure-Scenes.ps1' -ApplicationArguments @('
 ```
 
 `--blend-method` 同时支持 `Tile` 和 `ClusterCached`。统一场景分别使用 32 个 X-ray 面板和 128 个颜色贴花，接在 opaque visibility 着色之后、TAA 之前；三场景继续提供各自实际 opaque 深度。深度索引每图元 4 B，wave 先归约实际 Z 占用位集，再以 ballot 生成完整候选掩码，resolver 的像素状态保存在寄存器。32 个 Z 分区控制空间分辨率，处理数量由实际图元决定。实测表、总显存和图像误差见 [实验记录](../../wiki/architecture/rendering/Transparency-Tile-Visibility.md#x-ray-与贴花的-cluster-实测)。
+
+## 效果专项 benchmark
+
+`BlendWorkloads` 集中定义机械部件遮挡、重叠贴花和稀疏贴花。隔离测量与 DefaultGame 共用这组几何、数量及深度范围。`--blend-scene=Assembly|DecalLayers|SparseDecals` 选择效果输入，`--blend-method=Forward|Tile|Cluster|ClusterCached` 选择执行方式。OIT 使用 `--oit-scene=glass|smoke|foliage`，配合 `--transparency-tiles-software` 或 `--transparency-tiles-hardware` 选择光栅入口。
+
+```powershell
+dotnet run --project tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj -c Release -- --compare wiki/architecture/rendering/Transparency-OIT-Workloads-2026-10-16.json 'intersecting glass' 'smoke clouds' 'foliage patches'
+dotnet run --project tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj -c Release -- --blend-effects wiki/architecture/rendering/Transparency-Workloads-2026-10-16.json 'Xray assembly 64' 'Decal layers 256' 'Sparse decals 64'
+```
+
+`--blend-reference=<shader 路径>` 在同一进程中加入原版 tile 和 XYZ shader。结果同时保存两份 resolver 源码、图像误差、受影响像素、引用数、显存和预热设置。`--blend-shader=<shader 路径>` 在 DefaultGame 中选择对应参考 resolver。参考路径通过现有 shader 构建入口使用相应深度数据表示。
+
+统一场景采用相同 NativeAOT 应用和已构建内容。`Measure-Transparency.ps1` 通过 `Measure-Scenes.ps1` 顺序测量机械 X-ray、重叠贴花及交错玻璃，保存整帧与逐帧数据。三个场景的采样起点分别为 2048、1024、2048，每个场景采样 256 帧。工具在结束时恢复应用原有场景配置。
+
+```powershell
+$effectApplication = 'templates/DefaultProject/Game.App/bin/Release/net10.0/win-x64/publish/Game.App.exe'
+pwsh -NoProfile -File tools/Measure-Transparency.ps1 -ApplicationPath $effectApplication
+```
+
+传入 `-ReferenceShaderPath` 可同时测量原版 XYZ，得到八组完整三场景反馈。原版 resolver 可以从 `fa94e04e` 的同名 shader 导出；临时参考文件在使用后删除。本轮内容输入复用渲染性能分支已经构建的 1024 小球、Sponza 与 Bistro 数据。

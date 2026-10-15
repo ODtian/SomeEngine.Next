@@ -5,6 +5,7 @@ namespace SomeEngine.Transparency.Research;
 
 public enum BlendEffect { Xray, Decals }
 public enum BlendMethod { Forward, Tile, Cluster, ClusterCached }
+public enum BlendScene { DepthBands, Assembly, DecalLayers, SparseDecals }
 
 public sealed class BlendEffectData
 {
@@ -13,9 +14,11 @@ public sealed class BlendEffectData
     public const float NearDepth = 1;
     public const float FarDepth = 128;
 
-    public BlendEffectData(BlendEffect effect, int count, int width, int height, bool spheres = false, float depthOffset = 0)
+    public BlendEffectData(BlendEffect effect, int count, int width, int height, bool spheres = false, float depthOffset = 0,
+        BlendScene scene = BlendScene.DepthBands)
     {
         Effect = effect;
+        Scene = scene;
         Width = width;
         Height = height;
         TileColumns = (width + TileSize - 1) / TileSize;
@@ -31,7 +34,18 @@ public sealed class BlendEffectData
                 float x = (float)random.NextDouble() * 1.5f - .75f;
                 float y = (float)random.NextDouble() * 1.5f - .75f;
                 float z = depthOffset + 2 + (index + .5f) * 62 / count;
-                bounds.Add(new(new(x - .36f, y - .36f, x + .36f, y + .36f), new(z, z + 4), (uint)index, 0));
+                float radius = .36f;
+                if (scene is BlendScene.DecalLayers or BlendScene.SparseDecals)
+                {
+                    int patch = scene == BlendScene.DecalLayers ? index / 8 : index;
+                    x = -.8f + 1.6f * ((patch * 37 % 97) / 96f);
+                    y = -.7f + 1.4f * ((patch * 53 % 89) / 88f);
+                    radius = scene == BlendScene.DecalLayers ? .20f : .07f;
+                    float receiverDepth = x < 0 ? 12 : 36;
+                    z = depthOffset + receiverDepth - .75f + (index % 4) * 6;
+                }
+                float thickness = scene == BlendScene.DepthBands ? 4 : 1.5f;
+                bounds.Add(new(new(x - radius, y - radius, x + radius, y + radius), new(z, z + thickness), (uint)index, 0));
             }
         }
         else
@@ -39,6 +53,11 @@ public sealed class BlendEffectData
             for (int model = 0; model < count; model++)
             {
                 float depth = depthOffset + 2 + (model + .5f) * 62 / count;
+                bool assembly = scene == BlendScene.Assembly;
+                Vector2 center = assembly ? new(-.78f + (model % 8) * .22f, -.66f + (model / 8) * .19f)
+                    : new(.12f * MathF.Sin(model), .12f * MathF.Cos(model));
+                float radius = assembly ? .09f : .42f;
+                if (assembly) depth = depthOffset + 14 + (model % 8 / 2) * 6 + (model / 8 % 3) * .4f;
                 if (spheres)
                 {
                     for (int latitude = 0; latitude < 8; latitude++)
@@ -54,8 +73,8 @@ public sealed class BlendEffectData
                         float u = longitude / 12f, v = latitude / 8f;
                         float theta = v * MathF.PI, phi = u * MathF.Tau;
                         Vector3 normal = new(MathF.Sin(theta) * MathF.Cos(phi), MathF.Cos(theta), MathF.Sin(theta) * MathF.Sin(phi));
-                        return Vertex(new(.12f * MathF.Sin(model) + normal.X * .42f,
-                            .12f * MathF.Cos(model) + normal.Y * .42f, depth + normal.Z), normal, u, v);
+                        return Vertex(new(center.X + normal.X * radius,
+                            center.Y + normal.Y * radius, depth + normal.Z), normal, u, v);
                     }
                 }
                 else
@@ -122,6 +141,7 @@ public sealed class BlendEffectData
     }
 
     public BlendEffect Effect { get; }
+    public BlendScene Scene { get; }
     public int Width { get; }
     public int Height { get; }
     public int TileColumns { get; }
@@ -141,6 +161,7 @@ public sealed class BlendEffectData
         values[2] = (uint)TileColumns; values[3] = (uint)TileRows;
         values[4] = (uint)Bounds.Length; values[5] = (uint)Words.Length;
         values[6] = DepthSlices;
+        values[7] = (uint)Scene;
         values[8] = BitConverter.SingleToUInt32Bits(projection.M33);
         values[9] = BitConverter.SingleToUInt32Bits(projection.M34);
         values[10] = BitConverter.SingleToUInt32Bits(projection.M43);

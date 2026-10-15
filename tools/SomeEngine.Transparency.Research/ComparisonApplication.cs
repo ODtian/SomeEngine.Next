@@ -189,7 +189,10 @@ public static class ComparisonApplication
         .Append(new("spheres", 8, .5f, (width, height) => ResearchGeometry.CreateSpheres(8, .5f, width, height)))
         .Append(new("shaded separated spheres", 8, .5f, (width, height) => ResearchGeometry.CreateShadedSpheres(8, .5f, width, height, .075f)))
         .Append(new("overlapping spheres", 8, .5f, (width, height) => ResearchGeometry.CreateSpheres(8, .5f, width, height, .025f)))
-        .Append(new("shaded overlapping spheres", 8, .5f, (width, height) => ResearchGeometry.CreateShadedSpheres(8, .5f, width, height)));
+        .Append(new("shaded overlapping spheres", 8, .5f, (width, height) => ResearchGeometry.CreateShadedSpheres(8, .5f, width, height)))
+        .Append(new("intersecting glass", 32, .12f, (width, height) => ResearchGeometry.CreateGlass(32, width, height)))
+        .Append(new("smoke clouds", 128, .04f, ResearchGeometry.CreateSmoke))
+        .Append(new("foliage patches", 192, .6f, ResearchGeometry.CreateFoliage));
 
     private static ImageError Compare(Vector4[] actual, Vector3[] reference)
     {

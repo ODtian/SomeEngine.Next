@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SlangShaderSharp;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
 using Buffer = SomeEngine.Graphics.Buffer;
@@ -64,16 +65,36 @@ public sealed class BlendEffectRenderer : ITransparencyRenderer
         _backend.Begin(_context);
         _backend.Barrier(_context, new TextureBarrier(_depth, DepthRange, PipelineSync.None, PipelineSync.DepthStencil,
             ResourceAccess.NoAccess, ResourceAccess.DepthStencilWrite, TextureLayout.Undefined, TextureLayout.DepthStencilWrite));
-        for (uint row = 0; row < 4; row++)
-        for (uint column = 0; column < 4; column++)
+        using LinkedRasterPipeline? sceneDepth = _data.Scene == BlendScene.DepthBands ? null : LinkedRasterPipeline.Create(
+            _backend, _device, new ComparisonShaders().Get("blend_scene_depth.slang", ["BlendSceneVertex", "BlendSceneDepth"]),
+            "BlendSceneVertex", "BlendSceneDepth", [], Format.D32Float,
+            rasterizer: new(Cull: CullType.None),
+            depthStencil: new(DepthTest: true, DepthWrite: true, DepthComparison: CompareOperation.Always));
+        if (sceneDepth is not null)
         {
-            float depth = 3 + (row * 4 + column) * 3.5f;
-            Matrix4x4 projection = BlendEffectData.Projection;
-            float deviceDepth = (-depth * projection.M33 + projection.M43) / (-depth * projection.M34 + projection.M44);
+            _backend.SetPipeline(_context, sceneDepth.Pipeline);
+            _backend.SetTransientParameterBindings(_context, new(sceneDepth.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
+                GpuTransparencyRenderer.Bindings(sceneDepth.Reflection, _effect.ReadBindings), []));
+            _backend.SetViewports(_context, [new(0, 0, _data.Width, _data.Height)]);
+            _backend.SetScissors(_context, [new(0, 0, _data.Width, _data.Height)]);
             _backend.BeginRendering(_context, new([], new(view, LoadType.Clear, StoreType.Store,
-                LoadType.Discard, StoreType.Discard, deviceDepth), (uint)_data.Width / 4, (uint)_data.Height / 4,
-                x: column * (uint)_data.Width / 4, y: row * (uint)_data.Height / 4));
+                LoadType.Discard, StoreType.Discard, 0), (uint)_data.Width, (uint)_data.Height));
+            _backend.Draw(_context, new(3, 1, 0, 0));
             _backend.EndRendering(_context);
+        }
+        else
+        {
+            for (uint row = 0; row < 4; row++)
+            for (uint column = 0; column < 4; column++)
+            {
+                float depth = 3 + (row * 4 + column) * 3.5f;
+                Matrix4x4 projection = BlendEffectData.Projection;
+                float deviceDepth = (-depth * projection.M33 + projection.M43) / (-depth * projection.M34 + projection.M44);
+                _backend.BeginRendering(_context, new([], new(view, LoadType.Clear, StoreType.Store,
+                    LoadType.Discard, StoreType.Discard, deviceDepth), (uint)_data.Width / 4, (uint)_data.Height / 4,
+                    x: column * (uint)_data.Width / 4, y: row * (uint)_data.Height / 4));
+                _backend.EndRendering(_context);
+            }
         }
         bool depthTest = _method == BlendMethod.Forward;
         _backend.Barrier(_context, new TextureBarrier(_depth, DepthRange, PipelineSync.DepthStencil,

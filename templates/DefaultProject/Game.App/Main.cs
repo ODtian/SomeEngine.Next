@@ -42,25 +42,40 @@ BlendEffect? surfaceEffect = Enum.TryParse(args.FirstOrDefault(static value => v
     true, out BlendEffect effect) ? effect : null;
 BlendMethod blendMethod = Enum.TryParse(args.FirstOrDefault(static value => value.StartsWith("--blend-method="))?["--blend-method=".Length..],
     true, out BlendMethod method) ? method : BlendMethod.Forward;
+BlendScene blendScene = Enum.TryParse(args.FirstOrDefault(static value => value.StartsWith("--blend-scene="))?["--blend-scene=".Length..],
+    true, out BlendScene inputScene) ? inputScene : BlendScene.DepthBands;
+BlendWorkload? workload = blendScene != BlendScene.DepthBands ? BlendWorkloads.Scenes.Single(value => value.Scene == blendScene)
+    : surfaceEffect is { } inputEffect ? new(inputEffect.ToString(), inputEffect, inputEffect == BlendEffect.Xray ? 32 : 128, 4) : null;
+string? blendShader = args.FirstOrDefault(static value => value.StartsWith("--blend-shader="))?["--blend-shader=".Length..];
+string? oitScene = args.FirstOrDefault(static value => value.StartsWith("--oit-scene="))?["--oit-scene=".Length..];
 SomeEngine.Transparency.Research.TransparencyComparison? tileRaster = args.Contains("--transparency-tiles-hardware")
     ? TransparencyComparison.TileHardware : args.Contains("--transparency-tiles-software") ? TransparencyComparison.TileSoftware : null;
+if (oitScene is not null) tileRaster ??= TransparencyComparison.TileSoftware;
 var platform = new SomeEngine.Runtime.SceneTestPlatform(scenes.Select(scene => scene with
 {
     ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
 }).ToArray(), startupOptions)
 {
     StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
-    CreateColorFeature = surfaceEffect is { } selectedEffect
+    CreateColorFeature = workload is { } selectedWorkload
         ? (rendering, scene) => new BlendEffectColorFeature(rendering,
-            new(selectedEffect, selectedEffect == BlendEffect.Xray ? 32 : 128, rendering.Width, rendering.Height,
-                depthOffset: scene.Name == "1024 spheres" ? 32 : 0), blendMethod, 4)
+            selectedWorkload.CreateData(rendering.Width, rendering.Height, scene.Name == "1024 spheres"
+                ? selectedWorkload.Scene == BlendScene.Assembly ? 56 : 32 : 0), blendMethod, selectedWorkload.Distance, new(blendShader))
         : tileRaster is { } selectedRaster ? (rendering, _) => new TileVisibilityColorFeature(rendering,
-            ResearchGeometry.CreateShadedSpheres(8, .5f, rendering.Width, rendering.Height), selectedRaster, 1f / 255)
+            oitScene switch
+            {
+                "glass" => ResearchGeometry.CreateGlass(32, rendering.Width, rendering.Height),
+                "smoke" => ResearchGeometry.CreateSmoke(rendering.Width, rendering.Height),
+                "foliage" => ResearchGeometry.CreateFoliage(rendering.Width, rendering.Height),
+                _ => ResearchGeometry.CreateShadedSpheres(8, .5f, rendering.Width, rendering.Height),
+            }, selectedRaster, 1f / 255)
         : null,
     ColorFeatureSettings = new Dictionary<string, string>
     {
-        ["Effect"] = surfaceEffect?.ToString() ?? "OIT",
-        ["Method"] = surfaceEffect is not null ? blendMethod.ToString() : tileRaster?.ToString() ?? "Opaque",
+        ["Effect"] = workload?.Effect.ToString() ?? "OIT",
+        ["Workload"] = workload?.Name ?? oitScene ?? "Shaded spheres",
+        ["Method"] = workload is not null ? blendMethod.ToString() : tileRaster?.ToString() ?? "Opaque",
+        ["Shader"] = blendShader is null ? "Current" : "Reference",
     },
 };
 return await SomeEngine.Runtime.Application.RunAsync([], static (material, seconds) =>
