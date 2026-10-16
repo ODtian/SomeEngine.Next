@@ -18,6 +18,8 @@ internal sealed partial class ClusterBlendScene(ClusterBlendAssets assets, strin
         "smoke" => "8 smoke clouds with 16 cards each",
         "foliage" => "64 leaf clusters with 3 crossed cards each",
         "deformed-phong" => "16 moving parts with Wave vertices and Phong surfaces",
+        "decal-layers" => "16 groups with 3 glass planes and 16 material decal layers each",
+        "decal-sparse" => "64 local material decals with a transparent foreground",
         _ => effect,
     };
 
@@ -30,6 +32,8 @@ internal sealed partial class ClusterBlendScene(ClusterBlendAssets assets, strin
             case "smoke": AddSmoke(edit); break;
             case "foliage": AddFoliage(edit); break;
             case "deformed-phong": AddDeformedPhong(edit); break;
+            case "decal-layers": AddDecalLayers(edit); break;
+            case "decal-sparse": AddDecalSparse(edit); break;
             default: throw new ArgumentOutOfRangeException(nameof(effect));
         }
         Update(edit, scene, 0);
@@ -38,6 +42,7 @@ internal sealed partial class ClusterBlendScene(ClusterBlendAssets assets, strin
     public void Update(SceneEdit edit, TestScene scene, int frame)
     {
         AnimateDeformedPhong(frame);
+        AnimateDecals(frame);
         Matrix4x4.Invert(edit.CameraView, out Matrix4x4 camera);
         Quaternion rotation = Quaternion.CreateFromRotationMatrix(Matrix4x4.CreateRotationY(MathF.PI) * camera);
         TransformQvvs root = new(camera.Translation, rotation);
