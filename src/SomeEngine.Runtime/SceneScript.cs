@@ -37,6 +37,7 @@ public sealed class SceneScript
     public uint BlendTriangleCapacity { get; init; } = 262_144;
     public uint BlendReferenceCapacity { get; init; } = 1_048_576;
     public Action<ClusterBlendMetrics>? BlendFrameCompleted { get; init; }
+    public Func<ApplicationRendering, IApplicationColorFeature>? CreateColorFeature { get; init; }
     public bool WaitForFrames { get; init; } = true;
     public float RasterEdgePixels { get; init; } = 4;
     public bool UseCameraHistory { get; init; } = true;
@@ -171,6 +172,18 @@ public sealed class SceneEdit
     {
         RequireAction();
         _scene.SetEntityTransform(entity, transform);
+    }
+
+    public void SetXray(Entity entity, Xray effect)
+    {
+        RequireAction();
+        _scene.SetXray(entity, effect);
+    }
+
+    public void RemoveXray(Entity entity)
+    {
+        RequireAction();
+        _scene.RemoveXray(entity);
     }
 
     public IReadOnlyList<Entity> PointLights { get { RequireAction(); return _scene.GetPointLights(); } }

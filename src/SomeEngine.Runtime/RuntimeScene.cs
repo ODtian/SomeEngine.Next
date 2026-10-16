@@ -362,6 +362,14 @@ internal sealed class RuntimeScene : IDisposable
 
     internal void SetEntityTransform(Entity entity, TransformQvvs transform) =>
         _world.Replace(entity, new WorldTransform { Qvvs = transform });
+
+    internal void SetXray(Entity entity, Xray effect)
+    {
+        if (_world.Has<Xray>(entity)) _world.Replace(entity, effect);
+        else _world.Add(entity, effect);
+    }
+
+    internal void RemoveXray(Entity entity) => _world.Remove<Xray>(entity);
     internal Entity[] GetPointLights() => Entities(_world, new QueryDefinitionBuilder().Read<PointLight>());
     internal void SetPointLight(Entity entity, PointLight light) => _world.Replace(entity, light);
 
