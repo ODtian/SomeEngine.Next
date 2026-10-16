@@ -6,6 +6,12 @@ if (args is ["--refresh-cluster-configuration", var clusterDirectory])
     return;
 }
 
+if (args is ["--refresh-shader", var shaderProject, var shaderSource, var shaderEngine])
+{
+    await DefaultContent.RefreshShaderAsync(shaderProject, shaderSource, shaderEngine);
+    return;
+}
+
 if (args is ["--refresh-shared-assets", var sharedDirectory, var importedDirectory])
 {
     ImportedSceneBuild.RefreshSharedAssets(sharedDirectory, importedDirectory);

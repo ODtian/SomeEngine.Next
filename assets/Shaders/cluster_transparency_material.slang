@@ -117,15 +117,18 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         float3 bary1 = DecodeTessellationPatchBarycentric(value.Patch, 1u);
         float3 bary2 = DecodeTessellationPatchBarycentric(value.Patch, 2u);
         primitive = value.Primitive++;
-        domain[0] = TransformPatchBarycentric(bary0, bary1, bary2,
-            TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.x)).yz;
-        domain[1] = TransformPatchBarycentric(bary0, bary1, bary2,
-            TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.y)).yz;
-        domain[2] = TransformPatchBarycentric(bary0, bary1, bary2,
-            TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.z)).yz;
-        first = projectPosition(Domain.position(value.Triangle, Barycentric(domain[0])), view);
-        second = projectPosition(Domain.position(value.Triangle, Barycentric(domain[1])), view);
-        third = projectPosition(Domain.position(value.Triangle, Barycentric(domain[2])), view);
+        float3 firstDomain = TransformPatchBarycentric(bary0, bary1, bary2,
+            TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.x));
+        float3 secondDomain = TransformPatchBarycentric(bary0, bary1, bary2,
+            TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.y));
+        float3 thirdDomain = TransformPatchBarycentric(bary0, bary1, bary2,
+            TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.z));
+        domain[0] = firstDomain.yz;
+        domain[1] = secondDomain.yz;
+        domain[2] = thirdDomain.yz;
+        first = projectPosition(Domain.position(value.Triangle, firstDomain), view);
+        second = projectPosition(Domain.position(value.Triangle, secondDomain), view);
+        third = projectPosition(Domain.position(value.Triangle, thirdDomain), view);
         return true;
     }
 
