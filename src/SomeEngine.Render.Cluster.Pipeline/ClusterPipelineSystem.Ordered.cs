@@ -8,6 +8,27 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
+    /// <summary>Creates the pipeline's shared integer stencil image when a custom render stage requests it.</summary>
+    public ClusterStencil GetStencil()
+    {
+        if (GraphData.Stencil is not null) return GraphData.Stencil;
+        EditGraph((ref RenderGraphEdit edit) => _ = CreateStencil(ref edit));
+        return GraphData.Stencil!;
+    }
+
+    private ClusterStencil CreateStencil(ref RenderGraphEdit edit)
+    {
+        if (GraphData.Stencil is not null) return GraphData.Stencil;
+        FrameResources frame = GraphData.Resources;
+        GraphData.BlendColors = edit.AddRegion("Cluster blend colors", _regions.Shading);
+        GraphRegionId stages = edit.AddRegion("Cluster hardware stencil stages", _regions.Shading);
+        var stencil = new ClusterStencil(_backend, _device, _graph, ref edit,
+            frame.Width, frame.Height, frame.ViewCount, GraphData.BlendColors, stages);
+        GraphData.Stencil = stencil;
+        GraphData.Outputs = GraphData.Outputs with { Stencil = stencil };
+        return stencil;
+    }
+
     [StructLayout(LayoutKind.Sequential, Size = 64)]
     private struct OrderedMaterialState
     {

@@ -9,7 +9,8 @@ public readonly record struct ApplicationRendering(IGraphicsBackend Backend, Dev
     global::SomeEngine.RenderGraph.RenderGraph Graph, int Width, int Height, Matrix4x4 Projection = default,
     GraphRegionId Region = default)
 {
-    public ClusterStencil? Stencil { get; init; }
+    public ClusterStencil? Stencil => StencilSource?.Invoke();
+    internal Func<ClusterStencil>? StencilSource { get; init; }
 }
 
 /// <summary>A persistent color feature consuming the renderer's color and depth.</summary>
