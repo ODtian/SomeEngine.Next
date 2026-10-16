@@ -50,6 +50,8 @@
 
 引用根的 `World.ExecuteComponentWrite` 为 714 字节，根循环 `Channel.WriteRoots<FieldRoot, FieldAccess>` 为 1,102 字节，包含 table/sparse 分支与 ECS 当前行解析、版本维护的共同代码。批次回调在 World 边界执行一次 `call rsi`。根循环在取得实际根后，具体访问及属性 setter 内联为对象引用读取和常量字段偏移写入；行定位、COW 与版本维护使用既有 ECS 方法。此处的字节统计包含该方法的检查和异常分支，热调用描述对应正常执行路径。
 
+补充字段边界队列 `f69a85438aaf4b58960a400215b3c1b5`，退出码 0。[机器码与输出](codegen-field-jit.stdout.txt) · [队列结果](codegen-field-jit.result.json)。类型化 `Channel.WriteBatch` 为 242 字节，在批次边界从字段描述取得具体函数地址并执行一次 `call rax`；具体 `WriteFields<FieldRoot, FieldAccess>` 为 76 字节，将 span 和 Channel 放入栈上后调用具体根批次。加上 World 边界的一次回调，共两次应用层间接调用服务整个字段批次；每项的具体访问和 setter 继续内联到根循环。727 字节的 `ReferenceFieldEntry` 包含世界、对象、实体、输入数组创建及最终值检查，作为公开入口的对应证据。
+
 ## ECS 公开行为
 
 Debug 独立消费者通过 `FieldAccessChecks.VerifyAll` 运行 13 条共享公开行为，另执行包含引用的泛型根及缓冲元素操作。最新根批次运行队列 `9615540e72d340fe83141c7abec6bf37`，退出码 0。[标准输出](ecs-root-batch.stdout.txt) · [标准错误](ecs-root-batch.stderr.txt) · [队列结果](ecs-root-batch.result.json)。
@@ -61,3 +63,5 @@ Debug 独立消费者通过 `FieldAccessChecks.VerifyAll` 运行 13 条共享公
 ## 算法与图公开行为
 
 核心与类型化图的 Release 定向验证通过 27 项，行为规则检查为 0 项违规。队列 `01c002753d7a438b89c8ff24354c7e7e`，退出码 0。[标准输出](core-typed-graph.stdout.txt) · [标准错误](core-typed-graph.stderr.txt) · [队列结果](core-typed-graph.result.json)。覆盖完整类型参数、managed 状态与消费者算法、阶段和完成、共享图定义、实例参数更新、固定截止时间重定目标、自定义条件及自定义叶生命周期。
+
+兼容图、销毁清理与输出卸载的补充执行合计形成 46 个不同公开检查，命令与原始三件集中在 [图行为验收](Graph-Checks.md)。

@@ -1,0 +1,327 @@
+; Assembly listing for method SomeEngine.Animation.Checks.CodeGenerationChecks:ReferenceFieldEntry() (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rbp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 13 single block inlinees; 1 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       push     rbp
+       push     r14
+       push     rdi
+       push     rsi
+       push     rbx
+       sub      rsp, 240
+       vmovaps  xmmword ptr [rsp+0xE0], xmm6
+       vmovaps  xmmword ptr [rsp+0xD0], xmm7
+       lea      rbp, [rsp+0x110]
+       xor      eax, eax
+       mov      qword ptr [rbp-0xE8], rax
+       vxorps   xmm4, xmm4, xmm4
+       vmovdqu  ymmword ptr [rbp-0xE0], ymm4
+       vmovdqu  ymmword ptr [rbp-0xC0], ymm4
+       vmovdqu  ymmword ptr [rbp-0xA0], ymm4
+       vmovdqu  ymmword ptr [rbp-0x80], ymm4
+       vmovdqu  ymmword ptr [rbp-0x60], ymm4
+ 
+G_M000_IG02:                ;; offset=0x0056
+       mov      rcx, 0x7FF8D599BA90
+       call     CORINFO_HELP_NEWSFAST
+       mov      rbx, rax
+       mov      rcx, rbx
+       mov      edx, 256
+       xor      r8, r8
+       call     [SomeEngine.ECS.World:.ctor(int,SomeEngine.ECS.WorldExecution):this]
+       mov      gword ptr [rbp-0xF0], rbx
+ 
+G_M000_IG03:                ;; offset=0x0080
+       mov      rsi, 0x7FF8D599C2A8
+       mov      rcx, rsi
+       call     CORINFO_HELP_NEWSFAST
+       mov      rdi, rax
+       mov      rcx, rsi
+       call     CORINFO_HELP_NEWSFAST
+       mov      rsi, rax
+       mov      gword ptr [rbp-0x68], rdi
+       lea      rdx, [rbp-0x68]
+       mov      rcx, rbx
+       call     [SomeEngine.ECS.World:CreateEntity[SomeEngine.Animation.Checks.CodeGenerationChecks+FieldRoot](byref):SomeEngine.ECS.Entities.Entity:this]
+       mov      qword ptr [rbp-0x48], rax
+       xor      edx, edx
+       mov      gword ptr [rbp-0x68], rdx
+       mov      gword ptr [rbp-0x68], rsi
+       lea      rdx, [rbp-0x68]
+       mov      rcx, rbx
+       call     [SomeEngine.ECS.World:CreateEntity[SomeEngine.Animation.Checks.CodeGenerationChecks+FieldRoot](byref):SomeEngine.ECS.Entities.Entity:this]
+       mov      qword ptr [rbp-0x50], rax
+       test     byte  ptr [(reloc 0x7ff8d599d868)], 1
+       je       G_M000_IG07
+ 
+G_M000_IG04:                ;; offset=0x00DD
+       movzx    r14, word  ptr [(reloc 0x7ff8d563b0e8)]
+       vxorps   ymm0, ymm0, ymm0
+       vmovdqu  ymmword ptr [rbp-0xD8], ymm0
+       vmovdqu  xmmword ptr [rbp-0xB8], xmm0
+       mov      r8, 0x7FF8D5932478
+       mov      qword ptr [rbp-0xD8], r8
+       mov      r8, 0x7FF8D59324A8
+       mov      qword ptr [rbp-0xD0], r8
+       mov      r8, 0x7FF8D59324D8
+       mov      qword ptr [rbp-0xC8], r8
+       mov      r8, 0x7FF8D5932508
+       mov      qword ptr [rbp-0xC0], r8
+       mov      r8, 0x7FF8D5932538
+       mov      qword ptr [rbp-0xB8], r8
+       mov      byte  ptr [rbp-0xB0], 1
+       lea      r8, [rbp-0xD8]
+       mov      ecx, r14d
+       mov      edx, 1
+       call     [SomeEngine.Animation.FieldDescriptions`1[float]:Add(ushort,uint,SomeEngine.Animation.FieldDescription`1[float]):int]
+       mov      word  ptr [rbp-0x60], r14w
+       mov      dword ptr [rbp-0x5C], 1
+       mov      word  ptr [rbp-0x58], 0xFFFF
+       mov      dword ptr [rbp-0x54], eax
+       mov      rcx, 0x7FF8D599CCF0
+       mov      edx, 2
+       call     CORINFO_HELP_NEWARR_1_VC
+       vmovups  xmm0, xmmword ptr [rbp-0x60]
+       vmovups  xmmword ptr [rbp-0x80], xmm0
+       lea      r8, bword ptr [rax+0x10]
+       mov      ecx, dword ptr [rbp-0x48]
+       mov      dword ptr [r8], ecx
+       mov      ecx, dword ptr [rbp-0x44]
+       mov      dword ptr [r8+0x04], ecx
+       vmovss   xmm6, dword ptr [reloc @RWD00]
+       vmovss   dword ptr [r8+0x18], xmm6
+       vmovups  xmm0, xmmword ptr [rbp-0x80]
+       vmovups  xmmword ptr [r8+0x08], xmm0
+       vmovups  xmm0, xmmword ptr [rbp-0x60]
+       vmovups  xmmword ptr [rbp-0xA0], xmm0
+       lea      r8, bword ptr [rax+0x2C]
+       mov      ecx, dword ptr [rbp-0x50]
+       mov      dword ptr [r8], ecx
+       mov      ecx, dword ptr [rbp-0x4C]
+       mov      dword ptr [r8+0x04], ecx
+       vmovss   xmm7, dword ptr [reloc @RWD04]
+       vmovss   dword ptr [r8+0x18], xmm7
+       vmovups  xmm0, xmmword ptr [rbp-0xA0]
+       vmovups  xmmword ptr [r8+0x08], xmm0
+       add      rax, 16
+       mov      bword ptr [rbp-0xE8], rax
+       mov      dword ptr [rbp-0xE0], 2
+       lea      r8, [rbp-0xE8]
+ 
+G_M000_IG05:                ;; offset=0x021D
+       lea      rcx, [rbp-0x60]
+       mov      rdx, rbx
+       call     [SomeEngine.Animation.Channel`1[float]:WriteBatch(SomeEngine.ECS.World,System.ReadOnlySpan`1[SomeEngine.Animation.FieldWrite`1[float]]):this]
+       vmovss   xmm0, dword ptr [rdi+0x08]
+       vucomiss xmm0, xmm6
+       jp       SHORT G_M000_IG08
+       jne      SHORT G_M000_IG08
+       vmovss   xmm0, dword ptr [rsi+0x08]
+       vucomiss xmm0, xmm7
+       jp       SHORT G_M000_IG06
+       je       SHORT G_M000_IG09
+ 
+G_M000_IG06:                ;; offset=0x0244
+       jmp      SHORT G_M000_IG08
+ 
+G_M000_IG07:                ;; offset=0x0246
+       mov      rcx, 0x7FF8D599D7D8
+       call     CORINFO_HELP_GET_NONGCSTATIC_BASE
+       jmp      G_M000_IG04
+ 
+G_M000_IG08:                ;; offset=0x025A
+       mov      rcx, 0x7FF8D585AED0
+       call     CORINFO_HELP_NEWSFAST
+       mov      rbx, rax
+       mov      ecx, 0x285F
+       mov      rdx, 0x7FF8D591EC88
+       call     [CORINFO_HELP_STRCNS]
+       mov      rdx, rax
+       mov      rcx, rbx
+       call     [System.InvalidOperationException:.ctor(System.String):this]
+       mov      rcx, rbx
+       call     CORINFO_HELP_THROW
+       int3     
+ 
+G_M000_IG09:                ;; offset=0x0296
+       mov      rcx, rbx
+       call     [SomeEngine.ECS.World:Dispose():this]
+       nop      
+ 
+G_M000_IG10:                ;; offset=0x02A0
+       vmovaps  xmm6, xmmword ptr [rsp+0xE0]
+       vmovaps  xmm7, xmmword ptr [rsp+0xD0]
+       add      rsp, 240
+       pop      rbx
+       pop      rsi
+       pop      rdi
+       pop      r14
+       pop      rbp
+       ret      
+ 
+G_M000_IG11:                ;; offset=0x02C0
+       sub      rsp, 40
+ 
+G_M000_IG12:                ;; offset=0x02C4
+       mov      rcx, gword ptr [rbp-0xF0]
+       call     [SomeEngine.ECS.World:Dispose():this]
+       nop      
+ 
+G_M000_IG13:                ;; offset=0x02D2
+       add      rsp, 40
+       ret      
+ 
+RWD00  	dd	40E00000h		;         7
+RWD04  	dd	41300000h		;        11
+
+; Total bytes of code 727
+
+; Assembly listing for method SomeEngine.Animation.Channel`1[float]:WriteBatch(SomeEngine.ECS.World,System.ReadOnlySpan`1[SomeEngine.Animation.FieldWrite`1[float]]):this (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 2 single block inlinees; 1 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       push     r15
+       push     r14
+       push     r13
+       push     r12
+       push     rdi
+       push     rsi
+       push     rbp
+       push     rbx
+       sub      rsp, 56
+       mov      rbx, rcx
+       mov      rsi, rdx
+ 
+G_M000_IG02:                ;; offset=0x0016
+       cmp      dword ptr [rbx+0x0C], 0
+       jne      G_M000_IG08
+ 
+G_M000_IG03:                ;; offset=0x0020
+       mov      rdi, bword ptr [r8]
+       mov      ebp, dword ptr [r8+0x08]
+       test     ebp, ebp
+       jle      SHORT G_M000_IG07
+       xor      r14d, r14d
+ 
+G_M000_IG04:                ;; offset=0x002E
+       lea      r15, bword ptr [rdi+r14]
+       movzx    rcx, word  ptr [r15+0x08]
+       mov      eax, dword ptr [r15+0x0C]
+       movzx    r13, word  ptr [rbx]
+       movzx    rdx, r13w
+       mov      r8d, dword ptr [rbx+0x04]
+       cmp      cx, dx
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG05:                ;; offset=0x004C
+       cmp      eax, r8d
+       jne      SHORT G_M000_IG06
+       mov      r12d, dword ptr [r15]
+       mov      eax, dword ptr [r15+0x04]
+       mov      dword ptr [rsp+0x30], eax
+       movzx    rdx, word  ptr [rbx+0x08]
+       mov      dword ptr [rsp+0x34], edx
+       cmp      byte  ptr [rsi], sil
+       mov      ecx, r13d
+       call     [SomeEngine.ECS.Registry.ComponentRegistry:Get(int):byref]
+       mov      r9, rax
+       mov      edx, dword ptr [rsp+0x30]
+       shl      rdx, 32
+       mov      r8d, r12d
+       or       rdx, r8
+       mov      r8d, r13d
+       mov      rcx, rsi
+       call     [SomeEngine.ECS.World:WriteBytes(SomeEngine.ECS.Entities.Entity,ushort,byref):byref:this]
+       movsxd   rdx, dword ptr [rsp+0x34]
+       vmovss   xmm0, dword ptr [r15+0x18]
+       vmovss   dword ptr [rax+rdx], xmm0
+ 
+G_M000_IG06:                ;; offset=0x009D
+       add      r14, 28
+       dec      ebp
+       jne      SHORT G_M000_IG04
+ 
+G_M000_IG07:                ;; offset=0x00A5
+       add      rsp, 56
+       pop      rbx
+       pop      rbp
+       pop      rsi
+       pop      rdi
+       pop      r12
+       pop      r13
+       pop      r14
+       pop      r15
+       ret      
+ 
+G_M000_IG08:                ;; offset=0x00B6
+       mov      rdx, 0x22F88C00D38
+       mov      rdx, gword ptr [rdx]
+       mov      ecx, dword ptr [rbx+0x0C]
+       dec      ecx
+       cmp      ecx, dword ptr [rdx+0x08]
+       jae      SHORT G_M000_IG09
+       imul     rcx, rcx, 48
+       mov      rax, qword ptr [rdx+rcx+0x30]
+       vmovups  xmm0, xmmword ptr [rbx]
+       vmovups  xmmword ptr [rsp+0x20], xmm0
+       lea      rdx, [rsp+0x20]
+       mov      rcx, rsi
+       call     rax
+       jmp      SHORT G_M000_IG07
+ 
+G_M000_IG09:                ;; offset=0x00EC
+       call     CORINFO_HELP_RNGCHKFAIL
+       int3     
+ 
+; Total bytes of code 242
+
+; Assembly listing for method SomeEngine.Animation.Channel`1[float]:WriteFields[SomeEngine.Animation.Checks.CodeGenerationChecks+FieldRoot,SomeEngine.Animation.Checks.CodeGenerationChecks+FieldAccess](SomeEngine.ECS.World,SomeEngine.Animation.Channel`1[float],System.ReadOnlySpan`1[SomeEngine.Animation.FieldWrite`1[float]]) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; partially interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 72
+       xor      eax, eax
+       mov      qword ptr [rsp+0x28], rax
+       vxorps   xmm4, xmm4, xmm4
+       vmovdqa  xmmword ptr [rsp+0x30], xmm4
+       mov      qword ptr [rsp+0x40], rax
+ 
+G_M000_IG02:                ;; offset=0x001A
+       vmovups  xmm0, xmmword ptr [rdx]
+       vmovups  xmmword ptr [rsp+0x28], xmm0
+ 
+G_M000_IG03:                ;; offset=0x0024
+       vmovdqu  xmm0, xmmword ptr [r8]
+       vmovdqu  xmmword ptr [rsp+0x38], xmm0
+ 
+G_M000_IG04:                ;; offset=0x002F
+       lea      rdx, [rsp+0x28]
+       mov      r8, 0x7FF8D593B468
+       cmp      dword ptr [rcx], ecx
+       call     [SomeEngine.ECS.World:ExecuteComponentWrite[SomeEngine.Animation.Checks.CodeGenerationChecks+FieldRoot,SomeEngine.Animation.Channel`1+FieldBatch[float]](byref,ptr):this]
+       nop      
+ 
+G_M000_IG05:                ;; offset=0x0047
+       add      rsp, 72
+       ret      
+ 
+; Total bytes of code 76
+
+CODEGEN_PASSED tween-static-easing spring consumer-history scalar-function reference-field-batch
