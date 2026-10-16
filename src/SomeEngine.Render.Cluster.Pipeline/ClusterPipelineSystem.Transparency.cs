@@ -29,10 +29,11 @@ public sealed partial class ClusterPipelineSystem
         internal required ImmutableArray<IndexedTextureRead> TextureReads;
         internal GraphRegionId Geometry, Requests, Color;
         internal GraphBufferId Triangles, TriangleCount, Counts, References, Arguments, States;
-        internal GraphBufferId Offsets, Writes, Streams, Sources, SourceCounts, OrderedStates;
+        internal GraphBufferId Offsets, Writes, Streams, Sources, SourceCounts, ActiveSources, ProjectedSources, OrderedStates;
         internal GraphBufferSlice Parameters, ShadeParameters, GeometryParameters;
         internal uint TriangleCapacity, MaterialCapacity;
-        internal GraphPassId RequestPass, ColorPass;
+        internal GraphPassId[] RequestPasses = [], ColorPasses = [];
+        internal GraphPassId ColorPass => ColorPasses[^1];
         internal GraphPassId[] Builds = [];
         internal RenderInstanceBatch? InstanceBatch;
         internal ulong InstanceRevision, GeometryRevision, RasterRevision;
@@ -68,8 +69,8 @@ public sealed partial class ClusterPipelineSystem
             {
                 previous.TextureReads = textureReads;
                 foreach (GraphPassId pass in previous.Builds) UpdateTransparencyTextureReads(ref edit, pass, previous);
-                if (previous.RequestPass != default) UpdateTransparencyTextureReads(ref edit, previous.RequestPass, previous);
-                UpdateTransparencyTextureReads(ref edit, previous.ColorPass, previous);
+                foreach (GraphPassId pass in previous.RequestPasses) UpdateTransparencyTextureReads(ref edit, pass, previous);
+                foreach (GraphPassId pass in previous.ColorPasses) UpdateTransparencyTextureReads(ref edit, pass, previous);
             }
             UpdateTransparencyParameters(ref edit, previous, assignments);
             UpdateTransparencyStates(ref edit, previous, assignments, stages);
@@ -93,8 +94,8 @@ public sealed partial class ClusterPipelineSystem
         BufferDesc triangles = new((ulong)capacity * shaders.TriangleStride, storage, "Cluster transparent projected triangles");
         BufferDesc counts = new((ulong)tiles * 4u, counted, "Cluster transparency tile counts");
         BufferDesc references = new((ulong)_options.BlendReferenceCapacity * 4u, storage, "Cluster transparency continuous references");
-        BufferDesc triangleCount = new(16, counted, "Cluster transparent triangle count");
-        BufferDesc arguments = new(48, storage | BufferUsages.Indirect, "Cluster transparent geometry arguments");
+        BufferDesc triangleCount = new(20, counted, "Cluster transparent triangle count");
+        BufferDesc arguments = new(60, storage | BufferUsages.Indirect, "Cluster transparent geometry arguments");
         var data = new TransparencyData
         {
             Shaders = shaders, Materials = materials, ResourceMaterials = resources, TextureReads = textureReads,
@@ -114,6 +115,8 @@ public sealed partial class ClusterPipelineSystem
             Streams = edit.CreatePersistentBuffer(counts with { Label = "Cluster transparency streaming cells" }),
             Sources = edit.CreatePersistentBuffer(new BufferDesc((ulong)_options.MaxCandidates * 12, storage, "Cluster transparency source requests")),
             SourceCounts = edit.CreatePersistentBuffer(new BufferDesc(16, storage, "Cluster transparency source counts")),
+            ActiveSources = edit.CreatePersistentBuffer(new BufferDesc((ulong)_options.MaxCandidates * 4, storage, "Cluster transparency active sources")),
+            ProjectedSources = edit.CreatePersistentBuffer(new BufferDesc((ulong)capacity * shaders.SourceBoundsStride, storage, "Cluster transparency source bounds")),
             GeometryParameters = CreateParameters(ref edit, new byte[8], "Cluster transparency geometry parameters"),
             Parameters = CreateParameters(ref edit, new byte[48], "Cluster transparency parameters"),
             ShadeParameters = CreateParameters(ref edit, new byte[48], "Cluster transparency surface parameters"),
@@ -121,14 +124,15 @@ public sealed partial class ClusterPipelineSystem
         GraphData.Transparency = data;
         UpdateTransparencyParameters(ref edit, data, assignments);
         UpdateTransparencyStates(ref edit, data, assignments, stages);
-        string[] entries = ["ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry", "ReserveTransparentCells", "ScatterTransparentCells"];
-        uint[] offsets = [0, 12, 0, 0, 36];
+        string[] entries = ["ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry", "CountTransparentCells", "ReserveTransparentCells", "ScatterTransparentCells"];
+        uint[] offsets = [0, 12, 0, 0, 0, 36];
         data.Builds = new GraphPassId[entries.Length];
         for (int index = 0; index < entries.Length; index++)
         {
-            bool indirect = index is 1 or 2 or 4;
+            bool indirect = index is 1 or 2 or 5;
+            uint work = index == 3 ? Math.Max(tiles, capacity) : tiles;
             data.Builds[index] = AddTransparencyPass(ref edit, data, shaders.Pipelines[entries[index]], entries[index], data.Geometry,
-                new DispatchArguments((tiles + 63u) / 64u, 1, 1), indirect, offsets[index]);
+                new DispatchArguments((work + 63u) / 64u, 1, 1), indirect, offsets[index]);
             if (index != 0) edit.OrderAfter(data.Builds[index], data.Builds[index - 1]);
         }
         GraphPassId geometryReady = data.Builds[^1];
@@ -138,18 +142,21 @@ public sealed partial class ClusterPipelineSystem
                 CellOffsets = data.Offsets, StreamingCells = data.Streams, Sources = data.Sources,
                 SourceCounts = data.SourceCounts, ReferenceCapacity = _options.BlendReferenceCapacity,
             } };
-        GraphPassId requests = default;
         if (_transparencyRequestRegion != default)
+            data.RequestPasses = AddPixelPasses(ref edit, ["RequestTransparentShadows", "RequestProjectedTransparentShadows"], data.Requests);
+        data.ColorPasses = AddPixelPasses(ref edit, ["ResolveTransparentColor", "ResolveProjectedTransparentColor"], data.Color);
+
+        GraphPassId[] AddPixelPasses(ref RenderGraphEdit graph, string[] names, GraphRegionId region)
         {
-            requests = AddTransparencyPass(ref edit, data, shaders.Pipelines["RequestTransparentShadows"], "RequestTransparentShadows", data.Requests,
-                new DispatchArguments(((uint)frame.Width + 15u) / 16u, ((uint)frame.Height + 15u) / 16u, frame.ViewCount));
-            edit.OrderAfter(requests, geometryReady);
+            var passes = new GraphPassId[names.Length];
+            for (int index = 0; index < names.Length; index++)
+            {
+                passes[index] = AddTransparencyPass(ref graph, data, shaders.Pipelines[names[index]], names[index], region,
+                    default, true, index == 0 ? 24u : 48u);
+                graph.OrderAfter(passes[index], index == 0 ? geometryReady : passes[index - 1]);
+            }
+            return passes;
         }
-        GraphPassId color = AddTransparencyPass(ref edit, data, shaders.Pipelines["ResolveTransparentColor"], "ResolveTransparentColor", data.Color,
-            new DispatchArguments(((uint)frame.Width + 15u) / 16u, ((uint)frame.Height + 15u) / 16u, frame.ViewCount));
-        edit.OrderAfter(color, geometryReady);
-        data.RequestPass = requests;
-        data.ColorPass = color;
     }
 
     private static bool SameTransparencyBindings(ClusterShadeInvocation[] previous, ClusterShadeInvocation[] next) =>
@@ -293,6 +300,8 @@ public sealed partial class ClusterPipelineSystem
             case "TransparencyViews": buffer = frame.PackedViews; stride = ClusterViewUniforms.SizeInBytes; break;
             case "TransparencySources": case "TransparencySourceOutput": buffer = data.Sources; stride = 12; break;
             case "TransparencySourceCounts": buffer = data.SourceCounts; stride = 0; break;
+            case "TransparencyActiveSources": buffer = data.ActiveSources; break;
+            case "TransparencyProjectedSources": buffer = data.ProjectedSources; stride = data.Shaders.SourceBoundsStride; break;
             case "TransparencyCellOffsets": buffer = data.Offsets; break;
             case "TransparencyCellWrites": buffer = data.Writes; break;
             case "TransparencyCellStreams": buffer = data.Streams; break;
@@ -306,7 +315,7 @@ public sealed partial class ClusterPipelineSystem
             case "OrderedMaterialStates": buffer = data.OrderedStates; stride = 64; break;
             case "OrderedStencil": pass.Bind(graph.CreateTextureUav(GraphData.Stencil!.Values, format: Format.R32UInt,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray), PipelineSync.ComputeShading,
-                GraphAccessMode.Write, WriteCoverage.Complete); return true;
+                GraphAccessMode.Write, WriteCoverage.Partial); return true;
             case "TransparencyTriangles": buffer = data.Triangles; stride = data.Shaders.TriangleStride; break;
             case "TransparencyTileCounts": buffer = data.Counts; break;
             case "TransparencyReferences": buffer = data.References; break;
@@ -326,8 +335,11 @@ public sealed partial class ClusterPipelineSystem
             {
                 ("ClearTransparentTiles", _) => GraphAccessMode.Write,
                 ("CopyTransparentSources", "TransparencySourceOutput") => GraphAccessMode.Write,
-                ("BuildTransparentGeometry", "TransparencyTriangles") => GraphAccessMode.Write,
-                ("BuildTransparentGeometry", "TransparencyTriangleCount" or "TransparencyTileCounts" or "TransparencyCellStreams") => GraphAccessMode.ReadWrite,
+                ("CopyTransparentSources", "TransparencyActiveSources") => GraphAccessMode.Write,
+                ("CopyTransparentSources", "TransparencyTriangleCount") => GraphAccessMode.ReadWrite,
+                ("BuildTransparentGeometry", "TransparencyTriangles" or "TransparencyProjectedSources") => GraphAccessMode.Write,
+                ("BuildTransparentGeometry", "TransparencyTriangleCount") => GraphAccessMode.ReadWrite,
+                ("CountTransparentCells", "TransparencyTileCounts") => GraphAccessMode.ReadWrite,
                 ("ReserveTransparentCells", "TransparencyCellOffsets" or "TransparencyArguments") => GraphAccessMode.Write,
                 ("ReserveTransparentCells", "TransparencyTriangleCount" or "TransparencyCellStreams") => GraphAccessMode.ReadWrite,
                 ("ScatterTransparentCells", "TransparencyReferences") => GraphAccessMode.Write,
@@ -377,6 +389,7 @@ public sealed partial class ClusterPipelineSystem
         edit.Remove(data.Geometry); edit.Remove(data.Requests); edit.Remove(data.Color);
         edit.Remove(data.Triangles); edit.Remove(data.TriangleCount); edit.Remove(data.Counts); edit.Remove(data.References); edit.Remove(data.Arguments);
         edit.Remove(data.Offsets); edit.Remove(data.Writes); edit.Remove(data.Streams); edit.Remove(data.Sources); edit.Remove(data.SourceCounts);
+        edit.Remove(data.ActiveSources); edit.Remove(data.ProjectedSources);
         RemoveParameters(data.GeometryParameters);
         RemoveBufferData(ref edit, data.States);
         RemoveBufferData(ref edit, data.OrderedStates);

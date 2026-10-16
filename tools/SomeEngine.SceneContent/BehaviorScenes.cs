@@ -7,6 +7,7 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.Render;
 using SomeEngine.Resources;
 using SomeEngine.Render.Components;
@@ -78,6 +79,7 @@ public static partial class BehaviorScenes
                 });
                 world.Add(entity, new MeshSource { Mesh = curved.Reference });
             }
+            world.CreateEntity(new PointLight(new(0, 2, 0), 20, Vector3.One, 30));
         });
         await SceneContent.SetOutputSizeAsync(destination, 1280, 720);
     }
@@ -90,6 +92,29 @@ public static partial class BehaviorScenes
         string shader = File.ReadAllText(Path.Combine(destination, "assets/Shaders/unlit.slang"))
             .Replace("#include \"unlit_material.slang\"", material);
         await SetGreenShaderAsync(destination, engineRoot, "swapped-unlit", shader);
+    }
+
+    public static async Task CreateShadowedPhongPartsAsync(string source, string destination)
+    {
+        CopyContent(source, destination);
+        var project = new AssetProject(destination, []);
+        await using var loader = new AssetLoader(project.CreateStorage());
+        using var receiver = await MeshAsset.OpenAsync(loader,
+            new(project.Manifest.Assets.Values.Single(value => value.Name == "Blend panel" && value.AssetType == MeshAsset.FileType).AssetGuid));
+        using var application = await ApplicationSettingsAsset.OpenAsync(loader,
+            new(project.Manifest.List(ApplicationSettingsAsset.FileType).Single().AssetGuid));
+        using var scene = await WorldAsset.OpenAsync(loader, application.GetBlock<ApplicationSettingsBlock>().Scene);
+        using var world = await scene.LoadAsync(SceneSerialization.CreateRegistry());
+        Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity, 3) });
+        world.Add(entity, new MeshSource { Mesh = receiver.Reference });
+        var cameras = world.Query(new QueryDefinitionBuilder().ReadWrite<SceneCamera>());
+        world.ExecuteQuery(cameras, rows =>
+        {
+            foreach (var row in rows.Rows) row.ReadWrite<SceneCamera>().VerticalFieldOfView = MathF.PI / 4;
+        });
+        world.ReleaseQuery(cameras);
+        scene.WriteWorld(world, SceneSerialization.CreateRegistry());
+        project.RegisterAsset(await scene.SaveAsync(Path.Combine(destination, project.Manifest.Assets[scene.Id].Path)));
     }
 
     public static async Task CreateStreamingSphereAsync(string source, string destination)

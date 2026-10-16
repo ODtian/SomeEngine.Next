@@ -6,11 +6,11 @@ using SomeEngine.RenderGraph;
 namespace SomeEngine.Render.Cluster.Pipeline;
 
 internal readonly record struct BlendMeasurementPasses(
-    GraphPassId[] Geometry, GraphPassId Request, GraphPassId[] Color, GraphRegionId Feedback,
+    GraphPassId[] Geometry, GraphPassId[] Requests, GraphPassId[] Color, GraphRegionId Feedback,
     GraphPassId[] Decals, GraphPassId[] OpaqueReceivers, GraphPassId[] OpaqueColors);
 
 internal readonly record struct BlendMeasurementBuffers(
-    GraphBufferId TriangleCount, uint TriangleStride, ulong FixedBytes, ulong CapacityBytes, ulong AllocationBytes, uint TriangleCapacity);
+    GraphBufferId TriangleCount, uint TriangleStride, uint SourceBoundsStride, ulong FixedBytes, ulong CapacityBytes, ulong AllocationBytes, uint TriangleCapacity);
 
 internal readonly record struct BlendDecalBuffers(
     uint ViewCount, ulong FixedBytes, ulong PropertyBytes,
@@ -63,7 +63,7 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
     }
 
     internal bool HasPasses(BlendMeasurementPasses passes) =>
-        _passes.Request == passes.Request && _passes.Feedback == passes.Feedback &&
+        _passes.Requests.AsSpan().SequenceEqual(passes.Requests) && _passes.Feedback == passes.Feedback &&
         _passes.Geometry.AsSpan().SequenceEqual(passes.Geometry) && _passes.Color.AsSpan().SequenceEqual(passes.Color) &&
         _passes.Decals.AsSpan().SequenceEqual(passes.Decals) &&
         _passes.OpaqueReceivers.AsSpan().SequenceEqual(passes.OpaqueReceivers) &&
@@ -73,7 +73,7 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
     {
         var times = new List<PassTime>();
         times.AddRange(_passes.Geometry.Select(pass => new PassTime(pass, Phase.ProjectionIndex)));
-        if (_passes.Request != default) times.Add(new(_passes.Request, Phase.CoverageReceiver));
+        times.AddRange(_passes.Requests.Select(pass => new PassTime(pass, Phase.CoverageReceiver)));
         times.AddRange(_passes.Color.Concat(_hardwarePasses).Select(pass => new PassTime(pass, Phase.MaterialComposite)));
         times.AddRange(_passes.Decals.Select(pass => new PassTime(pass, Phase.DecalIndex)));
         times.AddRange(_passes.OpaqueReceivers.Concat(_passes.OpaqueColors).Select(pass => new PassTime(pass, Phase.OpaqueMaterial)));
@@ -84,7 +84,7 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
         _queryId = edit.RegisterQueryPool(_queries);
         for (int index = 0; index < _times.Length; index++)
             edit.MeasurePassTime(_times[index].Pass, _queryId, (uint)index * 2u);
-        ulong byteCount = (ulong)_times.Length * 16u + 32u;
+        ulong byteCount = (ulong)_times.Length * 16u + 36u;
         _results = edit.CreateBuffer(new BufferDesc(byteCount,
             BufferUsages.QueryResolve | BufferUsages.CopyDestination | BufferUsages.CopySource,
             "Cluster blend timing and work results"));
@@ -153,15 +153,17 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
         uint references = BinaryPrimitives.ReadUInt32LittleEndian(work[4..]);
         uint residentReferences = BinaryPrimitives.ReadUInt32LittleEndian(work[8..]);
         uint sources = BinaryPrimitives.ReadUInt32LittleEndian(work[12..]);
-        uint decalReferences = BinaryPrimitives.ReadUInt32LittleEndian(work[16..]);
-        uint decalResidentReferences = BinaryPrimitives.ReadUInt32LittleEndian(work[20..]);
-        uint decalVolumes = BinaryPrimitives.ReadUInt32LittleEndian(work[24..]);
+        uint projectedSources = BinaryPrimitives.ReadUInt32LittleEndian(work[16..]);
+        uint decalReferences = BinaryPrimitives.ReadUInt32LittleEndian(work[20..]);
+        uint decalResidentReferences = BinaryPrimitives.ReadUInt32LittleEndian(work[24..]);
+        uint decalVolumes = BinaryPrimitives.ReadUInt32LittleEndian(work[28..]);
         BlendMeasurementBuffers buffers = frame.Buffers;
         BlendDecalBuffers decals = frame.Decals;
         ulong decalUsed = decals.FixedBytes + (ulong)decalVolumes * (144u + decals.ViewCount * 32u) +
             (decalVolumes == 0 ? 0 : decals.PropertyBytes) + (ulong)decalResidentReferences * sizeof(uint);
         ulong used = buffers.FixedBytes + (ulong)Math.Min(triangles, buffers.TriangleCapacity) * buffers.TriangleStride +
-            (ulong)residentReferences * sizeof(uint) + (ulong)sources * 12u;
+            (ulong)residentReferences * sizeof(uint) + (ulong)sources * 16u +
+            (ulong)Math.Min(projectedSources, buffers.TriangleCapacity) * buffers.SourceBoundsStride;
         frame.Result = new(frame.SimulationFrame, tag,
             milliseconds[(int)Phase.ProjectionIndex], milliseconds[(int)Phase.CoverageReceiver], milliseconds[(int)Phase.MaterialComposite],
             triangles, references, used + decalUsed, buffers.CapacityBytes + decals.CapacityBytes,
@@ -194,7 +196,7 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
         internal static void Declare(ref PassDefinition pass, ref Results data)
         {
             if (data.TriangleCount != default)
-                _ = pass.Read(data.TriangleCount, new BufferRange(0, 16), PipelineSync.Copy, ResourceAccess.CopySource);
+                _ = pass.Read(data.TriangleCount, new BufferRange(0, 20), PipelineSync.Copy, ResourceAccess.CopySource);
             _ = pass.Read(data.DecalWork, new BufferRange(0, 16), PipelineSync.Copy, ResourceAccess.CopySource);
             _ = pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
         }
@@ -209,9 +211,9 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
                 else commands.ClearBuffer(destination, range);
             }
             ulong timeBytes = (ulong)data.Active.Length * 16u;
-            if (data.TriangleCount == default) commands.ClearBuffer(destination, new BufferRange(timeBytes, 16));
-            else commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.TriangleCount), 0, destination, timeBytes, 16));
-            commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.DecalWork), 0, destination, timeBytes + 16, 16));
+            if (data.TriangleCount == default) commands.ClearBuffer(destination, new BufferRange(timeBytes, 20));
+            else commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.TriangleCount), 0, destination, timeBytes, 20));
+            commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.DecalWork), 0, destination, timeBytes + 20, 16));
         }
     }
 }

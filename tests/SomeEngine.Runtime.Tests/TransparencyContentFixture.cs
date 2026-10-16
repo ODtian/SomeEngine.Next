@@ -8,15 +8,20 @@ public sealed class TransparencyContentFixture : IAsyncLifetime
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"SomeEngine-Transparency-{Guid.NewGuid():N}");
     private string _sourceDirectory = "";
     private Task? _offsetContent;
+    private Task? _shadowedParts;
     public string DirectoryPath => Path.Combine(_directory, "panels");
     public string Spheres => Path.Combine(_directory, "spheres");
     public string Lit => Path.Combine(_directory, "lit");
     public string DeformedPhong => Path.Combine(_directory, "deformed-phong");
     public string DeformedPhongParts => Path.Combine(_directory, "deformed-phong-parts");
     public string Offset => Path.Combine(_directory, "offset");
+    public string ShadowedPhongParts => Path.Combine(_directory, "shadowed-phong-parts");
 
     public Task BuildOffsetPanelsAsync() => _offsetContent ??=
         SomeEngine.SceneContent.BehaviorScenes.CreateOffsetPanelsAsync(DirectoryPath, Offset, _sourceDirectory);
+
+    public Task BuildShadowedPhongPartsAsync() => _shadowedParts ??=
+        SomeEngine.SceneContent.BehaviorScenes.CreateShadowedPhongPartsAsync(DeformedPhongParts, ShadowedPhongParts);
 
     public async Task InitializeAsync()
     {

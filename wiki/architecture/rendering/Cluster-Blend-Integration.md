@@ -97,7 +97,7 @@ edit.SetXray(entity, new Xray(
 
 `SceneTiming.Blending` 汇总五项时间的平均值、中位数、P95、两类索引的构建/复用帧数、体积/引用及显存；整帧呈现间隔保留在原 `SceneTiming` 字段。逐帧原始数据保存在统一报告的 `BlendFrames`。共享纹理、网格驻留和统一实例存储沿各自的数据持有者另计。
 
-计量由 Cluster 管线持有，纯 opaque 贴花同样产生数据。每个测量 pass 使用一对时间戳，附着在该 pass 的命令前后；CPU 按阶段累加各对差值。回读大小为 `16 × 测量 pass 数量 + 32` 字节，末尾保存两份 4×uint GPU 工作数。测量对象统一持有查询池、结果缓冲与回读；用户分组、资源或硬件阶段显式变更时调整测量集合。本帧禁用的 pass 清零结果范围，查询解析只读取本帧启用的 pass。每个提交保留当帧已更新的缓冲容量和 RHI 分配描述，回读以同一提交的数据计算。
+计量由 Cluster 管线持有，纯 opaque 贴花同样产生数据。每个测量 pass 使用一对时间戳，附着在该 pass 的命令前后；CPU 按阶段累加各对差值。回读大小为 `16 × 测量 pass 数量 + 36` 字节，末尾分别保存透明的 5×uint 与贴花的 4×uint GPU 工作数。透明项包含实际微三角形、引用总数、驻留引用、active cluster 及 source bounds 数量；使用字节计入每个 active cluster 的 12B 请求与 4B 索引、预算内每份 source bounds 的反射 stride，以及 20B 工作数和 60B 间接调度参数。容量和分配按两份实际缓冲描述分别累加。缓存与重投影的两套 pass 时间归入同一阶段。测量对象统一持有查询池、结果缓冲与回读；用户分组、资源或硬件阶段显式变更时调整测量集合。本帧禁用的 pass 清零结果范围，查询解析只读取本帧启用的 pass。每个提交保留当帧已更新的缓冲容量和 RHI 分配描述，回读以同一提交的数据计算。
 
 `BlendMeasurementsFollowDecalChangesAcrossSubmittedFrames` 已通过 D3D12 的 16 帧公共启动检查：引用预算为 1，纯 opaque 场景在第 8 帧从一个贴花增至两个，GPU 数量、驻留引用、使用字节及容量按提交更新，随后恢复候选复用。`OrderedRenderingTests` 的双次硬件 stencil 往返已在 Vulkan 开启计量通过，全图线性颜色容差为 0.001。
 

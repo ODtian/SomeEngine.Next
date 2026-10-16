@@ -455,7 +455,7 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 
 资源数组容量按二次幂分档；材质箱编号、实例参数或同一容量内的资源项变化只更新数据。源 `Shader` 持有以源名称、源文本、目标和库 shader 引用序列为键的组合结果，同一批 gallery 材质跨场景重载复用编译结果。每个渲染管线继续持有自己的 GPU pipeline 与资源绑定。代码生成和入口资源归属位于 `ClusterPipelineSystem.TransparencyShaders.cs`。
 
-单 evaluator、单直接资源项的七个透明入口随用户 `ShaderAsset` 在内容构建期保存。用户的第三个源文件导入自己的 evaluator，再包含 `cluster_transparency_entries.slang`，以一个具体的 `Material0` 实现 `ITransparencyMaterials`。四个数据准备入口保存为普通入口，几何、receiver 和颜色入口按 visibility-depth 与 tessellated 常量保存专门化。它们继续调用共享透明核心中的几何、阴影请求与合成函数。DefaultProject 的 Standard、Unlit、Deformed Phong 及导入材质生成函数使用同一包装。管线在这个资源分组下取得保存代码；每个入口连同自己的 `Shader` 传入反射和绑定流程。多 evaluator、多资源项沿前述 `Compose` 组合路径生成具体资源数组。
+单 evaluator、单直接资源项的十个透明入口随用户 `ShaderAsset` 在内容构建期保存。用户的第三个源文件导入自己的 evaluator，再包含 `cluster_transparency_entries.slang`，以一个具体的 `Material0` 实现 `ITransparencyMaterials`。五个数据准备入口保存为普通入口，用户几何以及缓存、重投影两套 receiver 和颜色入口按 visibility-depth 与 tessellated 常量保存专门化。它们继续调用共享透明核心中的几何、阴影请求与合成函数。DefaultProject 的 Standard、Unlit、Deformed Phong 及导入材质生成函数使用同一包装。管线在这个资源分组下取得保存代码；每个入口连同自己的 `Shader` 传入反射和绑定流程。多 evaluator、多资源项沿前述 `Compose` 组合路径生成具体资源数组。
 
 每帧几何阶段读取两轮 Cluster 可见几何的实际数量，并生成投影三角形和 tile 图元引用。每个 tile 的实际引用数量决定查询范围。每个像素在寄存器中保留四个按深度、来源图元次序排列的命中；处理一批后，继续从上批最后的命中向后查询，直到完整覆盖输入。逐命中使用自己的深度、位置、重心坐标及其梯度求值表面，调用 `evaluateSurface` 后以该 receiver 进行 Forward 光照和阴影采样，再执行前向 alpha 累积。opaque 颜色作为累积背景，合成位置位于 opaque 着色之后、TAA 之前。
 
@@ -505,11 +505,13 @@ XY 通过 `LightingFeature.CreateTileGrid()` 从同一份视图参数派生单�
 
 GPU 从 primary 两阶段的实际可见数量保存配套源请求，每项 12 B，持有页、实例、页内 cluster 和 view。source 编码由该表的条目与原 triangle 组成；微三角形通过同一用户域的 primitive 序号及原域重心来源重建。投影、覆盖、阴影和材质求值读取同一份源表。已保存的投影及 cell 引用与其源表共同复用，帧间可见队列的追加顺序变化由这份配套身份隔离。
 
-Count 对实际投影图元的保守 cell 范围计数，Reserve 为每 cell 分配连续引用区间，Scatter 写入投影引用。投影缓存与引用池分别由 `ClusterPipelineOptions.BlendTriangleCapacity/BlendReferenceCapacity` 设置；`SceneScript` 提供相同的公开预算。完整 cell 区间在预算内驻留，引用容量之外的 cell 扫描已保存的投影。投影容量之外的来源通过 wave 共享的用户投影状态继续生成，每次广播一份三角形；各像素执行自己的覆盖和完整次序累积。驻留引用路径对覆盖后的最终深度查询所属 cell；该 cell 执行最终命中的 receiver 和合成。
+GPU 复制源请求时，同时形成参与混合的 cluster 索引及数量，保留原 source 编码。用户几何阶段为每个原三角形汇总实际微三角形的保守 cell 范围，保存 28 B 的 source bounds。Count 在实际投影数形成后选择微三角形或 source bounds 计数，Reserve 为每 cell 分配连续引用区间，Scatter 写入对应的投影索引或 source 身份。投影缓存与引用池分别由 `ClusterPipelineOptions.BlendTriangleCapacity/BlendReferenceCapacity` 设置；source bounds 使用相同的三角形预算。完整 cell 区间在预算内驻留，引用容量之外的 cell 扫描对应的缓存记录。source bounds 容量之外的输入沿 active cluster 索引完整继续。
+
+缓存和重投影各使用静态专门化的 receiver、颜色内核，GPU 实际投影数写入两个间接调度范围。缓存内核仅持有 cell、引用和四项命中队列；重投影内核按 wave 覆盖的 cell 引用选择相关 source，由一个 lane 继续用户投影，再广播一份实际微三角形。各像素以最终命中所属 cell 去重，执行自己的覆盖、receiver 和完整次序累积。一次 Deformed Phong DXIL 对照中，缓存颜色入口从 501,980 B 降为 112,352 B，原来的 24 个 16 项局部数组全部消失，仅保留四项局部队列。
 
 `Measure-ClusterEffects.ps1` 默认以 XY/XYZ 配对八类效果，比较同一屏幕 tile 候选增加 Z 筛选后的实际收益。`-Methods full,xy,xyz` 将完整遍历加入同输入对照。统一报告固定三个基础场景、分辨率、相机与效果行为、模拟帧、渲染和编译设置及采样，逐项保留五类 GPU 时间、引用与显存口径。
 
-每轮先扫描全部候选，选择剩余输入中最近四层，再更新颜色与透射率。源批次持续到实际输入结束；`MaximumError` 继续沿已完成前缀检查尾部颜色界。持久图保留五个固定几何阶段、资源与连接，当帧 GPU 计数决定其实际工作量。视图、实例 batch 与内容版本、几何/光栅版本、材质配置、驻留写入与 streaming quality 变化驱动刷新；完成后的相同输入复用配套源、投影和引用。
+每轮先扫描全部候选，选择剩余输入中最近四层，再更新颜色与透射率。源批次持续到实际输入结束；`MaximumError` 继续沿已完成前缀检查尾部颜色界。持久图保留六个固定几何阶段、资源与连接，当帧 GPU 计数决定其实际工作量。视图、实例 batch 与内容版本、几何/光栅版本、材质配置、驻留写入与 streaming quality 变化驱动刷新；完成后的相同输入复用配套源、投影和引用。
 
 声明 `VisibilityDepth.Offset` 的用户材质保留投影 XY 范围，并保守覆盖候选 grid 的全部 Z 切片；覆盖后的最终深度决定命中所属 cell。同一静态材质分类随既有 GPU 材质状态传递，单切片 XY grid 使用自己的唯一 Z 切片。贴花纹理读集合变化在原 pass 上替换索引资源读声明，透明几何的完成状态继续由上述几何修订控制。
 

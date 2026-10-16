@@ -28,9 +28,9 @@ public sealed partial class ClusterPipelineSystem
         TransparencyData? transparent = GraphData.Transparency;
         MaterialDecalData decals = GraphData.Decals!;
         GraphPassId[] colors = GraphData.Stencil is { } colorStencil ? [colorStencil.ClearPass] : [];
-        if (transparent is not null) colors = [.. colors, transparent.ColorPass];
+        if (transparent is not null) colors = [.. colors, .. transparent.ColorPasses];
         var passes = new BlendMeasurementPasses(
-            transparent?.Builds ?? [], transparent?.RequestPass ?? default, colors, _regions.Feedback, decals.Builds,
+            transparent?.Builds ?? [], transparent?.RequestPasses ?? [], colors, _regions.Feedback, decals.Builds,
             GraphData.ReceiverGroups.Values.OrderBy(group => group.Stage.BinIndex).Select(group => group.Pass).ToArray(),
             GraphData.ShadeGroups.Values.OrderBy(group => group.Stage.BinIndex).Select(group => group.Pass).ToArray());
         if (GraphData.BlendMeasurements is { } previous && !previous.HasPasses(passes)) RemoveBlendMeasurements(ref edit);
@@ -52,25 +52,27 @@ public sealed partial class ClusterPipelineSystem
         ulong tileViewBytes = _options.BlendIndex == ClusterBlendIndex.Xy ? (ulong)_viewGrid.ViewCount * 192u : 0;
         ulong capacityBytes = (GraphData.Stencil?.CapacityBytes ?? 0) + tileViewBytes;
         ulong allocationBytes = GraphData.Stencil?.AllocationBytes ?? 0;
-        if (GraphData.Transparency is not { } data) return new(default, 0, capacityBytes, capacityBytes, allocationBytes, 0);
+        if (GraphData.Transparency is not { } data) return new(default, 0, 0, capacityBytes, capacityBytes, allocationBytes, 0);
         FrameResources frame = GraphData.Resources;
         BufferUsages storage = BufferUsages.ShaderRead | BufferUsages.ShaderWrite;
         BufferDesc triangles = new((ulong)data.TriangleCapacity * data.Shaders.TriangleStride, storage);
         BufferDesc counts = new((ulong)_viewGrid.CellCountPerView * frame.ViewCount * 4u, storage | BufferUsages.CopySource);
-        BufferDesc triangleCount = new(16, storage | BufferUsages.CopySource);
-        BufferDesc arguments = new(48, storage | BufferUsages.Indirect);
+        BufferDesc triangleCount = new(20, storage | BufferUsages.CopySource);
+        BufferDesc arguments = new(60, storage | BufferUsages.Indirect);
         BufferDesc states = GraphData.BufferDescriptions[data.States].Description;
         BufferDesc orderedStates = GraphData.BufferDescriptions[data.OrderedStates].Description;
         BufferDesc[] descriptions = [triangles, counts, counts, counts, counts,
             new((ulong)_options.BlendReferenceCapacity * 4u, storage), triangleCount, arguments, states, orderedStates,
-            new((ulong)_options.MaxCandidates * 12u, storage), new(16, storage)];
+            new((ulong)_options.MaxCandidates * 12u, storage), new(16, storage),
+            new((ulong)_options.MaxCandidates * 4u, storage), new((ulong)data.TriangleCapacity * data.Shaders.SourceBoundsStride, storage)];
         ulong fixedBytes = capacityBytes + counts.Size * 4u + triangleCount.Size + arguments.Size + states.Size + orderedStates.Size + 16u;
         foreach (BufferDesc description in descriptions)
         {
             capacityBytes += description.Size;
             allocationBytes += _backend.GetBufferMemoryRequirements(_device, description).Size;
         }
-        return new(data.TriangleCount, data.Shaders.TriangleStride, fixedBytes, capacityBytes, allocationBytes, data.TriangleCapacity);
+        return new(data.TriangleCount, data.Shaders.TriangleStride, data.Shaders.SourceBoundsStride,
+            fixedBytes, capacityBytes, allocationBytes, data.TriangleCapacity);
     }
 
     private BlendDecalBuffers CaptureDecalBuffers()
