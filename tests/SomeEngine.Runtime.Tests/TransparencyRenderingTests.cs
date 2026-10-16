@@ -2,6 +2,7 @@ using System.Numerics;
 using Game.Content;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
+using SomeEngine.Graphics;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Runtime.Tests;
@@ -88,6 +89,7 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
     public async Task TransparentUserMaterialsMatchOpaqueForwardLightingAndShadowsAtFullOpacity(string backend)
     {
         SceneLinearImage? opaque = null, transparent = null;
+        using var nearest = new StandardMaterial();
         await SceneImages.RunAsync(backend, new SceneScript(content.Lit, 24,
         [
             new(0, edit =>
@@ -102,6 +104,15 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
                             material.BaseColorTint = material.BaseColorTint with { W = 1 };
                             break;
                     }
+                Entity panel = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "lit panel");
+                nearest.Update(edit.GetMaterial(panel));
+                nearest.Name = "lit panel nearest";
+                nearest.MaterialSampler = nearest.MaterialSampler with
+                {
+                    MinFilter = FilterType.Nearest, MagFilter = FilterType.Nearest, MipFilter = FilterType.Nearest,
+                };
+                Entity copy = edit.AddEntity(panel, new(new Vector3(-1.6f, 0, 4), Quaternion.Identity, .3f));
+                edit.ReplaceMaterial(copy, nearest);
             }),
             new(11, edit => edit.CaptureLinearImage(value => opaque = value)),
             new(12, edit =>
@@ -109,7 +120,7 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
                 foreach (var entity in edit.MeshEntities)
                 {
                     Material material = edit.GetMaterial(entity);
-                    if (material.Name is "lit panel" or "unlit panel")
+                    if (material.Name is "lit panel" or "lit panel nearest" or "unlit panel")
                         material.State = material.State with { Surface = SurfaceMode.Translucent };
                 }
             }),
