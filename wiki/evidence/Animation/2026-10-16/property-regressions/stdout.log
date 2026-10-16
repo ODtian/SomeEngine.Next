@@ -1,0 +1,49 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Animation.Tests; 0 violations.
+  SomeEngine.Diagnostics -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\src\SomeEngine.Diagnostics\bin\Release\net10.0\SomeEngine.Diagnostics.dll
+  SomeEngine.Job.Contracts -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\src\SomeEngine.Job.Contracts\bin\Release\net10.0\SomeEngine.Job.Contracts.dll
+  SomeEngine.ECS.SourceGen -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\src\SomeEngine.ECS.SourceGen\bin\Release\netstandard2.0\SomeEngine.ECS.SourceGen.dll
+  SomeEngine.ECS -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\src\SomeEngine.ECS\bin\Release\net10.0\SomeEngine.ECS.dll
+  SomeEngine.Job -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\src\SomeEngine.Job\bin\Release\net10.0\SomeEngine.Job.dll
+  SomeEngine.ECS.Systems -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\src\SomeEngine.ECS.Systems\bin\Release\net10.0\SomeEngine.ECS.Systems.dll
+  SomeEngine.Core -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\src\SomeEngine.Core\bin\Release\net10.0\SomeEngine.Core.dll
+  SomeEngine.Animation -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\src\SomeEngine.Animation\bin\Release\net10.0\SomeEngine.Animation.dll
+  SomeEngine.Animation.Tests -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\tests\SomeEngine.Animation.Tests\bin\Release\net10.0\SomeEngine.Animation.Tests.dll
+F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\tests\SomeEngine.Animation.Tests\bin\Release\net10.0\SomeEngine.Animation.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行
+VSTest 版本 18.0.2 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+  失败 SomeEngine.Animation.Tests.PropertyAnimationTests.CrossingDurationStagesPresentsTheReachedValueInTheSameFrame(delta: 0.14999999999999999, expected: 1.5, playing: True) [501 ms]
+  错误消息:
+   Assert.Equal() Failure: Values are not within 5 decimal places
+Expected: 1.5 (rounded from 1.5)
+Actual:   1 (rounded from 1)
+  堆栈跟踪:
+     at SomeEngine.Animation.Tests.PropertyAnimationTests.CrossingDurationStagesPresentsTheReachedValueInTheSameFrame(Double delta, Single expected, Boolean playing) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\tests\SomeEngine.Animation.Tests\PropertyAnimationTests.cs:line 516
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+  失败 SomeEngine.Animation.Tests.PropertyAnimationTests.CrossingDurationStagesPresentsTheReachedValueInTheSameFrame(delta: 0.25, expected: 2, playing: False) [5 ms]
+  错误消息:
+   Assert.Equal() Failure: Values are not within 5 decimal places
+Expected: 2 (rounded from 2)
+Actual:   1 (rounded from 1)
+  堆栈跟踪:
+     at SomeEngine.Animation.Tests.PropertyAnimationTests.CrossingDurationStagesPresentsTheReachedValueInTheSameFrame(Double delta, Single expected, Boolean playing) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\tests\SomeEngine.Animation.Tests\PropertyAnimationTests.cs:line 516
+   at InvokeStub_PropertyAnimationTests.CrossingDurationStagesPresentsTheReachedValueInTheSameFrame(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  失败 SomeEngine.Animation.Tests.PropertyAnimationTests.PublicTrackDataSamplesOnlyItsCurrentTimelineStage [3 ms]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   1
+  堆栈跟踪:
+     at SomeEngine.Animation.Tests.PropertyAnimationTests.PublicTrackDataSamplesOnlyItsCurrentTimelineStage() in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\tests\SomeEngine.Animation.Tests\PropertyAnimationTests.cs:line 552
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+失败!  - 失败:     3，通过:    11，已跳过:     0，总计:    14，持续时间: 1 s - SomeEngine.Animation.Tests.dll (net10.0)
