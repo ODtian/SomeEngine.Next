@@ -51,14 +51,19 @@ string? oitScene = args.FirstOrDefault(static value => value.StartsWith("--oit-s
 SomeEngine.Transparency.Research.TransparencyComparison? tileRaster = args.Contains("--transparency-tiles-hardware")
     ? TransparencyComparison.TileHardware : args.Contains("--transparency-tiles-software") ? TransparencyComparison.TileSoftware : null;
 if (oitScene is not null) tileRaster ??= TransparencyComparison.TileSoftware;
-using var clusterOit = args.Contains("--cluster-oit") ? new ClusterOitScene() : null;
+string? clusterEffect = args.FirstOrDefault(static value => value.StartsWith("--cluster-effect="))?["--cluster-effect=".Length..]
+    ?? (args.Contains("--cluster-oit") ? "glass" : null);
+using var clusterAssets = clusterEffect is null ? null : await ClusterBlendAssets.OpenAsync(AppContext.BaseDirectory,
+    startupOptions?.GraphicsBackend ?? SomeEngine.Runtime.RuntimeGraphicsBackend.Direct3D12);
+using var clusterScene = clusterAssets is null ? null : new ClusterBlendScene(clusterAssets, clusterEffect!);
 var platform = new SomeEngine.Runtime.SceneTestPlatform(scenes.Select(scene => scene with
 {
     ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
 }).ToArray(), startupOptions)
 {
     StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
-    InitializeScene = clusterOit is null ? null : clusterOit.Initialize,
+    InitializeScene = clusterScene is null ? null : clusterScene.Initialize,
+    UpdateScene = clusterScene is null || args.Contains("--cluster-static") ? null : clusterScene.Update,
     CreateColorFeature = workload is { } selectedWorkload
         ? (rendering, scene) => new BlendEffectColorFeature(rendering,
             selectedWorkload.CreateData(rendering.Width, rendering.Height, scene.Name == "1024 spheres"
@@ -74,9 +79,9 @@ var platform = new SomeEngine.Runtime.SceneTestPlatform(scenes.Select(scene => s
         : null,
     ColorFeatureSettings = new Dictionary<string, string>
     {
-        ["Effect"] = workload?.Effect.ToString() ?? "OIT",
-        ["Workload"] = clusterOit is not null ? "8 scene meshes with glass materials" : workload?.Name ?? oitScene ?? "Shaded spheres",
-        ["Method"] = clusterOit is not null ? "Cluster OIT" : workload is not null ? blendMethod.ToString() : tileRaster?.ToString() ?? "Opaque",
+        ["Effect"] = clusterScene?.Effect ?? workload?.Effect.ToString() ?? "OIT",
+        ["Workload"] = clusterScene?.Workload ?? workload?.Name ?? oitScene ?? "Shaded spheres",
+        ["Method"] = clusterScene is not null ? "Cluster" : workload is not null ? blendMethod.ToString() : tileRaster?.ToString() ?? "Opaque",
         ["Shader"] = blendShader is null ? "Current" : "Reference",
     },
 };
