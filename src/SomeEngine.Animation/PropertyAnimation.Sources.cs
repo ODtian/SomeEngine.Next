@@ -8,6 +8,22 @@ namespace SomeEngine.Animation;
 
 public static partial class PropertyAnimation
 {
+    internal static void FinishSource<T>(World world, Entity animation, in Track<T> track) where T : unmanaged
+    {
+        if (HoldsLayerValue(world, animation, in track)) return;
+        Entity target = track.Target == Entity.Null ? animation : track.Target;
+        if (!world.HasBuffer<PropertySource<T>>(target)) return;
+        int index = track.SourceIndex;
+        world.ExecuteBufferWrite<PropertySource<T>, int>(target, ref index, static (sources, ref index) =>
+        {
+            PropertySource<T> source = sources.Read(index);
+            if (!source.Active) return;
+            source.Active = false;
+            source.Dirty = true;
+            sources[index] = source;
+        });
+    }
+
     private static class SourceQueries<T> where T : unmanaged
     {
         private static readonly ConditionalWeakTable<World, SourceQuery> Queries = new();

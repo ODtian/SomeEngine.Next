@@ -555,7 +555,7 @@ public sealed class AnimationLayersTests
 
     private static void AddDurationStages(World world, Entity animation)
     {
-        world.AddBuffer<TimelineStage>(animation);
+        if (!world.HasBuffer<TimelineStage>(animation)) world.AddBuffer<TimelineStage>(animation);
         world.ExecuteBufferWrite<TimelineStage>(animation, static stages =>
         {
             stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
