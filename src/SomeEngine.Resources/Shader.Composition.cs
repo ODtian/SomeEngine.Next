@@ -5,6 +5,9 @@ namespace SomeEngine.Resources;
 
 public partial class Shader
 {
+    private sealed record ComposedShader(string SourceName, string Source, SlangCompileTarget? Target, Shader[] Libraries, Shader Shader);
+    private readonly List<ComposedShader> _composedShaders = [];
+
     /// <summary>Creates a Slang compiler that locates the application's downstream compiler libraries.</summary>
     public static IGlobalSession CreateSlangGlobalSession()
     {
@@ -24,6 +27,20 @@ public partial class Shader
     /// <param name="source">Complete source text, including imports using the libraries' Slang source unit names.</param>
     public Shader Compose(string name, string sourceName, string source, IReadOnlyList<Shader> libraries,
         SlangCompileTarget? target = null)
+    {
+        lock (_composedShaders)
+        {
+            foreach (ComposedShader composition in _composedShaders)
+                if (composition.SourceName == sourceName && composition.Source == source && composition.Target == target &&
+                    composition.Libraries.SequenceEqual(libraries)) return composition.Shader;
+            Shader shader = CompileComposition(name, sourceName, source, libraries, target);
+            _composedShaders.Add(new(sourceName, source, target, libraries.ToArray(), shader));
+            return shader;
+        }
+    }
+
+    private Shader CompileComposition(string name, string sourceName, string source, IReadOnlyList<Shader> libraries,
+        SlangCompileTarget? target)
     {
         TargetDesc[] targets = target is { } format ? [_slangTargets[RequireSlangTarget(format)]] : _slangTargets.ToArray();
         var description = new SessionDesc

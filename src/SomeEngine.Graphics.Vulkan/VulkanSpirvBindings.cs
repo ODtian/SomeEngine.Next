@@ -401,8 +401,8 @@ internal sealed unsafe partial class VulkanBackend
             VulkanSpirvBindingTarget[] named = available
                 .Where(target => sourceGroup.Any(source => NamesMatch(source.Name, target.Name)))
                 .ToArray();
-            // Source units can repeat leaf names; the linked binding distinguishes their declarations.
-            if (named.Select(static target => (target.Set, target.Binding)).Distinct().Count() > 1)
+            // Source units can repeat leaf names and alias one heap; linked bindings distinguish the declarations.
+            if (named.Length > 1)
             {
                 uint declared = EncodeDescriptorBinding(sourceGroup.Key, group.Key.RegisterClass);
                 named = named.Where(target => target.DeclaredBinding == declared).ToArray();
