@@ -23,7 +23,7 @@ internal sealed unsafe class SystemNode<TSystem, TContext> : SystemNode<TContext
 {
     private TSystem _system;
 
-    public SystemNode(TSystem system) : base(&UpdateSystem)
+    public SystemNode(TSystem system) : base(SystemFunctions<TSystem, TContext>.Update)
     {
         _system = system;
     }
@@ -35,14 +35,21 @@ internal sealed unsafe class SystemNode<TSystem, TContext> : SystemNode<TContext
         _system.OnCreate(ref context);
     }
 
-    private static void UpdateSystem(SystemNode<TContext> node, ref TContext context)
-    {
-        ((SystemNode<TSystem, TContext>)node)._system.OnUpdate(ref context);
-    }
+    internal void UpdateSystem(ref TContext context) => _system.OnUpdate(ref context);
 
     public override void OnDestroy(ref TContext context)
     {
         _system.OnDestroy(ref context);
     }
+}
+
+internal static unsafe class SystemFunctions<TSystem, TContext>
+    where TSystem : ISystem<TContext>
+    where TContext : allows ref struct
+{
+    internal static readonly delegate* managed<SystemNode<TContext>, ref TContext, void> Update = &UpdateSystem;
+
+    private static void UpdateSystem(SystemNode<TContext> node, ref TContext context) =>
+        ((SystemNode<TSystem, TContext>)node).UpdateSystem(ref context);
 }
 
