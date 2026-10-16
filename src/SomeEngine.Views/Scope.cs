@@ -426,7 +426,9 @@ public static partial class Scope
         current.DependenciesEnabled = dependenciesEnabled;
         current.Queue = BuildQueue.For(world);
         current.BeginChildren(frame, parent?.World == world ? parent.Changes : null);
-        current.PreviousComputations = current.Changes.RememberComputations(world, entity);
+        current.PreviousComputations = current.OutermostBuild
+            ? current.Changes.RememberComputations(world, entity, ref current.PreviousComputationData)
+            : current.Changes.RememberComputations(world, entity);
 #if DEBUG
         current.ContentVersion++;
         current.BuildNumber = ++s_buildNumber;
@@ -776,6 +778,8 @@ public static partial class Scope
         internal Dictionary<ulong, int>? RememberOccurrences;
         internal Dictionary<ulong, int>? AsyncOccurrences;
         internal ComputationList? PreviousComputations;
+        internal ChildChanges.ChildOrder? PreviousOrder;
+        internal ChildChanges.ChildComputations? PreviousComputationData;
         internal ulong? KeyPrefix;
         // Caller content inherits the call group; explicit Key scopes belong to their parent.
         internal ulong? GroupPrefix;
@@ -795,7 +799,10 @@ public static partial class Scope
             FirstRemoval = Changes.RemovedCount;
             FirstAnimation = Changes.AnimationCount;
             if (DeclaresChildren)
-                Changes.RememberOrder(Parent, PreviousChildren);
+            {
+                if (OutermostBuild) Changes.RememberOrder(Parent, PreviousChildren, ref PreviousOrder);
+                else Changes.RememberOrder(Parent, PreviousChildren);
+            }
         }
 
         internal void ReplaceChanges(ChildChanges changes, int firstData, int firstRemoval, int firstAnimation)
