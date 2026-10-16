@@ -42,8 +42,9 @@ StructuredBuffer<VisibleCluster> TransparencyVisibleClusters;
 ByteAddressBuffer TransparencyPageHeap;
 ByteAddressBuffer TransparencyFirstDraw;
 ByteAddressBuffer TransparencySecondDraw;
-StructuredBuffer<uint> TransparencyMaterialBins;
-StructuredBuffer<uint> TransparencyMaterialStates;
+// x: low two bits select facing, remaining bits contain evaluator + 1.
+// y: descriptor-array item for that evaluator's direct material resources.
+StructuredBuffer<uint2> TransparencyMaterialStates;
 Texture2DArray<float> TransparencyOpaqueDepth;
 RWTexture2DArray<float4> TransparencyColor;
 RWStructuredBuffer<TransparencySource> TransparencySourceOutput;
@@ -141,9 +142,17 @@ bool TransparencySourceMaterial(uint source, out uint bin, out uint material, ou
     material = LoadClusterMaterialSlotOffset(TransparencyInstances,
         LoadRenderInstanceMetadata(TransparencyProperties, CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD), request.InstanceID) +
         LocalMaterial(TransparencyPageHeap, cluster, request.PageOffset, triangle);
-    if (TransparencyMaterialStates[material] == 0u) return false;
-    bin = TransparencyMaterialBins[material];
+    uint state = TransparencyMaterialStates[material].x;
+    if ((state & 3u) == 0u) return false;
+    bin = (state >> 2u) - 1u;
     return true;
+}
+
+uint TransparencyResourceItem(uint source)
+{
+    uint evaluator, material, view;
+    TransparencySourceMaterial(source, evaluator, material, view);
+    return TransparencyMaterialStates[material].y;
 }
 
 bool ProjectTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials materials,
@@ -162,7 +171,7 @@ bool ProjectTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials
     c = floor(c * CLUSTER_RASTER_SUBPIXEL_SCALE_F + .5) / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
     float2 edge1 = b - a, edge2 = c - a;
     float area = edge1.x * edge2.y - edge1.y * edge2.x;
-    if (area == 0.0 || (TransparencyMaterialStates[material] == 1u && area >= 0.0)) return false;
+    if (area == 0.0 || ((TransparencyMaterialStates[material].x & 3u) == 1u && area >= 0.0)) return false;
     int2 minimum = max(int2(0), int2(ceil(min(a, min(b, c)) - .5)));
     int2 maximum = min(int2(size) - 1, int2(floor(max(a, max(b, c)) - .5)));
     if (any(minimum > maximum)) return false;
@@ -468,7 +477,7 @@ void ResolveTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials
         }
         if (bins.x == 0xFFFFFFFFu) break;
         remaining = bins.w != 0xFFFFFFFFu;
-        [unroll]
+        [loop]
         for (uint item = 0u; item < 4u; item++)
         {
             if (bins[item] == 0xFFFFFFFFu) break;
