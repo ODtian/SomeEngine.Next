@@ -348,7 +348,7 @@ public enum RayTracingPipelineOptions : byte
 public readonly ref struct RayTracingPipelineDesc
 {
     public RayTracingPipelineDesc(
-        IComponentType slangCode,
+        SlangShaderData slangCode,
         ShaderReflection reflection,
         ReadOnlySequence<byte> code,
         ReadOnlySpan<EntryPointReflection> rayGeneration,
@@ -381,7 +381,7 @@ public readonly ref struct RayTracingPipelineDesc
         StaticSamplers = staticSamplers;
     }
 
-    public IComponentType SlangCode { get; }
+    public SlangShaderData SlangCode { get; }
     public ShaderReflection Reflection { get; }
     public ReadOnlySequence<byte> Code { get; }
     public ISlangBlob? CodeBlob { get; }

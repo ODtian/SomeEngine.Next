@@ -9,7 +9,7 @@ internal sealed unsafe partial class VulkanBackend
         RhiDevice device,
         in RayTracingPipelineDesc desc,
         SomeEngine.Graphics.PipelineCache? cache,
-        IComponentType? capturedSlangCode = null)
+        SlangShaderData? capturedSlangCode = null)
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
         ValidateRayTracingPipeline(desc, GetRayTracingCapability(nativeDevice));
@@ -23,7 +23,7 @@ internal sealed unsafe partial class VulkanBackend
             desc.StaticSamplers);
         VkPipeline native = default;
         VulkanPipeline? pipeline = null;
-        IComponentType? retainedCode = null;
+        SlangShaderData? retainedCode = null;
         try
         {
             if (nativeCache is null)
@@ -69,7 +69,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        IComponentType slangCode = desc.SlangCode;
+        SlangShaderData slangCode = desc.SlangCode;
         var data = new RayPipelineData(desc);
         return EnqueuePipelineCreation(
             nativeDevice,
@@ -667,7 +667,7 @@ internal sealed unsafe partial class VulkanBackend
 
     private sealed class RayPipelineData
     {
-        private readonly IComponentType _slangCode;
+        private readonly SlangShaderData _slangCode;
         private readonly ShaderReflection _reflection;
         private readonly ReadOnlySequence<byte>[] _code;
         private readonly ISlangBlob?[] _codeBlobs;
@@ -706,7 +706,7 @@ internal sealed unsafe partial class VulkanBackend
             VulkanBackend backend,
             VulkanDevice device,
             SomeEngine.Graphics.PipelineCache? cache,
-            IComponentType capturedSlangCode)
+            SlangShaderData capturedSlangCode)
         {
             RayTracingPipelineDesc desc = new(
                 _slangCode,

@@ -17,6 +17,7 @@ internal sealed class D3D12TestShader
     private readonly EntryPointReflection[] _entries;
 
     internal D3D12TestShader(
+        IGlobalSession global,
         ISession session,
         IComponentType[] components,
         IComponentType combinedCode,
@@ -31,7 +32,7 @@ internal sealed class D3D12TestShader
         _components = components;
         _combinedCode = combinedCode;
         _compileRequest = compileRequest;
-        SlangCode = slangCode;
+        SlangCode = new SlangShaderData(global, session, slangCode);
         Reflection = reflection;
         _entries = entries;
         _entryCode = entryCode;
@@ -39,7 +40,7 @@ internal sealed class D3D12TestShader
     }
 
     private readonly byte[][] _entryCode;
-    internal IComponentType SlangCode { get; }
+    internal SlangShaderData SlangCode { get; }
     internal ShaderReflection Reflection { get; }
     internal ReadOnlySequence<byte> TargetCode { get; }
 

@@ -97,6 +97,7 @@ public sealed class VulkanTestCompiler : IDisposable
             entryCode[index] = ReadEntryCode(linkedCode, index);
         byte[] targetCode = ReadTargetCode(linkedCode);
         return new VulkanTestShader(
+            global,
             session,
             sourceUnit,
             slangEntries,

@@ -109,7 +109,7 @@ internal readonly record struct ClusterRasterCompatibilityKey(
     ClusterRasterPipeline? TargetHardware = null);
 
 internal readonly record struct ClusterShadeCompatibilityKey(
-    IComponentType SlangCode,
+    SlangShaderData SlangCode,
     EntryPointReflection EntryPoint);
 
 internal static class ClusterMaterialBindingDefaults
@@ -417,7 +417,7 @@ internal readonly record struct ClusterShadeBinKey(
     SurfaceMode Surface = SurfaceMode.Opaque);
 
 internal readonly record struct ClusterLinkedStageKey(
-    IComponentType SlangCode,
+    SlangShaderData SlangCode,
     SlangCompileTarget Target,
     string FirstEntry,
     string? SecondEntry);
@@ -1361,11 +1361,11 @@ internal sealed class ClusterRasterStageResources<TCore>
 }
 
 internal readonly record struct ClusterRasterSoftwareKey(
-    IComponentType SlangCode,
+    SlangShaderData SlangCode,
     EntryPointReflection EntryPoint);
 
 internal readonly record struct ClusterRasterHardwareKey(
-    IComponentType SlangCode,
+    SlangShaderData SlangCode,
     EntryPointReflection Vertex,
     EntryPointReflection Pixel,
     bool TargetOutput);

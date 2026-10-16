@@ -42,7 +42,7 @@ public partial class Shader
             (variant.EntryPoint, variant.Arguments, new Lazy<Shader>(() => variant.Shader))).ToArray());
 
     internal Shader WithSpecializations(IReadOnlyList<(string EntryPoint, string[] Arguments, Lazy<Shader> Shader)> variants) =>
-        new(Name, _slangGlobal, _slangSession, _slangUnits, _slangEntries, _slangCode,
+        new(Name, SlangCode, _slangUnits, _slangEntries,
             _slangTargets, _slangReflections, _slangTargetBlobs, _slangEntryBlobs,
             _slangTargetBytes, _slangEntryBytes, _slangEntryCount, _slangUsedParameters, _slangUnboundEntries,
             variants.Select(static variant =>

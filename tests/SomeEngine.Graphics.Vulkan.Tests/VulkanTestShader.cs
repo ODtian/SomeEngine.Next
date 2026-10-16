@@ -12,6 +12,7 @@ internal sealed class VulkanTestShader
     private readonly byte[][] _entryCode;
 
     internal VulkanTestShader(
+        IGlobalSession global,
         ISession session,
         IModule sourceUnit,
         IEntryPoint[] slangEntries,
@@ -26,14 +27,14 @@ internal sealed class VulkanTestShader
         _sourceUnit = sourceUnit;
         _slangEntries = slangEntries;
         _combinedCode = combinedCode;
-        SlangCode = slangCode;
+        SlangCode = new SlangShaderData(global, session, slangCode);
         Reflection = reflection;
         Entries = entries;
         _entryCode = entryCode;
         TargetCode = new ReadOnlySequence<byte>(targetCode);
     }
 
-    internal IComponentType SlangCode { get; }
+    internal SlangShaderData SlangCode { get; }
     internal ShaderReflection Reflection { get; }
     internal EntryPointReflection[] Entries { get; }
     internal ReadOnlySequence<byte> TargetCode { get; }
@@ -48,7 +49,7 @@ internal sealed class VulkanTestShader
         nuint register)
     {
         VulkanTestCompiler.Require(
-            SlangCode.GetEntryPointMetadata(
+            SlangCode.Code.GetEntryPointMetadata(
                 entryPointIndex,
                 0,
                 out IMetadata metadata,

@@ -7,11 +7,10 @@ namespace SomeEngine.Resources;
 
 public unsafe partial class Shader
 {
-    private readonly IGlobalSession _slangGlobal;
-    private readonly ISession _slangSession;
+    private IGlobalSession _slangGlobal => SlangCode.Global;
     private readonly ImmutableArray<IModule> _slangUnits;
     private readonly ImmutableArray<IEntryPoint> _slangEntries;
-    private readonly IComponentType _slangCode;
+    private IComponentType _slangCode => SlangCode.Code;
     private readonly ImmutableArray<TargetDesc> _slangTargets;
     private readonly ImmutableArray<ShaderReflection> _slangReflections;
     private readonly ImmutableArray<ISlangBlob?> _slangTargetBlobs;
@@ -23,11 +22,9 @@ public unsafe partial class Shader
 
     private Shader(
         string name,
-        IGlobalSession global,
-        ISession session,
+        SlangShaderData slangCode,
         ImmutableArray<IModule> sourceUnits,
         ImmutableArray<IEntryPoint> entries,
-        IComponentType linkedCode,
         ImmutableArray<TargetDesc> targets,
         ImmutableArray<ShaderReflection> reflections,
         ImmutableArray<ISlangBlob?> targetBlobs,
@@ -40,11 +37,9 @@ public unsafe partial class Shader
         ImmutableArray<(string EntryPoint, ImmutableArray<string> Arguments, Lazy<Shader> Shader)> specializations = default)
     {
         Name = name;
-        _slangGlobal = global;
-        _slangSession = session;
+        SlangCode = slangCode;
         _slangUnits = sourceUnits;
         _slangEntries = entries;
-        _slangCode = linkedCode;
         _slangTargets = targets;
         _slangReflections = reflections;
         _slangTargetBlobs = targetBlobs;
@@ -82,6 +77,7 @@ public unsafe partial class Shader
         if (targets.IsEmpty)
             throw new ArgumentException("Creating a shader requires at least one Slang target.", nameof(targets));
 
+        var slangCode = new SlangShaderData(global, session, linkedCode);
         bool unbound = linkedCode.GetSpecializationParamCount() != 0;
         ImmutableArray<bool> unboundEntries = entries.Select(entry =>
             unbound && entry.GetSpecializationParamCount() != 0).ToImmutableArray();
@@ -125,11 +121,9 @@ public unsafe partial class Shader
         int codeCount = checked(targets.Length * entryCount);
         return new Shader(
             name,
-            global,
-            session,
+            slangCode,
             sourceUnits.ToImmutableArray(),
             entries.ToImmutableArray(),
-            linkedCode,
             targets.ToArray().ToImmutableArray(),
             reflections.ToImmutable(),
             targetBlobs.ToImmutable(),
@@ -148,7 +142,7 @@ public unsafe partial class Shader
     public int SlangSourceUnitCount => _slangUnits.Length;
     public IModule GetSlangSourceUnit(int index) => _slangUnits[index];
     public IEntryPoint GetSlangEntryPoint(int index) => _slangEntries[index];
-    public IComponentType SlangCode => _slangCode;
+    public SlangShaderData SlangCode { get; }
     public TargetDesc GetSlangTarget(int targetIndex) => _slangTargets[targetIndex];
     public ShaderReflection GetSlangReflection(int targetIndex) => _slangReflections[targetIndex];
 
@@ -264,11 +258,9 @@ public unsafe partial class Shader
 
         return new Shader(
             Name,
-            _slangGlobal,
-            _slangSession,
+            SlangCode,
             _slangUnits,
             _slangEntries,
-            _slangCode,
             _slangTargets,
             _slangReflections,
             Enumerable.Repeat<ISlangBlob?>(null, targetCode.Count).ToImmutableArray(),

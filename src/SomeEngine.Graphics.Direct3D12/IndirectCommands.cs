@@ -434,7 +434,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly D3D12Device _device;
         private readonly NativeLease _native;
-        private IComponentType? _slangCode;
+        private SlangShaderData? _slangCode;
 
         internal D3D12IndirectCommandLayout(
             D3D12Device device,
@@ -449,7 +449,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             _device = device;
             NativeLease? pipelineState = null;
-            IComponentType? slangCode = null;
+            SlangShaderData? slangCode = null;
             try
             {
                 if (nativePipeline is not null)

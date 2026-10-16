@@ -80,7 +80,7 @@ public sealed class WarpWorkGraphTests(D3D12TestCompiler shaderCompiler)
         EntryPointReflection entry = shader.Reflection.GetEntryPointByIndex(0);
         FunctionReflection function = entry.Function;
         Assert.NotEqual(FunctionReflection.Null, function);
-        IGlobalSession globalSession = shader.SlangCode.GetSession().GetGlobalSession();
+        IGlobalSession globalSession = shader.SlangCode.Global;
         AttributeReflection nodeID = function.FindAttributeByName(globalSession, "NodeID")
             ?? AttributeReflection.Null;
         Assert.NotEqual(AttributeReflection.Null, nodeID);
