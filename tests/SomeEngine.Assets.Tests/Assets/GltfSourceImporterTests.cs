@@ -141,8 +141,18 @@ public class GltfSourceImporterTests
             using MaterialAsset unlitAsset = await MaterialAsset.OpenAsync(loader,
                 new(project.List(MaterialAsset.FileType).Single(value => value.Name == "TransparentUnlit").AssetGuid));
 
-            using StandardMaterial standard = await standardAsset.CreateAsync<StandardMaterial>(loader);
-            using UnlitMaterial unlit = await unlitAsset.CreateAsync<UnlitMaterial>(loader);
+            Dictionary<AssetId<ShaderAsset>, Shader> shaders = [];
+            Dictionary<AssetId<TextureAsset>, Texture> textures = [];
+            using MaterialBlock content = await standardAsset.ResolveAsync(loader);
+            foreach (AssetId<TextureAsset> id in content.Parameters
+                .Where(value => value.Kind == MaterialParameterKind.Texture)
+                .Select(value => value.Texture).Distinct())
+            {
+                using TextureAsset texture = await TextureAsset.OpenAsync(loader, id);
+                textures.Add(id, await texture.GetBlock<TextureBlock>().CreateAsync(texture.Name));
+            }
+            StandardMaterial standard = await standardAsset.CreateAsync<StandardMaterial>(loader, shaders, textures);
+            UnlitMaterial unlit = await unlitAsset.CreateAsync<UnlitMaterial>(loader, shaders, textures);
 
             Assert.Equal(MaterialTemplates.Standard, await standardAsset.GetTemplateAsync(loader));
             Assert.Equal(MaterialTemplates.Unlit, await unlitAsset.GetTemplateAsync(loader));

@@ -7,7 +7,7 @@ public sealed class MaterialTests
     [Fact]
     public void MaterialPropertiesKeepDefaultsAndRecordActualChanges()
     {
-        using var material = new StandardMaterial();
+        var material = new StandardMaterial();
         Assert.Equal(0.5f, material.Roughness);
         uint index = material.Properties.Single(property => property.Name == nameof(StandardMaterial.Roughness)).Index;
         ulong revision = material.Revision;
@@ -25,8 +25,8 @@ public sealed class MaterialTests
     [Fact]
     public void ConcreteUpdatePreservesIdentityAndAdvancesOneContentRevision()
     {
-        using var material = new StandardMaterial { Name = "before", Roughness = 0.25f };
-        using var replacement = new StandardMaterial { Name = "after", Roughness = 0.75f };
+        var material = new StandardMaterial { Name = "before", Roughness = 0.25f };
+        var replacement = new StandardMaterial { Name = "after", Roughness = 0.75f };
         ulong revision = material.Revision;
         long identity = material.MaterialId;
         material.Update(replacement);
@@ -39,7 +39,7 @@ public sealed class MaterialTests
     [Fact]
     public void InvalidParameterKindsPreserveExistingValues()
     {
-        using var material = new StandardMaterial { Roughness = 0.25f };
+        var material = new StandardMaterial { Roughness = 0.25f };
         ulong revision = material.Revision;
         Assert.Throws<InvalidDataException>(() => material.ApplyParameter(
             new(nameof(StandardMaterial.Roughness), MaterialParameterKind.Vector4) { Vector4 = Vector4.One }, null));

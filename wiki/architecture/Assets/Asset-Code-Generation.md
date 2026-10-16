@@ -50,7 +50,7 @@ Importer 是在库中完整编译的普通类。glTF 来源遍历及各 Block �
 
 ## 材质与使用边界
 
-材质生成器由具体材料声明生成属性、参数解释和 `IMaterial<TMaterial>.Create`、`Update` 静态实现。创建直接构造具体材料，保留类字段默认值并应用已解析的参数与实际纹理引用；更新直接复制该具体类型的字段，并推进一次材料 Revision。`MaterialAsset.CreateAsync<TMaterial>` 与 `UpdateAsync<TMaterial>` 通过这些静态接口操作完整对象。Standard、Unlit 位于引擎 Resources，参数访问针对 MaterialBlock。
+材质生成器由具体材料声明生成属性、参数解释和 `IMaterial<TMaterial>.Create`、`Update` 静态实现。创建直接构造具体材料，保留类字段默认值并应用已解析的参数与实际纹理引用；更新直接复制该具体类型的全部字段，并在字段就绪后推进一次材料 Revision。`MaterialAsset.CreateAsync<TMaterial>` 与 `UpdateAsync<TMaterial>` 接收文件访问以及 Shader、Texture 的强类型实际引用字典，通过这些静态接口操作完整对象。`ResolveAsync` 提供独立的完整 MaterialBlock，供业务准备具体资源。Standard、Unlit 位于引擎 Resources，参数访问针对 MaterialBlock。
 
 针对明确声明的使用对象，分析器检查静态成员中直接或间接泄漏 Asset 及资产引用。导入、编辑、工具代码仍可正常使用资产，不用方法名猜测职责。业务程序集无须依赖 Assets。
 

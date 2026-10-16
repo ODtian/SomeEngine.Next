@@ -13,9 +13,19 @@ public sealed class MaterialTemplateTests
         await using var loader = new AssetLoader(project.CreateStorage());
         using MaterialAsset standardAsset = await MaterialAsset.OpenAsync(loader, MaterialTemplates.Standard);
         using MaterialAsset unlitAsset = await MaterialAsset.OpenAsync(loader, MaterialTemplates.Unlit);
+        Dictionary<AssetId<ShaderAsset>, Shader> shaders = [];
+        Dictionary<AssetId<TextureAsset>, Texture> textures = [];
+        using MaterialBlock content = await standardAsset.ResolveAsync(loader);
+        foreach (AssetId<TextureAsset> id in content.Parameters
+            .Where(value => value.Kind == MaterialParameterKind.Texture)
+            .Select(value => value.Texture).Distinct())
+        {
+            using TextureAsset texture = await TextureAsset.OpenAsync(loader, id);
+            textures.Add(id, await texture.GetBlock<TextureBlock>().CreateAsync(texture.Name));
+        }
 
-        using StandardMaterial standard = await standardAsset.CreateAsync<StandardMaterial>(loader);
-        using UnlitMaterial unlit = await unlitAsset.CreateAsync<UnlitMaterial>(loader);
+        StandardMaterial standard = await standardAsset.CreateAsync<StandardMaterial>(loader, shaders, textures);
+        UnlitMaterial unlit = await unlitAsset.CreateAsync<UnlitMaterial>(loader, shaders, textures);
 
         Assert.Same(standard.AlbedoMap, standard.ARMMap);
         Assert.Same(standard.AlbedoMap, unlit.AlbedoMap);

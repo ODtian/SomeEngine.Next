@@ -82,20 +82,30 @@ public partial class MaterialAsset : Asset
         }
     }
 
-    private async ValueTask<(AssetId<ShaderAsset> Shader, Dictionary<string, MaterialParameter> Values)> ResolveAsync(
-        AssetLoader loader, HashSet<Guid> ancestors, CancellationToken cancellationToken)
+    /// <summary>Gets independent complete content for the caller to acquire its shader and textures.</summary>
+    public async ValueTask<MaterialBlock> ResolveAsync(AssetLoader files,
+        CancellationToken cancellationToken = default)
+    {
+        using MaterialAsset copy = Duplicate();
+        return await copy.ResolveContentAsync(files, [], cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<MaterialBlock> ResolveContentAsync(
+        AssetLoader files, HashSet<Guid> ancestors, CancellationToken cancellationToken)
     {
         MaterialBlock content = await GetBlockAsync<MaterialBlock>(cancellationToken).ConfigureAwait(false);
         if (!ancestors.Add(Id)) throw new InvalidDataException("Material parent references contain a cycle.");
-        (AssetId<ShaderAsset> Shader, Dictionary<string, MaterialParameter> Values) result =
-            (content.Shader, new(StringComparer.Ordinal));
+        MaterialBlock result;
         if (!content.Parent.IsEmpty)
         {
-            await using MaterialAsset parent = await OpenAsync(loader, content.Parent, cancellationToken).ConfigureAwait(false);
-            result = await parent.ResolveAsync(loader, ancestors, cancellationToken).ConfigureAwait(false);
-            if (!content.Shader.IsEmpty) result.Shader = content.Shader;
+            using MaterialAsset parent = await OpenAsync(files, content.Parent, cancellationToken).ConfigureAwait(false);
+            result = await parent.ResolveContentAsync(files, ancestors, cancellationToken).ConfigureAwait(false);
         }
-        foreach (MaterialParameter value in content.Parameters) result.Values[value.Name] = value;
+        else result = new MaterialBlock();
+        result.Name = Name;
+        result.Parent = content.Parent;
+        if (!content.Shader.IsEmpty) result.Shader = content.Shader;
+        foreach (MaterialParameter value in content.Parameters) result.SetParameter(value);
         return result;
     }
 
@@ -110,29 +120,31 @@ public partial class MaterialAsset : Asset
     }
 
     /// <summary>Resolves complete content and creates the concrete material chosen by the caller.</summary>
-    public async ValueTask<TMaterial> CreateAsync<TMaterial>(AssetLoader loader,
+    public async ValueTask<TMaterial> CreateAsync<TMaterial>(AssetLoader files,
+        IReadOnlyDictionary<AssetId<ShaderAsset>, Shader> shaders,
+        IReadOnlyDictionary<AssetId<TextureAsset>, Texture> textures,
         CancellationToken cancellationToken = default) where TMaterial : Material, IMaterial<TMaterial>
     {
-        using MaterialAsset copy = Duplicate();
-        var content = await copy.ResolveAsync(loader, [], cancellationToken).ConfigureAwait(false);
-        Shader? shader = content.Shader.IsEmpty ? null
-            : await loader.GetShaderAsync(content.Shader, cancellationToken).ConfigureAwait(false);
-        var values = new List<(MaterialValue Value, Texture? Texture)>(content.Values.Count);
-        foreach (MaterialParameter parameter in content.Values.Values)
+        using MaterialBlock content = await ResolveAsync(files, cancellationToken).ConfigureAwait(false);
+        Shader? shader = content.Shader.IsEmpty ? null : shaders[content.Shader];
+        var values = new List<(MaterialValue Value, Texture? Texture)>(content.Parameters.Count);
+        foreach (MaterialParameter parameter in content.Parameters)
         {
             Texture? texture = parameter.Kind == MaterialParameterKind.Texture && !parameter.Texture.IsEmpty
-                ? await loader.GetTextureAsync(parameter.Texture, cancellationToken).ConfigureAwait(false) : null;
+                ? textures[parameter.Texture] : null;
             values.Add((parameter.ToValue(), texture));
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return TMaterial.Create(copy.Name, shader, values);
+        return TMaterial.Create(content.Name, shader, values);
     }
 
-    /// <summary>Applies complete replacement fields at the caller's update boundary.</summary>
-    public async ValueTask UpdateAsync<TMaterial>(TMaterial material, AssetLoader loader,
+    /// <summary>Applies complete replacement fields from the caller's actual resource references.</summary>
+    public async ValueTask UpdateAsync<TMaterial>(TMaterial material, AssetLoader files,
+        IReadOnlyDictionary<AssetId<ShaderAsset>, Shader> shaders,
+        IReadOnlyDictionary<AssetId<TextureAsset>, Texture> textures,
         CancellationToken cancellationToken = default) where TMaterial : Material, IMaterial<TMaterial>
     {
-        using TMaterial replacement = await CreateAsync<TMaterial>(loader, cancellationToken).ConfigureAwait(false);
+        TMaterial replacement = await CreateAsync<TMaterial>(files, shaders, textures, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         TMaterial.Update(material, replacement);
     }

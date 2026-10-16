@@ -41,14 +41,16 @@ public sealed class EditableAssetTests
         project.RegisterAsset(await child.SaveAsync(directory.File("child.material.asset")));
         await using var loader = new AssetLoader(project.CreateStorage());
         using var opened = await StandardMaterialAsset.OpenAsync(loader, child.Reference);
-        using var zero = await opened.CreateAsync(loader);
+        Dictionary<AssetId<ShaderAsset>, Shader> shaders = [];
+        Dictionary<AssetId<TextureAsset>, Texture> textures = [];
+        StandardMaterial zero = await opened.CreateAsync<StandardMaterial>(loader, shaders, textures);
         Assert.Equal(0, zero.Roughness);
         Assert.Equal(new[] { parent.Id }, opened.Describe().Dependencies);
         opened.GetBlock<MaterialBlock>().Reset(nameof(StandardMaterial.Roughness));
         opened.Name = "edited";
         AssetEntry saved = await opened.SaveAsync(directory.File("edited.material.asset"));
         using var reloaded = await StandardMaterialAsset.OpenAsync(saved.Path);
-        using var inherited = await reloaded.CreateAsync(loader);
+        StandardMaterial inherited = await reloaded.CreateAsync<StandardMaterial>(loader, shaders, textures);
         Assert.Equal(0.25f, inherited.Roughness);
         Assert.Equal("edited", reloaded.Name);
         Assert.Equal(reloaded.SourceVersion, saved.Version);
