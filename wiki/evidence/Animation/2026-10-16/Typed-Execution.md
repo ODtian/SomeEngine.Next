@@ -214,6 +214,8 @@ NativeAOT 基线的 1,000 目标全路径队列 `041c17fc2c1046a78f39fbc78cdcd66
 
 实际 Native 指令将原因定位到 `World.IsEnabled<Timeline>` 正常路径：`0x14045B7F0` 在进入 `Owners.Components.IsEnabled` 前调用 RuntimeType 名称接口。泛型启用读写原先把 `typeof(T).Name` 作为通用实现的诊断参数，Native 每次取得 `Timeline` 名称形成 40 B 字符串，两次访问构成每目标 80 B。实现现传递 `Type`，在既有缺组件诊断分支创建名称；组件身份、存储权限、启用读写和诊断文本沿共同入口保持一致。Release 的 GC 后缓存恢复与 Native 的逐帧字符串费用由最终同一公开路径采样确认。
 
+最终映像指令队列 `b8c4de8ca5da4aa98d327662fe9d2159` 退出码 0：[实际指令](codegen-final-native-instructions.stdout.txt) · [队列结果](codegen-final-native-instructions.result.json)。`World.IsEnabled<Timeline>` 为 412 B，在 `0x140455B87` 取得 Type 地址后直接传入共同实现。共同实现于 `0x14004A5E6` 按缺组件结果跳到诊断分支，正常结果在 `0x14004A616` 返回，名称调用位于诊断分支的 `0x14004A626`。该主体由原 516 B 增至 882 B，World 包装由 469 B 缩至 412 B；具体四类算法批次、引用根写入与系统跳板的字节数保持前表的实际映射值。
+
 ## 最终集成采样
 
 最终版本包含空算法存储早退、当前行来源更新、Views 元数据与 FieldMotion 复用，以及上述诊断名称延后创建。Native 发布 `457279ad74ab4167b661fa98df3b20e7` 与 Release 构建 `f06ff6974d5f4262a7a2cede14ab5734` 均退出码 0：[Native 发布](native-final-publish.stdout.txt) · [Native 结果](native-final-publish.result.json) · [Release 构建](public-final-release-build.stdout.txt) · [Release 结果](public-final-release-build.result.json)。Native 映像为 9,660,928 B，Release apphost 为 162,816 B；Native 发布保留前述三处诊断，Release 构建为 0 警告、0 错误。
@@ -266,7 +268,7 @@ Release 单组 `fccb0678e1db4a94a053723cc3ac9e6a` 复用相同 1,000 普通 Twee
 | 状态机和输入完整执行 | 5599.500 |
 | Blend 和输入完整执行 | 5151.100 |
 
-1,000 项首次声明为 28.772 ms、分配 4,117,896 B；已声明后首次播放为 6.787 ms、0 B；首次完成帧为 2.588 ms、分配 93,120 B，包含首次工作容量增长。后续完成并复用为 7445.900 ns/目标，P95 7828.600、P99 8286.000，0 B/批。公共空查询委托和 managed 函数入口中位数为 201.953 / 219.043 ns/次，完整系统组为 364.062 ns/次，二者各持续样本为 0 B。
+1,000 项首次声明为 28.772 ms、分配 4,117,896 B；已声明后首次播放为 6.787 ms、0 B；首次完成帧为 2.588 ms、分配 93,120 B，包含首次工作容量增长。后续完成并复用为 7445.900 ns/目标，P95 7828.600、P99 8286.000，0 B/批。公共空查询委托和 managed 函数入口中位数为 201.953 / 219.043 ns/次，完整系统组为 364.062 ns/次，这三项的持续样本为 0 B。
 
 ### 三组 Native 声明内存
 
