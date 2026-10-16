@@ -192,6 +192,7 @@ public static partial class PropertyAnimation
         if (change.ParametersOnly)
         {
             previous.Duration = spec.Boundary.Duration;
+            previous.End = spec.Boundary.End;
             WriteTrack(world, instance, source.Track, in previous);
             if (world.IsEnabled<Timeline>(instance)) UpdateDirectBoundary(world, instance, source.Track, in previous, in timeline, spec.Boundary);
             return instance;
@@ -202,6 +203,7 @@ public static partial class PropertyAnimation
             Typed = true, SourceActive = true, MotionType = type, MotionIndex = change.Index, MotionInitialized = true, SourceIndex = previous.SourceIndex,
             From = from, To = to, Current = from, Start = timeline.Time, SampleTime = timeline.Time,
             StartId = timeline.Starts, Stage = timeline.Stage, Duration = spec.Boundary.Duration,
+            End = spec.Boundary.End,
             Endpoints = endpoints == TrackEndpoints.Displacement ? TrackEndpoints.DisplacementValues : endpoints,
             Displacement = endpoints == TrackEndpoints.Displacement ? value : default,
         };

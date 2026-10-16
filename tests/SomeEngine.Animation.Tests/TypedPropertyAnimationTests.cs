@@ -74,6 +74,25 @@ public sealed class TypedPropertyAnimationTests
     }
 
     [Fact]
+    public void RetargetRestartsTheDeclaredFixedBoundary()
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new FieldPanel());
+        var spec = Spec.Tween<float, FloatOps, Linear>(1);
+        PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, spec);
+        using var systems = TweenSystems(world);
+        PropertyAnimation.To(world, target, FieldPanelChannels.Opacity, 1f, spec);
+        Tick(systems, world, 0.25);
+
+        PropertyAnimation.Retarget(world, target, FieldPanelChannels.Opacity, 2f);
+        Tick(systems, world, 0.75);
+        Assert.True(world.IsEnabled<Timeline>(target));
+        Tick(systems, world, 0.25);
+
+        Assert.Equal(2f, world.Read<FieldPanel>(target).Opacity);
+    }
+
+    [Fact]
     public void TypedSpringRetargetKeepsVelocity()
     {
         using var world = new World();

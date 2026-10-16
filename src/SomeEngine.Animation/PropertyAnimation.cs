@@ -190,6 +190,7 @@ public static partial class PropertyAnimation
                     {
                         var values = new MotionValues<T>(current, destination.Value, current);
                         MotionAccesses<T>.Items[track.MotionType - 1].Retarget(destination.World, destination.Animation, track.MotionIndex, in values);
+                        UpdateDirectBoundary(destination.World, destination.Animation, i, in track, in destination.Timeline, new(track.End, track.Duration));
                     }
                     destination.Found = true;
                 }
