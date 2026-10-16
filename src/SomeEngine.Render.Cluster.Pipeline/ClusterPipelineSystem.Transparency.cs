@@ -48,6 +48,7 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId Triangles, TriangleCount, Counts, References, Arguments, States;
         internal GraphBufferSlice Parameters, ShadeParameters;
         internal uint TriangleCapacity, MaterialCapacity;
+        internal ClusterBlendMeasurements? Measurements;
     }
 
     private readonly List<TransparencyShaders> _transparencyShaders = [];
@@ -154,6 +155,13 @@ public sealed partial class ClusterPipelineSystem
         uint tiles = checked((uint)((frame.Width + 15) / 16) * (uint)((frame.Height + 15) / 16) * frame.ViewCount);
         GraphRegionId preparation = _transparencyRequestRegion != default ? _transparencyRequestRegion : _surfaceReceiverRegion;
         if (preparation == default) preparation = _regions.Shading;
+        BufferUsages storage = BufferUsages.ShaderRead | BufferUsages.ShaderWrite;
+        BufferUsages counted = storage | (_options.MeasureBlending ? BufferUsages.CopySource : BufferUsages.None);
+        BufferDesc triangles = new((ulong)capacity * shaders.TriangleStride, storage, "Cluster transparent projected triangles");
+        BufferDesc counts = new((ulong)tiles * 4u, counted, "Cluster transparency tile counts");
+        BufferDesc references = new((ulong)capacity * tiles * 4u, storage, "Cluster transparency tile references");
+        BufferDesc triangleCount = new(4, counted, "Cluster transparent triangle count");
+        BufferDesc arguments = new(12, storage | BufferUsages.Indirect, "Cluster transparent geometry arguments");
         var data = new TransparencyData
         {
             Shaders = shaders, Materials = materials, TextureReads = textureReads,
@@ -161,16 +169,11 @@ public sealed partial class ClusterPipelineSystem
             Geometry = edit.AddRegion("Cluster transparent geometry", preparation),
             Requests = edit.AddRegion("Cluster transparent shadow requests", preparation),
             Color = edit.AddRegion("Cluster transparent color", _regions.Shading),
-            Triangles = edit.CreatePersistentBuffer(new BufferDesc((ulong)capacity * shaders.TriangleStride,
-                BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Cluster transparent projected triangles")),
-            Counts = edit.CreatePersistentBuffer(new BufferDesc((ulong)tiles * 4u,
-                BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Cluster transparency tile counts")),
-            References = edit.CreatePersistentBuffer(new BufferDesc((ulong)capacity * tiles * 4u,
-                BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Cluster transparency tile references")),
-            TriangleCount = edit.CreatePersistentBuffer(new BufferDesc(4, BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
-                "Cluster transparent triangle count")),
-            Arguments = edit.CreatePersistentBuffer(new BufferDesc(12, BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.Indirect,
-                "Cluster transparent geometry arguments")),
+            Triangles = edit.CreatePersistentBuffer(triangles),
+            Counts = edit.CreatePersistentBuffer(counts),
+            References = edit.CreatePersistentBuffer(references),
+            TriangleCount = edit.CreatePersistentBuffer(triangleCount),
+            Arguments = edit.CreatePersistentBuffer(arguments),
             States = CreateBufferData(ref edit, new byte[checked((int)assignments.SlotCapacity * 4)], BufferUsages.ShaderRead, "Cluster transparency material states"),
             Parameters = CreateParameters(ref edit, new byte[32], "Cluster transparency parameters"),
             ShadeParameters = CreateParameters(ref edit, new byte[48], "Cluster transparency surface parameters"),
@@ -184,15 +187,32 @@ public sealed partial class ClusterPipelineSystem
         edit.OrderAfter(geometryReady, cleared);
         GraphData.Outputs = GraphData.Outputs with { Transparency = new(data.Triangles, data.Counts,
             data.References, data.TriangleCount, capacity, shaders.TriangleStride, geometryReady) };
+        GraphPassId requests = default;
         if (_transparencyRequestRegion != default)
         {
-            GraphPassId requests = AddTransparencyPass(ref edit, data, shaders.Request, "RequestTransparentShadows", data.Requests,
+            requests = AddTransparencyPass(ref edit, data, shaders.Request, "RequestTransparentShadows", data.Requests,
                 new DispatchArguments(((uint)frame.Width + 15u) / 16u, ((uint)frame.Height + 15u) / 16u, frame.ViewCount));
             edit.OrderAfter(requests, geometryReady);
         }
         GraphPassId color = AddTransparencyPass(ref edit, data, shaders.Resolve, "ResolveTransparentColor", data.Color,
             new DispatchArguments(((uint)frame.Width + 15u) / 16u, ((uint)frame.Height + 15u) / 16u, frame.ViewCount));
         edit.OrderAfter(color, geometryReady);
+        if (_options.MeasureBlending)
+        {
+            BufferDesc states = GraphData.BufferDescriptions[data.States].Description;
+            BufferDesc[] descriptions = [triangles, counts, references, triangleCount, arguments, states];
+            ulong capacityBytes = 0, allocationBytes = 0;
+            foreach (BufferDesc description in descriptions)
+            {
+                capacityBytes += description.Size;
+                allocationBytes += _backend.GetBufferMemoryRequirements(_device, description).Size;
+            }
+            data.Measurements = new(_backend, _device, _graph, ref edit,
+                new(data.Geometry, cleared, geometryReady, data.Requests, requests, data.Color, color, _regions.Feedback),
+                new(data.TriangleCount, data.Counts, tiles, shaders.TriangleStride,
+                    counts.Size + triangleCount.Size + arguments.Size + states.Size, capacityBytes, allocationBytes),
+                ReceiveBlendFrame);
+        }
     }
 
     private static bool SameTransparencyBindings(ClusterShadeInvocation[] previous, ClusterShadeInvocation[] next) =>
@@ -343,6 +363,7 @@ public sealed partial class ClusterPipelineSystem
 
     private void RemoveTransparency(ref RenderGraphEdit edit, TransparencyData data)
     {
+        data.Measurements?.Remove(ref edit);
         edit.Remove(data.Geometry); edit.Remove(data.Requests); edit.Remove(data.Color);
         edit.Remove(data.Triangles); edit.Remove(data.TriangleCount); edit.Remove(data.Counts); edit.Remove(data.References); edit.Remove(data.Arguments);
         RemoveBufferData(ref edit, data.States);
