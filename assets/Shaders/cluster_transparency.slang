@@ -82,10 +82,17 @@ uint TransparencyVisibleCount(ByteAddressBuffer arguments)
     return arguments.Load(4u) + arguments.Load(8u);
 }
 
+void WriteTransparencyDispatch(uint offset, uint3 groups)
+{
+    TransparencyArguments.Store(offset, groups.x);
+    TransparencyArguments.Store(offset + 4u, groups.y);
+    TransparencyArguments.Store(offset + 8u, groups.z);
+}
+
 void TransparencyDispatch(uint offset, uint work)
 {
     uint groups = max(1u, (work + 63u) / 64u);
-    TransparencyArguments.Store3(offset, uint3(min(groups, 65535u), (groups + 65534u) / 65535u, 1u));
+    WriteTransparencyDispatch(offset, uint3(min(groups, 65535u), (groups + 65534u) / 65535u, 1u));
 }
 
 void ClearTransparency(uint3 thread)
@@ -331,8 +338,8 @@ void ReserveTransparency(uint3 thread)
         TransparencyDispatch(36u, min(count, TransparencyUniforms.TriangleCapacity));
         uint3 groups = uint3((TransparencyUniforms.Width + 15u) / 16u,
             (TransparencyUniforms.Height + 15u) / 16u, TransparencyUniforms.ViewCount);
-        TransparencyArguments.Store3(24u, reproject ? 0u.xxx : groups);
-        TransparencyArguments.Store3(48u, reproject ? groups : 0u.xxx);
+        WriteTransparencyDispatch(24u, reproject ? 0u.xxx : groups);
+        WriteTransparencyDispatch(48u, reproject ? groups : 0u.xxx);
     }
     if (thread.x < TransparencyUniforms.CellCount)
     {
