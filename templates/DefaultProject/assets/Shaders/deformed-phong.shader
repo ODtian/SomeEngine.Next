@@ -14,9 +14,13 @@
       "Fields": {
         "SourceNames": [
           "cluster_transparency.slang",
-          "deformed-phong.slang"
+          "deformed-phong.slang",
+          "deformed-phong_transparency.slang"
         ],
         "Specializations": [
+          { "EntryPoint": "BuildTransparentGeometry", "Arguments": ["0", "true"] },
+          { "EntryPoint": "RequestTransparentShadows", "Arguments": ["0", "true"] },
+          { "EntryPoint": "ResolveTransparentColor", "Arguments": ["0", "true"] },
           {
             "EntryPoint": "ClusterSurfaceDataDepth",
             "Arguments": [

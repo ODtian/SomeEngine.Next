@@ -981,8 +981,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         Dispose(ref _shadeStages, ref failures);
         foreach (TransparencyShaders shaders in _transparencyShaders)
         {
-            foreach (ClusterComputePipeline pipeline in shaders.Pipelines.Values)
-                try { pipeline.Dispose(); }
+            foreach (TransparencyPipeline pipeline in shaders.Pipelines.Values)
+                try { pipeline.Pipeline.Dispose(); }
                 catch (Exception error) { (failures ??= []).Add(error); }
         }
         _transparencyShaders.Clear();

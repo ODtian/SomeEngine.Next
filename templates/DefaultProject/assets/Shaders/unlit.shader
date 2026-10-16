@@ -14,9 +14,13 @@
       "Fields": {
         "SourceNames": [
           "cluster_transparency.slang",
-          "unlit.slang"
+          "unlit.slang",
+          "unlit_transparency.slang"
         ],
         "Specializations": [
+          { "EntryPoint": "BuildTransparentGeometry", "Arguments": ["0", "false"] },
+          { "EntryPoint": "RequestTransparentShadows", "Arguments": ["0", "false"] },
+          { "EntryPoint": "ResolveTransparentColor", "Arguments": ["0", "false"] },
           {
             "EntryPoint": "ClusterSurfaceDataDepth",
             "Arguments": [

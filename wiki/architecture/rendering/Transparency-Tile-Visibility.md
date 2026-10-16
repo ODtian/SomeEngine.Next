@@ -455,6 +455,8 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 
 资源数组容量按二次幂分档；材质箱编号、实例参数或同一容量内的资源项变化只更新数据。源 `Shader` 持有以源名称、源文本、目标和库 shader 引用序列为键的组合结果，同一批 gallery 材质跨场景重载复用编译结果。每个渲染管线继续持有自己的 GPU pipeline 与资源绑定。代码生成和入口资源归属位于 `ClusterPipelineSystem.TransparencyShaders.cs`。
 
+单 evaluator、单直接资源项的七个透明入口随用户 `ShaderAsset` 在内容构建期保存。用户的第三个源文件导入自己的 evaluator，再包含 `cluster_transparency_entries.slang`，以一个具体的 `Material0` 实现 `ITransparencyMaterials`。四个数据准备入口保存为普通入口，几何、receiver 和颜色入口按 visibility-depth 与 tessellated 常量保存专门化。它们继续调用共享透明核心中的几何、阴影请求与合成函数。DefaultProject 的 Standard、Unlit、Deformed Phong 及导入材质生成函数使用同一包装。管线在这个资源分组下取得保存代码；每个入口连同自己的 `Shader` 传入反射和绑定流程。多 evaluator、多资源项沿前述 `Compose` 组合路径生成具体资源数组。
+
 每帧几何阶段读取两轮 Cluster 可见几何的实际数量，并生成投影三角形和 tile 图元引用。每个 tile 的实际引用数量决定查询范围。每个像素在寄存器中保留四个按深度、来源图元次序排列的命中；处理一批后，继续从上批最后的命中向后查询，直到完整覆盖输入。逐命中使用自己的深度、位置、重心坐标及其梯度求值表面，调用 `evaluateSurface` 后以该 receiver 进行 Forward 光照和阴影采样，再执行前向 alpha 累积。opaque 颜色作为累积背景，合成位置位于 opaque 着色之后、TAA 之前。
 
 透明 receiver 的覆盖请求在 VSM 页分配之前执行。请求复用 VSM 页需求发布和 receiver footprint 计算，颜色阶段复用 Forward 的逐 receiver 阴影采样。
@@ -476,6 +478,10 @@ dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Re
 共享 evaluator 后的完整材质对照加入同一 Standard shader 的线性与最近点采样器实例，两后端整图继续满足 `.003`。`TransparencyRenderingTests` 的 6 项与 `TransparencyIndexTests` 的 3 项全部通过，命令执行了行为规则自动检查。曲面场景同时组合普通 Unlit 和 Deformed Phong；两源中的同名纹理表共用 Vulkan descriptor heap，各声明按其 Slang 源绑定位置匹配。该公开场景先暴露了同名声明的映射问题，修正后 Vulkan 单项通过。
 
 配套 88 项 default 内容的 NativeAOT 冷启动使用 1280×720、Forward、VSM、TAA、32 片玻璃、混合计量与同步 compute 配置。应用到首帧为 43.808 s，16 帧进程总耗时 45.93 s，退出码为 0，2/2 网格与 6/6 页驻留。此记录用于启动定位；正式帧耗时及三场景预算由统一场景平台记录。
+
+保存单材质入口后，包含 PixelCenter、贴花与有序混合核心的 91 项 default 内容在相同应用选项下完成 NativeAOT 16 帧：应用到首帧 39.504 s，进程 41.48 s，退出码 0，1024 实例、2/2 网格、6/6 页驻留。两次启动记录分别对应各自的内容和核心版本。该版本的最小公共图像选取 Vulkan 六层 Unlit 合成与 D3D12 Standard 双采样器/Unlit 材质对照，两项全部通过，行为规则自动检查为 0 违规。
+
+一次顺序 CPU 定位恢复包内 70 个生产及示例 Shader，基础 IR、反射和保存代码合计 2.074 s；Standard、Unlit、Deformed Phong 的全部 87 个保存专门化再花 5.860 s。Standard 三个透明专门化各花约 68 ms，颜色入口直接取得 694,496 B 保存 DXIL。这个范围覆盖全部调试模式及曲面入口。`ClusterComputePipeline.Create` 随后把入口代码交给 RHI；D3D12 的 `DevicePipelineTrace.CreateComputePipelineState` 已提供原生 PSO 创建的 detail trace 边界，供统一场景反馈后的阶段定位使用。
 
 ```powershell
 templates/DefaultProject/Game.App/bin/Release/net10.0/publish/Game.App.exe --measure-scene '1024 spheres' --cluster-oit --hardware-adapter --graphics-backend d3d12 --hardware-raster --shading-path forward --measure-blending --no-async-compute --frames 16 --hidden-window --no-debug-ui
