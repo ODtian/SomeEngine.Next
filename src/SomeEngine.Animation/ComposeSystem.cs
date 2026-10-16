@@ -33,6 +33,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
         var composition = (World: world, WeightChannels: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0);
         world.ExecuteQuery(_targets, context.LastSystemVersion, ref composition, &ComposeDynamic);
         world.ExecuteQuery(_sources, context.LastSystemVersion, ref composition, &ComposeFixed);
+        FieldWrites<T>.Flush(world, composition.Writes, ref composition.Count);
         _writes = composition.Writes;
 
         static void ComposeDynamic(QueryCursor rows, ref (World World, bool WeightChannels, FieldWrite<T>[] Writes, int Count) composition)
@@ -105,7 +106,6 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                             buffer.SwapRemoveAt(i);
                     }
                 }
-                FieldWrites<T>.Flush(world, composition.Writes, ref composition.Count);
             }
         }
     }
@@ -211,7 +211,6 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                     if ((dynamicBuffer.Read(index).Channel.Component == ComponentId<AnimationLayers>.Value) == composition.WeightChannels)
                         dynamicBuffer.SwapRemoveAt(index);
             }
-            FieldWrites<T>.Flush(world, composition.Writes, ref composition.Count);
         }
     }
 

@@ -12,6 +12,11 @@ public static partial class PropertyAnimation
     /// <summary>Declares inline storage before animation starts.</summary>
     public static void Declare<T>(World world, Entity entity) where T : unmanaged
     {
+        if (!DefaultProperties<T>.Declare(world, entity)) DeclareStorage<T>(world, entity);
+    }
+
+    private static void DeclareStorage<T>(World world, Entity entity) where T : unmanaged
+    {
         if (!world.Has<Timeline>(entity))
         {
             world.Add(entity, new Timeline());
@@ -19,14 +24,19 @@ public static partial class PropertyAnimation
         }
         if (!world.HasBuffer<Track<T>>(entity))
             world.AddBuffer<Track<T>>(entity);
+        _ = SourceQueries<T>.For(world);
     }
 
     public static Entity To<T>(World world, Entity target, Channel<T> channel, T value, Spec spec, byte layer = 0)
-        where T : unmanaged => Start(world, target, channel, value, spec, layer, TrackEndpoints.Values);
+        where T : unmanaged => StartCompatible(world, target, channel, value, spec, layer, TrackEndpoints.Values);
 
     /// <summary>Samples a displacement back toward the field value captured when playback starts.</summary>
     public static Entity By<T>(World world, Entity target, Channel<T> channel, T delta, Spec spec, byte layer = 0)
-        where T : unmanaged => Start(world, target, channel, delta, spec, layer, TrackEndpoints.Displacement);
+        where T : unmanaged => StartCompatible(world, target, channel, delta, spec, layer, TrackEndpoints.Displacement);
+
+    private static Entity StartCompatible<T>(World world, Entity target, Channel<T> channel, T value, Spec spec, byte layer, TrackEndpoints endpoints)
+        where T : unmanaged => DefaultProperties<T>.TryStart(world, target, channel, value, spec, layer, endpoints, out Entity animation)
+            ? animation : Start(world, target, channel, value, spec, layer, endpoints);
 
     private static Entity Start<T>(World world, Entity target, Channel<T> channel, T value, Spec spec, byte layer, TrackEndpoints endpoints)
         where T : unmanaged
@@ -165,37 +175,29 @@ public static partial class PropertyAnimation
     {
         DevelopmentCheck.Require(world.IsEnabled<Timeline>(animation), "Retarget requires an enabled animation.");
         Timeline timeline = world.Read<Timeline>(animation);
-        var destination = new TrackDestination<T>
+        bool found = false;
+        int count = BufferCount<Track<T>>(world, animation);
+        for (int index = 0; index < count; index++)
         {
-            World = world, Animation = animation, Channel = channel, Value = value, Timeline = timeline,
-        };
-        world.ExecuteBufferWrite<Track<T>, TrackDestination<T>>(animation, ref destination,
-            static (DynamicBuffer<Track<T>> tracks, ref TrackDestination<T> destination) =>
+            Track<T> track = ReadTrack<T>(world, animation, index);
+            if (track.Channel != channel || track.Finished || track.StartId != timeline.Starts || track.Stage != timeline.Stage) continue;
+            Entity target = track.Target == Entity.Null ? animation : track.Target;
+            T current = track.Typed || world.Has<AnimationLayers>(target) || world.HasBuffer<Contribution<T>>(target)
+                ? track.Current : track.Channel.Read(world, target);
+            track.From = track.Current = current;
+            track.To = value;
+            track.Endpoints = TrackEndpoints.Values;
+            track.Start = track.SampleTime = timeline.Time;
+            if (track.Typed)
             {
-                for (int i = 0; i < tracks.Count; i++)
-                {
-                    Track<T> previous = tracks.Read(i);
-                    if (previous.Channel != destination.Channel || previous.Finished || previous.StartId != destination.Timeline.Starts || previous.Stage != destination.Timeline.Stage)
-                        continue;
-                    ref Track<T> track = ref tracks[i];
-                    Entity target = track.Target == Entity.Null ? destination.Animation : track.Target;
-                    T current = track.Typed || destination.World.Has<AnimationLayers>(target) || destination.World.HasBuffer<Contribution<T>>(target)
-                        ? previous.Current
-                        : track.Channel.Read(destination.World, target);
-                    track.From = track.Current = current;
-                    track.To = destination.Value;
-                    track.Endpoints = TrackEndpoints.Values;
-                    track.Start = track.SampleTime = destination.Timeline.Time;
-                    if (track.Typed)
-                    {
-                        var values = new MotionValues<T>(current, destination.Value, current);
-                        MotionAccesses<T>.Items[track.MotionType - 1].Retarget(destination.World, destination.Animation, track.MotionIndex, in values);
-                        UpdateDirectBoundary(destination.World, destination.Animation, i, in track, in destination.Timeline, new(track.End, track.Duration));
-                    }
-                    destination.Found = true;
-                }
-            });
-        DevelopmentCheck.Require(destination.Found, "Retarget requires a matching channel in the animation's track buffer.");
+                var values = new MotionValues<T>(current, value, current);
+                MotionAccesses<T>.Items[track.MotionType - 1].Retarget(world, animation, track.MotionIndex, in values);
+                UpdateDirectBoundary(world, animation, index, in track, in timeline, new(track.End, track.Duration));
+            }
+            WriteTrack(world, animation, index, in track);
+            found = true;
+        }
+        DevelopmentCheck.Require(found, "Retarget requires a matching channel in the animation's track buffer.");
     }
 
     /// <summary>Stops playback at the currently presented values.</summary>
@@ -203,12 +205,8 @@ public static partial class PropertyAnimation
     {
         if (world.HasBuffer<MotionStop>(animation))
         {
-            var stopping = (World: world, Animation: animation);
-            world.ExecuteBufferRead<MotionStop, (World World, Entity Animation)>(animation, ref stopping,
-                static (stops, ref stopping) =>
-                {
-                    foreach (MotionStop stop in stops.AsSpan()) stop.Stop(stopping.World, stopping.Animation);
-                });
+            int count = BufferCount<MotionStop>(world, animation);
+            for (int index = 0; index < count; index++) ReadBufferItem<MotionStop>(world, animation, index).Stop(world, animation);
         }
         world.Disable<Timeline>(animation);
     }
@@ -250,16 +248,6 @@ public static partial class PropertyAnimation
     }
 
     private struct PooledAnimation : ITag;
-
-    private struct TrackDestination<T> where T : unmanaged
-    {
-        public World World;
-        public Entity Animation;
-        public Channel<T> Channel;
-        public T Value;
-        public Timeline Timeline;
-        public bool Found;
-    }
 
     private struct FieldAnimations<T> where T : unmanaged
     {

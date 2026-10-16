@@ -1,10 +1,23 @@
+using System.Runtime.CompilerServices;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Animation;
 
 public static partial class PropertyAnimation
 {
+    private static class SourceQueries<T> where T : unmanaged
+    {
+        private static readonly ConditionalWeakTable<World, SourceQuery> Queries = new();
+        internal static QueryHandle For(World world) => Queries.GetValue(world, static world => new SourceQuery(world)).Handle;
+        private sealed class SourceQuery(World world)
+        {
+            internal readonly QueryHandle Handle = world.Query(world.QueryDefinition().ReadBuffer<PropertySource<T>>().OptionalBuffer<Track<T>>(QueryAccess.Read));
+        }
+    }
+
     /// <summary>Reserves the transient contribution batch used by external value systems.</summary>
     public static void DeclareContributions<T>(World world, Entity target, int capacity = 4) where T : unmanaged
     {
@@ -24,27 +37,23 @@ public static partial class PropertyAnimation
     /// <summary>Releases and removes a source relationship, then resolves the remaining field range.</summary>
     public static unsafe void RemoveSource<T>(World world, Entity target, Entity animation, uint output) where T : unmanaged
     {
-        var removal = (World: world, Animation: animation, Output: output, Channel: default(Channel<T>));
-        world.ExecuteBufferWrite<PropertySource<T>, (World World, Entity Animation, uint Output, Channel<T> Channel)>(target, ref removal,
-            static (sources, ref removal) =>
-            {
-                for (int index = sources.Count - 1; index >= 0; index--)
-                {
-                    PropertySource<T> source = sources.Read(index);
-                    if (source.Animation != removal.Animation || source.Track != removal.Output) continue;
-                    Track<T> track = ReadTrack<T>(removal.World, removal.Animation, source.Track);
-                    if (track.MotionInitialized) MotionAccesses<T>.Items[track.MotionType - 1].Release(removal.World, removal.Animation, track.MotionIndex);
-                    track.SourceActive = false;
-                    track.MotionInitialized = false;
-                    track.Finished = true;
-                    WriteTrack(removal.World, removal.Animation, source.Track, in track);
-                    removal.Channel = source.Channel;
-                    sources.SwapRemoveAt(index);
-                }
-            });
+        Channel<T> channel = default;
+        for (int index = BufferCount<PropertySource<T>>(world, target) - 1; index >= 0; index--)
+        {
+            PropertySource<T> source = ReadSource<T>(world, target, index);
+            if (source.Animation != animation || source.Track != output) continue;
+            Track<T> track = ReadTrack<T>(world, animation, source.Track);
+            if (track.MotionInitialized) MotionAccesses<T>.Items[track.MotionType - 1].Release(world, animation, track.MotionIndex);
+            track.SourceActive = false;
+            track.MotionInitialized = false;
+            track.Finished = true;
+            WriteTrack(world, animation, source.Track, in track);
+            channel = source.Channel;
+            world.ExecuteBufferWrite<PropertySource<T>, int>(target, ref index, static (sources, ref index) => sources.SwapRemoveAt(index));
+        }
         RefreshSources<T>(world, target);
         T basis = default;
-        if (ReadBase(world, target, removal.Channel, ref basis)) removal.Channel.Write(world, target, in basis);
+        if (ReadBase(world, target, channel, ref basis)) channel.Write(world, target, in basis);
     }
 
     /// <summary>Resolves source order, field ranges, bases, masks, and writeback after explicit relationship changes.</summary>
@@ -65,9 +74,8 @@ public static partial class PropertyAnimation
         if (world.HasBuffer<Contribution<T>>(target))
             world.ExecuteBufferWrite<Contribution<T>, int>(target, ref selection.Count,
                 static (contributions, ref count) => contributions.EnsureCapacity(count));
-        var refresh = (World: world, Target: target, Direct: !world.HasBuffer<Contribution<T>>(target));
-        world.ExecuteBufferWrite<PropertySource<T>, (World World, Entity Target, bool Direct)>(target, ref refresh,
-            static (sources, ref refresh) =>
+        world.ExecuteBufferWrite<PropertySource<T>>(target,
+            static sources =>
             {
                 Span<PropertySource<T>> values = sources.AsSpan();
                 for (int index = 1; index < values.Length; index++)
@@ -78,18 +86,44 @@ public static partial class PropertyAnimation
                     { values[previous + 1] = values[previous]; previous--; }
                     values[previous + 1] = value;
                 }
-                for (int index = 0; index < values.Length; index++)
-                {
-                    ref PropertySource<T> source = ref values[index];
-                    source.Direct = refresh.Direct;
-                    source.Dirty = true;
-                    source.BaseIndex = BaseIndex(refresh.World, refresh.Target, source.Channel);
-                    source.Selected = SourceSelected(refresh.World, refresh.Target, source.Channel, source.Layer);
-                    var trackIndex = (Track: source.Track, Source: index);
-                    refresh.World.ExecuteBufferWrite<Track<T>, (int Track, int Source)>(source.Animation, ref trackIndex,
-                        static (tracks, ref trackIndex) => tracks[trackIndex.Track].SourceIndex = trackIndex.Source);
-                }
             });
+        bool direct = !world.HasBuffer<Contribution<T>>(target);
+        for (int index = 0; index < selection.Count; index++)
+        {
+            PropertySource<T> source = ReadSource<T>(world, target, index);
+            source.Direct = direct;
+            source.Dirty = true;
+            source.BaseIndex = BaseIndex(world, target, source.Channel);
+            source.Selected = SourceSelected(world, target, source.Channel, source.Layer);
+            var item = (Index: index, Source: source);
+            world.ExecuteBufferWrite<PropertySource<T>, (int Index, PropertySource<T> Source)>(target, ref item,
+                static (sources, ref item) => sources[item.Index] = item.Source);
+            var trackIndex = (Track: source.Track, Source: index);
+            world.ExecuteBufferWrite<Track<T>, (int Track, int Source)>(source.Animation, ref trackIndex,
+                static (tracks, ref trackIndex) => tracks[trackIndex.Track].SourceIndex = trackIndex.Source);
+        }
+    }
+
+    internal static PropertySource<T> ReadSource<T>(World world, Entity target, int index) where T : unmanaged
+    {
+        var item = (Index: index, Source: default(PropertySource<T>));
+        world.ExecuteBufferRead<PropertySource<T>, (int Index, PropertySource<T> Source)>(target, ref item,
+            static (sources, ref item) => item.Source = sources[item.Index]);
+        return item.Source;
+    }
+
+    internal static int BufferCount<TBuffer>(World world, Entity entity) where TBuffer : struct, IBufferElement
+    {
+        int count = 0;
+        world.ExecuteBufferRead<TBuffer, int>(entity, ref count, static (buffer, ref count) => count = buffer.Count);
+        return count;
+    }
+
+    internal static TBuffer ReadBufferItem<TBuffer>(World world, Entity entity, int index) where TBuffer : struct, IBufferElement
+    {
+        var item = (Index: index, Value: default(TBuffer));
+        world.ExecuteBufferRead<TBuffer, (int Index, TBuffer Value)>(entity, ref item, static (buffer, ref item) => item.Value = buffer[item.Index]);
+        return item.Value;
     }
 
     private static int BaseIndex<T>(World world, Entity target, Channel<T> channel) where T : unmanaged

@@ -12,7 +12,7 @@ public sealed class ComponentFieldGenerator : IIncrementalGenerator
     {
         var declarations = context.SyntaxProvider.ForAttributeWithMetadataName(
             "SomeEngine.ECS.GenerateFieldsAttribute",
-            static (node, _) => node is StructDeclarationSyntax,
+            static (node, _) => node is StructDeclarationSyntax || node is RecordDeclarationSyntax record && record.ClassOrStructKeyword.IsKind(SyntaxKind.StructKeyword),
             static (data, _) => (INamedTypeSymbol)data.TargetSymbol);
         context.RegisterSourceOutput(declarations.Combine(context.CompilationProvider),
             static (output, data) => Generate(output, data.Left, data.Right));

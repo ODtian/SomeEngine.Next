@@ -27,7 +27,7 @@ public static partial class PropertyAnimation
         where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
     {
         DevelopmentCheck.Require(capacity > 0, "A declared animation requires positive source capacity.");
-        Declare<T>(world, animation);
+        DeclareStorage<T>(world, animation);
         if (!world.HasBuffer<PropertySource<T>>(target)) world.AddBuffer<PropertySource<T>>(target);
         if (!world.HasBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation))
             world.AddBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation);
@@ -65,43 +65,37 @@ public static partial class PropertyAnimation
             foreach (MotionStop previous in stops.AsSpan()) if (previous.Type == stop.Type && previous.ValueType == stop.ValueType) return;
             stops.Add(stop);
         });
-        var declaration = (World: world, Animation: animation, Target: target, Channel: channel, Capacity: capacity, Layer: layer);
-        world.ExecuteBufferWrite<Track<T>, (World World, Entity Animation, Entity Target, Channel<T> Channel, int Capacity, byte Layer)>(animation, ref declaration,
+        var declaration = (Animation: animation, Target: target, Channel: channel, Layer: layer, Count: 0, TrackCount: 0);
+        world.ExecuteBufferRead<Track<T>, (Entity Animation, Entity Target, Channel<T> Channel, byte Layer, int Count, int TrackCount)>(animation, ref declaration,
             static (tracks, ref declaration) =>
             {
-                int count = 0;
+                declaration.TrackCount = tracks.Count;
                 for (int index = 0; index < tracks.Count; index++)
                 {
-                    Track<T> track = tracks.Read(index);
+                    Track<T> track = tracks[index];
                     if (track.Typed && track.Channel == declaration.Channel && track.Layer == declaration.Layer &&
                         (track.Target == Entity.Null ? declaration.Animation : track.Target) == declaration.Target)
-                        count++;
-                }
-                tracks.EnsureCapacity(tracks.Count + declaration.Capacity - count);
-                while (count++ < declaration.Capacity)
-                {
-                    var source = new PropertySource<T>
-                    {
-                        Animation = declaration.Animation, Channel = declaration.Channel, Layer = declaration.Layer, Track = tracks.Count,
-                    };
-                    var boundary = new DirectBoundary { ValueType = BufferComponents.Header<Track<T>>(), Track = tracks.Count };
-                    declaration.World.ExecuteBufferWrite<DirectBoundary, DirectBoundary>(declaration.Animation, ref boundary,
-                        static (boundaries, ref boundary) =>
-                        {
-                            for (int index = 0; index < boundaries.Count; index++)
-                                if (boundaries.Read(index).ValueType == boundary.ValueType && boundaries.Read(index).Track == boundary.Track)
-                                { boundaries[index] = boundary; return; }
-                            boundaries.Add(boundary);
-                        });
-                    tracks.Add(new Track<T>
-                    {
-                        Target = declaration.Animation == declaration.Target ? Entity.Null : declaration.Target,
-                        Channel = declaration.Channel, Layer = declaration.Layer, Typed = true, Finished = true,
-                    });
-                    declaration.World.ExecuteBufferWrite<PropertySource<T>, PropertySource<T>>(declaration.Target, ref source,
-                        static (sources, ref source) => sources.Add(source));
+                        declaration.Count++;
                 }
             });
+        while (declaration.Count++ < capacity)
+        {
+            int index = declaration.TrackCount++;
+            var source = new PropertySource<T> { Animation = animation, Channel = channel, Layer = layer, Track = index };
+            var boundary = new DirectBoundary { ValueType = BufferComponents.Header<Track<T>>(), Track = index };
+            world.ExecuteBufferWrite<DirectBoundary, DirectBoundary>(animation, ref boundary,
+                static (boundaries, ref boundary) =>
+                {
+                    for (int index = 0; index < boundaries.Count; index++)
+                        if (boundaries.Read(index).ValueType == boundary.ValueType && boundaries.Read(index).Track == boundary.Track)
+                        { boundaries[index] = boundary; return; }
+                    boundaries.Add(boundary);
+                });
+            var track = new Track<T> { Target = animation == target ? Entity.Null : target,
+                Channel = channel, Layer = layer, Typed = true, Finished = true };
+            world.ExecuteBufferWrite<Track<T>, Track<T>>(animation, ref track, static (tracks, ref track) => tracks.Add(track));
+            world.ExecuteBufferWrite<PropertySource<T>, PropertySource<T>>(target, ref source, static (sources, ref source) => sources.Add(source));
+        }
         _ = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type;
         RefreshSources<T>(world, target);
     }
@@ -218,9 +212,11 @@ public static partial class PropertyAnimation
     {
         if (!world.HasBuffer<PropertySource<T>>(target)) return default;
         var search = (World: world, Target: target, Channel: channel, Layer: layer, Endpoints: endpoints, Result: default(PropertySource<T>));
-        world.ExecuteBufferRead<PropertySource<T>, (World World, Entity Target, Channel<T> Channel, byte Layer, TrackEndpoints Endpoints, PropertySource<T> Result)>(target, ref search,
-            static (sources, ref search) =>
+        world.ExecuteQuery(SourceQueries<T>.For(world), ref search,
+            static (QueryCursor rows, ref (World World, Entity Target, Channel<T> Channel, byte Layer, TrackEndpoints Endpoints, PropertySource<T> Result) search) =>
             {
+                if (!rows.TryGetRow(search.Target, out QueryRow row)) return;
+                BufferView<PropertySource<T>> sources = row.ReadBuffer<PropertySource<T>>();
                 foreach (PropertySource<T> source in sources.AsSpan())
                 {
                     if (source.Channel != search.Channel || source.Layer != search.Layer || !search.World.IsAlive(source.Animation)) continue;
@@ -228,7 +224,7 @@ public static partial class PropertyAnimation
                     if ((track.Target == Entity.Null ? source.Animation : track.Target) != search.Target) continue;
                     if (search.Endpoints == TrackEndpoints.Values && track.SourceActive && track.Endpoints == TrackEndpoints.Values)
                     { search.Result = source; return; }
-                    if (!track.SourceActive || track.Finished) search.Result = source;
+                    if (!track.SourceActive || track.Finished && !HoldsLayerValue(search.World, source.Animation, in track)) search.Result = source;
                 }
             });
         return search.Result;
@@ -276,36 +272,39 @@ public static partial class PropertyAnimation
                     holds |= HoldsLayerValue(available.World, row.Entity, in track);
                 }
                 if (holds) continue;
-                for (int index = 0; index < tracks.Count; index++)
-                {
-                    Track<T> track = tracks.Read(index);
-                    if (track.MotionInitialized)
-                        MotionAccesses<T>.Items[track.MotionType - 1].Release(available.World, row.Entity, track.MotionIndex);
-                    Entity target = track.Target == Entity.Null ? row.Entity : track.Target;
-                    if (!available.World.IsAlive(target) || !available.World.HasBuffer<PropertySource<T>>(target)) continue;
-                    Entity animation = row.Entity;
-                    available.World.ExecuteBufferWrite<PropertySource<T>, Entity>(target, ref animation,
-                        static (sources, ref animation) =>
-                        {
-                            for (int source = sources.Count - 1; source >= 0; source--)
-                                if (sources.Read(source).Animation == animation) sources.SwapRemoveAt(source);
-                        });
-                    RefreshSources<T>(available.World, target);
-                }
-                tracks.Clear();
                 available.Animation = row.Entity;
                 return;
             }
         });
         world.ReleaseQuery(query);
-        if (available.Animation != Entity.Null) return available.Animation;
+        if (available.Animation != Entity.Null)
+        {
+            int count = BufferCount<Track<T>>(world, available.Animation);
+            for (int index = 0; index < count; index++)
+            {
+                Track<T> track = ReadTrack<T>(world, available.Animation, index);
+                if (track.MotionInitialized) MotionAccesses<T>.Items[track.MotionType - 1].Release(world, available.Animation, track.MotionIndex);
+                Entity target = track.Target == Entity.Null ? available.Animation : track.Target;
+                if (!world.IsAlive(target) || !world.HasBuffer<PropertySource<T>>(target)) continue;
+                Entity previous = available.Animation;
+                world.ExecuteBufferWrite<PropertySource<T>, Entity>(target, ref previous,
+                    static (sources, ref previous) =>
+                    {
+                        for (int source = sources.Count - 1; source >= 0; source--)
+                            if (sources.Read(source).Animation == previous) sources.SwapRemoveAt(source);
+                    });
+                RefreshSources<T>(world, target);
+            }
+            world.ExecuteBufferWrite<Track<T>>(available.Animation, static tracks => tracks.Clear());
+            return available.Animation;
+        }
         Entity animation = world.CreateEntity(new Timeline());
         world.AddTag<PooledAnimation>(animation);
         world.Disable<Timeline>(animation);
         return animation;
     }
 
-    private static Track<T> ReadTrack<T>(World world, Entity animation, int index) where T : unmanaged
+    internal static Track<T> ReadTrack<T>(World world, Entity animation, int index) where T : unmanaged
     {
         var item = (Index: index, Track: default(Track<T>));
         world.ExecuteBufferRead<Track<T>, (int Index, Track<T> Track)>(animation, ref item,
@@ -313,7 +312,7 @@ public static partial class PropertyAnimation
         return item.Track;
     }
 
-    private static void WriteTrack<T>(World world, Entity animation, int index, in Track<T> track) where T : unmanaged
+    internal static void WriteTrack<T>(World world, Entity animation, int index, in Track<T> track) where T : unmanaged
     {
         var item = (Index: index, Track: track);
         world.ExecuteBufferWrite<Track<T>, (int Index, Track<T> Track)>(animation, ref item,
