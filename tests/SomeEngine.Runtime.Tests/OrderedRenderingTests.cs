@@ -104,6 +104,7 @@ public sealed class OrderedRenderingTests(OrderedContentFixture content)
 
     [SceneTheory]
     [InlineData("d3d12")]
+    [InlineData("vulkan")]
     public async Task StencilFailDepthFailAndFaceOperationsMatchHardwareMasks(string backend)
     {
         SceneLinearImage? tile = null, hardware = null;
