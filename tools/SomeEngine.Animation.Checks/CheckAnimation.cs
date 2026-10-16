@@ -21,6 +21,11 @@ internal static partial class CheckAnimation
             CodeGenerationChecks.Run();
             return 0;
         }
+        if (args.Contains("--allocation-check"))
+        {
+            FullPathMeasurements.RunAllocationCheck();
+            return 0;
+        }
         if (args.Contains("--full-benchmark"))
         {
             FullPathMeasurements.Run(args.Contains("--smoke") ? [1_000] : [1_000, 10_000, 100_000]);

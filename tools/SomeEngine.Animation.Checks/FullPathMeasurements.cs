@@ -17,6 +17,11 @@ internal static unsafe partial class FullPathMeasurements
     private const float FrameDelta = 1f / 120;
     private const float TargetValue = 1_000_000f;
 
+    public static void RunAllocationCheck() =>
+        MeasureFull<Plain, PlainAccess, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>(
+            "tween-plain", 1_000, static () => default, Channel<float>.Of<Plain, PlainAccess>(1, false, 0),
+            Spec.Tween<float, FloatOps, Linear>(10_000));
+
     public static void Run(int[] counts)
     {
         Console.WriteLine($"framework={RuntimeInformation.FrameworkDescription}; architecture={RuntimeInformation.ProcessArchitecture}; nativeAot={!RuntimeFeature.IsDynamicCodeSupported}; executableBytes={new FileInfo(Environment.ProcessPath!).Length}; warmup={Warmups}; samples={Samples}; frameDelta={FrameDelta}; target={TargetValue}");
@@ -273,16 +278,20 @@ internal static unsafe partial class FullPathMeasurements
         if (heapBefore != 0) retained = GC.GetTotalMemory(true) - heapBefore;
         var times = new double[Samples];
         long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        long firstSampleAllocation = 0;
         for (int index = 0; index < times.Length; index++)
         {
             long start = Stopwatch.GetTimestamp();
             sample();
             times[index] = Stopwatch.GetElapsedTime(start).TotalNanoseconds / count;
+            if (index == 0) firstSampleAllocation = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
         }
         long allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
         Array.Sort(times);
         using var process = Process.GetCurrentProcess();
         Console.WriteLine(FormattableString.Invariant($"{category},{name},{count},{times[Samples / 2]:F3},{times[(int)(Samples * 0.95)]:F3},{times[^1]:F3},{allocated / (double)Samples:F3},{firstTime:F0},{firstAllocation},{retained},{process.PeakWorkingSet64},{warmupAllocation}"));
+        if (heapBefore != 0)
+            Console.WriteLine($"allocation,{name},{count},post_gc_first_sample_bytes={firstSampleAllocation},steady_total_allocated_bytes={allocated - firstSampleAllocation},steady_samples={Samples - 1}");
     }
 
     private static void Require(bool condition, string message)

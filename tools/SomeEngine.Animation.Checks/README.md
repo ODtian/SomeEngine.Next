@@ -52,3 +52,5 @@ $nativeChecks = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/ne
 `memory` 行记录单通道 Tween、同一通道预声明 Tween 与 Spring，以及包含 64 个浮点历史值和托管引用的消费者状态。每组记录声明和首次激活的耗时、分配、GC 后保留堆，以及通过公开缓冲视图取得的轨道与具体算法容量。实际元素大小同时列出，供默认内联容量取舍使用。
 
 每个队列任务在返回的结果目录保存 `stdout.log`、`stderr.log` 和 `result.json`。交付证据集中于 `wiki/evidence/Animation/2026-10-16`，HUD 的整帧、GPU 与呈现测量由该目录的固定 HUD 工作量页面定义。
+
+`--allocation-check` 复用单组 1,000 项普通 Tween 的完整公开路径。完整字段测量在预热后收集保留堆，`allocation` 行单列完整 GC 后首个样本和随后 47 个样本的实际分配，原有均值保留这 48 个样本的总量。
