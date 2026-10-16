@@ -24,6 +24,18 @@ public static partial class BehaviorScenes
         await SetGreenShaderAsync(destination, engineRoot, "tessellated-unlit", shader);
     }
 
+    public static async Task CreateDeformedPhongSpheresAsync(string source, string destination, string engineRoot)
+    {
+        CopyContent(source, destination);
+        string shader = File.ReadAllText(Path.Combine(destination, "assets/Shaders/unlit.slang"))
+            .Replace("typedef StaticVertexEval VertexEvaluate;", "typedef WaveVertexEval VertexEvaluate;")
+            .Replace("typedef LinearSurface DomainEvaluate;", "#include \"phong_tessellation.slang\"\ntypedef PhongTessellation DomainEvaluate;")
+            .Replace("UnlitTransparencyMaterial", "DeformedPhongTransparencyMaterial")
+            + "\n#include \"cluster_tessellation_entries.slang\"\n";
+        await SetGreenShaderAsync(destination, engineRoot, "deformed-phong", shader);
+        await SceneContent.SetOutputSizeAsync(destination, 128, 128);
+    }
+
     public static async Task CreateShaderReplacementSpheresAsync(string source, string destination, string engineRoot)
     {
         CopyContent(source, destination);
@@ -106,7 +118,7 @@ public static partial class BehaviorScenes
         JsonNode document = JsonNode.Parse(File.ReadAllText(Path.Combine(shaderDirectory, "unlit.shader")))!;
         document["Fields"]!["Id"] = Guid.NewGuid().ToString();
         document["Fields"]!["Name"] = name;
-        document["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(name + ".slang");
+        document["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang");
         string path = Path.Combine(shaderDirectory, name + ".shader");
         File.WriteAllText(path, document.ToJsonString());
         var project = new AssetProject(directory, [], sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);
