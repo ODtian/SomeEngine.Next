@@ -94,14 +94,14 @@ public sealed partial class ClusterPipelineSystem
             source.Append("if (bin == ").Append(index).Append("u) value.Material").Append(index).Append(" = ").Append(Resource(index))
                 .Append(".beginProjection(source, view, ").Append(Tessellated(index)).AppendLine(", screenBounds);");
         source.AppendLine("return value; }");
-        source.AppendLine("bool nextProjection(uint bin, uint source, uint view, inout Projection value, out uint primitive, out float4 first, out float4 second, out float4 third) {");
+        source.AppendLine("bool nextProjection(uint bin, uint source, uint view, inout Projection value, out uint primitive, out float3x2 domain, out float4 first, out float4 second, out float4 third) {");
         for (int index = 0; index < materials.Length; index++)
             source.Append("if (bin == ").Append(index).Append("u) return ").Append(Resource(index))
                 .Append(".nextProjection(source, view, ").Append(Tessellated(index)).Append(", value.Material").Append(index)
-                .AppendLine(", primitive, first, second, third);");
-        source.AppendLine("primitive=0u; first=second=third=0.0.xxxx; return false; }");
-        AppendMethod("bool cover(uint bin, uint source, uint primitive, uint3 pixel, float depth, out float resultDepth)",
-            "cover(source, primitive, TESS, pixel, depth, resultDepth)", "return false;");
+                .AppendLine(", primitive, domain, first, second, third);");
+        source.AppendLine("primitive=0u; domain={}; first=second=third=0.0.xxxx; return false; }");
+        AppendMethod("bool cover(uint bin, uint source, float3x2 domain, uint3 pixel, float depth, out float resultDepth)",
+            "cover(source, domain, TESS, pixel, depth, resultDepth)", "return false;");
         source.AppendLine("float4 shade(uint bin, uint source, uint primitive, uint3 pixel, float depth) {");
         for (int index = 0; index < materials.Length; index++)
             source.Append("if (bin == ").Append(index).Append("u) return ").Append(Resource(index))

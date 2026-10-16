@@ -13,8 +13,8 @@ interface ITransparencyMaterials
     associatedtype Projection;
     Projection beginProjection(uint bin, uint source, uint view, float4 screenBounds);
     bool nextProjection(uint bin, uint source, uint view, inout Projection value,
-        out uint primitive, out float4 first, out float4 second, out float4 third);
-    bool cover(uint bin, uint source, uint primitive, uint3 pixel, float depth, out float resultDepth);
+        out uint primitive, out float3x2 domain, out float4 first, out float4 second, out float4 third);
+    bool cover(uint bin, uint source, float3x2 domain, uint3 pixel, float depth, out float resultDepth);
     float4 shade(uint bin, uint source, uint primitive, uint3 pixel, float depth);
     void receiver(uint bin, uint source, uint primitive, uint3 pixel, float depth,
         out float3 position, out float3 normal, out uint flags);
@@ -34,6 +34,8 @@ struct TransparencyTriangle
     float InverseArea;
     float3 Depths;
     uint Source, Bin, View, Primitive;
+    // Each row retains the original triangle's barycentric y/z coordinates.
+    float3x2 Domain;
 };
 
 ConstantBuffer<TransparencyParameters> TransparencyUniforms;
@@ -160,7 +162,7 @@ uint TransparencyResourceItem(uint source)
 }
 
 bool ProjectTransparency(uint source, uint primitive, uint bin, uint material, uint view,
-    float4 first, float4 second, float4 third, out TransparencyTriangle value)
+    float3x2 domain, float4 first, float4 second, float4 third, out TransparencyTriangle value)
 {
     value = {};
     if (first.w <= 0.0 || second.w <= 0.0 || third.w <= 0.0) return false;
@@ -181,6 +183,7 @@ bool ProjectTransparency(uint source, uint primitive, uint bin, uint material, u
     value.InverseArea = 1.0 / area;
     value.Depths = float3(first.z / first.w, second.z / second.w, third.z / third.w);
     value.Source = source; value.Primitive = primitive; value.Bin = bin; value.View = view;
+    value.Domain = domain;
     return true;
 }
 
@@ -223,11 +226,12 @@ void BuildTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials m
     TMaterials.Projection projection = materials.beginProjection(bin, source, view,
         float4(.5, .5, float(TransparencyUniforms.Width) - .5, float(TransparencyUniforms.Height) - .5));
     uint primitive;
+    float3x2 domain;
     float4 first, second, third;
-    while (materials.nextProjection(bin, source, view, projection, primitive, first, second, third))
+    while (materials.nextProjection(bin, source, view, projection, primitive, domain, first, second, third))
     {
         TransparencyTriangle triangle;
-        if (!ProjectTransparency(source, primitive, bin, material, view, first, second, third, triangle)) continue;
+        if (!ProjectTransparency(source, primitive, bin, material, view, domain, first, second, third, triangle)) continue;
         uint index;
         TransparencyTriangleCount.InterlockedAdd(0u, 1u, index);
         if (index < TransparencyUniforms.TriangleCapacity) TransparencyTriangles[index] = triangle;
@@ -367,9 +371,10 @@ bool ReadTransparencySource<TMaterials : ITransparencyMaterials>(uniform TMateri
                 input.SourceStarted = true;
             }
             uint primitive;
+            float3x2 domain;
             float4 first, second, third;
-            while (materials.nextProjection(bin, source, pixel.z, input.Projection, primitive, first, second, third))
-                if (ProjectTransparency(source, primitive, bin, material, pixel.z, first, second, third, triangle)) return true;
+            while (materials.nextProjection(bin, source, pixel.z, input.Projection, primitive, domain, first, second, third))
+                if (ProjectTransparency(source, primitive, bin, material, pixel.z, domain, first, second, third, triangle)) return true;
         }
         input.Work++; input.SourceStarted = false;
     }
@@ -394,6 +399,9 @@ bool ReadWaveTransparencySource<TMaterials : ITransparencyMaterials>(uniform TMa
     triangle.Bin = WaveReadLaneAt(triangle.Bin, leader);
     triangle.View = WaveReadLaneAt(triangle.View, leader);
     triangle.Primitive = WaveReadLaneAt(triangle.Primitive, leader);
+    triangle.Domain[0] = WaveReadLaneAt(triangle.Domain[0], leader);
+    triangle.Domain[1] = WaveReadLaneAt(triangle.Domain[1], leader);
+    triangle.Domain[2] = WaveReadLaneAt(triangle.Domain[2], leader);
     return true;
 }
 
@@ -468,7 +476,7 @@ bool TransparencyHit<TMaterials : ITransparencyMaterials>(uniform TMaterials mat
 {
     if (!TransparencyCovered(triangle, float2(pixel.xy) + .5, depth)) return false;
     float resultDepth;
-    if (!materials.cover(triangle.Bin, triangle.Source, triangle.Primitive, pixel, depth, resultDepth)) return false;
+    if (!materials.cover(triangle.Bin, triangle.Source, triangle.Domain, pixel, depth, resultDepth)) return false;
     depth = resultDepth;
     if (depth < 0.0 || depth > 1.0) return false;
     InstanceXray effect = LoadInstanceXray(TransparencyInstances, TransparencyProperties,
