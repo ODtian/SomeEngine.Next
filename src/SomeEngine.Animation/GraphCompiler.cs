@@ -193,7 +193,7 @@ internal static class GraphCompiler
 
     private static bool SameOutput(in GraphTrack first, in GraphTrack second) =>
         first.Node.Target == second.Node.Target && first.Node.Field.Component == second.Node.Field.Component &&
-        first.Node.Field.Offset == second.Node.Field.Offset && first.Node.Layer == second.Node.Layer && first.Group == second.Group;
+        first.Node.Field.Field == second.Node.Field.Field && first.Node.Layer == second.Node.Layer && first.Group == second.Group;
 
     private static bool ContainsOpenStage(GraphNode[] nodes, int node)
     {

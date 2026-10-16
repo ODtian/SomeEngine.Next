@@ -185,8 +185,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
     {
         if (track.CaptureStart)
         {
-            T current = Unsafe.ReadUnaligned<T>(
-                in world.ReadBytes(target, track.Channel.Component, track.Channel.Offset, Unsafe.SizeOf<T>()));
+            T current = track.Channel.Read(world, target);
             if (track.Channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target) &&
                 world.Read<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
                 PropertyAnimation.ReadBase(world, target, track.Channel, ref current);

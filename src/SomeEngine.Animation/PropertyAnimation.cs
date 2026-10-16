@@ -31,7 +31,7 @@ public static partial class PropertyAnimation
     private static Entity Start<T>(World world, Entity target, Channel<T> channel, T value, Spec spec, byte layer, TrackEndpoints endpoints)
         where T : unmanaged
     {
-        T current = Unsafe.ReadUnaligned<T>(in world.ReadBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>()));
+        T current = channel.Read(world, target);
         bool hasLayers = channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target);
         if (hasLayers)
         {
@@ -181,7 +181,7 @@ public static partial class PropertyAnimation
                     Entity target = track.Target == Entity.Null ? destination.Animation : track.Target;
                     T current = destination.World.Has<AnimationLayers>(target) || destination.World.HasBuffer<Contribution<T>>(target)
                         ? previous.Current
-                        : Unsafe.ReadUnaligned<T>(in destination.World.ReadBytes(target, track.Channel.Component, track.Channel.Offset, Unsafe.SizeOf<T>()));
+                        : track.Channel.Read(destination.World, target);
                     track.From = track.Current = current;
                     track.To = destination.Value;
                     track.Endpoints = TrackEndpoints.Values;

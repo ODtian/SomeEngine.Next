@@ -67,7 +67,7 @@ public static partial class PropertyAnimation
             else
                 return;
         }
-        Unsafe.WriteUnaligned(ref world.WriteBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>()), value);
+        channel.Write(world, target, in value);
     }
 
     internal static bool Includes<T>(World world, Entity target, Channel<T> channel, LayerMask mask) where T : unmanaged
@@ -85,7 +85,7 @@ public static partial class PropertyAnimation
                 for (int i = mask.Start; i < mask.Start + mask.Count; i++)
                 {
                     LayerChannel field = channels[i];
-                    if (field.Component == selection.Channel.Component && field.Offset == selection.Channel.Offset)
+                    if (field.Component == selection.Channel.Component && field.Field == selection.Channel.Field)
                     {
                         selection.Found = true;
                         return;

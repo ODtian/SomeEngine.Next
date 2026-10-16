@@ -83,7 +83,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                         }
                         while (i < contributions.Length && contributions[i].Channel == channel);
                         if (hasBase || includesValue)
-                            Unsafe.WriteUnaligned(ref world.WriteBytes(row.Entity, channel.Component, channel.Offset, Unsafe.SizeOf<T>()), result);
+                            channel.Write(world, row.Entity, in result);
                     }
                     // Retain the buffer's capacity for the next frame's contributions.
                     for (int i = buffer.Count - 1; i >= 0; i--)
@@ -116,7 +116,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
     {
         int order = first.Channel.Component.CompareTo(second.Channel.Component);
         if (order == 0)
-            order = first.Channel.Offset.CompareTo(second.Channel.Offset);
+            order = first.Channel.Field.CompareTo(second.Channel.Field);
         if (order == 0)
             order = first.Layer.CompareTo(second.Layer);
         if (order == 0)
