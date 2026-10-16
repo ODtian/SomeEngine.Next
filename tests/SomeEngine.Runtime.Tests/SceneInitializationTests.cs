@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Runtime.InteropServices;
 using Game.Content;
 
 namespace SomeEngine.Runtime.Tests;
@@ -62,9 +61,7 @@ public sealed class SceneInitializationTests(SceneContentFixture content)
                 }),
                 new(11, edit => edit.CaptureLinearImage(image => expected = image)),
             ]) { RasterEdgePixels = 32, WaitForFrames = false }, "--hardware-raster", "--no-taa", "--no-vsm");
-            SceneImages.AssertEqual(new(11, expected!.Frame.Width * 2, expected.Frame.Height,
-                MemoryMarshal.AsBytes(expected.Pixels.Span).ToArray()),
-                new(11, actual.Frame.Width * 2, actual.Frame.Height, MemoryMarshal.AsBytes(actual.Pixels.Span).ToArray()));
+            SceneImages.AssertLinearEqual(expected!, actual, 0);
         }
         finally { Directory.Delete(directory, true); }
     }

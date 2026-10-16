@@ -152,4 +152,66 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
         Assert.True((float)opaque!.Pixels.Span[(64 * 128 + 80) * 4] > .01f);
         SceneImages.AssertLinearEqual(opaque, transparent!, .003f);
     }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    public async Task SharedShaderMaterialsKeepEveryColorLimitAndZeroErrorDeclaration(string backend)
+    {
+        SceneLinearImage? complete = null;
+        var completeImages = new List<SceneLinearImage>();
+        var bounded = new List<SceneLinearImage>();
+        var models = new List<Entity>();
+        TransformQvvs[] transforms = Enumerable.Range(0, 8).Select(layer => new TransformQvvs(
+            new Vector3(0, 0, 5 + layer * .5f), Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.Atan(.5f)))).ToArray();
+        using var red = new UnlitMaterial();
+        using var blue = new UnlitMaterial();
+        await SceneImages.RunAsync(backend, new SceneScript(content.DirectoryPath, 24,
+        [
+            new(0, edit =>
+            {
+                Entity first = edit.MeshEntities[0];
+                red.Update(edit.GetMaterial(first));
+                blue.Update(red);
+                red.BaseColorTint = new(1, 0, 0, .5f);
+                blue.BaseColorTint = new(0, 0, 4, .5f);
+                red.State = red.State with { Surface = SurfaceMode.Translucent, ColorLimit = 1 };
+                blue.State = blue.State with { Surface = SurfaceMode.Translucent, ColorLimit = 4 };
+                foreach (Entity entity in edit.MeshEntities.Skip(1)) edit.DeleteEntity(entity);
+                for (int layer = 0; layer < transforms.Length; layer++)
+                {
+                    Entity entity = layer == 0 ? first : edit.AddEntity(first, transforms[layer]);
+                    edit.SetEntityTransform(entity, transforms[layer]);
+                    edit.ReplaceMaterial(entity, layer < 4 ? red : blue);
+                    models.Add(entity);
+                }
+            }),
+            new(7, edit => edit.CaptureLinearImage(value => complete = value)),
+            new(8, _ => red.State = red.State with { MaximumError = .13f }),
+            new(11, edit => edit.CaptureLinearImage(completeImages.Add)),
+            new(12, _ =>
+            {
+                red.State = red.State with { MaximumError = 0 };
+                blue.State = blue.State with { MaximumError = .13f };
+            }),
+            new(15, edit => edit.CaptureLinearImage(completeImages.Add)),
+            new(16, _ =>
+            {
+                red.State = red.State with { MaximumError = .04f };
+                blue.State = blue.State with { MaximumError = .04f };
+            }),
+            new(19, edit => edit.CaptureLinearImage(bounded.Add)),
+            new(20, edit =>
+            {
+                red.BaseColorTint = new(0, 0, 4, .5f);
+                blue.BaseColorTint = new(1, 0, 0, .5f);
+                red.State = red.State with { ColorLimit = 4 };
+                blue.State = blue.State with { ColorLimit = 1 };
+                for (int layer = 0; layer < models.Count; layer++)
+                    edit.SetEntityTransform(models[layer], transforms[(layer + 4) % transforms.Length]);
+            }),
+            new(23, edit => edit.CaptureLinearImage(bounded.Add)),
+        ]) { WaitForFrames = false }, "--hardware-raster", "--no-taa", "--no-vsm");
+        foreach (SceneLinearImage image in completeImages) SceneImages.AssertLinearEqual(complete!, image, .001f);
+        foreach (SceneLinearImage image in bounded) SceneImages.AssertLinearEqual(complete!, image, .04f);
+    }
 }

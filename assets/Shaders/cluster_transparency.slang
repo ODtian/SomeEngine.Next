@@ -45,7 +45,8 @@ StructuredBuffer<VisibleCluster> TransparencyVisibleClusters;
 ByteAddressBuffer TransparencyPageHeap;
 ByteAddressBuffer TransparencyFirstDraw;
 ByteAddressBuffer TransparencySecondDraw;
-// x: low two bits select facing, remaining bits contain evaluator + 1.
+// x: facing in bits 0..1, evaluator + 1 in bits 2..29,
+// user depth offset in bit 30, opaque X-ray source in bit 31.
 // y: descriptor-array item for that evaluator's direct material resources.
 StructuredBuffer<uint2> TransparencyMaterialStates;
 Texture2DArray<float> TransparencyOpaqueDepth;
@@ -148,7 +149,7 @@ bool TransparencySourceMaterial(uint source, out uint bin, out uint material, ou
     uint state = TransparencyMaterialStates[material].x;
     if ((state & 3u) == 0u || ((state & 0x80000000u) != 0u &&
         LoadInstanceXray(TransparencyInstances, TransparencyProperties, request.InstanceID).Enabled == 0u)) return false;
-    bin = ((state & 0x7FFFFFFFu) >> 2u) - 1u;
+    bin = ((state & 0x3FFFFFFFu) >> 2u) - 1u;
     return true;
 }
 
@@ -205,6 +206,13 @@ void TransparencyCellBounds(TransparencyTriangle triangle, out uint3 minimum, ou
         TransparencyViewDepth(triangle.View, triangle.Third, triangle.Depths.z));
     minimum = uint3(uint2(low) / uint2(grid.TileSizeX, grid.TileSizeY), ClusteredLightDepthSlice(grid, min(depths.x, min(depths.y, depths.z))));
     maximum = uint3(uint2(high) / uint2(grid.TileSizeX, grid.TileSizeY), ClusteredLightDepthSlice(grid, max(depths.x, max(depths.y, depths.z))));
+    uint bin, material, view;
+    TransparencySourceMaterial(triangle.Source, bin, material, view);
+    if ((TransparencyMaterialStates[material].x & 0x40000000u) != 0u)
+    {
+        minimum.z = 0u;
+        maximum.z = grid.DepthSliceCount - 1u;
+    }
 }
 
 uint TransparencyCell(uint view, uint3 coordinate)
