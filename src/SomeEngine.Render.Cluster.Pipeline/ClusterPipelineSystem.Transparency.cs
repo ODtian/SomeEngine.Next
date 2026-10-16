@@ -95,7 +95,8 @@ public sealed partial class ClusterPipelineSystem
         string[] geometryCalls = ["ClearTransparency(thread)", "CopyTransparencySources(thread)", "BuildTransparency(materials, thread)", "ReserveTransparency(thread)", "ScatterTransparency(thread)"];
         for (int entry = 0; entry < geometryEntries.Length; entry++)
             source.Append("[shader(\"compute\")] [numthreads(64,1,1)] void ").Append(geometryEntries[entry])
-                .Append("(uniform SceneTransparencyMaterials materials, uint3 thread : SV_DispatchThreadID) { ")
+                .Append(entry == 2 ? "(uniform SceneTransparencyMaterials materials, " : "(")
+                .Append("uint3 thread : SV_DispatchThreadID) { ")
                 .Append(geometryCalls[entry]).AppendLine("; }");
         source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void RequestTransparentShadows(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { RequestTransparencyShadows(materials, pixel); }");
         source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveTransparentColor(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveTransparency(materials, pixel); }");
@@ -233,7 +234,7 @@ public sealed partial class ClusterPipelineSystem
             }
             data.Measurements = new(_backend, _device, _graph, ref edit,
                 new(data.Geometry, cleared, geometryReady, data.Requests, requests, data.Color, color, _regions.Feedback),
-                new(data.TriangleCount, data.Counts, tiles, shaders.TriangleStride,
+                new(data.TriangleCount, shaders.TriangleStride,
                     counts.Size * 4 + triangleCount.Size + arguments.Size + states.Size + 16, capacityBytes, allocationBytes, capacity),
                 ReceiveBlendFrame);
         }
@@ -385,8 +386,18 @@ public sealed partial class ClusterPipelineSystem
         if (resource.Type == ResourceBindingType.BufferUav)
         {
             bool clear = entry == "ClearTransparentTiles";
-            bool build = entry is "ClearTransparentTiles" or "CopyTransparentSources" or "BuildTransparentGeometry" or "ReserveTransparentCells" or "ScatterTransparentCells";
-            GraphAccessMode mode = clear ? GraphAccessMode.Write : build ? GraphAccessMode.ReadWrite : GraphAccessMode.Read;
+            GraphAccessMode mode = (entry, resource.Name) switch
+            {
+                ("ClearTransparentTiles", _) => GraphAccessMode.Write,
+                ("CopyTransparentSources", "TransparencySourceOutput") => GraphAccessMode.Write,
+                ("BuildTransparentGeometry", "TransparencyTriangles") => GraphAccessMode.Write,
+                ("BuildTransparentGeometry", "TransparencyTriangleCount" or "TransparencyTileCounts" or "TransparencyCellStreams") => GraphAccessMode.ReadWrite,
+                ("ReserveTransparentCells", "TransparencyCellOffsets" or "TransparencyArguments") => GraphAccessMode.Write,
+                ("ReserveTransparentCells", "TransparencyTriangleCount" or "TransparencyCellStreams") => GraphAccessMode.ReadWrite,
+                ("ScatterTransparentCells", "TransparencyReferences") => GraphAccessMode.Write,
+                ("ScatterTransparentCells", "TransparencyCellWrites") => GraphAccessMode.ReadWrite,
+                _ => GraphAccessMode.Read,
+            };
             pass.Bind(graph.CreateBufferUav(buffer, structureStride: stride), PipelineSync.ComputeShading, mode,
                 clear ? WriteCoverage.Complete : WriteCoverage.Partial, ResourceContentState.Defined);
         }
