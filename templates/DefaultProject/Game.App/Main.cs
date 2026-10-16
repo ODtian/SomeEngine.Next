@@ -82,6 +82,7 @@ var platform = new SomeEngine.Runtime.SceneTestPlatform(scenes.Select(scene => s
         ["Effect"] = clusterScene?.Effect ?? workload?.Effect.ToString() ?? "OIT",
         ["Workload"] = clusterScene?.Workload ?? workload?.Name ?? oitScene ?? "Shaded spheres",
         ["Method"] = clusterScene is not null ? "Cluster" : workload is not null ? blendMethod.ToString() : tileRaster?.ToString() ?? "Opaque",
+        ["Candidates"] = (startupOptions?.BlendIndex ?? SomeEngine.Render.Cluster.Pipeline.ClusterBlendIndex.Xyz).ToString(),
         ["Shader"] = blendShader is null ? "Current" : "Reference",
     },
 };
