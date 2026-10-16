@@ -25,3 +25,5 @@ RenderDevice 是一个 Graphics.Device 对应的 render-side 长期设备状态�
 应用的呈现 pass 通过 `OrderTextureUploadsBefore` 排在当帧纹理上传完成之后，并通过 Cluster 的 `PageFaultReadbackPass` 排在缺页反馈的提前提交之后。呈现与当帧图像读回由同一次交换链图像提交覆盖；首个场景帧沿这一公共路径验收。
 
 [[architecture/assets/Texture-Device-Realization]] · [[architecture/render-graph/Resource-Access]]
+
+图帧提交完成后，`RenderGraph.CollectCompleted()` 或后续 `BeginFrame` 推进帧登记回收并清除帧级 Texture 引用；`RenderDevice.CollectCompleted()` 消费设备释放队列，沿已登记的 GPU 完成位置释放原生纹理和视图。业务在结束消费时按这两个各自的完成入口推进收尾。

@@ -123,6 +123,7 @@ internal static class TextureGpuReuseMeasurements
         finally { frame.Dispose(); }
         renderer.TrackSubmission(completions.AsSpan(0, count));
         renderer.WaitForTrackedSubmissions(TimeSpan.FromSeconds(30));
+        graph.CollectCompleted();
         renderer.CollectCompleted();
         return (resource, copies);
     }

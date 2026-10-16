@@ -16,7 +16,7 @@ ApplicationSettingsAsset 的 ApplicationSettingsBlock 记录窗口配置、场�
 
 WorldAsset 恢复真实 Game world。Mesh、Material 引用在原实体上解析，管线读取自己需要的 Block；同一 MeshAsset 中其他表示不会被错误地当作另一个场景身份。流送取得数据后再更新已有资源状态，渲染准备不隐藏 Asset 查询或文件 I/O。
 
-公开游戏启动通过 `Application.RunAsync<TMaterials>` 采用游戏的静态 `ISceneMaterials.CreateAsync`。ApplicationContent 在应用范围持有文件读取器、Slang 设置、两份强类型 WeakValues 以及明确跨场景使用的管线与启动 Shader。场景解析 MaterialAsset.ResolveAsync 的完整 Block，按强类型资产引用取得实际 Shader、Texture，再把两份实际引用字典交给具体材质创建方法。场景保留 Material、Mesh 和几何页来源，卸载时更新普通引用；Cluster 的 Shader 准备发生在渲染消费阶段。
+公开游戏启动通过 `Application.RunAsync<TMaterials>` 采用游戏的静态 `ISceneMaterials.CreateAsync`。ApplicationContent 在应用范围持有文件读取器、Slang 设置、两份强类型 WeakValues 以及明确跨场景使用的管线与启动 Shader。内容目录、目录文件写入时间或图形后端变化时，应用建立对应的文件和 Slang 范围。场景解析 MaterialAsset.ResolveAsync 的完整 Block，按强类型资产引用取得实际 Shader、Texture，再把两份实际引用字典交给具体材质创建方法。场景保留 Material、Mesh 和几何页来源，卸载时更新普通引用；Cluster 的 Shader 准备发生在渲染消费阶段。
 
 ## 生命周期与 Shader 解释
 

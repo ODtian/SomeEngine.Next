@@ -197,9 +197,10 @@ public sealed class AssetLoaderTests
             }
             """);
         using var asset = new ShaderAsset(guid) { Name = "stored-shader" };
-        asset.GetBlock<ShaderSourceBlock>().SourceNames = [sourcePath];
+        asset.GetBlock<ShaderSourceBlock>().SourceNames = ["stored.slang"];
         IGlobalSession slang = SlangShaderImporter.GlobalSession;
         SessionDesc settings = TestShaderLoading.CreateSessionDescription(slang, SlangCompileTarget.Spirv);
+        settings.SearchPaths = [directory.Path];
         asset.CompileAsync(slang, settings).GetAwaiter().GetResult();
         asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
