@@ -1,5 +1,6 @@
 using System.Text;
 using System.Numerics;
+using System.Globalization;
 using SlangShaderSharp;
 using SomeEngine.Resources;
 
@@ -8,15 +9,15 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 public sealed partial class ClusterPipelineSystem
 {
     private readonly record struct TransparencyMember(Shader Shader, ClusterVisibilityDepth VisibilityDepth);
+    private sealed record TransparencyPipeline(Shader Shader, ClusterComputePipeline Pipeline);
 
-    private sealed class TransparencyShaders(Shader shader, TransparencyMember[] members, uint[] resourceCapacities,
-        Dictionary<string, ClusterComputePipeline> pipelines)
+    private sealed class TransparencyShaders(TransparencyMember[] members, uint[] resourceCapacities,
+        Dictionary<string, TransparencyPipeline> pipelines)
     {
-        internal readonly Shader Shader = shader;
         internal readonly TransparencyMember[] Members = members;
         internal readonly uint[] ResourceCapacities = resourceCapacities;
-        internal readonly Dictionary<string, ClusterComputePipeline> Pipelines = pipelines;
-        internal readonly uint TriangleStride = GetTriangleStride(shader);
+        internal readonly Dictionary<string, TransparencyPipeline> Pipelines = pipelines;
+        internal readonly uint TriangleStride = GetTriangleStride(pipelines["BuildTransparentGeometry"].Shader);
         private static uint GetTriangleStride(Shader shader)
         {
             ShaderReflection reflection = shader.GetSlangReflection(0);
@@ -43,12 +44,21 @@ public sealed partial class ClusterPipelineSystem
 
         resources = GroupResources(members);
         uint[] capacities = resources.Select(group => BitOperations.RoundUpToPowerOf2((uint)group.Length)).ToArray();
-        Shader shader = ComposeTransparencyShaders(members, capacities, _device.Capabilities.CompileTarget);
-        var pipelines = new Dictionary<string, ClusterComputePipeline>();
+        Shader source = members[0].Shader;
+        string[] arguments = [((uint)members[0].VisibilityDepth).ToString(CultureInfo.InvariantCulture),
+            source.TryGetSlangEntry(0, ClusterMaterialEntries.TessellationSeed, SlangStage.Compute, out _) ? "true" : "false"];
+        bool saved = members.Length == 1 && capacities[0] == 1 &&
+            source.TryGetSpecialization("ResolveTransparentColor", arguments, out _);
+        Shader? composition = saved ? null : ComposeTransparencyShaders(members, capacities, _device.Capabilities.CompileTarget);
+        var pipelines = new Dictionary<string, TransparencyPipeline>();
         foreach (string entry in new[] { "ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry", "ReserveTransparentCells",
                      "ScatterTransparentCells", "RequestTransparentShadows", "ResolveTransparentColor" })
-            pipelines.Add(entry, ClusterComputePipeline.Create(_backend, _device, shader, entry, entry));
-        var result = new TransparencyShaders(shader, members, capacities, pipelines);
+        {
+            Shader shader = composition ?? (entry is "BuildTransparentGeometry" or "RequestTransparentShadows" or "ResolveTransparentColor"
+                ? source.RequireSpecialization(entry, arguments) : source);
+            pipelines.Add(entry, new(shader, ClusterComputePipeline.Create(_backend, _device, shader, entry, entry)));
+        }
+        var result = new TransparencyShaders(members, capacities, pipelines);
         _transparencyShaders.Add(result);
         return result;
 

@@ -455,6 +455,8 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 
 资源数组容量按二次幂分档；材质箱编号、实例参数或同一容量内的资源项变化只更新数据。源 `Shader` 持有以源名称、源文本、目标和库 shader 引用序列为键的组合结果，同一批 gallery 材质跨场景重载复用编译结果。每个渲染管线继续持有自己的 GPU pipeline 与资源绑定。代码生成和入口资源归属位于 `ClusterPipelineSystem.TransparencyShaders.cs`。
 
+单 evaluator、单直接资源项的七个透明入口随用户 `ShaderAsset` 在内容构建期保存。用户的第三个源文件导入自己的 evaluator，再包含 `cluster_transparency_entries.slang`，以一个具体的 `Material0` 实现 `ITransparencyMaterials`。四个数据准备入口保存为普通入口，几何、receiver 和颜色入口按 visibility-depth 与 tessellated 常量保存专门化。它们继续调用共享透明核心中的几何、阴影请求与合成函数。DefaultProject 的 Standard、Unlit、Deformed Phong 及导入材质生成函数使用同一包装。管线在这个资源分组下取得保存代码；每个入口连同自己的 `Shader` 传入反射和绑定流程。多 evaluator、多资源项沿前述 `Compose` 组合路径生成具体资源数组。
+
 每帧几何阶段读取两轮 Cluster 可见几何的实际数量，并生成投影三角形和 tile 图元引用。每个 tile 的实际引用数量决定查询范围。每个像素在寄存器中保留四个按深度、来源图元次序排列的命中；处理一批后，继续从上批最后的命中向后查询，直到完整覆盖输入。逐命中使用自己的深度、位置、重心坐标及其梯度求值表面，调用 `evaluateSurface` 后以该 receiver 进行 Forward 光照和阴影采样，再执行前向 alpha 累积。opaque 颜色作为累积背景，合成位置位于 opaque 着色之后、TAA 之前。
 
 透明 receiver 的覆盖请求在 VSM 页分配之前执行。请求复用 VSM 页需求发布和 receiver footprint 计算，颜色阶段复用 Forward 的逐 receiver 阴影采样。

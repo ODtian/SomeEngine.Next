@@ -216,9 +216,11 @@ public sealed partial class ClusterPipelineSystem
         UpdateOrderedStates(ref edit, data, assignments);
     }
 
-    private GraphPassId AddTransparencyPass(ref RenderGraphEdit edit, TransparencyData data, ClusterComputePipeline pipeline,
+    private GraphPassId AddTransparencyPass(ref RenderGraphEdit edit, TransparencyData data, TransparencyPipeline compiled,
         string entry, GraphRegionId region, DispatchArguments groups, bool indirect = false, uint argumentOffset = 0)
     {
+        ClusterComputePipeline pipeline = compiled.Pipeline;
+        Shader shader = compiled.Shader;
         GraphPassId id;
         if (indirect)
         {
@@ -232,10 +234,10 @@ public sealed partial class ClusterPipelineSystem
         else id = AddComputePass(ref edit, entry, pipeline, new ClusterDispatchParameters(groups), 0,
             ClusterDispatchParameters.Record, region: region);
         PassDefinition pass = edit.GetPass(id);
-        int target = data.Shaders.Shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
-        ShaderReflection reflection = data.Shaders.Shader.GetSlangReflection(target);
+        int target = shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
+        ShaderReflection reflection = shader.GetSlangReflection(target);
         BindBlock(ref edit, ref pass, reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null, null, true);
-        EntryPointReflection reflectedEntry = data.Shaders.Shader.RequireSlangEntry(target, entry, SlangStage.Compute);
+        EntryPointReflection reflectedEntry = shader.RequireSlangEntry(target, entry, SlangStage.Compute);
         VariableLayoutReflection entryLayout = reflectedEntry.VarLayout;
         BindBlock(ref edit, ref pass, entryLayout, GetTransparencyEntryMaterials(data, entryLayout), false);
         ReadIndexedMaterialTextures(ref edit, ref pass, data.TextureReads, PipelineSync.ComputeShading);
@@ -246,7 +248,7 @@ public sealed partial class ClusterPipelineSystem
             if (layout == VariableLayoutReflection.Null) return;
             access.BindParameterBlock(layout);
             var resources = ClusterLinkedStageLayout.Create(layout, global
-                ? (category, space, register) => data.Shaders.Shader.IsSlangParameterLocationUsed(target, entry, category, space, register)
+                ? (category, space, register) => shader.IsSlangParameterLocationUsed(target, entry, category, space, register)
                 : null);
             int resourceIndex = 0;
             foreach (ClusterLinkedStageResource resource in resources.Resources)
