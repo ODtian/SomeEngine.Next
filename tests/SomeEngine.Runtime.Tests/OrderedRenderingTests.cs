@@ -187,7 +187,7 @@ public sealed class OrderedRenderingTests(OrderedContentFixture content)
             }),
             new(15, edit => edit.CaptureLinearImage(image => hardware = image)),
         ]) { WaitForFrames = false, CreateColorFeature = rendering => new HardwareOrderedFeature(rendering, references, view, roundTripProbe) },
-            "--hardware-raster", "--shading-path", "forward", "--no-taa", "--no-vsm");
+            "--hardware-raster", "--shading-path", "forward", "--no-taa", "--no-vsm", "--measure-blending");
         SceneImages.AssertLinearEqual(hardware!, tile!, .001f);
     }
 

@@ -53,7 +53,7 @@ public sealed partial class ClusterPipelineSystem
                     DrawOrder = state.DrawOrder, Enabled = 1, StencilRef = state.StencilRef,
                     Front = Face(tests.Front), Back = Face(tests.Back),
                     ReadMask = tests.StencilReadMask, WriteMask = tests.StencilWriteMask,
-                    Flags = (tests.DepthTest ? 1u : 0u) | (tests.DepthWrite ? 2u : 0u) |
+                    Flags = (tests.DepthTest ? 1u : 0u) | (tests.DepthTest && tests.DepthWrite ? 2u : 0u) |
                         (tests.StencilTest ? 4u : 0u) | (blend.Enabled ? 8u : 0u),
                     ColorBlend = Blend(blend.SourceColor, blend.DestinationColor, blend.ColorOperation),
                     AlphaBlend = Blend(blend.SourceAlpha, blend.DestinationAlpha, blend.AlphaOperation),
