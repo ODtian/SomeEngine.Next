@@ -355,18 +355,7 @@ public static partial class PropertyAnimation
             world.ExecuteBufferWrite<PropertySource<T>, (int Index, Track<T> Track, bool Direct)>(target, ref outputValue,
                 static (sources, ref outputValue) =>
                 {
-                    PropertySource<T> previous = sources.Read(outputValue.Index);
-                    outputValue.Direct &= previous.Direct;
-                    if (!previous.Active || !TOps.Equals(in previous.Value, in outputValue.Track.Current) ||
-                        !TOps.Equals(in previous.Reference, in outputValue.Track.To) || previous.Endpoints != outputValue.Track.Endpoints)
-                    {
-                        previous.Value = outputValue.Track.Current;
-                        previous.Reference = outputValue.Track.To;
-                        previous.Endpoints = outputValue.Track.Endpoints;
-                        previous.Active = true;
-                        previous.Dirty = true;
-                        sources[outputValue.Index] = previous;
-                    }
+                    outputValue.Direct &= UpdateSource<T, TOps>(sources, outputValue.Index, in outputValue.Track);
                 });
             if (!outputValue.Direct) return false;
         }
@@ -391,5 +380,22 @@ public static partial class PropertyAnimation
             return true;
         }
         return false;
+    }
+
+    internal static bool UpdateSource<T, TOps>(DynamicBuffer<PropertySource<T>> sources, int index, in Track<T> track)
+        where T : unmanaged where TOps : struct, IValueOps<T>
+    {
+        PropertySource<T> previous = sources.Read(index);
+        if (!previous.Active || !TOps.Equals(in previous.Value, in track.Current) ||
+            !TOps.Equals(in previous.Reference, in track.To) || previous.Endpoints != track.Endpoints)
+        {
+            previous.Value = track.Current;
+            previous.Reference = track.To;
+            previous.Endpoints = track.Endpoints;
+            previous.Active = true;
+            previous.Dirty = true;
+            sources[index] = previous;
+        }
+        return previous.Direct;
     }
 }

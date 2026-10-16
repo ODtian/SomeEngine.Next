@@ -66,11 +66,17 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
         {
             bool hasStages = chunk.HasBuffer<TimelineStage>();
             bool hasMotions = chunk.HasBuffer<GraphMotion>();
+            bool inlineDirect = chunk.HasBuffer<PropertySource<T>>() && !chunk.Has<AnimationLayers>() &&
+                !chunk.HasBuffer<Contribution<T>>();
             foreach (QueryRow row in chunk.Rows)
             {
+                DynamicBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>> instances =
+                    row.Buffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>();
+                if (instances.Count == 0)
+                    continue;
                 DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
-                Span<MotionData<T, TParameters, TState>> data = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Data(
-                    row.Buffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>());
+                DynamicBuffer<PropertySource<T>> sources = inlineDirect ? row.Buffer<PropertySource<T>>() : default;
+                Span<MotionData<T, TParameters, TState>> data = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Data(instances);
                 for (int index = 0; index < data.Length; index++)
                     data[index].Active = false;
                 ref Timeline timeline = ref row.ReadWrite<Timeline>();
@@ -111,7 +117,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                             previous.Finished && PropertyAnimation.HoldsLayerValue(world, row.Entity, in previous)) &&
                             !(previous.Stage < lastStage && TrackSystem<T, TOps>.HasLaterTrack(tracks, index, row.Entity,
                                 previous.Target == Entity.Null ? row.Entity : previous.Target, in previous, lastStage, timeline.Time)))
-                            Submit(world, row.Entity, index, in previous, ref evaluation.Writes, ref writeCount);
+                            Submit(world, row.Entity, index, in previous, sources, inlineDirect, ref evaluation.Writes, ref writeCount);
                         continue;
                     }
                     ref Track<T> track = ref tracks[index];
@@ -218,7 +224,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     if (!track.FromGraph && !(track.Stage < lastStage && TrackSystem<T, TOps>.HasLaterTrack(tracks, index, row.Entity,
                         track.Target == Entity.Null ? row.Entity : track.Target, in track, lastStage, timeline.Time)))
                     {
-                        Submit(world, row.Entity, index, in track, ref evaluation.Writes, ref writeCount);
+                        Submit(world, row.Entity, index, in track, sources, inlineDirect, ref evaluation.Writes, ref writeCount);
                     }
                     if (!track.Finished)
                     {
@@ -239,8 +245,15 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
         (track.Channel.Component == ComponentId<AnimationLayers>.Value) == weights;
 
     private static void Submit(World world, Entity animation, int index, in Track<T> track,
+        DynamicBuffer<PropertySource<T>> sources, bool inlineDirect,
         ref FieldWrite<T>[] writes, ref int count)
     {
+        if (inlineDirect && track.Target == Entity.Null)
+        {
+            if (PropertyAnimation.UpdateSource<T, TOps>(sources, track.SourceIndex, in track))
+                FieldWrites<T>.Add(ref writes, ref count, animation, track.Channel, track.Current);
+            return;
+        }
         if (PropertyAnimation.TrySubmitTyped<T, TOps>(world, animation, (uint)index, in track, out FieldWrite<T> write))
             FieldWrites<T>.Add(ref writes, ref count, write.Target, write.Channel, write.Value);
     }
