@@ -83,9 +83,9 @@ internal static unsafe partial class AnimatedFields
 
     internal static void Submit<T>(World world, Entity entity, Channel<T> channel, in T value) where T : unmanaged
     {
-        var target = (World: world, Entity: entity, Channel: channel, Value: value, Found: false);
+        var target = (Channel: channel, Index: -1, Field: default(AnimatedField));
         if (world.HasBuffer<AnimatedField>(entity))
-            world.ExecuteBufferWrite<AnimatedField, (World World, Entity Entity, Channel<T> Channel, T Value, bool Found)>(
+            world.ExecuteBufferRead<AnimatedField, (Channel<T> Channel, int Index, AnimatedField Field)>(
                 entity, ref target, static (fields, ref target) =>
                 {
                     for (int index = 0; index < fields.Count; index++)
@@ -93,13 +93,19 @@ internal static unsafe partial class AnimatedFields
                         AnimatedField field = fields.Read(index);
                         if (field.Component != target.Channel.Component || field.Field != target.Channel.Field)
                             continue;
-                        field.SubmitFunction(target.World, target.Entity, ref field, ref Unsafe.As<T, byte>(ref target.Value));
-                        fields[index] = field;
-                        target.Found = true;
+                        target.Field = field;
+                        target.Index = index;
                         return;
                     }
                 });
-        if (!target.Found) channel.Write(world, entity, in value);
+        if (target.Index >= 0)
+        {
+            T submitted = value;
+            target.Field.SubmitFunction(world, entity, ref target.Field, ref Unsafe.As<T, byte>(ref submitted));
+            world.ExecuteBufferWrite<AnimatedField, (Channel<T> Channel, int Index, AnimatedField Field)>(
+                entity, ref target, static (fields, ref target) => fields[target.Index] = target.Field);
+        }
+        else channel.Write(world, entity, in value);
     }
 
     private static Channel<T> FindChannel<T>(World world, Entity entity, in AnimatedField field) where T : unmanaged

@@ -88,23 +88,26 @@ internal static unsafe partial class AnimatedFields
     {
         if (!world.HasBuffer<AnimatedField>(entity))
             return false;
-        var data = (World: world, Entity: entity, Value: value, FieldValue: fieldValue, Found: false);
-        world.ExecuteBufferWrite<AnimatedField, (World World, Entity Entity, T Value, FieldValue FieldValue, bool Found)>(entity, ref data,
-            static (fields, ref data) =>
-            {
-                for (int index = 0; index < fields.Count; index++)
-                {
-                    AnimatedField field = fields.Read(index);
-                    if (field.Component != ComponentId<T>.Value || field.ThroughReference)
-                        continue;
-                    data.Found = true;
-                    field.ValueFunction(data.World, data.Entity, ref field,
-                        ref Unsafe.As<T, byte>(ref data.Value), data.FieldValue);
-                    if (data.FieldValue == FieldValue.Target) fields[index] = field;
-                }
-            });
-        value = data.Value;
-        return data.Found;
+        int count = 0;
+        world.ExecuteBufferRead<AnimatedField, int>(entity, ref count,
+            static (fields, ref count) => count = fields.Count);
+        AnimatedField* fields = stackalloc AnimatedField[count];
+        var storage = (Address: (nint)fields, Count: count);
+        world.ExecuteBufferRead<AnimatedField, (nint Address, int Count)>(entity, ref storage,
+            static (fields, ref storage) => fields.AsSpan().CopyTo(new Span<AnimatedField>((void*)storage.Address, storage.Count)));
+        bool found = false;
+        for (int index = 0; index < count; index++)
+        {
+            ref AnimatedField field = ref fields[index];
+            if (field.Component != ComponentId<T>.Value || field.ThroughReference)
+                continue;
+            found = true;
+            field.ValueFunction(world, entity, ref field, ref Unsafe.As<T, byte>(ref value), fieldValue);
+        }
+        if (found && fieldValue == FieldValue.Target)
+            world.ExecuteBufferWrite<AnimatedField, (nint Address, int Count)>(entity, ref storage,
+                static (fields, ref storage) => new ReadOnlySpan<AnimatedField>((void*)storage.Address, storage.Count).CopyTo(fields.AsSpan()));
+        return found;
     }
 
     private static void CopyValue<T>(World world, Entity entity, ref AnimatedField field, ref byte component, FieldValue fieldValue)
