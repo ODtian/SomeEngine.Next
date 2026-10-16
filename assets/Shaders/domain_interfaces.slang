@@ -12,6 +12,7 @@ struct SurfaceBarycentrics
 
 struct SurfaceReconstructionInput
 {
+    float2 PixelCenter;
     float3 TargetPosition;
     float3 TargetPositionDx;
     float3 TargetPositionDy;
