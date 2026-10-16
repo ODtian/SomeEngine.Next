@@ -16,7 +16,7 @@ using SomeEngine.Render.Frame;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 using SomeEngine.Views;
-using RenderGraph = SomeEngine.RenderGraph.RenderGraph;
+using RenderGraphType = SomeEngine.RenderGraph.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Animation.HudChecks;
@@ -32,7 +32,7 @@ internal static class HudMeasurements
         long startup = Stopwatch.GetTimestamp();
         long memory = GC.GetTotalMemory(true);
         using var window = new HudWindow();
-        using IGraphicsBackend backend = Direct3D12GraphicsBackend.Create();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         var preference = new AdapterEnumerationOptions(AdapterPreference.HighPerformance);
         backend.TryEnumerateAdapters(preference, [], out int adapterCount);
         var adapters = new AdapterInfo[adapterCount];
@@ -44,7 +44,7 @@ internal static class HudMeasurements
             new(1280, 720, Format.R8G8B8A8UNorm, ColorSpace.Srgb, PresentType.Immediate, true, 1)));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         ulong frequency = backend.CalibrateTimestamps(queue).QueueFrequency;
-        using var graph = new RenderGraph(backend, device, [queue]);
+        using var graph = new RenderGraphType(backend, device, [queue]);
         using var game = new World();
         using var render = new RenderWorld();
         using var renderDevice = new RenderDevice(backend, device);
