@@ -451,7 +451,9 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 
 用户 shader 导出带 `TransparencyMaterial` 属性的具体类型，并实现几何投影、覆盖求值、颜色求值和 receiver 求值。DefaultProject 的 Standard、Unlit 以及导入场景材质通过 `cluster_transparency_material.slang` 复用自己的 `VertexEvaluate`、`DomainEvaluate`、`VisibilityEvaluate` 和 `SurfaceEvaluate`。顶点解码、属性插值、表面重建、纹理梯度、法线与资源含义均由这些用户类型解释。
 
-`Shader.Compose` 将驻留用户 shader 的 Slang IR 导入同一 session，编译按材质箱选择具体 evaluator 的新入口。共享 `cluster_transparency.slang` 以 builtin 几何和颜色类型连接各个用户源文件。材质资源按整个入口的反射布局绑定，各资源对应到该字段所属的材质。源 shader 与组合入口使用 `NoMangle=0`，保留各个源文件的符号身份；资源寄存器由 Slang 在组合布局中自动分配。
+`Shader.Compose` 将驻留用户 shader 的 Slang IR 导入同一 session，按唯一的用户 shader 与 visibility-depth 类型组合 evaluator。共享 `cluster_transparency.slang` 以 builtin 几何和颜色类型连接各个用户源文件。材质地址对应的 GPU 状态保存 evaluator 分类及直接资源项；同类型的采样器和 buffer 通过具体 evaluator 结构数组绑定，相同绑定共用资源项。用户 evaluator 从自身材质地址读取标量与纹理索引，组合阶段生成数组布局及资源选择。材质资源按整个入口的反射布局绑定，各资源对应到该字段及数组项所属的材质。源 shader 与组合入口使用 `NoMangle=0`，保留各个源文件的符号身份；资源寄存器由 Slang 在组合布局中自动分配。
+
+资源数组容量按二次幂分档；材质箱编号、实例参数或同一容量内的资源项变化只更新数据。源 `Shader` 持有以源名称、源文本、目标和库 shader 引用序列为键的组合结果，同一批 gallery 材质跨场景重载复用编译结果。每个渲染管线继续持有自己的 GPU pipeline 与资源绑定。代码生成和入口资源归属位于 `ClusterPipelineSystem.TransparencyShaders.cs`。
 
 每帧几何阶段读取两轮 Cluster 可见几何的实际数量，并生成投影三角形和 tile 图元引用。每个 tile 的实际引用数量决定查询范围。每个像素在寄存器中保留四个按深度、来源图元次序排列的命中；处理一批后，继续从上批最后的命中向后查询，直到完整覆盖输入。逐命中使用自己的深度、位置、重心坐标及其梯度求值表面，调用 `evaluateSurface` 后以该 receiver 进行 Forward 光照和阴影采样，再执行前向 alpha 累积。opaque 颜色作为累积背景，合成位置位于 opaque 着色之后、TAA 之前。
 
@@ -459,7 +461,7 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 
 `MaterialState.ColorLimit` 声明线性 RGB 每通道的颜色上界，默认 `1`；`MaximumError` 声明线性 RGB 最大通道误差，默认 `0`，表示完整合成。近似合成仅在剩余透射率乘以颜色上界的一半落入误差限时结束，并以剩余区间的中点估计尾部。场景使用全部参与材质的最大颜色上界和最小误差限，背景颜色同时参与上界计算。
 
-`ClusterPipelineOutputs.Transparency` 提供投影三角形、实际数量、tile 引用及数量、三角形步长和几何准备完成 pass，供后续 XYZ 索引消费。当前引用按 `tile × TriangleCapacity` 连续分段；实际循环范围由 `TileCounts` 决定。
+`ClusterPipelineOutputs.Transparency` 提供投影三角形、实际数量、cell 连续引用及数量、三角形步长、配套源和几何准备完成 pass。XYZ cell 的连续区间与预算外来源遍历共同覆盖全部输入，实际范围由 GPU 计数决定。
 
 公共行为检查通过 `Application.RunAsync`、`SceneScript` 和线性图像读回进入整条路径。相交场景使用同一 Unlit evaluator 的红、绿、蓝实例：六层命中跨越寄存器队列的两个批次，比较已知完整排序颜色、反向提交结果和 `MaximumError=.04` 的误差界。完整材质场景将带贴图、法线和点光源遮挡物的 Standard 面板及 Unlit 面板从 opaque 切换为 alpha 为 `1` 的透明表面，比较两次 Forward 光照与 VSM 阴影图像。每组分别运行 D3D12 和 Vulkan：
 
@@ -468,6 +470,16 @@ dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Re
 ```
 
 本轮四项检查全部通过，行为规则自动检查为 0 违规。首条图像检查的 red 阶段在内部区域记录最大通道差 `.5`；补齐间接几何 pass 的参数布局、复用现有整数边界覆盖后，六层完整排序与反向提交均满足 `.001`，带贴图、法线、光照和阴影的整图对照满足 `.003`。
+
+启动定位采用实际 Standard 材质 IR 和组合入口的 Slang CPU 编译计时。颜色入口将四次完整 PBR/阴影求色展开为单个循环体，保持四项寄存器命中队列及累积次序。DXIL 单 evaluator 的颜色入口从 1,151,200 B / 39.26 s 降至 334,752 B / 19.06 s；整组七入口从 46.89 s 降至 27.24 s。两项直接资源数组版本为 335,484 B / 21.11 s，七入口共 29.69 s；相同数组的 SPIR-V 七入口共 2.24 s。IR 导入、源加载和链接在这些输入下合计约半秒，颜色入口代码生成是主要成本。微型公开 `Shader.Compose` 重复调用复用同一对象，耗时约 .5 ms。这组数据用于编译阶段定位，统一场景性能继续由 `tools/Measure-Scenes.ps1` 验收。
+
+共享 evaluator 后的完整材质对照加入同一 Standard shader 的线性与最近点采样器实例，两后端整图继续满足 `.003`。`TransparencyRenderingTests` 的 6 项与 `TransparencyIndexTests` 的 3 项全部通过，命令执行了行为规则自动检查。曲面场景同时组合普通 Unlit 和 Deformed Phong；两源中的同名纹理表共用 Vulkan descriptor heap，各声明按其 Slang 源绑定位置匹配。该公开场景先暴露了同名声明的映射问题，修正后 Vulkan 单项通过。
+
+配套 88 项 default 内容的 NativeAOT 冷启动使用 1280×720、Forward、VSM、TAA、32 片玻璃、混合计量与同步 compute 配置。应用到首帧为 43.808 s，16 帧进程总耗时 45.93 s，退出码为 0，2/2 网格与 6/6 页驻留。此记录用于启动定位；正式帧耗时及三场景预算由统一场景平台记录。
+
+```powershell
+templates/DefaultProject/Game.App/bin/Release/net10.0/publish/Game.App.exe --measure-scene '1024 spheres' --cluster-oit --hardware-adapter --graphics-backend d3d12 --hardware-raster --shading-path forward --measure-blending --no-async-compute --frames 16 --hidden-window --no-debug-ui
+```
 
 DefaultGame 的 `--cluster-oit` 通过场景初始化与逐帧场景编辑，在现有游戏世界中添加 32 片相交玻璃。四种 Standard 材质实例共享用户 evaluator，使用各自的颜色与表面参数，alpha 设为 `.12`；实例随相机保持在视野内。`--cluster-effect=smoke` 与 `--cluster-effect=foliage` 复用同一入口，分别使用带 alpha 纹理的 Unlit 烟雾和交叉叶片。构建 DefaultProject 内容和 Game.App 后，统一场景平台可直接运行：
 
