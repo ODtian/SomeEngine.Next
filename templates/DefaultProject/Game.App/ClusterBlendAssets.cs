@@ -12,6 +12,7 @@ internal sealed class ClusterBlendAssets : IDisposable
     internal required Mesh Part { get; init; }
     internal required StandardMaterial Standard { get; init; }
     internal required UnlitMaterial Unlit { get; init; }
+    internal required UnlitMaterial DeformedPhong { get; init; }
     internal required Texture Smoke { get; init; }
     internal required Texture Leaf { get; init; }
 
@@ -40,6 +41,7 @@ internal sealed class ClusterBlendAssets : IDisposable
             Part = await ReadMeshAsync("Blend part"),
             Standard = (StandardMaterial)await ReadMaterialAsync("Standard"),
             Unlit = (UnlitMaterial)await ReadMaterialAsync("Unlit"),
+            DeformedPhong = (UnlitMaterial)await ReadMaterialAsync("Deformed Phong"),
             Smoke = await ReadTextureAsync("Blend smoke"),
             Leaf = await ReadTextureAsync("Blend leaf"),
         };
@@ -74,6 +76,7 @@ internal sealed class ClusterBlendAssets : IDisposable
     {
         Standard.Dispose();
         Unlit.Dispose();
+        DeformedPhong.Dispose();
         Smoke.Dispose();
         Leaf.Dispose();
     }
