@@ -166,7 +166,7 @@ public static partial class PropertyAnimation
             static (instances, ref change) =>
             {
                 ref MotionData<T, TParameters, TState> data = ref instances[change.Index].Data;
-                bool equal = TEvaluator.ParametersEqual(in data.Parameters, in change.Parameters);
+                bool equal = change.Running && TEvaluator.ParametersEqual(in data.Parameters, in change.Parameters);
                 bool sameTarget = change.Previous.Endpoints == TrackEndpoints.Values && change.Endpoints == TrackEndpoints.Values &&
                     TOps.Equals(in change.Previous.To, in change.Target);
                 if (change.Previous.SourceActive && sameTarget && equal &&
