@@ -281,3 +281,13 @@ Release 单组 `fccb0678e1db4a94a053723cc3ac9e6a` 复用相同 1,000 普通 Twee
 | 大历史状态 | 28.331 | 6595192 | 9.002 | 131448 | 5683616 | 5683.616 |
 
 该进程累积峰值工作集为 50,831,360 B。首次类型及共同结构初始化后的专门声明采样提供以上三组；整个测量的首组普通 Tween 创建、声明、启动与系统初始化合计为 40.383 ms。
+
+## 声明持有与算法重选
+
+`AnimatedField` 持有各实际泛型组合的 `FieldMotion` 声明集合，以及当前选择的声明。每个具体对象保留完整 Spec 和 Channel，提交函数地址保持完整类型；反复选择已经声明的 Linear、CubicOut 与便利 Spec 时复用各自对象。便利声明在首次 `.Animate` 时建立所需算法容量，类型化声明登记它自己的具体组合。
+
+这组源码包含 Animation `3616801b`、Views `85e4a4a9`、声明集合 `6e3a6639` 与首次便利容量 `7c66724e`。Native 发布队列 `e5dfe6fd7d544d0fa961da690c01d6c6`，退出码 0，UTC 17:16:25–17:18:39：[发布输出](native-declarations-publish.stdout.txt) · [队列结果](native-declarations-publish.result.json)。映像为 9,824,256 B，发布输出保留前述三处诊断。
+
+带发布门槛的执行队列 `1d8a86e2c9344ec1add242dd62218e00` 读取该发布结果，成功后运行同一映像，退出码 0：[实际输出](native-declarations-public.stdout.txt) · [队列结果](native-declarations-public.result.json)。默认消费者覆盖十一项 Views 公开行为，以及 ECS、算法和图的共同检查；新增的公开行为从首次帧之后观察实体及组件结构，在九次算法重选中验证当前呈现连续、具体插值结果、实体与存储复用及引用字段身份。
+
+同一脚本随后执行 `--view-switch-benchmark`，128 帧预热后测量 1,000 次完整帧的当前线程分配，包含状态修改、Views 构建和动画。该次原始输出为 `VIEWS_DECLARED_SWITCHES samples=1000 bytes=96000`，即 96 B/完整帧；该诊断沿独立场景记录，字段、来源与图的既有 0 B 矩阵保留各自的实际输入与结果。脚本源文件见 [Run-NativeChecks.ps1](../../../../tools/SomeEngine.Animation.Checks/Run-NativeChecks.ps1)。
