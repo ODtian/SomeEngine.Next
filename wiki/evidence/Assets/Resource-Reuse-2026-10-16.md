@@ -66,3 +66,23 @@ IR、代码和像素的字节命中继续承担实际对象重建工作。文件
 Shader、Texture 各覆盖六条公开行为：同一存活值重复取得；32 个并发读取共享完整创建；不同读取器各自取得对象；同一资产的新版本取得新对象且旧值继续可用；GC 后沿同一来源创建新值；文件读取器结束后继续使用已取得的代码和像素。
 
 检查通过公开 `IAssetStorage` 实现记录来源打开次数，通过 `ReadStarted` 和 `ReleaseReads` 明确交接读取阶段。GC 检查使用普通引用、外部弱引用及独立方法范围；引用结束后再次取得并实际读取代码或像素。Shader 设置、创建会话与索引范围在各项检查中保持一致。
+
+## GPU 上传与设备分配
+
+2026-10-16 20:46:02–20:46:11（Asia/Shanghai），公共队列任务 `8c6f7df442fc453e8957a875c4a06044` 退出 0。测量源码位于提交 `88616138` 的 `TextureGpuReuseMeasurements`。适配器为 Microsoft Basic Render Driver（D3D12 WARP），输入为 1024 × 1024、R8、单 mip 的 1,048,576 B 像素。RHI 的 `GetTextureMemoryRequirements` 返回单项设备分配需求 1,048,576 B、对齐 65,536 B。
+
+```powershell
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 dotnet run --project tools/SomeEngine.Assets.Benchmarks/SomeEngine.Assets.Benchmarks.csproj -c Release -- reuse-gpu
+```
+
+| 取得与使用 | 实际 Texture / RHI 分配 | 执行的上传 Copy pass | 分配需求 |
+| --- | --- | ---: | ---: |
+| 首次取得并消费 | 各一项 | 1 | 1,048,576 B |
+| 持有引用后的 32 次取得与逐帧消费 | 共同使用原 Texture、RHI Texture 与 SRV | 0 | 保持原一项 |
+| 使用同一像素数组直接创建第二个 Texture | 两个实际 Texture、两项独立分配 | 第二项 1 | 两项合计 2,097,152 B |
+| 普通引用结束并推进 GC、帧和设备收尾 | 两项原生分配均完成释放 | 0 | 已结束两项 |
+| 同键再次取得并消费 | 建立新的实际 Texture 和 RHI 分配 | 1 | 1,048,576 B |
+
+Copy pass 来自公开图帧诊断中的实际 Live Copy pass，图帧经过真实提交。每帧完成依次推进 `RenderDevice.WaitForTrackedSubmissions`、`RenderGraph.CollectCompleted` 与 `RenderDevice.CollectCompleted`；图的帧登记清除帧级实际 Texture 引用，设备队列完成原生收尾。回收由外部弱引用观察，原生释放通过创建 SRV 的公开调用触发 `ObjectDisposedException` 观察。
+
+本节计量上传工作、RHI 分配需求与释放事件。像素输入由一份托管数组持有，两项独立 Texture 直接引用这份数组；各自的设备分配和更新状态随实际 Texture 分开。CPU、Slang、字节 LRU 与弱句柄表费用分别沿本页前述结果及 Core 弱索引证据记录。
