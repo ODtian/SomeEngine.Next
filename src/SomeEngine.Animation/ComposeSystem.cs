@@ -14,7 +14,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
     private readonly TrackFields _fields = fields;
     private QueryHandle _targets;
     private QueryHandle _sources;
-    private FieldWrite<T>[] _writes;
+    private FieldWrite<T>[] _writes = [];
 
     public void OnCreate(ref ImmediateSystemContext context)
     {

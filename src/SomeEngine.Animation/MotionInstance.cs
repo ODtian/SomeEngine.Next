@@ -47,6 +47,17 @@ internal unsafe struct MotionStop : IBufferElement
     internal delegate* managed<World, Entity, void> Stop;
 }
 
+[BufferCapacity(1)]
+internal struct DirectBoundary : IBufferElement
+{
+    internal int ValueType, Track;
+    internal MotionBoundary Boundary;
+    internal float Start;
+    internal ushort Stage;
+    internal uint Starts;
+    internal bool Defined;
+}
+
 internal readonly unsafe struct MotionAccess<T>(
     delegate* managed<World, Entity, int, in MotionValues<T>, void> retarget,
     delegate* managed<World, Entity, int, void> release) where T : unmanaged

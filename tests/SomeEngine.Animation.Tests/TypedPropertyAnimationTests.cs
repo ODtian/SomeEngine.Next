@@ -176,6 +176,27 @@ public sealed class TypedPropertyAnimationTests
         Assert.Equal(2f, world.Read<FieldPanel>(second).Opacity);
     }
 
+    [Fact]
+    public void AnExternalMotionCompletesWhenItsDeclaredBoundaryIsAdvanced()
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new FieldPanel());
+        var spec = Spec.Create<float, FloatOps, ExternalParameters, ExternalState, ExternalMotion>(new());
+        PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, spec);
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        systems.Add(new TimelineSystem());
+        systems.Add(new TypedTrackSystem<float, FloatOps, ExternalParameters, ExternalState, ExternalMotion>());
+        systems.Add(new TimelineEndSystem());
+        PropertyAnimation.To(world, target, FieldPanelChannels.Opacity, 1f, spec);
+        Tick(systems, world, 0.25);
+        Assert.True(world.IsEnabled<Timeline>(target));
+
+        Animation.Advance(world, target);
+        Tick(systems, world, 0);
+
+        Assert.Equal(1u, world.Read<Timeline>(target).Completions);
+    }
+
     private static SystemGroup<ImmediateSystemContext> TweenSystems(World world)
     {
         var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -220,5 +241,15 @@ public sealed class TypedPropertyAnimationTests
         public static MotionSample<float> Evaluate(in HistoryParameters parameters, in MotionTime time, in MotionValues<float> values, ref HistoryState state) => new(values.Current + ++state.Samples, false);
         public static void Retarget(in HistoryParameters previous, in HistoryParameters next, in MotionValues<float> values, ref HistoryState state) => state.History.Retargets++;
         public static void Release(ref HistoryState state) { state.History.Releases++; state = default; }
+    }
+
+    private struct ExternalParameters;
+    private struct ExternalState;
+    private readonly struct ExternalMotion : IMotion<float, FloatOps, ExternalParameters, ExternalState>
+    {
+        public static MotionBoundary Describe(in ExternalParameters parameters) => new(StageEnd.External);
+        public static void Initialize(in ExternalParameters parameters, in MotionValues<float> values, ref ExternalState state) { }
+        public static MotionSample<float> Evaluate(in ExternalParameters parameters, in MotionTime time, in MotionValues<float> values, ref ExternalState state) => new(values.To, false);
+        public static void Retarget(in ExternalParameters previous, in ExternalParameters next, in MotionValues<float> values, ref ExternalState state) { }
     }
 }

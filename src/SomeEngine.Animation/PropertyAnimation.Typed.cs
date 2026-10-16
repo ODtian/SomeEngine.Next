@@ -33,6 +33,8 @@ public static partial class PropertyAnimation
             world.AddBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation);
         if (!world.HasBuffer<MotionDeclaration<T>>(animation)) world.AddBuffer<MotionDeclaration<T>>(animation);
         if (!world.HasBuffer<MotionStop>(animation)) world.AddBuffer<MotionStop>(animation);
+        if (!world.HasBuffer<DirectBoundary>(animation)) world.AddBuffer<DirectBoundary>(animation);
+        if (!world.HasBuffer<TimelineStage>(animation)) world.AddBuffer<TimelineStage>(animation);
         var reservation = (Declaration: new MotionDeclaration<T> { Channel = channel, Layer = layer, Capacity = capacity,
             Type = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type }, Additional: capacity);
         world.ExecuteBufferWrite<MotionDeclaration<T>, (MotionDeclaration<T> Declaration, int Additional)>(animation, ref reservation,
@@ -82,6 +84,15 @@ public static partial class PropertyAnimation
                     {
                         Animation = declaration.Animation, Channel = declaration.Channel, Layer = declaration.Layer, Track = tracks.Count,
                     };
+                    var boundary = new DirectBoundary { ValueType = BufferComponents.Header<Track<T>>(), Track = tracks.Count };
+                    declaration.World.ExecuteBufferWrite<DirectBoundary, DirectBoundary>(declaration.Animation, ref boundary,
+                        static (boundaries, ref boundary) =>
+                        {
+                            for (int index = 0; index < boundaries.Count; index++)
+                                if (boundaries.Read(index).ValueType == boundary.ValueType && boundaries.Read(index).Track == boundary.Track)
+                                { boundaries[index] = boundary; return; }
+                            boundaries.Add(boundary);
+                        });
                     tracks.Add(new Track<T>
                     {
                         Target = declaration.Animation == declaration.Target ? Entity.Null : declaration.Target,
@@ -182,6 +193,7 @@ public static partial class PropertyAnimation
         {
             previous.Duration = spec.Boundary.Duration;
             WriteTrack(world, instance, source.Track, in previous);
+            if (world.IsEnabled<Timeline>(instance)) UpdateDirectBoundary(world, instance, source.Track, in previous, in timeline, spec.Boundary);
             return instance;
         }
         var track = new Track<T>
@@ -195,6 +207,7 @@ public static partial class PropertyAnimation
         };
         WriteTrack(world, instance, source.Track, in track);
         world.Replace(instance, timeline);
+        UpdateDirectBoundary(world, instance, source.Track, in track, in timeline, spec.Boundary);
         world.Enable<Timeline>(instance);
         return instance;
     }
@@ -246,7 +259,7 @@ public static partial class PropertyAnimation
         where T : unmanaged where TOps : struct, IValueOps<T> where TParameters : struct where TState : struct
         where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
     {
-        var query = world.Query(world.QueryDefinition().Read<Timeline>().Read<PooledAnimation>()
+        var query = world.Query(world.QueryDefinition().Read<Timeline>().All<PooledAnimation>()
             .WriteBuffer<Track<T>>().WriteBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>().Disabled<Timeline>());
         var available = (World: world, Animation: Entity.Null);
         world.ExecuteQuery(query, ref available, static (QueryCursor rows, ref (World World, Entity Animation) available) =>
