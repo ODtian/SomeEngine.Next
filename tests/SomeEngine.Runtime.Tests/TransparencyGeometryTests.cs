@@ -68,6 +68,14 @@ public sealed class TransparencyGeometryTests(TransparencyContentFixture content
             }
             finally { foreach (UnlitMaterial material in materials) material.Dispose(); }
             Assert.Equal(4, measurements.Count);
+            // The grayscale checker and neutral background retain this part's tint ratios.
+            int sample = (480 * first!.Frame.Width + 800) * 4;
+            float blue = MathF.Max(.1f, (float)first.Pixels.Span[sample + 2]);
+            SceneFrame tintFrame = first.Frame with { Width = 1, Height = 1 };
+            SceneImages.AssertLinearEqual(new(tintFrame, new Half[] { (Half).2f, (Half).8f, (Half)1, (Half)1 }),
+                new(tintFrame, new Half[] { (Half)((float)first.Pixels.Span[sample] / blue),
+                    (Half)((float)first.Pixels.Span[sample + 1] / blue),
+                    (Half)((float)first.Pixels.Span[sample + 2] / blue), (Half)1 }), .003f);
             SceneImages.AssertLinearNotEqual(first!, moved!);
             firstImages.Add(first!); movedImages.Add(moved!);
         }
