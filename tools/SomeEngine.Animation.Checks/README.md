@@ -9,16 +9,16 @@
 本机通过公共 FIFO 提交构建、运行与 NativeAOT 发布。PowerShell 以字符串传递 MSBuild 属性。
 
 ```powershell
-& F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 dotnet build tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release '--property:PublishAot=false' '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false'
-& F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 dotnet tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.dll
+& ./tools/Invoke-Benchmark.ps1 dotnet build tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release '--property:PublishAot=false' '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false'
+& ./tools/Invoke-Benchmark.ps1 dotnet tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.dll
 ```
 
 测量使用同一发布配置和固定 JIT 配置，队列保存提交进程的环境。纯批次入口为 `--benchmark`；完整路径入口为 `--full-benchmark`。`--full-benchmark --smoke` 使用 1,000 项检查测量流程，完整入口使用 1,000 / 10,000 / 100,000 项。
 
 ```powershell
 $env:DOTNET_TieredCompilation = '0'
-& F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.exe --benchmark
-& F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.exe --full-benchmark
+& ./tools/Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.exe --benchmark
+& ./tools/Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.exe --full-benchmark
 ```
 
 NativeAOT 使用相同消费者与输入，发布时生成方法映射以核对代码体积。
@@ -26,9 +26,9 @@ NativeAOT 使用相同消费者与输入，发布时生成方法映射以核对�
 `--codegen` 独立执行静态 `IEasing` Tween、Spring、消费者 History、标量函数回调和引用字段批次。Release 使用 `DOTNET_JitDisasm` 记录这些具体方法，NativeAOT 使用同一次发布的方法映射与反汇编核对入口、内循环和字节数。此入口与性能采样分别运行。
 
 ```powershell
-& F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 dotnet publish tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release -r win-x64 --self-contained true '--property:PublishAot=true' '--property:IlcGenerateMapFile=true' '--property:OptimizationPreference=Speed' '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false' -o tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish
-& F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Animation.Checks.exe
-& F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Animation.Checks.exe --full-benchmark
+& ./tools/Invoke-Benchmark.ps1 dotnet publish tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release -r win-x64 --self-contained true '--property:PublishAot=true' '--property:IlcGenerateMapFile=true' '--property:OptimizationPreference=Speed' '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false' -o tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish
+& ./tools/Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Animation.Checks.exe
+& ./tools/Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Animation.Checks.exe --full-benchmark
 ```
 
 ## 测量范围
