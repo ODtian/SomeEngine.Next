@@ -4,7 +4,8 @@
 SomeUI 是引擎动画库中属性动画的使用者（[[architecture/Animation|Animation]]，ADR 0014），只增加两项与界面相关的衔接：`.Animate` 和 FLIP。界面动画使用 `Interface` 时钟，游戏暂停时照常运行。
 
 ## Invariants
-- **`.Animate(channel, spec)`：** 首次调用时，在节点上加入禁用状态的 `Timeline` 和对应的 `Track<T>`。此后调用方对该字段的写入（参数或修饰）成为基准值，并在内联轨道上重定目标；呈现值由属性动画写回字段。整个过程没有结构变化，也不创建新实体。基准值的唯一写入方是调用方，呈现值的唯一写入方是动画系统。
+- **`.Animate(channel, spec)`：** 首次声明节点的时间线、通道、具体算法组合及类型化容量。后续参数、修饰与 `Scope.Set` 提交调用方目标；内联来源保存自身输出，最终呈现值由属性动画写回。声明的类型集合及容量覆盖启动、重定目标、切换和停止。基准值由调用方提交，算法历史由实例持有。
+- **引用路径：** `Scope.Set(node, channel, value)` 与生成的字段目标方法保存独立叶值目标，在构建提交时启动或更新动画。真实引用对象在呈现写回时得到当前输出；根组件版本与 `State<T>.Value` 自身的版本分别沿公开写入行为推进。
 - **FLIP：** `Flip.Enable(entity, spec)` 首次在节点上加入 `PresentationOffset`（矩阵与不透明度）及其内联轨道。`FlipSystem` 在布局之后比较前后两帧同一实体的快照（边界、变换、不透明度），算出反向的 `PresentationOffset`，再以内联轨道把它动画回到单位值。FLIP 只写 `PresentationOffset`，不写用户变换；渲染时叠加布局结果、用户变换和 `PresentationOffset`。只按同一实体匹配，不做启发式的跨实体匹配。
 - 一次性流程可以直接在异步构建中使用 `await NextFrame()`，或者等待时间线完成计数。
 
@@ -28,6 +29,30 @@ public static class Flip
 构建与计算中的声明式入口使用 `Scope.World`。显式 World 重载供应用直接声明 FLIP。
 `SurfaceChannels.Fill` 是保存为静态只读值的普通 `Channel<Color>`；用户字段通过
 `Channel<T>.Of<TComponent>` 声明，并使用自己的 `TrackSystem<T, TOps>` 求值。
+
+完整强类型 `Spec<T, TOps, TParameters, TState, TEvaluator>` 由 `.Animate` 原样传入声明和求值。
+应用在首次更新前通过 `AnimationSystems.Add(schedule, spec)` 登记具体组合；
+`GameFrameSystems.AddAnimation(spec)` 把用户算法加入相同的默认界面阶段。
+普通字段、嵌套值、引用字段及可写属性都使用生成的统一 Channel。
+
+```csharp
+[GenerateFields]
+[ComponentField("Progress.Value", Name = "ProgressValue")]
+public struct PanelData : IComponent
+{
+    public float Opacity;
+    public State<float> Progress;
+}
+
+var radius = Spec.Tween<float, FloatOps, CubicOut>(0.15f);
+node.Animate(PanelDataChannels.ProgressValue, radius);
+Scope.Set(node, PanelDataChannels.ProgressValue, hovered ? 16f : 8f);
+// 生成的目标修饰器采用相同提交入口。
+node.SetProgressValue(hovered ? 16f : 8f);
+```
+
+`Scope.Set` 也提供节点切片与对应值切片的批量重载。字段身份、具体路径及访问函数由共同生成器维护；
+普通字段与值嵌套的组件副本继续提交参数目标，跨引用路径采用独立叶值副本。
 
 ```csharp
 Column().Background(hovered ? hoverColor : normalColor)
@@ -57,11 +82,16 @@ Flip.Enable(row, Spec.Tween(0.2f));
 普通字段恢复统一经过 `ChildChanges.RestoreValue`，先保留动画呈现值，再比较整值，
 实际变化通过 ECS 替换推进写版本，已读取该字段的视图和计算沿现有依赖路径更新。
 
-相同字段字节值保留已有目标及其进度；重跑可以更新以后采用的 Spec。
+强类型路径通过 `TOps.Equals` 比较叶目标，通过 `TEvaluator.ParametersEqual` 比较参数；相同提交保留已有时间和状态。
+参数变化调用 `UpdateParameters`，目标变化调用 `Retarget`，已声明算法切换执行释放和初始化生命周期。
 新目标沿属性动画规则从当前呈现值继续，弹簧沿其公开 API 保留速度。
 只改变动画目标的参数更新保留呈现字段的写版本；实际采样沿属性动画写版本规则推进。
-提交接缝使用声明时绑定的类型专门化函数地址，字段位置仍由组件编号与偏移表达；
-逐帧求值由普通静态泛型系统完成。基准值由属性动画的 `BaseValue<T>` 持有。
+提交接缝使用声明时绑定的具体泛型函数，字段身份由组件编号与生成字段编号表达；
+共享描述保存实际 CLR 偏移或类型化路径。逐帧求值由保留完整算法类型的批次完成。
+基准值由属性动画的 `BaseValue<T>` 持有，绑定参数由具体 `FieldMotion` 数据持有，运行历史由动画实例持有。
+
+独立叶值副本沿 `ChildChanges` 的动画记录参加同一段提交、挂起、续跑、恢复与取消。
+每段提交保存此前叶目标，恢复时从当前呈现继续转向此前目标；普通参数副本保持原有提交顺序。
 
 ## FLIP frame data
 

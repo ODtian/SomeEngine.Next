@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using SomeEngine.Animation;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
@@ -14,17 +13,20 @@ internal unsafe struct AnimatedField : IBufferElement
 {
     internal ushort Component;
     internal ushort Offset;
+    internal uint Field;
+    internal bool ThroughReference;
     internal Spec Spec;
     internal bool HasValue;
 #if DEBUG
     internal int ValueComponent;
 #endif
     internal delegate*<World, Entity, ref AnimatedField, ref byte, FieldValue, void> ValueFunction;
+    internal delegate* managed<World, Entity, ref AnimatedField, ref byte, void> SubmitFunction;
 }
 
 internal enum FieldValue : byte { Base, Presentation, Target }
 
-internal static unsafe class AnimatedFields
+internal static unsafe partial class AnimatedFields
 {
     internal static void Declare<T>(World world, Entity entity, Channel<T> channel, Spec spec, T value, bool hasValue)
         where T : unmanaged
@@ -40,8 +42,9 @@ internal static unsafe class AnimatedFields
             world.AddBuffer<AnimatedField>(entity);
         var declaration = (Field: new AnimatedField
         {
-            Component = channel.Component, Offset = channel.Offset, Spec = spec,
-            HasValue = hasValue, ValueFunction = &CopyValue<T>,
+            Component = channel.Component, Offset = channel.Offset, Field = channel.Field, Spec = spec,
+            ThroughReference = channel.ThroughReference,
+            HasValue = hasValue, ValueFunction = &CopyValue<T>, SubmitFunction = &SubmitValue<T>,
 #if DEBUG
             ValueComponent = BufferComponents.Header<BaseValue<T>>(),
 #endif
@@ -52,13 +55,15 @@ internal static unsafe class AnimatedFields
                 for (int index = 0; index < fields.Count; index++)
                 {
                     AnimatedField field = fields.Read(index);
-                    if (field.Component != declaration.Field.Component || field.Offset != declaration.Field.Offset)
+                    if (field.Component != declaration.Field.Component || field.Field != declaration.Field.Field)
                         continue;
 #if DEBUG
                     DevelopmentCheck.Require(field.ValueComponent == declaration.Field.ValueComponent,
                         "An animated field keeps one value type at its component offset.");
 #endif
                     field.Spec = declaration.Field.Spec;
+                    field.ValueFunction = declaration.Field.ValueFunction;
+                    field.SubmitFunction = declaration.Field.SubmitFunction;
                     fields[index] = field;
                     return;
                 }
@@ -89,7 +94,7 @@ internal static unsafe class AnimatedFields
                 for (int index = 0; index < fields.Count; index++)
                 {
                     AnimatedField field = fields.Read(index);
-                    if (field.Component != ComponentId<T>.Value)
+                    if (field.Component != ComponentId<T>.Value || field.ThroughReference)
                         continue;
                     data.Found = true;
                     field.ValueFunction(data.World, data.Entity, ref field,
@@ -104,22 +109,22 @@ internal static unsafe class AnimatedFields
     private static void CopyValue<T>(World world, Entity entity, ref AnimatedField field, ref byte component, FieldValue fieldValue)
         where T : unmanaged
     {
-        ref byte bytes = ref Unsafe.Add(ref component, field.Offset);
+        Channel<T> channel = FindChannel<T>(world, entity, in field);
         if (fieldValue == FieldValue.Presentation)
         {
             if (field.HasValue)
             {
-                T presented = Unsafe.ReadUnaligned<T>(in world.ReadBytes(entity, field.Component, field.Offset, Unsafe.SizeOf<T>()));
-                Unsafe.WriteUnaligned(ref bytes, presented);
+                T presented = channel.Read(world, entity);
+                channel.WriteRoot(ref component, in presented);
             }
             return;
         }
-        var basis = (Component: field.Component, Offset: field.Offset, Value: default(BaseValue<T>));
-        world.ExecuteBufferRead<BaseValue<T>, (ushort Component, ushort Offset, BaseValue<T> Value)>(entity, ref basis,
+        var basis = (Component: field.Component, Field: field.Field, Value: default(BaseValue<T>));
+        world.ExecuteBufferRead<BaseValue<T>, (ushort Component, uint Field, BaseValue<T> Value)>(entity, ref basis,
             static (values, ref basis) =>
             {
                 foreach (BaseValue<T> value in values.AsSpan())
-                    if (value.Channel.Component == basis.Component && value.Channel.Offset == basis.Offset)
+                    if (value.Channel.Component == basis.Component && value.Channel.Field == basis.Field)
                     {
                         basis.Value = value;
                         return;
@@ -127,10 +132,10 @@ internal static unsafe class AnimatedFields
             });
         if (fieldValue == FieldValue.Base)
         {
-            if (field.HasValue) Unsafe.WriteUnaligned(ref bytes, basis.Value.Value);
+            if (field.HasValue) channel.WriteRoot(ref component, in basis.Value.Value);
             return;
         }
-        T target = Unsafe.ReadUnaligned<T>(ref bytes);
+        T target = channel.ReadRoot(in component);
         if (!field.HasValue)
         {
             field.HasValue = true;
@@ -143,8 +148,6 @@ internal static unsafe class AnimatedFields
         PropertyAnimation.To(world, entity, basis.Value.Channel, target, field.Spec);
     }
 
-    // Field bytes are also the public property-animation address and support every unmanaged value type.
     private static bool SameValue<T>(in T left, in T right) where T : unmanaged =>
-        MemoryMarshal.CreateReadOnlySpan(ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in left)), Unsafe.SizeOf<T>())
-            .SequenceEqual(MemoryMarshal.CreateReadOnlySpan(ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in right)), Unsafe.SizeOf<T>()));
+        EqualityComparer<T>.Default.Equals(left, right);
 }

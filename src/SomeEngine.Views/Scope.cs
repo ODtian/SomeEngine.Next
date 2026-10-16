@@ -168,7 +168,7 @@ public static partial class Scope
         ScopeData current = Current;
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"Scope.Write requires table or sparse component {typeof(T).Name}.");
-        var key = (entity, ComponentId<T>.Value);
+        var key = (entity, ComponentId<T>.Value, 0UL);
         var copies = current.ViewData.ComponentCopies ??= new();
         if (!copies.TryGetValue(key, out ComponentCopy? copy) || !copy.Written && !copy.CanReuse)
         {
@@ -319,7 +319,7 @@ public static partial class Scope
             if (AnimatedFields.PreservePresentation(current.World, existing, ref parameters))
             {
                 var copies = current.ViewData.ComponentCopies ??= new();
-                var component = (existing, ComponentId<T>.Value);
+                var component = (existing, ComponentId<T>.Value, 0UL);
                 if (!copies.TryGetValue(component, out ComponentCopy? copy) || !copy.Written && !copy.CanReuse)
                     copies[component] = copy = new ComponentCopy<T>(existing, view);
                 else
@@ -733,14 +733,14 @@ public static partial class Scope
 
     internal sealed class ScopeData
     {
-        private List<(Entity Entity, ushort Component)>? _unusedCopies;
+        private List<(Entity Entity, ushort Component, ulong Field)>? _unusedCopies;
         internal World World = null!;
         internal Entity Entity;
         internal Entity Parent;
         internal ScopeData ViewData = null!;
         internal List<ScopeData>? ContentData;
         internal Computation? Computation;
-        internal Dictionary<(Entity Entity, ushort Component), ComponentCopy>? ComponentCopies;
+        internal Dictionary<(Entity Entity, ushort Component, ulong Field), ComponentCopy>? ComponentCopies;
         internal ulong Frame;
         internal HierarchyChildrenSnapshot<ElementTree> PreviousChildren;
         internal List<Entity> DeclaredChildren { get; } = new();
