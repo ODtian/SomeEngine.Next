@@ -12,6 +12,7 @@ StructuredBuffer<ClusterViewUniforms> Views;
 
 ByteAddressBuffer InstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
+StructuredBuffer<uint> MaterialBounds;
 StructuredBuffer<ClusterCandidate> CandidateClusters;
 StructuredBuffer<uint> CandidateCount;
 #endif
@@ -393,6 +394,7 @@ bool LoadAndFilterCandidate(
     instanceID = candidate.InstanceID;
     viewIndex = DrawRequestViewIndex(candidate);
     view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
+    view = ApplyClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instanceID, view);
     if (!IsInstanceVisibleToView(LoadInstanceFirstPerson(InstanceData, InstanceProperties, instanceID), view)) return false;
     view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
     if (view.TargetPolicy != 0u) AddClusterWorkMetric(8u, 1u);

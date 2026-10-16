@@ -110,6 +110,7 @@ uint ClusterSeedBoundsState(
 StructuredBuffer<uint> SceneInstances;
 StructuredBuffer<float4> SceneChunks;
 StructuredBuffer<float4> InstanceWorldBounds;
+StructuredBuffer<uint> MaterialBounds;
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -154,6 +155,7 @@ void SeedHierarchyRoots(
             uint viewSlot = viewSlotBase + groupThreadIndex;
             uint viewIndex = ClusterSeedViewIndex(viewSlot);
             ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
+            if (SceneChunks[groupID.x * 2u].w == 0.0) view.CullingEnabled = 0u;
             bool active = true;
             ClusterProjectedBounds sceneBounds;
             bool outside = ProjectWorldAabb(
@@ -228,6 +230,7 @@ void SeedHierarchyRoots(
                 continue;
             if (!IsInstanceVisibleToView(LoadInstanceFirstPerson(InstanceData, InstanceProperties, instanceID), view))
                 continue;
+            view = ApplyClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instanceID, view);
             view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
             if (view.TargetPolicy != 0u && !ClusterTargetPolicyWorldDepthAccepts(
                     instanceWorldMin, instanceWorldMax, view,

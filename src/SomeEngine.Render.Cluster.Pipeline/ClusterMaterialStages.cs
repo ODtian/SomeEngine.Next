@@ -192,6 +192,7 @@ internal sealed class ClusterBinIndexMap<TKey, TStage> where TKey : notnull
             Changes = Changes.Add(group.Index);
     }
     internal uint Range => Math.Max(1u, _next);
+    internal TStage GetStage(int address) => _groups[_keys[address]].Members[address];
     internal ImmutableSortedDictionary<uint, TStage> GetStages(Func<TStage, uint, TStage> withIndex)
     {
         foreach (uint index in _updated)
@@ -547,6 +548,23 @@ internal sealed class ClusterRasterStages : IDisposable
             bins.Set(address, key, invocation);
         }
         var invocations = bins.GetStages(static (stage, index) => stage with { BinIndex = index });
+        var boundsChanges = new List<(int Offset, byte[] Bytes)>();
+        foreach ((int offset, int count) in assignments.MaterialRanges)
+        {
+            bool changed = false;
+            bool finite = true;
+            for (int index = 0; index < count; index++)
+            {
+                changed |= addresses.Contains(offset + index);
+                finite &= bins.GetStage(offset + index).Bounds == ClusterConservativeBounds.Finite;
+            }
+            if (!changed) continue;
+            byte[] bytes = new byte[sizeof(uint)];
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes, finite ? 1u : 0u);
+            boundsChanges.Add((checked(offset * sizeof(uint)), bytes));
+        }
+        ClusterBytes materialBounds = (_resolved?.MaterialBounds ?? ClusterBytes.Zero(0)).WithChanges(
+            checked((int)assignments.SlotCapacity * sizeof(uint)), boundsChanges);
         var result = new ClusterRasterStageSet(bins.GetIndices(
             assignments.SlotCapacity,
             _resolved?.BinIndices ?? ClusterBytes.Zero(0),
@@ -556,7 +574,9 @@ internal sealed class ClusterRasterStages : IDisposable
                 (stage.SoftwareUsesMaterialRanges && stage.Tessellation is null ? 0x20000000u : 0u) |
                 (stage.PixelVisibility ? 0x10000000u : 0u) |
                 (stage.Material.State.Surface == SurfaceMode.Translucent || stage.Material.State.Ordered ? 0x08000000u : 0u)),
-            invocations, bins.Range, [.. bins.Changes], [.. addresses], _resolved);
+            invocations, bins.Range, materialBounds,
+            [.. boundsChanges.Select(change => change.Offset / sizeof(uint))],
+            [.. bins.Changes], [.. addresses], _resolved);
         _binIndices = bins;
         _resourceProperties = resourceProperties;
         _depthProperties = depthProperties;
@@ -1243,6 +1263,8 @@ internal sealed class ClusterRasterStageSet
         ClusterBytes binIndices,
         ImmutableSortedDictionary<uint, ClusterRasterInvocation> invocations,
         uint binCount,
+        ClusterBytes materialBounds,
+        int[] changedBounds,
         uint[]? changedBins = null,
         int[]? changedOffsets = null,
         ClusterRasterStageSet? previous = null)
@@ -1250,6 +1272,8 @@ internal sealed class ClusterRasterStageSet
         BinIndices = binIndices;
         _bins = invocations;
         BinCount = binCount;
+        MaterialBounds = materialBounds;
+        ChangedBounds = changedBounds;
         ChangedBins = changedBins ?? [];
         ChangedOffsets = changedOffsets ?? [];
         _unboundedBinCount = previous?._unboundedBinCount ?? 0;
@@ -1266,6 +1290,8 @@ internal sealed class ClusterRasterStageSet
     }
 
     internal ClusterBytes BinIndices { get; }
+    internal ClusterBytes MaterialBounds { get; }
+    internal IReadOnlyList<int> ChangedBounds { get; }
     internal IReadOnlyList<int> ChangedOffsets { get; }
     internal IEnumerable<ClusterRasterInvocation> Invocations => _bins.Values;
     internal uint BinCount { get; }

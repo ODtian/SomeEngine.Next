@@ -84,6 +84,7 @@ public sealed partial class ClusterPipelineSystem
                 case "PageHeap": pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(CreateReadOnlyBufferView(graph, frame.PageHeap))); break;
                 case "InstanceData": Read(ref graph, ref pass, frame.InstanceData); break;
                 case "InstanceProperties": pass.Bind(graph.CreateBufferCbv(frame.InstanceProperties, frame.InstancePropertiesRange), PipelineSync.ComputeShading); break;
+                case "MaterialBounds": Read(ref graph, ref pass, frame.MaterialBounds, sizeof(uint)); break;
                 case "CandidateArgs": Write(ref graph, ref pass, frame.CandidateArgs); break;
                 case "CandidateClusters": Write(ref graph, ref pass, frame.CandidateClusters, CandidateStride); break;
                 case "CandidateCount": Write(ref graph, ref pass, frame.CandidateCount, sizeof(uint)); break;

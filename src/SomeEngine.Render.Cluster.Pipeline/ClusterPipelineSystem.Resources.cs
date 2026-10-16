@@ -93,6 +93,8 @@ public sealed partial class ClusterPipelineSystem
                 rasterStages.BinIndices,
                 BufferUsages.ShaderRead,
                 "Cluster raster stage slots"),
+            MaterialBounds = UploadBytes(ref graph, rasterStages.MaterialBounds,
+                BufferUsages.ShaderRead, "Cluster material sequence bounds"),
             ReadOffsetZero = UploadBytes(
                 ref graph,
                 stackalloc byte[16],
@@ -1128,6 +1130,7 @@ public sealed partial class ClusterPipelineSystem
         internal GraphTextureInput CurrentHiZ = null!;
         internal GraphBufferId PackedViews;
         internal GraphBufferId RasterSlots;
+        internal GraphBufferId MaterialBounds;
         internal GraphBufferId ShadeSlots;
         internal GraphBufferId ReadOffsetZero;
         internal GraphBufferId CandidateArgs;

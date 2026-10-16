@@ -448,7 +448,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             scalars = _materialScalars.Update(shadeStages, assignments,
                 _renderDevice.GetTextureDescriptorIndex, shadingChanged
                     ? assignments.ActiveOffsets.Concat(_textureScalarChanges) : _textureScalarChanges);
-            cullingEnabled = _pipelines!.DefaultRasterCullingEnabled && rasterStages.HasFiniteBounds;
+            cullingEnabled = _pipelines!.DefaultRasterCullingEnabled;
             rasterChanged = !ReferenceEquals(rasterStages, _installedRasterStages) &&
                 (_installedRasterStages is null || rasterStages.ChangedBins.Count != 0 ||
                     _installedRasterStages.BinIndices.Length != rasterStages.BinIndices.Length || _cullingEnabled != cullingEnabled);
@@ -943,6 +943,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _sceneBatch = CurrentInstances;
                 _sceneInstanceRevision = _sceneBatch?.ContentRevision ?? 0;
                 _sceneGeometryRevision = GeometryRevision;
+                _sceneRasterRevision = RasterRevision;
                 _sceneOrigin = _frameSceneOrigin;
             }
         }

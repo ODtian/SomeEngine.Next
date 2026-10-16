@@ -15,6 +15,7 @@ StructuredBuffer<ClusterViewUniforms> Views;
 ByteAddressBuffer GlobalBVH;
 ByteAddressBuffer InstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
+StructuredBuffer<uint> MaterialBounds;
 
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer CandidateArgs;
@@ -270,6 +271,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         remainingViews = multipleViews ? remainingViews & (remainingViews - 1u) : 0u;
         uint viewIndex = viewBase + bit;
         ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
+        view = ApplyClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instanceID, view);
         view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
         if (view.TargetPolicy != 0u && !ClusterTargetPolicyWorldDepthAccepts(
                 worldMin, worldMax, view,

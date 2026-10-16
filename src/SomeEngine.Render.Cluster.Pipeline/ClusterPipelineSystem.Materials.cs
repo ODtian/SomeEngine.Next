@@ -1248,7 +1248,10 @@ public sealed partial class ClusterPipelineSystem
         ClusterRasterStageSet raster, ClusterShadeStageSet shade)
     {
         if (!ReferenceEquals(raster, _installedRasterStages))
+        {
             Update(ref edit, GraphData.Resources.RasterSlots, raster.BinIndices, raster.ChangedOffsets);
+            Update(ref edit, GraphData.Resources.MaterialBounds, raster.MaterialBounds, raster.ChangedBounds);
+        }
         if (!ReferenceEquals(shade, _installedShadeStages))
             Update(ref edit, GraphData.Resources.ShadeSlots, shade.BinIndices, shade.ChangedOffsets);
 

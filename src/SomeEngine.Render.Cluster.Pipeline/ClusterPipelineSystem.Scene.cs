@@ -27,6 +27,7 @@ public sealed partial class ClusterPipelineSystem
     private RenderInstanceBatch? _sceneBatch;
     private ulong _sceneInstanceRevision;
     private ulong _sceneGeometryRevision;
+    private ulong _sceneRasterRevision;
     private WorldOrigin _sceneOrigin;
     private WorldOrigin _frameSceneOrigin;
     private Vector3[] _scenePositions = [];
@@ -69,6 +70,7 @@ public sealed partial class ClusterPipelineSystem
             GraphAccessMode.Write, WriteCoverage.Partial, ResourceContentState.Defined, BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(graph.CreateBufferUav(GraphData.InstanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.Resources.MaterialBounds, structureStride: sizeof(uint)), PipelineSync.ComputeShading);
         _sceneBatch = null;
     }
 
@@ -77,7 +79,7 @@ public sealed partial class ClusterPipelineSystem
     {
         bool hasPrevious = ReferenceEquals(_sceneBatch, batch);
         bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision ||
-            _sceneGeometryRevision != GeometryRevision || _sceneOrigin != worldOrigin;
+            _sceneGeometryRevision != GeometryRevision || _sceneRasterRevision != RasterRevision || _sceneOrigin != worldOrigin;
         _frameSceneOrigin = worldOrigin;
         // Movement changes bounds, not the instance membership of the spatial groups.
         // Keep their order until batch replacement changes the row mapping; the GPU refits
@@ -154,5 +156,6 @@ public sealed partial class ClusterPipelineSystem
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.SceneInstances, structureStride: 4), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.SceneChunks, structureStride: 16), PipelineSync.ComputeShading, BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.InstanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.Resources.MaterialBounds, structureStride: sizeof(uint)), PipelineSync.ComputeShading);
     }
 }

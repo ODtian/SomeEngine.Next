@@ -27,6 +27,22 @@ uint LoadClusterMaterialSlotOffset(ByteAddressBuffer data, uint metadata, uint i
         CLUSTER_UINT32_PROPERTY_STRIDE);
 }
 
+bool HasFiniteClusterInstanceBounds(StructuredBuffer<uint> bounds, ByteAddressBuffer data,
+    RenderInstancePropertyMetadata metadata, uint instanceID)
+{
+    uint offset = LoadClusterMaterialSlotOffset(data,
+        LoadRenderInstanceMetadata(metadata, CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD), instanceID);
+    return bounds[offset] != 0u;
+}
+
+ClusterViewUniforms ApplyClusterInstanceBounds(StructuredBuffer<uint> bounds, ByteAddressBuffer data,
+    RenderInstancePropertyMetadata metadata, uint instanceID, ClusterViewUniforms view)
+{
+    view.CullingEnabled = view.CullingEnabled != 0u &&
+        HasFiniteClusterInstanceBounds(bounds, data, metadata, instanceID) ? 1u : 0u;
+    return view;
+}
+
 float LoadClusterBoundsExpansion(ByteAddressBuffer data, uint metadata, uint instanceSlot)
 {
     return RenderInstanceLoad<float>(

@@ -79,6 +79,8 @@ public sealed class ClusterMaterialAssignmentSet
     internal IEnumerable<long> ChangedMaterialIds => _changes;
     internal IEnumerable<Material> ChangedMaterials => _changes.Where(_values.ContainsKey).Select(id => _values[id].Resource);
     internal IEnumerable<int> ActiveOffsets => _entries.Keys;
+    internal IEnumerable<(int Offset, int Count)> MaterialRanges =>
+        _sequences.Select(pair => (checked((int)pair.Value.Offset), pair.Key.Count));
     internal IEnumerable<int> ChangedOffsets => _changedOffsets;
     internal IEnumerable<Entity> Entities => _entities.Keys;
     internal IEnumerable<Entity> TranslucentEntities
