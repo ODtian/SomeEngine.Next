@@ -33,6 +33,18 @@ public static partial class BehaviorScenes
         using var material = await UnlitMaterialAsset.OpenAsync(loader, new(entry.AssetGuid));
         material.GetBlock<MaterialBlock>().Shader = new(project.Resolve("assets/Shaders/deformed-phong.shader")!.Value);
         project.RegisterAsset(await material.SaveAsync(Path.Combine(destination, entry.Path)));
+        using var red = await MeshAsset.OpenAsync(loader,
+            new(project.Manifest.Assets.Values.Single(value => value.Name == "red sphere" && value.AssetType == MeshAsset.FileType).AssetGuid));
+        var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(0);
+        using MeshAsset green = ClusterBuilder.ProcessRaw(vertices, attributes, indices, [material.Reference], "green Phong sphere");
+        project.RegisterAsset(await green.SaveAsync(Path.Combine(destination, "assets/Meshes/green-phong.mesh.asset")));
+        await WriteSceneAsync(project, world =>
+        {
+            Entity redEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(-1, 0, 6), Quaternion.Identity) });
+            world.Add(redEntity, new MeshSource { Mesh = red.Reference });
+            Entity greenEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(1, 0, 6), Quaternion.Identity) });
+            world.Add(greenEntity, new MeshSource { Mesh = green.Reference });
+        });
         await SceneContent.SetOutputSizeAsync(destination, 128, 128);
     }
 
