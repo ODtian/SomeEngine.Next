@@ -26,6 +26,7 @@ DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-ind
 | `smoke` | 八团烟雾，每团 16 张带 alpha 纹理的卡片。 |
 | `foliage` | 64 组植被，每组三张交叉叶片。 |
 | `deformed-phong` | 16 个移动部件，使用 Wave 顶点变形与 Phong 曲面。 |
+| `xray` | 64 个机械部件，共 10,752 个三角形，带独立遮挡板与完整 Standard 材质。 |
 
 场景内容通过 `SceneTestPlatform.InitializeScene` 和 `UpdateScene` 编辑游戏实体。相机回放时专项物体使用同一相机相对布局，三个基础场景都保有对应的效果工作量。
 
@@ -50,6 +51,20 @@ GraphPassId completed = attachment.Import(ref edit, hardwarePass);
 ```
 
 该入口调用 `tools/Measure-Scenes.ps1`，每次同时测量 1024 小球、Sponza、Amazon Bistro，以完整且收敛的三场景报告交付对照。配对固定分辨率、模拟帧、场景行为、渲染配置、编译配置与采样。内容构建单列；trace 定位单列。
+
+## X-ray
+
+网格实体的 `Xray` 组件分别持有可见侧与遮挡侧的颜色倍率、透明度，以及遮挡距离区间。编辑入口与其他游戏数据一致：
+
+```csharp
+edit.SetXray(entity, new Xray(
+    new XrayBlend(.8f),
+    new XrayBlend(new Vector3(.7f, .9f, 1), .45f),
+    MinimumOcclusion: 0,
+    MaximumOcclusion: 8));
+```
+
+`RemoveXray` 恢复该实体的普通材质路径。独立提取器更新镜像上的 `RenderXray`，其 48 字节设置随共用实例属性提交。primary hierarchy 与 cluster 的遮挡判断保留效果几何，继续执行视锥和 LOD 选择；阴影视图沿原材质路径工作。求色以该命中自己的表面和 receiver 完成，随后按 opaque 深度分类并应用对应侧别规则。距离使用视空间的世界单位。
 
 ## 计量口径
 

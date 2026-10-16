@@ -18,7 +18,8 @@ public static class ImportedSceneBuild
     public static async Task RefreshShadersAsync(string applicationDirectory, string projectRoot, string engineRoot)
     {
         var project = new AssetProject(Path.GetFullPath(projectRoot), [],
-            sourceFormats: [new ShaderSourceFormat([Path.GetFullPath(Path.Combine(engineRoot, "assets/Shaders"))])]);
+            sourceFormats: [new ShaderSourceFormat([Path.GetFullPath(Path.Combine(engineRoot, "assets/Shaders")),
+                Path.GetFullPath(Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"))])]);
         CopySharedShaders(project, Path.GetFullPath(applicationDirectory));
         ImportedSceneImporter.WriteSurfaceShader(Path.Combine(project.RootPath, "assets/Shaders"),
             Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"));
@@ -66,7 +67,8 @@ public static class ImportedSceneBuild
             services.AddSingleton<IClusterVertexEncoder, SceneVertexEncoder>();
         }, "imported-scenes-3;" + ImportedSceneCapabilities.BuildVersion, ImportedSceneImporter.ImporterId);
         var project = new AssetProject(projectRoot, [importer],
-            sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);
+            sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders"),
+                Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders")])]);
         CopySharedShaders(project, applicationDirectory);
         ModelRoot model = ModelRoot.Load(copiedSource);
         foreach (var material in model.LogicalMaterials)

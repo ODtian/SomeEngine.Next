@@ -111,6 +111,8 @@ public sealed partial class ClusterPipelineSystem
                 GraphData.ShaderParameterBytes, GraphData.SceneChunks, GraphData.InstanceWorldBounds,
                 frame.Work.Nodes, frame.Work.Clusters, frame.Work.NodeReady, frame.Work.ClusterReady, frame.Work.Arguments,
             ];
+            if (GraphData.Decals is { } decals)
+                buffers.UnionWith([decals.Counts, decals.Offsets, decals.Writes, decals.References, decals.Ranges, decals.Work]);
             buffers.UnionWith(frame.TessellationLevelDispatchArgs);
             buffers.UnionWith(GraphData.BufferDescriptions.Keys);
             foreach (GraphBufferId buffer in buffers)

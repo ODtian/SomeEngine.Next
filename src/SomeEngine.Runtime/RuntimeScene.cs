@@ -350,6 +350,16 @@ internal sealed class RuntimeScene : IDisposable
         catch { _world.DestroyEntity(entity); throw; }
     }
 
+    internal Entity AddMaterialDecal(Material material, TransformQvvs transform, int order)
+    {
+        Entity entity = _world.CreateEntity(new WorldTransform { Qvvs = transform });
+        _world.Add(entity, new MaterialDecal(material, order));
+        return entity;
+    }
+
+    internal void SetMaterialDecal(Entity entity, Material material, int order) =>
+        _world.Replace(entity, new MaterialDecal(material, order));
+
     internal void SetEntityTransform(Entity entity, TransformQvvs transform) =>
         _world.Replace(entity, new WorldTransform { Qvvs = transform });
 

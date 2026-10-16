@@ -2,6 +2,7 @@
 #define STANDARD_SLANG
 
 #include "material_interfaces.slang"
+#include "coating_material.slang"
 #include "render_lighting.slang"
 #include "brdf.slang"
 #include "vsm_projected_sampling.slang"
@@ -157,6 +158,18 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
         data.Roughness = max(saturate(arm.g * scalars.Roughness), .04);
         data.Occlusion = arm.r;
         data.Alpha = albedo.a * scalars.BaseColorTint.a;
+        float3 positionDx = surface.DpDu * pixel.BarycentricDx.y + surface.DpDv * pixel.BarycentricDx.z;
+        float3 positionDy = surface.DpDu * pixel.BarycentricDy.y + surface.DpDv * pixel.BarycentricDy.z;
+        MaterialDecalIterator decals = BeginMaterialDecals(pixel.PixelCoord, receiver.Position);
+        MaterialDecalInput decal;
+        while (NextMaterialDecal(decals, receiver.Position, positionDx, positionDy, decal))
+        {
+            CoatingLayer layer = EvaluateCoating(decal);
+            float alpha = saturate(layer.BaseColor.a);
+            data.BaseColor = lerp(data.BaseColor, layer.BaseColor.rgb, alpha);
+            data.Roughness = lerp(data.Roughness, layer.Roughness, alpha);
+            receiver.ShadingNormal = SafeNormalize(lerp(receiver.ShadingNormal, layer.Normal, alpha), receiver.GeometricNormal);
+        }
         return data;
     }
 

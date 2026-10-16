@@ -293,6 +293,7 @@ SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
     positionFromDepth = ReconstructWorldPositionAt(pixelCenter, depth, view);
 
     SurfaceReconstructionInput input;
+    input.PixelCenter = pixelCenter;
     input.TargetPosition = positionFromDepth;
     input.TargetPositionDx = ReconstructWorldPositionAt(
         pixelCenter + float2(1.0, 0.0), depth, view);

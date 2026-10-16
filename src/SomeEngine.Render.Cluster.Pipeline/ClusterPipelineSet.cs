@@ -84,6 +84,11 @@ internal sealed class ClusterPipelineSet : IDisposable
                 ClusterShaderOperationRole.BvhTraversal,
                 $"Cluster BVH traversal (target filters: {targetFilters}, multiple views: {multipleViews})",
                 specializations: [targetFilters ? "true" : "false", multipleViews ? "true" : "false"]);
+            DecalClear = Compute(ClusterShaderOperationRole.MaterialDecalCells, "Clear material decal cells", "ClearMaterialDecalCells");
+            DecalCount = Compute(ClusterShaderOperationRole.MaterialDecalCells, "Count material decal cells", "CountMaterialDecalCells");
+            DecalReserve = Compute(ClusterShaderOperationRole.MaterialDecalCells, "Reserve material decal cells", "ReserveMaterialDecalCells");
+            DecalScatter = Compute(ClusterShaderOperationRole.MaterialDecalCells, "Scatter material decal cells", "ScatterMaterialDecalCells");
+            DecalSort = Compute(ClusterShaderOperationRole.MaterialDecalCells, "Sort material decal cells", "SortMaterialDecalCells");
             LeafFlagFixups = Compute(ClusterShaderOperationRole.LeafFlagFixups, "Cluster streaming leaf flags");
             PageRequests = Compute(ClusterShaderOperationRole.PageRequests, "Cluster page request priorities");
             SceneBounds = Compute(ClusterShaderOperationRole.SceneBounds, "Cluster spatial scene bounds");
@@ -217,6 +222,11 @@ internal sealed class ClusterPipelineSet : IDisposable
     internal ClusterComputePipeline DeferredResume { get; }
     internal string DefaultRasterVertexEncoding { get; }
     internal bool DefaultRasterCullingEnabled { get; }
+    internal ClusterComputePipeline DecalClear { get; }
+    internal ClusterComputePipeline DecalCount { get; }
+    internal ClusterComputePipeline DecalReserve { get; }
+    internal ClusterComputePipeline DecalScatter { get; }
+    internal ClusterComputePipeline DecalSort { get; }
     internal ClusterComputePipeline CullReset { get; }
     internal ClusterComputePipeline CullPhase1 { get; }
     internal ClusterComputePipeline CullPhase2 { get; }

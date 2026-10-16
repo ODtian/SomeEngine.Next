@@ -155,6 +155,19 @@ public sealed class SceneEdit
             materials.Select(material => new MeshMaterialBinding(material)).ToArray(), transform);
     }
 
+    /// <summary>Projects a material layer inside the transformed [-1, 1] box.</summary>
+    public Entity AddMaterialDecal(Material material, TransformQvvs transform, int order = 0)
+    {
+        RequireAction();
+        return _scene.AddMaterialDecal(material, transform, order);
+    }
+
+    public void SetMaterialDecal(Entity entity, Material material, int order = 0)
+    {
+        RequireAction();
+        _scene.SetMaterialDecal(entity, material, order);
+    }
+
     public void SetEntityTransform(Entity entity, TransformQvvs transform)
     {
         RequireAction();

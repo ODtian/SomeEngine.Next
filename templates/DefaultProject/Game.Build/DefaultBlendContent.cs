@@ -66,6 +66,11 @@ internal static class DefaultBlendContent
             new(.35f + .15f * y, .8f, .2f,
                 MathF.Abs(x) < .65f * MathF.Sin((y + 1) * MathF.PI * .5f) ? 1 : 0));
 
+        await SaveTextureAsync(DefaultContentIds.CoatingNormalTexture, "Blend coating normal", (x, y) =>
+        {
+            Vector3 normal = Vector3.Normalize(new Vector3(x, y, 1));
+            return new(normal * .5f + new Vector3(.5f), 1);
+        });
         await SaveTextureAsync(DefaultContentIds.BlendCheckerTexture, "Blend checker", (x, y) =>
         {
             float value = (((int)MathF.Floor((x + 1) * 4) + (int)MathF.Floor((y + 1) * 4)) & 1) == 0 ? .3f : 1;
