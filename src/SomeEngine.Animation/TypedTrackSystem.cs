@@ -83,7 +83,8 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     {
                         if (enabled && !previous.Finished)
                             timeline.Submit(true);
-                        if (!previous.FromGraph && (enabled || previous.Finished && PropertyAnimation.HoldsLayerValue(world, row.Entity, in previous)))
+                        if (!previous.FromGraph && (enabled && !previous.Finished && previous.Sampled ||
+                            previous.Finished && PropertyAnimation.HoldsLayerValue(world, row.Entity, in previous)))
                             Submit(world, row.Entity, index, in previous, ref evaluation.Writes, ref writeCount);
                         continue;
                     }
@@ -165,6 +166,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                         continue;
                     ref MotionData<T, TParameters, TState> motion = ref data[track.MotionIndex];
                     track.Current = motion.Sample.Value;
+                    track.Sampled = true;
                     track.Finished = motion.Sample.Finished;
                     track.SampleTime = motion.Time.Time + track.Start;
                     motion.Active = false;

@@ -53,7 +53,7 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         systems.Add(new GraphSystem());
         AddAdditionalSystems(systems, AnimationPhase.Graph);
         if (_defaults)
-            systems.Add(new TrackSystem<float, FloatOps>(TrackFields.LayerWeights));
+            systems.Add(new TrackSystem<float, FloatOps>(TrackFields.LayerWeights, evaluateTyped: false));
         foreach (Algorithm algorithm in _algorithms)
             algorithm.Evaluate(systems, TrackFields.LayerWeights);
         AddAdditionalSystems(systems, AnimationPhase.LayerWeights);
@@ -123,7 +123,7 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         where T : unmanaged
         where TOps : struct, IValueOps<T>
     {
-        systems.Add(new TrackSystem<T, TOps>());
+        systems.Add(new TrackSystem<T, TOps>(TrackFields.Properties, evaluateTyped: false));
         compositions.Add(typeof(ValueOps<T, TOps>));
     }
 

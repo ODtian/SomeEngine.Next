@@ -138,7 +138,7 @@ public static partial class PropertyAnimation
             "The selected algorithm must be declared on the animation instance.");
         Track<T> previous = ReadTrack<T>(world, instance, source.Track);
         Timeline timeline = ReadStartingTimeline(world, instance);
-        T current = previous.SourceActive && (!previous.Finished || HoldsLayerValue(world, instance, in previous))
+        T current = source.Active ? source.Value : previous.SourceActive && (!previous.Finished || HoldsLayerValue(world, instance, in previous))
             ? previous.Current : channel.Read(world, target);
         if (world.Has<AnimationLayers>(target) && (endpoints == TrackEndpoints.Displacement || !previous.SourceActive &&
             world.Read<AnimationLayers>(target).Items[layer].Mode == LayerMode.Additive)) ReadBase(world, target, channel, ref current);
