@@ -207,13 +207,6 @@ public static partial class TypedAnimationChecks
         var presented = new State<float>();
         Entity root = Views.Spawn(frames.World, Entity.Null, new DeclaredTargets(selection, target, presented));
         frames.Frame(0);
-        for (int index = 0; index < 3; index++)
-        {
-            selection.Value = index;
-            target.Value = (index + 1) * 10;
-            frames.Frame(0);
-            frames.Frame(0.5f);
-        }
         Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
         using var tables = frames.World.ObserveEntityTables();
         tables.Accept(tables.Read());

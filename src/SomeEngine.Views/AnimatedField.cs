@@ -43,7 +43,7 @@ internal static unsafe partial class AnimatedFields
         bool keepMotion = false)
         where T : unmanaged
     {
-        if (!world.HasBuffer<Track<T>>(entity))
+        if (!keepMotion || !world.HasBuffer<Track<T>>(entity))
             PropertyAnimation.Declare<T>(world, entity);
         Timeline timeline = world.Read<Timeline>(entity);
         if (timeline.Clock != TimelineClock.Interface)
