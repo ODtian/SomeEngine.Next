@@ -15,7 +15,7 @@ public static partial class PropertyAnimation
         if (!DefaultProperties<T>.Declare(world, entity)) DeclareStorage<T>(world, entity);
     }
 
-    private static void DeclareStorage<T>(World world, Entity entity) where T : unmanaged
+    internal static void DeclareStorage<T>(World world, Entity entity) where T : unmanaged
     {
         if (!world.Has<Timeline>(entity))
         {

@@ -42,7 +42,7 @@ PropertyAnimation.Contribute(world, node, new Contribution<float>
 
 层权重是 Channel<float>，先完成 `TrackFields.LayerWeights` 求值与合成，再读取本帧权重合成普通字段。`AnimationSystems.Add` 与 AddDefaults 共同进入这条阶段链，外部系统可按 AnimationPhase 加入。
 
-单来源直接输出，多来源使用 `ComposeSystem<T,TOps>` 的同一值运算规则。每个最终字段在对应阶段产生一个 `FieldWrite<T>`。系统按查询块汇总字段写入，再按共享 Channel 选择一个批次入口，内部以具体根组件和 IFieldAccess 循环写值及推进版本。合成与字段访问分别按实际类型专门化。
+单来源直接输出，多来源使用 `ComposeSystem<T,TOps>` 的同一值运算规则。每个最终字段在对应阶段产生一个 `FieldWrite<T>`。系统在对应阶段查询完成后汇总字段写入，再按共享 Channel 选择一个批次入口，经过一次 World.ExecuteComponentWrite 取得具体根组件批次，内部以具体 IFieldAccess 循环写值及推进版本。合成与字段访问分别按实际类型专门化。
 
 ## 验收
 

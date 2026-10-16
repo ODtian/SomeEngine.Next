@@ -73,7 +73,7 @@ public static partial class PropertyAnimation
                 for (int index = 0; index < tracks.Count; index++)
                 {
                     Track<T> track = tracks[index];
-                    if (track.Typed && track.Channel == declaration.Channel && track.Layer == declaration.Layer &&
+                    if (track.Typed && !track.FromGraph && track.Channel == declaration.Channel && track.Layer == declaration.Layer &&
                         (track.Target == Entity.Null ? declaration.Animation : track.Target) == declaration.Target)
                         declaration.Count++;
                 }
@@ -223,6 +223,7 @@ public static partial class PropertyAnimation
                 {
                     if (source.Channel != search.Channel || source.Layer != search.Layer || !search.World.IsAlive(source.Animation)) continue;
                     Track<T> track = ReadTrack<T>(search.World, source.Animation, source.Track);
+                    if (track.FromGraph) continue;
                     if ((track.Target == Entity.Null ? source.Animation : track.Target) != search.Target) continue;
                     if (search.Endpoints == TrackEndpoints.Values && track.SourceActive && track.Endpoints == TrackEndpoints.Values)
                     { search.Result = source; return; }
