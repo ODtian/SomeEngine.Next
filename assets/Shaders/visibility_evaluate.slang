@@ -2,15 +2,14 @@
 #define VISIBILITY_EVALUATE_SLANG
 
 #include "common.slang"
+#include "cluster_structures.slang"
 
 [__AttributeUsage(_AttributeTargets.Struct)]
 struct VisibilityDepthAttribute { string behavior; };
 
 struct VisibilityVertexInput
 {
-    uint VisibleClusterIndex;
-    uint InstanceID;
-    uint ViewIndex;
+    DrawRequest Source;
     uint LocalVertexIndex;
 };
 
@@ -37,7 +36,7 @@ struct VisibilityPixelInput
     // Reversed integer depth already stored at the resolved target pixel.
     // A shader retaining input.Depth can reject covered target pixels itself.
     uint EncodedTargetDepth;
-    uint VisibleClusterIndex;
+    DrawRequest Source;
     uint TriangleID;
     uint ViewIndex;
     uint TargetPolicy;

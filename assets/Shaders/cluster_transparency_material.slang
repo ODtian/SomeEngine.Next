@@ -133,7 +133,7 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         interpolation.LinearBarycentricDy = (TriangleBarycentricAt(projection, center + float2(0, 1)) / projection.InverseW);
         interpolation.LinearBarycentricDy /= dot(interpolation.LinearBarycentricDy, 1.0.xxx);
         interpolation.LinearBarycentricDy -= interpolation.LinearBarycentric;
-        VisibilityVertexInput vertexInput = { info.visibleClusterIndex, info.instanceID, coord.z, info.vi0 };
+        VisibilityVertexInput vertexInput = { TransparencySourceRequest(source), info.vi0 };
         VisibilityEvaluate.Varying source0 = Visibility.makeVarying(first, vertexInput);
         vertexInput.LocalVertexIndex = info.vi1;
         VisibilityEvaluate.Varying source1 = Visibility.makeVarying(second, vertexInput);
@@ -146,7 +146,7 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         pixel.PixelCoord = coord;
         pixel.Depth = depth;
         pixel.EncodedDepth = asuint(1.0 - depth);
-        pixel.VisibleClusterIndex = info.visibleClusterIndex;
+        pixel.Source = TransparencySourceRequest(source);
         pixel.TriangleID = info.triangleID;
         pixel.ViewIndex = coord.z;
         VisibilityPixelResult result = Visibility.evaluate(pixel, Visibility.interpolatePixel(v0, v1, v2, interpolation));
