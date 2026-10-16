@@ -3,7 +3,7 @@ param(
     [string[]]$Effects = @('glass', 'smoke', 'foliage', 'deformed-phong', 'xray', 'decal-layers', 'decal-sparse', 'ordered'),
     [ValidateSet('full', 'xy', 'xyz')][string[]]$Methods = @('xy', 'xyz'),
     [hashtable]$FirstFrames,
-    [int]$FrameCount = 128,
+    [int]$FrameCount = 64,
     [switch]$Static,
     [string]$OutputPath = 'wiki/architecture/rendering/Cluster-Blend-Scenes-2026-10-16.json'
 )
@@ -16,7 +16,7 @@ $effectFirstFrames = @{
     'glass' = 384
     'smoke' = 256
     'foliage' = 1280
-    'deformed-phong' = 256
+    'deformed-phong' = 192
     'xray' = 1280
     'decal-layers' = 768
     'decal-sparse' = 1280

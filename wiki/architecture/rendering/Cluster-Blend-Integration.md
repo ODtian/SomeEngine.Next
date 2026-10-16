@@ -16,6 +16,10 @@
 
 持久 RenderGraph 保存投影、计数、范围保留、引用散布和求色阶段。每帧上传及 GPU 引用内容沿这些阶段更新；几何、实例、视图、驻留或相关渲染设置变化时刷新索引。静态输入复用既有数据。
 
+材质的边界能力按实例使用的完整材质序列汇总，光栅阶段持有 `MaterialBounds` 及其 GPU 数据。根播种、层级遍历、LOD、HiZ 和 cluster 筛选读取各实例自己的能力；空间组保存组内能力的汇总。用户 shader 的域可以声明 `CLUSTER_TESSELLATION_BOUNDS "finite"`，调用方通过 `SceneEdit.AddEntity(mesh, materials, transform, boundsExpansion)` 提供世界单位外扩。
+
+Wave/Phong 示例采用六个二次控制点的凸包确定外扩：`.35` 缩放部件使用 `.66`，公共单位球使用 `1.31`。推导和实例剔除的实际工作量见 [Cluster 工作列表](../cluster/Worklists.md)。透明投影默认驻留 `524288` 个微三角形；容量控制缓存与按源单元重投影的选择，两条路径保留相同命中和材质求值。
+
 ## 统一场景
 
 DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-index=full|xy|xyz` 选择完整遍历、XY tile 或 XYZ 候选，默认使用 XYZ。三种方式消费相同的几何、用户材质和效果规则。`--cluster-static` 固定效果物体，静态性能对照同时固定场景行为。
@@ -57,7 +61,7 @@ GraphPassId completed = attachment.Import(ref edit, hardwarePass);
 ./tools/Measure-ClusterEffects.ps1 -ApplicationPath <NativeAOT Game.App.exe>
 ```
 
-该入口调用 `tools/Measure-Scenes.ps1`，每次同时测量 1024 小球、Sponza、Amazon Bistro，以完整且收敛的三场景报告交付对照。默认对八类效果逐一配对 XY 与 XYZ：XY 保留屏幕 tile 内的候选，XYZ 继续按深度切片筛选。`-Methods full,xy,xyz` 可加入逐像素完整遍历作为图像和工作量参考。配对固定分辨率、模拟帧、场景行为、渲染配置、编译配置与采样。内容构建单列；trace 定位单列。
+该入口调用 `tools/Measure-Scenes.ps1`，每次同时测量 1024 小球、Sponza、Amazon Bistro，以完整且收敛的三场景报告交付对照。默认对八类效果逐一配对 XY 与 XYZ：XY 保留屏幕 tile 内的候选，XYZ 继续按深度切片筛选。每个场景采集固定的 64 个模拟帧，Wave/Phong 从第 192 帧开始；各效果的窗口由脚本统一指定。`-Methods full,xy,xyz` 可加入逐像素完整遍历作为图像和工作量参考。配对固定分辨率、模拟帧、场景行为、渲染配置、编译配置与采样。内容构建单列；trace 定位单列。
 
 ## X-ray
 
