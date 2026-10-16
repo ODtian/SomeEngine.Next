@@ -77,17 +77,29 @@ public sealed partial class ClusterPipelineSystem
         foreach (string unit in materials.SelectMany(stage => Enumerable.Range(0, stage.Shader.SlangSourceUnitCount)
                      .Select(stage.Shader.GetSlangSourceUnitName)).Distinct())
             source.Append("import \"").Append(unit).AppendLine("\";");
+        source.AppendLine("struct SceneTransparencyProjection {");
+        for (int index = 0; index < materials.Length; index++)
+            source.Append(FindTransparencyType(materials[index].Shader)).Append(".Projection Material").Append(index).AppendLine(";");
+        source.AppendLine("};");
         source.AppendLine("struct SceneTransparencyMaterials : ITransparencyMaterials {");
+        source.AppendLine("typealias Projection = SceneTransparencyProjection;");
         for (int index = 0; index < materials.Length; index++)
         {
             source.Append(FindTransparencyType(materials[index].Shader)).Append(" Material").Append(index);
             if (resourceCapacities[index] > 1) source.Append('[').Append(resourceCapacities[index]).Append(']');
             source.AppendLine(";");
         }
-        AppendMethod("uint primitiveCount(uint bin, uint source, uint view)",
-            "primitiveCount(source, view, TESS)", "return 0u;");
-        AppendMethod("bool project(uint bin, uint source, uint view, uint primitive, out float4 first, out float4 second, out float4 third)",
-            "project(source, view, primitive, TESS, first, second, third)", "return false;");
+        source.AppendLine("Projection beginProjection(uint bin, uint source, uint view, float4 screenBounds) { Projection value = {};");
+        for (int index = 0; index < materials.Length; index++)
+            source.Append("if (bin == ").Append(index).Append("u) value.Material").Append(index).Append(" = ").Append(Resource(index))
+                .Append(".beginProjection(source, view, ").Append(Tessellated(index)).AppendLine(", screenBounds);");
+        source.AppendLine("return value; }");
+        source.AppendLine("bool nextProjection(uint bin, uint source, uint view, inout Projection value, out uint primitive, out float4 first, out float4 second, out float4 third) {");
+        for (int index = 0; index < materials.Length; index++)
+            source.Append("if (bin == ").Append(index).Append("u) return ").Append(Resource(index))
+                .Append(".nextProjection(source, view, ").Append(Tessellated(index)).Append(", value.Material").Append(index)
+                .AppendLine(", primitive, first, second, third);");
+        source.AppendLine("primitive=0u; first=second=third=0.0.xxxx; return false; }");
         AppendMethod("bool cover(uint bin, uint source, uint primitive, uint3 pixel, float depth, out float resultDepth)",
             "cover(source, primitive, TESS, pixel, depth, resultDepth)", "return false;");
         source.AppendLine("float4 shade(uint bin, uint source, uint primitive, uint3 pixel, float depth) {");
@@ -116,12 +128,14 @@ public sealed partial class ClusterPipelineSystem
         {
             source.Append(signature).AppendLine(" {");
             for (int index = 0; index < materials.Length; index++)
-                source.Append("if (bin == ").Append(index).Append("u) return ").Append(Resource(index)).Append('.').Append(call.Replace("TESS", materials[index].Shader.TryGetSlangEntry(0, ClusterMaterialEntries.TessellationSeed, SlangStage.Compute, out _) ? "true" : "false")).AppendLine(";");
+                source.Append("if (bin == ").Append(index).Append("u) return ").Append(Resource(index)).Append('.').Append(call.Replace("TESS", Tessellated(index))).AppendLine(";");
             source.AppendLine(fallback).AppendLine("}");
         }
 
         string Resource(int index) => "Material" + index + (resourceCapacities[index] == 1 ? "" :
             "[NonUniformResourceIndex(TransparencyResourceItem(source))]");
+        string Tessellated(int index) => materials[index].Shader.TryGetSlangEntry(0,
+            ClusterMaterialEntries.TessellationSeed, SlangStage.Compute, out _) ? "true" : "false";
     }
 
     private static string FindTransparencyType(Shader shader)

@@ -10,8 +10,10 @@
 
 interface ITransparencyMaterials
 {
-    uint primitiveCount(uint bin, uint source, uint view);
-    bool project(uint bin, uint source, uint view, uint primitive, out float4 first, out float4 second, out float4 third);
+    associatedtype Projection;
+    Projection beginProjection(uint bin, uint source, uint view, float4 screenBounds);
+    bool nextProjection(uint bin, uint source, uint view, inout Projection value,
+        out uint primitive, out float4 first, out float4 second, out float4 third);
     bool cover(uint bin, uint source, uint primitive, uint3 pixel, float depth, out float resultDepth);
     float4 shade(uint bin, uint source, uint primitive, uint3 pixel, float depth);
     void receiver(uint bin, uint source, uint primitive, uint3 pixel, float depth,
@@ -157,12 +159,10 @@ uint TransparencyResourceItem(uint source)
     return TransparencyMaterialStates[material].y;
 }
 
-bool ProjectTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials materials,
-    uint source, uint primitive, uint bin, uint material, uint view, out TransparencyTriangle value)
+bool ProjectTransparency(uint source, uint primitive, uint bin, uint material, uint view,
+    float4 first, float4 second, float4 third, out TransparencyTriangle value)
 {
     value = {};
-    float4 first, second, third;
-    if (!materials.project(bin, source, view, primitive, first, second, third)) return false;
     if (first.w <= 0.0 || second.w <= 0.0 || third.w <= 0.0) return false;
     float2 size = float2(TransparencyUniforms.Width, TransparencyUniforms.Height);
     float2 a = (first.xy / first.w * float2(.5, -.5) + .5) * size;
@@ -220,11 +220,14 @@ void BuildTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials m
     uint source = TransparencyVisibleIndex(work / 128u) * 128u + work % 128u;
     uint bin, material, view;
     if (!TransparencySourceMaterial(source, bin, material, view)) return;
-    uint primitiveCount = materials.primitiveCount(bin, source, view);
-    for (uint primitive = 0u; primitive < primitiveCount; primitive++)
+    TMaterials.Projection projection = materials.beginProjection(bin, source, view,
+        float4(.5, .5, float(TransparencyUniforms.Width) - .5, float(TransparencyUniforms.Height) - .5));
+    uint primitive;
+    float4 first, second, third;
+    while (materials.nextProjection(bin, source, view, projection, primitive, first, second, third))
     {
         TransparencyTriangle triangle;
-        if (!ProjectTransparency(materials, source, primitive, bin, material, view, triangle)) continue;
+        if (!ProjectTransparency(source, primitive, bin, material, view, first, second, third, triangle)) continue;
         uint index;
         TransparencyTriangleCount.InterlockedAdd(0u, 1u, index);
         if (index < TransparencyUniforms.TriangleCapacity) TransparencyTriangles[index] = triangle;
@@ -301,16 +304,25 @@ bool TransparencyCovered(TransparencyTriangle triangle, float2 pixel, out float 
 
 
 // A pixel keeps its depth ordering while the candidate source advances through cells and batches.
-struct TransparencyCandidates
+struct TransparencyCandidates<TMaterials : ITransparencyMaterials>
 {
-    uint Slice, Reference, Work, Primitive, Projected;
+    uint Slice, Reference, Work, Projected;
     uint Cell, LastSlice;
     uint4 OccupiedSlices;
+    float4 ScreenBounds;
+    TMaterials.Projection Projection;
+    bool SourceStarted;
 };
 
-TransparencyCandidates BeginTransparencyCandidates(uint3 pixel, float opaque)
+TransparencyCandidates<TMaterials> BeginTransparencyCandidates<TMaterials : ITransparencyMaterials>(uint3 pixel, float opaque)
 {
-    TransparencyCandidates input = {};
+    TransparencyCandidates<TMaterials> input = {};
+    if (TransparencyTriangleCount.Load(0u) > TransparencyUniforms.TriangleCapacity)
+    {
+        float2 center = float2(pixel.xy) + .5;
+        input.ScreenBounds = float4(WaveActiveMin(center), WaveActiveMax(center));
+        return input;
+    }
     if (TransparencyUniforms.UseIndex == 0u) return input;
     ClusteredLightGridParameters grid = TransparencyLightingViews[pixel.z];
     uint2 tile = pixel.xy / uint2(grid.TileSizeX, grid.TileSizeY);
@@ -329,7 +341,7 @@ TransparencyCandidates BeginTransparencyCandidates(uint3 pixel, float opaque)
 }
 
 bool ReadTransparencySource<TMaterials : ITransparencyMaterials>(uniform TMaterials materials,
-    uint view, inout TransparencyCandidates input, out TransparencyTriangle triangle)
+    uint3 pixel, inout TransparencyCandidates<TMaterials> input, out TransparencyTriangle triangle)
 {
     triangle = {};
     uint count = TransparencyTriangleCount.Load(0u);
@@ -338,7 +350,7 @@ bool ReadTransparencySource<TMaterials : ITransparencyMaterials>(uniform TMateri
         while (input.Projected < count)
         {
             triangle = TransparencyTriangles[input.Projected++];
-            if (triangle.View == view) return true;
+            if (triangle.View == pixel.z) return true;
         }
         return false;
     }
@@ -347,24 +359,56 @@ bool ReadTransparencySource<TMaterials : ITransparencyMaterials>(uniform TMateri
     {
         uint source = TransparencyVisibleIndex(input.Work / 128u) * 128u + input.Work % 128u;
         uint bin, material, sourceView;
-        if (TransparencySourceMaterial(source, bin, material, sourceView) && sourceView == view)
+        if (TransparencySourceMaterial(source, bin, material, sourceView) && sourceView == pixel.z)
         {
-            uint primitives = materials.primitiveCount(bin, source, view);
-            while (input.Primitive < primitives)
-                if (ProjectTransparency(materials, source, input.Primitive++, bin, material, view, triangle)) return true;
+            if (!input.SourceStarted)
+            {
+                input.Projection = materials.beginProjection(bin, source, pixel.z, input.ScreenBounds);
+                input.SourceStarted = true;
+            }
+            uint primitive;
+            float4 first, second, third;
+            while (materials.nextProjection(bin, source, pixel.z, input.Projection, primitive, first, second, third))
+                if (ProjectTransparency(source, primitive, bin, material, pixel.z, first, second, third, triangle)) return true;
         }
-        input.Work++; input.Primitive = 0u;
+        input.Work++; input.SourceStarted = false;
     }
     return false;
 }
 
-bool NextTransparencyCandidate<TMaterials : ITransparencyMaterials>(uniform TMaterials materials,
-    uint3 pixel, inout TransparencyCandidates input, out TransparencyTriangle triangle)
+bool ReadWaveTransparencySource<TMaterials : ITransparencyMaterials>(uniform TMaterials materials,
+    uint3 pixel, inout TransparencyCandidates<TMaterials> input, out TransparencyTriangle triangle)
 {
+    uint leader = WaveMaskFirstLane(WaveActiveBallot(true));
+    uint found = 0u;
+    triangle = {};
+    if (WaveGetLaneIndex() == leader)
+        found = ReadTransparencySource(materials, pixel, input, triangle) ? 1u : 0u;
+    if (WaveReadLaneAt(found, leader) == 0u) return false;
+    triangle.First = WaveReadLaneAt(triangle.First, leader);
+    triangle.Second = WaveReadLaneAt(triangle.Second, leader);
+    triangle.Third = WaveReadLaneAt(triangle.Third, leader);
+    triangle.InverseArea = WaveReadLaneAt(triangle.InverseArea, leader);
+    triangle.Depths = WaveReadLaneAt(triangle.Depths, leader);
+    triangle.Source = WaveReadLaneAt(triangle.Source, leader);
+    triangle.Bin = WaveReadLaneAt(triangle.Bin, leader);
+    triangle.View = WaveReadLaneAt(triangle.View, leader);
+    triangle.Primitive = WaveReadLaneAt(triangle.Primitive, leader);
+    return true;
+}
+
+bool NextTransparencyCandidate<TMaterials : ITransparencyMaterials>(uniform TMaterials materials,
+    uint3 pixel, inout TransparencyCandidates<TMaterials> input, out TransparencyTriangle triangle)
+{
+    if (TransparencyTriangleCount.Load(0u) > TransparencyUniforms.TriangleCapacity)
+    {
+        input.Cell = 0xFFFFFFFFu;
+        return ReadWaveTransparencySource(materials, pixel, input, triangle);
+    }
     if (TransparencyUniforms.UseIndex == 0u)
     {
         input.Cell = 0xFFFFFFFFu;
-        return ReadTransparencySource(materials, pixel.z, input, triangle);
+        return ReadTransparencySource(materials, pixel, input, triangle);
     }
     ClusteredLightGridParameters grid = TransparencyLightingViews[pixel.z];
     uint2 tile = pixel.xy / uint2(grid.TileSizeX, grid.TileSizeY);
@@ -387,7 +431,7 @@ bool NextTransparencyCandidate<TMaterials : ITransparencyMaterials>(uniform TMat
         }
         else if (TransparencyTileCounts[cell] != 0u)
         {
-            while (ReadTransparencySource(materials, pixel.z, input, triangle))
+            while (ReadTransparencySource(materials, pixel, input, triangle))
             {
                 uint3 minimum, maximum;
                 TransparencyCellBounds(triangle, minimum, maximum);
@@ -395,7 +439,7 @@ bool NextTransparencyCandidate<TMaterials : ITransparencyMaterials>(uniform TMat
                 if (all(position >= minimum) && all(position <= maximum)) { input.Cell = cell; return true; }
             }
         }
-        input.Slice++; input.Reference = input.Work = input.Primitive = input.Projected = 0u;
+        input.Slice++; input.Reference = input.Work = input.Projected = 0u; input.SourceStarted = false;
     }
     triangle = {};
     return false;
@@ -455,7 +499,7 @@ void RequestTransparencyShadows<TMaterials : ITransparencyMaterials>(uniform TMa
 {
     if (pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height || pixel.z >= TransparencyUniforms.ViewCount) return;
     float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
-    TransparencyCandidates input = BeginTransparencyCandidates(pixel, opaque);
+    TransparencyCandidates<TMaterials> input = BeginTransparencyCandidates<TMaterials>(pixel, opaque);
     TransparencyTriangle triangle;
     while (NextTransparencyCandidate(materials, pixel, input, triangle))
     {
@@ -490,7 +534,7 @@ void ResolveOrderedTransparency<TMaterials : ITransparencyMaterials>(uniform TMa
         float selectedDepth = 0.0;
         uint selectedSource = 0u, selectedPrimitive = 0u, selectedBin = 0u;
         OrderedMaterialState selectedState = {};
-        TransparencyCandidates input = BeginTransparencyCandidates(pixel, 1.0);
+        TransparencyCandidates<TMaterials> input = BeginTransparencyCandidates<TMaterials>(pixel, 1.0);
         TransparencyTriangle triangle;
         while (NextTransparencyCandidate(materials, pixel, input, triangle))
         {
@@ -536,7 +580,7 @@ void ResolveTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials
     {
         float4 depths = 2.0.xxxx;
         uint4 sources = 0u.xxxx, primitives = 0u.xxxx, bins = 0xFFFFFFFFu.xxxx;
-        TransparencyCandidates input = BeginTransparencyCandidates(pixel, opaque);
+        TransparencyCandidates<TMaterials> input = BeginTransparencyCandidates<TMaterials>(pixel, opaque);
         TransparencyTriangle triangle;
         while (NextTransparencyCandidate(materials, pixel, input, triangle))
         {

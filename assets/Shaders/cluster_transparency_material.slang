@@ -7,8 +7,8 @@
 [__AttributeUsage(_AttributeTargets.Struct)]
 struct TransparencyMaterialAttribute {};
 
-// User vertex and surface types stay in their source unit. The composition
-// interface uses builtin values so independently cooked material units can link.
+// User vertex, surface and traversal data stay in their source unit. Composition
+// names each concrete Projection and exchanges clip-space triangles.
 #define TRANSPARENCY_EVALUATOR_NAME(name) name##Evaluator
 #define TRANSPARENCY_EVALUATOR(name) TRANSPARENCY_EVALUATOR_NAME(name)
 
@@ -29,22 +29,46 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         return info;
     }
 
-    uint primitiveCount(uint source, uint viewIndex, bool tessellated)
+    struct Projection
     {
-        if (!tessellated) return 1u;
-        TriangleInfo info = triangleInfo(source, viewIndex);
-        DomainEvaluate.TriangleData triangle = evaluateTriangle<VertexEvaluate, DomainEvaluate>(Vertex, Domain, info);
-        ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, info.instanceID, Views[viewIndex]);
-        TessellationTraversal traversal = BeginTessellationTraversal();
-        TessellationPatch patch;
-        uint count = 0u;
-        while (NextTessellationPatch<VertexEvaluate.Vertex, DomainEvaluate>(Domain, triangle, view,
-            TransparencyGeometryUniforms.MaxFactor, TransparencyGeometryUniforms.TargetEdgePixels, traversal, patch))
+        DomainEvaluate.TriangleData Triangle;
+        TessellationTraversal Traversal;
+        TessellationPatch Patch;
+        float4 ScreenBounds;
+        uint Instance, Primitive, PatchPrimitive, PatchCount, Factor, Enabled;
+        uint3 EdgeFactors;
+    };
+
+    bool overlapsScreenBounds(float3 minimum, float3 maximum, ClusterViewUniforms view, float4 screenBounds)
+    {
+        float2 low = 1e20.xx, high = -1e20.xx;
+        [unroll]
+        for (uint corner = 0u; corner < 8u; corner++)
         {
-            uint3 factors = TessellationPatchEdgeFactors(patch);
-            count += TessellationGridTriangleCount(max(factors.x, max(factors.y, factors.z)));
+            float3 position = float3((corner & 1u) != 0u ? maximum.x : minimum.x,
+                (corner & 2u) != 0u ? maximum.y : minimum.y, (corner & 4u) != 0u ? maximum.z : minimum.z);
+            float4 clip = projectPosition(position, view);
+            if (clip.w <= 0.0) return true;
+            float2 pixel = TessellationScreenPosition(clip, view);
+            low = min(low, pixel); high = max(high, pixel);
         }
-        return count;
+        float margin = .5 / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
+        return all(high + margin >= screenBounds.xy) && all(low - margin <= screenBounds.zw);
+    }
+
+    Projection beginProjection(uint source, uint viewIndex, bool tessellated, float4 screenBounds)
+    {
+        Projection value = {};
+        TriangleInfo info = triangleInfo(source, viewIndex);
+        value.Triangle = evaluateTriangle<VertexEvaluate, DomainEvaluate>(Vertex, Domain, info);
+        ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, info.instanceID, Views[viewIndex]);
+        float3 minimum, maximum;
+        Domain.bounds(value.Triangle, minimum, maximum);
+        value.Enabled = overlapsScreenBounds(minimum, maximum, view, screenBounds) ? 1u : 0u;
+        value.Instance = info.instanceID;
+        value.ScreenBounds = screenBounds;
+        if (tessellated) value.Traversal = BeginTessellationTraversal();
+        return value;
     }
 
     bool primitiveBarycentrics(DomainEvaluate.TriangleData triangle, ClusterViewUniforms view,
@@ -80,18 +104,51 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         return mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
     }
 
-    bool project(uint source, uint viewIndex, uint primitive, bool tessellated,
-        out float4 first, out float4 second, out float4 third)
+    bool nextProjection(uint source, uint viewIndex, bool tessellated, inout Projection value,
+        out uint primitive, out float4 first, out float4 second, out float4 third)
     {
-        TriangleInfo info = triangleInfo(source, viewIndex);
-        DomainEvaluate.TriangleData triangle = evaluateTriangle<VertexEvaluate, DomainEvaluate>(Vertex, Domain, info);
-        ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, info.instanceID, Views[viewIndex]);
-        float3 bary0, bary1, bary2;
-        bool valid = primitiveBarycentrics(triangle, view, primitive, tessellated, bary0, bary1, bary2);
-        first = projectPosition(tessellated ? Domain.position(triangle, bary0) : Domain.cornerPosition(triangle, 0u), view);
-        second = projectPosition(tessellated ? Domain.position(triangle, bary1) : Domain.cornerPosition(triangle, 1u), view);
-        third = projectPosition(tessellated ? Domain.position(triangle, bary2) : Domain.cornerPosition(triangle, 2u), view);
-        return valid;
+        primitive = 0u;
+        first = second = third = 0.0.xxxx;
+        if (value.Enabled == 0u) return false;
+        ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, value.Instance, Views[viewIndex]);
+        if (!tessellated)
+        {
+            value.Enabled = 0u;
+            first = projectPosition(Domain.cornerPosition(value.Triangle, 0u), view);
+            second = projectPosition(Domain.cornerPosition(value.Triangle, 1u), view);
+            third = projectPosition(Domain.cornerPosition(value.Triangle, 2u), view);
+            return true;
+        }
+        while (value.PatchPrimitive >= value.PatchCount)
+        {
+            if (!NextTessellationPatch<VertexEvaluate.Vertex, DomainEvaluate>(Domain, value.Triangle, view,
+                TransparencyGeometryUniforms.MaxFactor, TransparencyGeometryUniforms.TargetEdgePixels, value.Traversal, value.Patch))
+                return false;
+            value.EdgeFactors = TessellationPatchEdgeFactors(value.Patch);
+            value.Factor = max(value.EdgeFactors.x, max(value.EdgeFactors.y, value.EdgeFactors.z));
+            value.PatchCount = TessellationGridTriangleCount(value.Factor);
+            value.PatchPrimitive = 0u;
+            float3 minimum, maximum;
+            Domain.patchBounds(value.Triangle, DecodeTessellationPatchBarycentric(value.Patch, 0u),
+                DecodeTessellationPatchBarycentric(value.Patch, 1u), DecodeTessellationPatchBarycentric(value.Patch, 2u), minimum, maximum);
+            if (!overlapsScreenBounds(minimum, maximum, view, value.ScreenBounds))
+            {
+                value.Primitive += value.PatchCount;
+                value.PatchPrimitive = value.PatchCount;
+            }
+        }
+        uint3 vertices = TessellationGridTriangleVertexIndices(value.Factor, value.PatchPrimitive++);
+        float3 bary0 = DecodeTessellationPatchBarycentric(value.Patch, 0u);
+        float3 bary1 = DecodeTessellationPatchBarycentric(value.Patch, 1u);
+        float3 bary2 = DecodeTessellationPatchBarycentric(value.Patch, 2u);
+        primitive = value.Primitive++;
+        first = projectPosition(Domain.position(value.Triangle,
+            TransformPatchBarycentric(bary0, bary1, bary2, TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.x))), view);
+        second = projectPosition(Domain.position(value.Triangle,
+            TransformPatchBarycentric(bary0, bary1, bary2, TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.y))), view);
+        third = projectPosition(Domain.position(value.Triangle,
+            TransformPatchBarycentric(bary0, bary1, bary2, TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.z))), view);
+        return true;
     }
 
     bool cover(uint source, uint primitive, bool tessellated, uint3 coord, float depth, out float resultDepth)
@@ -216,10 +273,12 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
 struct TRANSPARENCY_MATERIAL_TYPE
 {
     TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE) Material;
-    uint primitiveCount(uint source, uint view, bool tessellated)
-    { return Material.primitiveCount(source, view, tessellated); }
-    bool project(uint source, uint view, uint primitive, bool tessellated, out float4 first, out float4 second, out float4 third)
-    { return Material.project(source, view, primitive, tessellated, first, second, third); }
+    typealias Projection = TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE).Projection;
+    Projection beginProjection(uint source, uint view, bool tessellated, float4 screenBounds)
+    { return Material.beginProjection(source, view, tessellated, screenBounds); }
+    bool nextProjection(uint source, uint view, bool tessellated, inout Projection value,
+        out uint primitive, out float4 first, out float4 second, out float4 third)
+    { return Material.nextProjection(source, view, tessellated, value, primitive, first, second, third); }
     bool cover(uint source, uint primitive, bool tessellated, uint3 pixel, float depth, out float resultDepth)
     { return Material.cover(source, primitive, tessellated, pixel, depth, resultDepth); }
     float4 shade<let visibilityDepth : uint>(uint source, uint primitive, uint3 pixel, float depth)

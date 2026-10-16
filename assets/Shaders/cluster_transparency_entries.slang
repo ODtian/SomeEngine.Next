@@ -3,11 +3,13 @@ import "cluster_transparency";
 struct SingleTransparencyMaterials<let visibilityDepth : uint, let tessellated : bool> : ITransparencyMaterials
 {
     TRANSPARENCY_MATERIAL_TYPE Material0;
+    typealias Projection = TRANSPARENCY_MATERIAL_TYPE.Projection;
 
-    uint primitiveCount(uint bin, uint source, uint view)
-    { return Material0.primitiveCount(source, view, tessellated); }
-    bool project(uint bin, uint source, uint view, uint primitive, out float4 first, out float4 second, out float4 third)
-    { return Material0.project(source, view, primitive, tessellated, first, second, third); }
+    Projection beginProjection(uint bin, uint source, uint view, float4 screenBounds)
+    { return Material0.beginProjection(source, view, tessellated, screenBounds); }
+    bool nextProjection(uint bin, uint source, uint view, inout Projection value,
+        out uint primitive, out float4 first, out float4 second, out float4 third)
+    { return Material0.nextProjection(source, view, tessellated, value, primitive, first, second, third); }
     bool cover(uint bin, uint source, uint primitive, uint3 pixel, float depth, out float resultDepth)
     { return Material0.cover(source, primitive, tessellated, pixel, depth, resultDepth); }
     float4 shade(uint bin, uint source, uint primitive, uint3 pixel, float depth)
