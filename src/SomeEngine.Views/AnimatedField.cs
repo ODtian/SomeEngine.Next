@@ -88,9 +88,20 @@ internal static unsafe partial class AnimatedFields
     {
         if (!world.HasBuffer<AnimatedField>(entity))
             return false;
-        int count = 0;
-        world.ExecuteBufferRead<AnimatedField, int>(entity, ref count,
-            static (fields, ref count) => count = fields.Count);
+        var selection = (Component: ComponentId<T>.Value, Count: 0, Found: false);
+        world.ExecuteBufferRead<AnimatedField, (ushort Component, int Count, bool Found)>(entity, ref selection,
+            static (fields, ref selection) =>
+            {
+                selection.Count = fields.Count;
+                foreach (ref readonly AnimatedField field in fields.AsSpan())
+                    if (field.Component == selection.Component && !field.ThroughReference)
+                    {
+                        selection.Found = true;
+                        return;
+                    }
+            });
+        if (!selection.Found) return false;
+        int count = selection.Count;
         AnimatedField* fields = stackalloc AnimatedField[count];
         var storage = (Address: (nint)fields, Count: count);
         world.ExecuteBufferRead<AnimatedField, (nint Address, int Count)>(entity, ref storage,

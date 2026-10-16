@@ -172,7 +172,7 @@ internal static unsafe partial class AnimatedFields
         {
             T target = channel.ReadRoot(in component);
             SubmitTypedValue<T, TOps, TParameters, TState, TEvaluator>(world, entity, ref field,
-                ref Unsafe.As<T, byte>(ref target));
+                ref Unsafe.As<T, byte>(ref target), in motion);
         }
         else if (field.HasValue)
         {
@@ -190,6 +190,17 @@ internal static unsafe partial class AnimatedFields
         where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
     {
         var motion = ReadMotion<T, TOps, TParameters, TState, TEvaluator>(world, entity, in field);
+        SubmitTypedValue<T, TOps, TParameters, TState, TEvaluator>(world, entity, ref field, ref bytes, in motion);
+    }
+
+    private static void SubmitTypedValue<T, TOps, TParameters, TState, TEvaluator>(World world, Entity entity,
+        ref AnimatedField field, ref byte bytes, in FieldMotion<T, TOps, TParameters, TState, TEvaluator> motion)
+        where T : unmanaged
+        where TOps : struct, IValueOps<T>
+        where TParameters : struct
+        where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
+    {
         T target = Unsafe.ReadUnaligned<T>(ref bytes);
         T previous = ReadTarget(world, entity, motion.Channel);
         if (!TOps.Equals(in target, in previous))

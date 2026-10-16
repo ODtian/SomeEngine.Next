@@ -74,6 +74,8 @@ public static partial class Scope
         ScopeData current = Current;
         var computation = new Computation(current.World, current.Entity, current.Computation, run,
             current.Frame, evaluatesOnRead);
+        if (current.Computation is { } parent)
+            parent.HasCreatedChildren = true;
         RetainComputation(computation);
         return computation;
     }

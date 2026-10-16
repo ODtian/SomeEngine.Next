@@ -104,11 +104,22 @@ internal static class HudMeasurements
                     commands.ResolveQueries(data.Queries, 0, 2, commands.GetBuffer(data.Results), BufferRange.Whole));
             edit.Commit();
         }
-        var animationMs = new double[Samples];
+        var viewsCost = new PhaseCost("Views");
+        var animationCost = new PhaseCost("Animation");
+        var layoutCost = new PhaseCost("Layout");
+        var flipCost = new PhaseCost("FLIP");
+        var extractionCost = new PhaseCost("Extraction");
+        var prepareCost = new PhaseCost("Prepare");
+        var reconcileCost = new PhaseCost("Graph reconciliation");
+        var acquireCost = new PhaseCost("Acquire");
+        var executeCost = new PhaseCost("Frame execution and GPU wait");
+        var presentCost = new PhaseCost("Present");
+        PhaseCost[] phaseCosts = [viewsCost, animationCost, layoutCost, flipCost, extractionCost,
+            prepareCost, reconcileCost, acquireCost, executeCost, presentCost];
         var cpuMs = new double[Samples];
         var gpuMs = new double[Samples];
         var intervals = new double[Samples];
-        long animationBytes = 0, frameBytes = 0;
+        long frameBytes = 0;
         double firstFrameMs = 0;
         long previous = Stopwatch.GetTimestamp(), previousPresent = previous;
         QueueCompletion[] completions = [];
@@ -122,22 +133,31 @@ internal static class HudMeasurements
             previous = started;
             frameNumber.Value = index;
             game.Replace(time, new AnimationTime(delta, gamePaused: true));
+            viewsCost.Begin();
             views.Update();
+            viewsCost.End(index);
             var context = new ImmediateSystemContext(game, 0, 0, delta);
-            long animationStarted = Stopwatch.GetTimestamp();
-            long beforeAnimation = GC.GetAllocatedBytesForCurrentThread();
+            animationCost.Begin();
             animation.Update(ref context);
-            long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeAnimation;
-            double elapsed = Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
+            animationCost.End(index);
+            layoutCost.Begin();
             layout.Update(ref context);
+            layoutCost.End(index);
+            flipCost.Begin();
             flip.Update(ref context);
+            flipCost.End(index);
+            extractionCost.Begin();
             extraction.Extract(game);
+            extractionCost.End(index);
+            prepareCost.Begin();
             if (!frames.TryBeginPrepare(out RenderPrepareScope? scope)) throw new InvalidOperationException("HUD prepare failed.");
             using (scope)
             {
                 prepare.ApplyExtraction(scope);
                 scope.Commit();
             }
+            prepareCost.End(index);
+            reconcileCost.Begin();
             renderer.ReconcileGraph(target);
             if (index == 0)
             {
@@ -148,8 +168,12 @@ internal static class HudMeasurements
                 edit.Commit();
                 completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
             }
+            reconcileCost.End(index);
+            acquireCost.Begin();
             if (backend.Acquire(swapchain, new SwapchainAcquireOptions(TimeSpan.FromSeconds(10)), out SwapchainImage image) != SwapchainAcquireStatus.Success)
                 throw new InvalidOperationException("HUD presentation image acquisition failed.");
+            acquireCost.End(index);
+            executeCost.Begin();
             RenderGraphFrame frame = graph.BeginFrame();
             try
             {
@@ -176,14 +200,15 @@ internal static class HudMeasurements
                 renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
             }
             finally { frame.Dispose(); }
+            executeCost.End(index);
+            presentCost.Begin();
             backend.Present(queue, image);
+            presentCost.End(index);
             long presented = Stopwatch.GetTimestamp();
             if (index == 0) firstFrameMs = Stopwatch.GetElapsedTime(started, presented).TotalMilliseconds;
             if (index >= Warmups && index < Warmups + Samples)
             {
                 int sample = index - Warmups;
-                animationMs[sample] = elapsed;
-                animationBytes += bytes;
                 cpuMs[sample] = Stopwatch.GetElapsedTime(started, presented).TotalMilliseconds;
                 frameBytes += GC.GetAllocatedBytesForCurrentThread() - allocated;
                 intervals[sample] = Stopwatch.GetElapsedTime(previousPresent, presented).TotalMilliseconds;
@@ -208,11 +233,12 @@ internal static class HudMeasurements
             Device = device.Adapter.Name, Processor = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
             Framework = RuntimeInformation.FrameworkDescription, Backend = "D3D12", Width = 1280, Height = 720,
             PresentType = "Immediate", VSync = false, Delta = "actual elapsed between frame starts",
-            Animation = Summarize(animationMs), CpuFrame = Summarize(cpuMs), Gpu = Summarize(gpuMs), PresentInterval = Summarize(intervals),
-            AnimationBytesPerFrame = (double)animationBytes / Samples, CpuBytesPerFrame = (double)frameBytes / Samples,
+            Animation = Summarize(animationCost.Milliseconds), CpuFrame = Summarize(cpuMs), Gpu = Summarize(gpuMs), PresentInterval = Summarize(intervals),
+            AnimationBytesPerFrame = (double)animationCost.Bytes / Samples, CpuBytesPerFrame = (double)frameBytes / Samples,
+            Phases = phaseCosts.Select(cost => new { cost.Name, Timing = Summarize(cost.Milliseconds), BytesPerFrame = (double)cost.Bytes / Samples }).ToArray(),
             FirstFrameMs = firstFrameMs, StartupAndRunMs = Stopwatch.GetElapsedTime(startup).TotalMilliseconds,
             RetainedBytes = GC.GetTotalMemory(true) - memory,
-            AnimationBudgetMs = 1d, AnimationWithinBudget = Quantile(animationMs, 0.95) <= 1,
+            AnimationBudgetMs = 1d, AnimationWithinBudget = Quantile(animationCost.Milliseconds, 0.95) <= 1,
             FrameTargetMs = 1000d / 300, PresentedFrames = frameCount, Capture = capture,
         }));
         if (!frames.TryBeginPrepare(out RenderPrepareScope? shutdown)) throw new InvalidOperationException("HUD shutdown prepare failed.");
@@ -222,6 +248,30 @@ internal static class HudMeasurements
             shutdown.Commit();
         }
         return 0;
+    }
+
+    private sealed class PhaseCost(string name)
+    {
+        internal string Name { get; } = name;
+        internal double[] Milliseconds { get; } = new double[Samples];
+        internal long Bytes { get; private set; }
+        private long _started;
+        private long _allocated;
+
+        internal void Begin()
+        {
+            _started = Stopwatch.GetTimestamp();
+            _allocated = GC.GetAllocatedBytesForCurrentThread();
+        }
+
+        internal void End(int index)
+        {
+            if (index >= Warmups && index < Warmups + Samples)
+            {
+                Milliseconds[index - Warmups] = Stopwatch.GetElapsedTime(_started).TotalMilliseconds;
+                Bytes += GC.GetAllocatedBytesForCurrentThread() - _allocated;
+            }
+        }
     }
 
     private static object Summarize(double[] samples) => new
