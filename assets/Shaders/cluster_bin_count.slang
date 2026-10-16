@@ -74,6 +74,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         isSoftware);
 
     DrawRequest entry = VisibleClusterRequest(VisibleClusters[visibleIndex]);
+    if (Uniforms.PolicyTarget == 0u && LoadInstanceXray(InstanceData, InstanceProperties, entry.InstanceID).Enabled != 0u) return;
     if (Uniforms.PolicyTarget != 0u)
     {
         ClusterRasterTargetView target = WorkTargetViews[ClusterPhysicalViewIndex(DrawRequestViewIndex(entry))];

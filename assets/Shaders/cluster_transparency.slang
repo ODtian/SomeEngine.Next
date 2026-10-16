@@ -22,7 +22,7 @@ struct TransparencyParameters
     uint Width, Height, ViewCount, MaterialCapacity;
     uint TriangleCapacity, VisibleCapacity;
     float ColorLimit, MaximumError;
-    uint ReferenceCapacity, UseIndex, CellCount, Padding;
+    uint ReferenceCapacity, UseIndex, CellCount, HasXray;
 };
 
 struct TransparencyTriangle
@@ -143,8 +143,9 @@ bool TransparencySourceMaterial(uint source, out uint bin, out uint material, ou
         LoadRenderInstanceMetadata(TransparencyProperties, CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD), request.InstanceID) +
         LocalMaterial(TransparencyPageHeap, cluster, request.PageOffset, triangle);
     uint state = TransparencyMaterialStates[material].x;
-    if ((state & 3u) == 0u) return false;
-    bin = (state >> 2u) - 1u;
+    if ((state & 3u) == 0u || ((state & 0x80000000u) != 0u &&
+        LoadInstanceXray(TransparencyInstances, TransparencyProperties, request.InstanceID).Enabled == 0u)) return false;
+    bin = ((state & 0x7FFFFFFFu) >> 2u) - 1u;
     return true;
 }
 
@@ -320,7 +321,7 @@ TransparencyCandidates BeginTransparencyCandidates(uint3 pixel, float opaque)
             if (TransparencyTileCounts[TransparencyCell(pixel.z, uint3(tile, slice))] != 0u)
                 occupied[slice >> 5u] |= 1u << (slice & 31u);
     input.OccupiedSlices = WaveReadLaneAt(occupied, leader);
-    input.LastSlice = opaque < 1.0
+    input.LastSlice = opaque < 1.0 && TransparencyUniforms.HasXray == 0u
         ? ClusteredLightDepthSlice(grid, TransparencyViewDepth(pixel.z, float2(pixel.xy) + .5, opaque))
         : grid.DepthSliceCount - 1u;
     return input;
@@ -417,7 +418,23 @@ bool TransparencyHit<TMaterials : ITransparencyMaterials>(uniform TMaterials mat
     float resultDepth;
     if (!materials.cover(triangle.Bin, triangle.Source, triangle.Primitive, pixel, depth, resultDepth)) return false;
     depth = resultDepth;
-    if (depth < 0.0 || depth > opaque) return false;
+    if (depth < 0.0 || depth > 1.0) return false;
+    InstanceXray effect = LoadInstanceXray(TransparencyInstances, TransparencyProperties,
+        TransparencySourceRequest(triangle.Source).InstanceID);
+    if (effect.Enabled == 0u)
+    {
+        if (depth > opaque) return false;
+    }
+    else if (depth <= opaque)
+    {
+        if (effect.Visible.w == 0.0) return false;
+    }
+    else
+    {
+        float distance = TransparencyViewDepth(pixel.z, float2(pixel.xy) + .5, depth) -
+            TransparencyViewDepth(pixel.z, float2(pixel.xy) + .5, opaque);
+        if (distance < effect.MinimumOcclusion || distance > effect.MaximumOcclusion || effect.Occluded.w == 0.0) return false;
+    }
     return cell == 0xFFFFFFFFu || cell == ClusteredLightCellIndex(TransparencyLightingViews[pixel.z], pixel.z, pixel.xy,
         TransparencyViewDepth(pixel.z, float2(pixel.xy) + .5, depth));
 }
@@ -482,6 +499,9 @@ void ResolveTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials
         {
             if (bins[item] == 0xFFFFFFFFu) break;
             float4 surface = materials.shade(bins[item], sources[item], primitives[item], pixel, depths[item]);
+            InstanceXray effect = LoadInstanceXray(TransparencyInstances, TransparencyProperties,
+                TransparencySourceRequest(sources[item]).InstanceID);
+            if (effect.Enabled != 0u) surface *= depths[item] <= opaque ? effect.Visible : effect.Occluded;
             float alpha = saturate(surface.a);
             if (alpha > 0.0)
             {

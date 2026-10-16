@@ -48,6 +48,26 @@ uint2 LoadInstanceFirstPerson(ByteAddressBuffer data, RenderInstancePropertyMeta
         instanceId, 8u);
 }
 
+struct InstanceXray
+{
+    float4 Visible;
+    float4 Occluded;
+    float MinimumOcclusion, MaximumOcclusion;
+    uint Enabled, Padding;
+};
+
+InstanceXray LoadInstanceXray(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata, uint instanceId)
+{
+    return RenderInstanceLoad<InstanceXray>(data, LoadRenderInstanceMetadata(metadata, RENDER_XRAY_METADATA_WORD),
+        instanceId, 48u);
+}
+
+bool KeepXrayOcclusion(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata,
+    uint instanceId, ClusterViewUniforms view)
+{
+    return view.Family == 0u && view.TargetPolicy == 0u && LoadInstanceXray(data, metadata, instanceId).Enabled != 0u;
+}
+
 bool IsInstanceVisibleToView(uint2 firstPerson, ClusterViewUniforms view)
 {
     uint kind = firstPerson.x & 3u;

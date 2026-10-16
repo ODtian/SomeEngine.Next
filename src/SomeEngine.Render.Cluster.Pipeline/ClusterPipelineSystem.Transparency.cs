@@ -18,7 +18,7 @@ public sealed partial class ClusterPipelineSystem
         internal uint Width, Height, ViewCount, MaterialCapacity;
         internal uint TriangleCapacity, VisibleCapacity;
         internal float ColorLimit, MaximumError;
-        internal uint ReferenceCapacity, UseIndex, CellCount, Padding;
+        internal uint ReferenceCapacity, UseIndex, CellCount, HasXray;
     }
 
     private sealed class TransparencyData
@@ -44,7 +44,8 @@ public sealed partial class ClusterPipelineSystem
 
     private void ReconcileTransparency(ref RenderGraphEdit edit, ClusterMaterialAssignmentSet assignments, ClusterShadeStageSet stages)
     {
-        ClusterShadeInvocation[] materials = stages.Invocations.Where(stage => stage.Material.State.Surface == SurfaceMode.Translucent).ToArray();
+        ClusterShadeInvocation[] materials = stages.Invocations.Where(stage =>
+            stage.Material.State.Surface == SurfaceMode.Translucent || assignments.UsesXray(stage.Material)).ToArray();
         uint capacity = _options.BlendTriangleCapacity;
         ClusterShadeInvocation[][] resources = [];
         TransparencyShaders? shaders = materials.Length == 0 ? null : GetTransparencyShaders(materials, out resources);
@@ -156,15 +157,16 @@ public sealed partial class ClusterPipelineSystem
     {
         FrameResources frame = GraphData.Resources;
         Span<TransparencyParameters> parameters = stackalloc TransparencyParameters[1];
-        Material[] transparent = assignments.DistinctMaterials.Where(material => material.State.Surface == SurfaceMode.Translucent).ToArray();
+        Material[] transparent = data.Materials.Select(stage => stage.Material).ToArray();
         parameters[0] = new()
         {
             Width = (uint)frame.Width, Height = (uint)frame.Height, ViewCount = frame.ViewCount,
             MaterialCapacity = assignments.SlotCapacity, TriangleCapacity = data.TriangleCapacity,
             VisibleCapacity = _options.MaxCandidates, ReferenceCapacity = _options.BlendReferenceCapacity,
             UseIndex = _options.BlendIndex == ClusterBlendIndex.Xyz ? 1u : 0u, CellCount = _viewGrid.CellCountPerView * frame.ViewCount,
+            HasXray = assignments.HasXray ? 1u : 0u,
             ColorLimit = transparent.Max(material => material.State.ColorLimit),
-            MaximumError = transparent.Min(material => material.State.MaximumError),
+            MaximumError = assignments.HasXray ? 0 : transparent.Min(material => material.State.MaximumError),
         };
         UpdateParameters(ref edit, data.Parameters, MemoryMarshal.AsBytes(parameters));
         Span<uint> geometry = stackalloc uint[2] { _options.MaxTessellationFactor, BitConverter.SingleToUInt32Bits(_options.TessellationTargetEdgePixels) };
@@ -181,13 +183,15 @@ public sealed partial class ClusterPipelineSystem
         byte[] states = new byte[checked((int)assignments.SlotCapacity * 8)];
         Span<byte> bin = stackalloc byte[4];
         foreach (int address in assignments.ActiveOffsets)
-            if (assignments.TryGetEntry(address, out Material material, out _) && material.State.Surface == SurfaceMode.Translucent)
+            if (assignments.TryGetEntry(address, out Material material, out _) &&
+                (material.State.Surface == SurfaceMode.Translucent || assignments.UsesXray(material)))
             {
                 stages.BinIndices.CopyTo(bin, address * 4);
                 ClusterShadeInvocation stage = stages.GetBin(BinaryPrimitives.ReadUInt32LittleEndian(bin));
                 int evaluator = Array.IndexOf(data.Shaders.Members, new TransparencyMember(material.Shader!, stage.VisibilityDepth));
                 int resource = Array.FindIndex(data.ResourceMaterials[evaluator], entry => entry.CommandBindings.Equals(stage.CommandBindings));
                 uint facing = material.State.TwoSided ? 2u : 1u;
+                if (material.State.Surface != SurfaceMode.Translucent) facing |= 0x80000000u;
                 BinaryPrimitives.WriteUInt32LittleEndian(states.AsSpan(address * 8), ((uint)evaluator + 1u) << 2 | facing);
                 BinaryPrimitives.WriteUInt32LittleEndian(states.AsSpan(address * 8 + 4), (uint)resource);
             }

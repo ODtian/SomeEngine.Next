@@ -696,6 +696,7 @@ public sealed class ClusterRenderResources : IDisposable
         private readonly ResolvedRenderInstanceProperty<float> _boundsExpansion;
         private readonly ResolvedRenderInstanceProperty<uint> _depthCacheClass;
         private readonly ResolvedRenderInstanceProperty<FirstPersonMeshData> _firstPerson;
+        private readonly ResolvedRenderInstanceProperty<RenderXray> _xray;
 
         internal ClusterGeometryProducer(ClusterMeshCache meshes)
         {
@@ -709,6 +710,7 @@ public sealed class ClusterRenderResources : IDisposable
             _boundsExpansion = clusterProperties.Resolve<float>(ClusterRenderFeature.BoundsExpansionKey);
             _depthCacheClass = clusterProperties.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey);
             _firstPerson = clusterProperties.Resolve<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey);
+            _xray = clusterProperties.Resolve<RenderXray>(ClusterRenderFeature.XrayKey);
         }
 
         public RenderInstancePropertyLayout Properties => ClusterRenderFeature.GeometryLayout;
@@ -719,16 +721,18 @@ public sealed class ClusterRenderResources : IDisposable
             packet.ChangedSince<RenderTransform>(lastSystemVersion)
             || packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)
             || packet.ChangedSince<RenderMesh>(lastSystemVersion)
+            || (packet.Has<RenderXray>() && packet.ChangedSince<RenderXray>(lastSystemVersion))
                 ? RenderInstanceChanges.Values
                 : RenderInstanceChanges.None;
 
         public void Bind(RenderInstanceWriteSlice destination)
             => Bind(destination, true, true, true);
 
-        internal void Bind(RenderInstanceWriteSlice destination, bool current, bool previous, bool mesh)
+        internal void Bind(RenderInstanceWriteSlice destination, bool current, bool previous, bool mesh, bool xray = true)
         {
             if (current) destination.BindPerInstance(_currentTransform);
             if (previous) destination.BindPerInstance(_previousTransform);
+            if (xray) destination.BindPerInstance(_xray);
             if (mesh)
             {
                 destination.BindPerInstance(_bvhRoot);
@@ -742,10 +746,16 @@ public sealed class ClusterRenderResources : IDisposable
             => Write(destination, packet, true, true, true);
 
         internal void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
-            bool current, bool previous, bool mesh)
+            bool current, bool previous, bool mesh, bool xray = true)
         {
             if (current) destination.Write(_currentTransform, packet.Read<RenderTransform>());
             if (previous) destination.Write(_previousTransform, packet.Read<RenderPreviousTransform>());
+            if (xray)
+            {
+                Span<RenderXray> effects = destination.GetWriteSpan(_xray);
+                if (packet.TryRead<RenderXray>(out ReadOnlySpan<RenderXray> values)) values.CopyTo(effects);
+                else effects.Clear();
+            }
             if (!mesh) return;
 
             Span<uint> depthClasses = destination.GetWriteSpan(_depthCacheClass);
@@ -763,8 +773,10 @@ public sealed class ClusterRenderResources : IDisposable
         public void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
             uint lastSystemVersion, bool allTransformsChanged = false)
         {
+            if (packet.Has<RenderXray>() && packet.ChangedSince<RenderXray>(lastSystemVersion))
+                WriteChangedProperty(destination, packet, _xray, lastSystemVersion);
             if (allTransformsChanged)
-                Write(destination, packet, true, true, false);
+                Write(destination, packet, true, true, false, false);
             else
             {
                 WriteChangedProperty(destination, packet, _currentTransform, lastSystemVersion);
@@ -776,7 +788,7 @@ public sealed class ClusterRenderResources : IDisposable
             int start = 0;
             while (NextChangedRows<RenderMesh>(packet, lastSystemVersion, ref start, out int count))
             {
-                Write(destination.Slice(start, count), packet.Slice(start, count), false, false, true);
+                Write(destination.Slice(start, count), packet.Slice(start, count), false, false, true, false);
                 start += count;
             }
         }
