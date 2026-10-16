@@ -22,7 +22,7 @@ public static class ImportedSceneBuild
         CopySharedShaders(project, Path.GetFullPath(applicationDirectory));
         ImportedSceneImporter.WriteSurfaceShader(Path.Combine(project.RootPath, "assets/Shaders"),
             Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"));
-        ImportedSceneImporter.WriteTransparencySources(Path.Combine(project.RootPath, "assets/Shaders"), engineRoot);
+        ImportedSceneImporter.WriteSurfaceSources(Path.Combine(project.RootPath, "assets/Shaders"), engineRoot);
         foreach (string source in Directory.EnumerateFiles(Path.Combine(project.RootPath, "assets/Shaders"), "scene_*.shader"))
             await project.BuildAsync(source);
         Console.WriteLine($"Refreshed scene shaders: {project.RootPath}");
