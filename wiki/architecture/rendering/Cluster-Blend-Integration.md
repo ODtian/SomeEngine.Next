@@ -72,11 +72,11 @@ GraphPassId completed = attachment.Import(ref edit, hardwarePass);
 | `foliage` | 1280 | 384 | 1280 |
 | `deformed-phong` | 192 | 192 | 192 |
 | `xray` | 1280 | 384 | 1280 |
-| `decal-layers` | 768 | 384 | 768 |
+| `decal-layers` | 768 | 384 | 1280 |
 | `decal-sparse` | 1280 | 384 | 1280 |
 | `ordered` | 1280 | 384 | 1280 |
 
-Sponza 对效果默认首帧达到 768 的组从第 384 帧开始采样，其余场景沿用各效果的首帧。实际场景窗口随每轮结果的 `SceneSettings` 保存。
+Sponza 对效果默认首帧达到 768 的组从第 384 帧开始采样。Amazon Bistro 的 `decal-layers` 从第 1280 帧开始，满足该场景的资源驻留预热；其他组合沿用各效果的首帧。实际场景窗口随每轮结果的 `SceneSettings` 保存。
 
 测量结果用于当轮读取：`Measure-ClusterEffects.ps1` 默认写入 `artifacts/cluster-blend-scenes.json`，研究场景脚本写入 `artifacts/transparency-scenes.json`，研究应用的两组对照分别写入 `artifacts/transparency-comparison.json` 与 `artifacts/transparency-effects.json`。调用方读取结果后立即删除对应 JSON，图像与日志沿同一使用周期清理。
 

@@ -31,6 +31,7 @@ try {
         foreach ($scene in $sceneSettings) {
             $scene.MeasurementFrames.FirstFrame = if ($FirstFrames) { $FirstFrames[$scene.Name] }
                 elseif ($scene.Name -eq 'Sponza' -and $effectFirstFrames[$effect] -ge 768) { 384 }
+                elseif ($scene.Name -eq 'Amazon Bistro' -and $effect -eq 'decal-layers') { 1280 }
                 else { $effectFirstFrames[$effect] }
             $scene.MeasurementFrames.FrameCount = $FrameCount
             if ($Static) { $scene | Add-Member -NotePropertyName Animate -NotePropertyValue $false -Force }
