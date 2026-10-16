@@ -18,6 +18,16 @@ SomeUI 是引擎动画库中属性动画的使用者（[[architecture/Animation|
 public static class AnimateModifiers
 {
     public static Entity Animate<T>(this Entity node, Channel<T> channel, Spec spec) where T : unmanaged;
+    public static Entity Animate<T, TOps, TParameters, TState, TEvaluator>(this Entity node,
+        Channel<T> channel, Spec<T, TOps, TParameters, TState, TEvaluator> spec)
+        where T : unmanaged where TOps : struct, IValueOps<T>
+        where TParameters : struct where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>;
+}
+public static partial class Scope
+{
+    public static void Set<T>(Entity node, Channel<T> channel, T value) where T : unmanaged;
+    public static void Set<T>(ReadOnlySpan<Entity> nodes, Channel<T> channel, ReadOnlySpan<T> values) where T : unmanaged;
 }
 public static class Flip
 {
@@ -27,8 +37,8 @@ public static class Flip
 ```
 
 构建与计算中的声明式入口使用 `Scope.World`。显式 World 重载供应用直接声明 FLIP。
-`SurfaceChannels.Fill` 是保存为静态只读值的普通 `Channel<Color>`；用户字段通过
-`Channel<T>.Of<TComponent>` 声明，并使用自己的 `TrackSystem<T, TOps>` 求值。
+`SurfaceChannels.Fill`、`SurfaceChannels.CornerRadius` 等由 ECS 共同字段生成器根据 `Surface` 生成，
+保存为静态只读 Channel。用户字段沿同一生成入口声明，具体算法通过 `AnimationSystems.Add` 接入。
 
 完整强类型 `Spec<T, TOps, TParameters, TState, TEvaluator>` 由 `.Animate` 原样传入声明和求值。
 应用在首次更新前通过 `AnimationSystems.Add(schedule, spec)` 登记具体组合；
@@ -92,6 +102,11 @@ Flip.Enable(row, Spec.Tween(0.2f));
 
 独立叶值副本沿 `ChildChanges` 的动画记录参加同一段提交、挂起、续跑、恢复与取消。
 每段提交保存此前叶目标，恢复时从当前呈现继续转向此前目标；普通参数副本保持原有提交顺序。
+字段元数据先在借用范围内读取；具体算法提交在借用返回后执行，最后一次更新元数据。
+这条路径遵循绑定 World 的存储访问声明，引用对象与根组件在呈现写回时共同发布变化。
+
+`GameFrameSystems.MeasureViews` 的 `AnimationMs` 单列动画 CPU 时间；实际 HUD 消费者位于
+`tools/SomeEngine.Animation.HudChecks`，使用相同的视图、动画、布局、FLIP、提取与画布绘制阶段。
 
 ## FLIP frame data
 
