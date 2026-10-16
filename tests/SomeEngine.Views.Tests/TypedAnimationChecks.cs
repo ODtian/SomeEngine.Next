@@ -6,7 +6,7 @@ using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Views.Tests;
 
-public static class TypedAnimationChecks
+public static partial class TypedAnimationChecks
 {
     public static void GeneratedFieldTargetsAnimateThroughTypedSpecs()
     {
@@ -212,9 +212,10 @@ public static class TypedAnimationChecks
 
 [GenerateFields]
 [ComponentField("Progress.Value", Name = "ProgressValue")]
-internal struct AnimatedPanel : IView, IComponent
+internal struct AnimatedPanel : IView, IComponent, IEquatable<AnimatedPanel>
 {
     public float Opacity;
     public State<float> Progress;
     public BuildTask Build() => default;
+    public bool Equals(AnimatedPanel other) => Opacity == other.Opacity && ReferenceEquals(Progress, other.Progress);
 }

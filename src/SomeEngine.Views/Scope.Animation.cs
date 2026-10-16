@@ -47,10 +47,10 @@ public static partial class Scope
         CheckBuild(current);
         using var untracked = Untrack();
         var copies = current.ViewData.ComponentCopies;
-        bool hasCopy = !channel.ThroughReference && copies is not null &&
+        bool hasCopy = copies is not null &&
             copies.TryGetValue((entity, channel.Component, 0UL), out var copy) && copy.Written;
         T value = hasCopy ? channel.ReadRoot(in copies![(entity, channel.Component, 0UL)].Bytes) : channel.Read(current.World, entity);
-        AnimatedFields.Declare(current.World, entity, channel, spec, value, hasValue: !hasCopy);
+        AnimatedFields.Declare(current.World, entity, channel, spec, value, hasValue: channel.ThroughReference || !hasCopy);
     }
 
     internal static void Animate<T>(Entity entity, Channel<T> channel, Spec spec) where T : unmanaged
@@ -58,10 +58,10 @@ public static partial class Scope
         ScopeData current = Current;
         using var untracked = Untrack();
         var copies = current.ViewData.ComponentCopies;
-        bool hasCopy = !channel.ThroughReference && copies is not null && copies.TryGetValue((entity, channel.Component, 0UL), out var copy) && copy.Written;
+        bool hasCopy = copies is not null && copies.TryGetValue((entity, channel.Component, 0UL), out var copy) && copy.Written;
         T value = hasCopy
             ? channel.ReadRoot(in copies![(entity, channel.Component, 0UL)].Bytes)
             : channel.Read(current.World, entity);
-        AnimatedFields.Declare(current.World, entity, channel, spec, value, hasValue: !hasCopy);
+        AnimatedFields.Declare(current.World, entity, channel, spec, value, hasValue: channel.ThroughReference || !hasCopy);
     }
 }
