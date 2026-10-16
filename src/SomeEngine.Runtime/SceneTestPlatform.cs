@@ -210,7 +210,8 @@ public sealed class SceneTestPlatform
             _frames.Count == 0 ? null : _frames.Average(f => f.Views.TotalMs),
             _frames.Count == 0 ? null : _frames.Average(f => f.ExtractionMs),
             _frames.Count == 0 ? null : _frames.Average(f => f.Views.AllocatedBytes),
-            _frames.Count == 0 ? null : _frames.Average(f => f.ExtractionAllocatedBytes)));
+            _frames.Count == 0 ? null : _frames.Average(f => f.ExtractionAllocatedBytes),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.AnimationMs)));
         ReloadRequested = true;
     }
 
@@ -359,6 +360,6 @@ public sealed class SceneTestPlatform
         double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults,
         long Rebuilds, double? RebuildsPerFrame, long Computations, double? ComputationsPerFrame,
         double? RebuildMs, double? TextMs, double? LayoutMs, double? ViewMs, double? ExtractionMs,
-        double? ViewAllocatedBytes, double? ExtractionAllocatedBytes);
+        double? ViewAllocatedBytes, double? ExtractionAllocatedBytes, double? AnimationMs);
 }
 

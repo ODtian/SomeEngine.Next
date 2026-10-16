@@ -28,7 +28,7 @@ public readonly record struct FrameStageDescription(FrameStage Stage, IReadOnlyL
 
 /// <summary>CPU stage times and current-thread allocations for one measured view frame.</summary>
 public readonly record struct ViewTiming(int RebuildCount, int ComputationCount, double RebuildMs,
-    double TextMs, double LayoutMs, double TotalMs, long AllocatedBytes);
+    double TextMs, double LayoutMs, double TotalMs, long AllocatedBytes, double AnimationMs = 0);
 
 /// <summary>Game-world interface systems, with input before simulation and layout before extraction.</summary>
 public sealed class GameFrameSystems : IDisposable
@@ -39,6 +39,7 @@ public sealed class GameFrameSystems : IDisposable
     private static readonly TraceSite RebuildTrace = new("someui", "Views.Rebuild");
     private static readonly TraceSite TextTrace = new("someui", "Views.TextMeasurement");
     private static readonly TraceSite LayoutTrace = new("someui", "Views.Layout");
+    private static readonly TraceSite AnimationTrace = new("someui", "Views.Animation");
 
     public GameFrameSystems(World world)
     {
@@ -73,13 +74,15 @@ public sealed class GameFrameSystems : IDisposable
     {
         long allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
         long started = measure ? Stopwatch.GetTimestamp() : 0;
-        double rebuildMs = 0, textMs = 0, layoutMs = 0;
+        double rebuildMs = 0, textMs = 0, layoutMs = 0, animationMs = 0;
         var context = new ImmediateSystemContext(_world, 0, 0, deltaSeconds);
         foreach (var stage in _stages)
         {
             if (stage.Stage < FrameStage.ViewRebuild || stage.Systems is null) continue;
             if (measure && stage.Stage == FrameStage.ViewRebuild)
                 rebuildMs = Measure(stage.Systems, RebuildTrace, ref context);
+            else if (measure && stage.Stage == FrameStage.Animation)
+                animationMs = Measure(stage.Systems, AnimationTrace, ref context);
             else if (measure && stage.Stage == FrameStage.TextMeasurement)
                 textMs = Measure(stage.Systems, TextTrace, ref context);
             else if (measure && stage.Stage == FrameStage.Layout)
@@ -88,7 +91,7 @@ public sealed class GameFrameSystems : IDisposable
                 stage.Systems.Update(ref context);
         }
         return measure ? new ViewTiming(_rebuild.BuildCount, _rebuild.ComputationCount, rebuildMs, textMs, layoutMs,
-            Stopwatch.GetElapsedTime(started).TotalMilliseconds, GC.GetAllocatedBytesForCurrentThread() - allocated) : default;
+            Stopwatch.GetElapsedTime(started).TotalMilliseconds, GC.GetAllocatedBytesForCurrentThread() - allocated, animationMs) : default;
     }
 
     private static double Measure(SystemGroup<ImmediateSystemContext> systems, TraceSite site, ref ImmediateSystemContext context)
@@ -104,6 +107,15 @@ public sealed class GameFrameSystems : IDisposable
 
     public int AddFlipSystem<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> =>
         Group(FrameStage.Flip).Add(system);
+
+    /// <summary>Adds a concrete motion to the same animation phases used by the interface.</summary>
+    public void AddAnimation<T, TOps, TParameters, TState, TEvaluator>(Spec<T, TOps, TParameters, TState, TEvaluator> spec)
+        where T : unmanaged
+        where TOps : struct, IValueOps<T>
+        where TParameters : struct
+        where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState> =>
+        AnimationSystems.Add(Group(FrameStage.Animation), spec);
 
     private SystemGroup<ImmediateSystemContext> Group(FrameStage stage) => _stages[(int)stage].Systems!;
 
