@@ -49,7 +49,8 @@ public sealed partial class ClusterPipelineSystem
 
     private BlendMeasurementBuffers CreateBlendMeasurementBuffers()
     {
-        ulong capacityBytes = GraphData.Stencil?.CapacityBytes ?? 0;
+        ulong tileViewBytes = _options.BlendIndex == ClusterBlendIndex.Xy ? (ulong)_viewGrid.ViewCount * 192u : 0;
+        ulong capacityBytes = (GraphData.Stencil?.CapacityBytes ?? 0) + tileViewBytes;
         ulong allocationBytes = GraphData.Stencil?.AllocationBytes ?? 0;
         if (GraphData.Transparency is not { } data) return new(default, 0, capacityBytes, capacityBytes, allocationBytes, 0);
         FrameResources frame = GraphData.Resources;

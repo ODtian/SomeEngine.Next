@@ -25,6 +25,7 @@ public enum ClusterBlendIndex : byte
 {
     FullScan,
     Xyz,
+    Xy,
 }
 
 /// <summary>Capacity and quality policy for Cluster visibility graph construction.</summary>

@@ -169,7 +169,8 @@ public sealed record RuntimeStartupOptions(
             {
                 "full" => ClusterBlendIndex.FullScan,
                 "xyz" => ClusterBlendIndex.Xyz,
-                _ => throw new ArgumentException("--blend-index requires 'full' or 'xyz'.", "--blend-index"),
+                "xy" => ClusterBlendIndex.Xy,
+                _ => throw new ArgumentException("--blend-index requires 'full', 'xy' or 'xyz'.", "--blend-index"),
             },
             ShadowRayCount = shadowRayCount,
         };
