@@ -30,4 +30,5 @@ public struct Track<T> : IBufferElement where T : unmanaged
     public bool SourceActive;
     public int MotionType;
     public int MotionIndex;
+    public bool MotionInitialized;
 }

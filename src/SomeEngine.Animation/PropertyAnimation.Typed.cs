@@ -139,22 +139,22 @@ public static partial class PropertyAnimation
         var values = new MotionValues<T>(from, to, from);
         int type = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type;
         bool same = previous.MotionType == type;
-        bool running = same && previous.SourceActive && !previous.Finished;
-        if (!same && previous.MotionType != 0 && !previous.Finished)
+        bool running = same && previous.MotionInitialized;
+        if (!same && previous.MotionInitialized)
             MotionAccesses<T>.Items[previous.MotionType - 1].Release(world, instance, previous.MotionIndex);
         int stateIndex = same ? previous.MotionIndex : FreeMotionIndex<T, TOps, TParameters, TState, TEvaluator>(world, instance);
         var change = (Parameters: spec.Parameters, Previous: previous, Values: values, Running: running, Index: stateIndex,
-            Unchanged: false, Endpoints: endpoints, Target: value);
+            Unchanged: false, ParametersOnly: false, Endpoints: endpoints, Target: value);
         world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>,
-            (TParameters Parameters, Track<T> Previous, MotionValues<T> Values, bool Running, int Index, bool Unchanged, TrackEndpoints Endpoints, T Target)>(instance, ref change,
+            (TParameters Parameters, Track<T> Previous, MotionValues<T> Values, bool Running, int Index, bool Unchanged, bool ParametersOnly, TrackEndpoints Endpoints, T Target)>(instance, ref change,
             static (instances, ref change) =>
             {
                 ref MotionData<T, TParameters, TState> data = ref instances[change.Index].Data;
                 bool equal = TEvaluator.ParametersEqual(in data.Parameters, in change.Parameters);
                 bool sameTarget = change.Previous.Endpoints == TrackEndpoints.Values && change.Endpoints == TrackEndpoints.Values &&
-                    TOps.Distance(in change.Previous.To, in change.Target) == 0;
+                    TOps.Equals(in change.Previous.To, in change.Target);
                 if (change.Previous.SourceActive && sameTarget && equal &&
-                    (change.Running || TOps.Distance(in change.Previous.Current, in change.Target) == 0) &&
+                    (change.Running || TOps.Equals(in change.Previous.Current, in change.Target)) &&
                     change.Previous.MotionType == MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type)
                 {
                     change.Unchanged = true;
@@ -163,7 +163,12 @@ public static partial class PropertyAnimation
                 if (change.Running)
                 {
                     if (!equal) TEvaluator.UpdateParameters(in data.Parameters, in change.Parameters, ref data.State);
-                    TEvaluator.Retarget(in data.Parameters, in change.Parameters, in change.Values, ref data.State);
+                    if (sameTarget)
+                    {
+                        change.ParametersOnly = true;
+                        change.Values = new(change.Previous.From, change.Previous.To, change.Previous.Current);
+                    }
+                    else TEvaluator.Retarget(in data.Parameters, in change.Parameters, in change.Values, ref data.State);
                 }
                 else TEvaluator.Initialize(in change.Parameters, in change.Values, ref data.State);
                 data.Parameters = change.Parameters;
@@ -171,10 +176,16 @@ public static partial class PropertyAnimation
                 data.Active = true;
             });
         if (change.Unchanged) return instance;
+        if (change.ParametersOnly)
+        {
+            previous.Duration = spec.Boundary.Duration;
+            WriteTrack(world, instance, source.Track, in previous);
+            return instance;
+        }
         var track = new Track<T>
         {
             Target = target == instance ? Entity.Null : target, Channel = channel, Layer = layer,
-            Typed = true, SourceActive = true, MotionType = type, MotionIndex = change.Index,
+            Typed = true, SourceActive = true, MotionType = type, MotionIndex = change.Index, MotionInitialized = true,
             From = from, To = to, Current = from, Start = timeline.Time, SampleTime = timeline.Time,
             StartId = timeline.Starts, Stage = timeline.Stage, Duration = spec.Boundary.Duration,
             Endpoints = endpoints == TrackEndpoints.Displacement ? TrackEndpoints.DisplacementValues : endpoints,
@@ -229,7 +240,7 @@ public static partial class PropertyAnimation
         return search.Index;
     }
 
-    private static Entity FindTypedPool<T, TOps, TParameters, TState, TEvaluator>(World world)
+    private static unsafe Entity FindTypedPool<T, TOps, TParameters, TState, TEvaluator>(World world)
         where T : unmanaged where TOps : struct, IValueOps<T> where TParameters : struct where TState : struct
         where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
     {
@@ -251,6 +262,8 @@ public static partial class PropertyAnimation
                 for (int index = 0; index < tracks.Count; index++)
                 {
                     Track<T> track = tracks.Read(index);
+                    if (track.MotionInitialized)
+                        MotionAccesses<T>.Items[track.MotionType - 1].Release(available.World, row.Entity, track.MotionIndex);
                     Entity target = track.Target == Entity.Null ? row.Entity : track.Target;
                     if (!available.World.IsAlive(target) || !available.World.HasBuffer<PropertySource<T>>(target)) continue;
                     Entity animation = row.Entity;

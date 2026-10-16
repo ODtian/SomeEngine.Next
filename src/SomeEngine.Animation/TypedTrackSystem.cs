@@ -20,12 +20,13 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
         _tracks = context.World.Query(context.World.QueryDefinition().ReadWrite<Timeline>().WriteBuffer<Track<T>>()
             .WriteBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>());
 
-    public void OnUpdate(ref ImmediateSystemContext context)
+    public unsafe void OnUpdate(ref ImmediateSystemContext context)
     {
         var evaluation = (World: context.World, Weights: _fields == TrackFields.LayerWeights);
-        context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation,
-            static (QueryCursor rows, ref (World World, bool Weights) evaluation) =>
-            {
+        context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);
+
+        static void Evaluate(QueryCursor rows, ref (World World, bool Weights) evaluation)
+        {
                 World world = evaluation.World;
                 int type = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type;
                 foreach (QueryRow row in rows.Rows)
@@ -33,6 +34,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
                     Span<MotionData<T, TParameters, TState>> data = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Data(
                         row.Buffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>());
+                    for (int index = 0; index < data.Length; index++) data[index].Active = false;
                     ref Timeline timeline = ref row.ReadWrite<Timeline>();
                     bool enabled = world.IsEnabled<Timeline>(row.Entity);
                     bool evaluate = false;
@@ -57,7 +59,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     }
                     if (!evaluate) continue;
                     var batch = new MotionBatch<T, TParameters, TState>(data);
-                    MotionDispatcher<T, TOps, TParameters, TState, TEvaluator>.EvaluateBatch(ref batch);
+                    TEvaluator.EvaluateBatch<TEvaluator>(ref batch);
                     for (int index = 0; index < tracks.Count; index++)
                     {
                         ref Track<T> track = ref tracks[index];
@@ -71,13 +73,12 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                         PropertyAnimation.SubmitTyped<T, TOps>(world, row.Entity, (uint)index, in track);
                         if (track.Finished)
                         {
-                            TEvaluator.Release(ref motion.State);
                             motion.Active = false;
                         }
                         else timeline.Running |= 1;
                     }
                 }
-            });
+        }
     }
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_tracks);

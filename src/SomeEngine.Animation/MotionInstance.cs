@@ -109,20 +109,17 @@ internal static unsafe class MotionStorage<T, TOps, TParameters, TState, TEvalua
 
     private static void Stop(World world, Entity animation)
     {
-        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation, static instances =>
-        {
-            for (int index = 0; index < instances.Count; index++)
-            {
-                ref MotionData<T, TParameters, TState> data = ref instances[index].Data;
-                if (!data.Active) continue;
-                TEvaluator.Release(ref data.State);
-                data.Active = false;
-            }
-        });
-        world.ExecuteBufferWrite<Track<T>>(animation, static tracks =>
+        var stopping = (World: world, Animation: animation);
+        world.ExecuteBufferWrite<Track<T>, (World World, Entity Animation)>(animation, ref stopping, static (tracks, ref stopping) =>
         {
             for (int index = 0; index < tracks.Count; index++)
-                if (tracks.Read(index).MotionType == Type) tracks[index].Finished = true;
+            {
+                ref Track<T> track = ref tracks[index];
+                if (track.MotionType != Type) continue;
+                if (track.MotionInitialized) Release(stopping.World, stopping.Animation, track.MotionIndex);
+                track.MotionInitialized = false;
+                track.Finished = true;
+            }
         });
     }
 }
