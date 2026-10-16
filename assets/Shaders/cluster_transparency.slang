@@ -378,7 +378,10 @@ bool TransparencyHit<TMaterials : ITransparencyMaterials>(uniform TMaterials mat
     TransparencyTriangle triangle, uint cell, float opaque, out float depth)
 {
     if (!TransparencyCovered(triangle, float2(pixel.xy) + .5, depth)) return false;
-    if (!materials.cover(triangle.Bin, triangle.Source, triangle.Primitive, pixel, depth, depth) || depth < 0.0 || depth > opaque) return false;
+    float resultDepth;
+    if (!materials.cover(triangle.Bin, triangle.Source, triangle.Primitive, pixel, depth, resultDepth)) return false;
+    depth = resultDepth;
+    if (depth < 0.0 || depth > opaque) return false;
     return cell == 0xFFFFFFFFu || cell == ClusteredLightCellIndex(TransparencyLightingViews[pixel.z], pixel.z, pixel.xy,
         TransparencyViewDepth(pixel.z, float2(pixel.xy) + .5, depth));
 }
