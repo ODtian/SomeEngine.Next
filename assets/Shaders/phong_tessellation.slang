@@ -69,10 +69,44 @@ PhongCoefficients BuildPhongCoefficients(Triangle triangle)
     return result;
 }
 
+float3 EvalPhongEdgePosition(
+    float3 position0, float3 position1,
+    float3 normal0, float3 normal1, float weight)
+{
+    // Adjacent source triangles evaluate the same edge in the same order.
+    if (position0.x > position1.x ||
+        (position0.x == position1.x && (position0.y > position1.y ||
+        (position0.y == position1.y && position0.z > position1.z))))
+    {
+        float3 position = position0; position0 = position1; position1 = position;
+        float3 normal = normal0; normal0 = normal1; normal1 = normal;
+        weight = 1.0 - weight;
+    }
+    normal0 = SafeNormalize(normal0, float3(0.0, 0.0, 1.0));
+    normal1 = SafeNormalize(normal1, normal0);
+    precise float3 edge = position1 - position0;
+    precise float3 correction = dot(edge, normal1) * normal1 - dot(edge, normal0) * normal0;
+    precise float3 control = (position0 + position1 + correction) * 0.5;
+    precise float firstWeight = 1.0 - weight;
+    precise float3 position = position0 * (firstWeight * firstWeight) +
+        position1 * (weight * weight) + control * (2.0 * firstWeight * weight);
+    return position;
+}
+
 float3 EvalPhongPosition(
+    Triangle triangle,
     PhongCoefficients coefficients,
     float3 barycentric)
 {
+    if (barycentric.x == 0.0)
+        return EvalPhongEdgePosition(triangle.Position1, triangle.Position2,
+            triangle.Normal1, triangle.Normal2, barycentric.z);
+    if (barycentric.y == 0.0)
+        return EvalPhongEdgePosition(triangle.Position0, triangle.Position2,
+            triangle.Normal0, triangle.Normal2, barycentric.z);
+    if (barycentric.z == 0.0)
+        return EvalPhongEdgePosition(triangle.Position0, triangle.Position1,
+            triangle.Normal0, triangle.Normal1, barycentric.y);
     float u = barycentric.y;
     float v = barycentric.z;
     return
@@ -92,7 +126,7 @@ SurfaceEval EvalPhongSurface(
     float u = barycentric.y;
     float v = barycentric.z;
     SurfaceEval result;
-    result.Position = EvalPhongPosition(coefficients, barycentric);
+    result.Position = EvalPhongPosition(triangle, coefficients, barycentric);
     result.DpDu =
         coefficients.LinearU +
         coefficients.QuadraticUU * (2.0 * u) +
@@ -144,7 +178,7 @@ struct PhongTessellation : IDomainEvaluate<StandardVertex>
 
     float3 position(Triangle triangle, float3 barycentric)
     {
-        return EvalPhongPosition(BuildPhongCoefficients(triangle), barycentric);
+        return EvalPhongPosition(triangle, BuildPhongCoefficients(triangle), barycentric);
     }
 
     SurfaceEval eval(Triangle triangle, float3 barycentric)
@@ -230,12 +264,12 @@ struct PhongTessellation : IDomainEvaluate<StandardVertex>
     {
         PhongCoefficients coefficients = BuildPhongCoefficients(triangle);
         float3 control[6];
-        control[0] = EvalPhongPosition(coefficients, bary0);
-        control[1] = EvalPhongPosition(coefficients, bary1);
-        control[2] = EvalPhongPosition(coefficients, bary2);
-        float3 midpoint01 = EvalPhongPosition(coefficients, (bary0 + bary1) * 0.5);
-        float3 midpoint12 = EvalPhongPosition(coefficients, (bary1 + bary2) * 0.5);
-        float3 midpoint20 = EvalPhongPosition(coefficients, (bary2 + bary0) * 0.5);
+        control[0] = EvalPhongPosition(triangle, coefficients, bary0);
+        control[1] = EvalPhongPosition(triangle, coefficients, bary1);
+        control[2] = EvalPhongPosition(triangle, coefficients, bary2);
+        float3 midpoint01 = EvalPhongPosition(triangle, coefficients, (bary0 + bary1) * 0.5);
+        float3 midpoint12 = EvalPhongPosition(triangle, coefficients, (bary1 + bary2) * 0.5);
+        float3 midpoint20 = EvalPhongPosition(triangle, coefficients, (bary2 + bary0) * 0.5);
         control[3] = 2.0 * midpoint01 - 0.5 * (control[0] + control[1]);
         control[4] = 2.0 * midpoint12 - 0.5 * (control[1] + control[2]);
         control[5] = 2.0 * midpoint20 - 0.5 * (control[2] + control[0]);
@@ -259,9 +293,9 @@ struct PhongTessellation : IDomainEvaluate<StandardVertex>
         float3 position2)
     {
         PhongCoefficients coefficients = BuildPhongCoefficients(triangle);
-        float3 midpoint01 = EvalPhongPosition(coefficients, (bary0 + bary1) * 0.5);
-        float3 midpoint12 = EvalPhongPosition(coefficients, (bary1 + bary2) * 0.5);
-        float3 midpoint20 = EvalPhongPosition(coefficients, (bary2 + bary0) * 0.5);
+        float3 midpoint01 = EvalPhongPosition(triangle, coefficients, (bary0 + bary1) * 0.5);
+        float3 midpoint12 = EvalPhongPosition(triangle, coefficients, (bary1 + bary2) * 0.5);
+        float3 midpoint20 = EvalPhongPosition(triangle, coefficients, (bary2 + bary0) * 0.5);
 
         // For a quadratic Bezier edge, D = C - (P0 + P1) / 2 and the maximum
         // deviation from the endpoint chord is |D| / 2. Bound the positive

@@ -553,6 +553,8 @@ dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Re
 
 2026-10-16，`TransparentDeformedPhongPartsAtWindowResolutionMatchOpaqueSurfaces` 在 D3D12 与 Vulkan 两个 backend 共 2/2 通过。检查采用 1280×720、60° 相机、16 个近距离 Wave/Phong 部件，选择 `--hardware-raster --shading-path forward --no-taa --no-vsm`，保持默认细分与投影预算、`WaitForFrames=false`。每次完成 16 帧并驻留 1/1 页；第 7 帧 opaque 与第 15 帧 alpha 为 1 的透明完整线性图像误差在 `0.003` 内。微三角形保留原域角点、覆盖沿采样深度求值，并以首顶点加深度差的形式插值；相交处的深度精度由同一图像对照验证。配套 `223-precision/DefaultProject` 由 `review` 的 91 项内容复制后只重建 `deformed-phong.shader`，代码对应 `6ec9dab0`。
 
+有限边界版本的同一检查进一步定位了原三角形 62/63 的共享边：原域点 `(.75,.25,0)` 与 `(0,.25,.75)` 对应同一位置，原来的基点多项式展开将其投影到 `(562.6289,299.59375)` 与 `(562.6328,299.59375)`，相差一个 subpixel。采样点 `(562.5,299.5)` 落入这条微缝，硬件选取实例 12，透明候选转而选取实例 13，线性颜色差为 `.33740234`。`PhongTessellation` 的公共位置求值现在沿共享边以相同端点次序计算二次 Bézier 边控制点与权重，使用 `precise` 固定运算；表面、范围和误差求值复用这一位置函数。干净 `phong-edges/DefaultProject` 包仅重建 Deformed Phong 的全部入口、保存特化与 IR，其余 91 项包资产沿用正式内容。原相交布局的 720p 两后端检查再次各完成 16 帧、驻留 1/1 页，并满足原 `.003` 整图容差。
+
 2026-10-16 的容量继续处理检查通过 `TransparentCurvedGeometryMatchesAcrossRasterSourcesAndBufferBatches` 对照三次应用：硬件来源（8 px、投影/引用各 4096）、软件来源（256 px、各 4096）和软件来源（256 px、各 1）。每次完成 8 帧并驻留 6/6 页，D3D12 与 Vulkan 的完整线性图像均在 `0.001` 内一致，两个 backend 检查共 2/2 通过，行为规则为 0 违规。该轮先记录容量为 `1` 时的 D3D12 `DeviceLost`，随后采用顺序细分和 wave 共享投影通过原检查。匹配内容位于 `F:/AI-Workspaces/tile-blending-221-content/223-fallback/DefaultProject`（91 资产），新 `Assets` 编译后通过原 `DefaultContent.BuildAsync` 重写配置。
 
 ```powershell
