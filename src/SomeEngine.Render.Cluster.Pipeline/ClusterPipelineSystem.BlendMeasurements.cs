@@ -29,10 +29,11 @@ public sealed partial class ClusterPipelineSystem
         MaterialDecalData decals = GraphData.Decals!;
         GraphRegionId requests = _transparencyRequestRegion != default ? _transparencyRequestRegion : _regions.Shading;
         GraphRegionId color = GraphData.Stencil is null ? _regions.Shading : GraphData.BlendColors;
+        GraphPassId colorFirst = transparent?.ColorPass ?? GraphData.Stencil?.ClearPass ?? default;
         var passes = new BlendMeasurementPasses(
             transparent?.Geometry ?? _regions.PrimaryGeometry, transparent?.Builds[0] ?? default, transparent?.Builds[^1] ?? default,
             transparent?.Requests ?? requests, transparent?.RequestPass ?? default,
-            transparent?.Color ?? color, transparent?.ColorPass ?? default, transparent?.ColorPass ?? default,
+            transparent?.Color ?? color, colorFirst, colorFirst,
             _regions.Shading, _regions.Feedback,
             decals.Geometry, decals.Builds[0], decals.Builds[^1], GraphData.ReceiverGroups.Parent, GraphData.ShadeGroups.Parent);
         if (GraphData.BlendMeasurements is { } previous && !previous.HasPasses(passes)) RemoveBlendMeasurements(ref edit);
