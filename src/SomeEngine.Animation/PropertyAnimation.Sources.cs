@@ -59,16 +59,18 @@ public static partial class PropertyAnimation
             PropertySource<T> source = ReadSource<T>(world, target, index);
             if (source.Animation != animation || source.Track != output) continue;
             Track<T> track = ReadTrack<T>(world, animation, source.Track);
-            if (track.MotionInitialized) MotionAccesses<T>.Items[track.MotionType - 1].Release(world, animation, track.MotionIndex);
-            if (!track.FromGraph)
+            if (track.FromGraph)
+                GraphFieldOutputs<T>.Remove(world, animation, source.Track);
+            else
             {
+                if (track.MotionInitialized) MotionAccesses<T>.Items[track.MotionType - 1].Release(world, animation, track.MotionIndex);
                 Timeline timeline = world.Read<Timeline>(animation);
                 RemoveDirectBoundary<T>(world, animation, source.Track, in timeline);
+                track.SourceActive = false;
+                track.MotionInitialized = false;
+                track.Finished = true;
+                WriteTrack(world, animation, source.Track, in track);
             }
-            track.SourceActive = false;
-            track.MotionInitialized = false;
-            track.Finished = true;
-            WriteTrack(world, animation, source.Track, in track);
             channel = source.Channel;
             world.ExecuteBufferWrite<PropertySource<T>, int>(target, ref index, static (sources, ref index) => sources.SwapRemoveAt(index));
         }

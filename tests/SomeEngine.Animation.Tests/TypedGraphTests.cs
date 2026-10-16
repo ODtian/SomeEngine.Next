@@ -8,6 +8,34 @@ namespace SomeEngine.Animation.Tests;
 public class TypedGraphTests
 {
     private static readonly Channel<float> Value = Channel<float>.Of<GraphValue>(static (ref GraphValue value) => ref value.Value);
+    private static readonly Channel<float> Other = Channel<float>.Of<GraphValue>(static (ref GraphValue value) => ref value.Other);
+
+    [Fact]
+    public void RemovingOneCompiledOutputKeepsTheOtherOutputRunning()
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new GraphValue());
+        var spec = Spec.Tween<float, FloatOps, Linear>(1);
+        using var builder = new AnimationBuilder(world);
+        builder.To(target, Value, 10, spec);
+        builder.To(target, Other, 20, spec);
+        Entity animation = builder.Play();
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.Add(systems, spec);
+        var frame = new ImmediateSystemContext(world, 0, 0, 0.25);
+        systems.Update(ref frame);
+        uint output = 0;
+        world.ExecuteBufferRead<PropertySource<float>, uint>(target, ref output, static (sources, ref output) =>
+        {
+            foreach (PropertySource<float> source in sources.AsSpan())
+                if (source.Channel == Value) output = (uint)source.Track;
+        });
+        PropertyAnimation.RemoveSource<float>(world, target, animation, output);
+
+        systems.Update(ref frame);
+
+        Assert.Equal((2.5f, 10), (world.Read<GraphValue>(target).Value, world.Read<GraphValue>(target).Other));
+    }
 
     [Fact]
     public void SequenceCapturesThePreviousTypedLeafEndpointAcrossAlgorithms()
@@ -174,5 +202,5 @@ public class TypedGraphTests
         Assert.Equal((10, 0), (world.Read<GraphValue>(first).Value, world.Read<GraphValue>(second).Value));
     }
 
-    private struct GraphValue : IComponent { public float Value; }
+    private struct GraphValue : IComponent { public float Value, Other; }
 }

@@ -10,6 +10,7 @@ namespace SomeEngine.Animation.Checks;
 internal static class GraphConsumerChecks
 {
     private static readonly Channel<float> Value = Channel<float>.Of<GraphValue>(static (ref GraphValue value) => ref value.Value);
+    private static readonly Channel<float> Other = Channel<float>.Of<GraphValue>(static (ref GraphValue value) => ref value.Other);
 
     internal static void Check()
     {
@@ -19,6 +20,7 @@ internal static class GraphConsumerChecks
         CheckRetarget();
         CheckCustomCondition();
         CheckPublicLeaf();
+        CheckOutputRemoval();
         Console.WriteLine("GRAPH_CONSUMERS_PASSED typed-sequence shared-definition instance-state custom-condition public-leaf");
     }
 
@@ -169,10 +171,34 @@ internal static class GraphConsumerChecks
         systems.Update(ref context);
     }
 
+    private static void CheckOutputRemoval()
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new GraphValue());
+        var spec = Spec.Tween<float, FloatOps, Linear>(1);
+        using var builder = new AnimationBuilder(world);
+        builder.To(target, Value, 10, spec);
+        builder.To(target, Other, 20, spec);
+        Entity animation = builder.Play();
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.Add(systems, spec);
+        Tick(systems, world, 0.25);
+        uint output = 0;
+        world.ExecuteBufferRead<PropertySource<float>, uint>(target, ref output, static (sources, ref output) =>
+        {
+            foreach (PropertySource<float> source in sources.AsSpan())
+                if (source.Channel == Value) output = (uint)source.Track;
+        });
+        PropertyAnimation.RemoveSource<float>(world, target, animation, output);
+        Tick(systems, world, 0.25);
+        Require(world.Read<GraphValue>(target).Value == 2.5f && world.Read<GraphValue>(target).Other == 10,
+            "Removing a compiled output holds its presented field while the other output keeps sampling.");
+    }
+
     private static void Require(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);
     }
 
-    private struct GraphValue : IComponent { public float Value; }
+    private struct GraphValue : IComponent { public float Value, Other; }
 }

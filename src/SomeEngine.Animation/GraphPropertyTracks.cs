@@ -99,6 +99,31 @@ internal static class GraphPropertyTracks<T, TOps, TParameters, TState, TEvaluat
 
 internal static class GraphFieldOutputs<T> where T : unmanaged
 {
+    internal static unsafe void Remove(World world, Entity animation, int leader)
+    {
+        int count = PropertyAnimation.BufferCount<GraphFieldOutput<T>>(world, animation);
+        for (int outputIndex = 0; outputIndex < count; outputIndex++)
+        {
+            GraphFieldOutput<T> output = PropertyAnimation.ReadBufferItem<GraphFieldOutput<T>>(world, animation, outputIndex);
+            if (output.Leader != leader)
+                continue;
+            for (int index = output.First; index < output.First + output.Count; index++)
+            {
+                int trackIndex = PropertyAnimation.ReadBufferItem<GraphFieldTrack<T>>(world, animation, index).Track;
+                Track<T> track = PropertyAnimation.ReadTrack<T>(world, animation, trackIndex);
+                if (track.MotionInitialized)
+                    MotionAccesses<T>.Items[track.MotionType - 1].Release(world, animation, track.MotionIndex);
+                track.MotionInitialized = false;
+                track.SourceActive = false;
+                track.Finished = true;
+                PropertyAnimation.WriteTrack(world, animation, trackIndex, in track);
+            }
+            world.ExecuteBufferWrite<GraphFieldOutput<T>, int>(animation, ref outputIndex,
+                static (outputs, ref outputIndex) => outputs.SwapRemoveAt(outputIndex));
+            return;
+        }
+    }
+
     internal static void Release(World world, Entity animation)
     {
         var targets = new HashSet<Entity>();
