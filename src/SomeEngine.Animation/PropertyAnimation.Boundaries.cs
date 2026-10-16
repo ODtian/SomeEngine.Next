@@ -9,25 +9,47 @@ public static partial class PropertyAnimation
     private static void UpdateDirectBoundary<T>(World world, Entity animation, int index,
         in Track<T> track, in Timeline timeline, MotionBoundary boundary) where T : unmanaged
     {
-        var summary = (ValueType: BufferComponents.Header<Track<T>>(), Track: index, TrackData: track,
-            Timeline: timeline, Boundary: boundary, Stage: new TimelineStage());
+        var update = (ValueType: BufferComponents.Header<Track<T>>(), Track: index, TrackData: track, Boundary: boundary);
         world.ExecuteBufferWrite<DirectBoundary,
-            (int ValueType, int Track, Track<T> TrackData, Timeline Timeline, MotionBoundary Boundary, TimelineStage Stage)>(animation, ref summary,
-            static (boundaries, ref summary) =>
+            (int ValueType, int Track, Track<T> TrackData, MotionBoundary Boundary)>(animation, ref update,
+            static (boundaries, ref update) =>
             {
                 for (int index = 0; index < boundaries.Count; index++)
                 {
                     DirectBoundary value = boundaries.Read(index);
-                    if (value.ValueType == summary.ValueType && value.Track == summary.Track)
+                    if (value.ValueType == update.ValueType && value.Track == update.Track)
                     {
-                        value.Boundary = summary.Boundary;
-                        value.Start = summary.TrackData.Start;
-                        value.Stage = summary.TrackData.Stage;
-                        value.Starts = summary.TrackData.StartId;
+                        value.Boundary = update.Boundary;
+                        value.Start = update.TrackData.Start;
+                        value.Stage = update.TrackData.Stage;
+                        value.Starts = update.TrackData.StartId;
                         value.Defined = true;
                         boundaries[index] = value;
                     }
                 }
+            });
+        WriteDirectStage(world, animation, in timeline);
+    }
+
+    internal static void RemoveDirectBoundary<T>(World world, Entity animation, int index, in Timeline timeline) where T : unmanaged
+    {
+        var source = (ValueType: BufferComponents.Header<Track<T>>(), Track: index);
+        world.ExecuteBufferWrite<DirectBoundary, (int ValueType, int Track)>(animation, ref source,
+            static (boundaries, ref source) =>
+            {
+                for (int index = 0; index < boundaries.Count; index++)
+                    if (boundaries.Read(index).ValueType == source.ValueType && boundaries.Read(index).Track == source.Track)
+                        boundaries[index].Defined = false;
+            });
+        WriteDirectStage(world, animation, in timeline);
+    }
+
+    private static void WriteDirectStage(World world, Entity animation, in Timeline timeline)
+    {
+        var summary = (Timeline: timeline, Stage: new TimelineStage());
+        world.ExecuteBufferRead<DirectBoundary, (Timeline Timeline, TimelineStage Stage)>(animation, ref summary,
+            static (boundaries, ref summary) =>
+            {
                 foreach (DirectBoundary value in boundaries.AsSpan())
                 {
                     if (!value.Defined || value.Starts != summary.Timeline.Starts || value.Stage != summary.Timeline.Stage) continue;

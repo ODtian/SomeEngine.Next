@@ -60,6 +60,11 @@ public static partial class PropertyAnimation
             if (source.Animation != animation || source.Track != output) continue;
             Track<T> track = ReadTrack<T>(world, animation, source.Track);
             if (track.MotionInitialized) MotionAccesses<T>.Items[track.MotionType - 1].Release(world, animation, track.MotionIndex);
+            if (!track.FromGraph)
+            {
+                Timeline timeline = world.Read<Timeline>(animation);
+                RemoveDirectBoundary<T>(world, animation, source.Track, in timeline);
+            }
             track.SourceActive = false;
             track.MotionInitialized = false;
             track.Finished = true;
