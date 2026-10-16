@@ -15,6 +15,7 @@ internal sealed class ClusterBlendAssets : IDisposable
     internal required UnlitMaterial DeformedPhong { get; init; }
     internal required Texture Smoke { get; init; }
     internal required Texture Leaf { get; init; }
+    internal required Texture CoatingNormal { get; init; }
 
     internal static async Task<ClusterBlendAssets> OpenAsync(string root, RuntimeGraphicsBackend backend)
     {
@@ -44,6 +45,7 @@ internal sealed class ClusterBlendAssets : IDisposable
             DeformedPhong = (UnlitMaterial)await ReadMaterialAsync("Deformed Phong"),
             Smoke = await ReadTextureAsync("Blend smoke"),
             Leaf = await ReadTextureAsync("Blend leaf"),
+            CoatingNormal = await ReadTextureAsync("Blend coating normal"),
         };
 
         Guid Id(string name, string type) => manifest.Assets.Values.Single(entry => entry.Name == name && entry.AssetType == type).AssetGuid;
@@ -79,5 +81,6 @@ internal sealed class ClusterBlendAssets : IDisposable
         DeformedPhong.Dispose();
         Smoke.Dispose();
         Leaf.Dispose();
+        CoatingNormal.Dispose();
     }
 }
