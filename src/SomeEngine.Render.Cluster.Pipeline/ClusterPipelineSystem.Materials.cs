@@ -108,11 +108,11 @@ public sealed partial class ClusterPipelineSystem
     // Observed property revisions serve GPU bindings and declared depth inputs; values stay on Material.
     private readonly Dictionary<long, MaterialBindingVersions> _materialBindingVersions = [];
     private sealed record MaterialBindingVersions(
-        Shader? Shader, ulong[] Properties)
+        Shader? Shader, MaterialState State, ulong[] Properties)
     {
         internal bool Matches(Material material, ClusterRasterStages raster, ClusterShadeStages shade)
         {
-            if (!ReferenceEquals(Shader, material.Shader) || Properties.Length != material.PropertyCount)
+            if (!ReferenceEquals(Shader, material.Shader) || State != material.State || Properties.Length != material.PropertyCount)
                 return false;
             // Stage resolution already retains the complete resource-property sets.
             // Read only those revisions; scalar-only edits need no full-property scan.
@@ -168,7 +168,7 @@ public sealed partial class ClusterPipelineSystem
             var properties = new ulong[material.PropertyCount];
             for (uint property = 0; property < material.PropertyCount; property++)
                 properties[property] = material.GetPropertyRevision(property);
-            _materialBindingVersions[id] = new(material.Shader, properties);
+            _materialBindingVersions[id] = new(material.Shader, material.State, properties);
         }
         _consumedMaterialAssignments = assignments;
         _materialAssignments.AcceptMaterialChanges(source);

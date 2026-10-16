@@ -71,6 +71,19 @@ public sealed class ClusterMaterialAssignmentSet
     internal IEnumerable<int> ActiveOffsets => _entries.Keys;
     internal IEnumerable<int> ChangedOffsets => _changedOffsets;
     internal IEnumerable<Entity> Entities => _entities.Keys;
+    internal IEnumerable<Entity> TranslucentEntities
+    {
+        get
+        {
+            foreach ((Entity entity, ClusterMaterialSequence sequence) in _entities)
+                for (int index = 0; index < sequence.Count; index++)
+                    if (_values[sequence.MaterialAt(index)].Resource.State.Surface == SurfaceMode.Translucent)
+                    {
+                        yield return entity;
+                        break;
+                    }
+        }
+    }
     internal void CollectChangedEntities(HashSet<Entity> entities, HashSet<long> changedMaterials)
     {
         foreach ((Entity entity, ClusterMaterialSequence sequence) in _entities)

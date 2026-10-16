@@ -444,3 +444,31 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 - [效果专项原始数据及两份 resolver 源码](Transparency-Workloads-2026-10-16.json)
 - [优化过程中的配对数据](Transparency-Workload-Variants-2026-10-16.json)
 - [OIT 八种方法的场景对照](Transparency-OIT-Workloads-2026-10-16.json)
+
+## 2026-10-16 Cluster 完整材质 OIT 接入
+
+游戏通过 `Material.State.Surface = SurfaceMode.Translucent` 选择透明表面。材质状态沿现有材质变化通知、世界提取和 Rendering world 的 Cluster 材质分配传递。材质标量和纹理索引继续由现有实例材质地址读取；同一 evaluator 的不同实例共享静态代码，使用各自的参数。
+
+用户 shader 导出带 `TransparencyMaterial` 属性的具体类型，并实现几何投影、覆盖求值、颜色求值和 receiver 求值。DefaultProject 的 Standard、Unlit 以及导入场景材质通过 `cluster_transparency_material.slang` 复用自己的 `VertexEvaluate`、`DomainEvaluate`、`VisibilityEvaluate` 和 `SurfaceEvaluate`。顶点解码、属性插值、表面重建、纹理梯度、法线与资源含义均由这些用户类型解释。
+
+`Shader.Compose` 将驻留用户 shader 的 Slang IR 导入同一 session，编译按材质箱选择具体 evaluator 的新入口。共享 `cluster_transparency.slang` 以 builtin 几何和颜色类型连接各个用户源文件。材质资源按整个入口的反射布局绑定，各资源对应到该字段所属的材质。源 shader 与组合入口使用 `NoMangle=0`，保留各个源文件的符号身份；资源寄存器由 Slang 在组合布局中自动分配。
+
+每帧几何阶段读取两轮 Cluster 可见几何的实际数量，并生成投影三角形和 tile 图元引用。每个 tile 的实际引用数量决定查询范围。每个像素在寄存器中保留四个按深度、来源图元次序排列的命中；处理一批后，继续从上批最后的命中向后查询，直到完整覆盖输入。逐命中使用自己的深度、位置、重心坐标及其梯度求值表面，调用 `evaluateSurface` 后以该 receiver 进行 Forward 光照和阴影采样，再执行前向 alpha 累积。opaque 颜色作为累积背景，合成位置位于 opaque 着色之后、TAA 之前。
+
+透明 receiver 的覆盖请求在 VSM 页分配之前执行。请求复用 VSM 页需求发布和 receiver footprint 计算，颜色阶段复用 Forward 的逐 receiver 阴影采样。
+
+`MaterialState.ColorLimit` 声明线性 RGB 每通道的颜色上界，默认 `1`；`MaximumError` 声明线性 RGB 最大通道误差，默认 `0`，表示完整合成。近似合成仅在剩余透射率乘以颜色上界的一半落入误差限时结束，并以剩余区间的中点估计尾部。场景使用全部参与材质的最大颜色上界和最小误差限，背景颜色同时参与上界计算。
+
+`ClusterPipelineOutputs.Transparency` 提供投影三角形、实际数量、tile 引用及数量、三角形步长和几何准备完成 pass，供后续 XYZ 索引消费。当前引用按 `tile × TriangleCapacity` 连续分段；实际循环范围由 `TileCounts` 决定。
+
+公共行为检查通过 `Application.RunAsync`、`SceneScript` 和线性图像读回进入整条路径。相交场景使用同一 Unlit evaluator 的红、绿、蓝实例：六层命中跨越寄存器队列的两个批次，比较已知完整排序颜色、反向提交结果和 `MaximumError=.04` 的误差界。完整材质场景将带贴图、法线和点光源遮挡物的 Standard 面板及 Unlit 面板从 opaque 切换为 alpha 为 `1` 的透明表面，比较两次 Forward 光照与 VSM 阴影图像。每组分别运行 D3D12 和 Vulkan：
+
+```powershell
+dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Release --filter 'FullyQualifiedName~TransparencyRenderingTests' --nologo -v minimal
+```
+
+DefaultGame 的 `--cluster-oit` 在场景初始化时把前八个网格替换为自身材质的透明副本，保留贴图、法线和实例参数，alpha 设为 `.35`。构建 DefaultProject 内容和 Game.App 后，统一场景平台可直接运行：
+
+```powershell
+dotnet templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.dll --measure-scene '1024 spheres' --cluster-oit --hardware-adapter --graphics-backend d3d12 --hardware-raster --frames 16 --hidden-window --no-debug-ui
+```

@@ -6,7 +6,7 @@ namespace SomeEngine.Assets.Importers;
 
 public static partial class SlangShaderImporter
 {
-    public const uint ImporterVersion = 34;
+    public const uint ImporterVersion = 35;
 
     private static readonly Lazy<IGlobalSession> s_globalSession = new(CreateGlobalSession);
 
@@ -55,7 +55,7 @@ public static partial class SlangShaderImporter
             ];
         CompilerOptionEntry[] options =
         [
-            new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1, 0)),
+            new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(0, 0)),
             new(CompilerOptionName.VulkanEmitReflection, CompilerOptionValue.FromInt(1, 0)),
             new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
             new(CompilerOptionName.ExperimentalFeature, CompilerOptionValue.FromInt(1, 0)),

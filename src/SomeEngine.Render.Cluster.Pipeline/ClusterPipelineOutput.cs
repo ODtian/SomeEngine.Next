@@ -70,6 +70,7 @@ public readonly record struct ClusterPipelineOutputs(
     /// </summary>
     public GraphRegionId? SurfaceReceiverConsumers { get; init; }
     public GraphTextureId CurrentHiZ { get; init; }
+    public ClusterTransparencyGeometry? Transparency { get; init; }
     public bool IsValid =>
         Visibility != default &&
         Depth != default &&
@@ -80,6 +81,14 @@ public readonly record struct ClusterPipelineOutputs(
         Height > 0 &&
         ViewCount > 0;
 }
+
+/// <summary>Current projected transparent geometry and its counted tile references, rebuilt from Cluster geometry each frame.</summary>
+/// <remarks>TriangleCount stores the actual projected triangle count at byte 0.
+/// Tile counts address contiguous ranges at tile index multiplied by TriangleCapacity. Triangle records
+/// retain screen projection, depth, view, material bin and source visibility identity.</remarks>
+public sealed record ClusterTransparencyGeometry(GraphBufferId Triangles, GraphBufferId TileCounts,
+    GraphBufferId TileReferences, GraphBufferId TriangleCount, uint TriangleCapacity, uint TriangleStride,
+    GraphPassId GeometryReady);
 
 /// <summary>
 /// Feature-owned policy data for views participating in the shared Cluster work stream.

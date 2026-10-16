@@ -169,6 +169,8 @@ uint RasterKey(
     uint slotOffset,
     uint localMaterialIndex)
 {
+    uint stage = GetStageSlot(slots, slotOffset, localMaterialIndex, uniforms.SlotCapacity);
+    if (uniforms.PolicyTarget == 0u && (stage & 0x08000000u) != 0u) return BIN_INVALID;
     return SlotBin(
         slots,
         slotOffset,

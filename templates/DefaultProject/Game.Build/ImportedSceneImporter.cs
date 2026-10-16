@@ -86,12 +86,15 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             File.Copy(file, destination, overwrite: true);
         }
         WriteSurfaceShader(directory, defaults);
+        WriteIfChanged(Path.Combine(directory, "cluster_transparency.slang"),
+            File.ReadAllText(Path.Combine(engine, "assets/Shaders/cluster_transparency.slang")));
         foreach (var (cutoff, twoSided) in model.LogicalMaterials.Select(material => (Cutoff(material), material.DoubleSided)).Distinct())
         {
             string suffix = cutoff < 0 ? "opaque" : "mask_" + BitConverter.SingleToInt32Bits(cutoff).ToString("x8");
             string shaderName = "scene_" + suffix + (twoSided ? "_both" : "");
             string shader = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
-                .Replace("\"standard_material.slang\"", "\"scene_material.slang\"");
+                .Replace("\"standard_material.slang\"", "\"scene_material.slang\"")
+                .Replace("StandardTransparencyMaterial", "SceneTransparencyMaterial_" + suffix + (twoSided ? "_both" : ""));
             if (twoSided) shader = "#define CLUSTER_RASTER_TWO_SIDED 1\n" + shader;
             if (cutoff >= 0)
                 shader = Replace(shader, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
@@ -103,7 +106,7 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
                 ? Guid.Parse(JsonNode.Parse(File.ReadAllText(definitionPath))!["Fields"]!["Id"]!.GetValue<string>()) : Guid.NewGuid();
             definition["Fields"]!["Id"] = shaderId.ToString();
             definition["Fields"]!["Name"] = shaderName;
-            definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(shaderName + ".slang");
+            definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", shaderName + ".slang");
             // This generator emits only OpaqueVisibilityEvaluate or SceneMask, with fixed depth metadata.
             if (definition["Blocks"]![0]!["Fields"]!["Specializations"] is JsonArray specializations)
                 foreach (JsonNode? value in specializations)
@@ -137,17 +140,37 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
         string surface = File.ReadAllText(Path.Combine(defaults, "standard_material.slang"));
         surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
         surface = Replace(surface, "uint ARMMap;", "uint ARMMap;\n    uint OcclusionMap;\n    uint EmissiveMap;");
-        surface = Replace(surface, "return StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;",
-            "float3 normal = StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;\n" +
+        surface = Replace(surface, "return StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleGrad(MaterialSampler, uv, uvDx, uvDy).rgb * 2.0 - 1.0;",
+            "float3 normal = StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleGrad(MaterialSampler, uv, uvDx, uvDy).rgb * 2.0 - 1.0;\n" +
             "        normal.xy *= scalars.NormalScale;\n" +
             "        return normal;");
         surface = Replace(surface, "data.BaseColor = albedo.rgb", "data.BaseColor = SceneSrgbToLinear(albedo.rgb)");
         surface = Replace(surface, "data.Occlusion = arm.r;",
-            "data.Occlusion = lerp(1.0, StandardMaterialTextures[NonUniformResourceIndex(scalars.OcclusionMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0).r, scalars.OcclusionStrength);");
+            "data.Occlusion = lerp(1.0, StandardMaterialTextures[NonUniformResourceIndex(scalars.OcclusionMap)].SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy).r, scalars.OcclusionStrength);");
         surface = Replace(surface, "data.Emissive = scalars.EmissiveFactor;",
-            "data.Emissive = SceneSrgbToLinear(StandardMaterialTextures[NonUniformResourceIndex(scalars.EmissiveMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb) * scalars.EmissiveFactor;");
+            "data.Emissive = SceneSrgbToLinear(StandardMaterialTextures[NonUniformResourceIndex(scalars.EmissiveMap)].SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy).rgb) * scalars.EmissiveFactor;");
         surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
         WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
+    }
+
+    internal static void WriteTransparencySources(string directory, string engineRoot)
+    {
+        WriteIfChanged(Path.Combine(directory, "cluster_transparency.slang"),
+            File.ReadAllText(Path.Combine(engineRoot, "assets/Shaders/cluster_transparency.slang")));
+        foreach (string definitionPath in Directory.EnumerateFiles(directory, "scene_*.shader"))
+        {
+            string shaderName = Path.GetFileNameWithoutExtension(definitionPath);
+            string sourcePath = Path.Combine(directory, shaderName + ".slang");
+            string source = File.ReadAllText(sourcePath);
+            if (!source.Contains("cluster_transparency_material.slang", StringComparison.Ordinal))
+                source += "\n#define TRANSPARENCY_MATERIAL_TYPE SceneTransparencyMaterial_" + shaderName +
+                    "\n#include \"cluster_transparency_material.slang\"\n";
+            else source = source.Replace("StandardTransparencyMaterial", "SceneTransparencyMaterial_" + shaderName);
+            WriteIfChanged(sourcePath, source);
+            JsonNode definition = JsonNode.Parse(File.ReadAllText(definitionPath))!;
+            definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", shaderName + ".slang");
+            WriteIfChanged(definitionPath, definition.ToJsonString());
+        }
     }
 
     protected override ValueTask AddSceneContentAsync(World world, Scene scene, ImportContext context,

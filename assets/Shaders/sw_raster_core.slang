@@ -28,7 +28,7 @@ struct ClusterSoftwareRasterUniforms
     uint _pad2;
 };
 
-cbuffer ClusterSoftwareRasterPushConstants : register(b100, space0)
+cbuffer ClusterSoftwareRasterPushConstants
 {
     ClusterSoftwareRasterUniforms ClusterSoftwareRasterUniformData;
 };

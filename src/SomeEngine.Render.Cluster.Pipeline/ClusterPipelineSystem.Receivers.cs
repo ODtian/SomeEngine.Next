@@ -7,6 +7,13 @@ public sealed partial class ClusterPipelineSystem
     private GraphRegionId _surfaceReceiverRegion;
     private bool _evaluateSurfaceReceivers = true;
     private bool _primaryDepthMaterialsSupported;
+    private GraphRegionId _transparencyRequestRegion;
+
+    /// <summary>Places transparent receiver requests before shadow page allocation.</summary>
+    public void ConfigureTransparencyRequests(RenderGraphEdit edit, GraphRegionId region)
+    {
+        _transparencyRequestRegion = edit.AddRegion("Cluster transparent receiver requests", region);
+    }
 
     /// <summary>Whether the installed shade stages evaluate material receivers before lighting.</summary>
     public bool HasEarlySurfaceReceiverEvaluation => _installedShadeStages?.HasReceiverEvaluation ??

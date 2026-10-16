@@ -40,7 +40,7 @@ public sealed partial class VirtualShadowFeature
     }
 
     private void InstallWorkFeedback(ref RenderGraphEdit edit, VirtualShadowMapShaders shaders,
-        uint viewCapacity, GraphRegionId prepare, GraphRegionId feedback, GraphPassId resolutionCopy)
+        uint viewCapacity, GraphRegionId prepare, GraphRegionId feedback)
     {
         _workUniforms = edit.CreateBufferInput(BufferUsages.Constant);
         if (!_shadowMap.Settings.WorkThrottlingEnabled) return;
@@ -65,15 +65,15 @@ public sealed partial class VirtualShadowFeature
         _ = pass.Bind(edit.CreateBufferSrv(_previousWorkCounts, structureStride: sizeof(uint)), PipelineSync.ComputeShading);
         _ = pass.Bind(edit.CreateBufferSrv(_previousWorkPressure, structureStride: sizeof(float)), PipelineSync.ComputeShading);
         _ = pass.Bind(edit.CreateBufferSrv(_previousWorkViewIndices, structureStride: sizeof(uint)), PipelineSync.ComputeShading);
-        _ = pass.Bind(edit.CreateBufferSrv(_frameResolutionBias, structureStride: sizeof(float)), PipelineSync.ComputeShading);
+        BindFrameResolutionBias(ref edit, ref pass, PipelineSync.ComputeShading);
         _ = pass.Bind(edit.CreateBufferUav(_frameShadowViews, structureStride: VirtualShadowView.SizeInBytes),
             PipelineSync.ComputeShading, GraphAccessMode.ReadWrite, WriteCoverage.Complete);
         _ = pass.Bind(edit.CreateBufferUav(_frameWorkPressure, structureStride: sizeof(float)),
             PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete);
         edit.OrderAfter(_workUpdatePass, _workResetPass);
-        edit.OrderAfter(_workUpdatePass, resolutionCopy);
         edit.OrderAfter(_markPass, _workUpdatePass);
         edit.OrderAfter(_coarseMarkPass, _workUpdatePass);
+        foreach (GraphPassId request in _froxelMarkPasses) edit.OrderAfter(request, _workUpdatePass);
         var copy = new WorkCopyData(_policyRasterWorkCount, _previousWorkCounts, _frameWorkPressure, _previousWorkPressure);
         _workCopyPass = edit.AddCopyFramePass("Carry completed virtual shadow work", PassQueueSelection.AnyOfType(QueueType.Graphics),
             copy, new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),

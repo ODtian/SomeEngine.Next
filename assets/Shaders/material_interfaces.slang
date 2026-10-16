@@ -38,6 +38,8 @@ struct SurfacePixel
     float Depth;
     uint VisibilityDepth;
     float3 PositionFromDepth;
+    float3 BarycentricDx;
+    float3 BarycentricDy;
 };
 
 interface ISurfaceEvaluate<TSurface, TTriangle>

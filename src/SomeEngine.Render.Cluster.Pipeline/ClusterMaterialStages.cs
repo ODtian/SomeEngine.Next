@@ -402,7 +402,8 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
 internal readonly record struct ClusterRasterBinKey(
     ClusterRasterCompatibilityKey Execution,
     string VertexEncoding,
-    ClusterCommandBindingKey Bindings);
+    ClusterCommandBindingKey Bindings,
+    SurfaceMode Surface);
 
 internal readonly record struct ClusterShadeBinKey(
     ClusterShadeCompatibilityKey Execution,
@@ -411,7 +412,8 @@ internal readonly record struct ClusterShadeBinKey(
     uint ScalarPayloadBytes,
     ClusterCommandBindingKey Bindings,
     ClusterShadeCompatibilityKey? Receiver = null,
-    ClusterCommandBindingKey? ReceiverBindings = null);
+    ClusterCommandBindingKey? ReceiverBindings = null,
+    SurfaceMode Surface = SurfaceMode.Opaque);
 
 internal readonly record struct ClusterLinkedStageKey(
     IComponentType SlangCode,
@@ -531,7 +533,7 @@ internal sealed class ClusterRasterStages : IDisposable
                 if (tessellation.HardwareResources is { } hardware)
                     ClusterMaterialEntries.AddResourceProperties(properties, hardware.MaterialBindings);
             }
-            var key = new ClusterRasterBinKey(invocation.Key, encoding, invocation.CommandBindings);
+            var key = new ClusterRasterBinKey(invocation.Key, encoding, invocation.CommandBindings, material.State.Surface);
             if (resourceProperties.TryGetValue(material.MaterialId, out var existing)) properties.UnionWith(existing);
             resourceProperties = resourceProperties.SetItem(material.MaterialId, properties);
             HashSet<uint>? depthInputs = materialDepthInputs is { } inputs ? [.. inputs] : null;
@@ -551,7 +553,8 @@ internal sealed class ClusterRasterStages : IDisposable
             static (stage, index) => index | (stage.Software is null ? 0u : 0x80000000u) |
                 (stage.Hardware.UsesMaterialRanges && stage.Tessellation is null ? 0x40000000u : 0u) |
                 (stage.SoftwareUsesMaterialRanges && stage.Tessellation is null ? 0x20000000u : 0u) |
-                (stage.PixelVisibility ? 0x10000000u : 0u)),
+                (stage.PixelVisibility ? 0x10000000u : 0u) |
+                (stage.Material.State.Surface == SurfaceMode.Translucent ? 0x08000000u : 0u)),
             invocations, bins.Range, [.. bins.Changes], [.. addresses], _resolved);
         _binIndices = bins;
         _resourceProperties = resourceProperties;
@@ -1480,7 +1483,7 @@ internal sealed class ClusterShadeStages : IDisposable
             properties.UnionWith(scalarLayouts[address].TextureProperties);
             var key = new ClusterShadeBinKey(invocation.Key, encoding,
                 invocation.Scalars.LayoutHash, invocation.Scalars.PayloadByteSize, invocation.CommandBindings,
-                invocation.SurfaceShader?.Key, invocation.SurfaceShader?.CommandBindings);
+                invocation.SurfaceShader?.Key, invocation.SurfaceShader?.CommandBindings, material.State.Surface);
             if (resourceProperties.TryGetValue(material.MaterialId, out var existing)) properties.UnionWith(existing);
             resourceProperties = resourceProperties.SetItem(material.MaterialId, properties);
             bins.Set(address, key, invocation);
@@ -2015,7 +2018,7 @@ internal sealed class ClusterLinkedStageLayout
     internal static ClusterLinkedStageLayout Create(VariableLayoutReflection layout)
         => Create(layout, null);
 
-    private static ClusterLinkedStageLayout Create(
+    internal static ClusterLinkedStageLayout Create(
         VariableLayoutReflection layout,
         Func<SlangParameterCategory, nuint, nuint, bool>? isUsed)
     {

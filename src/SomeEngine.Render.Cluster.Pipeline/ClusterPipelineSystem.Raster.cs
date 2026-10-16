@@ -103,7 +103,7 @@ public sealed partial class ClusterPipelineSystem
 
     private RasterBin[] CreateRasterBins(ClusterRasterStageSet stages, ClusterShadeStageSet shadeStages)
     {
-        var reads = CollectIndexedTextureReads(stages.BinIndices, shadeStages, 0x0fffffffu);
+        var reads = CollectIndexedTextureReads(stages.BinIndices, shadeStages, 0x07ffffffu);
         return stages.Invocations.Select(stage => new RasterBin(stage)
             { Inputs = { TextureReads = stage.ReadsMaterialScalars ? reads.GetValueOrDefault(stage.BinIndex, []) : [] } }).ToArray();
     }

@@ -33,6 +33,8 @@ public static class DefaultContent
         MaterialTypes.Register();
         WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"),
             BuildRenderInstanceLayoutSource(ClusterRenderFeature.InstanceLayout));
+        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
+            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
             sourceFormats: [new ShaderSourceFormat([engineShaders])]);
         await BuildEngineShadersAsync(project, shaders, engineShaders, cancellationToken).ConfigureAwait(false);

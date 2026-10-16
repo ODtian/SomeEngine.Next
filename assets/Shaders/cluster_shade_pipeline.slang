@@ -271,13 +271,13 @@ float3 ReconstructWorldPositionAt(
     return abs(world.w) > 1e-8 ? world.xyz / world.w : world.xyz;
 }
 
-SurfaceBarycentrics ResolveBarycentrics<TVertex, TDomain>(
+SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
     uniform TDomain domain,
     uint3 pixelCoord,
     ClusterViewUniforms view,
     TDomain.TriangleData triangle,
     TriangleInfo info,
-    out float depth,
+    float depth,
     out float3 positionFromDepth)
     where TDomain : IDomainEvaluate<TVertex>
 {
@@ -286,7 +286,6 @@ SurfaceBarycentrics ResolveBarycentrics<TVertex, TDomain>(
     float3 seed = TriangleBarycentricAt(projection, pixelCenter);
     float3 seedX = TriangleBarycentricAt(projection, pixelCenter + float2(1.0, 0.0));
     float3 seedY = TriangleBarycentricAt(projection, pixelCenter + float2(0.0, 1.0));
-    depth = DepthBuffer.Load(int4(pixelCoord, 0));
     positionFromDepth = ReconstructWorldPositionAt(pixelCenter, depth, view);
 
     SurfaceReconstructionInput input;
@@ -303,6 +302,15 @@ SurfaceBarycentrics ResolveBarycentrics<TVertex, TDomain>(
     input.ViewProjection = view.ViewProj;
     input.ScreenSize = uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
     return domain.reconstruct(triangle, input);
+}
+
+SurfaceBarycentrics ResolveBarycentrics<TVertex, TDomain>(
+    uniform TDomain domain, uint3 pixelCoord, ClusterViewUniforms view,
+    TDomain.TriangleData triangle, TriangleInfo info, out float depth, out float3 positionFromDepth)
+    where TDomain : IDomainEvaluate<TVertex>
+{
+    depth = DepthBuffer.Load(int4(pixelCoord, 0));
+    return ResolveBarycentricsAtDepth<TVertex, TDomain>(domain, pixelCoord, view, triangle, info, depth, positionFromDepth);
 }
 
 float2 ClusterMotionClipToUv(float4 clip)
@@ -349,7 +357,7 @@ void WriteClusterMotion<
 bool TryEvaluateMaterialPixel<TVE, TDomain>(uniform TVE vertexEval, uniform TDomain domain, uint3 tid,
     out uint3 pixelCoord, out TriangleInfo tri, out ClusterViewUniforms view,
     out TDomain.TriangleData triangle, out float3 bary, out TDomain.Surface evaluated, out uint surfaceIndex,
-    out float depth, out float3 positionFromDepth)
+    out float depth, out float3 positionFromDepth, out float3 baryDx, out float3 baryDy)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
@@ -363,6 +371,8 @@ bool TryEvaluateMaterialPixel<TVE, TDomain>(uniform TVE vertexEval, uniform TDom
         domain, pixelCoord, view, triangle, tri, depth, positionFromDepth);
     if (coordinates.Valid == 0u) return false;
     bary = coordinates.Value;
+    baryDx = coordinates.Dx;
+    baryDy = coordinates.Dy;
     evaluated = domain.eval(triangle, bary);
     return true;
 }
@@ -440,8 +450,9 @@ void CSEvaluateSurface<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform T
     uint surfaceIndex;
     float depth;
     float3 positionFromDepth;
+    float3 baryDx, baryDy;
     if (!TryEvaluateMaterialPixel<TVE, TDomain>(vertexEval, domain, tid,
-        coord, tri, view, triangle, bary, evaluated, surfaceIndex, depth, positionFromDepth)) return;
+        coord, tri, view, triangle, bary, evaluated, surfaceIndex, depth, positionFromDepth, baryDx, baryDy)) return;
     SurfacePixel pixel;
     pixel.PixelCoord = coord;
     pixel.InstanceID = tri.instanceID;
@@ -450,6 +461,8 @@ void CSEvaluateSurface<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform T
     pixel.VisibilityDepth = visibilityDepth;
     pixel.Depth = depth;
     pixel.PositionFromDepth = positionFromDepth;
+    pixel.BarycentricDx = baryDx;
+    pixel.BarycentricDy = baryDy;
     SurfaceReceiver receiver;
     TSurface.Data data = surface.evaluateSurface(pixel, evaluated, bary, triangle, receiver);
     receiver = TransformMaterialReceiver(receiver, tri, true);
@@ -475,8 +488,9 @@ void CSEvaluateShadowReceiver<TVE, TDomain, TSurface>(uniform TVE vertexEval, un
     uint surfaceIndex;
     float depth;
     float3 positionFromDepth;
+    float3 baryDx, baryDy;
     if (!TryEvaluateMaterialPixel<TVE, TDomain>(vertexEval, domain, tid,
-        coord, tri, view, triangle, bary, evaluated, surfaceIndex, depth, positionFromDepth)) return;
+        coord, tri, view, triangle, bary, evaluated, surfaceIndex, depth, positionFromDepth, baryDx, baryDy)) return;
     SurfacePixel pixel;
     pixel.PixelCoord = coord;
     pixel.InstanceID = tri.instanceID;
@@ -485,6 +499,8 @@ void CSEvaluateShadowReceiver<TVE, TDomain, TSurface>(uniform TVE vertexEval, un
     pixel.VisibilityDepth = visibilityDepth;
     pixel.Depth = depth;
     pixel.PositionFromDepth = positionFromDepth;
+    pixel.BarycentricDx = baryDx;
+    pixel.BarycentricDy = baryDy;
     SurfaceReceiver receiver = surface.evaluateShadowReceiver(pixel, evaluated, bary, triangle);
     receiver.ShadingNormal = 0.0.xxx;
     receiver.DepthOffset = 0.0;
@@ -509,8 +525,9 @@ void CSForwardShade<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDom
     uint surfaceIndex;
     float depth;
     float3 positionFromDepth;
+    float3 baryDx, baryDy;
     if (!TryEvaluateMaterialPixel<TVE, TDomain>(vertexEval, domain, tid,
-        coord, tri, view, triangle, bary, evaluated, surfaceIndex, depth, positionFromDepth)) return;
+        coord, tri, view, triangle, bary, evaluated, surfaceIndex, depth, positionFromDepth, baryDx, baryDy)) return;
     SurfacePixel pixel;
     pixel.PixelCoord = coord;
     pixel.InstanceID = tri.instanceID;
@@ -519,6 +536,8 @@ void CSForwardShade<TVE, TDomain, TSurface>(uniform TVE vertexEval, uniform TDom
     pixel.VisibilityDepth = visibilityDepth;
     pixel.Depth = depth;
     pixel.PositionFromDepth = positionFromDepth;
+    pixel.BarycentricDx = baryDx;
+    pixel.BarycentricDy = baryDy;
     SurfaceReceiver receiver;
     TSurface.Data data = surface.evaluateSurface(pixel, evaluated, bary, triangle, receiver);
     receiver = TransformMaterialReceiver(receiver, tri, true);

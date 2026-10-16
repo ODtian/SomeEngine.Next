@@ -272,7 +272,7 @@ internal static class RuntimeApplication
             DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
             CompilerOptionEntries =
             [
-                new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1, 0)),
+                new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(0, 0)),
                 new(CompilerOptionName.VulkanEmitReflection, CompilerOptionValue.FromInt(1, 0)),
                 new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
                 new(CompilerOptionName.ExperimentalFeature, CompilerOptionValue.FromInt(1, 0)),

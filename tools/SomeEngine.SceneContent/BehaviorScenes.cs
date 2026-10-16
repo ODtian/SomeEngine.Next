@@ -13,7 +13,7 @@ using SomeEngine.Render.Components;
 
 namespace SomeEngine.SceneContent;
 
-public static class BehaviorScenes
+public static partial class BehaviorScenes
 {
     public static async Task CreateTessellatedSpheresAsync(string source, string destination, string engineRoot)
     {

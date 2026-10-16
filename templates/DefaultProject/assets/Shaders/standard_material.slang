@@ -53,6 +53,7 @@ struct StandardSurfaceData
     float3 Emissive;
     float Roughness;
     float Occlusion;
+    float Alpha;
 };
 
 struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
@@ -60,9 +61,14 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
     typealias Data = StandardSurfaceData;
     SamplerState MaterialSampler;
 
-    float3 sampleNormal(float2 uv, StandardScalars scalars)
+    float2 textureGradient(Triangle triangle, float3 gradient)
     {
-        return StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleLevel(MaterialSampler, uv, 0.0).rgb * 2.0 - 1.0;
+        return triangle.TexCoord0 * gradient.x + triangle.TexCoord1 * gradient.y + triangle.TexCoord2 * gradient.z;
+    }
+
+    float3 sampleNormal(float2 uv, float2 uvDx, float2 uvDy, StandardScalars scalars)
+    {
+        return StandardMaterialTextures[NonUniformResourceIndex(scalars.NormalMap)].SampleGrad(MaterialSampler, uv, uvDx, uvDy).rgb * 2.0 - 1.0;
     }
 
     SurfaceReceiver evaluateGeometryReceiver(SurfacePixel pixel, SurfaceEval surface, float3 bary, Triangle triangle)
@@ -123,7 +129,8 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
         float3 baseNormal = normalize(surface.Normal);
         float3 tangent = normalize(surface.Tangent.xyz - baseNormal * dot(baseNormal, surface.Tangent.xyz));
         float3 bitangent = cross(baseNormal, tangent) * surface.Tangent.w;
-        float3 normalTS = sampleNormal(surface.TexCoord, scalars);
+        float3 normalTS = sampleNormal(surface.TexCoord, textureGradient(triangle, pixel.BarycentricDx),
+            textureGradient(triangle, pixel.BarycentricDy), scalars);
         SurfaceReceiver receiver = evaluateGeometryReceiver(pixel, surface, bary, triangle);
         receiver.ShadingNormal = normalize(tangent * normalTS.x + bitangent * normalTS.y + baseNormal * normalTS.z);
         ClusterViewUniforms surfaceView = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties,
@@ -139,14 +146,17 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
     {
         StandardScalars scalars = LoadMaterialScalars<StandardScalars>(pixel.MaterialIndex);
         receiver = evaluateFullReceiver(pixel, surface, bary, triangle, scalars);
-        float4 albedo = StandardMaterialTextures[NonUniformResourceIndex(scalars.AlbedoMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0);
-        float3 arm = StandardMaterialTextures[NonUniformResourceIndex(scalars.ARMMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb;
+        float2 uvDx = textureGradient(triangle, pixel.BarycentricDx);
+        float2 uvDy = textureGradient(triangle, pixel.BarycentricDy);
+        float4 albedo = StandardMaterialTextures[NonUniformResourceIndex(scalars.AlbedoMap)].SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy);
+        float3 arm = StandardMaterialTextures[NonUniformResourceIndex(scalars.ARMMap)].SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy).rgb;
         Data data;
         data.BaseColor = albedo.rgb * scalars.BaseColorTint.rgb;
         data.Metallic = saturate(arm.b * scalars.MetallicFactor);
         data.Emissive = scalars.EmissiveFactor;
         data.Roughness = max(saturate(arm.g * scalars.Roughness), .04);
         data.Occlusion = arm.r;
+        data.Alpha = albedo.a * scalars.BaseColorTint.a;
         return data;
     }
 
@@ -231,7 +241,7 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
 
         if (dot(mappedNormal, V) <= 0.0)
         {
-            return float4(finalColor, 1.0);
+            return float4(finalColor, data.Alpha);
         }
 
         for (uint lightIndex = 0u; lightIndex < lighting.DirectionalCount; lightIndex++)
@@ -320,7 +330,7 @@ struct StandardMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
             }
         }
 
-        return float4(finalColor, 1.0);
+        return float4(finalColor, data.Alpha);
     }
 
 };

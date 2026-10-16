@@ -400,6 +400,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
         if (!assignmentsChanged && !materialResourcesChanged && !shadingChanged)
         {
+            if (GraphData.Transparency is not null)
+                EditGraph((ref RenderGraphEdit edit) => ReconcileTransparency(ref edit, assignments, _installedShadeStages!));
             ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments,
                 _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
             if (!ReferenceEquals(updated, _materialScalars))
@@ -477,6 +479,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             var materialResources = UpdateMaterialResources(ref edit, rasterStages, shadeStages);
             GraphData.MaterialBuffers = materialResources.Buffers;
             GraphData.MaterialTextures = materialResources.Textures;
+            ReconcileTransparency(ref edit, assignments, shadeStages);
         });
         _materialScalars = scalars;
         _textureScalarChanges.Clear();
@@ -960,6 +963,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         Release(ref _viewQuery, context.World, ref failures);
         Release(ref _sceneQuery, context.World, ref failures);
         Dispose(ref _shadeStages, ref failures);
+        foreach (TransparencyShaders shaders in _transparencyShaders)
+        {
+            foreach (ClusterComputePipeline pipeline in new[] { shaders.Clear, shaders.Build, shaders.Request, shaders.Resolve })
+                try { pipeline.Dispose(); }
+                catch (Exception error) { (failures ??= []).Add(error); }
+        }
+        _transparencyShaders.Clear();
         Dispose(ref _rasterStages, ref failures);
         DisposeMaterialSamplers(ref failures);
         Dispose(ref _pipelines, ref failures);

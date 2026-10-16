@@ -46,6 +46,7 @@ public sealed partial class ClusterPipelineSystem
         internal GraphPassId ShadeCountPass;
         internal GraphRegionId ShadeScatter;
         internal FrameResources Resources;
+        internal TransparencyData? Transparency;
         internal ClusterPipelineOutputs Outputs;
         internal ClusterLayerDispatch SceneBounds;
         internal ClusterLayerDispatch PrimarySeed;

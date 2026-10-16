@@ -13,6 +13,7 @@
       "Schema": "68AF469430D4B902",
       "Fields": {
         "SourceNames": [
+          "cluster_transparency.slang",
           "standard.slang"
         ],
         "Specializations": [

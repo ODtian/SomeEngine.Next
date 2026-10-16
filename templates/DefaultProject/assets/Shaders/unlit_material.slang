@@ -14,6 +14,7 @@ struct UnlitScalars
 struct UnlitSurfaceData
 {
     float3 Color;
+    float Alpha;
 };
 
 struct UnlitMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
@@ -54,7 +55,11 @@ struct UnlitMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
         receiver.ShadingNormal = surface.Normal;
         UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>(pixel.MaterialIndex);
         Data data;
-        data.Color = UnlitMaterialTextures[NonUniformResourceIndex(scalars.AlbedoMap)].SampleLevel(MaterialSampler, surface.TexCoord, 0.0).rgb * scalars.BaseColorTint.rgb;
+        float2 uvDx = triangle.TexCoord0 * pixel.BarycentricDx.x + triangle.TexCoord1 * pixel.BarycentricDx.y + triangle.TexCoord2 * pixel.BarycentricDx.z;
+        float2 uvDy = triangle.TexCoord0 * pixel.BarycentricDy.x + triangle.TexCoord1 * pixel.BarycentricDy.y + triangle.TexCoord2 * pixel.BarycentricDy.z;
+        float4 albedo = UnlitMaterialTextures[NonUniformResourceIndex(scalars.AlbedoMap)].SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy);
+        data.Color = albedo.rgb * scalars.BaseColorTint.rgb;
+        data.Alpha = albedo.a * scalars.BaseColorTint.a;
         return data;
     }
 
@@ -94,7 +99,7 @@ struct UnlitMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
 
     float4 shadeSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver)
     {
-        return float4(data.Color, 1);
+        return float4(data.Color, data.Alpha);
     }
 
     float4 shadeForwardSurface(uint3 pixelCoord, uint debugMode, Data data, SurfaceReceiver receiver)
@@ -104,13 +109,13 @@ struct UnlitMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
     [ForceInline]
     float4 shadeSurfaceMode<let debugMode : uint>(uint3 pixelCoord, Data data, SurfaceReceiver receiver)
     {
-        return float4(data.Color, 1);
+        return float4(data.Color, data.Alpha);
     }
 
     [ForceInline]
     float4 shadeForwardSurfaceMode<let debugMode : uint>(uint3 pixelCoord, Data data, SurfaceReceiver receiver)
     {
-        return float4(data.Color, 1);
+        return float4(data.Color, data.Alpha);
     }
 };
 #endif
