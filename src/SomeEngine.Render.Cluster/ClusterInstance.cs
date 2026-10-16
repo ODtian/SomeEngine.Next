@@ -18,6 +18,9 @@ public static class ClusterRenderFeature
     public static RenderInstancePropertyKey MaterialSlotOffsetKey { get; } =
         new("someengine.cluster.material_slot_offset");
 
+    public static RenderInstancePropertyKey BlendOcclusionKey { get; } =
+        new("someengine.cluster.blend_occlusion");
+
     public static RenderInstancePropertyKey BoundsExpansionKey { get; } =
         new("someengine.cluster.bounds_expansion");
 
@@ -80,6 +83,7 @@ public static class ClusterRenderFeature
             "SomeEngine.Render.Cluster.MaterialBinding",
             MaterialSlotOffsetKey,
             UInt32Encoding);
+        _ = builder.Register<uint>("SomeEngine.Render.Cluster.MaterialBinding", BlendOcclusionKey, UInt32Encoding);
         return builder.Freeze();
     }
 }

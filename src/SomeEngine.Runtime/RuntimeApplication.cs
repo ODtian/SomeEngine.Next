@@ -1031,7 +1031,10 @@ internal static class RuntimeApplication
                 bool connectColorFeature = temporal is null;
                 if (connectColorFeature && platform?.CreateColorFeature is { } createColorFeature)
                     colorFeature = createColorFeature(new(backend, device, renderGraph, boot.Width, boot.Height,
-                        viewFrame.View.Projection, colorEffectsRegion), platform.Current);
+                        viewFrame.View.Projection, colorEffectsRegion) { Stencil = clusterOutputs.Stencil }, platform.Current);
+                else if (connectColorFeature && script?.CreateColorFeature is { } createScriptColorFeature)
+                    colorFeature = createScriptColorFeature(new(backend, device, renderGraph, boot.Width, boot.Height,
+                        viewFrame.View.Projection, colorEffectsRegion) { Stencil = clusterOutputs.Stencil });
                 temporal ??= new TemporalFeature(
                     backend,
                     device,

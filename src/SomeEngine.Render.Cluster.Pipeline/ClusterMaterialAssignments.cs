@@ -72,6 +72,7 @@ public sealed class ClusterMaterialAssignmentSet
     public IEnumerable<Material> DistinctMaterials => _values.Values.Select(value => value.Resource);
     internal bool HasXray => !_xrayMaterials.IsEmpty;
     internal bool UsesXray(Material material) => _xrayMaterials.Contains(material.MaterialId);
+    internal bool HasOrdered => DistinctMaterials.Any(material => material.State.Ordered);
     internal IEnumerable<long> ChangedMaterialIds => _changes;
     internal IEnumerable<Material> ChangedMaterials => _changes.Where(_values.ContainsKey).Select(id => _values[id].Resource);
     internal IEnumerable<int> ActiveOffsets => _entries.Keys;
@@ -188,6 +189,18 @@ public sealed class ClusterMaterialAssignmentSet
             if (!_entities.TryGetValue(entities[row], out var sequence))
                 throw new InvalidOperationException($"Render entity {entities[row]} has no material assignment.");
             destination[row] = _sequences[sequence].Offset;
+        }
+    }
+
+    internal void ResolveBlendOcclusion(ReadOnlySpan<Entity> entities, Span<uint> destination)
+    {
+        for (int row = 0; row < entities.Length; row++)
+        {
+            ClusterMaterialSequence sequence = _entities[entities[row]];
+            uint keep = 0;
+            for (int index = 0; index < sequence.Count; index++)
+                if (_values[sequence.MaterialAt(index)].Resource.State.Ordered) { keep = 1; break; }
+            destination[row] = keep;
         }
     }
 
@@ -493,12 +506,14 @@ public readonly struct ClusterMaterialOffsetProducer : IRenderInstanceProducer
 {
     private readonly ClusterMaterialAssignments _assignments;
     private readonly ResolvedRenderInstanceProperty<uint> _slot;
+    private readonly ResolvedRenderInstanceProperty<uint> _blendOcclusion;
 
     internal ClusterMaterialOffsetProducer(ClusterMaterialAssignments assignments)
     {
         _assignments = assignments;
         Properties = ClusterRenderFeature.MaterialSlotLayout;
         _slot = Properties.Resolve<uint>(ClusterRenderFeature.MaterialSlotOffsetKey);
+        _blendOcclusion = Properties.Resolve<uint>(ClusterRenderFeature.BlendOcclusionKey);
     }
 
     public RenderInstancePropertyLayout Properties { get; }
@@ -507,16 +522,21 @@ public readonly struct ClusterMaterialOffsetProducer : IRenderInstanceProducer
         ReadOnlyQueryPacket packet,
         uint lastSystemVersion) =>
         packet.BufferChangedSince<RenderMaterialBinding>(lastSystemVersion) ||
-        packet.ChangedSince<RenderMesh>(lastSystemVersion)
+        packet.ChangedSince<RenderMesh>(lastSystemVersion) ||
+        _assignments.Current.ChangedMaterialIds.Any()
             ? RenderInstanceChanges.Values
             : RenderInstanceChanges.None;
 
-    public void Bind(RenderInstanceWriteSlice destination) =>
+    public void Bind(RenderInstanceWriteSlice destination)
+    {
         destination.BindPerInstance(_slot);
+        destination.BindPerInstance(_blendOcclusion);
+    }
 
     public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
     {
         ClusterMaterialAssignmentSet assignments = _assignments.Current;
         assignments.Resolve(packet.Entities, destination.GetWriteSpan(_slot));
+        assignments.ResolveBlendOcclusion(packet.Entities, destination.GetWriteSpan(_blendOcclusion));
     }
 }

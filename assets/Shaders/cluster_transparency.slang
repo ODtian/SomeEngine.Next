@@ -6,6 +6,7 @@
 #include "cluster_raster_shared.slang"
 #include "render_lighting.slang"
 #include "wave_aggregation.slang"
+#include "cluster_ordered_state.slang"
 
 interface ITransparencyMaterials
 {
@@ -22,7 +23,7 @@ struct TransparencyParameters
     uint Width, Height, ViewCount, MaterialCapacity;
     uint TriangleCapacity, VisibleCapacity;
     float ColorLimit, MaximumError;
-    uint ReferenceCapacity, UseIndex, CellCount, HasXray;
+    uint ReferenceCapacity, UseIndex, CellCount, Effects;
 };
 
 struct TransparencyTriangle
@@ -321,7 +322,7 @@ TransparencyCandidates BeginTransparencyCandidates(uint3 pixel, float opaque)
             if (TransparencyTileCounts[TransparencyCell(pixel.z, uint3(tile, slice))] != 0u)
                 occupied[slice >> 5u] |= 1u << (slice & 31u);
     input.OccupiedSlices = WaveReadLaneAt(occupied, leader);
-    input.LastSlice = opaque < 1.0 && TransparencyUniforms.HasXray == 0u
+    input.LastSlice = opaque < 1.0 && TransparencyUniforms.Effects == 0u
         ? ClusteredLightDepthSlice(grid, TransparencyViewDepth(pixel.z, float2(pixel.xy) + .5, opaque))
         : grid.DepthSliceCount - 1u;
     return input;
@@ -411,6 +412,13 @@ bool TransparencyBefore(float depth, uint source, uint primitive, float otherDep
     return primitive < otherPrimitive;
 }
 
+OrderedMaterialState TransparencyOrderedState(uint source)
+{
+    uint bin, material, view;
+    TransparencySourceMaterial(source, bin, material, view);
+    return OrderedMaterialStates[material];
+}
+
 bool TransparencyHit<TMaterials : ITransparencyMaterials>(uniform TMaterials materials, uint3 pixel,
     TransparencyTriangle triangle, uint cell, float opaque, out float depth)
 {
@@ -421,7 +429,11 @@ bool TransparencyHit<TMaterials : ITransparencyMaterials>(uniform TMaterials mat
     if (depth < 0.0 || depth > 1.0) return false;
     InstanceXray effect = LoadInstanceXray(TransparencyInstances, TransparencyProperties,
         TransparencySourceRequest(triangle.Source).InstanceID);
-    if (effect.Enabled == 0u)
+    if (TransparencyOrderedState(triangle.Source).Enabled != 0u)
+    {
+        // Ordered coverage reaches the state chain even when its depth test fails.
+    }
+    else if (effect.Enabled == 0u)
     {
         if (depth > opaque) return false;
     }
@@ -457,9 +469,61 @@ void RequestTransparencyShadows<TMaterials : ITransparencyMaterials>(uniform TMa
     }
 }
 
+bool OrderedBefore(int order, uint source, uint primitive, int otherOrder, uint otherSource, uint otherPrimitive)
+{
+    return order < otherOrder || (order == otherOrder &&
+        TransparencyBefore(0.0, source, primitive, 0.0, otherSource, otherPrimitive));
+}
+
+void ResolveOrderedTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials materials, uint3 pixel, float opaque)
+{
+    uint stencil = 0u;
+    float depthValue = opaque;
+    float4 color = 0.0.xxxx;
+    bool colorRead = false, previous = false;
+    int previousOrder = 0;
+    uint previousSource = 0u, previousPrimitive = 0u;
+    [loop]
+    while (true)
+    {
+        bool found = false, front = false;
+        float selectedDepth = 0.0;
+        uint selectedSource = 0u, selectedPrimitive = 0u, selectedBin = 0u;
+        OrderedMaterialState selectedState = {};
+        TransparencyCandidates input = BeginTransparencyCandidates(pixel, 1.0);
+        TransparencyTriangle triangle;
+        while (NextTransparencyCandidate(materials, pixel, input, triangle))
+        {
+            OrderedMaterialState state = TransparencyOrderedState(triangle.Source);
+            if (state.Enabled == 0u) continue;
+            if (previous && !OrderedBefore(previousOrder, previousSource, previousPrimitive,
+                state.DrawOrder, triangle.Source, triangle.Primitive)) continue;
+            if (found && !OrderedBefore(state.DrawOrder, triangle.Source, triangle.Primitive,
+                selectedState.DrawOrder, selectedSource, selectedPrimitive)) continue;
+            float depth;
+            if (!TransparencyHit(materials, pixel, triangle, input.Cell, 1.0, depth)) continue;
+            found = true;
+            selectedDepth = depth; selectedSource = triangle.Source;
+            selectedPrimitive = triangle.Primitive; selectedBin = triangle.Bin;
+            selectedState = state; front = triangle.InverseArea < 0.0;
+        }
+        if (!found) break;
+        previous = true; previousOrder = selectedState.DrawOrder;
+        previousSource = selectedSource; previousPrimitive = selectedPrimitive;
+        if (!AdvanceOrderedStencil(selectedState, front, selectedDepth, depthValue, stencil)) continue;
+        if (selectedState.ColorMask == 0u) continue;
+        float4 surface = materials.shade(selectedBin, selectedSource, selectedPrimitive, pixel, selectedDepth);
+        if (!colorRead) { color = TransparencyColor[pixel]; colorRead = true; }
+        color = OrderedBlend(selectedState, surface, color);
+    }
+    OrderedStencil[pixel] = stencil;
+    if (colorRead) TransparencyColor[pixel] = color;
+}
+
 void ResolveTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials materials, uint3 pixel)
 {
     if (pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height || pixel.z >= TransparencyUniforms.ViewCount) return;
+    OrderedStencil[pixel] = 0u;
     if (TransparencyTriangleCount.Load(0u) == 0u) return;
     float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
     float4 background = 0.0.xxxx;
@@ -476,6 +540,7 @@ void ResolveTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials
         TransparencyTriangle triangle;
         while (NextTransparencyCandidate(materials, pixel, input, triangle))
         {
+            if (TransparencyOrderedState(triangle.Source).Enabled != 0u) continue;
             float depth;
             if (!TransparencyHit(materials, pixel, triangle, input.Cell, opaque, depth)) continue;
             uint source = triangle.Source, primitive = triangle.Primitive, bin = triangle.Bin;
@@ -525,6 +590,7 @@ void ResolveTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials
             }
         }
     }
-    if (!contributed) return;
-    TransparencyColor[pixel] = float4(color + transmission * background.rgb, background.a);
+    if (contributed) TransparencyColor[pixel] = float4(color + transmission * background.rgb, background.a);
+    if ((TransparencyUniforms.Effects & 2u) != 0u)
+        ResolveOrderedTransparency(materials, pixel, opaque);
 }

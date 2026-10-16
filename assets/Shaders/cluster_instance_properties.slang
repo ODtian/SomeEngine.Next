@@ -62,10 +62,13 @@ InstanceXray LoadInstanceXray(ByteAddressBuffer data, RenderInstancePropertyMeta
         instanceId, 48u);
 }
 
-bool KeepXrayOcclusion(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata,
+bool KeepBlendOcclusion(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata,
     uint instanceId, ClusterViewUniforms view)
 {
-    return view.Family == 0u && view.TargetPolicy == 0u && LoadInstanceXray(data, metadata, instanceId).Enabled != 0u;
+    uint ordered = RenderInstanceLoad<uint>(data,
+        LoadRenderInstanceMetadata(metadata, CLUSTER_BLEND_OCCLUSION_METADATA_WORD), instanceId, 4u);
+    return view.Family == 0u && view.TargetPolicy == 0u &&
+        (ordered != 0u || LoadInstanceXray(data, metadata, instanceId).Enabled != 0u);
 }
 
 bool IsInstanceVisibleToView(uint2 firstPerson, ClusterViewUniforms view)

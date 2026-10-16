@@ -29,6 +29,12 @@ public sealed partial class ClusterPipelineSystem
             GraphData.Transparency = null;
         }
         if (_surfaceReceiverRegion != default) edit.Remove(_surfaceReceiverRegion);
+        if (GraphData.Stencil is { } stencil)
+        {
+            RenderGraphEdit stencilEdit = edit;
+            stencil.Remove(ref stencilEdit);
+            GraphData.Stencil = null;
+        }
         edit.Remove(_regions.PrimaryGeometry);
         edit.Remove(_regions.TargetGeometry);
         edit.Remove(_regions.Shading);

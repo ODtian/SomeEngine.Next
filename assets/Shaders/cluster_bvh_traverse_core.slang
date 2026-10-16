@@ -164,7 +164,7 @@ uint ClusterHierarchyNodeState(
 {
     if (!ClusterTargetPolicyAccepts(projectedBounds, view, depthCacheClass))
         return 0u;
-    if (KeepXrayOcclusion(InstanceData, InstanceProperties, instanceID, view)) return 1u;
+    if (KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view)) return 1u;
     if (view.CullingEnabled == 0u ||
         view.HasPrevHistory == 0u ||
         view.HiZMipCount == 0u)

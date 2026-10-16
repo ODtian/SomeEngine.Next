@@ -540,7 +540,7 @@ void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
 #ifdef CLUSTER_PERSISTENT_CULL
     if (TraversalLevel.TraversalMode == 2u)
     {
-        if (KeepXrayOcclusion(InstanceData, InstanceProperties, instanceID, view) || !IsOccludedByHiZ(currentBounds, false, viewIndex, view,
+        if (KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view) || !IsOccludedByHiZ(currentBounds, false, viewIndex, view,
                 view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u))
         {
             bool software = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, currentBounds.NearDepth,
@@ -554,7 +554,7 @@ void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
     ClusterScreenBounds bounds = currentBounds;
     bool occluded = false;
     if (view.HasPrevHistory != 0u && view.CullingEnabled != 0u &&
-        !KeepXrayOcclusion(InstanceData, InstanceProperties, instanceID, view))
+        !KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view))
     {
         bounds = ProjectClusterScreenBounds(worldBounds, true, view);
         occluded = IsOccludedByHiZ(bounds, true, viewIndex, view,
@@ -697,7 +697,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     if (!valid)
         return;
 
-    bool occluded = !KeepXrayOcclusion(InstanceData, InstanceProperties, instanceID, view) &&
+    bool occluded = !KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view) &&
         IsOccludedByHiZ(currentBounds, false, viewIndex, view,
             view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
     if (!occluded)

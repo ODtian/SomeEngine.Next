@@ -403,7 +403,8 @@ internal readonly record struct ClusterRasterBinKey(
     ClusterRasterCompatibilityKey Execution,
     string VertexEncoding,
     ClusterCommandBindingKey Bindings,
-    SurfaceMode Surface);
+    SurfaceMode Surface,
+    bool Ordered);
 
 internal readonly record struct ClusterShadeBinKey(
     ClusterShadeCompatibilityKey Execution,
@@ -533,7 +534,7 @@ internal sealed class ClusterRasterStages : IDisposable
                 if (tessellation.HardwareResources is { } hardware)
                     ClusterMaterialEntries.AddResourceProperties(properties, hardware.MaterialBindings);
             }
-            var key = new ClusterRasterBinKey(invocation.Key, encoding, invocation.CommandBindings, material.State.Surface);
+            var key = new ClusterRasterBinKey(invocation.Key, encoding, invocation.CommandBindings, material.State.Surface, material.State.Ordered);
             if (resourceProperties.TryGetValue(material.MaterialId, out var existing)) properties.UnionWith(existing);
             resourceProperties = resourceProperties.SetItem(material.MaterialId, properties);
             HashSet<uint>? depthInputs = materialDepthInputs is { } inputs ? [.. inputs] : null;
@@ -554,7 +555,7 @@ internal sealed class ClusterRasterStages : IDisposable
                 (stage.Hardware.UsesMaterialRanges && stage.Tessellation is null ? 0x40000000u : 0u) |
                 (stage.SoftwareUsesMaterialRanges && stage.Tessellation is null ? 0x20000000u : 0u) |
                 (stage.PixelVisibility ? 0x10000000u : 0u) |
-                (stage.Material.State.Surface == SurfaceMode.Translucent ? 0x08000000u : 0u)),
+                (stage.Material.State.Surface == SurfaceMode.Translucent || stage.Material.State.Ordered ? 0x08000000u : 0u)),
             invocations, bins.Range, [.. bins.Changes], [.. addresses], _resolved);
         _binIndices = bins;
         _resourceProperties = resourceProperties;

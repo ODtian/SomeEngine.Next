@@ -71,6 +71,7 @@ public readonly record struct ClusterPipelineOutputs(
     public GraphRegionId? SurfaceReceiverConsumers { get; init; }
     public GraphTextureId CurrentHiZ { get; init; }
     public ClusterTransparencyGeometry? Transparency { get; init; }
+    public ClusterStencil? Stencil { get; init; }
     public bool IsValid =>
         Visibility != default &&
         Depth != default &&
