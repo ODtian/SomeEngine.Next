@@ -54,3 +54,12 @@ $nativeChecks = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/ne
 每个队列任务在返回的结果目录保存 `stdout.log`、`stderr.log` 和 `result.json`。交付证据集中于 `wiki/evidence/Animation/2026-10-16`，HUD 的整帧、GPU 与呈现测量由该目录的固定 HUD 工作量页面定义。
 
 `--allocation-check` 复用单组 1,000 项普通 Tween 的完整公开路径。完整字段测量在预热后收集保留堆，`allocation` 行单列完整 GC 后首个样本和随后 47 个样本的实际分配，原有均值保留这 48 个样本的总量。
+
+发布后的 `Read-NativeCode.ps1` 读取同一次 NativeAOT 方法映射，输出代表方法的代码字节、静态数据字节、PDB 地址和映像分节。以这些地址调用 LLVM `llvm-objdump --disassemble --start-address=... --stop-address=...`，即可核对最终映像中的实际指令。该诊断同样通过公共队列运行。
+
+```powershell
+$nativeDirectory = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish'
+$nativeMap = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/obj/Release/net10.0/win-x64/native/SomeEngine.Animation.Checks.map.xml'
+$nativeCodeReader = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/Read-NativeCode.ps1'
+& ./tools/Invoke-Benchmark.ps1 pwsh -NoProfile -File $nativeCodeReader -NativeDirectory $nativeDirectory -MapPath $nativeMap -LlvmBinDirectory 'C:/Program Files/LLVM/bin'
+```
