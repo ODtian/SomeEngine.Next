@@ -133,7 +133,7 @@ internal sealed partial class FrameExecutor
         bool aliasActivated = resource.Placement.Aliases;
         BufferPhysicalState state = aliasActivated
             ? new BufferPhysicalState(
-                PipelineSync.None,
+                PipelineSync.All,
                 ResourceAccess.NoAccess,
                 null,
                 -1,
@@ -294,8 +294,13 @@ internal sealed partial class FrameExecutor
             if (!seen && !resource.Placement.Aliases)
                 AddInitialCompletions(resource.EntryBoundaryStates, queue, pass);
             if (!seen && resource.Placement.Aliases)
-                AddBufferTransition(-1, pass, buffer, PipelineSync.None, sync,
+            {
+                // The alias barrier leaves this buffer at NoAccess. Activate
+                // its first declared access with an explicit transition.
+                AddBufferTransition(-1, pass, buffer,
+                    pass == resource.FirstPass ? PipelineSync.All : PipelineSync.None, sync,
                     ResourceAccess.NoAccess, access, false);
+            }
 
             // D3D12 permits concurrent readers. Serialize writers for the whole buffer:
             // even disjoint writes may race through cache lines shared by different queues.

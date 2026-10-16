@@ -69,6 +69,10 @@ edit.SetXray(entity, new Xray(
 
 `RemoveXray` 恢复该实体的普通材质路径。独立提取器更新镜像上的 `RenderXray`，其 48 字节设置随共用实例属性提交。primary hierarchy 与 cluster 的遮挡判断保留效果几何，继续执行视锥和 LOD 选择；阴影视图沿原材质路径工作。求色以该命中自己的表面和 receiver 完成，随后按 opaque 深度分类并应用对应侧别规则。距离使用视空间的世界单位。
 
+别名堆的访问交接由 RenderGraph 的 `Placement.Aliases` 派生。D3D12 的别名屏障把缓冲交到 `NO_ACCESS`，紧随其后的首次声明使用显式 `ALL/NO_ACCESS` 到目标同步范围与访问类型的屏障完成激活。这与 [D3D12 Enhanced Barriers 的别名规则](https://microsoft.github.io/DirectX-Specs/d3d/D3D12EnhancedBarriers.html#resource-aliasing) 一致，适用于单点光照网格、引用与覆盖范围共享临时堆的情形。普通缓冲的隐式首次访问继续沿原规则处理。
+
+`XrayRenderingTests` 的三项公共图像对照已通过：D3D12 和 Vulkan 各运行 56 帧，覆盖可见侧与遮挡侧的独立混合、效果添加与移除、实体克隆与移动后的完整图像；D3D12 另运行 32 帧，将遮挡侧的受阴影材质与同一材质的硬件图像比较，并通过移动遮挡物确认阴影更新。三项保留 `WaitForFrames=false`、常规堆复用和 0.003 线性颜色容差，运行入口同时执行行为规则检查。
+
 ## 计量口径
 
 `--measure-blending` 产生完成 GPU 提交后的逐帧 `ClusterBlendMetrics`，通过模拟帧关联统一平台的呈现间隔。测量采用图形队列的校准时间戳；统一性能工具同时关闭异步计算以固定阶段顺序。

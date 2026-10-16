@@ -57,7 +57,7 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
         for (int y = 0; y < height; y++)
         for (int x = 0; x < width; x++)
         {
-            int source = ((54 + y) * 128 + 66 + x) * 4;
+            int source = ((54 + y) * 128 + 46 + x) * 4;
             int target = (y * width + x) * 4;
             hardware!.Pixels.Span.Slice(source, 4).CopyTo(expected.AsSpan(target));
             xray!.Pixels.Span.Slice(source, 4).CopyTo(actual.AsSpan(target));
@@ -71,6 +71,7 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
 
     [SceneTheory]
     [InlineData("d3d12")]
+    [InlineData("vulkan")]
     public async Task XraySidesKeepTheirOwnTexturedMaterialThroughMotionAndEffectChanges(string backend)
     {
         SceneLinearImage? background = null, visible = null, surface = null, xray = null;
@@ -132,7 +133,9 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
         {
             int source = ((first + y) * 128 + first + x) * 4;
             int target = (y * size + x) * 4;
-            bool front = MathF.Abs((float)visible!.Pixels.Span[source] - (float)surface!.Pixels.Span[source]) < .001f;
+            bool front = true;
+            for (int channel = 0; channel < 3; channel++)
+                front &= MathF.Abs((float)visible!.Pixels.Span[source + channel] - (float)surface!.Pixels.Span[source + channel]) < .001f;
             if (front) visiblePixels++; else occludedPixels++;
             float alpha = front ? .25f : .7f;
             for (int channel = 0; channel < 3; channel++)
@@ -141,9 +144,9 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
             expected[target + 3] = background!.Pixels.Span[source + 3];
             xray!.Pixels.Span.Slice(source, 4).CopyTo(actual.AsSpan(target));
         }
-        Assert.True(visiblePixels > 100 && occludedPixels > 100);
         SceneFrame frame = xray!.Frame with { Width = size, Height = size };
         SceneImages.AssertLinearEqual(new(frame, expected), new(frame, actual), .003f);
+        Assert.True(visiblePixels > 100 && occludedPixels > 100, $"Visible pixels: {visiblePixels}; occluded pixels: {occludedPixels}.");
         SceneImages.AssertLinearEqual(visible!, removed!, .003f);
         SceneImages.AssertLinearEqual(xray, returned!, .003f);
         int changedPixels = 0;
