@@ -521,7 +521,7 @@ Count 对实际投影图元的保守 cell 范围计数，Reserve 为每 cell 分
 
 透明几何沿 primary 的两轮可见结果读取硬件与软件来源。每份来源保留 12 字节 `DrawRequest`，用户 `VisibilityVertexInput.Source` 和 `VisibilityPixelInput.Source` 直接携带该请求，覆盖、求色与 receiver 从同一份 page、instance、cluster 和 view 解释几何。缓存保留的来源与当前全局可见列表具有各自的索引范围。
 
-`cluster_tessellation_geometry.slang` 统一 opaque 与透明使用的边因子、曲面误差、分片及子片计算。透明用户类型通过 `beginProjection` 创建自身的 `Projection`，由 `nextProjection` 顺序推进当前 `VertexEvaluate` 与 `DomainEvaluate` 的实际曲面。该类型持有用户三角形和深度优先细分状态，用户域的整体及分片范围用于屏幕查询裁剪。枚举时把微三角形三个原域角点的 y/z 分量保存在投影记录的 `Domain` 中，覆盖直接从三个 float2 恢复重心；`Primitive` 保留原枚举次序供排序。覆盖确认后的源身份和深度继续进入 opaque 与透明共用的用户表面反解和材质求值。
+`cluster_tessellation_geometry.slang` 统一 opaque 与透明使用的边因子、曲面误差、分片及子片计算。透明用户类型通过 `beginProjection` 创建自身的 `Projection`，由 `nextProjection` 顺序推进当前 `VertexEvaluate` 与 `DomainEvaluate` 的实际曲面。该类型持有用户三角形和深度优先细分状态，用户域的整体及分片范围用于屏幕查询裁剪。投影用枚举产生的完整 float3 原域重心求用户曲面位置，与 opaque 的顶点生成共享计算路径。微三角形三个角点的 y/z 分量保存在投影记录的 `Domain` 中，覆盖从三个 float2 恢复重心；`Primitive` 保留原枚举次序供排序。覆盖确认后的源身份和深度继续进入 opaque 与透明共用的用户表面反解和材质求值。
 
 溢出遍历由 wave 的一个 lane 持有同一份用户投影状态，查询范围覆盖该 wave 的像素中心。该 lane 依次生成实际微三角形，再广播屏幕投影、深度与同一份原域角点；像素保留自己的四层命中队列和合成状态。分片遍历使用细分层数决定的局部栈，原图元序号在裁剪后继续保留。该路径使用原有源表，投影和引用容量均为 `1` 时也完整推进实际贡献。新增原域角点的存储按 shader reflection 给出的实际 stride 进入图元缓冲的使用、容量与分配字节。
 
@@ -538,6 +538,8 @@ DefaultGame 的 `--cluster-effect=deformed-phong` 创建 16 个带棋盘贴图�
 ```powershell
 dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Release --filter 'FullyQualifiedName~TransparentDeformedPhongSurfaceMatchesOpaqueSurfaceAtFullOpacity|FullyQualifiedName~TransparencyGeometryTests' --nologo -v minimal
 ```
+
+单材质迭代使用 `Game.Build --refresh-shader <project> <shader-source> <engine>`，例如将 `assets/Shaders/deformed-phong.shader` 交给项目原有的 `AssetProject.BuildAsync`。该入口同步透明核心副本与实例布局，沿指定 engine 的 shader 搜索路径构建这一份源定义，保留项目中其它资产。
 
 2026-10-16 的容量继续处理检查通过 `TransparentCurvedGeometryMatchesAcrossRasterSourcesAndBufferBatches` 对照三次应用：硬件来源（8 px、投影/引用各 4096）、软件来源（256 px、各 4096）和软件来源（256 px、各 1）。每次完成 8 帧并驻留 6/6 页，D3D12 与 Vulkan 的完整线性图像均在 `0.001` 内一致，两个 backend 检查共 2/2 通过，行为规则为 0 违规。该轮先记录容量为 `1` 时的 D3D12 `DeviceLost`，随后采用顺序细分和 wave 共享投影通过原检查。匹配内容位于 `F:/AI-Workspaces/tile-blending-221-content/223-fallback/DefaultProject`（91 资产），新 `Assets` 编译后通过原 `DefaultContent.BuildAsync` 重写配置。
 

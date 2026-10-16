@@ -26,6 +26,23 @@ public static class DefaultContent
     public static Guid BuildClusterShaders(string projectRoot) =>
         BuildClusterShaders(new AssetProject(Path.GetFullPath(projectRoot), []));
 
+    /// <summary>Rebuilds one project shader with the selected engine shader library.</summary>
+    public static async Task RefreshShaderAsync(string projectRoot, string shaderSource, string engineRoot,
+        CancellationToken cancellationToken = default)
+    {
+        projectRoot = Path.GetFullPath(projectRoot);
+        string shaders = Path.Combine(projectRoot, "assets", "Shaders");
+        string engineShaders = Path.Combine(Path.GetFullPath(engineRoot), "assets", "Shaders");
+        MaterialTypes.Register();
+        WriteRenderInstanceLayout(shaders);
+        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
+            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
+        var project = new AssetProject(projectRoot, [], sourceFormats: [new ShaderSourceFormat([engineShaders])]);
+        await project.BuildAsync(Path.GetFullPath(shaderSource, projectRoot), cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        Console.WriteLine($"Shader: {Path.GetFileName(shaderSource)}");
+    }
+
     public static async Task BuildAsync(string projectRoot, string engineRoot, CancellationToken cancellationToken = default)
     {
         projectRoot = Path.GetFullPath(projectRoot);
