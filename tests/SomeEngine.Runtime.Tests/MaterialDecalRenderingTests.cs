@@ -1,5 +1,7 @@
 using System.Numerics;
 using Game.Content;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Schema;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Resources;
@@ -10,6 +12,55 @@ namespace SomeEngine.Runtime.Tests;
 [Collection("Transparency content")]
 public sealed class MaterialDecalRenderingTests(TransparencyContentFixture content)
 {
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task LitDecalNormalAndRoughnessMatchTheSameStandardSurface(string backend)
+    {
+        AssetManifest manifest = AssetManifest.Load(Path.Combine(content.Lit, "Library/AssetManifest"));
+        await using var loader = new AssetLoader(new LooseAssetStorage(content.Lit, manifest));
+        using var file = await MeshAsset.OpenAsync(loader,
+            new(manifest.Assets.Values.Single(entry => entry.Name == "Blend panel" && entry.AssetType == MeshAsset.FileType).AssetGuid));
+        ClusterMeshBlock clusters = await file.GetBlockAsync<ClusterMeshBlock>();
+        Mesh panel = await clusters.CreateAsync(await file.GetBlockAsync<MeshBlock>(), file.Name);
+        await clusters.LoadPagesAsync(panel, Enumerable.Range(0, panel.PageCount));
+        using var normalFile = await TextureAsset.OpenAsync(loader,
+            new(manifest.Assets.Values.Single(entry => entry.Name == "Blend coating normal" && entry.AssetType == TextureAsset.FileType).AssetGuid));
+        using Texture normal = await (await normalFile.GetBlockAsync<TextureBlock>()).CreateAsync(normalFile.Name);
+        using var receiver = new StandardMaterial();
+        using var coating = new StandardMaterial();
+        Texture? baseNormal = null;
+        SceneLinearImage? before = null, reference = null, layered = null;
+        await SceneImages.RunAsync(backend, new SceneScript(content.Lit, 16,
+        [
+            new(0, edit =>
+            {
+                receiver.Update(edit.GetMaterial(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "lit panel")));
+                receiver.AlbedoMap = ((UnlitMaterial)edit.GetMaterial(edit.MeshEntities.Single(entity => edit.GetMaterial(entity) is UnlitMaterial))).AlbedoMap;
+                receiver.BaseColorTint = new(.7f, .5f, .2f, 1);
+                receiver.Roughness = .15f;
+                baseNormal = receiver.NormalMap;
+                coating.Update(receiver);
+                coating.NormalMap = normal;
+                coating.Roughness = .85f;
+                foreach (Entity entity in edit.MeshEntities) edit.DeleteEntity(entity);
+                edit.AddEntity(panel, [receiver], new(new Vector3(0, 0, 6), Quaternion.Identity, 2));
+            }),
+            new(7, edit => edit.CaptureLinearImage(value => before = value)),
+            new(8, _ => { receiver.NormalMap = normal; receiver.Roughness = .85f; }),
+            new(11, edit => edit.CaptureLinearImage(value => reference = value)),
+            new(12, edit =>
+            {
+                receiver.NormalMap = baseNormal;
+                receiver.Roughness = .15f;
+                edit.AddMaterialDecal(coating, new(new Vector3(0, 0, 6), Quaternion.Identity) { Stretch = new(2, 2, -2) });
+            }),
+            new(15, edit => edit.CaptureLinearImage(value => layered = value)),
+        ]) { WaitForFrames = false }, "--hardware-raster", "--shading-path", "forward", "--no-taa", "--no-vsm");
+        SceneImages.AssertLinearNotEqual(before!, reference!);
+        SceneImages.AssertLinearEqual(reference!, layered!, .003f);
+    }
+
     [SceneTheory]
     [InlineData("d3d12")]
     [InlineData("vulkan")]

@@ -265,7 +265,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 this,
                 context,
                 composer,
-                membership.Count == 0 ? forcedChanges : forcedChanges | RenderInstanceChanges.Structure);
+                membership,
+                forcedChanges);
             context.World.ExecuteReadSnapshot(
                 query,
                 context.LastSystemVersion,
@@ -311,17 +312,20 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         private readonly RenderInstanceBatchBuilder<TGroupKey> _owner;
         private readonly RenderPrepareSystemContext _context;
         private readonly TComposer _composer;
+        private readonly EntityTableChangeBatch _membership;
         private readonly RenderInstanceChanges _forcedChanges;
 
         internal UpdateSnapshot(
             RenderInstanceBatchBuilder<TGroupKey> owner,
             RenderPrepareSystemContext context,
             TComposer composer,
+            EntityTableChangeBatch membership,
             RenderInstanceChanges forcedChanges)
         {
             _owner = owner;
             _context = context;
             _composer = composer;
+            _membership = membership;
             _forcedChanges = forcedChanges;
             Changed = false;
         }
@@ -342,8 +346,15 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                     return;
                 }
 
+                RenderInstanceChanges forcedChanges = _forcedChanges;
+                foreach (Entity entity in _membership.Entities)
+                    if (cursor.TryGetRow(entity, out _))
+                    {
+                        forcedChanges |= RenderInstanceChanges.Structure;
+                        break;
+                    }
                 RenderInstanceChanges changes = packets.RowCount == current.EntityCount
-                    ? _forcedChanges | DetectChanges(ref packets)
+                    ? forcedChanges | DetectChanges(ref packets)
                     : RenderInstanceChanges.Structure;
                 if (changes == RenderInstanceChanges.None)
                     return;

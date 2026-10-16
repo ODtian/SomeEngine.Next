@@ -62,10 +62,15 @@ public sealed partial class ClusterPipelineSystem
             .SelectMany(pair => pair.Value).ToImmutableArray();
         TransparencyData? previous = GraphData.Transparency;
         if (previous is not null && ReferenceEquals(previous.Shaders, shaders) && previous.TriangleCapacity == capacity &&
-            previous.MaterialCapacity == assignments.SlotCapacity && SameTransparencyBindings(previous.Materials, materials) &&
-            previous.TextureReads.AsSpan().SequenceEqual(textureReads.AsSpan()))
+            previous.MaterialCapacity == assignments.SlotCapacity && SameTransparencyBindings(previous.Materials, materials))
         {
-            previous.Completed = false;
+            if (!previous.TextureReads.AsSpan().SequenceEqual(textureReads.AsSpan()))
+            {
+                previous.TextureReads = textureReads;
+                foreach (GraphPassId pass in previous.Builds) UpdateTransparencyTextureReads(ref edit, pass, previous);
+                if (previous.RequestPass != default) UpdateTransparencyTextureReads(ref edit, previous.RequestPass, previous);
+                UpdateTransparencyTextureReads(ref edit, previous.ColorPass, previous);
+            }
             UpdateTransparencyParameters(ref edit, previous, assignments);
             UpdateTransparencyStates(ref edit, previous, assignments, stages);
             return;
@@ -265,6 +270,13 @@ public sealed partial class ClusterPipelineSystem
                     boundMaterial, PipelineSync.ComputeShading);
             }
         }
+    }
+
+    private void UpdateTransparencyTextureReads(ref RenderGraphEdit edit, GraphPassId id, TransparencyData data)
+    {
+        edit.ClearIndexedReads(id);
+        PassDefinition pass = edit.GetPass(id);
+        ReadIndexedMaterialTextures(ref edit, ref pass, data.TextureReads, PipelineSync.ComputeShading);
     }
 
     private bool TryBindTransparencyResource(ref RenderGraphEdit graph, ref PassDefinition pass, TransparencyData data,

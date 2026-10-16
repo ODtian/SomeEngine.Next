@@ -463,6 +463,10 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 
 `MaterialState.ColorLimit` 声明线性 RGB 每通道的颜色上界，默认 `1`；`MaximumError` 声明线性 RGB 最大通道误差，默认 `0`，表示完整合成。近似合成仅在剩余透射率乘以颜色上界的一半落入误差限时结束，并以剩余区间的中点估计尾部。场景使用全部参与材质的最大颜色上界和最小误差限，背景颜色同时参与上界计算。
 
+颜色上界与误差限由实际材质地址聚合。同 shader、同直接资源绑定的材质继续共享静态 evaluator，分别保留自己的声明；其中任一材质声明 `MaximumError=0` 时使用完整合成。材质 `State` 的修订沿已有材质通知和世界提取更新合成参数。
+
+`SharedShaderMaterialsKeepEveryColorLimitAndZeroErrorDeclaration` 通过八层同 shader、同绑定材质交换 `0/.13` 误差声明，并交换 HDR 蓝色与 `1/4` 颜色上界。2026-10-16 审查回归先记录完整合成的最大通道差 `.203125`；实际材质聚合后，两个完整图像满足 `.001`，两个近似图像满足 `.04`。
+
 `ClusterPipelineOutputs.Transparency` 提供投影三角形、实际数量、cell 连续引用及数量、三角形步长、配套源和几何准备完成 pass。XYZ cell 的连续区间与预算外来源遍历共同覆盖全部输入，实际范围由 GPU 计数决定。
 
 公共行为检查通过 `Application.RunAsync`、`SceneScript` 和线性图像读回进入整条路径。相交场景使用同一 Unlit evaluator 的红、绿、蓝实例：六层命中跨越寄存器队列的两个批次，比较已知完整排序颜色、反向提交结果和 `MaximumError=.04` 的误差界。完整材质场景将带贴图、法线和点光源遮挡物的 Standard 面板及 Unlit 面板从 opaque 切换为 alpha 为 `1` 的透明表面，比较两次 Forward 光照与 VSM 阴影图像。每组分别运行 D3D12 和 Vulkan：
@@ -502,6 +506,8 @@ GPU 从 primary 两阶段的实际可见数量保存配套源请求，每项 12 
 Count 对实际投影图元的保守 XYZ 范围计数，Reserve 为每 cell 分配连续引用区间，Scatter 写入投影引用。投影缓存与引用池分别由 `ClusterPipelineOptions.BlendTriangleCapacity/BlendReferenceCapacity` 设置；`SceneScript` 提供相同的公开预算。完整 cell 区间在预算内驻留，引用容量之外的 cell 扫描已保存的投影。投影容量之外的来源通过 wave 共享的用户投影状态继续生成，每次广播一份三角形；各像素执行自己的覆盖和完整次序累积。驻留引用路径对覆盖后的最终深度查询所属 cell；该 cell 执行最终命中的 receiver 和合成。
 
 每轮先扫描全部候选，选择剩余输入中最近四层，再更新颜色与透射率。源批次持续到实际输入结束；`MaximumError` 继续沿已完成前缀检查尾部颜色界。持久图保留五个固定几何阶段、资源与连接，当帧 GPU 计数决定其实际工作量。视图、实例 batch 与内容版本、几何/光栅版本、材质配置、驻留写入与 streaming quality 变化驱动刷新；完成后的相同输入复用配套源、投影和引用。
+
+声明 `VisibilityDepth.Offset` 的用户材质保留投影 XY 范围，并保守覆盖候选 grid 的全部 Z 切片；覆盖后的最终深度决定命中所属 cell。同一静态材质分类随既有 GPU 材质状态传递，单切片 XY grid 使用自己的唯一 Z 切片。贴花纹理读集合变化在原 pass 上替换索引资源读声明，透明几何的完成状态继续由上述几何修订控制。
 
 `ClusterBlendMetrics` 报告 GPU 投影/索引、覆盖/receiver、材质/合成、贴花索引与 opaque 用户求值五项时间，以及实际图元/引用、使用/容量/分配字节和静态复用标记。各项分别累加实际 pass 命令前后的时间戳差值，复用构建的帧回报零构建时间；工作总数由 GPU 在构建时累计。查询池与回读按测量 pass 数量维护，字节口径见 [Cluster 混合集成](Cluster-Blend-Integration.md#计量口径)。使用字节根据驻留引用、投影缓存中的实际数量和配套源数量计算。统一场景平台按 simulation frame 关联这些完成数据。
 

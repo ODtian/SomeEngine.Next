@@ -1,6 +1,7 @@
 using System.Numerics;
 using Game.Content;
 using SomeEngine.Core.Math;
+using SomeEngine.ECS.Entities;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Resources;
 
@@ -10,6 +11,42 @@ namespace SomeEngine.Runtime.Tests;
 [Collection("Transparency content")]
 public sealed class TransparencyIndexTests(TransparencyContentFixture content)
 {
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task XyzCandidatesIncludeUserDepthOffsetsAcrossSlices(string backend)
+    {
+        await content.BuildOffsetPanelsAsync();
+        var images = new List<SceneLinearImage>();
+        foreach (string index in new[] { "full", "xyz" })
+        {
+            await SceneImages.RunAsync(backend, new SceneScript(content.Offset, 8,
+            [
+                new(0, edit =>
+                {
+                    Entity green = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "green sphere");
+                    foreach (Entity entity in edit.MeshEntities.Where(entity => entity != green)) edit.DeleteEntity(entity);
+                    var material = (UnlitMaterial)edit.GetMaterial(green);
+                    material.State = material.State with { Surface = SurfaceMode.Translucent };
+                    material.BaseColorTint = new(0, 1, 0, .5f);
+                }),
+                new(7, edit => edit.CaptureLinearImage(images.Add)),
+            ]) { WaitForFrames = false }, "--blend-index=" + index, "--hardware-raster", "--no-taa", "--no-vsm");
+        }
+        Half[] expected = images[0].Pixels.ToArray();
+        for (int y = 25; y < 39; y++)
+        for (int x = 23; x < 41; x++)
+        {
+            int pixel = (y * 64 + x) * 4;
+            expected[pixel] = (Half)0;
+            expected[pixel + 1] = (Half).5f;
+            expected[pixel + 2] = (Half)0;
+            expected[pixel + 3] = (Half)1;
+        }
+        SceneImages.AssertLinearEqual(images[0] with { Pixels = expected }, images[0], .001f);
+        SceneImages.AssertLinearEqual(images[0], images[1], .001f);
+    }
+
     [SceneTheory]
     [InlineData("d3d12")]
     [InlineData("vulkan")]
@@ -70,6 +107,8 @@ public sealed class TransparencyIndexTests(TransparencyContentFixture content)
     public async Task StaticBlendCellsAreReusedUntilInstanceMembershipChanges(string backend)
     {
         var measurements = new List<ClusterBlendMetrics>();
+        Entity decal = default;
+        using var coating = new StandardMaterial();
         await SceneImages.RunAsync(backend, new SceneScript(content.DirectoryPath, 16,
         [
             new(0, edit =>
@@ -79,8 +118,14 @@ public sealed class TransparencyIndexTests(TransparencyContentFixture content)
                     Material material = edit.GetMaterial(entity);
                     material.State = material.State with { Surface = SurfaceMode.Translucent };
                 }
+                var source = (UnlitMaterial)edit.GetMaterial(edit.MeshEntities[0]);
+                coating.Shader = source.Shader;
+                coating.AlbedoMap = source.AlbedoMap;
             }),
             new(8, edit => edit.AddEntity(edit.MeshEntities[0], new TransformQvvs(new Vector3(.25f, 0, 9), Quaternion.Identity))),
+            new(10, edit => decal = edit.AddMaterialDecal(coating,
+                new TransformQvvs(new Vector3(100, 0, 6), Quaternion.Identity))),
+            new(12, edit => edit.DeleteEntity(decal)),
         ]) { BlendFrameCompleted = measurements.Add, WaitForFrames = false },
             "--measure-blending", "--hardware-raster", "--no-taa", "--no-vsm", "--static-scene");
 
@@ -89,6 +134,8 @@ public sealed class TransparencyIndexTests(TransparencyContentFixture content)
         ClusterBlendMetrics after = measurements.Single(frame => frame.SimulationFrame == 15);
         Assert.True(before.ReusedIndex);
         Assert.False(measurements.Single(frame => frame.SimulationFrame == 8).ReusedIndex);
+        Assert.True(measurements.Single(frame => frame.SimulationFrame == 10).ReusedIndex);
+        Assert.True(measurements.Single(frame => frame.SimulationFrame == 12).ReusedIndex);
         Assert.True(after.ReusedIndex);
         Assert.Equal(0u, before.DecalVolumes);
         Assert.Equal(0u, after.DecalVolumes);

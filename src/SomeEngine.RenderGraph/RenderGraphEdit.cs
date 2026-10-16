@@ -1202,6 +1202,14 @@ public ref partial struct RenderGraphEdit
         Changes.TouchPass(pass.Value);
     }
 
+    /// <summary>Removes descriptor-indexed reads so their resource set can be replaced on an existing pass.</summary>
+    public void ClearIndexedReads(GraphPassId pass)
+    {
+        ValidatePass(pass);
+        foreach (GraphIdentity access in Staging.Passes.Get(pass.Value).Accesses.ToArray())
+            if (Staging.Accesses.Get(access).IndexedParameterRead) RemoveAccess(access);
+    }
+
     internal void SetBufferDescriptorRead(GraphBufferAccessId access, bool descriptorOnly)
     {
         PassResourceAccess row = Staging.Accesses.GetMutable(access.Value);
