@@ -10,10 +10,19 @@ internal static partial class CheckAnimation
 {
     public static int Main(string[] args)
     {
-        if (args.Contains("--view-switch-benchmark"))
+        if (args.Contains("--view-switch-benchmark") || args.Contains("--view-switch-allocations"))
         {
             var measurement = global::SomeEngine.Views.Tests.TypedAnimationChecks.MeasureDeclaredMotionSwitches();
             Console.WriteLine($"VIEWS_DECLARED_SWITCHES samples={measurement.Samples} bytes={measurement.Bytes}");
+            if (args.Contains("--view-switch-allocations"))
+            {
+                for (int index = 0; index < measurement.Selections.Length; index++)
+                {
+                    var selected = measurement.Selections[index];
+                    Console.WriteLine($"VIEWS_DECLARED_SWITCH_PHASE selection={index} samples={selected.Samples} state={selected.StateBytes} views={selected.ViewsBytes} animation={selected.AnimationBytes} declare={selected.DeclareBytes} set={selected.SetBytes} builds={selected.Builds} calculations={selected.Calculations}");
+                }
+                Console.WriteLine($"VIEWS_QUIET_FRAME bytes={measurement.QuietViewsBytes} builds={measurement.QuietBuilds} calculations={measurement.QuietCalculations}");
+            }
             return 0;
         }
         if (args.Contains("--views-checks"))

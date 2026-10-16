@@ -7,6 +7,9 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Views.Tests;
 
+public readonly record struct MotionSwitchAllocation(int Samples, long StateBytes, long ViewsBytes, long AnimationBytes,
+    long DeclareBytes, long SetBytes, int Builds, int Calculations);
+
 public static partial class TypedAnimationChecks
 {
     public static void GeneratedFieldTargetsAnimateThroughTypedSpecs()
@@ -232,13 +235,15 @@ public static partial class TypedAnimationChecks
             "Repeated algorithm selection retains the referenced field.");
     }
 
-    public static (int Samples, long Bytes) MeasureDeclaredMotionSwitches()
+    public static (int Samples, long Bytes, MotionSwitchAllocation[] Selections,
+        long QuietViewsBytes, int QuietBuilds, int QuietCalculations) MeasureDeclaredMotionSwitches()
     {
         using var frames = new TypedFrames();
         frames.Add(Spec.Tween<float, FloatOps, CubicOut>(1));
         var selection = new State<int>();
         var target = new State<float>();
-        Views.Spawn(frames.World, Entity.Null, new DeclaredTargets(selection, target, new State<float>()));
+        var probe = new MotionSwitchProbe();
+        Views.Spawn(frames.World, Entity.Null, new DeclaredTargets(selection, target, new State<float>(), probe));
         const int warmups = 128, samples = 1000;
         for (int index = 0; index < warmups; index++)
         {
@@ -247,14 +252,34 @@ public static partial class TypedAnimationChecks
             frames.Frame(1f / 120);
         }
 
+        var allocations = new MotionSwitchAllocation[3];
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int index = 0; index < samples; index++)
         {
-            selection.Value = (warmups + index) % 3;
+            int selected = (warmups + index) % 3;
+            probe.DeclareBytes = probe.SetBytes = 0;
+            long stateStart = GC.GetAllocatedBytesForCurrentThread();
+            selection.Value = selected;
             target.Value = warmups + index + 1;
-            frames.Frame(1f / 120);
+            long viewsStart = GC.GetAllocatedBytesForCurrentThread();
+            frames.BuildViews();
+            long animationStart = GC.GetAllocatedBytesForCurrentThread();
+            frames.Animate(1f / 120);
+            long completed = GC.GetAllocatedBytesForCurrentThread();
+            MotionSwitchAllocation previous = allocations[selected];
+            allocations[selected] = new(previous.Samples + 1,
+                previous.StateBytes + viewsStart - stateStart,
+                previous.ViewsBytes + animationStart - viewsStart,
+                previous.AnimationBytes + completed - animationStart,
+                previous.DeclareBytes + probe.DeclareBytes, previous.SetBytes + probe.SetBytes,
+                previous.Builds + frames.BuildCount, previous.Calculations + frames.ComputationCount);
         }
-        return (samples, GC.GetAllocatedBytesForCurrentThread() - before);
+        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        frames.BuildViews();
+        long quiet = GC.GetAllocatedBytesForCurrentThread();
+        frames.BuildViews();
+        return (samples, bytes, allocations, GC.GetAllocatedBytesForCurrentThread() - quiet,
+            frames.BuildCount, frames.ComputationCount);
     }
 
     private static void Require(bool value, string message)
@@ -268,19 +293,29 @@ public static partial class TypedAnimationChecks
         internal World World { get; }
         private readonly SystemGroup<ImmediateSystemContext> _builds;
         private readonly SystemGroup<ImmediateSystemContext> _animations;
+        private readonly ViewRebuildSystem _viewSystem = new();
+        internal int BuildCount => _viewSystem.BuildCount;
+        internal int ComputationCount => _viewSystem.ComputationCount;
 
         internal TypedFrames()
         {
             World = WorldJobs.CreateWorld(scheduler: _scheduler);
             _builds = new(new ImmediateSystemDriver(World));
-            _builds.Add(new ViewRebuildSystem());
+            _builds.Add(_viewSystem);
             _animations = new(new ImmediateSystemDriver(World));
             AnimationSystems.Add(_animations, Spec.Tween<float, FloatOps, Linear>(1));
         }
 
         internal void Frame(float delta)
         {
-            _builds.Update();
+            BuildViews();
+            Animate(delta);
+        }
+
+        internal void BuildViews() => _builds.Update();
+
+        internal void Animate(float delta)
+        {
             var frame = new ImmediateSystemContext(World, 0, 0, delta);
             _animations.Update(ref frame);
         }
@@ -345,7 +380,14 @@ public static partial class TypedAnimationChecks
         }
     }
 
-    private readonly record struct DeclaredTargets(State<int> Selection, State<float> Target, State<float> Presented) : IView, IComponent
+    private sealed class MotionSwitchProbe
+    {
+        internal long DeclareBytes;
+        internal long SetBytes;
+    }
+
+    private readonly record struct DeclaredTargets(State<int> Selection, State<float> Target, State<float> Presented,
+        MotionSwitchProbe? Probe = null) : IView, IComponent
     {
         public BuildTask Build()
         {
@@ -355,15 +397,23 @@ public static partial class TypedAnimationChecks
                 .Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween(1));
             State<int> selection = Selection;
             State<float> target = Target;
+            MotionSwitchProbe? probe = Probe;
             Scope.Compute(() =>
             {
+                long before = probe is null ? 0 : GC.GetAllocatedBytesForCurrentThread();
                 switch (selection.Value % 3)
                 {
                     case 0: panel.Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween<float, FloatOps, Linear>(1)); break;
                     case 1: panel.Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween<float, FloatOps, CubicOut>(1)); break;
                     case 2: panel.Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween(1)); break;
                 }
+                long declared = probe is null ? 0 : GC.GetAllocatedBytesForCurrentThread();
                 Scope.Set(panel, AnimatedPanelChannels.ProgressValue, target.Value);
+                if (probe is not null)
+                {
+                    probe.DeclareBytes += declared - before;
+                    probe.SetBytes += GC.GetAllocatedBytesForCurrentThread() - declared;
+                }
             });
             return default;
         }
