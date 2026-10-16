@@ -71,6 +71,7 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
 
     [SceneTheory]
     [InlineData("d3d12")]
+    [InlineData("vulkan")]
     public async Task XraySidesKeepTheirOwnTexturedMaterialThroughMotionAndEffectChanges(string backend)
     {
         SceneLinearImage? background = null, visible = null, surface = null, xray = null;
