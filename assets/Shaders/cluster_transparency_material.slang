@@ -181,7 +181,7 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         VisibilityEvaluate.Varying v2 = Visibility.interpolateVertex(source0, source1, source2, bary2);
         VisibilityPixelInput pixel = (VisibilityPixelInput)0;
         pixel.PixelCoord = coord;
-        pixel.Depth = dot(interpolation.LinearBarycentric, float3(clip0.z / clip0.w, clip1.z / clip1.w, clip2.z / clip2.w));
+        pixel.Depth = depth;
         pixel.EncodedDepth = asuint(1.0 - pixel.Depth);
         pixel.Source = TransparencySourceRequest(source);
         pixel.TriangleID = info.triangleID;
