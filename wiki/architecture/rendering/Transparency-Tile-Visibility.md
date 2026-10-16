@@ -513,6 +513,8 @@ Count 对实际投影图元的保守 cell 范围计数，Reserve 为每 cell 分
 
 声明 `VisibilityDepth.Offset` 的用户材质保留投影 XY 范围，并保守覆盖候选 grid 的全部 Z 切片；覆盖后的最终深度决定命中所属 cell。同一静态材质分类随既有 GPU 材质状态传递，单切片 XY grid 使用自己的唯一 Z 切片。贴花纹理读集合变化在原 pass 上替换索引资源读声明，透明几何的完成状态继续由上述几何修订控制。
 
+`XyzCandidatesIncludeUserDepthOffsetsAcrossSlices` 使用 64×64 的用户 Unlit 面板，投影几何位于 `z=6`，用户 `VisibilityEvaluate` 将最终 clip 深度设为 `.5`，使命中跨越原投影的 Z 切片。2026-10-16 在 D3D12、Vulkan 分别运行 full 与 XYZ 各 8 帧：中心区域的线性绿色贡献为 `.5`，两种查询的整图误差均满足 `.001`。检查使用 `review/DefaultProject` 的 91 资产匹配包与 `2eafdd25` 源码，自给的 Offset shader 通过两源通用组合编译。
+
 静态复用公开检查在第 8 帧增加网格，第 10 帧创建场外贴花、第 12 帧删除它。2026-10-16 审查回归先记录贴花创建导致的索引复建；查询成员筛选与 pass 索引资源读更新后，D3D12 的 16 帧检查通过：网格成员变化刷新索引，两次贴花编辑复用索引，末帧构建计时为零且合成计时大于零。命令同时执行行为规则检查，结果为 0 违规。
 
 `ClusterBlendMetrics` 报告 GPU 投影/索引、覆盖/receiver、材质/合成、贴花索引与 opaque 用户求值五项时间，以及实际图元/引用、使用/容量/分配字节和静态复用标记。各项分别累加实际 pass 命令前后的时间戳差值，复用构建的帧回报零构建时间；工作总数由 GPU 在构建时累计。查询池与回读按测量 pass 数量维护，字节口径见 [Cluster 混合集成](Cluster-Blend-Integration.md#计量口径)。使用字节根据驻留引用、投影缓存中的实际数量和配套源数量计算。统一场景平台按 simulation frame 关联这些完成数据。
