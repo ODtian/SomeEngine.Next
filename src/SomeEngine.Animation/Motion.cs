@@ -63,7 +63,7 @@ public interface IMotion<T, TOps, TParameters, TState>
 }
 
 /// <summary>Typed instance storage; parameter and state references remain visible to the GC.</summary>
-[BufferCapacity(4)]
+[BufferCapacity(1)]
 public struct MotionData<T, TParameters, TState> : IBufferElement
     where T : unmanaged
     where TParameters : struct

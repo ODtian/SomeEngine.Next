@@ -38,6 +38,8 @@ public readonly struct Tween<T, TOps, TEasing> : IMotion<T, TOps, TweenParameter
 
 public readonly record struct SpringParameters
 {
+    public SpringParameters() : this(180, 20, 0.00001f, 1f / 120) { }
+
     public SpringParameters(float stiffness = 180, float damping = 20, float tolerance = 0.00001f, float step = 1f / 120)
     {
         DevelopmentCheck.Require(float.IsFinite(stiffness) && stiffness > 0, "Spring stiffness must be finite and positive.");
@@ -184,7 +186,7 @@ public readonly unsafe struct FunctionTween<T, TOps> : IMotion<T, TOps, Function
     public static void Initialize(in FunctionTweenParameters parameters, in MotionValues<T> values, ref TweenState state) => state = default;
     public static void Retarget(in FunctionTweenParameters previous, in FunctionTweenParameters next, in MotionValues<T> values, ref TweenState state) { }
     public static bool ParametersEqual(in FunctionTweenParameters previous, in FunctionTweenParameters next) =>
-        previous.Duration == next.Duration && previous.Function == next.Function;
+        previous.Duration == next.Duration && (nint)previous.Function == (nint)next.Function;
 
     public static MotionSample<T> Evaluate(in FunctionTweenParameters parameters, in MotionTime time,
         in MotionValues<T> values, ref TweenState state)
