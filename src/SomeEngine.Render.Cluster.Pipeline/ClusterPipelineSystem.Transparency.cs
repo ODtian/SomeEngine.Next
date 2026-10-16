@@ -156,7 +156,15 @@ public sealed partial class ClusterPipelineSystem
     {
         FrameResources frame = GraphData.Resources;
         Span<TransparencyParameters> parameters = stackalloc TransparencyParameters[1];
-        Material[] transparent = data.Materials.Select(stage => stage.Material).ToArray();
+        float colorLimit = 0;
+        float maximumError = float.PositiveInfinity;
+        foreach (int address in assignments.ActiveOffsets)
+            if (assignments.TryGetEntry(address, out Material material, out _) &&
+                (material.State.Surface == SurfaceMode.Translucent || material.State.Ordered || assignments.UsesXray(material)))
+            {
+                colorLimit = MathF.Max(colorLimit, material.State.ColorLimit);
+                maximumError = MathF.Min(maximumError, material.State.MaximumError);
+            }
         parameters[0] = new()
         {
             Width = (uint)frame.Width, Height = (uint)frame.Height, ViewCount = frame.ViewCount,
@@ -164,8 +172,8 @@ public sealed partial class ClusterPipelineSystem
             VisibleCapacity = _options.MaxCandidates, ReferenceCapacity = _options.BlendReferenceCapacity,
             UseIndex = _options.BlendIndex == ClusterBlendIndex.FullScan ? 0u : 1u, CellCount = _viewGrid.CellCountPerView * frame.ViewCount,
             Effects = (assignments.HasXray ? 1u : 0u) | (assignments.HasOrdered ? 2u : 0u),
-            ColorLimit = transparent.Max(material => material.State.ColorLimit),
-            MaximumError = assignments.HasXray ? 0 : transparent.Min(material => material.State.MaximumError),
+            ColorLimit = colorLimit,
+            MaximumError = assignments.HasXray ? 0 : maximumError,
         };
         UpdateParameters(ref edit, data.Parameters, MemoryMarshal.AsBytes(parameters));
         Span<uint> geometry = stackalloc uint[2] { _options.MaxTessellationFactor, BitConverter.SingleToUInt32Bits(_options.TessellationTargetEdgePixels) };
@@ -190,6 +198,7 @@ public sealed partial class ClusterPipelineSystem
                 int evaluator = Array.IndexOf(data.Shaders.Members, new TransparencyMember(material.Shader!, stage.VisibilityDepth));
                 int resource = Array.FindIndex(data.ResourceMaterials[evaluator], entry => entry.CommandBindings.Equals(stage.CommandBindings));
                 uint facing = material.State.TwoSided ? 2u : 1u;
+                if (stage.VisibilityDepth == ClusterVisibilityDepth.Offset) facing |= 0x40000000u;
                 if (material.State.Surface != SurfaceMode.Translucent && !material.State.Ordered) facing |= 0x80000000u;
                 BinaryPrimitives.WriteUInt32LittleEndian(states.AsSpan(address * 8), ((uint)evaluator + 1u) << 2 | facing);
                 BinaryPrimitives.WriteUInt32LittleEndian(states.AsSpan(address * 8 + 4), (uint)resource);

@@ -11,6 +11,34 @@ namespace SomeEngine.SceneContent;
 
 public static partial class BehaviorScenes
 {
+    public static async Task CreateOffsetPanelsAsync(string source, string destination, string engineRoot)
+    {
+        CopyContent(source, destination);
+        string shader = File.ReadAllText(Path.Combine(destination, "assets/Shaders/unlit.slang"))
+            .Replace("typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;", """
+                [VisibilityDepth("offset")]
+                [MaterialDepthInputs("")]
+                struct OffsetVisibility : IVisibilityEvaluate<VertexEvaluate.Vertex>
+                {
+                    typealias Varying = EmptyVisibilityVarying;
+                    Varying makeVarying(VertexEvaluate.Vertex vertex, VisibilityVertexInput input) { return {}; }
+                    Varying readLane(Varying value, uint lane) { return {}; }
+                    Varying interpolateVertex(Varying first, Varying second, Varying third, float3 bary) { return {}; }
+                    Varying interpolatePixel(Varying first, Varying second, Varying third, VisibilityInterpolationInput input) { return {}; }
+                    VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
+                    {
+                        VisibilityPixelResult result;
+                        result.Visible = 1u;
+                        result.Depth = .5;
+                        return result;
+                    }
+                };
+                typedef OffsetVisibility VisibilityEvaluate;
+                """)
+            .Replace("TRANSPARENCY_MATERIAL_TYPE UnlitTransparencyMaterial", "TRANSPARENCY_MATERIAL_TYPE OffsetUnlitTransparencyMaterial");
+        await SetGreenShaderAsync(destination, engineRoot, "offset-unlit", shader);
+    }
+
     /// <summary>Two intersecting planes whose nearest surface changes across the image.</summary>
     public static async Task CreateIntersectingPanelsAsync(string source, string destination)
     {
