@@ -70,7 +70,8 @@ public unsafe partial class Shader
         IReadOnlyList<IEntryPoint> entries,
         IComponentType linkedCode,
         ReadOnlySpan<TargetDesc> targets,
-        bool generateCode = true)
+        bool generateCode = true,
+        bool generateLibraryCode = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(global);
@@ -109,7 +110,7 @@ public unsafe partial class Shader
                 throw new InvalidDataException("Slang reflection differs from the supplied entry points.");
 
             reflections.Add(reflection);
-            targetBlobs.Add(generateCode && !unbound
+            targetBlobs.Add(generateCode && generateLibraryCode && !unbound
                 ? GetTargetBlob(linkedCode, targetIndex)
                 : null);
 

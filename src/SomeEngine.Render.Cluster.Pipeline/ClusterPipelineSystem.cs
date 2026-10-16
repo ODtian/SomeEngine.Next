@@ -679,6 +679,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _hasPendingFrame = true;
 
             graph.ObserveExecution(this);
+            if (GraphData.Transparency?.Measurements is { } blendMeasurements)
+                blendMeasurements.Stage(ref graph, _measurementSimulationFrame, reusedIndex: false);
             graph.SetReadbackTag(GraphData.PageFaultReadback, graph.FrameIdentity);
             if (_options.EnableFrameMetricsReadback)
                 graph.SetReadbackTag(GraphData.FrameMetricsReadback, binding.ReadbackEpoch.Value);

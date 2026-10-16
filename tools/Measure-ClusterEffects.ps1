@@ -15,6 +15,7 @@ $firstFrames = @{ '1024 spheres' = 2048; 'Sponza' = 1024; 'Amazon Bistro' = 2048
 foreach ($scene in $sceneSettings) {
     $scene.MeasurementFrames.FirstFrame = $firstFrames[$scene.Name]
     $scene.MeasurementFrames.FrameCount = 256
+    if ($Static) { $scene | Add-Member -NotePropertyName Animate -NotePropertyValue $false -Force }
 }
 $runs = [Collections.Generic.List[object]]::new()
 try {
