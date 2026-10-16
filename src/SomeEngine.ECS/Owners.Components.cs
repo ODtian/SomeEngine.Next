@@ -539,23 +539,23 @@ internal readonly partial struct Components
     internal bool IsEnabled<T>(Entity entity)
         where T : struct, IEnableableComponent
     {
-        return IsEnabled(entity, ComponentMetadata<T>.Id, typeof(T).Name);
+        return IsEnabled(entity, ComponentMetadata<T>.Id, typeof(T));
     }
 
     internal bool IsEnabled(Entity entity, int componentId)
     {
-        return IsEnabled(entity, componentId, $"id {componentId}");
+        return IsEnabled(entity, componentId, null);
     }
 
     internal void WriteEnabled<T>(Entity entity, bool enabled)
         where T : struct, IEnableableComponent
     {
-        WriteEnabled(entity, ComponentMetadata<T>.Id, enabled, typeof(T).Name);
+        WriteEnabled(entity, ComponentMetadata<T>.Id, enabled, typeof(T));
     }
 
     internal void WriteEnabled(Entity entity, int componentId, bool enabled)
     {
-        WriteEnabled(entity, componentId, enabled, $"id {componentId}");
+        WriteEnabled(entity, componentId, enabled, null);
     }
 }
 
@@ -739,27 +739,33 @@ internal readonly partial struct Components
         faults.ThrowIfAny();
     }
 
-    private bool IsEnabled(Entity entity, int componentId, string name)
+    private bool IsEnabled(Entity entity, int componentId, Type? componentType)
     {
         EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
 
         if (!archetype.HasComponent(componentId))
+        {
+            string name = componentType?.Name ?? $"id {componentId}";
             throw new InvalidOperationException(
                 $"Entity {entity} does not have component {name}.");
+        }
 
         int maskIndex = archetype.EnableMask(componentId);
         return record.Chunk!.IsEnabled(maskIndex, record.RowInChunk);
     }
 
-    private void WriteEnabled(Entity entity, int componentId, bool enabled, string name)
+    private void WriteEnabled(Entity entity, int componentId, bool enabled, Type? componentType)
     {
         EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
 
         if (!archetype.HasComponent(componentId))
+        {
+            string name = componentType?.Name ?? $"id {componentId}";
             throw new InvalidOperationException(
                 $"Entity {entity} does not have component {name}.");
+        }
 
         int maskIndex = archetype.EnableMask(componentId);
         record.Chunk!.WriteEnabled(maskIndex, record.RowInChunk, enabled);
