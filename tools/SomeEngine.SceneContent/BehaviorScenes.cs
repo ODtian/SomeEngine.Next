@@ -24,6 +24,30 @@ public static partial class BehaviorScenes
         await SetGreenShaderAsync(destination, engineRoot, "tessellated-unlit", shader);
     }
 
+    public static async Task CreateDeformedPhongSpheresAsync(string source, string destination)
+    {
+        CopyContent(source, destination);
+        var project = new AssetProject(destination, []);
+        await using var loader = new AssetLoader(project.CreateStorage());
+        AssetEntry entry = project.Manifest.Assets.Values.Single(value => value.Name == "green sphere" && value.AssetType == MaterialAsset.FileType);
+        using var material = await UnlitMaterialAsset.OpenAsync(loader, new(entry.AssetGuid));
+        material.GetBlock<MaterialBlock>().Shader = new(project.Resolve("assets/Shaders/deformed-phong.shader")!.Value);
+        project.RegisterAsset(await material.SaveAsync(Path.Combine(destination, entry.Path)));
+        using var red = await MeshAsset.OpenAsync(loader,
+            new(project.Manifest.Assets.Values.Single(value => value.Name == "red sphere" && value.AssetType == MeshAsset.FileType).AssetGuid));
+        var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(0);
+        using MeshAsset green = ClusterBuilder.ProcessRaw(vertices, attributes, indices, [new(material.Id)], "green Phong sphere");
+        project.RegisterAsset(await green.SaveAsync(Path.Combine(destination, "assets/Meshes/green-phong.mesh.asset")));
+        await WriteSceneAsync(project, world =>
+        {
+            Entity redEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(-1, 0, 6), Quaternion.Identity) });
+            world.Add(redEntity, new MeshSource { Mesh = red.Reference });
+            Entity greenEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(1, 0, 6), Quaternion.Identity) });
+            world.Add(greenEntity, new MeshSource { Mesh = green.Reference });
+        });
+        await SceneContent.SetOutputSizeAsync(destination, 128, 128);
+    }
+
     public static async Task CreateShaderReplacementSpheresAsync(string source, string destination, string engineRoot)
     {
         CopyContent(source, destination);
@@ -106,7 +130,7 @@ public static partial class BehaviorScenes
         JsonNode document = JsonNode.Parse(File.ReadAllText(Path.Combine(shaderDirectory, "unlit.shader")))!;
         document["Fields"]!["Id"] = Guid.NewGuid().ToString();
         document["Fields"]!["Name"] = name;
-        document["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(name + ".slang");
+        document["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang");
         string path = Path.Combine(shaderDirectory, name + ".shader");
         File.WriteAllText(path, document.ToJsonString());
         var project = new AssetProject(directory, [], sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);

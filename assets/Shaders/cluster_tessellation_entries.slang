@@ -246,7 +246,7 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
     pixelInput.Depth = ClusterRasterMaterialDepth(rasterDepth, view.TargetPolicy);
     pixelInput.EncodedDepth = EncodeClusterRasterDepth(rasterDepth, view.TargetPolicy);
     pixelInput.EncodedTargetDepth = ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted);
-    pixelInput.VisibleClusterIndex = input.VisibleClusterIndex;
+    pixelInput.Source = VisibleClusterRequest(TessellationVisibleClusters[input.VisibleClusterIndex]);
     pixelInput.TriangleID = input.TriangleID;
     pixelInput.ViewIndex = input.ViewIndex;
     pixelInput.TargetPolicy = view.TargetPolicy;

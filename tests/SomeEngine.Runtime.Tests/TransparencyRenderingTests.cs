@@ -14,6 +14,29 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
     [SceneTheory]
     [InlineData("d3d12")]
     [InlineData("vulkan")]
+    public async Task TransparentDeformedPhongSurfaceMatchesOpaqueSurfaceAtFullOpacity(string backend)
+    {
+        SceneLinearImage? opaque = null, transparent = null;
+        await SceneImages.RunAsync(backend, new SceneScript(content.DeformedPhong, 16,
+        [
+            new(7, edit => edit.CaptureLinearImage(value => opaque = value)),
+            new(8, edit =>
+            {
+                foreach (Entity entity in edit.MeshEntities)
+                {
+                    Material material = edit.GetMaterial(entity);
+                    material.State = material.State with { Surface = SurfaceMode.Translucent };
+                }
+            }),
+            new(15, edit => edit.CaptureLinearImage(value => transparent = value)),
+        ]) { RasterEdgePixels = 8, WaitForFrames = false },
+            "--hardware-raster", "--shading-path", "forward", "--no-taa", "--no-vsm");
+        SceneImages.AssertLinearEqual(opaque!, transparent!, .003f);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
     public async Task IntersectingTransparentModelsMatchCompleteDepthSortedCompositing(string backend)
     {
         SceneLinearImage? image = null, reversed = null, bounded = null;

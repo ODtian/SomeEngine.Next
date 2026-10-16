@@ -53,7 +53,7 @@ VisibilityPixelResult EvaluateHardwareRasterPixel<TVertex, TVisibility>(
     pixelInput.Depth = ClusterRasterMaterialDepth(rasterDepth, view.TargetPolicy);
     pixelInput.EncodedDepth = EncodeClusterRasterDepth(rasterDepth, view.TargetPolicy);
     pixelInput.EncodedTargetDepth = encodedTargetDepth;
-    pixelInput.VisibleClusterIndex = input.VisibleClusterIndex;
+    pixelInput.Source = VisibleClusterRequest(HardwareRasterVisibleClusters[input.VisibleClusterIndex]);
     pixelInput.TriangleID = input.TriangleID;
     pixelInput.ViewIndex = input.ViewIndex;
     pixelInput.TargetPolicy = view.TargetPolicy;
@@ -229,9 +229,7 @@ ClusterRasterPixelInput<TVisibility.Varying> BuildVisBufferVertex<TVE, TVisibili
     output.Pos = ClusterHardwareRasterPosition(output.Pos, visibleClusterIndex, view,
         float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight));
     VisibilityVertexInput visibilityInput;
-    visibilityInput.VisibleClusterIndex = visibleClusterIndex;
-    visibilityInput.InstanceID = realInstanceID;
-    visibilityInput.ViewIndex = viewIndex;
+    visibilityInput.Source = VisibleClusterRequest(HardwareRasterVisibleClusters[visibleClusterIndex]);
     visibilityInput.LocalVertexIndex = localVertIdx;
     output.Varying = visibility.makeVarying(vertex, visibilityInput);
     output.VisibleClusterIndex = visibleClusterIndex;
@@ -314,9 +312,7 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
         output.Pos = ClusterHardwareRasterPosition(output.Pos, visible, view,
             float2(HardwareRasterUniformData.RasterWidth, HardwareRasterUniformData.RasterHeight));
         VisibilityVertexInput visibilityInput;
-        visibilityInput.VisibleClusterIndex = visible;
-        visibilityInput.InstanceID = request.InstanceID;
-        visibilityInput.ViewIndex = viewIndex;
+        visibilityInput.Source = request;
         visibilityInput.LocalVertexIndex = localVertex;
         output.Varying = visibility.makeVarying(value, visibilityInput);
         output.VisibleClusterIndex = visible;
