@@ -9,6 +9,8 @@ system callbacks 按显式 order 和 registration tie-break 在 coordinator thre
 
 公开 `World.ExecuteQuery` 同时接受 managed 函数指针 `delegate* managed<QueryCursor, void>` 和 `delegate* managed<QueryCursor, ref TState, void>`。有状态形式支持 `allows ref struct`，调用方通过 `ref` 持有上下文。查询在回调前取得声明的数据访问和版本，回调成功后提交关系变化，异常时沿共同边界处理关系恢复。批内组件值、字段访问和值运算保留具体类型，间接分发位于查询回调边界。
 
+动态扩展在声明阶段可用 `QueryDefinitionBuilder.WithAccess(inputs)` 合入其公开输入定义。输入的组件及缓冲访问按原读写权限作为 `Optional` 条目合并，实体匹配由当前查询的必需项和过滤条件决定。实际执行复用共同的存储权限、缓冲访问展开与版本处理；图条件等扩展据此登记各具体状态和输入能力。
+
 system order 只表达 callback/lifecycle 顺序，不暗示数据 freshness。需要 B 读取 A 的新结果时，B 的 job显式依赖 A 的 handle；紧密 job pipeline 应在同一 feature/system 中组合，generated compound pipeline 可自动传递精确 handle。
 
 删除以下正确性机制：
