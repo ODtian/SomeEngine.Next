@@ -130,7 +130,6 @@ public struct GraphSystem : ISystem<ImmediateSystemContext>
                     {
                         if (instance.Data is not null)
                         {
-                            GraphPlayback.ReleaseConditions(world, row.Entity, instance.Data);
                             GraphData.Release(instance.Data);
                         }
                         instance.Data = null;
@@ -200,7 +199,8 @@ public struct GraphSystem : ISystem<ImmediateSystemContext>
                 ref GraphInstance instance = ref row.ReadWrite<GraphInstance>();
                 if (instance.Data is not null)
                 {
-                    GraphPlayback.ReleaseConditions(world, row.Entity, instance.Data);
+                    if (row.Has<Timeline>())
+                        GraphPlayback.ReleaseConditions(world, row.Entity, instance.Data);
                     GraphData.Release(instance.Data);
                 }
                 instance.Data = null;

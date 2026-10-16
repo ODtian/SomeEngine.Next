@@ -1,0 +1,58 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  SomeEngine.TestRules -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\tools\TestRules\bin\Release\net10.0\SomeEngine.TestRules.dll
+  Test rules: SomeEngine.Animation.Tests; 0 violations.
+  SomeEngine.Diagnostics -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.Diagnostics\bin\Release\net10.0\SomeEngine.Diagnostics.dll
+  SomeEngine.Job.Contracts -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.Job.Contracts\bin\Release\net10.0\SomeEngine.Job.Contracts.dll
+  SomeEngine.ECS.SourceGen -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.SourceGen\bin\Release\netstandard2.0\SomeEngine.ECS.SourceGen.dll
+  SomeEngine.ECS -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS\bin\Release\net10.0\SomeEngine.ECS.dll
+  SomeEngine.Job -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.Job\bin\Release\net10.0\SomeEngine.Job.dll
+  SomeEngine.ECS.SourceGen -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.SourceGen\bin\Release\netstandard2.0\SomeEngine.ECS.SourceGen.dll
+  SomeEngine.ECS.Systems -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.Systems\bin\Release\net10.0\SomeEngine.ECS.Systems.dll
+  SomeEngine.Core -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.Core\bin\Release\net10.0\SomeEngine.Core.dll
+  SomeEngine.Animation -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.Animation\bin\Release\net10.0\SomeEngine.Animation.dll
+  SomeEngine.Animation.Tests -> F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\tests\SomeEngine.Animation.Tests\bin\Release\net10.0\SomeEngine.Animation.Tests.dll
+F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\tests\SomeEngine.Animation.Tests\bin\Release\net10.0\SomeEngine.Animation.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行
+VSTest 版本 18.0.2 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+  失败 SomeEngine.Animation.Tests.AnimationGraphTests.DestroyedHandlesFinishCleanupWhileSharedInstancesContinue [29 ms]
+  错误消息:
+   System.AggregateException : System group disposal failed. (System group disposal failed. (Entity Entity(1:0) does not have buffer component GraphConditionState`3.))
+---- System.AggregateException : System group disposal failed. (Entity Entity(1:0) does not have buffer component GraphConditionState`3.)
+-------- System.InvalidOperationException : Entity Entity(1:0) does not have buffer component GraphConditionState`3.
+  堆栈跟踪:
+     at SomeEngine.ECS.Systems.SystemGroup`1.ThrowIfTeardownFailed(List`1 exceptions, String message) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.Systems\SystemGroup.cs:line 505
+   at SomeEngine.ECS.Systems.SystemGroup`1.Dispose() in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.Systems\SystemGroup.cs:line 439
+   at SomeEngine.Animation.Tests.AnimationGraphTests.DestroyedHandlesFinishCleanupWhileSharedInstancesContinue() in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\tests\SomeEngine.Animation.Tests\AnimationGraphTests.cs:line 560
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+----- Inner Stack Trace -----
+   at SomeEngine.ECS.Systems.SystemGroup`1.ThrowIfTeardownFailed(List`1 exceptions, String message) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.Systems\SystemGroup.cs:line 505
+   at SomeEngine.ECS.Systems.SystemGroup`1.Dispose() in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.Systems\SystemGroup.cs:line 439
+   at SomeEngine.Animation.AnimationPipeline.OnDestroy(ImmediateSystemContext& context) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.Animation\AnimationPipeline.cs:line 127
+   at SomeEngine.ECS.Systems.SystemNode`2.OnDestroy(TContext& context) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.Systems\SystemNode.cs:line 45
+   at SomeEngine.ECS.Systems.SystemGroup`1.DestroySlot(Int32 index, SystemSlot& slot, List`1 exceptions) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.Systems\SystemGroup.cs:line 470
+----- Inner Stack Trace -----
+   at SomeEngine.ECS.Owners.Buffers.Resolve[T](Entity entity, Chunk& chunk, Int32& row, Int32& headerColumn, Int32& inlineColumn) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS\Owners.Buffers.cs:line 85
+   at SomeEngine.ECS.Owners.Buffers.BorrowWrite[T](Entity entity, UInt32 writeVersion) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS\Owners.Buffers.cs:line 40
+   at SomeEngine.ECS.Owners.Buffers.BorrowWrite[T](Entity entity) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS\Owners.Buffers.cs:line 34
+   at SomeEngine.ECS.World.ExecuteBufferWrite[T,TState](Entity entity, TState& state, BufferWriteExecution`2 execution) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS\World.DynamicBuffer.cs:line 113
+--- End of stack trace from previous location ---
+   at SomeEngine.ECS.World.EndStorageBorrowAfterFault(Exception bodyFault) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS\World.DynamicBuffer.cs:line 126
+   at SomeEngine.ECS.World.ExecuteBufferWrite[T,TState](Entity entity, TState& state, BufferWriteExecution`2 execution) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS\World.DynamicBuffer.cs:line 117
+   at SomeEngine.Animation.GraphConditionData`3.Release(World world, Entity animation, Int32 index) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.Animation\AnimationCondition.cs:line 109
+   at SomeEngine.Animation.GraphPlayback.ReleaseConditions(World world, Entity animation, GraphData[] data) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.Animation\GraphPlayback.cs:line 196
+   at SomeEngine.Animation.GraphSystem.<>c.<OnDestroy>b__6_0(QueryCursor rows, World& world) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.Animation\AnimationGraph.cs:line 203
+   at SomeEngine.ECS.World.ExecuteQueryAdmitted[TState](QueryHandle query, UInt32 lastSystemVersion, UInt32 currentSystemVersion, Boolean relationshipWrite, TState& state, QueryExecution`1 execution) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS\World.Queries.cs:line 288
+--- End of stack trace from previous location ---
+   at SomeEngine.ECS.World.ExecuteQueryAdmitted[TState](QueryHandle query, UInt32 lastSystemVersion, UInt32 currentSystemVersion, Boolean relationshipWrite, TState& state, QueryExecution`1 execution) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS\World.Queries.cs:line 312
+   at SomeEngine.ECS.World.ExecuteQuery[TState](QueryHandle query, TState& state, QueryExecution`1 execution) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS\World.Queries.cs:line 222
+   at SomeEngine.Animation.GraphSystem.OnDestroy(ImmediateSystemContext& context) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.Animation\AnimationGraph.cs:line 196
+   at SomeEngine.ECS.Systems.SystemNode`2.OnDestroy(TContext& context) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.Systems\SystemNode.cs:line 45
+   at SomeEngine.ECS.Systems.SystemGroup`1.DestroySlot(Int32 index, SystemSlot& slot, List`1 exceptions) in F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\core\src\SomeEngine.ECS.Systems\SystemGroup.cs:line 470
+
+失败!  - 失败:     1，通过:    17，已跳过:     0，总计:    18，持续时间: 1 s - SomeEngine.Animation.Tests.dll (net10.0)
