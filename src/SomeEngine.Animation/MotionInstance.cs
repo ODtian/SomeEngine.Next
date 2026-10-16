@@ -25,6 +25,10 @@ public struct PropertySource<T> : IBufferElement where T : unmanaged
     public byte Layer;
     public Entity Animation;
     public int Track;
+    public int BaseIndex;
+    public T Value, Reference;
+    public TrackEndpoints Endpoints;
+    public bool Active, Dirty, Selected, Direct, HadDynamic;
 }
 
 [BufferCapacity(1)]

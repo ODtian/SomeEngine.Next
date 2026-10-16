@@ -92,6 +92,7 @@ public static partial class PropertyAnimation
                 }
             });
         _ = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type;
+        RefreshSources<T>(world, target);
     }
 
     public static Entity To<T, TOps, TParameters, TState, TEvaluator>(World world, Entity target,
@@ -133,7 +134,8 @@ public static partial class PropertyAnimation
         Track<T> previous = ReadTrack<T>(world, instance, source.Track);
         Timeline timeline = ReadStartingTimeline(world, instance);
         T current = previous.SourceActive ? previous.Current : channel.Read(world, target);
-        if (endpoints == TrackEndpoints.Displacement && world.Has<AnimationLayers>(target)) ReadBase(world, target, channel, ref current);
+        if (world.Has<AnimationLayers>(target) && (endpoints == TrackEndpoints.Displacement || !previous.SourceActive &&
+            world.Read<AnimationLayers>(target).Items[layer].Mode == LayerMode.Additive)) ReadBase(world, target, channel, ref current);
         T from = endpoints == TrackEndpoints.Displacement ? TOps.Add(in current, in value) : current;
         T to = endpoints == TrackEndpoints.Displacement ? current : value;
         var values = new MotionValues<T>(from, to, from);
@@ -185,7 +187,7 @@ public static partial class PropertyAnimation
         var track = new Track<T>
         {
             Target = target == instance ? Entity.Null : target, Channel = channel, Layer = layer,
-            Typed = true, SourceActive = true, MotionType = type, MotionIndex = change.Index, MotionInitialized = true,
+            Typed = true, SourceActive = true, MotionType = type, MotionIndex = change.Index, MotionInitialized = true, SourceIndex = previous.SourceIndex,
             From = from, To = to, Current = from, Start = timeline.Time, SampleTime = timeline.Time,
             StartId = timeline.Starts, Stage = timeline.Stage, Duration = spec.Boundary.Duration,
             Endpoints = endpoints == TrackEndpoints.Displacement ? TrackEndpoints.DisplacementValues : endpoints,
@@ -273,6 +275,7 @@ public static partial class PropertyAnimation
                             for (int source = sources.Count - 1; source >= 0; source--)
                                 if (sources.Read(source).Animation == animation) sources.SwapRemoveAt(source);
                         });
+                    RefreshSources<T>(available.World, target);
                 }
                 tracks.Clear();
                 available.Animation = row.Entity;
@@ -305,7 +308,36 @@ public static partial class PropertyAnimation
     internal static void SubmitTyped<T, TOps>(World world, Entity animation, uint output, in Track<T> track)
         where T : unmanaged where TOps : struct, IValueOps<T>
     {
+        if (TrySubmitTyped<T, TOps>(world, animation, output, in track, out FieldWrite<T> write))
+            write.Channel.Write(world, write.Target, in write.Value);
+    }
+
+    internal static bool TrySubmitTyped<T, TOps>(World world, Entity animation, uint output, in Track<T> track, out FieldWrite<T> write)
+        where T : unmanaged where TOps : struct, IValueOps<T>
+    {
+        write = default;
         Entity target = track.Target == Entity.Null ? animation : track.Target;
+        if (track.Typed && world.HasBuffer<PropertySource<T>>(target))
+        {
+            var outputValue = (Index: track.SourceIndex, Track: track, Direct: !world.HasBuffer<Contribution<T>>(target));
+            world.ExecuteBufferWrite<PropertySource<T>, (int Index, Track<T> Track, bool Direct)>(target, ref outputValue,
+                static (sources, ref outputValue) =>
+                {
+                    PropertySource<T> previous = sources.Read(outputValue.Index);
+                    outputValue.Direct &= previous.Direct;
+                    if (!previous.Active || !TOps.Equals(in previous.Value, in outputValue.Track.Current) ||
+                        !TOps.Equals(in previous.Reference, in outputValue.Track.To) || previous.Endpoints != outputValue.Track.Endpoints)
+                    {
+                        previous.Value = outputValue.Track.Current;
+                        previous.Reference = outputValue.Track.To;
+                        previous.Endpoints = outputValue.Track.Endpoints;
+                        previous.Active = true;
+                        previous.Dirty = true;
+                        sources[outputValue.Index] = previous;
+                    }
+                });
+            if (!outputValue.Direct) return false;
+        }
         T value = track.Current;
         if (track.Endpoints != TrackEndpoints.Values && world.Has<AnimationLayers>(target) &&
             world.Read<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
@@ -321,6 +353,11 @@ public static partial class PropertyAnimation
             world.ExecuteBufferWrite<Contribution<T>, Contribution<T>>(target, ref contribution,
                 static (contributions, ref contribution) => contributions.Add(contribution));
         }
-        else WriteSingle<T, TOps>(world, target, track.Channel, track.Layer, value);
+        else if (TrySingleValue<T, TOps>(world, target, track.Channel, track.Layer, ref value))
+        {
+            write = new(target, track.Channel, value);
+            return true;
+        }
+        return false;
     }
 }

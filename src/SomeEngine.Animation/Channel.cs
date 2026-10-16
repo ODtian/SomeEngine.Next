@@ -26,12 +26,13 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
         delegate* managed<World, SomeEngine.ECS.Entities.Entity, in T, void> write,
         delegate* managed<ref byte, T> readRoot,
         delegate* managed<ref byte, in T, void> writeRoot,
+        delegate* managed<World, Channel<T>, ReadOnlySpan<FieldWrite<T>>, void> writeBatch,
         bool throughReference, ushort offset)
     {
         Component = component;
         Field = field;
         Offset = offset;
-        _access = FieldDescriptions<T>.Add(component, field, new FieldDescription<T>(read, write, readRoot, writeRoot, throughReference));
+        _access = FieldDescriptions<T>.Add(component, field, new FieldDescription<T>(read, write, readRoot, writeRoot, writeBatch, throughReference));
     }
 
     /// <summary>Connects a generated identity to the common typed ECS field access.</summary>
@@ -40,7 +41,7 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
         where TAccess : struct, IFieldAccess<TComponent, T> =>
         new(ComponentId<TComponent>.Value, field,
             &ReadField<TComponent, TAccess>, &WriteField<TComponent, TAccess>,
-            &ReadComponent<TComponent, TAccess>, &WriteComponent<TComponent, TAccess>, throughReference, offset);
+            &ReadComponent<TComponent, TAccess>, &WriteComponent<TComponent, TAccess>, &WriteFields<TComponent, TAccess>, throughReference, offset);
 
     public bool ThroughReference => _access != 0 && FieldDescriptions<T>.Items[_access - 1].ThroughReference;
 
@@ -52,6 +53,16 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
     {
         if (_access != 0) FieldDescriptions<T>.Items[_access - 1].Write(world, entity, in value);
         else Unsafe.WriteUnaligned(ref world.WriteBytes(entity, Component, Offset, Unsafe.SizeOf<T>()), value);
+    }
+
+    /// <summary>Writes a batch through the concrete root and access types selected by this declaration.</summary>
+    public void WriteBatch(World world, ReadOnlySpan<FieldWrite<T>> writes)
+    {
+        if (_access != 0) FieldDescriptions<T>.Items[_access - 1].WriteBatch(world, this, writes);
+        else
+            foreach (ref readonly FieldWrite<T> write in writes)
+                if (write.Channel == this)
+                    Unsafe.WriteUnaligned(ref world.WriteBytes(write.Target, Component, Offset, Unsafe.SizeOf<T>()), write.Value);
     }
 
     public T ReadRoot<TComponent>(in TComponent component) where TComponent : struct
@@ -83,6 +94,13 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
         where TComponent : struct, IComponent where TAccess : struct, IFieldAccess<TComponent, T> =>
         TAccess.Write(ref Unsafe.As<byte, TComponent>(ref root), in value);
 
+    private static void WriteFields<TComponent, TAccess>(World world, Channel<T> channel, ReadOnlySpan<FieldWrite<T>> writes)
+        where TComponent : struct, IComponent where TAccess : struct, IFieldAccess<TComponent, T>
+    {
+        foreach (ref readonly FieldWrite<T> write in writes)
+            if (write.Channel == channel) world.WriteField<TComponent, T, TAccess>(write.Target, in write.Value);
+    }
+
     /// <summary>Computes a field location once; callers can keep the result in a static readonly field.</summary>
     public static Channel<T> Of<TComponent>(FieldRef<TComponent, T> field)
         where TComponent : unmanaged, IComponent
@@ -107,12 +125,14 @@ internal readonly unsafe struct FieldDescription<T>(
     delegate* managed<World, SomeEngine.ECS.Entities.Entity, in T, void> write,
     delegate* managed<ref byte, T> readRoot,
     delegate* managed<ref byte, in T, void> writeRoot,
+    delegate* managed<World, Channel<T>, ReadOnlySpan<FieldWrite<T>>, void> writeBatch,
     bool throughReference) where T : unmanaged
 {
     internal readonly delegate* managed<World, SomeEngine.ECS.Entities.Entity, T> Read = read;
     internal readonly delegate* managed<World, SomeEngine.ECS.Entities.Entity, in T, void> Write = write;
     internal readonly delegate* managed<ref byte, T> ReadRoot = readRoot;
     internal readonly delegate* managed<ref byte, in T, void> WriteRoot = writeRoot;
+    internal readonly delegate* managed<World, Channel<T>, ReadOnlySpan<FieldWrite<T>>, void> WriteBatch = writeBatch;
     internal readonly bool ThroughReference = throughReference;
 }
 
