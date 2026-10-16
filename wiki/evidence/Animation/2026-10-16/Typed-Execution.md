@@ -26,6 +26,30 @@
 
 全部 30 组稳态分配为 0 B/批。实例字节包含参数、算法状态、端点、时间、采样值与活动标记。消费者的托管参数和历史通过普通 C# 泛型存储保留，公共批次入口处理三种实际布局。该结果提供算法成本参照；完整字段路径还包含系统、查询、来源维护、合成、字段写入和版本提交。
 
+同公式静态缓动与标量函数适配追加队列 `0620ee4248c242349747d5c9e98812d3`，退出码 0。[标准输出](function-release.stdout.txt) · [标准错误](function-release.stderr.txt) · [队列结果](function-release.result.json)。两种路径都计算 `SquareEasing.Sample`，追加 12 组全部为 0 B/批。
+
+| 100,000 条轨道 | 批次中位数 | P95 | P99 | 直接循环中位数 | 实例字节 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 静态 SquareEasing | 5.353 | 6.011 | 6.196 | 3.581 | 40 |
+| 标量函数 SquareEasing | 6.444 | 8.114 | 12.961 | 4.621 | 56 |
+
+标量适配每个未完成的活动样本调用一次参数中的函数地址，批次中位数增加 1.091 ns/轨道；该差值同时包含调用和实例步长差异。公共批次包含活动位与批次视图选择，直接循环遍历同一组持续活动数据。
+
+## Release 机器码
+
+队列 `70d8117777824c32b06c8ccead43d794`，退出码 0，`DOTNET_TieredCompilation=0`，`DOTNET_JitDisasm` 选取具体入口、求值和根写回方法。[完整机器码与输出](codegen-jit.stdout.txt) · [标准错误](codegen-jit.stderr.txt) · [队列结果](codegen-jit.result.json)。全部方法标为 `FullOpts`。
+
+| 具体组合 | 分发跳板字节 | 批内循环字节 | 循环调用的算法体字节 |
+| --- | ---: | ---: | ---: |
+| Tween / FloatOps / SquareEasing | 6 | 457 | 0（已内联） |
+| Spring / FloatOps | 6 | 501 | 252 |
+| 消费者 History / FloatOps | 6 | 434 | 0（已内联） |
+| FunctionTween / FloatOps | 6 | 458 | 标量缓动 5 |
+
+公共 `MotionDispatcher` 在批次边界通过保存的 managed 地址执行一次 `call rax`，6 字节跳板再跳入确定的具体循环。Tween 的缓动与 FloatOps、History 的采样和历史递增均在循环内形成具体指令。Spring 的批次循环调用固定类型的 `Evaluate` 方法，其积分体中的值运算形成浮点指令。标量函数适配在循环内的未完成样本分支额外执行一次 `call rax`；类型化 `SquareEasing` 的平方形成乘法指令。
+
+引用根的 `World.ExecuteComponentWrite` 为 714 字节，根循环 `Channel.WriteRoots<FieldRoot, FieldAccess>` 为 1,102 字节，包含 table/sparse 分支与 ECS 当前行解析、版本维护的共同代码。批次回调在 World 边界执行一次 `call rsi`。根循环在取得实际根后，具体访问及属性 setter 内联为对象引用读取和常量字段偏移写入；行定位、COW 与版本维护使用既有 ECS 方法。此处的字节统计包含该方法的检查和异常分支，热调用描述对应正常执行路径。
+
 ## ECS 公开行为
 
 Debug 独立消费者通过 `FieldAccessChecks.VerifyAll` 运行 13 条共享公开行为，另执行包含引用的泛型根及缓冲元素操作。最新根批次运行队列 `9615540e72d340fe83141c7abec6bf37`，退出码 0。[标准输出](ecs-root-batch.stdout.txt) · [标准错误](ecs-root-batch.stderr.txt) · [队列结果](ecs-root-batch.result.json)。
