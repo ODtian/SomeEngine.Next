@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -215,6 +216,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
     private readonly StableGrouping<TGroupKey> _grouping;
     private readonly int _rowsPerPacket;
     private readonly JobScheduleOptions _jobOptions;
+    private EntityTableChanges? _entityTables;
     private int _updating;
 
     public RenderInstanceBatchBuilder(
@@ -257,17 +259,20 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
 
         try
         {
+            _entityTables ??= context.World.ObserveEntityTables();
+            EntityTableChangeBatch membership = _entityTables.Read();
             var snapshot = new UpdateSnapshot<TComposer>(
                 this,
                 context,
                 composer,
-                forcedChanges);
+                membership.Count == 0 ? forcedChanges : forcedChanges | RenderInstanceChanges.Structure);
             context.World.ExecuteReadSnapshot(
                 query,
                 context.LastSystemVersion,
                 ref snapshot,
                 static (QueryCursor cursor, ref UpdateSnapshot<TComposer> state) =>
                     state.Update(cursor));
+            _entityTables.Accept(membership);
             return snapshot.Changed;
         }
         finally
@@ -289,6 +294,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         {
             RenderInstanceBatches<TGroupKey>? current = Current;
             Current = null;
+            _entityTables?.Dispose();
+            _entityTables = null;
             if (current is not null)
                 Retire(context, current);
         }
