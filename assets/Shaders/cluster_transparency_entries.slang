@@ -31,6 +31,9 @@ void BuildTransparentGeometry<let visibilityDepth : uint, let tessellated : bool
 { BuildTransparency(materials, thread); }
 
 [shader("compute")] [numthreads(64,1,1)]
+void CountTransparentCells(uint3 thread : SV_DispatchThreadID) { CountTransparencyCells(thread); }
+
+[shader("compute")] [numthreads(64,1,1)]
 void ReserveTransparentCells(uint3 thread : SV_DispatchThreadID) { ReserveTransparency(thread); }
 
 [shader("compute")] [numthreads(64,1,1)]
