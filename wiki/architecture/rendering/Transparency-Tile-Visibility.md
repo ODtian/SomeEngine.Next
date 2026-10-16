@@ -517,6 +517,10 @@ Count 对实际投影图元的保守 XYZ 范围计数，Reserve 为每 cell 分�
 
 DefaultGame 的 `--cluster-effect=deformed-phong` 创建 16 个带棋盘贴图的透明曲面实例。实例每帧旋转和移动，`WaveVertexEval` 按当帧世界位置变形，`PhongTessellation` 决定曲面与细分，用户 Unlit evaluator 沿原域 UV 读取贴图。
 
+当前动态几何沿既有修订入口刷新透明候选：[实例 batch](../../../src/SomeEngine.Render/Instances/RenderInstanceResources.cs) 的 `ContentRevision` 覆盖实例变换及实例属性更新；[ClusterPipelineSystem](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.cs) 的 `GeometryRevision` 读取 mesh `ChangeRevision`，驻留更新通过当帧 mesh 上传数据交付；[材质输入](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.Materials.cs) 的属性及 depth-input 修订、[纹理内容通知](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.Textures.cs) 推进 `RasterRevision`。[BindTransparencyFrame](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.Transparency.cs) 共同比较这些修订、实例 batch、视图和 streaming quality。Wave 示例的每帧世界变换沿实例 `ContentRevision` 刷新几何。
+
+源码核对中，骨骼数据当前由 `ClusterBVHNode.BoneData` 等结构字段表达，骨骼 producer 处于动画规划范围；后续接入沿用户 `VertexEvaluate`、`DomainEvaluate` 和上述修订入口推进。保持同一个 RHI Buffer 引用的原地 GPU 写入，其后续 producer 接缝是图写入版本与深度输入修订的衔接；当前 `MaterialBuffer` 持有图资源、引用数和登记归属，材质属性修订由实际字段更新产生。
+
 公共图像检查包括 opaque 到 alpha 为 `1` 的透明曲面、硬件与软件来源、投影与引用容量均为 `1` 的继续处理，以及移动后状态与从启动即处于同一状态的对照：
 
 ```powershell
