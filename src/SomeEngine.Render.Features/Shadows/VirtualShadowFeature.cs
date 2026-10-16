@@ -1324,6 +1324,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 DivideRoundUp(receiverView.ViewportWidth, 16u),
                 DivideRoundUp(receiverView.ViewportHeight, 16u),
                 1)));
+        graph.SetRegionEnabled(TransparencyReceiverRequests, viewCount != 0u);
         graph.SetPassEnabled(_markPass, viewCount != 0u && !UsesPrimaryDepthReceiverRequests);
         if (_depthMarkPass != default)
         {
