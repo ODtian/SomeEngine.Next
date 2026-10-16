@@ -59,6 +59,12 @@ budget, not frame timing, warmup, scene behavior, quality or slow-frame inclusio
 Use the same scene, shading path, camera playback, fixed timestep and requested
 window for each A/B pair. Keep resolution and all other render settings equal.
 
+The measurement script shows its application's window above desktop tools while
+preserving the configured client size and position, then posts F9/F10 to that
+window. Startup still requires a successful scene presentation; presentation
+failures continue to invalidate the measurement. This keeps a background queue
+launcher and foreground desktop tools from blocking the first presented scene.
+
 A result must be `Complete` with the requested scene `Measured`; `Incomplete`,
 unready, missing or interrupted windows fail. Check both reports and frame samples
 for identical requested and actual simulation-frame ranges. One successful scene
