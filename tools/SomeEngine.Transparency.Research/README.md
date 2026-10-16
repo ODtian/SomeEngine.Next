@@ -109,7 +109,7 @@ $effectApplication = 'templates/DefaultProject/Game.App/bin/Release/net10.0/publ
 
 传入 `-ReferenceShaderPath` 可同时测量原版 XYZ，得到八组完整三场景反馈。原版 resolver 可以从 `fa94e04e` 的同名 shader 导出；临时参考文件在使用后删除。本轮内容输入复用渲染性能分支已经构建的 1024 小球、Sponza 与 Bistro 数据。
 
-正式 Cluster 八效果使用 `Measure-ClusterEffects.ps1`，各场景保留完整预热与收敛要求后采集固定的 64 帧。Sponza 对效果默认首帧达到 768 的组从第 384 帧采样，Amazon Bistro 的 `decal-layers` 从第 1280 帧采样，其他组合沿用各效果首帧；同一场景的 XY/XYZ 使用相同窗口。`-FirstFrames` 显式设置优先，实际窗口记录在结果的 `SceneSettings`，默认首帧表见[统一场景指南](../../wiki/architecture/rendering/Cluster-Blend-Integration.md)。
+正式 Cluster 八效果使用 `Measure-ClusterEffects.ps1`，各场景保留完整预热与收敛要求后采集固定的 64 帧。默认首帧按效果与命名场景逐项设定；`deformed-phong` 的三个场景分别从 192、192、512 帧采样，同一场景的 XY/XYZ 使用相同窗口。`-FirstFrames` 显式设置优先，实际窗口记录在结果的 `SceneSettings`，完整默认首帧表见[统一场景指南](../../wiki/architecture/rendering/Cluster-Blend-Integration.md)。
 
 ```powershell
 & 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1' pwsh -NoProfile -File tools/Measure-ClusterEffects.ps1 -ApplicationPath $effectApplication

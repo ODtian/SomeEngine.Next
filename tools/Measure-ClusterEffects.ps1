@@ -15,14 +15,14 @@ $applicationDirectory = [IO.Path]::GetDirectoryName($application)
 $sceneSettingsPath = Join-Path $applicationDirectory 'test-scenes.json'
 $originalSceneSettings = [IO.File]::ReadAllText($sceneSettingsPath)
 $effectFirstFrames = @{
-    'glass' = 384
-    'smoke' = 256
-    'foliage' = 1280
-    'deformed-phong' = 192
-    'xray' = 1280
-    'decal-layers' = 768
-    'decal-sparse' = 1280
-    'ordered' = 1280
+    'glass' = @{ '1024 spheres' = 384; 'Sponza' = 384; 'Amazon Bistro' = 384 }
+    'smoke' = @{ '1024 spheres' = 256; 'Sponza' = 256; 'Amazon Bistro' = 256 }
+    'foliage' = @{ '1024 spheres' = 1280; 'Sponza' = 384; 'Amazon Bistro' = 1280 }
+    'deformed-phong' = @{ '1024 spheres' = 192; 'Sponza' = 192; 'Amazon Bistro' = 512 }
+    'xray' = @{ '1024 spheres' = 1280; 'Sponza' = 384; 'Amazon Bistro' = 1280 }
+    'decal-layers' = @{ '1024 spheres' = 768; 'Sponza' = 384; 'Amazon Bistro' = 1280 }
+    'decal-sparse' = @{ '1024 spheres' = 1280; 'Sponza' = 384; 'Amazon Bistro' = 1280 }
+    'ordered' = @{ '1024 spheres' = 1280; 'Sponza' = 384; 'Amazon Bistro' = 1280 }
 }
 $runs = [Collections.Generic.List[object]]::new()
 try {
@@ -30,9 +30,7 @@ try {
         $sceneSettings = $originalSceneSettings | ConvertFrom-Json
         foreach ($scene in $sceneSettings) {
             $scene.MeasurementFrames.FirstFrame = if ($FirstFrames) { $FirstFrames[$scene.Name] }
-                elseif ($scene.Name -eq 'Sponza' -and $effectFirstFrames[$effect] -ge 768) { 384 }
-                elseif ($scene.Name -eq 'Amazon Bistro' -and $effect -eq 'decal-layers') { 1280 }
-                else { $effectFirstFrames[$effect] }
+                else { $effectFirstFrames[$effect][$scene.Name] }
             $scene.MeasurementFrames.FrameCount = $FrameCount
             if ($Static) { $scene | Add-Member -NotePropertyName Animate -NotePropertyValue $false -Force }
         }
