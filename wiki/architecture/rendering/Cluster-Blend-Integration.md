@@ -10,6 +10,10 @@
 
 每个透明命中重建自己的位置、UV、法线、导数与 `SurfaceReceiver`，执行自己的材质与阴影求值。OIT 依真实深度推进颜色与透射率。`Material.State.MaximumError = 0` 遍历全部贡献；正值结合材质声明的 `ColorLimit` 限定尾部误差。
 
+`Material.State.Ordered` 将材质放入 OIT 之后的有序阶段。`DrawOrder` 指定作者次序，相同次序按实例、几何及图元身份推进。`BlendAttachmentState` 表达颜色与 alpha 的因子、运算和通道写入；`BlendConstant` 提供常量混合值。`DepthStencilState` 与 `StencilRef` 表达深度、正反面的 stencil 比较、读写掩码及 stencil-fail、depth-fail、pass 操作。覆盖先经过用户材质的可见性求值，再执行完整状态链；颜色写掩码为零的命中仍推进 stencil。
+
+有序材质通过共用实例属性保留主视图 HiZ 后的覆盖，深度比较在状态链内选择 depth-fail 操作。像素线程保留当前颜色、深度与八位 stencil，按作者次序完成全部覆盖。最终 stencil 写入一张 R32UInt 整数图。
+
 持久 RenderGraph 保存投影、计数、范围保留、引用散布和求色阶段。每帧上传及 GPU 引用内容沿这些阶段更新；几何、实例、视图、驻留或相关渲染设置变化时刷新索引。静态输入复用既有数据。
 
 ## 统一场景
@@ -25,6 +29,22 @@ DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-ind
 | `xray` | 64 个机械部件，共 10,752 个三角形，带独立遮挡板与完整 Standard 材质。 |
 
 场景内容通过 `SceneTestPlatform.InitializeScene` 和 `UpdateScene` 编辑游戏实体。相机回放时专项物体使用同一相机相对布局，三个基础场景都保有对应的效果工作量。
+
+## 自定义硬件 stencil 阶段
+
+`ClusterPipelineSystem.GetStencil()` 按消费者请求创建共享整数图。应用的 `IApplicationColorFeature` 通过 `ApplicationRendering.Stencil` 取得同一能力；`SceneScript.CreateColorFeature` 提供脚本应用的相同入口。整数图与硬件阶段的区段长期保留，材质变化更新其生产依赖。
+
+调用 `stencil.Export(ref edit)` 创建 D32FloatS8UInt 附件，声明整数图打包与 stencil-plane copy。硬件 pass 使用返回的 `Texture`，并排在 `CompletePass` 之后；该 pass 持有自己的深度输入、颜色附件与 RHI stencil 状态。随后调用 `attachment.Import(ref edit, hardwareComplete)`，通过反向 copy 与解包将 stencil 返回同一整数图。后续阶段继续读取 `stencil.Values`，也可以再次导出为硬件附件。
+
+```csharp
+ClusterStencil stencil = rendering.Stencil!;
+ClusterStencilAttachment attachment = stencil.Export(ref edit);
+// 在 stencil.Region 添加硬件 pass，附件取 attachment.Texture。
+edit.OrderAfter(hardwarePass, attachment.CompletePass);
+GraphPassId completed = attachment.Import(ref edit, hardwarePass);
+```
+
+有序像素状态处理与显式交接进入 `MaterialCompositeMs`。R32UInt 图、材质状态、交接缓冲和硬件附件进入显存口径；交接缓冲按 RHI 的 stencil plane footprint 组织行距和各视图偏移。
 
 ```powershell
 ./tools/Measure-ClusterEffects.ps1 -ApplicationPath <NativeAOT Game.App.exe>

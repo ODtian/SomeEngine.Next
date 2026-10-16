@@ -40,7 +40,8 @@ public sealed class ClusterMaterialAssignmentSet
     private ImmutableDictionary<ClusterMaterialSequence, (uint Offset, int References)> _sequences = ImmutableDictionary<ClusterMaterialSequence, (uint, int)>.Empty;
     private ImmutableDictionary<int, ImmutableStack<uint>> _free = ImmutableDictionary<int, ImmutableStack<uint>>.Empty;
     private ImmutableDictionary<int, (long Material, string Encoding)> _entries = ImmutableDictionary<int, (long, string)>.Empty;
-    private ImmutableDictionary<long, (Material Resource, ulong Revision)> _values = ImmutableDictionary<long, (Material Resource, ulong Revision)>.Empty;
+    private ImmutableDictionary<long, (Material Resource, ulong Revision, bool Ordered)> _values =
+        ImmutableDictionary<long, (Material Resource, ulong Revision, bool Ordered)>.Empty;
     private ImmutableDictionary<long, ImmutableHashSet<int>> _materialOffsets = ImmutableDictionary<long, ImmutableHashSet<int>>.Empty;
     private ImmutableHashSet<long> _changes = ImmutableHashSet<long>.Empty;
     private ImmutableHashSet<int> _changedOffsets = ImmutableHashSet<int>.Empty;
@@ -62,6 +63,7 @@ public sealed class ClusterMaterialAssignmentSet
         _capacity = source._capacity;
         _xrayEntities = source._xrayEntities;
         _xrayMaterials = source._xrayMaterials;
+        BlendOcclusionChanged = source.BlendOcclusionChanged;
         TopologyVersion = source.TopologyVersion;
     }
 
@@ -72,7 +74,8 @@ public sealed class ClusterMaterialAssignmentSet
     public IEnumerable<Material> DistinctMaterials => _values.Values.Select(value => value.Resource);
     internal bool HasXray => !_xrayMaterials.IsEmpty;
     internal bool UsesXray(Material material) => _xrayMaterials.Contains(material.MaterialId);
-    internal bool HasOrdered => DistinctMaterials.Any(material => material.State.Ordered);
+    internal bool HasOrdered => _values.Values.Any(value => value.Ordered);
+    internal bool BlendOcclusionChanged { get; private set; }
     internal IEnumerable<long> ChangedMaterialIds => _changes;
     internal IEnumerable<Material> ChangedMaterials => _changes.Where(_values.ContainsKey).Select(id => _values[id].Resource);
     internal IEnumerable<int> ActiveOffsets => _entries.Keys;
@@ -142,6 +145,7 @@ public sealed class ClusterMaterialAssignmentSet
         var result = new ClusterMaterialAssignmentSet(this);
         result._changes = result._changes.Clear();
         result._changedOffsets = result._changedOffsets.Clear();
+        result.BlendOcclusionChanged = false;
         return result;
     }
 
@@ -199,7 +203,7 @@ public sealed class ClusterMaterialAssignmentSet
             ClusterMaterialSequence sequence = _entities[entities[row]];
             uint keep = 0;
             for (int index = 0; index < sequence.Count; index++)
-                if (_values[sequence.MaterialAt(index)].Resource.State.Ordered) { keep = 1; break; }
+                if (_values[sequence.MaterialAt(index)].Ordered) { keep = 1; break; }
             destination[row] = keep;
         }
     }
@@ -210,7 +214,7 @@ public sealed class ClusterMaterialAssignmentSet
         private readonly ClusterMaterialAssignmentSet _result;
         private readonly RenderWorld _world;
         private readonly HashSet<long> _neededMaterials = [];
-        private ImmutableDictionary<long, (Material Resource, ulong Revision)>.Builder? _values;
+        private ImmutableDictionary<long, (Material Resource, ulong Revision, bool Ordered)>.Builder? _values;
         private ImmutableHashSet<long>.Builder? _changes;
         private bool _topologyChanged;
         private bool _xrayChanged;
@@ -272,7 +276,8 @@ public sealed class ClusterMaterialAssignmentSet
                 ? _result._values.TryGetValue(material.MaterialId, out var value)
                 : values.TryGetValue(material.MaterialId, out value);
             if (found && ReferenceEquals(value.Resource, material) && value.Revision == material.Revision) return;
-            (_values ??= _result._values.ToBuilder())[material.MaterialId] = (material, material.Revision);
+            if (found && value.Ordered != material.State.Ordered) _result.BlendOcclusionChanged = true;
+            (_values ??= _result._values.ToBuilder())[material.MaterialId] = (material, material.Revision, material.State.Ordered);
             (_changes ??= _result._changes.ToBuilder()).Add(material.MaterialId);
         }
 
@@ -523,7 +528,7 @@ public readonly struct ClusterMaterialOffsetProducer : IRenderInstanceProducer
         uint lastSystemVersion) =>
         packet.BufferChangedSince<RenderMaterialBinding>(lastSystemVersion) ||
         packet.ChangedSince<RenderMesh>(lastSystemVersion) ||
-        _assignments.Current.ChangedMaterialIds.Any()
+        _assignments.Current.BlendOcclusionChanged
             ? RenderInstanceChanges.Values
             : RenderInstanceChanges.None;
 

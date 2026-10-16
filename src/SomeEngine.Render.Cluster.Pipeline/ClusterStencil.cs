@@ -15,22 +15,24 @@ public sealed class ClusterStencil
     private readonly Device _device;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly Shader _shader;
-    private readonly LinkedComputePipeline _clear, _pack, _unpack;
+    private readonly LinkedComputePipeline _clearPipeline, _packPipeline, _unpackPipeline;
     private readonly Buffer _uniformBuffer;
     private readonly GraphBufferId _uniforms;
     private readonly uint _width, _height, _views, _rowPitch, _viewBytes;
+    private readonly GraphRegionId _clearRegion;
     private readonly List<ClusterStencilAttachment> _attachments = [];
     private GraphPassId _sourceReady;
     private ClusterBlendMeasurements? _measurements;
 
     internal ClusterStencil(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph,
-        ref RenderGraphEdit edit, int width, int height, uint views, GraphRegionId region)
+        ref RenderGraphEdit edit, int width, int height, uint views, GraphRegionId clearRegion, GraphRegionId region)
     {
         _backend = backend; _device = device; _graph = graph;
         _width = (uint)width; _height = (uint)height; _views = views; Region = region;
+        _clearRegion = clearRegion;
         Values = edit.CreatePersistentTexture(new(TextureDimension.Texture2D, _width, _height, 1, 1, views, 1,
             Format.R32UInt, TextureUsages.Sampled | TextureUsages.Storage, label: "Cluster stencil values"));
-        var description = AttachmentDescription();
+        var description = CreateAttachmentDescription();
         TextureCopyFootprint footprint = backend.GetTextureCopyFootprint(device, description,
             new(null!, 0, 0, 0, null!, 0, 0, TextureAspects.Stencil, 0, 0, 0, _width, _height, 1));
         _rowPitch = (footprint.RowPitch + 3u) & ~3u;
@@ -46,10 +48,10 @@ public sealed class ClusterStencil
         _uniforms = edit.RegisterExternalBuffer(_uniformBuffer,
             [new(BufferRange.Whole, PipelineSync.ComputeShading, ResourceAccess.ConstantBuffer, ResourceContentState.Defined)]);
         _shader = CreateShader(device.Capabilities.CompileTarget);
-        _clear = LinkedComputePipeline.Create(backend, device, _shader, "ClearStencil", "Clear Cluster stencil");
-        _pack = LinkedComputePipeline.Create(backend, device, _shader, "PackStencil", "Pack Cluster stencil");
-        _unpack = LinkedComputePipeline.Create(backend, device, _shader, "UnpackStencil", "Unpack Cluster stencil");
-        ClearPass = AddCompute(ref edit, _clear, "ClearStencil", default);
+        _clearPipeline = LinkedComputePipeline.Create(backend, device, _shader, "ClearStencil", "Clear Cluster stencil");
+        _packPipeline = LinkedComputePipeline.Create(backend, device, _shader, "PackStencil", "Pack Cluster stencil");
+        _unpackPipeline = LinkedComputePipeline.Create(backend, device, _shader, "UnpackStencil", "Unpack Cluster stencil");
+        ClearPass = AddCompute(ref edit, _clearPipeline, "ClearStencil", default);
         _sourceReady = ClearPass;
     }
 
@@ -59,20 +61,20 @@ public sealed class ClusterStencil
     public GraphRegionId Region { get; }
     internal GraphPassId ClearPass { get; }
     /// <summary>The latest completed integer-image stage in the declared chain.</summary>
-    public GraphPassId Ready => _attachments.LastOrDefault()?.CompletePass ?? _sourceReady;
+    public GraphPassId CompletePass => _attachments.LastOrDefault()?.CompletePass ?? _sourceReady;
 
     /// <summary>Packs the integer image and copies its stencil plane into a D32FloatS8UInt attachment.</summary>
     /// <remarks>The returned attachment's depth is supplied by the caller's hardware stage.</remarks>
     public ClusterStencilAttachment Export(ref RenderGraphEdit edit)
     {
-        TextureDesc description = AttachmentDescription();
+        TextureDesc description = CreateAttachmentDescription();
         GraphTextureId texture = edit.CreateTexture(description);
         var bytes = new BufferDesc((ulong)_viewBytes * _views,
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination,
             "Cluster stencil transfer bytes");
         GraphBufferId buffer = edit.CreateBuffer(bytes);
-        GraphPassId pack = AddCompute(ref edit, _pack, "PackStencil", buffer);
-        edit.OrderAfter(pack, Ready);
+        GraphPassId pack = AddCompute(ref edit, _packPipeline, "PackStencil", buffer);
+        edit.OrderAfter(pack, CompletePass);
         GraphPassId copy = AddCopy(ref edit, texture, buffer, export: true);
         edit.OrderAfter(copy, pack);
         var attachment = new ClusterStencilAttachment(this, texture, buffer, pack, copy,
@@ -86,7 +88,7 @@ public sealed class ClusterStencil
     {
         GraphPassId copy = AddCopy(ref edit, attachment.Texture, attachment.Bytes, export: false);
         edit.OrderAfter(copy, hardwareComplete);
-        GraphPassId unpack = AddCompute(ref edit, _unpack, "UnpackStencil", attachment.Bytes);
+        GraphPassId unpack = AddCompute(ref edit, _unpackPipeline, "UnpackStencil", attachment.Bytes);
         edit.OrderAfter(unpack, copy);
         attachment.ImportCopy = copy;
         attachment.CompletePass = unpack;
@@ -115,11 +117,11 @@ public sealed class ClusterStencil
             edit.Remove(attachment.Bytes); edit.Remove(attachment.Texture);
         }
         edit.Remove(ClearPass); edit.Remove(Values); edit.Remove(_uniforms);
-        _graph.RetireAfterSubmittedFrames(_clear); _graph.RetireAfterSubmittedFrames(_pack);
-        _graph.RetireAfterSubmittedFrames(_unpack); _graph.RetireAfterSubmittedFrames(_uniformBuffer);
+        _graph.RetireAfterSubmittedFrames(_clearPipeline); _graph.RetireAfterSubmittedFrames(_packPipeline);
+        _graph.RetireAfterSubmittedFrames(_unpackPipeline); _graph.RetireAfterSubmittedFrames(_uniformBuffer);
     }
 
-    private TextureDesc AttachmentDescription() => new(TextureDimension.Texture2D, _width, _height, 1, 1, _views, 1,
+    private TextureDesc CreateAttachmentDescription() => new(TextureDimension.Texture2D, _width, _height, 1, 1, _views, 1,
         Format.D32FloatS8UInt, TextureUsages.DepthStencilAttachment | TextureUsages.CopySource | TextureUsages.CopyDestination,
         label: "Cluster hardware stencil attachment");
 
@@ -131,7 +133,8 @@ public sealed class ClusterStencil
         GraphPassId id = edit.AddComputeFramePass(entry, PassQueueSelection.AnyOfType(QueueType.Graphics), dispatch,
             new PassOptions(RepeatCommands: true), pipeline.Pipeline, pipeline.ParameterLayout, default,
             static (ref PassDefinition _, ref DispatchArguments _) => { },
-            static (ref ComputePassCommandScope commands, in DispatchArguments groups) => commands.Dispatch(groups), region: Region);
+            static (ref ComputePassCommandScope commands, in DispatchArguments groups) => commands.Dispatch(groups),
+            region: entry == "ClearStencil" ? _clearRegion : Region);
         PassDefinition pass = edit.GetPass(id);
         pass.BindParameterBlock(pipeline.ParameterLayout);
         int target = _shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
