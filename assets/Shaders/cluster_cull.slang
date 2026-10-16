@@ -359,7 +359,7 @@ void AppendCandidate(
 #endif
 
 bool LoadAndFilterCandidate(
-    uint threadId,
+    ClusterCandidate work,
     out uint pageOffset,
     out uint clusterID,
     out uint instanceID,
@@ -387,14 +387,6 @@ bool LoadAndFilterCandidate(
     currentBounds = (ClusterScreenBounds)0;
     currentBounds.MaxUv = 1.0.xx;
 
-    uint count = CandidateCount[0];
-    uint capacity;
-    uint stride;
-    CandidateClusters.GetDimensions(capacity, stride);
-    if (threadId >= min(count, capacity))
-        return false;
-
-    ClusterCandidate work = CandidateClusters[threadId];
     DrawRequest candidate = CandidateRequest(work);
     pageOffset = candidate.PageOffset;
     clusterID = DrawRequestClusterID(candidate);
@@ -403,8 +395,6 @@ bool LoadAndFilterCandidate(
     view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
     if (!IsInstanceVisibleToView(LoadInstanceFirstPerson(InstanceData, InstanceProperties, instanceID), view)) return false;
     view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
-    if (threadId >= view.MaxCandidates)
-        return false;
     if (view.TargetPolicy != 0u) AddClusterWorkMetric(8u, 1u);
 
     cluster = LoadCluster(pageOffset, clusterID);
@@ -502,7 +492,7 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
 }
 
 #if CLUSTER_CULL_PHASE == 1
-void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
+void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
 {
     // Target windows and the post-HiZ pass consume current bounds immediately.
     // Primary main needs them only after surviving previous-frame occlusion.
@@ -522,7 +512,7 @@ void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
     ClusterWorldBounds worldBounds;
     ClusterScreenBounds currentBounds;
     bool valid = LoadAndFilterCandidate(
-            candidateIndex,
+            candidate,
             pageOffset,
             clusterID,
             instanceID,
@@ -565,7 +555,7 @@ void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
     if (occluded)
     {
         AppendCandidate(pageOffset, clusterID, instanceID, viewIndex, view.MaxCandidates,
-            CandidateFlags(CandidateClusters[candidateIndex]));
+            CandidateFlags(candidate));
     }
     else
     {
@@ -583,6 +573,14 @@ void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
             view.MaxCandidates,
             currentBounds, cluster, t, targetFilters);
     }
+}
+
+void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
+{
+    uint capacity, stride;
+    CandidateClusters.GetDimensions(capacity, stride);
+    if (candidateIndex >= min(CandidateCount[0], capacity)) return;
+    CullClusterCandidateData(CandidateClusters[candidateIndex], targetFilters);
 }
 
 #ifndef CLUSTER_PERSISTENT_CULL
@@ -670,6 +668,9 @@ void AppendVisibleWindow(
 [numthreads(64, 1, 1)]
 void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
 {
+    uint capacity, stride;
+    CandidateClusters.GetDimensions(capacity, stride);
+    if (dispatchThreadID.x >= min(CandidateCount[0], capacity)) return;
     uint pageOffset;
     uint clusterID;
     uint instanceID;
@@ -682,7 +683,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     ClusterWorldBounds worldBounds;
     ClusterScreenBounds currentBounds;
     bool valid = LoadAndFilterCandidate(
-            dispatchThreadID.x,
+            CandidateClusters[dispatchThreadID.x],
             pageOffset,
             clusterID,
             instanceID,

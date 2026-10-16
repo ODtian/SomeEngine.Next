@@ -95,22 +95,15 @@ uint ReservePersistentNodes(uint amount)
         current = observed;
     }
 }
-uint ReservePersistentClusters(uint amount)
+void CountPersistentCandidates(uint amount)
 {
-    uint current = CandidateCount[0];
-    for (;;)
-    {
-        uint admitted = min(amount, TraversalLevel.MaxNodes - min(current, TraversalLevel.MaxNodes));
-        uint observed;
-        InterlockedCompareExchange(CandidateCount[0], current, current + admitted, observed);
-        if (observed == current)
-        {
-            if (admitted != amount) RejectClusterWork(2u);
-            return current;
-        }
-        current = observed;
-    }
+    uint first;
+    InterlockedAdd(CandidateCount[0], amount, first);
+    uint ignored;
+    CandidateArgs.InterlockedMax(0u, (first + amount + 63u) / 64u, ignored);
 }
+
+void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters);
 #endif
 
 void PublishCandidateDispatchArgs(uint start, uint count, uint maxCandidates)
@@ -399,19 +392,22 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     uint clusterCount = outputLeaf ? ClusterSliceClusterCount(node) : 0u;
     uint firstCluster = ClusterSliceFirstCluster(node);
     uint leafCount = clusterCount * countbits(activeViews);
-    uint leafOffset = WavePrefixSum(leafCount);
     uint waveLeafCount = WaveActiveSum(leafCount);
+#ifdef CLUSTER_PERSISTENT_CULL
+    // A leaf's candidates are consumed in this wave. The count records total
+    // work; only deferred candidates occupy the shared cluster queue.
+    if (WaveIsFirstLane() && waveLeafCount != 0u)
+        CountPersistentCandidates(waveLeafCount);
+#else
+    uint leafOffset = WavePrefixSum(leafCount);
     uint candidateBase = 0u;
     if (WaveIsFirstLane() && waveLeafCount != 0u)
-#ifdef CLUSTER_PERSISTENT_CULL
-        candidateBase = ReservePersistentClusters(waveLeafCount);
-#else
         candidateBase = ReserveClusterWork(CandidateCount, waveLeafCount, TraversalLevel.MaxNodes, 2u);
-#endif
     candidateBase = WaveReadLaneFirst(candidateBase);
     if (WaveIsFirstLane())
         PublishCandidateDispatchArgs(candidateBase, waveLeafCount, TraversalLevel.MaxNodes);
     uint output = candidateBase + leafOffset;
+#endif
     uint leafViews = outputLeaf ? activeViews : 0u;
     while (leafViews != 0u)
     {
@@ -419,17 +415,17 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         leafViews &= leafViews - 1u;
         for (uint cluster = 0u; cluster < clusterCount; cluster++)
         {
+            ClusterCandidate candidate = MakeClusterCandidate(MakeDrawRequest(
+                ClusterSlicePageOffset(node), firstCluster + cluster, instanceID, viewBase + bit), 1u);
+#ifdef CLUSTER_PERSISTENT_CULL
+            CullClusterCandidateData(candidate, targetFilters);
+#else
             if (output < TraversalLevel.MaxNodes)
-                CandidateClusters[output] = MakeClusterCandidate(MakeDrawRequest(
-                    ClusterSlicePageOffset(node), firstCluster + cluster, instanceID, viewBase + bit),
-                    1u);
+                CandidateClusters[output] = candidate;
             output++;
+#endif
         }
     }
-#ifdef CLUSTER_PERSISTENT_CULL
-    if (leafCount != 0u)
-        PublishClusterBatchRange(candidateBase + leafOffset, leafCount, TraversalLevel.MaxNodes);
-#endif
 }
 
 #ifndef CLUSTER_PERSISTENT_CULL

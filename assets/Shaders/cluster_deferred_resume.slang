@@ -90,6 +90,8 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
         {
             waveBase = ReserveClusterWork(CandidateCount, waveCount, ResumeUniforms.MaxWorkItems, 2u);
             uint published = min(waveBase + waveCount, ResumeUniforms.MaxWorkItems);
+            uint ignored;
+            TraversalArguments.InterlockedMax(CLUSTER_BATCH_COUNT, published, ignored);
             PublishDispatch(CandidateArgs, published, 64u);
             PublishDispatch(TraversalArguments, published, 64u);
         }

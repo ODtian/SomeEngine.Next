@@ -73,7 +73,7 @@ bool ClaimReadyClusters(uint nodesRemaining, out uint batch, out uint count)
         WorkClusterAssigned = true;
     }
     batch = WorkClusterRead;
-    uint batches = (CandidateCount[0] + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
+    uint batches = (NodeIndirectArgs.Load(CLUSTER_BATCH_COUNT) + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
     count = batch < batches ? ClusterBatchReady[batch] : 0u;
     if (count != CLUSTER_BATCH_SIZE && (nodesRemaining != 0u || count == 0u)) return false;
     WorkClusterAssigned = false;
@@ -99,7 +99,7 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
             if (WorkNodeCount == 0u && !ClaimReadyClusters(WorkNodesRemaining, WorkClusterBatch, WorkClusterReady))
                 WorkClusterReady = 0u;
             WorkFinished = WorkNodeCount == 0u && WorkClusterReady == 0u && WorkNodesRemaining == 0u &&
-                WorkClusterRead >= (CandidateCount[0] + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
+                WorkClusterRead >= (NodeIndirectArgs.Load(CLUSTER_BATCH_COUNT) + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
         }
         GroupMemoryBarrierWithGroupSync();
         if (WorkNodeCount != 0u)
