@@ -10,6 +10,8 @@
     <Compile Include="../../tests/SomeEngine.ECS.Tests/FieldAccessChecks.cs" Link="FieldAccessChecks.cs" />
     <Compile Include="../SomeEngine.ECS.AotSmoke/ComponentBytesSmoke.cs" Link="ComponentBytesSmoke.cs" />
     <Compile Include="../SomeEngine.ECS.AotSmoke/TypedFieldSmoke.cs" Link="TypedFieldSmoke.cs" />
+    <Compile Include="../../tests/SomeEngine.Views.Tests/TypedAnimationChecks.cs" Link="TypedAnimationChecks.cs" />
+    <ProjectReference Include="../../src/SomeEngine.Views/SomeEngine.Views.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.Animation/SomeEngine.Animation.csproj" GlobalPropertiesToRemove="PublishAot" />
   </ItemGroup>
 </Project>

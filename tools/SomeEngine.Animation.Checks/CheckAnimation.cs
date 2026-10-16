@@ -12,7 +12,7 @@ internal static partial class CheckAnimation
     {
         if (args.Contains("--full-benchmark"))
         {
-            FullPathMeasurements.Run();
+            FullPathMeasurements.Run(args.Contains("--smoke") ? [1_000] : [1_000, 10_000, 100_000]);
             return 0;
         }
         if (args.Contains("--benchmark"))
@@ -24,13 +24,19 @@ internal static partial class CheckAnimation
         global::SomeEngine.Tools.EcsAotSmoke.ComponentBytesSmoke.Check();
         global::SomeEngine.Tools.EcsAotSmoke.TypedFieldSmoke.Check();
         CheckGeneratedFieldPlayback();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.GeneratedFieldTargetsAnimateThroughTypedSpecs();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.EqualTargetsPreserveTheirElapsedProgress();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.ReferencedStateReceivesOnlyThePresentedValues();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.AReversedReferenceTargetContinuesFromItsPresentedValue();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.AParameterUpdateUsesTheExistingElapsedTime();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.AConsumerMotionUsesItsManagedHistoryThroughAnimate();
         CheckTypedBatch();
         CheckManagedHistory();
         CheckSpring();
         CheckCustomValue();
         CheckFunction();
         CheckClocksAndCompletion();
-        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-batch managed-history spring custom-value function clocks completion");
+        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion");
         return 0;
     }
 

@@ -16,12 +16,12 @@ internal static unsafe partial class FullPathMeasurements
     private const float FrameDelta = 1f / 120;
     private const float TargetValue = 1_000_000f;
 
-    public static void Run()
+    public static void Run(int[] counts)
     {
         Console.WriteLine($"framework={RuntimeInformation.FrameworkDescription}; architecture={RuntimeInformation.ProcessArchitecture}; nativeAot={!RuntimeFeature.IsDynamicCodeSupported}; executableBytes={new FileInfo(Environment.ProcessPath!).Length}; warmup={Warmups}; samples={Samples}; frameDelta={FrameDelta}; target={TargetValue}");
         Console.WriteLine("category,name,count,median_ns_per_item,p95_ns_per_item,p99_ns_per_item,allocated_bytes_per_sample,first_ns,first_allocated_bytes,retained_heap_bytes,process_peak_working_set_bytes");
         MeasureSystemEntry();
-        foreach (int count in new[] { 1_000, 10_000, 100_000 })
+        foreach (int count in counts)
         {
             MeasureEcs<Plain, PlainAccess>("plain", count, static () => default);
             MeasureEcs<Nested, NestedAccess>("nested", count, static () => default);
