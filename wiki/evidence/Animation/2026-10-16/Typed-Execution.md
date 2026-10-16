@@ -214,13 +214,15 @@ NativeAOT 基线的 1,000 目标全路径队列 `041c17fc2c1046a78f39fbc78cdcd66
 
 实际 Native 指令将原因定位到 `World.IsEnabled<Timeline>` 正常路径：`0x14045B7F0` 在进入 `Owners.Components.IsEnabled` 前调用 RuntimeType 名称接口。泛型启用读写原先把 `typeof(T).Name` 作为通用实现的诊断参数，Native 每次取得 `Timeline` 名称形成 40 B 字符串，两次访问构成每目标 80 B。实现现传递 `Type`，在既有缺组件诊断分支创建名称；组件身份、存储权限、启用读写和诊断文本沿共同入口保持一致。Release 的 GC 后缓存恢复与 Native 的逐帧字符串费用由最终同一公开路径采样确认。
 
-最终映像指令队列 `b8c4de8ca5da4aa98d327662fe9d2159` 退出码 0：[实际指令](codegen-final-native-instructions.stdout.txt) · [队列结果](codegen-final-native-instructions.result.json)。`World.IsEnabled<Timeline>` 为 412 B，在 `0x140455B87` 取得 Type 地址后直接传入共同实现。共同实现于 `0x14004A5E6` 按缺组件结果跳到诊断分支，正常结果在 `0x14004A616` 返回，名称调用位于诊断分支的 `0x14004A626`。该主体由原 516 B 增至 882 B，World 包装由 469 B 缩至 412 B；具体四类算法批次、引用根写入与系统跳板的字节数保持前表的实际映射值。
+9,660,928 B 基准映像的指令队列 `b8c4de8ca5da4aa98d327662fe9d2159` 退出码 0：[实际指令](codegen-final-native-instructions.stdout.txt) · [队列结果](codegen-final-native-instructions.result.json)。`World.IsEnabled<Timeline>` 为 412 B，在 `0x140455B87` 取得 Type 地址后直接传入共同实现。共同实现于 `0x14004A5E6` 按缺组件结果跳到诊断分支，正常结果在 `0x14004A616` 返回，名称调用位于诊断分支的 `0x14004A626`。该主体由原 516 B 增至 882 B，World 包装由 469 B 缩至 412 B；具体四类算法批次、引用根写入与系统跳板的字节数保持前表的实际映射值。
 
-## 最终集成采样
+## 字段与 GC 基准发布（9,660,928 B）
 
-最终版本包含空算法存储早退、当前行来源更新、Views 元数据与 FieldMotion 复用，以及上述诊断名称延后创建。Native 发布 `457279ad74ab4167b661fa98df3b20e7` 与 Release 构建 `f06ff6974d5f4262a7a2cede14ab5734` 均退出码 0：[Native 发布](native-final-publish.stdout.txt) · [Native 结果](native-final-publish.result.json) · [Release 构建](public-final-release-build.stdout.txt) · [Release 结果](public-final-release-build.result.json)。Native 映像为 9,660,928 B，Release apphost 为 162,816 B；Native 发布保留前述三处诊断，Release 构建为 0 警告、0 错误。
+该基准版本包含空算法存储早退、当前行来源更新、Views 元数据与 FieldMotion 复用，以及上述诊断名称延后创建。Native 发布 `457279ad74ab4167b661fa98df3b20e7` 与 Release 构建 `f06ff6974d5f4262a7a2cede14ab5734` 均退出码 0：[Native 发布](native-final-publish.stdout.txt) · [Native 结果](native-final-publish.result.json) · [Release 构建](public-final-release-build.stdout.txt) · [Release 结果](public-final-release-build.result.json)。Native 映像为 9,660,928 B，Release apphost 为 162,816 B；Native 发布保留前述三处诊断，Release 构建为 0 警告、0 错误。
 
-最终公开消费者在 Native 队列 `8d8c20af24bc472a9dc00358a47b6b3c` 和 Release 队列 `2776232742dd43388072164f3ce44d34` 均退出码 0，包含全部十项 Views 公开行为和 ECS、算法、图的共同检查：[Native 输出](public-final-native.stdout.txt) · [Native 结果](public-final-native.result.json) · [Release 输出](public-final-release.stdout.txt) · [Release 结果](public-final-release.result.json)。
+本节的十八组字段、GC 分解、控制、来源、图与三组声明内存均对应这份 9,660,928 B 基准映像。最终修复源码的公开验收对应末节 `e55ebbe8…` 发布，映像为 9,787,392 B；两组发布各自保留原始命令、输出和任务结果。
+
+该基准公开消费者在 Native 队列 `8d8c20af24bc472a9dc00358a47b6b3c` 和 Release 队列 `2776232742dd43388072164f3ce44d34` 均退出码 0，包含全部十项 Views 公开行为和 ECS、算法、图的共同检查：[Native 输出](public-final-native.stdout.txt) · [Native 结果](public-final-native.result.json) · [Release 输出](public-final-release.stdout.txt) · [Release 结果](public-final-release.result.json)。
 
 ### 字段与 GC 分配
 
@@ -251,7 +253,7 @@ Release 单组 `fccb0678e1db4a94a053723cc3ac9e6a` 复用相同 1,000 普通 Twee
 
 ### 控制、来源与图
 
-最终 Native 的声明后重定目标、算法切换、停止并播放、固定双来源、动态提交、三类保持输出，以及十二组图阶段持续帧均为 0 B。下列中位数按控制和图的目标数、来源的实际来源数计量：
+该基准 Native 的声明后重定目标、算法切换、停止并播放、固定双来源、动态提交、三类保持输出，以及十二组图阶段持续帧均为 0 B。下列中位数按控制和图的目标数、来源的实际来源数计量：
 
 | 操作 | ns/项 |
 | --- | ---: |
@@ -291,3 +293,21 @@ Release 单组 `fccb0678e1db4a94a053723cc3ac9e6a` 复用相同 1,000 普通 Twee
 带发布门槛的执行队列 `1d8a86e2c9344ec1add242dd62218e00` 读取该发布结果，成功后运行同一映像，退出码 0：[实际输出](native-declarations-public.stdout.txt) · [队列结果](native-declarations-public.result.json)。默认消费者覆盖十一项 Views 公开行为，以及 ECS、算法和图的共同检查；新增的公开行为从首次帧之后观察实体及组件结构，在九次算法重选中验证当前呈现连续、具体插值结果、实体与存储复用及引用字段身份。
 
 同一脚本随后执行 `--view-switch-benchmark`，128 帧预热后测量 1,000 次完整帧的当前线程分配，包含状态修改、Views 构建和动画。该次原始输出为 `VIEWS_DECLARED_SWITCHES samples=1000 bytes=96000`，即 96 B/完整帧；该诊断沿独立场景记录，字段、来源与图的既有 0 B 矩阵保留各自的实际输入与结果。脚本源文件见 [Run-NativeChecks.ps1](../../../../tools/SomeEngine.Animation.Checks/Run-NativeChecks.ps1)。
+
+## 最终修复源码公开验收（9,787,392 B）
+
+最终源码包含启用状态的查询批次读取 `4144742b`、轨道 span 复用 `11da31ce`、公开阶段诊断 `12866aaa` 和构建回滚记录复用 `3d952a4f`。类型化轨道通过 Enabled / Disabled 查询取得本批次的启用状态，求值内复用已取得的轨道 span。具体算法、字段访问与函数地址继续沿共同类型化入口执行。
+
+声明重选场景的 96 B 来自呈现字段写版本触发的视图参数重建，每帧创建一个 `ChildOrder` 和一个 `ChildComputations` 回滚记录。外层构建现在复用作用域持有的两份记录；嵌套及异步构建沿已有共享保持与完成边界处理。最后一份保持完成时清空子实体快照、World 和旧计算集合引用，后续捕获继续使用同一对象。
+
+Native 发布队列 `e55ebbe8af4148b9b361fea9b4a61225` 退出码 0，UTC 17:46:23–17:48:28：[发布输出](native-complete-publish.stdout.txt) · [标准错误](native-complete-publish.stderr.txt) · [完整命令与结果](native-complete-publish.result.json)。实际映像为 **9,787,392 B**，发布诊断为前述三个位置。
+
+门槛执行队列 `6e6e2e62b91b431f8494e374e5cadf66` 读取发布成功结果后运行同一映像，退出码 0，UTC 17:48:28–17:48:30：[实际输出](native-complete-public.stdout.txt) · [标准错误](native-complete-public.stderr.txt) · [完整命令与结果](native-complete-public.result.json)。默认十一项 Views 与 ECS、算法、图的共同公开检查全部通过，输出两项公开消费者成功标记。随后执行 `--view-switch-allocations`，合计 1,000 次完整帧分配为 **0 B**：
+
+| 选择 | 完整帧数 | State B | Views B | Animation B | Declare B | Set B | 构建次数 | 计算次数 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Linear | 333 | 0 | 0 | 0 | 0 | 0 | 333 | 333 |
+| CubicOut | 333 | 0 | 0 | 0 | 0 | 0 | 333 | 333 |
+| 便利 Spec | 334 | 0 | 0 | 0 | 0 | 0 | 334 | 334 |
+
+实际构建与计算每个采样帧均执行一次。静止帧为 0 B、构建 0 次、计算 0 次。完整字段与 GC 基准的十八组及全规模 Release 矩阵继续以此前各自发布的原始结果计量；本节提供最终源码的 Native 公开能力与声明切换分配验收。

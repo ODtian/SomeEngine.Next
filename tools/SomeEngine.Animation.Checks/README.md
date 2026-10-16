@@ -33,7 +33,7 @@ $nativeChecks = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/ne
 & ./tools/Invoke-Benchmark.ps1 $nativeChecks --full-benchmark
 ```
 
-预先排入发布依赖时，`Run-NativeChecks.ps1` 接收 `-PublishResultPath` 和 `-NativeDirectory`，先读取发布任务的 `result.json`，成功后打印本机映像字节并执行默认公开消费者，通过后顺序执行 `--view-switch-benchmark`。该最小诊断记录 1,000 次预声明 Linear / CubicOut / 便利 Spec 切换的完整帧当前线程分配。发布与检查按同一 FIFO 的顺序执行。
+预先排入发布依赖时，`Run-NativeChecks.ps1` 接收 `-PublishResultPath` 和 `-NativeDirectory`，先读取发布任务的 `result.json`，成功后打印本机映像字节并执行默认公开消费者，通过后顺序执行 `--view-switch-allocations`。该最小诊断在 128 帧预热后，记录预声明 Linear / CubicOut / 便利 Spec 交替选择的合计 1,000 次完整帧，分别列出 State 提交、Views 构建、Animation、声明及目标提交的当前线程分配，以及构建和计算次数。`--view-switch-benchmark` 保留单行完整帧分配入口。发布与检查按同一 FIFO 的顺序执行。
 
 ## 测量范围
 
