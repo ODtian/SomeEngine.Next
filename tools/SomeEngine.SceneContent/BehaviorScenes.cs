@@ -36,7 +36,7 @@ public static partial class BehaviorScenes
         using var red = await MeshAsset.OpenAsync(loader,
             new(project.Manifest.Assets.Values.Single(value => value.Name == "red sphere" && value.AssetType == MeshAsset.FileType).AssetGuid));
         var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(0);
-        using MeshAsset green = ClusterBuilder.ProcessRaw(vertices, attributes, indices, [material.Reference], "green Phong sphere");
+        using MeshAsset green = ClusterBuilder.ProcessRaw(vertices, attributes, indices, [new(material.Id)], "green Phong sphere");
         project.RegisterAsset(await green.SaveAsync(Path.Combine(destination, "assets/Meshes/green-phong.mesh.asset")));
         await WriteSceneAsync(project, world =>
         {
