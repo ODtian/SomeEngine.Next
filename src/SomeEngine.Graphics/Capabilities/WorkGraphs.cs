@@ -181,7 +181,7 @@ internal static class WorkGraphValidation
 public readonly ref struct WorkGraphPipelineDesc
 {
     public WorkGraphPipelineDesc(
-        IComponentType slangCode,
+        SlangShaderData slangCode,
         ShaderReflection reflection,
         ReadOnlySequence<byte> code,
         uint nodeMask = 1,
@@ -198,7 +198,7 @@ public readonly ref struct WorkGraphPipelineDesc
         StaticSamplers = staticSamplers;
     }
 
-    public IComponentType SlangCode { get; }
+    public SlangShaderData SlangCode { get; }
     public ShaderReflection Reflection { get; }
     public ReadOnlySequence<byte> Code { get; }
     public ISlangBlob? CodeBlob { get; }

@@ -38,6 +38,13 @@ ShaderAsset
 
 释放 `ShaderAsset`、Block 副本或 `AssetFile` 后，已有 `Shader` 仍持有其 `ISession`、`IModule`、`IEntryPoint`、`IComponentType` 以及最终托管代码或直接 `ISlangBlob`。普通入口、反射和代码访问都是同步的。`Shader` 不实现 `IDisposable`，更新创建完整新实例，由消费方交换外层引用。
 
+`Shader.SlangCode` 是 `SlangShaderData`，共同持有 global、session 与实际 linked component；
+同一码的代码副本共享此对象，独立专门化保留自己的 component。RHI 的管线描述、异步创建请求、
+管线和继续访问 reflection 的参数或间接命令对象传递同一份数据，直到实际使用结束。
+原生 Slang component 通过借用指针访问 session，因此数据还持有一份原生 session 引用；
+由 `SafeHandle` 在普通 COM wrapper finalizer 之后释放，保证整组回收时的父子顺序。
+直接访问 `SlangCode.Code` 或借用的 reflection 时，调用方持续持有对应的 `SlangShaderData`。
+
 `Shader.GetSlangEntryMetadataAsync` 在驻留 Shader 内共用每个 target/入口的直接 Slang `IMetadata` 与取得任务。材质加载可以提前启动入口准备，渲染侧从同一个 Shader 取得结果；入口准备的后台并发由这一取得路径统一限制。
 
 Cluster 的提前准备与材质阶段解析共用入口选择。着色、细分种子和细分拆分入口随材质 Shader 加载开始；光栅入口在设备创建后按编译 target、可见性模式和设备能力选择。Release 的保存代码加载会话使用 Slang 的最少优化及基础代码优化级别完成反射与入口资源分析，必要的 lowering 与资源使用分析仍由 Slang 执行。保存代码 chunk 按调用方原始编译设置读取；源编译与导入使用构建设置。

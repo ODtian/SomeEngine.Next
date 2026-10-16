@@ -31,8 +31,7 @@ public static class DefaultContent
         if (!File.Exists(Path.Combine(projectRoot, "Game.Build", "Game.Build.csproj")) || !Directory.Exists(engineShaders))
             throw new DirectoryNotFoundException("Select the copied project and its engine shader library explicitly.");
         MaterialTypes.Register();
-        WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"),
-            BuildRenderInstanceLayoutSource(ClusterRenderFeature.InstanceLayout));
+        WriteRenderInstanceLayout(shaders);
         WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
             File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
@@ -96,6 +95,10 @@ public static class DefaultContent
             Console.WriteLine($"Engine shader: {name}");
         }
     }
+
+    internal static void WriteRenderInstanceLayout(string shaders) =>
+        WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"),
+            BuildRenderInstanceLayoutSource(ClusterRenderFeature.InstanceLayout));
 
     private static string BuildRenderInstanceLayoutSource(RenderInstancePropertyLayout layout)
     {

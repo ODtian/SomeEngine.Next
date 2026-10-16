@@ -91,6 +91,8 @@ edit.SetXray(entity, new Xray(
 
 计量由 Cluster 管线持有，纯 opaque 贴花同样产生数据。固定 128B 回读承载 12 个时间戳与两份 4×uint 工作数。每个提交保留当帧已更新的缓冲容量和 RHI 分配描述，回读以同一提交的数据计算；用户分组或资源显式 reconcile 时才维护计时完成边。
 
+`BlendMeasurementsFollowDecalChangesAcrossSubmittedFrames` 已通过 D3D12 的 16 帧公共启动检查：引用预算为 1，纯 opaque 场景在第 8 帧从一个贴花增至两个，GPU 数量、驻留引用、使用字节及容量按提交更新，随后恢复候选复用。`OrderedRenderingTests` 的双次硬件 stencil 往返已在 Vulkan 开启计量通过，全图线性颜色容差为 0.001。
+
 `SceneTiming.Instances` 在场景完成时记录共用实例存储的实际行数、批次数、容量与属性字节数，效果增加的实例属性进入该项；共享几何仍由 `GeometryUsedBytes` 等既有字段记录。
 
 ## 行为与交付对应
@@ -100,7 +102,10 @@ edit.SetXray(entity, new Xray(
 | 规格故事 | 任务 | 公共行为检查与实现 |
 | --- | --- | --- |
 | 1–5：网格材质、用户求值、每命中属性、相交排序、光照阴影 | [#222](https://github.com/ODtian/SomeEngine.Next/issues/222) | `TransparencyRenderingTests` 的完整排序与全不透明材质对照；`Material.State`、源图元和用户表面求值。 |
+| 6、7、15：动态曲面、光栅入口与容量分段 | [#223](https://github.com/ODtian/SomeEngine.Next/issues/223) | `TransparencyGeometryTests` 从用户 Wave 顶点变形和 Phong 曲面生成透明几何，对比硬件、软件、单项三角形与引用容量，并对比脚本移动和启动时的相同变换。 |
 | 7、15：硬软语义、容量分段 | [#224](https://github.com/ODtian/SomeEngine.Next/issues/224) | `TransparencyIndexTests.XyzCandidatesMatchFullScanWhileModelsAndCameraMoveAcrossCells` 在两种后端对比完整遍历、常规容量和单项容量。 |
+| 8、9、14：完整材质 X-ray、两侧规则与连续编辑 | [#225](https://github.com/ODtian/SomeEngine.Next/issues/225) | `XrayRenderingTests` 对比同一 Standard 材质的硬件可见表面与 X-ray 命中，检查纹理、两侧透明度、独立遮挡体阴影，以及移入、移除、替换实体和返回后的画面。 |
+| 10、11、14：光照前材质贴花与逐命中空间查询 | [#226](https://github.com/ODtian/SomeEngine.Next/issues/226) | `MaterialDecalRenderingTests` 对照指定次序的分层颜色，移动贴花体积经过前后两层透明面后移除；用户 coating shader 同时组合基础色、法线和粗糙度。 |
 | 14：游戏编辑与当前帧更新 | [#224](https://github.com/ODtian/SomeEngine.Next/issues/224) | `StaticBlendCellsAreReusedUntilInstanceMembershipChanges` 与 `SceneInitializationAndFrameEditsMatchTheSameScriptedScene`。 |
 | 16：尾部误差界 | [#222](https://github.com/ODtian/SomeEngine.Next/issues/222) | 完整排序图像跨越四项局部队列继续求值；同一检查把材质误差界改为 0.04，与精确图比较整图误差。 |
 | 12、13：有序颜色与 stencil | [#227](https://github.com/ODtian/SomeEngine.Next/issues/227) | `OrderedRenderingTests` 分别对照只读遮罩、alpha 与乘色次序、stencil 的 fail/depth-fail/正反面与读写掩码。参考通过公共颜色 feature 使用 RHI 固定功能状态，并将同一整数图两次导出、导入硬件附件。 |

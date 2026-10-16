@@ -104,6 +104,7 @@ public static class ImportedSceneBuild
 
     private static void CopySharedShaders(AssetProject project, string applicationDirectory)
     {
+        DefaultContent.WriteRenderInstanceLayout(Path.Combine(project.RootPath, "assets/Shaders"));
         AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
         foreach (AssetEntry entry in applicationAssets.Assets.Values)
         {
