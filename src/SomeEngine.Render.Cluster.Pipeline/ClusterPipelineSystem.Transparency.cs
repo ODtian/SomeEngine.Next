@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
-using System.Text;
 using SlangShaderSharp;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
@@ -22,26 +21,11 @@ public sealed partial class ClusterPipelineSystem
         internal uint ReferenceCapacity, UseIndex, CellCount, Padding;
     }
 
-    private sealed record TransparencyMember(uint Bin, Shader Shader, ClusterVisibilityDepth VisibilityDepth);
-
-    private sealed class TransparencyShaders(Shader shader, TransparencyMember[] members, Dictionary<string, ClusterComputePipeline> pipelines)
-    {
-        internal readonly Shader Shader = shader;
-        internal readonly TransparencyMember[] Members = members;
-        internal readonly Dictionary<string, ClusterComputePipeline> Pipelines = pipelines;
-        internal readonly uint TriangleStride = GetTriangleStride(shader);
-        private static uint GetTriangleStride(Shader shader)
-        {
-            ShaderReflection reflection = shader.GetSlangReflection(0);
-            TypeReflection type = reflection.FindTypeByName("TransparencyTriangle")!.Value;
-            return checked((uint)reflection.GetTypeLayout(type, LayoutRules.DefaultStructuredBuffer)!.Value.GetSize(SlangParameterCategory.Uniform));
-        }
-    }
-
     private sealed class TransparencyData
     {
         internal required TransparencyShaders Shaders;
         internal required ClusterShadeInvocation[] Materials;
+        internal required ClusterShadeInvocation[][] ResourceMaterials;
         internal required ImmutableArray<IndexedTextureRead> TextureReads;
         internal GraphRegionId Geometry, Requests, Color;
         internal GraphBufferId Triangles, TriangleCount, Counts, References, Arguments, States;
@@ -58,89 +42,12 @@ public sealed partial class ClusterPipelineSystem
 
     }
 
-    private readonly List<TransparencyShaders> _transparencyShaders = [];
-
-    private TransparencyShaders GetTransparencyShaders(ClusterShadeInvocation[] materials)
-    {
-        TransparencyMember[] members = materials.Select(stage =>
-            new TransparencyMember(stage.BinIndex, stage.Material.Shader!, stage.VisibilityDepth)).ToArray();
-        foreach (TransparencyShaders existing in _transparencyShaders)
-            if (existing.Members.AsSpan().SequenceEqual(members)) return existing;
-
-        var source = new StringBuilder();
-        foreach (string unit in materials.SelectMany(stage => Enumerable.Range(0, stage.Material.Shader!.SlangSourceUnitCount)
-                     .Select(stage.Material.Shader!.GetSlangSourceUnitName)).Distinct())
-            source.Append("import \"").Append(unit).AppendLine("\";");
-        source.AppendLine("struct SceneTransparencyMaterials : ITransparencyMaterials {");
-        for (int index = 0; index < materials.Length; index++)
-            source.Append(FindTransparencyType(materials[index].Material.Shader!)).Append(" Material").Append(index).AppendLine(";");
-        AppendMethod("uint primitiveCount(uint bin, uint source, uint view)",
-            "primitiveCount(source, view, TESS)", "return 0u;");
-        AppendMethod("bool project(uint bin, uint source, uint view, uint primitive, out float4 first, out float4 second, out float4 third)",
-            "project(source, view, primitive, TESS, first, second, third)", "return false;");
-        AppendMethod("bool cover(uint bin, uint source, uint primitive, uint3 pixel, float depth, out float resultDepth)",
-            "cover(source, primitive, TESS, pixel, depth, resultDepth)", "return false;");
-        source.AppendLine("float4 shade(uint bin, uint source, uint primitive, uint3 pixel, float depth) {");
-        for (int index = 0; index < materials.Length; index++)
-            source.Append("if (bin == ").Append(materials[index].BinIndex).Append("u) return Material").Append(index)
-                .Append(".shade<").Append((uint)materials[index].VisibilityDepth).AppendLine("u>(source, primitive, pixel, depth);");
-        source.AppendLine("return 0.0.xxxx; }");
-        source.AppendLine("void receiver(uint bin, uint source, uint primitive, uint3 pixel, float depth, out float3 position, out float3 normal, out uint flags) {");
-        for (int index = 0; index < materials.Length; index++)
-            source.Append("if (bin == ").Append(materials[index].BinIndex).Append("u) { Material").Append(index)
-                .Append(".receiver<").Append((uint)materials[index].VisibilityDepth).AppendLine("u>(source, primitive, pixel, depth, position, normal, flags); return; }");
-        source.AppendLine("position=0.0.xxx; normal=0.0.xxx; flags=0u; }");
-        source.AppendLine("};");
-        string[] geometryEntries = ["ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry", "ReserveTransparentCells", "ScatterTransparentCells"];
-        string[] geometryCalls = ["ClearTransparency(thread)", "CopyTransparencySources(thread)", "BuildTransparency(materials, thread)", "ReserveTransparency(thread)", "ScatterTransparency(thread)"];
-        for (int entry = 0; entry < geometryEntries.Length; entry++)
-            source.Append("[shader(\"compute\")] [numthreads(64,1,1)] void ").Append(geometryEntries[entry])
-                .Append(entry == 2 ? "(uniform SceneTransparencyMaterials materials, " : "(")
-                .Append("uint3 thread : SV_DispatchThreadID) { ")
-                .Append(geometryCalls[entry]).AppendLine("; }");
-        source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void RequestTransparentShadows(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { RequestTransparencyShadows(materials, pixel); }");
-        source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveTransparentColor(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveTransparency(materials, pixel); }");
-        Shader shader = materials[0].Material.Shader!.Compose("Cluster transparent materials", "scene_transparency.slang",
-            source.ToString(), materials.Skip(1).Select(stage => stage.Material.Shader!).ToArray(), _device.Capabilities.CompileTarget);
-        var pipelines = new Dictionary<string, ClusterComputePipeline>();
-        foreach (string entry in geometryEntries.Concat(["RequestTransparentShadows", "ResolveTransparentColor"]))
-            pipelines.Add(entry, ClusterComputePipeline.Create(_backend, _device, shader, entry, entry));
-        var result = new TransparencyShaders(shader, members, pipelines);
-        _transparencyShaders.Add(result);
-        return result;
-
-        void AppendMethod(string signature, string call, string fallback)
-        {
-            source.Append(signature).AppendLine(" {");
-            for (int index = 0; index < materials.Length; index++)
-                source.Append("if (bin == ").Append(materials[index].BinIndex).Append("u) return Material").Append(index).Append('.').Append(call.Replace("TESS", materials[index].Material.Shader!.TryGetSlangEntry(0, ClusterMaterialEntries.TessellationSeed, SlangStage.Compute, out _) ? "true" : "false")).AppendLine(";");
-            source.AppendLine(fallback).AppendLine("}");
-        }
-    }
-
-    private static string FindTransparencyType(Shader shader)
-    {
-        string? name = null;
-        for (int unit = 0; unit < shader.SlangSourceUnitCount; unit++) Visit(shader.GetSlangSourceUnit(unit).GetModuleReflection());
-        return name ?? throw new InvalidDataException($"Material shader '{shader.Name}' requires a TransparencyMaterial evaluator.");
-        void Visit(DeclReflection declaration)
-        {
-            if (declaration == DeclReflection.Null) return;
-            if (declaration.Kind == DeclReflectionKind.Struct)
-            {
-                TypeReflection type = declaration.Type;
-                for (uint attribute = 0; attribute < type.AttributeCount; attribute++)
-                    if (type.GetAttribute(attribute).Name == "TransparencyMaterial") name = type.Name;
-            }
-            for (uint child = 0; child < declaration.ChildrenCount; child++) Visit(declaration.GetChild(child));
-        }
-    }
-
     private void ReconcileTransparency(ref RenderGraphEdit edit, ClusterMaterialAssignmentSet assignments, ClusterShadeStageSet stages)
     {
         ClusterShadeInvocation[] materials = stages.Invocations.Where(stage => stage.Material.State.Surface == SurfaceMode.Translucent).ToArray();
         uint capacity = _options.BlendTriangleCapacity;
-        TransparencyShaders? shaders = materials.Length == 0 ? null : GetTransparencyShaders(materials);
+        ClusterShadeInvocation[][] resources = [];
+        TransparencyShaders? shaders = materials.Length == 0 ? null : GetTransparencyShaders(materials, out resources);
         var textureReads = CollectIndexedTextureReads(stages.BinIndices, stages)
             .Where(pair => materials.Any(material => material.BinIndex == pair.Key)).OrderBy(pair => pair.Key)
             .SelectMany(pair => pair.Value).ToImmutableArray();
@@ -151,7 +58,7 @@ public sealed partial class ClusterPipelineSystem
         {
             previous.Completed = false;
             UpdateTransparencyParameters(ref edit, previous, assignments);
-            UpdateTransparencyStates(ref edit, previous, assignments);
+            UpdateTransparencyStates(ref edit, previous, assignments, stages);
             return;
         }
         if (previous is not null) RemoveTransparency(ref edit, previous);
@@ -171,7 +78,7 @@ public sealed partial class ClusterPipelineSystem
         BufferDesc arguments = new(48, storage | BufferUsages.Indirect, "Cluster transparent geometry arguments");
         var data = new TransparencyData
         {
-            Shaders = shaders, Materials = materials, TextureReads = textureReads,
+            Shaders = shaders, Materials = materials, ResourceMaterials = resources, TextureReads = textureReads,
             TriangleCapacity = capacity, MaterialCapacity = assignments.SlotCapacity,
             Geometry = edit.AddRegion("Cluster transparent geometry", GraphData.PrimaryGeometry),
             Requests = edit.AddRegion("Cluster transparent shadow requests", preparation),
@@ -181,7 +88,7 @@ public sealed partial class ClusterPipelineSystem
             References = edit.CreatePersistentBuffer(references),
             TriangleCount = edit.CreatePersistentBuffer(triangleCount),
             Arguments = edit.CreatePersistentBuffer(arguments),
-            States = CreateBufferData(ref edit, new byte[checked((int)assignments.SlotCapacity * 4)], BufferUsages.ShaderRead, "Cluster transparency material states"),
+            States = CreateBufferData(ref edit, new byte[checked((int)assignments.SlotCapacity * 8)], BufferUsages.ShaderRead, "Cluster transparency material states"),
             Offsets = edit.CreatePersistentBuffer(counts with { Label = "Cluster transparency cell offsets" }),
             Writes = edit.CreatePersistentBuffer(counts with { Label = "Cluster transparency cell writes" }),
             Streams = edit.CreatePersistentBuffer(counts with { Label = "Cluster transparency streaming cells" }),
@@ -193,7 +100,7 @@ public sealed partial class ClusterPipelineSystem
         };
         GraphData.Transparency = data;
         UpdateTransparencyParameters(ref edit, data, assignments);
-        UpdateTransparencyStates(ref edit, data, assignments);
+        UpdateTransparencyStates(ref edit, data, assignments, stages);
         string[] entries = ["ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry", "ReserveTransparentCells", "ScatterTransparentCells"];
         uint[] offsets = [0, 12, 0, 0, 36];
         data.Builds = new GraphPassId[entries.Length];
@@ -268,12 +175,22 @@ public sealed partial class ClusterPipelineSystem
         UpdateParameters(ref edit, data.ShadeParameters, MemoryMarshal.AsBytes(shade));
     }
 
-    private void UpdateTransparencyStates(ref RenderGraphEdit edit, TransparencyData data, ClusterMaterialAssignmentSet assignments)
+    private void UpdateTransparencyStates(ref RenderGraphEdit edit, TransparencyData data, ClusterMaterialAssignmentSet assignments,
+        ClusterShadeStageSet stages)
     {
-        byte[] states = new byte[checked((int)assignments.SlotCapacity * 4)];
+        byte[] states = new byte[checked((int)assignments.SlotCapacity * 8)];
+        Span<byte> bin = stackalloc byte[4];
         foreach (int address in assignments.ActiveOffsets)
             if (assignments.TryGetEntry(address, out Material material, out _) && material.State.Surface == SurfaceMode.Translucent)
-                BinaryPrimitives.WriteUInt32LittleEndian(states.AsSpan(address * 4), material.State.TwoSided ? 2u : 1u);
+            {
+                stages.BinIndices.CopyTo(bin, address * 4);
+                ClusterShadeInvocation stage = stages.GetBin(BinaryPrimitives.ReadUInt32LittleEndian(bin));
+                int evaluator = Array.IndexOf(data.Shaders.Members, new TransparencyMember(material.Shader!, stage.VisibilityDepth));
+                int resource = Array.FindIndex(data.ResourceMaterials[evaluator], entry => entry.CommandBindings.Equals(stage.CommandBindings));
+                uint facing = material.State.TwoSided ? 2u : 1u;
+                BinaryPrimitives.WriteUInt32LittleEndian(states.AsSpan(address * 8), ((uint)evaluator + 1u) << 2 | facing);
+                BinaryPrimitives.WriteUInt32LittleEndian(states.AsSpan(address * 8 + 4), (uint)resource);
+            }
         ClusterBytes bytes = ClusterBytes.FromBytes(states);
         UpdateBufferData(ref edit, data.States, bytes, [new BufferRange(0, (ulong)states.Length)]);
     }
@@ -299,18 +216,7 @@ public sealed partial class ClusterPipelineSystem
         BindBlock(ref edit, ref pass, reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null, null, true);
         EntryPointReflection reflectedEntry = data.Shaders.Shader.RequireSlangEntry(target, entry, SlangStage.Compute);
         VariableLayoutReflection entryLayout = reflectedEntry.VarLayout;
-        var entryMaterials = new List<Material>();
-        for (uint field = 0; field < entryLayout.TypeLayout.FieldCount; field++)
-        {
-            VariableLayoutReflection parameter = entryLayout.TypeLayout.GetFieldByIndex(field);
-            if (parameter.Name != "materials") continue;
-            for (uint material = 0; material < parameter.TypeLayout.FieldCount; material++)
-            {
-                var resources = ClusterLinkedStageLayout.Create(parameter.TypeLayout.GetFieldByIndex(material));
-                foreach (var resource in resources.Resources) entryMaterials.Add(data.Materials[material].Material);
-            }
-        }
-        BindBlock(ref edit, ref pass, entryLayout, entryMaterials, false);
+        BindBlock(ref edit, ref pass, entryLayout, GetTransparencyEntryMaterials(data, entryLayout), false);
         ReadIndexedMaterialTextures(ref edit, ref pass, data.TextureReads, PipelineSync.ComputeShading);
         return id;
 
@@ -369,8 +275,7 @@ public sealed partial class ClusterPipelineSystem
             case "TransparencyPageHeap": BindPageHeapDescriptor(ref graph, ref pass, "Cluster transparent geometry", PipelineSync.ComputeShading); return true;
             case "TransparencyFirstDraw": buffer = frame.DrawArgs; stride = 0; break;
             case "TransparencySecondDraw": buffer = frame.Phase2DrawArgs; stride = 0; break;
-            case "TransparencyMaterialBins": buffer = frame.ShadeSlots; break;
-            case "TransparencyMaterialStates": buffer = data.States; break;
+            case "TransparencyMaterialStates": buffer = data.States; stride = 8; break;
             case "TransparencyTriangles": buffer = data.Triangles; stride = data.Shaders.TriangleStride; break;
             case "TransparencyTileCounts": buffer = data.Counts; break;
             case "TransparencyReferences": buffer = data.References; break;
