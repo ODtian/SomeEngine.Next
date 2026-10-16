@@ -22,6 +22,10 @@ namespace Game.Build;
 /// <summary>Project source definitions for the default scene, shader settings and application.</summary>
 public static class DefaultContent
 {
+    /// <summary>Writes the default Cluster configuration against the project's existing shader assets.</summary>
+    public static Guid BuildClusterShaders(string projectRoot) =>
+        BuildClusterShaders(new AssetProject(Path.GetFullPath(projectRoot), []));
+
     public static async Task BuildAsync(string projectRoot, string engineRoot, CancellationToken cancellationToken = default)
     {
         projectRoot = Path.GetFullPath(projectRoot);
