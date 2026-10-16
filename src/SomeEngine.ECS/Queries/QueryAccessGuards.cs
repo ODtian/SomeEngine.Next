@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Registry;
 
@@ -6,6 +7,18 @@ namespace SomeEngine.ECS.Queries;
 
 internal static class QueryAccessGuards
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static int RequireFieldAccess<T>(QueryArchetypeMatch match, bool write)
+        where T : struct, IComponent
+    {
+        bool declared = match.TryGetAccess(ComponentMetadata<T>.Id, out var access);
+        DevelopmentCheck.Require(declared,
+            $"{typeof(T).Name} field access requires a declared query data term.");
+        DevelopmentCheck.Require(write ? access.Access.CanWrite() : access.Access.CanRead(),
+            $"{typeof(T).Name} field access requires the corresponding query permission.");
+        return access.ColumnIndex;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static int RequireAccess<T>(
         QueryArchetypeMatch match,

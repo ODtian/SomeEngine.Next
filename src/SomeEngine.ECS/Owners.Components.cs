@@ -448,6 +448,15 @@ internal readonly partial struct Components
         CommitReplace(entity, in oldValue, in newValue, version);
     }
 
+    internal ref T WriteRef<T>(Entity entity, uint version) where T : struct
+    {
+        EntityRecord record = _entities.ReadRow(entity);
+        record.Archetype!.TryColumn(ComponentMetadata<T>.Id, out int column);
+        DevelopmentCheck.Require(column >= 0,
+            $"Entity {entity} requires table component {typeof(T).Name} to write its field.");
+        return ref WriteRef<T>(entity, record.Chunk!, record.RowInChunk, column, version);
+    }
+
     internal ref T WriteRef<T>(
         Entity entity,
         Archetypes.Chunk chunk,

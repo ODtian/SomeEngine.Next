@@ -112,6 +112,15 @@ internal sealed partial class Sparse
         return ref sparseSet.ReadRef(entity);
     }
 
+    internal ref T WriteRef<T>(Entity entity, uint version) where T : struct
+    {
+        _entities.ThrowDead(entity);
+        bool hasSet = TrySet<T>(out SparseSet<T> sparseSet);
+        DevelopmentCheck.Require(hasSet,
+            $"Entity {entity} requires sparse component {typeof(T).Name} to write its field.");
+        return ref sparseSet.Get(entity, version);
+    }
+
     internal SparseSet<T> Set<T>()
         where T : struct
     {

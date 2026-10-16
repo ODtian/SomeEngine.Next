@@ -251,7 +251,7 @@ public sealed class SystemGroup<TContext> : IDisposable
         ThrowIfTeardownFailed(failures, "System work failed.");
     }
 
-    private void UpdateCore(bool useTemplate, ref TContext template)
+    private unsafe void UpdateCore(bool useTemplate, ref TContext template)
     {
         ThrowIfLifecycleCallbackReentry();
         ThrowIfJobCallbackWouldWaitForLifecycleControl();
@@ -297,7 +297,8 @@ public sealed class SystemGroup<TContext> : IDisposable
                         lock (_gate)
                             _slots[i] = slot;
                     }
-                    _nodes[i].OnUpdate(ref context);
+                    SystemNode<TContext> node = _nodes[i];
+                    node.Update(node, ref context);
                     _driver.AfterUpdate(ref slot, ref context);
                     slot.LastSystemVersion = slot.CurrentSystemVersion;
                     lock (_gate)
