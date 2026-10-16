@@ -78,6 +78,7 @@ public static partial class PropertyAnimation
                         declaration.Count++;
                 }
             });
+        bool addedSources = declaration.Count < capacity;
         while (declaration.Count++ < capacity)
         {
             int index = declaration.TrackCount++;
@@ -97,7 +98,7 @@ public static partial class PropertyAnimation
             world.ExecuteBufferWrite<PropertySource<T>, PropertySource<T>>(target, ref source, static (sources, ref source) => sources.Add(source));
         }
         _ = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type;
-        RefreshSources<T>(world, target);
+        if (addedSources) RefreshSources<T>(world, target);
     }
 
     public static Entity To<T, TOps, TParameters, TState, TEvaluator>(World world, Entity target,
