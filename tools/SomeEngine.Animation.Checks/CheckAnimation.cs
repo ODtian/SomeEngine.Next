@@ -10,6 +10,12 @@ internal static partial class CheckAnimation
 {
     public static int Main(string[] args)
     {
+        if (args.Contains("--views-checks"))
+        {
+            CheckViews();
+            Console.WriteLine("VIEWS_CHECKS_PASSED 10");
+            return 0;
+        }
         if (args.Contains("--codegen"))
         {
             CodeGenerationChecks.Run();
@@ -35,6 +41,20 @@ internal static partial class CheckAnimation
         global::SomeEngine.Tools.EcsAotSmoke.TypedFieldSmoke.Check();
         CheckGeneratedFieldPlayback();
         CheckBoundWorldFields();
+        CheckViews();
+        CheckTypedBatch();
+        CheckManagedHistory();
+        CheckSpring();
+        CheckCustomValue();
+        CheckFunction();
+        CheckClocksAndCompletion();
+        GraphConsumerChecks.Check();
+        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graph");
+        return 0;
+    }
+
+    private static void CheckViews()
+    {
         global::SomeEngine.Views.Tests.TypedAnimationChecks.GeneratedFieldTargetsAnimateThroughTypedSpecs();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.EqualTargetsPreserveTheirElapsedProgress();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.EqualHeldTargetsPreserveTheirPresentationVersion();
@@ -45,15 +65,6 @@ internal static partial class CheckAnimation
         global::SomeEngine.Views.Tests.TypedAnimationChecks.AnAwaitedReferenceTargetContinuesFromItsPresentation();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.CancelingAnAwaitedReferenceTargetKeepsTheReplacementTarget();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.ReferencePresentationRefreshesRootAndLeafReaders();
-        CheckTypedBatch();
-        CheckManagedHistory();
-        CheckSpring();
-        CheckCustomValue();
-        CheckFunction();
-        CheckClocksAndCompletion();
-        GraphConsumerChecks.Check();
-        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graph");
-        return 0;
     }
 
     private static void CheckTypedBatch()

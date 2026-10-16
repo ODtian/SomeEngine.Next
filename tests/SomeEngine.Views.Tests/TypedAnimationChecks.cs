@@ -144,14 +144,16 @@ public static partial class TypedAnimationChecks
         var presented = new State<float>();
         Entity panel = frames.World.CreateEntity(new AnimatedPanel { Progress = presented });
         var resume = new TaskCompletionSource();
-        Views.Spawn(frames.World, Entity.Null, new AwaitedTargets(panel, 8, resume.Task, 16));
+        Entity root = Views.Spawn(frames.World, Entity.Null, new AwaitedTargets(panel, 8, resume.Task, 16));
         frames.Frame(0);
         frames.Frame(0.25f);
 
         resume.SetResult();
         frames.Frame(0.5f);
 
-        Require(presented.Value == 9, "The resumed segment continues from the current referenced presentation.");
+        if (frames.World.HasSparse<BuildError>(root))
+            throw frames.World.ReadSparse<BuildError>(root).Exception;
+        Require(presented.Value == 9, $"The resumed segment continues from the current referenced presentation: {presented.Value}.");
     }
 
     public static void CancelingAnAwaitedReferenceTargetKeepsTheReplacementTarget()

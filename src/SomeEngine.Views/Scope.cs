@@ -590,7 +590,10 @@ public static partial class Scope
                 copies.Clear();
         }
         if (submitAnimations)
+        {
+            using var untracked = Untrack();
             data.Changes.CommitAnimations(data.World, data.FirstAnimation);
+        }
     }
 
     internal static void FinishChildren(ScopeData data)
