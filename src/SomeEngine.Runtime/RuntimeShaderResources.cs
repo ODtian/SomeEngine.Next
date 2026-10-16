@@ -194,15 +194,14 @@ internal sealed class RuntimeShaderResources : IDisposable
         AssetEntry configuration = Require(manifest, id, assetType);
         var text = new StringBuilder();
         bool versionsAvailable = configuration.Version != Guid.Empty;
-        foreach (AssetEntry shader in manifest.Assets.Values
-                     .Where(entry => entry.AssetType == ShaderAsset.FileType ||
-                         (assetType == VirtualShadowMapShadersAsset.FileType && entry.AssetType == TextureAsset.FileType))
+        foreach (AssetEntry dependency in manifest.GetDependencies(id)
+                     .Select(dependencyId => manifest.Assets[dependencyId])
                      .OrderBy(static entry => entry.AssetGuid))
         {
-            versionsAvailable &= shader.Version != Guid.Empty;
-            text.Append(shader.AssetGuid.ToString("N"))
+            versionsAvailable &= dependency.Version != Guid.Empty;
+            text.Append(dependency.AssetGuid.ToString("N"))
                 .Append(':')
-                .Append(shader.Version.ToString("N"))
+                .Append(dependency.Version.ToString("N"))
                 .Append(';');
         }
         return new ConfigurationIdentity(
