@@ -545,6 +545,8 @@ dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Re
 
 单材质迭代使用 `Game.Build --refresh-shader <project> <shader-source> <engine>`，例如将 `assets/Shaders/deformed-phong.shader` 交给项目原有的 `AssetProject.BuildAsync`。该入口同步透明核心副本与实例布局，沿指定 engine 的 shader 搜索路径构建这一份源定义，保留项目中其它资产。
 
+2026-10-16，`TransparentDeformedPhongPartsAtWindowResolutionMatchOpaqueSurfaces` 在 D3D12 与 Vulkan 两个 backend 共 2/2 通过。检查采用 1280×720、60° 相机、16 个近距离 Wave/Phong 部件，选择 `--hardware-raster --shading-path forward --no-taa --no-vsm`，保持默认细分与投影预算、`WaitForFrames=false`。每次完成 16 帧并驻留 1/1 页；第 7 帧 opaque 与第 15 帧 alpha 为 1 的透明完整线性图像误差在 `0.003` 内。微三角形保留原域角点、覆盖沿采样深度求值，并以首顶点加深度差的形式插值；相交处的深度精度由同一图像对照验证。配套 `223-precision/DefaultProject` 由 `review` 的 91 项内容复制后只重建 `deformed-phong.shader`，代码对应 `6ec9dab0`。
+
 2026-10-16 的容量继续处理检查通过 `TransparentCurvedGeometryMatchesAcrossRasterSourcesAndBufferBatches` 对照三次应用：硬件来源（8 px、投影/引用各 4096）、软件来源（256 px、各 4096）和软件来源（256 px、各 1）。每次完成 8 帧并驻留 6/6 页，D3D12 与 Vulkan 的完整线性图像均在 `0.001` 内一致，两个 backend 检查共 2/2 通过，行为规则为 0 违规。该轮先记录容量为 `1` 时的 D3D12 `DeviceLost`，随后采用顺序细分和 wave 共享投影通过原检查。匹配内容位于 `F:/AI-Workspaces/tile-blending-221-content/223-fallback/DefaultProject`（91 资产），新 `Assets` 编译后通过原 `DefaultContent.BuildAsync` 重写配置。
 
 ```powershell
