@@ -230,7 +230,7 @@ bool ClusterTargetPolicyRasterBoundsWindow(
     uint2 clippedWindow;
     if (!ClusterTargetCropRasterWindow(target, uint4(firstPage, lastPage),
             firstPixel, lastPixel, clippedWindow, depthCacheClass, requiredPageFlags)) return false;
-    rasterWindow = ClusterPackRasterTargetPageWindow(uint4(firstPage, lastPage));
+    rasterWindow = clippedWindow;
     return true;
 }
 
