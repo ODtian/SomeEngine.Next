@@ -18,6 +18,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.9" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\SomeEngine.Core\SomeEngine.Core.csproj" />
     <ProjectReference Include="..\SomeEngine.Resources\SomeEngine.Resources.csproj" />
     <ProjectReference Include="..\SomeEngine.ECS\SomeEngine.ECS.csproj" />
     <ProjectReference Include="..\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
