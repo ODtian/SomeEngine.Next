@@ -44,5 +44,9 @@ internal static class DefaultMaterials
         unlit.GetBlock<MaterialBlock>().Shader = new(unlitShader);
         AssetEntry unlitEntry = await unlit.SaveAsync(Path.Combine(project.RootPath, "assets/Materials/TestUnlit_1.material.asset"), cancellationToken).ConfigureAwait(false);
         project.RegisterAsset(unlitEntry);
+        using var deformedPhong = unlit.CreateCopy(DefaultContentIds.DeformedPhongMaterial);
+        deformedPhong.Name = "Deformed Phong";
+        deformedPhong.GetBlock<MaterialBlock>().Shader = new(project.Resolve("assets/Shaders/deformed-phong.shader")!.Value);
+        project.RegisterAsset(await deformedPhong.SaveAsync(Path.Combine(project.RootPath, "assets/Materials/DeformedPhong.material.asset"), cancellationToken).ConfigureAwait(false));
     }
 }

@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)][string]$ApplicationPath,
-    [string[]]$Effects = @('glass', 'smoke', 'foliage', 'xray', 'decal-layers', 'decal-sparse', 'ordered'),
+    [string[]]$Effects = @('glass', 'smoke', 'foliage', 'deformed-phong', 'xray', 'decal-layers', 'decal-sparse', 'ordered'),
     [ValidateSet('full', 'xyz')][string[]]$Methods = @('full', 'xyz'),
     [switch]$Static,
     [string]$OutputPath = 'wiki/architecture/rendering/Cluster-Blend-Scenes-2026-10-16.json'
