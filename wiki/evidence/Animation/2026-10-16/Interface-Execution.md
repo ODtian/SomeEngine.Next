@@ -54,3 +54,20 @@ passed **4 / 4** (`4f07f36747cd4d9bbb71375f9f417f29`):
 [stdout](hud-optimization-checks.stdout.txt), [stderr](hud-optimization-checks.stderr.txt).
 The dedicated view selection is retained as [result](view-fields.result.json),
 [stdout](view-fields.stdout.txt), [stderr](view-fields.stderr.txt).
+
+The first optimized normal run (`35b3387e05404e619dbc5f2ec4ec3ba8`) measured
+animation median/P95/P99 **1.1548/1.3875/1.6702 ms**, with **0 B/frame**.
+Views median/P95 were **3.4471/4.3718 ms**. The full frame median/P95 were
+7.4355/9.3842 ms and the GPU median/P95 were 0.091136/0.116736 ms.
+[Result](hud-first-optimization.result.json),
+[stdout](hud-first-optimization.stdout.txt), [stderr](hud-first-optimization.stderr.txt)
+retain all ten phase costs and allocations.
+
+The subsequent sampled-thread/GC trace (`e06f813e333840b88cda6aff236c4e66`)
+ran the same consumer. Its sampled stacks identified repeated field declaration
+buffer borrows, source lookup during target submission and per-row timeline
+enable reads. This diagnostic run is recorded separately from normal performance
+samples: [result](hud-profile.result.json), [stdout](hud-profile.stdout.txt),
+[stderr](hud-profile.stderr.txt). The next implementation shares typed field
+declarations through AnimatedField, reuses an already read component root and
+selects active algorithm/phase rows before borrowing their state.
