@@ -99,6 +99,8 @@ Copy pass 来自公开图帧诊断中的实际 Live Copy pass，图帧经过真�
 | 独立读取器的实际 Texture 及两项 Texture 提取行为 | 3 项通过 | `83a0ce75bbb74ae4b23520390c3fcfa9` |
 | 文件按需读取、具体资源创建及材质继续消费已提供引用 | 1 项通过 | `e6174ff6e1e344768d4deb4f02b3e72e` |
 | 自给 Shader 文件、资产结束后代码消费、替换及材质 IR 组合 | 5 项通过 | `c3f7386ee9b1494a83bf37d992c60693` 中的 Assets 检查 |
+| 公开应用帧动作、重载与 D3D12 纹理图像比较 | 4 项通过，Vulkan 行按能力条件跳过 1 项 | `0c93cb3211d240709c898019afd24214` |
+| DefaultGame 开发构建及 `prepare-materials` | 构建 0 警告、0 错误；Standard、Unlit 准备完成 | `0c93cb3211d240709c898019afd24214` |
 | win-x64 NativeAOT 发布与原生执行 | 发布退出 0；原生执行输出 `assets-nativeaot-smoke:ok` | `2cd1d8cd457d4005bf0b3ad0b5461e82`、`e1a7637fa6fd48f4a4f38af2b7f75a76` |
 
 Shader 文件夹具通过当前 `ShaderAsset.CreateAsync` 和相对源码名构建完整 Shader；测试源路径由本次 Slang 设置明确传入。NativeAOT 覆盖资产导入、自定义材质创建更新、共享 Shader、独立打开、读取器关闭后消费、世界、Mesh 和材质继承。
@@ -120,3 +122,28 @@ dotnet test tests/SomeEngine.Assets.Tests/SomeEngine.Assets.Tests.csproj -c Rele
 ```
 
 Standards 与 Spec 两条独立源码复核已完成修正复核：材质使用普通引用，Shader Wiki 与同步的 `Create(name, shaders)` 入口一致。正式结果写入本页后清理队列临时文件。
+
+### 公开应用与开发组合
+
+提交 `6f4e641f` 将球场景、材质准备及场景资产 ID 集中到 `DefaultGame.SceneContent`。DefaultGame 开发形态和场景工具各自直接引用这份内容库，构建代码由一份程序集承载。两条增量源码复核均通过。
+
+2026-10-16 22:26:02–22:30:26（Asia/Shanghai），公共队列任务 `0c93cb3211d240709c898019afd24214` 退出 0。`ApplicationSceneTests` 通过 3 帧截图及重载帧序列 `[0, 1, 0]`；D3D12 图像检查分别证明共享 Texture 更新、最后贴图引用替换与直接使用最终内容得到相同图像。合计 4 项通过、规则 0 违规，测试报告执行约 1 分 10 秒。Vulkan 行由 `SceneTheory` 的设备能力条件跳过 1 项。
+
+同一脚本随后完成 DefaultGame 开发构建，报告 0 警告、0 错误、14.40 秒；通过开发入口执行 `prepare-materials`，输出 `Material shader: standard` 和 `Material shader: unlit`。队列使用以下入口：
+
+```powershell
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 pwsh -NoProfile -File obj/Verify-AssetFinal.ps1
+```
+
+执行时的临时脚本内容如下，原生 `dotnet` 命令在脚本内保留完整串行参数；结果记录后清理脚本与队列输出：
+
+```powershell
+$ErrorActionPreference = 'Stop'
+dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Release -m:1 -p:BuildInParallel=false --filter 'FullyQualifiedName~ApplicationSceneTests|FullyQualifiedName~UpdatingASharedTextureMatchesStartingWithTheNewPixels|FullyQualifiedName~ReplacingTheLastMaterialTextureReferenceMatchesStartingWithReplacement' --nologo -v minimal
+$applicationExit = $LASTEXITCODE
+dotnet build samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEngineDevelopment=true -p:PublishAot=false -p:RuntimeIdentifier= -p:SelfContained=false -m:1 -p:BuildInParallel=false --nologo -v minimal
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+dotnet samples/DefaultGame/bin/development/Release/net10.0/DefaultGame.dll prepare-materials
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+exit $applicationExit
+```
