@@ -738,6 +738,7 @@ internal sealed partial class FrameExecutor
                 _frame.Backend.ResetQueries(context, _queryPools[access.ResourceIndex].Resource,
                     access.QueryRange.FirstQuery, access.QueryRange.QueryCount);
         }
+        WritePassTimes(pass, context, afterCommands: false);
         if (kind == GraphPassKind.Raster)
         {
             if (_shadingRateImages)
@@ -748,7 +749,16 @@ internal sealed partial class FrameExecutor
             _frame.Backend.EndRendering(context);
         }
         else InvokePass(pass, context);
+        WritePassTimes(pass, context, afterCommands: true);
         RecordAfter(pass, context);
+    }
+
+    private void WritePassTimes(int pass, CommandContext context, bool afterCommands)
+    {
+        if (_passes[pass].TimeMeasurements is not { } measurements) return;
+        foreach (PassTimeMeasurement time in measurements)
+            _frame.Backend.WriteTimestamp(context, _queryPools[ResolveQueryPool(time.Pool.Value)].Resource,
+                time.FirstQuery + (afterCommands ? 1u : 0u));
     }
 
     private Texture? FindShadingRateImage(int pass)

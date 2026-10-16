@@ -99,7 +99,7 @@ public sealed class ClusterStencil
         edit.OrderAfter(unpack, copy);
         attachment.ImportCopy = copy;
         attachment.CompletePass = unpack;
-        _measurements?.IncludeColorPass(ref edit, unpack, attachment.CapacityBytes, attachment.AllocationBytes);
+        _measurements?.IncludeColorPasses(ref edit, edit.GetPasses(Region), attachment.CapacityBytes, attachment.AllocationBytes);
         return unpack;
     }
 
@@ -112,7 +112,7 @@ public sealed class ClusterStencil
         if (measurements is not null)
             foreach (ClusterStencilAttachment attachment in _attachments)
                 if (attachment.ImportCopy != default)
-                    measurements.IncludeColorPass(ref edit, attachment.CompletePass, attachment.CapacityBytes, attachment.AllocationBytes);
+                    measurements.IncludeColorPasses(ref edit, edit.GetPasses(Region), attachment.CapacityBytes, attachment.AllocationBytes);
     }
 
     internal void Remove(ref RenderGraphEdit edit)

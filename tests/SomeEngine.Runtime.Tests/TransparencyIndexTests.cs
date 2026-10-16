@@ -84,9 +84,24 @@ public sealed class TransparencyIndexTests(TransparencyContentFixture content)
         ]) { BlendFrameCompleted = measurements.Add, WaitForFrames = false },
             "--measure-blending", "--hardware-raster", "--no-taa", "--no-vsm", "--static-scene");
 
-        Assert.True(measurements.Single(frame => frame.SimulationFrame == 7).ReusedIndex);
+        Assert.Equal(16, measurements.Count);
+        ClusterBlendMetrics before = measurements.Single(frame => frame.SimulationFrame == 7);
+        ClusterBlendMetrics after = measurements.Single(frame => frame.SimulationFrame == 15);
+        Assert.True(before.ReusedIndex);
         Assert.False(measurements.Single(frame => frame.SimulationFrame == 8).ReusedIndex);
-        Assert.True(measurements.Single(frame => frame.SimulationFrame == 15).ReusedIndex);
+        Assert.True(after.ReusedIndex);
+        Assert.Equal(0u, before.DecalVolumes);
+        Assert.Equal(0u, after.DecalVolumes);
+        Assert.True(before.ReusedDecalIndex);
+        Assert.True(after.ReusedDecalIndex);
+        Assert.Equal(0, before.ProjectionIndexMs);
+        Assert.Equal(0, after.ProjectionIndexMs);
+        Assert.Equal(0, before.DecalIndexMs);
+        Assert.Equal(0, after.DecalIndexMs);
+        Assert.Equal(0, before.CoverageReceiverMs);
+        Assert.Equal(0, after.CoverageReceiverMs);
+        Assert.True(before.MaterialCompositeMs > 0);
+        Assert.True(after.MaterialCompositeMs > 0);
     }
 
     [SceneTheory]
@@ -123,6 +138,11 @@ public sealed class TransparencyIndexTests(TransparencyContentFixture content)
         Assert.True(changed.DecalIndexMs > 0);
         Assert.True(changed.OpaqueMaterialMs > 0);
         Assert.False(changed.ReusedDecalIndex);
+        Assert.Equal(0, before.DecalIndexMs);
+        Assert.Equal(0, before.ProjectionIndexMs);
+        Assert.Equal(0, before.CoverageReceiverMs);
+        Assert.True(before.OpaqueMaterialMs > 0);
         Assert.True(measurements.Single(frame => frame.SimulationFrame == 15).ReusedDecalIndex);
+        Assert.Equal(0, measurements.Single(frame => frame.SimulationFrame == 15).DecalIndexMs);
     }
 }

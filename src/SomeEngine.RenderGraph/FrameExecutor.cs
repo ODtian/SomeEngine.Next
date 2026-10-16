@@ -355,6 +355,7 @@ internal sealed partial class FrameExecutor
                 ParameterOrdinaryData = source.ParameterOrdinaryData,
                 ParameterBindings = source.ParameterBindings,
                 PersistentBindings = source.PersistentBindings,
+                TimeMeasurements = source.TimeMeasurements,
                 DeclarationOrdinal = source.DeclarationOrdinal,
                 Enabled = source.Enabled && structureIndex.Structure.IsRegionEnabled(source.Region) &&
                     _frame.HasBufferUploads(source.CallbackStorage),

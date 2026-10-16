@@ -217,6 +217,7 @@ public ref partial struct RenderGraphEdit
     public void Remove(GraphQueryPoolId pool)
     {
         ValidateOwner(pool.Value);
+        RemovePassTimes(pool);
         Changes.TouchQueryPool(pool.Value, membership: true);
         _ = Staging.QueryPools.Remove(pool.Value);
     }
@@ -774,7 +775,7 @@ public ref partial struct RenderGraphEdit
         return new GraphTextureAccessId(identity);
     }
 
-    internal void AddQueryAccess(
+    internal GraphIdentity AddQueryAccess(
         in GraphIdentity pass,
         GraphQueryPoolId pool,
         GraphAccessMode mode,
@@ -799,6 +800,7 @@ public ref partial struct RenderGraphEdit
         });
         Staging.Passes.GetMutable(pass).Accesses.Add(identity);
         Changes.TouchAccess(identity, pass, pool.Value, membership: true);
+        return identity;
     }
 
     internal void AddShaderTableAccess(

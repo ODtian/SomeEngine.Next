@@ -75,11 +75,11 @@ edit.SetXray(entity, new Xray(
 
 | 字段 | 工作范围 |
 | --- | --- |
-| `ProjectionIndexMs` | 当前几何的用户投影、候选计数、连续范围与引用构建。复用帧记录相应阶段的实际成本。 |
+| `ProjectionIndexMs` | 当前几何的用户投影、候选计数、连续范围与引用构建，逐 pass 计时求和。复用帧为零。 |
 | `CoverageReceiverMs` | 覆盖与各命中阴影 receiver 请求。 |
-| `MaterialCompositeMs` | 命中筛选、表面与材质求色、颜色和状态合成，以及声明在该链中的硬件 stencil 导出、硬件阶段和回传。末时间戳位于共同的 shading 外层，通过显式完成边覆盖硬件回传。 |
-| `DecalIndexMs` | 贴花 Clear、Count、Reserve、Scatter、Sort 五阶段的真实 GPU 区间。 |
-| `OpaqueMaterialMs` | opaque receiver 与 color 两组用户 pass 的区间之和。该项覆盖这些 pass 内耦合的基础材质、贴花属性组合及光照求值；两组分别计时。 |
+| `MaterialCompositeMs` | 命中筛选、表面与材质求色、颜色和状态合成，以及硬件 stencil 区段中的 pack、export、hardware draw、import、unpack。每个实际 pass 分别计时并求和。 |
+| `DecalIndexMs` | 贴花 Clear、Count、Reserve、Scatter、Sort 五个 pass 的 GPU 时间之和。复用帧为零；空集合刷新计入当帧实际执行的清空与构建成本。 |
+| `OpaqueMaterialMs` | 每个 opaque receiver 与 color 用户 pass 分别计时后求和，覆盖这些 pass 内耦合的基础材质、贴花属性组合及光照求值。 |
 | `Triangles` / `References` | GPU 记录的实际工作量。 |
 | `DecalVolumes` / `DecalReferences` / `DecalResidentReferences` | GPU 工作缓冲回读的实际体积、投影引用总量与池内驻留引用数。 |
 | `UsedBytes` / `CapacityBytes` / `AllocationBytes` | 当帧驻留数据、配置容量和 RHI 分配要求，包括贴花私有缓冲、stencil 图像、256B 私有 stencil uniform upload 及硬件交换资源。 |
@@ -89,7 +89,7 @@ edit.SetXray(entity, new Xray(
 
 `SceneTiming.Blending` 汇总五项时间的平均值、中位数、P95、两类索引的构建/复用帧数、体积/引用及显存；整帧呈现间隔保留在原 `SceneTiming` 字段。逐帧原始数据保存在统一报告的 `BlendFrames`。共享纹理、网格驻留和统一实例存储沿各自的数据持有者另计。
 
-计量由 Cluster 管线持有，纯 opaque 贴花同样产生数据。固定 128B 回读承载 12 个时间戳与两份 4×uint 工作数。每个提交保留当帧已更新的缓冲容量和 RHI 分配描述，回读以同一提交的数据计算；用户分组或资源显式 reconcile 时才维护计时完成边。
+计量由 Cluster 管线持有，纯 opaque 贴花同样产生数据。每个测量 pass 使用一对时间戳，附着在该 pass 的命令前后；CPU 按阶段累加各对差值。回读大小为 `16 × 测量 pass 数量 + 32` 字节，末尾保存两份 4×uint GPU 工作数。测量对象统一持有查询池、结果缓冲与回读；用户分组、资源或硬件阶段显式变更时调整测量集合。本帧禁用的 pass 清零结果范围，查询解析只读取本帧启用的 pass。每个提交保留当帧已更新的缓冲容量和 RHI 分配描述，回读以同一提交的数据计算。
 
 `BlendMeasurementsFollowDecalChangesAcrossSubmittedFrames` 已通过 D3D12 的 16 帧公共启动检查：引用预算为 1，纯 opaque 场景在第 8 帧从一个贴花增至两个，GPU 数量、驻留引用、使用字节及容量按提交更新，随后恢复候选复用。`OrderedRenderingTests` 的双次硬件 stencil 往返已在 Vulkan 开启计量通过，全图线性颜色容差为 0.001。
 
