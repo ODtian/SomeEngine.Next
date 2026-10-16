@@ -27,22 +27,16 @@ public sealed partial class ClusterPipelineSystem
         }
         TransparencyData? transparent = GraphData.Transparency;
         MaterialDecalData decals = GraphData.Decals!;
-        GraphRegionId requests = _transparencyRequestRegion != default ? _transparencyRequestRegion : _regions.Shading;
-        GraphRegionId color = GraphData.Stencil is null ? _regions.Shading : GraphData.BlendColors;
-        GraphPassId colorFirst = transparent?.ColorPass ?? GraphData.Stencil?.ClearPass ?? default;
+        GraphPassId[] colors = GraphData.Stencil is { } colorStencil ? [colorStencil.ClearPass] : [];
+        if (transparent is not null) colors = [.. colors, transparent.ColorPass];
         var passes = new BlendMeasurementPasses(
-            transparent?.Geometry ?? _regions.PrimaryGeometry, transparent?.Builds[0] ?? default, transparent?.Builds[^1] ?? default,
-            transparent?.Requests ?? requests, transparent?.RequestPass ?? default,
-            transparent?.Color ?? color, colorFirst, colorFirst,
-            _regions.Shading, _regions.Feedback,
-            decals.Geometry, decals.Builds[0], decals.Builds[^1], GraphData.ReceiverGroups.Parent, GraphData.ShadeGroups.Parent);
+            transparent?.Builds ?? [], transparent?.RequestPass ?? default, colors, _regions.Feedback, decals.Builds,
+            GraphData.ReceiverGroups.Values.OrderBy(group => group.Stage.BinIndex).Select(group => group.Pass).ToArray(),
+            GraphData.ShadeGroups.Values.OrderBy(group => group.Stage.BinIndex).Select(group => group.Pass).ToArray());
         if (GraphData.BlendMeasurements is { } previous && !previous.HasPasses(passes)) RemoveBlendMeasurements(ref edit);
         GraphData.BlendMeasurements ??= new(_backend, _device, _graph, ref edit,
             passes, CreateBlendMeasurementBuffers(), decals.Work, ReceiveBlendFrame);
         ClusterBlendMeasurements measurements = GraphData.BlendMeasurements;
-        measurements.UpdateOpaquePasses(ref edit,
-            GraphData.ReceiverGroups.Values.OrderBy(group => group.Stage.BinIndex).Select(group => group.Pass).ToArray(),
-            GraphData.ShadeGroups.Values.OrderBy(group => group.Stage.BinIndex).Select(group => group.Pass).ToArray());
         if (GraphData.Stencil is { } stencil)
             stencil.SetSourceReady(ref edit, transparent?.ColorPass ?? stencil.ClearPass, measurements);
     }

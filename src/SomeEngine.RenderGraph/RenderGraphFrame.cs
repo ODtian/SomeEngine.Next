@@ -61,6 +61,9 @@ public ref partial struct RenderGraphFrame
 
     public void SetPassEnabled(GraphPassId pass, bool enabled) => State.SetPassEnabled(pass, enabled);
 
+    /// <summary>Includes the enable state of the pass's containing regions.</summary>
+    public bool IsPassEnabled(GraphPassId pass) => State.IsPassEnabled(pass);
+
     public void SetPassOptions(GraphPassId pass, in PassOptions options) => State.SetPassOptions(pass, options);
 
     public void SetPassData<T>(GraphPassId pass, in T value) => State.SetPassData(pass, value);

@@ -480,6 +480,7 @@ internal sealed class GraphPass
     internal long DeclarationOrdinal;
     internal GraphIdentity Region;
     internal List<GraphIdentity> Accesses = [];
+    internal List<PassTimeMeasurement> TimeMeasurements = [];
     internal List<GraphColorAttachment> ColorAttachments = [];
     internal GraphDepthStencilAttachment? DepthStencilAttachment;
     internal List<PassRenderingRegion> RenderingRegions = [];
@@ -501,6 +502,7 @@ internal sealed class GraphPass
         DeclarationOrdinal = DeclarationOrdinal,
         Region = Region,
         Accesses = new List<GraphIdentity>(Accesses),
+        TimeMeasurements = new List<PassTimeMeasurement>(TimeMeasurements),
         ColorAttachments = new List<GraphColorAttachment>(ColorAttachments),
         DepthStencilAttachment = DepthStencilAttachment,
         RenderingRegions = new List<PassRenderingRegion>(RenderingRegions),

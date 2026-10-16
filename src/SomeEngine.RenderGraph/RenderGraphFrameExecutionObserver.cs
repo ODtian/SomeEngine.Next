@@ -3,6 +3,9 @@ namespace SomeEngine.RenderGraph;
 /// <summary>Receives accepted GPU submissions and frame completion results.</summary>
 public interface IRenderGraphFrameExecutionObserver
 {
+    /// <summary>Finishes frame declarations after callers supply their inputs and before graph analysis begins.</summary>
+    void OnRenderGraphFramePreparing(ref RenderGraphFrame frame) { }
+
     /// <summary>Receives accepted submissions while later frame work can still be recorded and submitted.</summary>
     void OnRenderGraphSubmitted(RenderGraphFrameResult result) { }
 

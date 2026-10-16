@@ -22,6 +22,14 @@ receiver, label, region, options)` 安装持久复制 pass，并返回 `GraphRea
 
 ## Completion and memory
 
+GPU pass 计时通过 `RenderGraphEdit.MeasurePassTime(pass, queryPool, firstQuery)` 将一对 timestamp
+附着到实际命令前后。声明的两个查询在该 pass 开始时重置，参与查询范围的读写依赖。
+`RenderGraphEdit.GetPasses(region)` 返回该区段及子区段的持久 pass，供显式变更时维护测量集合；
+`RenderGraphFrame.IsPassEnabled(pass)` 同时读取 pass 与父区段的启用状态。
+`IRenderGraphFrameExecutionObserver.OnRenderGraphFramePreparing` 在调用方填写当帧输入后、图分析前完成
+测量读取声明，使后续 feature 对 pass 的启用修改进入同一帧计时。
+移除查询池时解除各 pass 上属于该池的计时数据与写入声明，已提交帧继续持有各自查询资源。
+
 目标内存来自对应帧槽位的回读页，同一帧的回读共享页内空间。复制使用普通源范围读取和
 目标范围写入声明，参与 RenderGraph 的同步、调度与资源完成跟踪。
 

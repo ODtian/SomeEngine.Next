@@ -182,6 +182,14 @@ internal sealed partial class RenderGraphFrameState
         Graph.PropertyChanged(pass.Value, GraphStoreKind.Passes);
     }
 
+    internal bool IsPassEnabled(GraphPassId pass)
+    {
+        EnsureAuthoring();
+        ValidateStatic(pass.Value, StructureIndex.Structure.Passes);
+        GraphPass row = StructureIndex.Structure.Passes.Get(pass.Value);
+        return row.Enabled && StructureIndex.Structure.IsRegionEnabled(row.Region) && HasBufferUploads(row.CallbackStorage);
+    }
+
     internal PassDefinition GetPass(GraphPassId pass)
     {
         EnsureAuthoring();
@@ -1197,6 +1205,9 @@ internal sealed partial class RenderGraphFrameState
         destination[..Graph.MaximumQueueCompletionCount].Clear();
         try
         {
+            var frame = new RenderGraphFrame(this);
+            foreach (IRenderGraphFrameExecutionObserver observer in _executionObservers)
+                observer.OnRenderGraphFramePreparing(ref frame);
             _executor.Reset();
             PrepareBufferUploads();
             PrepareReadbacks();
