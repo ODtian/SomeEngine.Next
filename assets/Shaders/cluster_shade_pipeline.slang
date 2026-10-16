@@ -66,15 +66,10 @@ struct TriangleInfo
     uint materialSlot;
 };
 
-bool LoadTriangleInfo(uint visibility, uint viewIndex, out TriangleInfo tri)
+bool LoadTriangleInfo(DrawRequest req, uint triangleID, out TriangleInfo tri)
 {
     tri = {};
-    tri.visibleClusterIndex = DecodeVisBufferVisibleClusterIndex(visibility);
-    tri.triangleID = DecodeVisBufferTriangleID(visibility);
-
-    DrawRequest req = VisibleClusterRequest(VisibleClusters[tri.visibleClusterIndex]);
-    if (DrawRequestViewIndex(req) != viewIndex)
-        return false;
+    tri.triangleID = triangleID;
     tri.instanceID = req.InstanceID;
     tri.viewIndex = DrawRequestViewIndex(req);
 
@@ -115,6 +110,15 @@ bool LoadTriangleInfo(uint visibility, uint viewIndex, out TriangleInfo tri)
     tri.vi1 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 1);
     tri.vi2 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 2);
     return true;
+}
+
+bool LoadTriangleInfo(uint visibility, uint viewIndex, out TriangleInfo tri)
+{
+    uint visible = DecodeVisBufferVisibleClusterIndex(visibility);
+    DrawRequest request = VisibleClusterRequest(VisibleClusters[visible]);
+    bool loaded = LoadTriangleInfo(request, DecodeVisBufferTriangleID(visibility), tri);
+    tri.visibleClusterIndex = visible;
+    return loaded && DrawRequestViewIndex(request) == viewIndex;
 }
 
 TriangleInfo ReadTriangleInfoLane(TriangleInfo value, uint lane)
