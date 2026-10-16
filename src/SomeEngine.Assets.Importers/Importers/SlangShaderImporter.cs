@@ -1,6 +1,7 @@
 using System.Text;
 using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Importers;
 
@@ -8,17 +9,9 @@ public static partial class SlangShaderImporter
 {
     public const uint ImporterVersion = 35;
 
-    private static readonly Lazy<IGlobalSession> s_globalSession = new(CreateGlobalSession);
+    private static readonly Lazy<IGlobalSession> s_globalSession = new(Shader.CreateSlangGlobalSession);
 
     public static IGlobalSession GlobalSession => s_globalSession.Value;
-
-    private static IGlobalSession CreateGlobalSession()
-    {
-        SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession session);
-        if (result.Failed || session is null)
-            throw new InvalidOperationException($"Slang global session creation failed with {result}.");
-        return session;
-    }
 
     public static TargetDesc[] CreateDefaultTargets(IGlobalSession slang)
     {

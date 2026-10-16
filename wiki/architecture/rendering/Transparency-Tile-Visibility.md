@@ -467,7 +467,9 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Release --filter 'FullyQualifiedName~TransparencyRenderingTests' --nologo -v minimal
 ```
 
-DefaultGame 的 `--cluster-oit` 在场景初始化时把前八个网格替换为自身材质的透明副本，保留贴图、法线和实例参数，alpha 设为 `.35`。构建 DefaultProject 内容和 Game.App 后，统一场景平台可直接运行：
+本轮四项检查全部通过，行为规则自动检查为 0 违规。首条图像检查的 red 阶段在内部区域记录最大通道差 `.5`；补齐间接几何 pass 的参数布局、复用现有整数边界覆盖后，六层完整排序与反向提交均满足 `.001`，带贴图、法线、光照和阴影的整图对照满足 `.003`。
+
+DefaultGame 的 `--cluster-oit` 通过场景初始化与逐帧场景编辑，在现有游戏世界中添加 32 片相交玻璃。四种 Standard 材质实例共享用户 evaluator，使用各自的颜色与表面参数，alpha 设为 `.12`；实例随相机保持在视野内。`--cluster-effect=smoke` 与 `--cluster-effect=foliage` 复用同一入口，分别使用带 alpha 纹理的 Unlit 烟雾和交叉叶片。构建 DefaultProject 内容和 Game.App 后，统一场景平台可直接运行：
 
 ```powershell
 dotnet templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.dll --measure-scene '1024 spheres' --cluster-oit --hardware-adapter --graphics-backend d3d12 --hardware-raster --frames 16 --hidden-window --no-debug-ui

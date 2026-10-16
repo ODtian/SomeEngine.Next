@@ -48,9 +48,7 @@ internal sealed class RuntimeShaderResources : IDisposable
             if (_slang.TryGetValue(channel, out IGlobalSession? existing))
                 return existing;
 
-            SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession slang);
-            if (result.Failed || slang is null)
-                throw new InvalidOperationException($"Slang global session creation failed with {result}.");
+            IGlobalSession slang = Shader.CreateSlangGlobalSession();
             _target = target;
             _slang.Add(channel, slang);
             return slang;

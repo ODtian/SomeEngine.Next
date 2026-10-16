@@ -19,8 +19,7 @@ internal sealed class ClusterBlendAssets : IDisposable
     {
         AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library/AssetManifest"));
         await using var loader = new AssetLoader(new LooseAssetStorage(root, manifest));
-        SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession slang);
-        if (result.Failed) throw new InvalidOperationException($"Creating the example shader session failed: {result}.");
+        IGlobalSession slang = Shader.CreateSlangGlobalSession();
         bool vulkan = backend == RuntimeGraphicsBackend.Vulkan;
         var session = new SessionDesc
         {
@@ -31,6 +30,7 @@ internal sealed class ClusterBlendAssets : IDisposable
             [
                 new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(0, 0)),
                 new(CompilerOptionName.VulkanEmitReflection, CompilerOptionValue.FromInt(1, 0)),
+                new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
                 new(CompilerOptionName.ExperimentalFeature, CompilerOptionValue.FromInt(1, 0)),
             ],
         };
