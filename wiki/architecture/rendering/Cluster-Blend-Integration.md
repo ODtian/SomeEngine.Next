@@ -29,6 +29,7 @@ DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-ind
 | `xray` | 64 个机械部件，共 10,752 个三角形，带独立遮挡板与完整 Standard 材质。 |
 | `decal-layers` | 16 组表面，每组包含三层玻璃、opaque 面板与 16 层材质贴花，共 256 个体积。 |
 | `decal-sparse` | 64 个局部贴花体积覆盖墙面，透明前景与墙面分别使用命中位置求值。 |
+| `ordered` | 四个 stencil 窗口与 16 个有序面板，演示 alpha、乘色和通道混合。 |
 
 场景内容通过 `SceneTestPlatform.InitializeScene` 和 `UpdateScene` 编辑游戏实体。相机回放时专项物体使用同一相机相对布局，三个基础场景都保有对应的效果工作量。
 
