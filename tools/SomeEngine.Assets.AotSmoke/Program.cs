@@ -2,6 +2,7 @@ using SlangShaderSharp;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Serialization;
 using SomeEngine.Assets;
+using SomeEngine.Core.Collections;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Resources.Geometry;
@@ -29,8 +30,8 @@ try
     await using TextureAsset second = opened[1];
     if (ReferenceEquals(first, second) || first.Id != second.Id)
         throw new InvalidOperationException("Disk opens must have independent close boundaries.");
-    await using Texture original = await first.GetBlock<TextureBlock>().CreateAsync(first.Name, firstMip: 0);
-    await using Texture other = await second.GetBlock<TextureBlock>().CreateAsync(second.Name);
+    Texture original = await first.GetBlock<TextureBlock>().CreateAsync(first.Name, firstMip: 0);
+    Texture other = await second.GetBlock<TextureBlock>().CreateAsync(second.Name);
     if (ReferenceEquals(original, other))
         throw new InvalidOperationException("Domain instances must be independent.");
     await first.DisposeAsync();
@@ -87,12 +88,14 @@ try
     _ = new StandardMaterialParameters(child.GetBlock<MaterialBlock>()) { Roughness = 0 };
     AssetEntry childEntry = await child.SaveAsync(Path.Combine(directory, "child.material.asset"));
     using var childRead = await StandardMaterialAsset.OpenAsync(childEntry.Path);
-    using var zero = await childRead.CreateAsync(materialLoader);
+    var shaders = new Dictionary<AssetId<ShaderAsset>, Shader>();
+    var textures = new Dictionary<AssetId<TextureAsset>, Texture>();
+    var zero = await childRead.CreateAsync<StandardMaterial>(materialLoader, shaders, textures);
     if (zero.Roughness != 0 || childRead.SourceVersion != childEntry.Version)
         throw new InvalidOperationException("A material lost its explicit zero override or output version.");
     using var childCopy = childRead.Duplicate();
     childCopy.GetBlock<MaterialBlock>().Reset(nameof(StandardMaterial.Roughness));
-    using var inherited = await childCopy.CreateAsync(materialLoader);
+    var inherited = await childCopy.CreateAsync<StandardMaterial>(materialLoader, shaders, textures);
     if (inherited.Roughness != 0.25f || !childRead.GetBlock<MaterialBlock>().HasOverride(nameof(StandardMaterial.Roughness)))
         throw new InvalidOperationException("Resetting an override changed another branch or lost inheritance.");
     var worldTypes = new SerializationRegistry().Register<SmokeWorldValue, SmokeWorldCodec>(
@@ -176,22 +179,24 @@ try
     shaderFile.GetBlock<ShaderSourceBlock>().SourceNames = ["coating.slang"];
     await shaderFile.CompileAsync(slang, sessionDescription);
     project.RegisterAsset(await shaderFile.SaveAsync(Path.Combine(directory, "coating.shader.asset")));
-    await using var coatingLoader = new AssetLoader(project.CreateStorage(), slang, sessionDescription);
+    await using var coatingLoader = new AssetLoader(project.CreateStorage());
     using var coatingAsset = new MaterialAsset { Name = "Consumer coating" };
     coatingAsset.GetBlock<MaterialBlock>().Shader = shaderFile.Reference;
     coatingAsset.GetBlock<MaterialBlock>().SetParameter(new(nameof(SmokeCoatingMaterial.Thickness), MaterialParameterKind.Float) { Float = .75f });
     AssetEntry coatingEntry = await coatingAsset.SaveAsync(Path.Combine(directory, "coating.material.asset"));
     using MaterialAsset coatingRead = await MaterialAsset.OpenAsync(coatingEntry.Path);
-    using SmokeCoatingMaterial coating = await coatingRead.CreateAsync<SmokeCoatingMaterial>(coatingLoader);
+    var shaderValues = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
+    Shader shader = await ShaderAsset.GetAsync(coatingLoader, shaderFile.Reference, shaderValues, slang, sessionDescription);
+    shaders.Add(shaderFile.Reference, shader);
+    SmokeCoatingMaterial coating = await coatingRead.CreateAsync<SmokeCoatingMaterial>(coatingLoader, shaders, textures);
     long coatingIdentity = coating.MaterialId;
-    Shader shader = coating.Shader!;
     if (coating.Thickness != .75f || coating.Roughness != .4f
-        || !ReferenceEquals(shader, await coatingLoader.GetShaderAsync(shaderFile.Reference))
+        || !ReferenceEquals(shader, await ShaderAsset.GetAsync(coatingLoader, shaderFile.Reference, shaderValues, slang, sessionDescription))
         || !shader.TryGetSlangEntry(0, "CoatingShade", SlangStage.Compute, out _)
         || shader.SlangTargetCount != 2)
         throw new InvalidOperationException("Custom static material creation or shared shader loading failed.");
     coatingRead.GetBlock<MaterialBlock>().Reset(nameof(SmokeCoatingMaterial.Thickness));
-    await coatingRead.UpdateAsync(coating, coatingLoader);
+    await coatingRead.UpdateAsync(coating, coatingLoader, shaders, textures);
     if (coating.MaterialId != coatingIdentity || coating.Thickness != .2f || coating.Roughness != .4f)
         throw new InvalidOperationException("Custom static material updating lost defaults or instance identity.");
     Console.WriteLine("assets-nativeaot-smoke:ok instances=2 independent-open=ok ready-after-close=ok update=ok extension=ok mesh-file=ok material-inheritance=ok world=ok curve-source=ok text-shapes=ok custom-material=ok shared-shader=ok");

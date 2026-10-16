@@ -16,7 +16,7 @@ Release 默认采用 NativeAOT。游戏启动通过现有 Application API 读取
 
 `StandardMaterial`、`UnlitMaterial`、实际默认 TextureAsset、材料模板及共享 Slang IR 由引擎提供。`MaterialAssets.PrepareAsync` 是项目选择固定入口集合的位置：分别设置材质 IR 和 `ClusterMaterialEntriesBlock`，调用 `SelectInputs<TBlock>`，再用 `CompileAsync` 保存共同 ShaderBlock。项目的 `.slang` 和 `.shader` 继续提供源码编译入口；添加自己的管线时，在准备代码中加入自己的强类型入口 Block。
 
-游戏启动使用 `Application.RunAsync<EngineSceneMaterials>`，由静态方法明确创建 Standard 和 Unlit 业务对象。定制游戏通过自己的 `ISceneMaterials` 实现调用 `MaterialAsset.CreateAsync<MyMaterial>(loader)`；材料文件保存模板、Shader 与参数数据。业务持有返回的实际 Material，AssetLoader 持有它创建的共享 Shader、Texture。
+游戏启动使用 `Application.RunAsync<EngineSceneMaterials>`，由静态方法明确创建 Standard 和 Unlit 业务对象。定制游戏通过自己的 `ISceneMaterials` 实现调用 `MaterialAsset.CreateAsync<MyMaterial>(files, shaders, textures)`；材料文件保存模板、Shader 与参数数据。应用先用 `ResolveAsync(files)` 取得完整内容，再以具体资产方法准备两个强类型引用字典；业务通过普通引用持有 Material、Shader、Texture。应用的强类型 WeakValues 复用仍存活的实际资源，AssetLoader 管理文件读取和字节缓存。
 
 `EnginePath.props` 记录引擎路径；开发构建将项目目录与引擎 Shader 目录编译为路径常量。Shader 编译使用项目来源和明确的引擎 include 库。引擎升级维护共享实现，项目继续维护自己的来源。
 

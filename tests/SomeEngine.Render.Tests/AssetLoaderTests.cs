@@ -34,20 +34,19 @@ public sealed class AssetLoaderTests
         TextureAsset[] files = await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => TextureAsset.OpenAsync(loader, new AssetId<TextureAsset>(id)).AsTask()));
         Assert.Equal(32, files.Distinct(ReferenceEqualityComparer.Instance).Count());
         Assert.Equal(1, storage.OpenCount);
-        await using Texture first = await files[0].GetBlock<TextureBlock>().CreateAsync(files[0].Name, firstMip: 0);
-        await using Texture second = await files[1].GetBlock<TextureBlock>().CreateAsync(files[1].Name);
+        Texture first = await files[0].GetBlock<TextureBlock>().CreateAsync(files[0].Name, firstMip: 0);
+        Texture second = await files[1].GetBlock<TextureBlock>().CreateAsync(files[1].Name);
         foreach (TextureAsset file in files) await file.DisposeAsync();
         await loader.DisposeAsync();
         await storage.DisposeAsync();
         Assert.True(first.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
         Assert.Equal(new byte[] { 1, 2, 3, 4 }, bytes.ToArray());
-        await first.DisposeAsync();
         Assert.True(second.TryGetTile(TextureTiles.ChunkKey(1, 2, 0, 0, 0, 0), out var other));
         Assert.Equal(new byte[] { 5, 6 }, other.ToArray());
     }
 
     [Fact]
-    public async Task DomainCreationUsesLazyFilesAndMaterialReferencesCreateActualObjects()
+    public async Task DomainCreationUsesLazyFilesAndMaterialsKeepProvidedResources()
     {
         using var directory = new TemporaryDirectory();
         Guid textureId = Guid.NewGuid(), shaderId = Guid.NewGuid(), meshId = Guid.NewGuid(), materialId = Guid.NewGuid();
@@ -62,7 +61,7 @@ public sealed class AssetLoaderTests
         var residency = new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 1024 * 1024 });
         await using var loader = new AssetLoader(storage, new() { MaxDecodedBytes = 1024 * 1024 });
         await using TextureAsset textureFile = await TextureAsset.OpenAsync(loader, new AssetId<TextureAsset>(textureId));
-        await using Texture texture = await textureFile.GetBlock<TextureBlock>().CreateAsync(textureFile.Name);
+        Texture texture = await textureFile.GetBlock<TextureBlock>().CreateAsync(textureFile.Name);
         Assert.Empty(textureFile.GetBlock<TextureBlock>().Chunks.Keys);
         await using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(loader, new AssetId<ShaderAsset>(shaderId));
         Shader shader = await TestShaderLoading.CreateAsync(
@@ -81,18 +80,18 @@ public sealed class AssetLoaderTests
         Assert.True(mesh.TryGetPage(0, out _));
         await meshFile.GetBlock<ClusterMeshBlock>().LoadPagesAsync(mesh, [0]);
         await using MaterialAsset materialFile = await MaterialAsset.OpenAsync(loader, new AssetId<MaterialAsset>(materialId));
-        using Material material = await materialFile.CreateAsync<StandardMaterial>(loader);
+        Material material = await materialFile.CreateAsync<StandardMaterial>(loader,
+            new Dictionary<AssetId<ShaderAsset>, Shader>(),
+            new Dictionary<AssetId<TextureAsset>, Texture> { [new(textureId)] = texture });
         StandardMaterial standard = Assert.IsType<StandardMaterial>(material);
         Assert.NotNull(standard.AlbedoMap);
-        Assert.NotSame(texture, standard.AlbedoMap);
+        Assert.Same(texture, standard.AlbedoMap);
         await loader.DisposeAsync();
         await meshFile.DisposeAsync();
         await storage.DisposeAsync();
         byte[] page = new byte[mesh.GetPageByteLength(0)];
         mesh.ReadPage(0, page);
         Assert.NotEmpty(page);
-        await texture.DisposeAsync();
-        material.Dispose();
         textureFile.Dispose();
         shaderFile.Dispose();
         materialFile.Dispose();

@@ -2,7 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
-using Texture = SomeEngine.Resources.Texture;
+Texture = SomeEngine.Resources.Texture;
 
 namespace SomeEngine.Runtime.Tests;
 
@@ -16,7 +16,7 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
     [InlineData("vulkan")]
     public async Task AddedMaterialMatchesStartingWithTheFinalMaterial(string backend)
     {
-        using var blue = new UnlitMaterial { Name = "blue", BaseColorTint = new(0, 0, 1, 1) };
+        var blue = new UnlitMaterial { Name = "blue", BaseColorTint = new(0, 0, 1, 1) };
         SceneImage? before = null, changed = null, expected = null;
         await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 12,
         [
@@ -79,8 +79,8 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
     [InlineData("vulkan")]
     public async Task ReplacedMaterialMatchesStartingWithTheReplacement(string backend)
     {
-        using var blue = new UnlitMaterial { Name = "blue", BaseColorTint = new(0, 0, 1, 1) };
-        using var purple = new UnlitMaterial { Name = "purple", BaseColorTint = new(1, 0, 1, 1) };
+        var blue = new UnlitMaterial { Name = "blue", BaseColorTint = new(0, 0, 1, 1) };
+        var purple = new UnlitMaterial { Name = "purple", BaseColorTint = new(1, 0, 1, 1) };
         SceneImage? before = null, changed = null, expected = null;
         await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 12,
         [
@@ -184,55 +184,48 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
     [InlineData("vulkan")]
     public async Task ManyMaterialsSharingOneTextureMatchStartingWithAllMaterials(string backend)
     {
-        var added = new List<UnlitMaterial>();
         SceneImage? before = null, changed = null, expected = null;
-        try
-        {
-            await SceneImages.RunAsync(backend, new SceneScript(content.ShaderReplacement, 16,
-            [
-                new(7, edit => edit.CaptureImage(image => before = image)),
-                new(8, edit =>
+        await SceneImages.RunAsync(backend, new SceneScript(content.ShaderReplacement, 16,
+        [
+            new(7, edit => edit.CaptureImage(image => before = image)),
+            new(8, edit =>
+            {
+                Entity source = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere");
+                var template = (UnlitMaterial)edit.GetMaterial(source);
+                Material other = edit.GetMaterial(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "green sphere"));
+                for (int index = 0; index < 64; index++)
                 {
-                    Entity source = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere");
-                    var template = (UnlitMaterial)edit.GetMaterial(source);
-                    Material other = edit.GetMaterial(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "green sphere"));
-                    for (int index = 0; index < 64; index++)
-                    {
-                        var material = new UnlitMaterial { Shader = index % 2 == 0 ? template.Shader : other.Shader, AlbedoMap = template.AlbedoMap,
-                            BaseColorTint = new((index % 3) * .4f + .1f, .2f, .8f, 1),
-                            MaterialSampler = template.MaterialSampler with { MipLodBias = index * .125f } };
-                        added.Add(material);
-                        Entity entity = edit.AddEntity(source, new(new Vector3((index % 8 - 3.5f) * .45f,
-                            (index / 8 - 3.5f) * .45f, 4), Quaternion.Identity, .15f));
-                        edit.ReplaceMaterial(entity, material);
-                    }
-                }),
-                new(15, edit => edit.CaptureImage(image => changed = image)),
-            ]), "--no-taa", "--no-vsm");
-            await SceneImages.RunAsync(backend, new SceneScript(content.ShaderReplacement, 16,
-            [
-                new(0, edit =>
+                    var material = new UnlitMaterial { Shader = index % 2 == 0 ? template.Shader : other.Shader, AlbedoMap = template.AlbedoMap,
+                        BaseColorTint = new((index % 3) * .4f + .1f, .2f, .8f, 1),
+                        MaterialSampler = template.MaterialSampler with { MipLodBias = index * .125f } };
+                    Entity entity = edit.AddEntity(source, new(new Vector3((index % 8 - 3.5f) * .45f,
+                        (index / 8 - 3.5f) * .45f, 4), Quaternion.Identity, .15f));
+                    edit.ReplaceMaterial(entity, material);
+                }
+            }),
+            new(15, edit => edit.CaptureImage(image => changed = image)),
+        ]), "--no-taa", "--no-vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.ShaderReplacement, 16,
+        [
+            new(0, edit =>
+            {
+                Entity source = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere");
+                var template = (UnlitMaterial)edit.GetMaterial(source);
+                Material other = edit.GetMaterial(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "green sphere"));
+                for (int index = 0; index < 64; index++)
                 {
-                    Entity source = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere");
-                    var template = (UnlitMaterial)edit.GetMaterial(source);
-                    Material other = edit.GetMaterial(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "green sphere"));
-                    for (int index = 0; index < 64; index++)
-                    {
-                        var material = new UnlitMaterial { Shader = index % 2 == 0 ? template.Shader : other.Shader, AlbedoMap = template.AlbedoMap,
-                            BaseColorTint = new((index % 3) * .4f + .1f, .2f, .8f, 1),
-                            MaterialSampler = template.MaterialSampler with { MipLodBias = index * .125f } };
-                        added.Add(material);
-                        Entity entity = edit.AddEntity(source, new(new Vector3((index % 8 - 3.5f) * .45f,
-                            (index / 8 - 3.5f) * .45f, 4), Quaternion.Identity, .15f));
-                        edit.ReplaceMaterial(entity, material);
-                    }
-                }),
-                new(15, edit => edit.CaptureImage(image => expected = image)),
-            ]), "--no-taa", "--no-vsm");
-            SceneImages.AssertEqual(expected!, changed!);
-            Assert.NotEqual(before!.Pixels.ToArray(), changed!.Pixels.ToArray());
-        }
-        finally { foreach (UnlitMaterial material in added) material.Dispose(); }
+                    var material = new UnlitMaterial { Shader = index % 2 == 0 ? template.Shader : other.Shader, AlbedoMap = template.AlbedoMap,
+                        BaseColorTint = new((index % 3) * .4f + .1f, .2f, .8f, 1),
+                        MaterialSampler = template.MaterialSampler with { MipLodBias = index * .125f } };
+                    Entity entity = edit.AddEntity(source, new(new Vector3((index % 8 - 3.5f) * .45f,
+                        (index / 8 - 3.5f) * .45f, 4), Quaternion.Identity, .15f));
+                    edit.ReplaceMaterial(entity, material);
+                }
+            }),
+            new(15, edit => edit.CaptureImage(image => expected = image)),
+        ]), "--no-taa", "--no-vsm");
+        SceneImages.AssertEqual(expected!, changed!);
+        Assert.NotEqual(before!.Pixels.ToArray(), changed!.Pixels.ToArray());
     }
 
     [SceneTheory]
@@ -240,8 +233,8 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
     [InlineData("vulkan")]
     public async Task UpdatingASharedTextureMatchesStartingWithTheNewPixels(string backend)
     {
-        using Texture shared = CreateColorTexture(255);
-        using Texture directTexture = CreateColorTexture(128);
+        Texture shared = CreateColorTexture(255);
+        Texture directTexture = CreateColorTexture(128);
         Task? update = null;
         SceneImage? before = null, changed = null, expected = null;
         await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 16,
@@ -265,8 +258,8 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
     [InlineData("d3d12")]
     public async Task ReplacingTheLastMaterialTextureReferenceMatchesStartingWithReplacement(string backend)
     {
-        using Texture original = CreateColorTexture(255);
-        using Texture replacement = CreateColorTexture(128);
+        Texture original = CreateColorTexture(255);
+        Texture replacement = CreateColorTexture(128);
         SceneImage? before = null, changed = null, expected = null;
         await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 12,
         [

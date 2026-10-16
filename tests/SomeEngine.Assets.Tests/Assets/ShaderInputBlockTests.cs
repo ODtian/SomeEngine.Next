@@ -40,13 +40,16 @@ public sealed class ShaderInputBlockTests
             Assert.Equal("consumer_material.slang", Assert.Single(entries.SourceNames));
         }
 
-        await using var loader = new AssetLoader(project.CreateStorage(), slang, description);
+        await using var loader = new AssetLoader(project.CreateStorage());
         using var materialAsset = new MaterialAsset { Name = "Standard" };
         materialAsset.GetBlock<MaterialBlock>().Shader = new(id);
         _ = new StandardMaterialParameters(materialAsset.GetBlock<MaterialBlock>()) { Roughness = 0.37f };
-        StandardMaterial instance = await materialAsset.CreateAsync<StandardMaterial>(loader);
-        Shader shader = Assert.IsType<Shader>(instance.Shader);
-        Assert.Same(shader, await loader.GetShaderAsync(new(id)));
+        using ShaderAsset shaderAsset = await ShaderAsset.OpenAsync(loader, new(id));
+        Shader shader = await shaderAsset.CreateAsync(slang, description);
+        StandardMaterial instance = await materialAsset.CreateAsync<StandardMaterial>(loader,
+            new Dictionary<AssetId<ShaderAsset>, Shader> { [new(id)] = shader },
+            new Dictionary<AssetId<TextureAsset>, Texture>());
+        Assert.Same(shader, instance.Shader);
         Assert.Equal(0.37f, instance.Roughness);
 
         Assert.True(shader.TryGetSlangEntry(0, "ClusterShade", SlangStage.Compute, out EntryPointReflection clusterEntry));

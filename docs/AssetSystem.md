@@ -28,7 +28,7 @@ SaveAsync 写出现有二进制文档并返回 AssetEntry。只有显式登记�
 
 人工原生定义保存自己的身份和强类型 Block。外部来源的 `.meta` 保存 Source ID、Importer 选择、强类型参数和必须保留的元素 ID 映射；`.import.json` 是可丢弃的构建记录。内容版本、文件路径、来源 ID 与资产 ID 不互相代替。缓存命中必须核验实际输入、输出内容及文档版本。
 
-Loader 与存储按已选条目取得字节范围。AssetLoader 的 `GetShaderAsync`、`GetTextureAsync` 按资产身份共享实际依赖，Material 的具体类型与使用期由业务控制。完整性、认证、压缩、包、差分和范围读取由原有通用实现提供。详见 [文件读写](../wiki/architecture/Assets/Asset-File-IO.md)、[引用和版本](../wiki/architecture/Assets/Asset-Identity-and-Dependencies.md)。
+Loader 与存储按已选条目取得字节范围。ShaderAsset.GetAsync、TextureAsset.GetAsync 以业务提供的强类型 WeakValues 复用存活实例，具体创建覆盖打开、Block 取得和完整资源创建；Material 的具体类型及实际资源引用由业务提供。完整性、认证、压缩、包、差分和范围读取由原有通用实现提供。详见 [文件读写](../wiki/architecture/Assets/Asset-File-IO.md)、[引用和版本](../wiki/architecture/Assets/Asset-Identity-and-Dependencies.md)。
 
 ## 扩展导入
 

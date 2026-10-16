@@ -11,11 +11,13 @@ public readonly struct SampleSceneMaterials : ISceneMaterials
     public const string ImportedTemplatePath = "assets/Materials/Imported.material.asset";
 
     public static async ValueTask<Material> CreateAsync(MaterialAsset asset, AssetLoader assets,
+        IReadOnlyDictionary<AssetId<ShaderAsset>, Shader> shaders,
+        IReadOnlyDictionary<AssetId<TextureAsset>, Texture> textures,
         CancellationToken cancellationToken = default)
     {
         AssetId<MaterialAsset> template = await asset.GetTemplateAsync(assets, cancellationToken);
         return template == ImportedTemplate
-            ? await asset.CreateAsync<ImportedScenes.SceneMaterial>(assets, cancellationToken)
-            : await EngineSceneMaterials.CreateAsync(asset, assets, cancellationToken);
+            ? await asset.CreateAsync<ImportedScenes.SceneMaterial>(assets, shaders, textures, cancellationToken)
+            : await EngineSceneMaterials.CreateAsync(asset, assets, shaders, textures, cancellationToken);
     }
 }

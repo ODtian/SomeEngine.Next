@@ -1,4 +1,5 @@
 using SlangShaderSharp;
+using SomeEngine.Core.Collections;
 using SomeEngine.Serialization;
 
 namespace SomeEngine.Assets.Schema;
@@ -8,10 +9,10 @@ namespace SomeEngine.Assets.Schema;
 public sealed partial record ShaderRef
 {
     internal EntryPointReflection ResolveEntry(
-        IReadOnlyDictionary<Guid, Shader> shaders,
+        IReadOnlyDictionary<AssetId<ShaderAsset>, Shader> shaders,
         int targetIndex = 0)
     {
-        Shader shader = shaders[Asset.Value];
+        Shader shader = shaders[Asset];
         if (!shader.TryGetSlangEntry(
                 targetIndex,
                 EntryPoint!,
@@ -23,15 +24,19 @@ public sealed partial record ShaderRef
         return entry;
     }
 
-    internal static async ValueTask<Dictionary<Guid, Shader>> LoadAsync(
+    public static async ValueTask<Dictionary<AssetId<ShaderAsset>, Shader>> LoadAsync(
         IEnumerable<Guid> references,
-        AssetLoader loader,
+        AssetLoader files,
+        WeakValues<AssetResourceKey<ShaderAsset>, Shader> values,
+        IGlobalSession slang, SessionDesc settings,
         CancellationToken cancellationToken = default)
     {
-        var shaders = new Dictionary<Guid, Shader>();
+        var shaders = new Dictionary<AssetId<ShaderAsset>, Shader>();
         foreach (Guid id in references.Where(static id => id != Guid.Empty).Distinct())
         {
-            shaders.Add(id, await loader.GetShaderAsync(new(id), cancellationToken).ConfigureAwait(false));
+            var reference = new AssetId<ShaderAsset>(id);
+            shaders.Add(reference, await ShaderAsset.GetAsync(files, reference, values, slang, settings,
+                cancellationToken).ConfigureAwait(false));
         }
         cancellationToken.ThrowIfCancellationRequested();
         return shaders;

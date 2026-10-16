@@ -4,7 +4,7 @@ using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets;
 
-/// <summary>Opens asset files and holds the shared shaders and textures it creates.</summary>
+/// <summary>Opens asset files and retains their file data within the configured budgets.</summary>
 public sealed partial class AssetLoader : IAsyncDisposable
 {
     private readonly IAssetStorage _storage;
@@ -36,6 +36,14 @@ public sealed partial class AssetLoader : IAsyncDisposable
     }
 
     public int MaxConcurrentReads => _options.MaxConcurrentReads;
+
+    /// <summary>The storage-selected file version used by a resource's acquisition key.</summary>
+    public Guid GetSourceVersion<T>(AssetId<T> id) where T : Asset
+    {
+        if (!_storage.TryFind(id.Value, out AssetEntry entry))
+            throw new KeyNotFoundException($"Asset {id} was not found in storage.");
+        return entry.Version;
+    }
 
     public async ValueTask<AssetFile> OpenFileAsync<T>(AssetId<T> id,
         string fileType, BinaryWireTypeDescriptor wireType, CancellationToken cancellationToken = default)
@@ -220,33 +228,18 @@ public sealed partial class AssetLoader : IAsyncDisposable
                 return new(_close);
             _closed = true;
             FileRead[] reads = [.. _files.Values];
-            Task<Shader>[] shaders = [.. _shaders.Values.Select(static read => read.Task)];
-            Task<Texture>[] textures = [.. _textures.Values.Select(static read => read.Task)];
             _files.Clear();
-            _shaders.Clear();
-            _textures.Clear();
             _cachedRootBytes = 0;
-            _close = CloseAsync(reads, shaders, textures, _cleanup);
+            _close = CloseAsync(reads, _cleanup);
             return new(_close);
         }
     }
 
-    private async Task CloseAsync(FileRead[] reads, Task<Shader>[] shaders, Task<Texture>[] textures, Task cleanup)
+    private async Task CloseAsync(FileRead[] reads, Task cleanup)
     {
         await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try { await _stop.CancelAsync().ConfigureAwait(false); }
         catch (Exception error) { lock (_gate) _closeErrors.Add(error); }
-        foreach (Task<Shader> read in shaders)
-            try { await read.ConfigureAwait(false); }
-            catch { }
-        foreach (Task<Texture> read in textures)
-        {
-            Texture texture;
-            try { texture = await read.ConfigureAwait(false); }
-            catch { continue; }
-            try { await texture.DisposeAsync().ConfigureAwait(false); }
-            catch (Exception error) { lock (_gate) _closeErrors.Add(error); }
-        }
         await cleanup.ConfigureAwait(false);
         foreach (FileRead read in reads)
         {

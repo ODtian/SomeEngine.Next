@@ -51,7 +51,7 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         using World main = new();
         using RenderWorld render = new();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
-        using var material = new StandardMaterial();
+        var material = new StandardMaterial();
         for (int index = 0; index < 128; index++)
         {
             Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, new Vector3(index, 0, 0));
@@ -93,8 +93,8 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         using World main = new();
         using RenderWorld render = new();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
-        using var first = new StandardMaterial();
-        using var second = new StandardMaterial();
+        var first = new StandardMaterial();
+        var second = new StandardMaterial();
         Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
         SetSourceBindings(main, source, first, default!, 1);
         ExtractAndApply(extraction, main, render);
@@ -108,8 +108,8 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         main.DestroyEntity(source);
         ExtractAndApply(extraction, main, render);
         Assert.Throws<KeyNotFoundException>(() => render.ReadMaterial(second.MaterialId));
-        Assert.False(first.IsDisposed);
-        Assert.False(second.IsDisposed);
+        Assert.Equal(0.5f, first.Roughness);
+        Assert.Equal(0.5f, second.Roughness);
     }
 
     [Fact]
@@ -118,8 +118,8 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         using World main = new();
         using RenderWorld render = new();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor(), new LightRenderExtractor());
-        using Texture texture = TextureAsset(91, 1);
-        using var material = new StandardMaterial { AlbedoMap = texture };
+        Texture texture = TextureAsset(91, 1);
+        var material = new StandardMaterial { AlbedoMap = texture };
         Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
         SetSourceBindings(main, source, material, default!, 1);
         main.Add(source, new DirectionalLight(Vector3.UnitZ, Vector3.One, 1));

@@ -115,3 +115,9 @@ Cluster 的提前准备与材质阶段解析共用入口选择。应用启动通
 这是破坏性 schema；旧反射字段和旧代码容器没有兼容 reader。编译器、来源、依赖、Block 编码或 target 设置变化时重新构建同一资产身份。
 
 实现入口：[ShaderAsset](../../../src/SomeEngine.Assets/Schema/ShaderAsset.cs)、[ShaderInputBlock](../../../src/SomeEngine.Assets/Schema/ShaderInputBlock.cs)、[ShaderSourceBlock](../../../src/SomeEngine.Assets/Schema/ShaderSourceBlock.cs)、[ClusterMaterialEntriesBlock](../../../src/SomeEngine.Assets/Schema/ClusterMaterialEntriesBlock.cs)、[ShaderBlock](../../../src/SomeEngine.Assets/Schema/ShaderBlock.cs)、[Shader](../../../src/SomeEngine.Resources/Shader.cs)、[项目来源说明](../../../docs/ShaderSources.md)。
+
+## 存活实例取得
+
+`ShaderAsset.GetAsync(files, id, values, slang, settings)` 接收业务持有的 `WeakValues<AssetResourceKey<ShaderAsset>, Shader>`。一个索引的使用范围固定 Slang 设置；完整取得键保存文件读取器来源、资产 ID 和存储选定版本。所有可变特化输入通过 `ShaderAsset.CreateAsync` 的明确调用建立独立结果。
+
+索引命中直接返回存活 Shader；唯一创建发起者在索引锁外打开 ShaderAsset、读取全部选定输入并创建完整 Shader。业务在自己的对象中保留实际引用；Shader 代码、反射与 Slang 数据的使用期由这些普通引用表达。完整取得与分批清理见 [WeakValues](../Weak-Values.md)。

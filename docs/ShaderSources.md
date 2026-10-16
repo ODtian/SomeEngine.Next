@@ -61,7 +61,7 @@ Shader shader = await asset.CreateAsync(
 
 这条路径恢复相同的直接 Slang 对象，并将所需代码交给最终 `byte[]`，由 `Shader` 通过普通引用持有。Asset 和文件随后可以释放，Shader 继续持有其代码及直接 Slang 对象。
 
-`AssetLoader` 在构造时接收实际 Slang 全局会话和一份 `SessionDesc`。材质与 Cluster、VirtualShadowMap 配置通过同一加载器取得实际共享 Shader，配置创建为 `block.CreateAsync(name, loader)`。`MaterialAsset.UpdateAsync<TMaterial>(material, loader)` 完整取得替代内容，并由具体材质生成代码更新原对象。
+业务持有实际 Slang 全局会话、一份 `SessionDesc` 和对应的强类型弱索引。`ShaderAsset.GetAsync(files, id, values, slang, settings)` 合并完整创建并复用存活实例；共享取得键包括文件来源、资产身份和选定文件版本。Cluster、VirtualShadowMap 配置以 `block.Create(name, shaders)` 消费已经取得的实际引用。`MaterialAsset.UpdateAsync<TMaterial>(material, files, shaders, textures)` 完整解析替代字段，再由具体材质生成代码更新原对象。
 
 ## 增量构建与失败
 

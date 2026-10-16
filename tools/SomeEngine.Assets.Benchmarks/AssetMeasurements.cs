@@ -90,7 +90,7 @@ internal static class AssetMeasurements
                 throw new InvalidOperationException("Replacing pixels changed an existing value.");
             return measurements.ToArray();
         }
-        finally { first?.Dispose(); second?.Dispose(); edited?.Dispose(); asset?.Dispose(); }
+        finally { edited?.Dispose(); asset?.Dispose(); }
 
         async ValueTask Record(Func<ValueTask> operation)
         {

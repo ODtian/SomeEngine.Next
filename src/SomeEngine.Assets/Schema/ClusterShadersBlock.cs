@@ -12,19 +12,12 @@ public sealed partial class ClusterShadersBlock : AssetBlock
 
     protected override void ValidateContent() => Validate("shader settings");
 
-    public async ValueTask<ClusterShaders> CreateAsync(
+    public ClusterShaders Create(
         string name,
-        AssetLoader loader,
-        CancellationToken cancellationToken = default)
+        IReadOnlyDictionary<AssetId<ShaderAsset>, Shader> shaders)
     {
-        ArgumentNullException.ThrowIfNull(loader);
         using ClusterShadersBlock copy = Duplicate();
-        cancellationToken.ThrowIfCancellationRequested();
         copy.Validate(name);
-        Dictionary<Guid, Shader> shaders = await ShaderRef.LoadAsync(
-            copy.References(),
-            loader,
-            cancellationToken).ConfigureAwait(false);
         var result = new ClusterShaders
         {
             Name = name,
@@ -32,7 +25,7 @@ public sealed partial class ClusterShadersBlock : AssetBlock
             {
                 Role = operation.Role,
                 Shaders = operation.Shaders!
-                    .Select(reference => shaders[reference.Asset.Value])
+                    .Select(reference => shaders[reference.Asset])
                     .ToImmutableList(),
                 Entries = operation.Shaders!
                     .Select(reference => reference.ResolveEntry(shaders))
@@ -41,7 +34,6 @@ public sealed partial class ClusterShadersBlock : AssetBlock
         };
         foreach (ShaderOperation operation in result.Operations)
             ValidateEntryStages(operation);
-        cancellationToken.ThrowIfCancellationRequested();
         return result;
     }
 

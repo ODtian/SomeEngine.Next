@@ -1,4 +1,5 @@
 using SomeEngine.Assets;
+using SomeEngine.Core.Collections;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
@@ -13,7 +14,7 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class ClusterAssetLoaderTests
 {
     [Fact]
-    public async Task ClusterRenderAssetRequestsEveryShaderThroughTheSameGenericLoader()
+    public async Task ClusterRenderAssetsUseTheSameLiveShaders()
     {
         using var directory = new TemporaryDirectory();
         var project = new AssetProject(directory.Path, []);
@@ -31,8 +32,7 @@ public sealed class ClusterAssetLoaderTests
         using ClusterShadersAsset cluster = CreateClusterRoot(shaderGuids);
         Guid clusterGuid = project.RegisterAsset(await cluster.SaveAsync(
             Path.Combine(project.RootPath, "assets/pipelines/main.clusterrender.asset")));
-        await using var loader = new AssetLoader(project.CreateStorage(), TestShaderLoading.Slang,
-            TestShaderLoading.CreateSessionDescription());
+        await using var loader = new AssetLoader(project.CreateStorage());
 
         ClusterShadersAsset[] opened = await Task.WhenAll(
             ClusterShadersAsset.OpenAsync(loader, new AssetId<ClusterShadersAsset>(clusterGuid)).AsTask(),
@@ -41,12 +41,15 @@ public sealed class ClusterAssetLoaderTests
         await using ClusterShadersAsset second = opened[1];
         Assert.NotSame(first, second);
         Assert.Equal(shaderGuids.Order(), first.Describe().Dependencies.Order());
-        ClusterShaders shaders = await first.GetBlock<ClusterShadersBlock>().CreateAsync(
-            first.Name,
-            loader);
-        ClusterShaders other = await second.GetBlock<ClusterShadersBlock>().CreateAsync(
-            second.Name,
-            loader);
+        var values = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
+        Dictionary<AssetId<ShaderAsset>, Shader> references = await ShaderRef.LoadAsync(
+            first.GetBlock<ClusterShadersBlock>().References(), loader, values,
+            TestShaderLoading.Slang, TestShaderLoading.CreateSessionDescription());
+        ClusterShaders shaders = first.GetBlock<ClusterShadersBlock>().Create(first.Name, references);
+        Dictionary<AssetId<ShaderAsset>, Shader> otherReferences = await ShaderRef.LoadAsync(
+            second.GetBlock<ClusterShadersBlock>().References(), loader, values,
+            TestShaderLoading.Slang, TestShaderLoading.CreateSessionDescription());
+        ClusterShaders other = second.GetBlock<ClusterShadersBlock>().Create(second.Name, otherReferences);
         Assert.NotSame(shaders, other);
         Assert.Equal("MainCluster", shaders.Name);
         Assert.Equal(roles.Length, shaders.Operations?.Count);

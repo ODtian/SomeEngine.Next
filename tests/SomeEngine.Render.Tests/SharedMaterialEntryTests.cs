@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using SomeEngine.Assets;
+using SomeEngine.Core.Collections;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
@@ -17,7 +18,10 @@ public sealed class SharedMaterialEntryTests(RenderTestDevice graphics) : IClass
     public async Task SharedStandardMaterialFeedsBothPipelineEntriesAfterExtraction()
     {
         await using var content = await SharedMaterialContent.CreateAsync();
-        using StandardMaterial material = await content.Material.CreateAsync<StandardMaterial>(content.Assets);
+        Shader shader = await ShaderAsset.GetAsync(content.Assets, content.Shader, content.Shaders, content.Slang, content.Settings);
+        StandardMaterial material = await content.Material.CreateAsync<StandardMaterial>(content.Assets,
+            new Dictionary<AssetId<ShaderAsset>, Shader> { [content.Shader] = shader },
+            new Dictionary<AssetId<TextureAsset>, Texture>());
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
@@ -45,7 +49,10 @@ public sealed class SharedMaterialEntryTests(RenderTestDevice graphics) : IClass
         await using var content = await SharedMaterialContent.CreateAsync();
         using var output = new StringWriter();
         Assert.Equal(0, await AssetCommands.RunAsync(content.Project, ["build", content.ShaderPath], output));
-        using StandardMaterial material = await content.Material.CreateAsync<StandardMaterial>(content.Assets);
+        Shader shader = await ShaderAsset.GetAsync(content.Assets, content.Shader, content.Shaders, content.Slang, content.Settings);
+        StandardMaterial material = await content.Material.CreateAsync<StandardMaterial>(content.Assets,
+            new Dictionary<AssetId<ShaderAsset>, Shader> { [content.Shader] = shader },
+            new Dictionary<AssetId<TextureAsset>, Texture>());
         Assert.True(material.Shader!.GetSlangEntryBytes(0,
             material.Shader.RequireSlangEntry(0, "FirstShade", SlangStage.Compute)).Length > 0);
         using var game = new World();
@@ -64,7 +71,7 @@ public sealed class SharedMaterialEntryTests(RenderTestDevice graphics) : IClass
         extraction.Extract(game);
         graphics.Apply(extraction, render);
 
-        Assert.Same(material.Shader, await content.Assets.GetShaderAsync(content.Shader));
+        Assert.Same(material.Shader, await ShaderAsset.GetAsync(content.Assets, content.Shader, content.Shaders, content.Slang, content.Settings));
         Assert.Equal(new float[] { .75f, 1 }, ExecuteEntries((StandardMaterial)render.ReadMaterial(material.MaterialId)));
     }
 
@@ -158,7 +165,10 @@ internal sealed class SharedMaterialContent : IAsyncDisposable
     private AssetLoader? _assets;
     private IGlobalSession _slang = null!;
     private SessionDesc _settings;
-    public AssetLoader Assets => _assets ??= new(Project.CreateStorage(), _slang, _settings);
+    public AssetLoader Assets => _assets ??= new(Project.CreateStorage());
+    public WeakValues<AssetResourceKey<ShaderAsset>, Shader> Shaders { get; } = new();
+    public IGlobalSession Slang => _slang;
+    public SessionDesc Settings => _settings;
     public MaterialAsset Material { get; } = new() { Name = "Shared business material" };
     public AssetId<ShaderAsset> Shader { get; private set; }
     public string ShaderPath => Path.Combine(_directory, "shared.shader.asset");

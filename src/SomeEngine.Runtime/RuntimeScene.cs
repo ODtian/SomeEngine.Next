@@ -22,7 +22,7 @@ internal sealed class RuntimeScene : IDisposable
     private readonly World _world;
     private (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings)[] _meshes = [];
     private readonly (Entity Entity, PointLight Value)[] _playbackLights;
-    private readonly Material[] _playbackMaterials;
+    private Material[] _playbackMaterials;
     private readonly Vector3 _initialCameraPosition;
     private readonly Vector3 _cameraOrbitTarget;
     private static readonly SomeEngine.Diagnostics.TraceSite MovingMeshesTrace = new("scene", "MovingMeshes");
@@ -76,8 +76,9 @@ internal sealed class RuntimeScene : IDisposable
 
     internal static async ValueTask<RuntimeScene> CreateAsync<TMaterials>(
         World world,
-        AssetLoader assets) where TMaterials : ISceneMaterials
+        ApplicationContent content) where TMaterials : ISceneMaterials
     {
+        AssetLoader assets = content.Files;
         Entity[] instances = Entities(world, new QueryDefinitionBuilder().Read<MeshSource>().Read<WorldTransform>());
         Entity[] cameras = Entities(world, new QueryDefinitionBuilder().Read<SceneCamera>());
         if (cameras.Length != 1) throw new InvalidDataException("The Game world must contain one scene camera.");
@@ -127,7 +128,19 @@ internal sealed class RuntimeScene : IDisposable
                 {
                     using MaterialAsset file = await MaterialAsset.OpenAsync(assets, materialIds[index], cancellationToken)
                         .ConfigureAwait(false);
-                    loadedMaterials[index] = await TMaterials.CreateAsync(file, assets, cancellationToken).ConfigureAwait(false);
+                    using MaterialBlock material = await file.ResolveAsync(assets, cancellationToken).ConfigureAwait(false);
+                    var shaders = new Dictionary<AssetId<ShaderAsset>, Shader>();
+                    var textures = new Dictionary<AssetId<TextureAsset>, Texture>();
+                    if (!material.Shader.IsEmpty)
+                        shaders.Add(material.Shader, await ShaderAsset.GetAsync(assets, material.Shader,
+                            content.ShaderValues, content.Slang, content.ShaderSettings, cancellationToken).ConfigureAwait(false));
+                    foreach (MaterialParameter parameter in material.Parameters)
+                        if (parameter.Kind == MaterialParameterKind.Texture && !parameter.Texture.IsEmpty &&
+                            !textures.ContainsKey(parameter.Texture))
+                            textures.Add(parameter.Texture, await TextureAsset.GetAsync(assets, parameter.Texture,
+                                content.TextureValues, cancellationToken).ConfigureAwait(false));
+                    loadedMaterials[index] = await TMaterials.CreateAsync(file, assets, shaders, textures,
+                        cancellationToken).ConfigureAwait(false);
                 }).ConfigureAwait(false);
             for (int index = 0; index < materialIds.Length; index++)
             {
@@ -194,11 +207,6 @@ internal sealed class RuntimeScene : IDisposable
         catch (Exception failure)
         {
             var errors = new List<Exception> { failure };
-            foreach (Material material in materials.Values)
-                try { material.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
-            foreach (Material? material in loadedMaterials)
-                if (material is not null)
-                    try { material.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
             foreach (var mesh in meshes.Values)
             {
                 try { mesh.Source.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
@@ -365,8 +373,7 @@ internal sealed class RuntimeScene : IDisposable
         var errors = new List<Exception>();
         try { _world.ReleaseQuery(_motionQuery); }
         catch (Exception error) { errors.Add(error); }
-        foreach (Material material in _playbackMaterials)
-            try { material.Dispose(); } catch (Exception error) { errors.Add(error); }
+        _playbackMaterials = [];
         foreach (var mesh in _meshes)
         {
             try { mesh.Source.Dispose(); } catch (Exception error) { errors.Add(error); }
