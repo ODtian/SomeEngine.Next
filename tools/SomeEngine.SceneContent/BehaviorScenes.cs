@@ -32,6 +32,10 @@ public static partial class BehaviorScenes
         AssetEntry entry = project.Manifest.Assets.Values.Single(value => value.Name == "green sphere" && value.AssetType == MaterialAsset.FileType);
         using var material = await UnlitMaterialAsset.OpenAsync(loader, new(entry.AssetGuid));
         material.GetBlock<MaterialBlock>().Shader = new(project.Resolve("assets/Shaders/deformed-phong.shader")!.Value);
+        _ = new UnlitMaterialParameters(material.GetBlock<MaterialBlock>())
+        {
+            AlbedoMap = new(project.Manifest.Assets.Values.Single(value => value.Name == "Blend checker" && value.AssetType == TextureAsset.FileType).AssetGuid),
+        };
         project.RegisterAsset(await material.SaveAsync(Path.Combine(destination, entry.Path)));
         using var red = await MeshAsset.OpenAsync(loader,
             new(project.Manifest.Assets.Values.Single(value => value.Name == "red sphere" && value.AssetType == MeshAsset.FileType).AssetGuid));
