@@ -298,6 +298,13 @@ public static partial class PropertyAnimation
                 RefreshSources<T>(world, target);
             }
             world.ExecuteBufferWrite<Track<T>>(available.Animation, static tracks => tracks.Clear());
+            Timeline previousTimeline = world.Read<Timeline>(available.Animation);
+            world.Replace(available.Animation, new Timeline { Starts = previousTimeline.Starts, Completions = previousTimeline.Completions });
+            if (world.HasBuffer<TimelineStage>(available.Animation))
+                world.ExecuteBufferWrite<TimelineStage>(available.Animation, static stages =>
+                {
+                    while (stages.Count > 0) stages.SwapRemoveAt(stages.Count - 1);
+                });
             return available.Animation;
         }
         Entity animation = world.CreateEntity(new Timeline());
