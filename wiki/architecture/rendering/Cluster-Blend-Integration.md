@@ -103,6 +103,8 @@ edit.SetXray(entity, new Xray(
 
 `SceneTiming.Instances` 在场景完成时记录共用实例存储的实际行数、批次数、容量与属性字节数，效果增加的实例属性进入该项；共享几何仍由 `GeometryUsedBytes` 等既有字段记录。
 
+XY 额外的候选视图参数由同一 LightingFeature 持有，透明与贴花共用。计量在统一使用与容量字节中计入一次 `192 × viewCount`；上传 arena 的 RHI 分配沿既有共享分配口径记录。PBR 光照继续使用原来的 16 切片参数。
+
 ## 行为与交付对应
 
 所有图像检查经过 `Application.RunAsync`、`SceneScript`、游戏编辑和线性图像读回，失败图沿公共设施输出实际、期望与差异 PNG。默认 `dotnet test` 同时执行 [行为检查规则](../../harness/Behavior-Checks.md)。
