@@ -12,6 +12,32 @@ public sealed class TransparencyGeometryTests(TransparencyContentFixture content
     [SceneTheory]
     [InlineData("d3d12")]
     [InlineData("vulkan")]
+    public async Task TransparentDeformedPhongPartsAtWindowResolutionMatchOpaqueSurfaces(string backend)
+    {
+        SceneLinearImage? opaque = null, transparent = null;
+        await SceneImages.RunAsync(backend, new SceneScript(content.DeformedPhongParts, 16,
+        [
+            new(0, edit =>
+            {
+                Material material = edit.GetMaterial(edit.MeshEntities[0]);
+                material.State = material.State with { TwoSided = true };
+            }),
+            new(7, edit => edit.CaptureLinearImage(image => opaque = image)),
+            new(8, edit =>
+            {
+                Material material = edit.GetMaterial(edit.MeshEntities[0]);
+                material.State = material.State with { Surface = SurfaceMode.Translucent };
+            }),
+            new(15, edit => edit.CaptureLinearImage(image => transparent = image)),
+        ]) { WaitForFrames = false },
+            "--hardware-raster", "--shading-path", "forward", "--no-taa", "--no-vsm");
+        Assert.Equal((1280, 720), (transparent!.Frame.Width, transparent.Frame.Height));
+        SceneImages.AssertLinearEqual(opaque!, transparent, .003f);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
     public async Task TransparentCurvedGeometryMatchesAcrossRasterSourcesAndBufferBatches(string backend)
     {
         var images = new List<SceneLinearImage>();

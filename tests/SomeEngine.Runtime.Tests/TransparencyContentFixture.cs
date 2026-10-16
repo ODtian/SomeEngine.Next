@@ -10,6 +10,7 @@ public sealed class TransparencyContentFixture : IAsyncLifetime
     public string Spheres => Path.Combine(_directory, "spheres");
     public string Lit => Path.Combine(_directory, "lit");
     public string DeformedPhong => Path.Combine(_directory, "deformed-phong");
+    public string DeformedPhongParts => Path.Combine(_directory, "deformed-phong-parts");
 
     public async Task InitializeAsync()
     {
@@ -26,6 +27,7 @@ public sealed class TransparencyContentFixture : IAsyncLifetime
             await SomeEngine.SceneContent.BehaviorScenes.CreateIntersectingPanelsAsync(Spheres, DirectoryPath);
             await SomeEngine.SceneContent.BehaviorScenes.CreateLitTransparencyAsync(Spheres, Lit);
             await SomeEngine.SceneContent.BehaviorScenes.CreateDeformedPhongSpheresAsync(Spheres, DeformedPhong);
+            await SomeEngine.SceneContent.BehaviorScenes.CreateDeformedPhongPartsAsync(Spheres, DeformedPhongParts);
         }
         catch { await DisposeAsync(); throw; }
     }
