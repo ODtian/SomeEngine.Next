@@ -6,22 +6,31 @@ using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Checks;
 
-internal static class CheckAnimation
+internal static partial class CheckAnimation
 {
     public static int Main(string[] args)
     {
+        if (args.Contains("--full-benchmark"))
+        {
+            FullPathMeasurements.Run();
+            return 0;
+        }
         if (args.Contains("--benchmark"))
         {
             BatchMeasurements.Run();
             return 0;
         }
+        global::SomeEngine.ECS.Tests.FieldAccessChecks.VerifyAll();
+        global::SomeEngine.Tools.EcsAotSmoke.ComponentBytesSmoke.Check();
+        global::SomeEngine.Tools.EcsAotSmoke.TypedFieldSmoke.Check();
+        CheckGeneratedFieldPlayback();
         CheckTypedBatch();
         CheckManagedHistory();
         CheckSpring();
         CheckCustomValue();
         CheckFunction();
         CheckClocksAndCompletion();
-        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-batch managed-history spring custom-value function clocks completion");
+        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-batch managed-history spring custom-value function clocks completion");
         return 0;
     }
 
