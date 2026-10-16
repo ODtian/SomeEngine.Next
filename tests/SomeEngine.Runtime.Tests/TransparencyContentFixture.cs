@@ -17,7 +17,11 @@ public sealed class TransparencyContentFixture : IAsyncLifetime
         if (source is null) throw new DirectoryNotFoundException("Engine sources are required to build transparent scene content.");
         try
         {
-            await SomeEngine.SceneContent.SceneContent.GenerateSpheresAsync(Spheres, source);
+            string? cooked = Environment.GetEnvironmentVariable("SOMEENGINE_TEST_COOKED_CONTENT");
+            if (cooked is null)
+                await SomeEngine.SceneContent.SceneContent.GenerateSpheresAsync(Spheres, source);
+            else
+                await SomeEngine.SceneContent.SceneContent.GenerateSpheresFromCookedAsync(Spheres, cooked);
             await SomeEngine.SceneContent.BehaviorScenes.CreateIntersectingPanelsAsync(Spheres, DirectoryPath);
             await SomeEngine.SceneContent.BehaviorScenes.CreateLitTransparencyAsync(Spheres, Lit);
         }

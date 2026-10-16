@@ -11,8 +11,7 @@ internal readonly record struct BlendMeasurementPasses(
     GraphRegionId Color, GraphPassId Resolve, GraphRegionId Feedback);
 
 internal readonly record struct BlendMeasurementBuffers(
-    GraphBufferId TriangleCount, GraphBufferId ReferenceCounts, uint ReferenceCountLength,
-    uint TriangleStride, ulong FixedBytes, ulong CapacityBytes, ulong AllocationBytes, uint TriangleCapacity);
+    GraphBufferId TriangleCount, uint TriangleStride, ulong FixedBytes, ulong CapacityBytes, ulong AllocationBytes, uint TriangleCapacity);
 
 internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRenderGraphFrameExecutionObserver
 {
@@ -54,7 +53,7 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
             passes.Request == default ? passes.GeometryLast : passes.Request,
             empty: passes.Request == default);
         AddInterval(ref edit, queries, 4, passes.Color, passes.Resolve, passes.Resolve);
-        ulong byteCount = 6u * sizeof(ulong) + 16u + buffers.ReferenceCountLength * sizeof(uint);
+        ulong byteCount = 6u * sizeof(ulong) + 16u;
         GraphBufferId results = _results = edit.CreateBuffer(new BufferDesc(byteCount,
             BufferUsages.QueryResolve | BufferUsages.CopyDestination | BufferUsages.CopySource,
             "Cluster blend timing and work results"));
@@ -103,8 +102,7 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
         if (!_frames.TryGetValue(tag, out MeasuredFrame? frame)) return;
         ReadOnlySpan<ulong> times = MemoryMarshal.Cast<byte, ulong>(bytes[..48]);
         uint triangles = BinaryPrimitives.ReadUInt32LittleEndian(bytes[48..]);
-        uint references = 0;
-        foreach (uint count in MemoryMarshal.Cast<byte, uint>(bytes[64..])) references += count;
+        uint references = BinaryPrimitives.ReadUInt32LittleEndian(bytes[52..]);
         frame.Result = new(frame.SimulationFrame, tag,
             1000.0 * (times[1] - times[0]) / _frequency,
             1000.0 * (times[3] - times[2]) / _frequency,
@@ -152,8 +150,6 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
         {
             pass.Read(data.Queries, new QueryRange(0, 6));
             _ = pass.Read(data.Buffers.TriangleCount, new BufferRange(0, 16), PipelineSync.Copy, ResourceAccess.CopySource);
-            _ = pass.Read(data.Buffers.ReferenceCounts, new BufferRange(0, data.Buffers.ReferenceCountLength * sizeof(uint)),
-                PipelineSync.Copy, ResourceAccess.CopySource);
             _ = pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
         }
 
@@ -162,8 +158,6 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
             var destination = commands.GetBuffer(data.Destination);
             commands.ResolveQueries(data.Queries, 0, 6, destination, new BufferRange(0, 48));
             commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.Buffers.TriangleCount), 0, destination, 48, 16));
-            commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.Buffers.ReferenceCounts), 0, destination, 64,
-                data.Buffers.ReferenceCountLength * sizeof(uint)));
         }
     }
 }
