@@ -17,8 +17,9 @@
 
 ```powershell
 $env:DOTNET_TieredCompilation = '0'
-& ./tools/Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.exe --benchmark
-& ./tools/Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.exe --full-benchmark
+$animationChecks = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.exe'
+& ./tools/Invoke-Benchmark.ps1 $animationChecks --benchmark
+& ./tools/Invoke-Benchmark.ps1 $animationChecks --full-benchmark
 ```
 
 NativeAOT 使用相同消费者与输入，发布时生成方法映射以核对代码体积。
@@ -27,8 +28,9 @@ NativeAOT 使用相同消费者与输入，发布时生成方法映射以核对�
 
 ```powershell
 & ./tools/Invoke-Benchmark.ps1 dotnet publish tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release -r win-x64 --self-contained true '--property:PublishAot=true' '--property:IlcGenerateMapFile=true' '--property:OptimizationPreference=Speed' '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false' -o tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish
-& ./tools/Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Animation.Checks.exe
-& ./tools/Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Animation.Checks.exe --full-benchmark
+$nativeChecks = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Animation.Checks.exe'
+& ./tools/Invoke-Benchmark.ps1 $nativeChecks
+& ./tools/Invoke-Benchmark.ps1 $nativeChecks --full-benchmark
 ```
 
 ## 测量范围
