@@ -23,6 +23,8 @@ $env:DOTNET_TieredCompilation = '0'
 
 NativeAOT 使用相同消费者与输入，发布时生成方法映射以核对代码体积。
 
+`--codegen` 独立执行静态 `IEasing` Tween、Spring、消费者 History、标量函数回调和引用字段批次。Release 使用 `DOTNET_JitDisasm` 记录这些具体方法，NativeAOT 使用同一次发布的方法映射与反汇编核对入口、内循环和字节数。此入口与性能采样分别运行。
+
 ```powershell
 & F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 dotnet publish tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release -r win-x64 --self-contained true '--property:PublishAot=true' '--property:IlcGenerateMapFile=true' '--property:OptimizationPreference=Speed' '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false' -o tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish
 & F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Animation.Checks.exe

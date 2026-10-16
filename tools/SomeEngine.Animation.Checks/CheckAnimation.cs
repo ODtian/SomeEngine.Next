@@ -10,6 +10,11 @@ internal static partial class CheckAnimation
 {
     public static int Main(string[] args)
     {
+        if (args.Contains("--codegen"))
+        {
+            CodeGenerationChecks.Run();
+            return 0;
+        }
         if (args.Contains("--full-benchmark"))
         {
             FullPathMeasurements.Run(args.Contains("--smoke") ? [1_000] : [1_000, 10_000, 100_000]);
