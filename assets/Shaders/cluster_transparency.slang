@@ -5,6 +5,7 @@
 #include "vsm_receiver_requests.slang"
 #include "cluster_raster_shared.slang"
 #include "render_lighting.slang"
+#include "wave_aggregation.slang"
 
 interface ITransparencyMaterials
 {
@@ -292,8 +293,29 @@ bool TransparencyCovered(TransparencyTriangle triangle, float2 pixel, out float 
 struct TransparencyCandidates
 {
     uint Slice, Reference, Work, Primitive, Projected;
-    uint Cell;
+    uint Cell, LastSlice;
+    uint4 OccupiedSlices;
 };
+
+TransparencyCandidates BeginTransparencyCandidates(uint3 pixel, float opaque)
+{
+    TransparencyCandidates input = {};
+    if (TransparencyUniforms.UseIndex == 0u) return input;
+    ClusteredLightGridParameters grid = TransparencyLightingViews[pixel.z];
+    uint2 tile = pixel.xy / uint2(grid.TileSizeX, grid.TileSizeY);
+    uint tileIndex = (pixel.z * grid.TileCountY + tile.y) * grid.TileCountX + tile.x;
+    uint leader = WaveMaskFirstLane(WaveMatchingLanes(tileIndex));
+    uint4 occupied = 0u.xxxx;
+    if (WaveGetLaneIndex() == leader)
+        for (uint slice = 0u; slice < grid.DepthSliceCount; slice++)
+            if (TransparencyTileCounts[TransparencyCell(pixel.z, uint3(tile, slice))] != 0u)
+                occupied[slice >> 5u] |= 1u << (slice & 31u);
+    input.OccupiedSlices = WaveReadLaneAt(occupied, leader);
+    input.LastSlice = opaque < 1.0
+        ? ClusteredLightDepthSlice(grid, TransparencyViewDepth(pixel.z, float2(pixel.xy) + .5, opaque))
+        : grid.DepthSliceCount - 1u;
+    return input;
+}
 
 bool ReadTransparencySource<TMaterials : ITransparencyMaterials>(uniform TMaterials materials,
     uint view, inout TransparencyCandidates input, out TransparencyTriangle triangle)
@@ -335,8 +357,13 @@ bool NextTransparencyCandidate<TMaterials : ITransparencyMaterials>(uniform TMat
     }
     ClusteredLightGridParameters grid = TransparencyLightingViews[pixel.z];
     uint2 tile = pixel.xy / uint2(grid.TileSizeX, grid.TileSizeY);
-    while (input.Slice < grid.DepthSliceCount)
+    while (input.Slice <= input.LastSlice)
     {
+        uint word = input.Slice >> 5u;
+        uint occupied = input.OccupiedSlices[word] & (0xFFFFFFFFu << (input.Slice & 31u));
+        if (occupied == 0u) { input.Slice = (word + 1u) * 32u; continue; }
+        input.Slice = word * 32u + uint(firstbitlow(occupied));
+        if (input.Slice > input.LastSlice) break;
         uint cell = TransparencyCell(pixel.z, uint3(tile, input.Slice));
         if (TransparencyCellStreams[cell] == 0u)
         {
@@ -378,7 +405,10 @@ bool TransparencyHit<TMaterials : ITransparencyMaterials>(uniform TMaterials mat
     TransparencyTriangle triangle, uint cell, float opaque, out float depth)
 {
     if (!TransparencyCovered(triangle, float2(pixel.xy) + .5, depth)) return false;
-    if (!materials.cover(triangle.Bin, triangle.Source, triangle.Primitive, pixel, depth, depth) || depth < 0.0 || depth > opaque) return false;
+    float resultDepth;
+    if (!materials.cover(triangle.Bin, triangle.Source, triangle.Primitive, pixel, depth, resultDepth)) return false;
+    depth = resultDepth;
+    if (depth < 0.0 || depth > opaque) return false;
     return cell == 0xFFFFFFFFu || cell == ClusteredLightCellIndex(TransparencyLightingViews[pixel.z], pixel.z, pixel.xy,
         TransparencyViewDepth(pixel.z, float2(pixel.xy) + .5, depth));
 }
@@ -387,7 +417,7 @@ void RequestTransparencyShadows<TMaterials : ITransparencyMaterials>(uniform TMa
 {
     if (pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height || pixel.z >= TransparencyUniforms.ViewCount) return;
     float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
-    TransparencyCandidates input = {};
+    TransparencyCandidates input = BeginTransparencyCandidates(pixel, opaque);
     TransparencyTriangle triangle;
     while (NextTransparencyCandidate(materials, pixel, input, triangle))
     {
@@ -406,7 +436,8 @@ void ResolveTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials
     if (pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height || pixel.z >= TransparencyUniforms.ViewCount) return;
     if (TransparencyTriangleCount.Load(0u) == 0u) return;
     float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
-    float4 background = TransparencyColor[pixel];
+    float4 background = 0.0.xxxx;
+    bool backgroundRead = false, contributed = false;
     float3 color = 0.0.xxx;
     float transmission = 1.0, previousDepth = -1.0;
     uint previousSource = 0u, previousPrimitive = 0u;
@@ -415,7 +446,7 @@ void ResolveTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials
     {
         float4 depths = 2.0.xxxx;
         uint4 sources = 0u.xxxx, primitives = 0u.xxxx, bins = 0xFFFFFFFFu.xxxx;
-        TransparencyCandidates input = {};
+        TransparencyCandidates input = BeginTransparencyCandidates(pixel, opaque);
         TransparencyTriangle triangle;
         while (NextTransparencyCandidate(materials, pixel, input, triangle))
         {
@@ -435,6 +466,7 @@ void ResolveTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials
                 }
             }
         }
+        if (bins.x == 0xFFFFFFFFu) break;
         remaining = bins.w != 0xFFFFFFFFu;
         [unroll]
         for (uint item = 0u; item < 4u; item++)
@@ -442,17 +474,28 @@ void ResolveTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials
             if (bins[item] == 0xFFFFFFFFu) break;
             float4 surface = materials.shade(bins[item], sources[item], primitives[item], pixel, depths[item]);
             float alpha = saturate(surface.a);
-            color += transmission * alpha * surface.rgb;
-            transmission *= 1.0 - alpha;
+            if (alpha > 0.0)
+            {
+                if (!backgroundRead) { background = TransparencyColor[pixel]; backgroundRead = true; }
+                color += transmission * alpha * surface.rgb;
+                transmission *= 1.0 - alpha;
+                contributed = true;
+            }
             previousDepth = depths[item]; previousSource = sources[item]; previousPrimitive = primitives[item];
         }
-        float limit = max(TransparencyUniforms.ColorLimit, max(background.r, max(background.g, background.b)));
-        if (remaining && TransparencyUniforms.MaximumError > 0.0 && transmission * limit * .5 <= TransparencyUniforms.MaximumError)
+        if (remaining && TransparencyUniforms.MaximumError > 0.0)
         {
-            color += transmission * limit * .5;
-            transmission = 0.0;
-            break;
+            if (!backgroundRead) { background = TransparencyColor[pixel]; backgroundRead = true; }
+            float limit = max(TransparencyUniforms.ColorLimit, max(background.r, max(background.g, background.b)));
+            if (transmission * limit * .5 <= TransparencyUniforms.MaximumError)
+            {
+                color += transmission * limit * .5;
+                transmission = 0.0;
+                contributed = true;
+                break;
+            }
         }
     }
+    if (!contributed) return;
     TransparencyColor[pixel] = float4(color + transmission * background.rgb, background.a);
 }
