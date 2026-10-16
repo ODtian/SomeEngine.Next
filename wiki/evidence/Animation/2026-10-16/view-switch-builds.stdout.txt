@@ -1,0 +1,11 @@
+
+
+    0 个警告
+    0 个错误
+
+已用时间 00:01:09.56
+VIEWS_DECLARED_SWITCHES samples=1000 bytes=96000
+VIEWS_DECLARED_SWITCH_PHASE selection=0 samples=333 state=0 views=31968 animation=0 declare=0 set=0 builds=333 calculations=333
+VIEWS_DECLARED_SWITCH_PHASE selection=1 samples=333 state=0 views=31968 animation=0 declare=0 set=0 builds=333 calculations=333
+VIEWS_DECLARED_SWITCH_PHASE selection=2 samples=334 state=0 views=32064 animation=0 declare=0 set=0 builds=334 calculations=334
+VIEWS_QUIET_FRAME bytes=0 builds=0 calculations=0
