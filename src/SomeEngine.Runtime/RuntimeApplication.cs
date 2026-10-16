@@ -749,7 +749,7 @@ internal static class RuntimeApplication
                 EnableFrameMetricsReadback = metrics,
                 MeasureBlending = preview is null && options.MeasureBlending,
                 BlendIndex = options.BlendIndex,
-                BlendTriangleCapacity = script?.BlendTriangleCapacity ?? 262_144,
+                BlendTriangleCapacity = script?.BlendTriangleCapacity ?? ClusterPipelineOptions.DefaultBlendTriangleCapacity,
                 BlendReferenceCapacity = script?.BlendReferenceCapacity ?? 1_048_576,
             }, viewGrid: blendGrid);
 

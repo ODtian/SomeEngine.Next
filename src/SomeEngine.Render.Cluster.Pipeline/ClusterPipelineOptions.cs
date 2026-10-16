@@ -31,6 +31,7 @@ public enum ClusterBlendIndex : byte
 /// <summary>Capacity and quality policy for Cluster visibility graph construction.</summary>
 public sealed record ClusterPipelineOptions
 {
+    public const uint DefaultBlendTriangleCapacity = 524_288;
     private const uint CandidateThreadsPerGroup = 64;
     private const uint PortableDispatchDimension = 65_535;
 
@@ -77,7 +78,7 @@ public sealed record ClusterPipelineOptions
     public bool MeasureBlending { get; init; }
     public ClusterBlendIndex BlendIndex { get; init; } = ClusterBlendIndex.Xyz;
     /// <summary>Projected primitives retained together; remaining primitives continue through the source batches.</summary>
-    public uint BlendTriangleCapacity { get; init; } = 262_144;
+    public uint BlendTriangleCapacity { get; init; } = DefaultBlendTriangleCapacity;
     /// <summary>Continuous cell references retained together; remaining cells continue through the source batches.</summary>
     public uint BlendReferenceCapacity { get; init; } = 1_048_576;
 

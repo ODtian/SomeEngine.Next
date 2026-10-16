@@ -34,7 +34,7 @@ public sealed class SceneScript
     public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
     /// <summary>Maximum hierarchy, candidate and deferred entries retained by the geometry pipeline.</summary>
     public uint ClusterWorkCapacity { get; init; } = 1_048_576;
-    public uint BlendTriangleCapacity { get; init; } = 262_144;
+    public uint BlendTriangleCapacity { get; init; } = ClusterPipelineOptions.DefaultBlendTriangleCapacity;
     public uint BlendReferenceCapacity { get; init; } = 1_048_576;
     public Action<ClusterBlendMetrics>? BlendFrameCompleted { get; init; }
     public Func<ApplicationRendering, IApplicationColorFeature>? CreateColorFeature { get; init; }
