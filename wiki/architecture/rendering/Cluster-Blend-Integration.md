@@ -117,4 +117,6 @@ edit.SetXray(entity, new Xray(
 
 `OrderedRenderingTests` 的三类 D3D12 硬件对照均已通过，整图线性颜色容差为 0.001。Vulkan 的 stencil 写入检查以同一容差通过，并开启 `--measure-blending`，覆盖整数图与硬件附件的两次往返、正反面状态、depth-fail 和读写掩码。每项经过 16 个脚本帧，运行入口同时执行行为规则检查。
 
+实际 pass 计时通过同一 Vulkan 硬件检查：公共 `BlendFrameCompleted` 交付 16 份逐帧统计，tile 图像对应的第 7 帧与硬件图像对应的第 15 帧均有大于零的 `MaterialCompositeMs`。计时附着于实际执行的 pass，覆盖 stencil 的打包、附件传输、硬件使用与解包链。
+
 交付分支为 `codex/tile-blending-221`；[PR #229](https://github.com/ODtian/SomeEngine.Next/pull/229) 汇集全部规格工作。

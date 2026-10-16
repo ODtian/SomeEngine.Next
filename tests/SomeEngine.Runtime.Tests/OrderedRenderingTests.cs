@@ -3,6 +3,7 @@ using Game.Content;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Graphics;
+using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Runtime.Tests;
@@ -108,6 +109,7 @@ public sealed class OrderedRenderingTests(OrderedContentFixture content)
     public async Task StencilFailDepthFailAndFaceOperationsMatchHardwareMasks(string backend)
     {
         SceneLinearImage? tile = null, hardware = null;
+        var measurements = new List<ClusterBlendMetrics>();
         Matrix4x4 view = default;
         var writerFace = new StencilFaceState(StencilOperation.Keep, StencilOperation.IncrementWrap,
             StencilOperation.Replace, CompareOperation.Always);
@@ -186,9 +188,16 @@ public sealed class OrderedRenderingTests(OrderedContentFixture content)
                 foreach (HardwareOrderedDraw draw in references) draw.Enabled = true;
             }),
             new(15, edit => edit.CaptureLinearImage(image => hardware = image)),
-        ]) { WaitForFrames = false, CreateColorFeature = rendering => new HardwareOrderedFeature(rendering, references, view, roundTripProbe) },
+        ])
+        {
+            WaitForFrames = false, BlendFrameCompleted = measurements.Add,
+            CreateColorFeature = rendering => new HardwareOrderedFeature(rendering, references, view, roundTripProbe),
+        },
             "--hardware-raster", "--shading-path", "forward", "--no-taa", "--no-vsm", "--measure-blending");
         SceneImages.AssertLinearEqual(hardware!, tile!, .001f);
+        Assert.Equal(16, measurements.Count);
+        Assert.True(measurements.Single(frame => frame.SimulationFrame == 7).MaterialCompositeMs > 0);
+        Assert.True(measurements.Single(frame => frame.SimulationFrame == 15).MaterialCompositeMs > 0);
     }
 
     private static Vector3[] RedPanel(TransformQvvs transform) => new Vector3[]
