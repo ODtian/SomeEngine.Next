@@ -7,14 +7,39 @@
 - 状态：规格已确定，待实现。规格见 `docs/Pose-Animation-Spec.md`。
 - 混合使用 `IValueOps<T>` 的批量版本，按骨骼数组做 SIMD。
 - 蒙皮输出作为一种 Deform 实现接入 cluster 渲染（[[architecture/cluster/Deform-Cache|Deform Cache]]）。
-- 片段压缩是可替换的算法接口：导入时的 `IAnimationClipEncoder` 与运行时按编码器标识解析为函数指针的解码器，由项目通过 DI 提供（与 `IClusterVertexEncoder` 相同方式）；默认实现参考 ACL。
-- 骨骼不是实体；挂点按需成为实体。最终姿势存于世界级姿势存储，实例以 `PoseRange` 引用，唯一写入方是姿势求值系统。
+- 每种片段方案由 Importer 与 `AnimationClipBlock` 子类组成，来源 `.meta` 选择具体组合。`RawClipBlock`、`AclClipBlock` 和用户 Block 经同一 `Sampler` 提供采样函数及共享数据；公共 glTF 曲线读取由普通库函数提供。
+- 骨骼按数组存储，挂点按需成为实体。最终局部姿势、模型姿势和蒙皮矩阵存于世界级连续姿势存储，实例以 `PoseRange` 引用，唯一写入方是姿势求值系统。
 - 读取口子：`PoseAnimation.ModelPose(world, entity)` 提供只读模型空间姿势及版本。
 - 根运动输出 `RootMotionDelta`，由移动系统决定如何应用。
 
 ## Non-goals
 - 不把每根骨骼表示为一条属性动画轨道。
 - 推迟：物理控制与需要物理查询的 IK、骨架间重定向、可编辑的图资产、基于姿势的游戏功能。
+
+## 共同执行规则
+
+2026-10-16 确认的[完整规格](../../../docs/Animation-Typed-Execution-Spec.md)规定属性与姿势共用 Timeline、阶段、事件、静态值运算、层及公开图扩展。`Spec<T, TOps, TParameters, TState, TEvaluator>` 保留具体算法类型，参数和状态可持有托管引用，姿势叶节点通过共同公开声明和安装能力接入。
+
+片段参数、压缩数据和采样入口由共享资产持有；节点关系、输出范围、候选过渡和混合点由编译图持有；时间、图输入、活动状态及算法历史由实例持有。中间姿势沿 Job 线程复用存储，最终姿势及矩阵保持在连续姿势存储中。
+
+Block 属性、图配置及实例化采用低频对象多态。逐帧采样、混合、层和后处理以 managed 函数指针进入包含完整数组循环的具体批次，循环内部保留类型、SIMD 和内联机会。图编译及显式关系修改建立来源与输出次序，每帧处理时间、活动状态和权重。层权重通过生成通道与强类型 Spec 接入属性动画。
+
+顺序为时间线、图与层、后处理、层级传播、蒙皮矩阵、提取。求值来源向共同时间线提交完成状态；事件以计数公开，根运动交给移动系统应用。数据沿 Game world → Rendering world → 持久 RenderGraph → RHI 提取。
+
+## 子票分工
+
+| 子票 | 公开能力与数据 |
+| --- | --- |
+| #96、#102 | 片段 Block、共享压缩数据、Sampler 与完整骨骼数组采样 |
+| #98 | 公开叶节点、片段实例状态、时间、事件和根运动 |
+| #99 | 静态值运算、骨骼数组批量混合与 Job 同步 |
+| #100 | 内置及用户条件、候选过渡范围和独立实例状态 |
+| #101 | 共同层权重、来源关系与姿势合成 |
+| #104 | 双骨骼 IK、注视及用户后处理的公开组合与权重 |
+| #109 | 纯算法及完整公共执行路径的队列基准、分配、内存与代码生成 |
+| #110 | 示例与 NativeAOT 消费者实际执行公开扩展 |
+
+CPU/GPU benchmark 和比较期间的独占构建、导入、捕获通过 `tools/Invoke-Benchmark.ps1` 公共 FIFO 队列，记录任务编号、结果目录、日志及退出码。验收以公开姿势、版本、事件及实例行为为准；性能证据独立记录算法、公共层、首次成本、稳态分配和代码体积。
 
 ## Relations
 [[architecture/animation/Animation-Layers|Animation Layers]] · [[architecture/animation/Animation-Graph|Animation Graph]]
