@@ -105,6 +105,10 @@ internal static unsafe partial class FullPathMeasurements
         MeasureFull<TComponent, TAccess, HistoryParameters, HistoryState, HistoryMotion>(
             "history-" + path, count, create, channel,
             Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(10_000, 0.75f, "shared-path")));
+        MeasureFull<TComponent, TAccess, TweenParameters, TweenState, Tween<float, FloatOps, SquareEasing>>(
+            "typed-square-" + path, count, create, channel, Spec.Tween<float, FloatOps, SquareEasing>(10_000));
+        MeasureFull<TComponent, TAccess, FunctionTweenParameters, TweenState, FunctionTween<float, FloatOps>>(
+            "function-square-" + path, count, create, channel, Spec.FromFunction<float, FloatOps>(10_000, &SquareEasing.Sample));
     }
 
     private static void MeasureFull<TComponent, TAccess, TParameters, TState, TMotion>(string name, int count,

@@ -35,6 +35,8 @@ NativeAOT 使用相同消费者与输入，发布时生成方法映射以核对�
 
 `BatchMeasurements` 使用 64 次预热、96 次采样，比较相同参数、状态和逐项时间的直接 C# 循环与公共批次入口。每条结果包含中位数、P95/P99、每批分配、实例大小、首次数组分配和数组保留字节。
 
+`--function-benchmark` 追加同公式 `SquareEasing.Sample` 的静态类型 Tween 与标量函数适配比较，供已有纯批次结果继续补充。完整 `--benchmark` 同时包含这两种情况；完整字段路径也分别记录 `typed-square` 与 `function-square`。函数适配在每次未完成采样时通过参数中保存的地址调用一次缓动。
+
 `FullPathMeasurements` 使用 12 次预热、48 次采样、固定 `1/120` 秒增量和 `1,000,000` 目标值。三类字段为普通字段、嵌套值字段、引用对象内的可写属性。Tween、Spring 与消费者 History 分别通过公共 `AnimationSystems.Add` 管线运行，采样后检查轨道的持续活动与实际字段结果。
 
 常规 World 使用直接同步执行。名称带 `worldjobs` 的三类 Tween 字段使用 `WorldJobs` 与 zero-worker、Checked scheduler，单列引擎存储访问和调度集成的完整成本。默认行为检查也覆盖这种 World 的单来源及多来源写回。

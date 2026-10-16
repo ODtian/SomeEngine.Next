@@ -25,6 +25,11 @@ internal static partial class CheckAnimation
             BatchMeasurements.Run();
             return 0;
         }
+        if (args.Contains("--function-benchmark"))
+        {
+            BatchMeasurements.RunFunctions();
+            return 0;
+        }
         global::SomeEngine.ECS.Tests.FieldAccessChecks.VerifyAll();
         global::SomeEngine.Tools.EcsAotSmoke.ComponentBytesSmoke.Check();
         global::SomeEngine.Tools.EcsAotSmoke.TypedFieldSmoke.Check();

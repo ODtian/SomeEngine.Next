@@ -20,6 +20,17 @@ internal static class BatchMeasurements
             Measure<HistoryParameters, HistoryState, HistoryMotion>("history", count, new HistoryParameters(10_000, 0.75f, "shared-path"));
             Measure<HistoryParameters, HistoryState, HistoryBatchMotion>("history-batch", count, new HistoryParameters(10_000, 0.75f, "shared-path"));
         }
+        RunFunctions();
+    }
+
+    public static unsafe void RunFunctions()
+    {
+        Console.WriteLine("motion,count,path,median_ns_per_track,p95_ns_per_track,p99_ns_per_track,allocated_bytes_per_batch,instance_bytes,first_allocation_bytes,retained_array_bytes");
+        foreach (int count in new[] { 1_000, 10_000, 100_000 })
+        {
+            Measure<TweenParameters, TweenState, Tween<float, FloatOps, SquareEasing>>("typed-square", count, new(10_000));
+            Measure<FunctionTweenParameters, TweenState, FunctionTween<float, FloatOps>>("function-square", count, new(10_000, &SquareEasing.Sample));
+        }
     }
 
     private static void Measure<TParameters, TState, TMotion>(string name, int count, TParameters parameters)
