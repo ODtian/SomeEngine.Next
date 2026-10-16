@@ -22,6 +22,8 @@ DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-ind
 
 `LightingFeature.CreateTileGrid()` 提供 XY 候选的同视图参数，沿同一份视图数据派生 `DepthSliceCount=1` 与每视图 tile 数。透明与材质贴花绑定这份参数后，现有 cell 构建、遍历和最终命中所属 cell 查询自然收敛到单切片。PBR 光照使用原来的 16 切片参数。两种索引共用 counts、offsets、引用与容量规则，各 cell 缓冲按所选 grid 的实际 cell 数分配。
 
+2026-10-16，`XyAndXyzCandidatesMatchFullScanWhileModelsAndCameraMoveAcrossCells` 在集成提交 `a4451752` 与配套 review 内容上通过 D3D12、Vulkan 两项公共图像检查。每个后端分别运行 Full、XY、XYZ 与投影/引用容量均为 1 的 XYZ，各 16 帧；第 7、15 帧采集物体和相机移动前后的整图，线性颜色容差为 0.001。全部内容页驻留，保留 `WaitForFrames=false`；默认行为规则检查为 0 违规，测试进程退出码为 0。
+
 | 效果 | 场景内容 |
 | --- | --- |
 | `glass` | 32 个交错玻璃面板，四组材质与八层相交覆盖。 |
