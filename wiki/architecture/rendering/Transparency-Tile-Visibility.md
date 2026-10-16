@@ -486,3 +486,19 @@ Count 对实际投影图元的保守 XYZ 范围计数，Reserve 为每 cell 分�
 每轮先扫描全部候选，选择剩余输入中最近四层，再更新颜色与透射率。源批次持续到实际输入结束；`MaximumError` 继续沿已完成前缀检查尾部颜色界。持久图保留五个固定几何阶段、资源与连接，当帧 GPU 计数决定其实际工作量。视图、实例 batch 与内容版本、几何/光栅版本、材质配置、驻留写入与 streaming quality 变化驱动刷新；完成后的相同输入复用配套源、投影和引用。
 
 `ClusterBlendMetrics` 报告 GPU 投影/索引、覆盖/receiver、材质/合成三个区间，以及实际图元/引用、使用/容量/分配字节和静态复用标记。工作总数由 GPU 在构建时累计，与六个时间戳组成固定 64 B 回读；使用字节根据驻留引用、投影缓存中的实际数量和配套源数量计算。统一场景平台按 simulation frame 关联这些完成数据。
+
+## 透明动态曲面与细分来源
+
+透明几何沿 primary 的两轮可见结果读取硬件与软件来源。每份来源保留 12 字节 `DrawRequest`，用户 `VisibilityVertexInput.Source` 和 `VisibilityPixelInput.Source` 直接携带该请求，覆盖、求色与 receiver 从同一份 page、instance、cluster 和 view 解释几何。缓存保留的来源与当前全局可见列表具有各自的索引范围。
+
+`cluster_tessellation_geometry.slang` 统一 opaque 与透明使用的边因子、曲面误差、分片及子片计算。透明用户类型的 `primitiveCount` 和 `project` 按当前 `VertexEvaluate` 与 `DomainEvaluate` 遍历实际曲面；图元序号恢复微三角形在原三角形域中的三个角点。投影缓冲中的 `Source` 和 `Primitive` 供覆盖与材质求值恢复同一曲面位置、重心与梯度。分片遍历使用细分层数决定的局部栈，投影和引用缓冲容量决定每批保留的数据；其余来源和微三角形继续通过同一用户入口处理。
+
+覆盖输入的深度来自用户曲面投影平面，和硬件插值深度一致。Phong 的深度反解将近似微三角形覆盖点钳制到原域边界，使用该位置与导数判断表面有效性，细分精度继续由共享边长及误差条件决定。
+
+DefaultGame 的 `--cluster-effect=deformed-phong` 创建 16 个带棋盘贴图的透明曲面实例。实例每帧旋转和移动，`WaveVertexEval` 按当帧世界位置变形，`PhongTessellation` 决定曲面与细分，用户 Unlit evaluator 沿原域 UV 读取贴图。
+
+公共图像检查包括 opaque 到 alpha 为 `1` 的透明曲面、硬件与软件来源、投影与引用容量均为 `1` 的继续处理，以及移动后状态与从启动即处于同一状态的对照：
+
+```powershell
+dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Release --filter 'FullyQualifiedName~TransparentDeformedPhongSurfaceMatchesOpaqueSurfaceAtFullOpacity|FullyQualifiedName~TransparencyGeometryTests' --nologo -v minimal
+```

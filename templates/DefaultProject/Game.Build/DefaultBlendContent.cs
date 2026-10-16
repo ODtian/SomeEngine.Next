@@ -66,6 +66,12 @@ internal static class DefaultBlendContent
             new(.35f + .15f * y, .8f, .2f,
                 MathF.Abs(x) < .65f * MathF.Sin((y + 1) * MathF.PI * .5f) ? 1 : 0));
 
+        await SaveTextureAsync(DefaultContentIds.BlendCheckerTexture, "Blend checker", (x, y) =>
+        {
+            float value = (((int)MathF.Floor((x + 1) * 4) + (int)MathF.Floor((y + 1) * 4)) & 1) == 0 ? .3f : 1;
+            return new(value, value, value, 1);
+        });
+
         async Task SaveMeshAsync(MeshAsset source, Guid id, string name)
         {
             using MeshAsset mesh = source.CreateCopy(id);

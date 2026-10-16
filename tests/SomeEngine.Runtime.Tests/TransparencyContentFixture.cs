@@ -9,6 +9,7 @@ public sealed class TransparencyContentFixture : IAsyncLifetime
     public string DirectoryPath => Path.Combine(_directory, "panels");
     public string Spheres => Path.Combine(_directory, "spheres");
     public string Lit => Path.Combine(_directory, "lit");
+    public string DeformedPhong => Path.Combine(_directory, "deformed-phong");
 
     public async Task InitializeAsync()
     {
@@ -17,13 +18,14 @@ public sealed class TransparencyContentFixture : IAsyncLifetime
         if (source is null) throw new DirectoryNotFoundException("Engine sources are required to build transparent scene content.");
         try
         {
-            string? cooked = Environment.GetEnvironmentVariable("SOMEENGINE_TEST_COOKED_CONTENT");
-            if (cooked is null)
+            string? cookedContent = Environment.GetEnvironmentVariable("SOMEENGINE_TEST_COOKED_CONTENT");
+            if (cookedContent is null)
                 await SomeEngine.SceneContent.SceneContent.GenerateSpheresAsync(Spheres, source);
             else
-                await SomeEngine.SceneContent.SceneContent.GenerateSpheresFromCookedAsync(Spheres, cooked);
+                await SomeEngine.SceneContent.SceneContent.GenerateSpheresFromCookedAsync(Spheres, cookedContent);
             await SomeEngine.SceneContent.BehaviorScenes.CreateIntersectingPanelsAsync(Spheres, DirectoryPath);
             await SomeEngine.SceneContent.BehaviorScenes.CreateLitTransparencyAsync(Spheres, Lit);
+            await SomeEngine.SceneContent.BehaviorScenes.CreateDeformedPhongSpheresAsync(Spheres, DeformedPhong);
         }
         catch { await DisposeAsync(); throw; }
     }

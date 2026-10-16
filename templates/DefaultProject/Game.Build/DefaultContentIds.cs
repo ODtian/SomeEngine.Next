@@ -9,6 +9,7 @@ internal static class DefaultContentIds
     internal static readonly Guid ShadowBlueNoise = new("3c356634-a34a-4b9f-ae0e-028b37c57633");
     internal static readonly Guid StandardMaterial = new("d0848ef2-57ee-47b4-a52d-6a979ea6b060");
     internal static readonly Guid UnlitMaterial = new("20697502-2e7d-4927-9a40-93d2b1812463");
+    internal static readonly Guid BlendCheckerTexture = new("99cd45bd-e4f0-495c-94f2-a52f6646755c");
     internal static readonly Guid DeformedPhongMaterial = new("4a9d651c-e7d8-4142-aa52-0733bfc57c20");
     internal static readonly Guid ClusterShaders = new("d8e8a175-d57f-4cbd-b4ef-79784b5a362b");
     internal static readonly Guid ShadowShaders = new("d66cc7ca-ee68-4b2f-9af2-0757741391e9");

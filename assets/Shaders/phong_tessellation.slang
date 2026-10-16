@@ -186,6 +186,8 @@ struct PhongTessellation : IDomainEvaluate<StandardVertex>
         }
 
         float3 unresolved = Barycentric(parameters);
+        // Raster coverage selects this source domain. Clamp the inverse of the
+        // diced depth to its boundary; patch error controls the approximation.
         float3 value = ClampBarycentric(unresolved);
         SurfaceEval evaluation = EvalPhongSurface(triangle, coefficients, value);
         float3 barycentricDx;
@@ -203,7 +205,6 @@ struct PhongTessellation : IDomainEvaluate<StandardVertex>
         result.Residual = length(evaluation.Position - input.TargetPosition);
         result.Valid =
             derivativesValid &&
-            SurfaceBarycentricViolation(unresolved) <= 1e-3 &&
             all(isfinite(evaluation.Position)) &&
             all(isfinite(evaluation.DpDu)) &&
             all(isfinite(evaluation.DpDv))

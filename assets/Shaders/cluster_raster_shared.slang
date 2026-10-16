@@ -388,7 +388,7 @@ struct ClusterPixelRasterTask<
     TVisibility.Varying Varying1;
     TVisibility.Varying Varying2;
     uint VisibilityValue;
-    uint VisibleClusterIndex;
+    DrawRequest Source;
     uint TriangleID;
     uint ViewIndex;
     uint TargetPolicy;
@@ -457,7 +457,9 @@ struct ClusterPixelRasterTask<
             WaveReadLaneAt(SourceBarycentric2.y, sourceLane),
             WaveReadLaneAt(SourceBarycentric2.z, sourceLane));
         result.VisibilityValue = WaveReadLaneAt(VisibilityValue, sourceLane);
-        result.VisibleClusterIndex = WaveReadLaneAt(VisibleClusterIndex, sourceLane);
+        result.Source.PageOffset = WaveReadLaneAt(Source.PageOffset, sourceLane);
+        result.Source.InstanceID = WaveReadLaneAt(Source.InstanceID, sourceLane);
+        result.Source.ClusterAndView = WaveReadLaneAt(Source.ClusterAndView, sourceLane);
         result.TriangleID = WaveReadLaneAt(TriangleID, sourceLane);
         result.ViewIndex = WaveReadLaneAt(ViewIndex, sourceLane);
         result.TargetPolicy = WaveReadLaneAt(TargetPolicy, sourceLane);
@@ -490,7 +492,7 @@ struct ClusterPixelRasterTask<
         float3 sourceBarycentric1 = SourceBarycentric1;
         float3 sourceBarycentric2 = SourceBarycentric2;
         uint visibilityValue = VisibilityValue;
-        uint visibleClusterIndex = VisibleClusterIndex;
+        DrawRequest source = Source;
         uint triangleID = TriangleID;
         uint viewIndex = ViewIndex;
         uint targetPolicy = TargetPolicy;
@@ -611,7 +613,7 @@ struct ClusterPixelRasterTask<
             pixelInput.Depth = ClusterRasterMaterialDepth(depth, targetPolicy);
             pixelInput.EncodedDepth = EncodeClusterRasterDepth(depth, targetPolicy);
             pixelInput.EncodedTargetDepth = encodedDepth;
-            pixelInput.VisibleClusterIndex = visibleClusterIndex;
+            pixelInput.Source = source;
             pixelInput.TriangleID = triangleID;
             pixelInput.ViewIndex = viewIndex;
             pixelInput.TargetPolicy = targetPolicy;
@@ -640,6 +642,7 @@ void RasterizeClusterTriangleWave<
     TVisibility.Varying varyings[3],
     int4 scissorRect,
     uint visibleClusterIndex,
+    DrawRequest source,
     uint triangleID,
     uint viewIndex,
     uint targetPolicy,
@@ -708,7 +711,7 @@ void RasterizeClusterTriangleWave<
         task.Varying1 = varyings[1];
         task.Varying2 = varyings[2];
         task.VisibilityValue = EncodeVisBuffer(visibleClusterIndex, triangleID);
-        task.VisibleClusterIndex = visibleClusterIndex;
+        task.Source = source;
         task.TriangleID = triangleID;
         task.ViewIndex = viewIndex;
         task.TargetPolicy = targetPolicy;

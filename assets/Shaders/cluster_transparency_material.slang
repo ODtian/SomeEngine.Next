@@ -133,7 +133,7 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         interpolation.LinearBarycentricDy = (TriangleBarycentricAt(projection, center + float2(0, 1)) / projection.InverseW);
         interpolation.LinearBarycentricDy /= dot(interpolation.LinearBarycentricDy, 1.0.xxx);
         interpolation.LinearBarycentricDy -= interpolation.LinearBarycentric;
-        VisibilityVertexInput vertexInput = { info.visibleClusterIndex, info.instanceID, coord.z, info.vi0 };
+        VisibilityVertexInput vertexInput = { TransparencySourceRequest(source), info.vi0 };
         VisibilityEvaluate.Varying source0 = Visibility.makeVarying(first, vertexInput);
         vertexInput.LocalVertexIndex = info.vi1;
         VisibilityEvaluate.Varying source1 = Visibility.makeVarying(second, vertexInput);
@@ -144,14 +144,18 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         VisibilityEvaluate.Varying v2 = Visibility.interpolateVertex(source0, source1, source2, bary2);
         VisibilityPixelInput pixel = (VisibilityPixelInput)0;
         pixel.PixelCoord = coord;
-        pixel.Depth = depth;
-        pixel.EncodedDepth = asuint(1.0 - depth);
-        pixel.VisibleClusterIndex = info.visibleClusterIndex;
+        pixel.Depth = dot(interpolation.LinearBarycentric, float3(clip0.z / clip0.w, clip1.z / clip1.w, clip2.z / clip2.w));
+        pixel.EncodedDepth = asuint(1.0 - pixel.Depth);
+        pixel.Source = TransparencySourceRequest(source);
         pixel.TriangleID = info.triangleID;
         pixel.ViewIndex = coord.z;
         VisibilityPixelResult result = Visibility.evaluate(pixel, Visibility.interpolatePixel(v0, v1, v2, interpolation));
         resultDepth = result.Depth;
-        return result.Visible != 0u;
+        if (result.Visible == 0u) return false;
+        float3 position;
+        SurfaceBarycentrics coordinates = ResolveBarycentricsAtDepth<VertexEvaluate.Vertex, DomainEvaluate>(
+            Domain, coord, view, triangle, info, result.Depth, position);
+        return coordinates.Valid != 0u;
     }
 
     void reconstruct(uint source, uint3 coord, float depth, uint visibilityDepth, out TriangleInfo info,
