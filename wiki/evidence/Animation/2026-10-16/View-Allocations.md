@@ -12,9 +12,9 @@
 
 三次任务退出码均为 0，构建均为 0 警告、0 错误。最终验证时间为 UTC 17:44:11–17:46:23。
 
-被动画写入的 `AnimatedPanel` 同时作为 `IView`，引用叶写入更新其参数版本，推动每帧重建。原路径在 `ScopeData.BeginChildren` 创建 `ChildOrder`，在 `Scope.Enter` 创建 `ChildComputations`；这两份回滚记录的 x64 对象布局各为 48 B。`3d952a4f` 将两份记录交由外层 `ScopeData` 重复 Capture，沿共享保留计数完成后清除 World、旧计算列表及子实体数组引用。修复后的测量保留每帧一次 Build 和一次 Compute，完整路径分配降至 0 B。
+被动画写入的 `AnimatedPanel` 同时作为 `IView`，引用叶写入更新其参数版本，推动每帧重建。原路径在 `ScopeData.BeginChildren` 创建 `ChildOrder`，在 `Scope.Enter` 创建 `ChildComputations`；这两份回滚记录的 x64 对象布局各为 48 B。交付分支的 `05015331` 将两份记录交由外层 `ScopeData` 重复 Capture，沿共享保留计数完成后清除 World、旧计算列表及子实体数组引用。修复后的测量保留每帧一次 Build 和一次 Compute，完整路径分配降至 0 B。
 
-字段的算法声明集合由 `AnimatedField` 持有；具体分发函数直接访问当前选择。重新选择已声明的完整泛型或便利 Spec 复用既有声明对象。诊断入口由 `12866aaa` 保留，最终动画批次源码包含 `11da31ce`。
+字段的算法声明集合由 `AnimatedField` 持有；具体分发函数直接访问当前选择。重新选择已声明的完整泛型或便利 Spec 复用既有声明对象。交付分支的诊断入口为 `c5c7a71b`，最终动画批次源码包含 `11da31ce`。
 
 | 最终选择 | 样本 | State B | Views B | Animation B | Declare B | Set B | Build | Compute |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
