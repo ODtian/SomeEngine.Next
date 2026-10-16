@@ -16,6 +16,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
 {
     private readonly TrackFields _fields = fields;
     private QueryHandle _tracks;
+    private QueryHandle _finishedTracks;
     private FieldWrite<T>[] _writes = null!;
     private GraphCapture<T>[] _captures = null!;
 
@@ -23,7 +24,13 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
     {
         _writes = ArrayPool<FieldWrite<T>>.Shared.Rent(64);
         _captures = ArrayPool<GraphCapture<T>>.Shared.Rent(64);
-        _tracks = context.World.Query(context.World.QueryDefinition().ReadWrite<Timeline>().WriteBuffer<Track<T>>()
+        _tracks = CreateQuery(context.World, enabled: true);
+        _finishedTracks = CreateQuery(context.World, enabled: false);
+    }
+
+    private static QueryHandle CreateQuery(World world, bool enabled)
+    {
+        var query = world.QueryDefinition().ReadWrite<Timeline>().WriteBuffer<Track<T>>()
             .WriteBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>()
             .Optional<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(QueryAccess.Read)
             .Optional<GraphInstance>(QueryAccess.Read).OptionalBuffer<GraphMotion>(QueryAccess.ReadWrite)
@@ -31,14 +38,17 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
             .OptionalBuffer<BaseValue<T>>(QueryAccess.Read).OptionalBuffer<LayerChannel>(QueryAccess.Read)
             .OptionalBuffer<Contribution<T>>(QueryAccess.ReadWrite)
             .OptionalBuffer<DirectBoundary>(QueryAccess.ReadWrite)
-            .OptionalBuffer<TimelineStage>(QueryAccess.ReadWrite));
+            .OptionalBuffer<TimelineStage>(QueryAccess.ReadWrite);
+        return world.Query(enabled ? query.Enabled<Timeline>() : query.Disabled<Timeline>());
     }
 
     public unsafe void OnUpdate(ref ImmediateSystemContext context)
     {
         var evaluation = (World: context.World, Weights: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0,
-            Captures: _captures, CaptureCount: 0, CaptureOnly: false);
+            Captures: _captures, CaptureCount: 0, CaptureOnly: false, Enabled: true);
         context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);
+        evaluation.Enabled = false;
+        context.World.ExecuteQuery(_finishedTracks, context.LastSystemVersion, ref evaluation, &Evaluate);
         if (evaluation.CaptureCount > 0)
         {
             for (int index = 0; index < evaluation.CaptureCount; index++)
@@ -49,7 +59,10 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     static (tracks, ref value) => tracks[value.Index].Current = value.Value);
             }
             evaluation.CaptureOnly = true;
+            evaluation.Enabled = true;
             context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);
+            evaluation.Enabled = false;
+            context.World.ExecuteQuery(_finishedTracks, context.LastSystemVersion, ref evaluation, &Evaluate);
         }
         _writes = evaluation.Writes;
         _captures = evaluation.Captures;
@@ -57,9 +70,10 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
     }
 
     private static void Evaluate(QueryCursor rows, ref (World World, bool Weights, FieldWrite<T>[] Writes, int Count,
-        GraphCapture<T>[] Captures, int CaptureCount, bool CaptureOnly) evaluation)
+        GraphCapture<T>[] Captures, int CaptureCount, bool CaptureOnly, bool Enabled) evaluation)
     {
         World world = evaluation.World;
+        bool enabled = evaluation.Enabled;
         int type = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type;
         int writeCount = evaluation.Count;
         foreach (QueryChunkView chunk in rows.Chunks)
@@ -90,7 +104,6 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                 for (int index = 0; index < data.Length; index++)
                     data[index].Active = false;
                 ref Timeline timeline = ref row.ReadWrite<Timeline>();
-                bool enabled = world.IsEnabled<Timeline>(row.Entity);
                 ReadOnlySpan<TimelineStage> stages = hasStages ? row.ReadBuffer<TimelineStage>().AsSpan() : default;
                 DynamicBuffer<GraphMotion> motions = hasMotions ? row.Buffer<GraphMotion>() : default;
                 GraphData[]? graph = row.Has<GraphInstance>() ? row.Read<GraphInstance>().Data : null;
@@ -271,6 +284,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
     public void OnDestroy(ref ImmediateSystemContext context)
     {
         context.World.ReleaseQuery(_tracks);
+        context.World.ReleaseQuery(_finishedTracks);
         ArrayPool<FieldWrite<T>>.Shared.Return(_writes);
         ArrayPool<GraphCapture<T>>.Shared.Return(_captures);
     }
