@@ -51,6 +51,7 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         isSoftware);
 
     DrawRequest entry = VisibleClusterRequest(VisibleClusters[visibleIndex]);
+    if (Uniforms.PolicyTarget == 0u && LoadInstanceXray(InstanceData, InstanceProperties, entry.InstanceID).Enabled != 0u) return;
     uint4 vertReuseBatchWords;
     uint vertexCount;
     uint triangleCount;

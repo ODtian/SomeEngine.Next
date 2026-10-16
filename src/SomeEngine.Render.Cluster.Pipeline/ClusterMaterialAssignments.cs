@@ -44,6 +44,8 @@ public sealed class ClusterMaterialAssignmentSet
     private ImmutableDictionary<long, ImmutableHashSet<int>> _materialOffsets = ImmutableDictionary<long, ImmutableHashSet<int>>.Empty;
     private ImmutableHashSet<long> _changes = ImmutableHashSet<long>.Empty;
     private ImmutableHashSet<int> _changedOffsets = ImmutableHashSet<int>.Empty;
+    private ImmutableHashSet<Entity> _xrayEntities = ImmutableHashSet<Entity>.Empty;
+    private ImmutableHashSet<long> _xrayMaterials = ImmutableHashSet<long>.Empty;
     private uint _capacity;
 
     private ClusterMaterialAssignmentSet() { }
@@ -58,6 +60,8 @@ public sealed class ClusterMaterialAssignmentSet
         _changes = source._changes;
         _changedOffsets = source._changedOffsets;
         _capacity = source._capacity;
+        _xrayEntities = source._xrayEntities;
+        _xrayMaterials = source._xrayMaterials;
         TopologyVersion = source.TopologyVersion;
     }
 
@@ -66,6 +70,8 @@ public sealed class ClusterMaterialAssignmentSet
     public uint SlotCapacity => Math.Max(1u, _capacity);
     public uint MaterialCount => checked((uint)_values.Count);
     public IEnumerable<Material> DistinctMaterials => _values.Values.Select(value => value.Resource);
+    internal bool HasXray => !_xrayMaterials.IsEmpty;
+    internal bool UsesXray(Material material) => _xrayMaterials.Contains(material.MaterialId);
     internal IEnumerable<long> ChangedMaterialIds => _changes;
     internal IEnumerable<Material> ChangedMaterials => _changes.Where(_values.ContainsKey).Select(id => _values[id].Resource);
     internal IEnumerable<int> ActiveOffsets => _entries.Keys;
@@ -194,6 +200,7 @@ public sealed class ClusterMaterialAssignmentSet
         private ImmutableDictionary<long, (Material Resource, ulong Revision)>.Builder? _values;
         private ImmutableHashSet<long>.Builder? _changes;
         private bool _topologyChanged;
+        private bool _xrayChanged;
         internal Update(ClusterMaterialAssignmentSet source, RenderWorld world)
         {
             _source = source;
@@ -256,8 +263,16 @@ public sealed class ClusterMaterialAssignmentSet
             (_changes ??= _result._changes.ToBuilder()).Add(material.MaterialId);
         }
 
+        internal void SetXray(Entity entity, bool enabled)
+        {
+            if (_result._xrayEntities.Contains(entity) == enabled) return;
+            _result._xrayEntities = enabled ? _result._xrayEntities.Add(entity) : _result._xrayEntities.Remove(entity);
+            _xrayChanged = true;
+        }
+
         internal void Remove(Entity entity)
         {
+            SetXray(entity, false);
             if (!_result._entities.TryGetValue(entity, out var sequence)) return;
             _result._entities = _result._entities.Remove(entity);
             var allocation = _result._sequences[sequence];
@@ -298,6 +313,18 @@ public sealed class ClusterMaterialAssignmentSet
                     SetValue(_world.ReadMaterial(id));
             if (_values is not null) _result._values = _values.ToImmutable();
             if (_changes is not null) _result._changes = _changes.ToImmutable();
+            if (_xrayChanged || _topologyChanged)
+            {
+                var materials = ImmutableHashSet.CreateBuilder<long>();
+                foreach (Entity entity in _result._xrayEntities)
+                    if (_result._entities.TryGetValue(entity, out var sequence))
+                        for (int index = 0; index < sequence.Count; index++) materials.Add(sequence.MaterialAt(index));
+                if (!_result._xrayMaterials.SetEquals(materials))
+                {
+                    _result._xrayMaterials = materials.ToImmutable();
+                    _topologyChanged = true;
+                }
+            }
             if (_topologyChanged) _result.TopologyVersion = checked(_source.TopologyVersion + 1);
             return _result;
         }
@@ -351,7 +378,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
         _assignments = assignments ?? throw new ArgumentNullException(nameof(assignments));
     public static QueryDefinition EntityQuery() => new QueryDefinitionBuilder()
         .Read<RenderInstance>().Read<RenderTransform>().Read<RenderPreviousTransform>()
-        .Read<RenderMesh>().ReadBuffer<RenderMaterialBinding>().Build();
+        .Read<RenderMesh>().ReadBuffer<RenderMaterialBinding>().Optional<RenderXray>(QueryAccess.Read).Build();
     public void OnCreate(ref RenderPrepareSystemContext context)
     {
         if (_created) throw new InvalidOperationException("The material assignment system is already created.");
@@ -416,6 +443,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
             world.ExecuteBufferRead<RenderMaterialBinding, MaterialBindings>(
                 entity, ref state, static (BufferView<RenderMaterialBinding> bindings, ref MaterialBindings state) =>
                     state.Update.Set(state.Entity, bindings.AsSpan(), state.Encoding));
+            _update.SetXray(entity, world.Has<RenderXray>(entity));
         }
 
         private readonly record struct MaterialBindings(
@@ -435,7 +463,8 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
             {
                 bool bindingsChanged = chunk.HasBufferChangedSinceLastSystemVersion<RenderMaterialBinding>();
                 bool meshesChanged = chunk.HasChangedSinceLastSystemVersion<RenderMesh>();
-                if (!bindingsChanged && !meshesChanged) continue;
+                bool xrayChanged = chunk.TryRead<RenderXray>(out _) && chunk.HasChangedSinceLastSystemVersion<RenderXray>();
+                if (!bindingsChanged && !meshesChanged && !xrayChanged) continue;
                 ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
                 for (int row = 0; row < chunk.Entities.Length; row++)
                 {
@@ -443,10 +472,12 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
                     if (_membership.Contains(entity)) continue;
                     if (
                         !(bindingsChanged && chunk.RowBufferChangedSinceLastSystemVersion<RenderMaterialBinding>(row)) &&
-                        !(meshesChanged && chunk.RowChangedSinceLastSystemVersion<RenderMesh>(row))) continue;
+                        !(meshesChanged && chunk.RowChangedSinceLastSystemVersion<RenderMesh>(row)) &&
+                        !(xrayChanged && chunk.RowChangedSinceLastSystemVersion<RenderXray>(row))) continue;
                     string encoding = meshes[row].Mesh.VertexEncoding ?? throw new InvalidDataException(
                         $"Cluster mesh '{meshes[row].Mesh.Name}' has no vertex encoding compatibility.");
                     _update.Set(entity, chunk.ReadBuffer<RenderMaterialBinding>(row).AsSpan(), encoding);
+                    _update.SetXray(entity, chunk.TryRead<RenderXray>(out _));
                 }
             }
         }

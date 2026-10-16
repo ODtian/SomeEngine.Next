@@ -160,6 +160,18 @@ public sealed class SceneEdit
         _scene.SetEntityTransform(entity, transform);
     }
 
+    public void SetXray(Entity entity, Xray effect)
+    {
+        RequireAction();
+        _scene.SetXray(entity, effect);
+    }
+
+    public void RemoveXray(Entity entity)
+    {
+        RequireAction();
+        _scene.RemoveXray(entity);
+    }
+
     public IReadOnlyList<Entity> PointLights { get { RequireAction(); return _scene.GetPointLights(); } }
 
     public void SetPointLight(Entity entity, PointLight light)

@@ -544,7 +544,7 @@ internal static class RuntimeApplication
     {
         using World mainWorld = loadedWorld;
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
-        using var extraction = new RenderExtractionSystems(renderWorld, new WorldOriginRenderExtractor(), new MeshRenderExtractor(), new LightRenderExtractor());
+        using var extraction = new RenderExtractionSystems(renderWorld, new WorldOriginRenderExtractor(), new MeshRenderExtractor(), new LightRenderExtractor(), new XrayRenderExtractor());
 
 
         if (!options.SynchronousFrames && script is null)

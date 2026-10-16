@@ -178,8 +178,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
     private sealed class InstanceColumnChanges
     {
         internal const int CurrentTransform = 1, PreviousTransform = 2, Mesh = 4, Additional = 8;
-        internal const int InitialValues = 16;
-        internal const int All = CurrentTransform | PreviousTransform | Mesh | Additional | InitialValues;
+        internal const int InitialValues = 16, Xray = 32;
+        internal const int All = CurrentTransform | PreviousTransform | Mesh | Additional | InitialValues | Xray;
         private int _fields;
         private int _partialTransformChanges;
         internal uint LastVersion { get; private set; }
@@ -222,6 +222,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
                 if (packet.ChangedSince<RenderTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.CurrentTransform;
                 if (packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.PreviousTransform;
                 if (packet.ChangedSince<RenderMesh>(lastSystemVersion)) fields |= InstanceColumnChanges.Mesh;
+                if (packet.Has<RenderXray>() && packet.ChangedSince<RenderXray>(lastSystemVersion)) fields |= InstanceColumnChanges.Xray;
                 if (producer.Second.GetChanges(packet, lastSystemVersion) != RenderInstanceChanges.None)
                     fields |= InstanceColumnChanges.Additional;
                 columns.Add(fields);
@@ -268,7 +269,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
             producer.First.Bind(destination.Restrict(producer.First.Properties),
                 (fields & InstanceColumnChanges.CurrentTransform) != 0,
                 (fields & InstanceColumnChanges.PreviousTransform) != 0,
-                (fields & InstanceColumnChanges.Mesh) != 0);
+                (fields & InstanceColumnChanges.Mesh) != 0,
+                (fields & InstanceColumnChanges.Xray) != 0);
             if ((fields & InstanceColumnChanges.Additional) != 0)
                 producer.Second.Bind(destination.Restrict(producer.Second.Properties));
         }

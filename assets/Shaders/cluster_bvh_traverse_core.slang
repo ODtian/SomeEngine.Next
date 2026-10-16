@@ -159,10 +159,12 @@ uint ClusterHierarchyNodeState(
     ClusterProjectedBounds projectedBounds,
     uint viewIndex,
     ClusterViewUniforms view,
-    uint depthCacheClass)
+    uint depthCacheClass,
+    uint instanceID)
 {
     if (!ClusterTargetPolicyAccepts(projectedBounds, view, depthCacheClass))
         return 0u;
+    if (KeepXrayOcclusion(InstanceData, InstanceProperties, instanceID, view)) return 1u;
     if (view.CullingEnabled == 0u ||
         view.HasPrevHistory == 0u ||
         view.HiZMipCount == 0u)
@@ -286,7 +288,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
             !ClusterNodePassesLod(node, lodBounds, view))
             continue;
         uint state = ClusterHierarchyNodeState(worldMin, worldMax, projectedBounds, viewIndex, view,
-            view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
+            view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u, instanceID);
         if (state == 2u)
             AppendDeferredTraversalNode(
                 MakeClusterTraversalNode(ClusterTraversalSlice(nodeIndex, childIndex), instanceID, viewIndex, 1u), TraversalLevel.MaxNodes);

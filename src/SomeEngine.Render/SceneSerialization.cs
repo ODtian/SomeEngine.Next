@@ -17,6 +17,7 @@ public static class SceneSerialization
         .RegisterHierarchyDomain<DefaultHierarchyDomain>()
         .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f;depthCache:u32;firstPersonKind:u32;player:u32;playerVisibility:u32"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
+        .Register<Xray, XrayCodec>(Key(nameof(Xray), "visibleColor:3f;visibleOpacity:f;occludedColor:3f;occludedOpacity:f;minimumOcclusion:f;maximumOcclusion:f"))
         .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f;dofPresent:u32;focus:f;infinityRadius:f;minRadius:f;maxRadius:f;depthBlurRadius:f;depthBlurExponent:f;shadowBiasStrength:f;player:u32;firstPersonPresent:u32;firstPersonFov:f;firstPersonScale:f"))
         .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32;sourceRadius:f;sourceAnglePresent:u32;sourceAngle:f"))
         .Register<PointLight, PointCodec>(Key(nameof(PointLight), "position:3f;range:f;color:3f;intensity:f;layers:u32;shadowBias:f;mobility:u32;sourceRadius:f;sourceAnglePresent:u32;sourceAngle:f"))
@@ -89,6 +90,20 @@ public static class SceneSerialization
                     (MeshPlayerVisibility)reader.ReadUInt32()),
             };
     }
+    private struct XrayCodec : ICanonicalComponentCodec<Xray>
+    {
+        public void Write(ref DataWriter writer, in Xray value)
+        {
+            WriteVector(ref writer, value.Visible.ColorMultiplier); writer.WriteSingle(value.Visible.Opacity);
+            WriteVector(ref writer, value.Occluded.ColorMultiplier); writer.WriteSingle(value.Occluded.Opacity);
+            writer.WriteSingle(value.MinimumOcclusion); writer.WriteSingle(value.MaximumOcclusion);
+        }
+
+        public void Read(ref DataReader reader, out Xray value) => value = new(
+            new XrayBlend(ReadVector(ref reader), reader.ReadSingle()),
+            new XrayBlend(ReadVector(ref reader), reader.ReadSingle()), reader.ReadSingle(), reader.ReadSingle());
+    }
+
     private struct MotionCodec : ICanonicalComponentCodec<MeshMotion>
     {
         public void Write(ref DataWriter writer, in MeshMotion value) { WriteVector(ref writer, value.Amplitude); writer.WriteUInt32(value.Seed); }
