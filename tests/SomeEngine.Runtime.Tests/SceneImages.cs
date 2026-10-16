@@ -28,9 +28,17 @@ internal static class SceneImages
             throw;
         }
 
-        static SceneImage Preview(SceneLinearImage value) => new(value.Frame.Frame, value.Frame.Width, value.Frame.Height,
-            value.Pixels.Span.ToArray().Select(channel => (byte)Math.Clamp((float)channel * 255, 0, 255)).ToArray());
     }
+
+    internal static void AssertLinearNotEqual(SceneLinearImage expected, SceneLinearImage actual,
+        [CallerMemberName] string test = "")
+    {
+        try { Assert.NotEqual(expected.Pixels.ToArray(), actual.Pixels.ToArray()); }
+        catch (XunitException) { SaveFailure(Preview(expected), Preview(actual), test); throw; }
+    }
+
+    private static SceneImage Preview(SceneLinearImage value) => new(value.Frame.Frame, value.Frame.Width, value.Frame.Height,
+        value.Pixels.Span.ToArray().Select(channel => (byte)Math.Clamp((float)channel * 255, 0, 255)).ToArray());
 
     internal static async Task RunAsync(string backend, SceneScript script, params string[] options)
     {
