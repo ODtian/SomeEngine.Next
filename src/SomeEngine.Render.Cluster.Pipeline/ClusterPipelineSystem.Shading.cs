@@ -50,7 +50,7 @@ public sealed partial class ClusterPipelineSystem
     private GraphRegionMap<uint, ShadeGroup> UpdateMaterialGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages,
         GraphRegionMap<uint, ShadeGroup> previousGroups, bool receivers)
     {
-        var reads = CollectIndexedTextureReads(stages.BinIndices, stages);
+        var reads = CollectIndexedTextureReads(stages.BinIndices, stages, includeDecals: true);
         var desired = stages.Invocations.Where(stage => !receivers || stage.SurfaceShader is not null).ToDictionary(static stage => stage.BinIndex,
             stage => new ShadeGroup(receivers ? stage.SurfaceShader! : stage,
                 reads.GetValueOrDefault(stage.BinIndex, [])));
@@ -89,7 +89,7 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private Dictionary<uint, ImmutableArray<IndexedTextureRead>> CollectIndexedTextureReads(
-        ClusterBytes binIndices, ClusterShadeStageSet stages, uint binMask = uint.MaxValue)
+        ClusterBytes binIndices, ClusterShadeStageSet stages, uint binMask = uint.MaxValue, bool includeDecals = false)
     {
         var reads = new Dictionary<uint, HashSet<IndexedTextureRead>>();
         Span<byte> binBytes = stackalloc byte[sizeof(uint)];
@@ -105,6 +105,12 @@ public sealed partial class ClusterPipelineSystem
                 members.Add(new(material, property, material.GetTexture(property)));
             }
         }
+        if (includeDecals && GraphData.Decals is { } decals)
+            foreach (ClusterShadeInvocation stage in stages.Invocations)
+            {
+                if (!reads.TryGetValue(stage.BinIndex, out var members)) reads.Add(stage.BinIndex, members = []);
+                members.UnionWith(decals.TextureReads);
+            }
         return reads.ToDictionary(static pair => pair.Key, static pair => pair.Value
             .OrderBy(static value => value.Material.MaterialId).ThenBy(static value => value.Property).ToImmutableArray());
     }

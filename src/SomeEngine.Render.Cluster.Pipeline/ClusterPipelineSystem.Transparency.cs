@@ -48,7 +48,7 @@ public sealed partial class ClusterPipelineSystem
         uint capacity = _options.BlendTriangleCapacity;
         ClusterShadeInvocation[][] resources = [];
         TransparencyShaders? shaders = materials.Length == 0 ? null : GetTransparencyShaders(materials, out resources);
-        var textureReads = CollectIndexedTextureReads(stages.BinIndices, stages)
+        var textureReads = CollectIndexedTextureReads(stages.BinIndices, stages, includeDecals: true)
             .Where(pair => materials.Any(material => material.BinIndex == pair.Key)).OrderBy(pair => pair.Key)
             .SelectMany(pair => pair.Value).ToImmutableArray();
         TransparencyData? previous = GraphData.Transparency;

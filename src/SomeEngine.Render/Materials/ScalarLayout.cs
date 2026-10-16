@@ -227,7 +227,8 @@ public sealed class ScalarLayout
     }
 
     private byte[] Encode(Material material, ReadOnlySpan<ScalarMaterialBinding> bindings,
-        Func<SomeEngine.Resources.Texture?, uint>? textureIndex)
+        Func<SomeEngine.Resources.Texture?, uint>? textureIndex,
+        Func<SomeEngine.Graphics.SamplerDesc, uint>? samplerIndex)
     {
         var result = new byte[ByteSize];
         WriteHeader(result);
@@ -250,6 +251,8 @@ public sealed class ScalarLayout
                 uint index = textureIndex(material.GetTexture(binding.MaterialSlot));
                 BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, index);
             }
+            else if (type == typeof(SomeEngine.Graphics.SamplerDesc))
+                BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, samplerIndex!(material.GetSampler(binding.MaterialSlot)));
             else
                 throw new InvalidDataException(
                     $"Material slot {binding.MaterialSlot} cannot be encoded as scalar data.");
@@ -272,8 +275,9 @@ public sealed class ScalarLayout
         internal uint LayoutHash => _layout.LayoutHash;
         internal uint PayloadByteSize => _layout.PayloadByteSize;
 
-        internal byte[] Encode(Material material, Func<SomeEngine.Resources.Texture?, uint>? textureIndex = null)
-            => _layout.Encode(material, _bindings, textureIndex);
+        internal byte[] Encode(Material material, Func<SomeEngine.Resources.Texture?, uint>? textureIndex = null,
+            Func<SomeEngine.Graphics.SamplerDesc, uint>? samplerIndex = null)
+            => _layout.Encode(material, _bindings, textureIndex, samplerIndex);
 
         internal IEnumerable<uint> TextureProperties => _bindings
             .Where(static binding => typeof(SomeEngine.Resources.Texture).IsAssignableFrom(binding.PropertyType))

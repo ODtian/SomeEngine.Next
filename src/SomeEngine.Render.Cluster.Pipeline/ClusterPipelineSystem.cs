@@ -122,7 +122,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new ArgumentException("The Cluster pipeline and RenderGraph must use the same Device.", nameof(graph));
         _outputDescription = outputDescription;
         _streamingFeedback = streamingFeedback ?? throw new ArgumentNullException(nameof(streamingFeedback));
-        _stageResourceProvider = stageResourceProvider;
+        _stageResourceProvider = new MaterialDecalResources(this, stageResourceProvider);
         _viewGrid = viewGrid;
         _options = options ?? new ClusterPipelineOptions();
         _visibilityMode = _options.SelectVisibilityMode(device.Capabilities);
@@ -330,6 +330,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _viewQuery = view;
             _sceneQuery = context.World.Query(_instances.EntityQuery);
             EnsurePipelineResources();
+            _decalWorld = context.World;
+            _decalQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderMaterialDecal>().Read<RenderTransform>());
+            EditGraph(InstallMaterialDecals);
             _rasterStages = new ClusterRasterStages(
                 _backend,
                 _device,
@@ -360,6 +363,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _drawIndirectLayout = null;
             ReleaseIfValid(context.World, view);
             ReleaseIfValid(context.World, _sceneQuery);
+            ReleaseIfValid(context.World, _decalQuery);
             _sceneQuery = default;
             throw;
         }
@@ -378,13 +382,14 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ClusterMaterialAssignmentSet sourceAssignments = _materialAssignments.Current;
         ClusterMaterialAssignmentSet assignments = sourceAssignments.ChangesSince(_consumedMaterialAssignments);
         RefreshMaterialTextures();
+        bool decalResourcesChanged = UpdateMaterialDecals();
         if (_graphInstalled && _resources.GeometryPageCount > GraphData.Resources.PagePriorityCapacity)
             EditGraph((ref RenderGraphEdit edit) => GrowPageRequestPriorities(ref edit));
         if (_graphInstalled && _resources.MaximumRasterBatchesPerCluster > GraphData.Resources.BinnedEntriesPerCluster)
             EditGraph((ref RenderGraphEdit edit) => GrowRasterWork(ref edit));
         bool assignmentsChanged = !_graphInstalled ||
             _installedMaterialTopologyVersion != assignments.TopologyVersion;
-        bool materialResourcesChanged = CollectMaterialChanges(assignments, assignmentsChanged);
+        bool materialResourcesChanged = CollectMaterialChanges(assignments, assignmentsChanged) || decalResourcesChanged;
         bool forward = _options.ShadingPath == ClusterShadingPath.Forward;
         if (forward && (assignmentsChanged || materialResourcesChanged || _installedShadeStages is null ||
             _installedShadeStages.ShadingPath != _options.ShadingPath ||
@@ -673,6 +678,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 }
             }
 
+            BindMaterialDecalFrame(ref graph, views[..primaryViewCount]);
             BindTransparencyFrame(ref graph, batch, views[..primaryViewCount], binding.Publication is not null);
             GraphData.Outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRange);
             _residentPageReads = GraphData.Outputs.Geometry.ResidentPageReads;
@@ -923,6 +929,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         try
         {
             CompleteTransparencyFrame(result);
+            CompleteMaterialDecalFrame(result);
             bool geometryWritten = result.TryGetPassCompletion(GraphData.Outputs.Geometry.CompletePass, out _);
             _history!.FinishFrame(geometryWritten);
             foreach (GraphBufferId buffer in GraphData.BufferWrites.Keys)
@@ -966,6 +973,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         List<Exception>? failures = null;
         Release(ref _viewQuery, context.World, ref failures);
         Release(ref _sceneQuery, context.World, ref failures);
+        Release(ref _decalQuery, context.World, ref failures);
+        _decalWorld = null;
         Dispose(ref _shadeStages, ref failures);
         foreach (TransparencyShaders shaders in _transparencyShaders)
         {

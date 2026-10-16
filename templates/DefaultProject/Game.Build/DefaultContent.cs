@@ -171,6 +171,10 @@ public static class DefaultContent
             Operations =
             [
                 ComputeOperation(
+                    ClusterShaderOperationRole.MaterialDecalCells,
+                    ResolveRequired(project, "assets/Shaders/generated/EngineSources/material_decal_cells.shader"),
+                    "CountMaterialDecalCells"),
+                ComputeOperation(
                     ClusterShaderOperationRole.BvhTraversal,
                     ResolveRequired(project, "assets/Shaders/cluster_bvh_traverse.shader"),
                     "CullClusterWork"),

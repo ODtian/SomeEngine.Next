@@ -1,6 +1,7 @@
 #ifndef GAME_UNLIT_MATERIAL_SLANG
 #define GAME_UNLIT_MATERIAL_SLANG
 #include "material_interfaces.slang"
+#include "coating_material.slang"
 Texture2D<float4> UnlitMaterialTextures[];
 
 [MaterialScalars]
@@ -60,6 +61,15 @@ struct UnlitMaterial : ISurfaceEvaluateModes<SurfaceEval, Triangle>
         float4 albedo = UnlitMaterialTextures[NonUniformResourceIndex(scalars.AlbedoMap)].SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy);
         data.Color = albedo.rgb * scalars.BaseColorTint.rgb;
         data.Alpha = albedo.a * scalars.BaseColorTint.a;
+        float3 positionDx = surface.DpDu * pixel.BarycentricDx.y + surface.DpDv * pixel.BarycentricDx.z;
+        float3 positionDy = surface.DpDu * pixel.BarycentricDy.y + surface.DpDv * pixel.BarycentricDy.z;
+        MaterialDecalIterator decals = BeginMaterialDecals(pixel.PixelCoord, receiver.Position);
+        MaterialDecalInput decal;
+        while (NextMaterialDecal(decals, receiver.Position, positionDx, positionDy, decal))
+        {
+            CoatingLayer layer = EvaluateCoating(decal);
+            data.Color = lerp(data.Color, layer.BaseColor.rgb, saturate(layer.BaseColor.a));
+        }
         return data;
     }
 

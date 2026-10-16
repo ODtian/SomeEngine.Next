@@ -1682,7 +1682,7 @@ internal sealed class ClusterShadeStages : IDisposable
         return ScalarLayout.FromSlangByteAddress(layout.Type.Name, layout);
     }
 
-    private static TypeLayoutReflection ResolveMaterialTypeLayout(Shader shader, int targetIndex, string attributeName)
+    internal static TypeLayoutReflection ResolveMaterialTypeLayout(Shader shader, int targetIndex, string attributeName)
     {
         var materialTypeNames = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
