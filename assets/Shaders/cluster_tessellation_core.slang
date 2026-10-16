@@ -168,9 +168,7 @@ DomainEvaluate.TriangleData LoadTessellationTriangleWithVisibility(
             context,
             visibleClusterIndex);
         VisibilityVertexInput visibilityInput;
-        visibilityInput.VisibleClusterIndex = visibleClusterIndex;
-        visibilityInput.InstanceID = request.InstanceID;
-        visibilityInput.ViewIndex = viewIndex;
+        visibilityInput.Source = request;
         visibilityInput.LocalVertexIndex = localVertex;
         varyings[corner] = visibility.makeVarying(vertices[corner], visibilityInput);
     }
@@ -760,6 +758,7 @@ void DiceTessellationPatches<
             varyings,
             scissor,
             patch.VisibleClusterIndex,
+            VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]),
             TessellationPatchTriangle(patch),
             viewIndex,
             view.TargetPolicy,

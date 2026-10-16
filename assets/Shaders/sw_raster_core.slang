@@ -224,9 +224,7 @@ void SWRasterKernel<
                 float4 clip = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
                 clip.zw = CalculateClusterRasterDepthInput(worldPosition, clip, view);
                 VisibilityVertexInput input;
-                input.VisibleClusterIndex = originalIndex;
-                input.InstanceID = realInstanceID;
-                input.ViewIndex = viewIndex;
+                input.Source = req;
                 input.LocalVertexIndex = localVertex;
                 VisibilityEvaluate.Varying varying = visibility.makeVarying(vertex, input);
                 if (vertexHalf == 0u) { firstClip = clip; firstVarying = varying; }
@@ -254,7 +252,7 @@ void SWRasterKernel<
                 triangleVaryings[corner] = vertex < 32u ? firstValue : secondValue;
             }
             RasterizeClusterTriangleWave<VertexEvaluate.Vertex, VisibilityEvaluate, TOutput>(
-                visibility, rasterOutput, clips, triangleVaryings, scissor, originalIndex,
+                visibility, rasterOutput, clips, triangleVaryings, scissor, originalIndex, req,
                 triangle, viewIndex, view.TargetPolicy, view.TargetViewIndex, active,
                 view.ScreenWidth, view.ScreenHeight, ClusterViewClipsDepth(view), ClusterSoftwareRasterUniformData.EarlyDepthEnabled);
         }
@@ -312,9 +310,7 @@ void SWRasterKernel<
         producerClip = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
         producerClip.zw = CalculateClusterRasterDepthInput(worldPosition, producerClip, view);
         VisibilityVertexInput visibilityInput;
-        visibilityInput.VisibleClusterIndex = originalIndex;
-        visibilityInput.InstanceID = realInstanceID;
-        visibilityInput.ViewIndex = viewIndex;
+        visibilityInput.Source = req;
         visibilityInput.LocalVertexIndex = producerLocalVertex;
         producerVarying = visibility.makeVarying(vertex, visibilityInput);
     }
@@ -341,6 +337,7 @@ void SWRasterKernel<
         varyings,
         scissor,
         visibleIndexPlusOne - 1u,
+        req,
         localTriIdx,
         viewIndex,
         view.TargetPolicy,

@@ -66,7 +66,7 @@ void DrawCoverage(uint thread)
     output.ImageIndex = 0u;
     RasterizeClusterTriangleWave<float4, OpaqueVisibilityEvaluate<float4>, CoverageOutput>(
         visibility, output, vertices, varyings, Inputs.Scissor,
-        0u, 0u, 0u, 0u, 0u, thread == 0u, Inputs.ViewWidth, Inputs.ViewHeight);
+        0u, MakeDrawRequest(0u, 0u, 0u, 0u), 0u, 0u, 0u, 0u, thread == 0u, Inputs.ViewWidth, Inputs.ViewHeight);
 }
 
 void DrawRectangleCoverage(uint thread, uniform uint threadCount)
@@ -89,7 +89,7 @@ void DrawRectangleCoverage(uint thread, uniform uint threadCount)
     task.Varying1 = {};
     task.Varying2 = {};
     task.VisibilityValue = EncodeVisBuffer(0u, 0u);
-    task.VisibleClusterIndex = 0u;
+    task.Source = MakeDrawRequest(0u, 0u, 0u, 0u);
     task.TriangleID = 0u;
     task.ViewIndex = 0u;
     task.TargetPolicy = 0u;

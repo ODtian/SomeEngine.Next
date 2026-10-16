@@ -35,7 +35,7 @@ public sealed class RasterDepthClipTests(D3D12TestCompiler shaderCompiler)
                 OpaqueVisibilityEvaluate<float> visibility;
                 PixelOutput output;
                 RasterizeClusterTriangleWave<float,OpaqueVisibilityEvaluate<float>,PixelOutput>(
-                    visibility,output,clip,varying,int4(0,0,2,2),0u,0u,0u,1u,0u,lane==0u,2u,2u,true);
+                    visibility,output,clip,varying,int4(0,0,2,2),0u,MakeDrawRequest(0u,0u,0u,0u),0u,0u,1u,0u,lane==0u,2u,2u,true);
             }
             """, "RasterizeLocalTriangle", new(1,1,1),
             [(new uint[4],ResourceBindingType.BufferSrv,0), (new uint[1],ResourceBindingType.BufferSrv,4),

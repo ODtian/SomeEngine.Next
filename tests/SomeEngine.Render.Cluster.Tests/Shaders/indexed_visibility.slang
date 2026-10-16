@@ -19,7 +19,7 @@ struct IndexedAlpha : IVisibilityEvaluate<StandardVertex>
     { return interpolateVertex(a, b, c, input.PerspectiveBarycentric); }
     VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
     {
-        DrawRequest cluster = VisibleClusterRequest(VisibleClusters[input.VisibleClusterIndex]);
+        DrawRequest cluster = input.Source;
         uint clusterOffset = cluster.PageOffset + PageHeap.Load(cluster.PageOffset + 16u) +
             DrawRequestClusterID(cluster) * PACKED_CLUSTER_STRIDE_BYTES;
         uint materialIndex = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.InstanceID) +
