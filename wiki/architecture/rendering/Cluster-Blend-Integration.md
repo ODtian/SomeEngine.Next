@@ -75,12 +75,19 @@ edit.SetXray(entity, new Xray(
 | --- | --- |
 | `ProjectionIndexMs` | 当前几何的用户投影、候选计数、连续范围与引用构建。复用帧记录相应阶段的实际成本。 |
 | `CoverageReceiverMs` | 覆盖与各命中阴影 receiver 请求。 |
-| `MaterialCompositeMs` | 命中筛选、表面与材质求色、颜色和状态合成。 |
+| `MaterialCompositeMs` | 命中筛选、表面与材质求色、颜色和状态合成，以及声明在该链中的硬件 stencil 导出、硬件阶段和回传。末时间戳位于共同的 shading 外层，通过显式完成边覆盖硬件回传。 |
+| `DecalIndexMs` | 贴花 Clear、Count、Reserve、Scatter、Sort 五阶段的真实 GPU 区间。 |
+| `OpaqueMaterialMs` | opaque receiver 与 color 两组用户 pass 的区间之和。该项覆盖这些 pass 内耦合的基础材质、贴花属性组合及光照求值；两组分别计时。 |
 | `Triangles` / `References` | GPU 记录的实际工作量。 |
-| `UsedBytes` / `CapacityBytes` / `AllocationBytes` | 当帧驻留数据、配置容量和实际资源分配。共享网格驻留与统一参数存储沿各自已有计量维护。 |
+| `DecalVolumes` / `DecalReferences` / `DecalResidentReferences` | GPU 工作缓冲回读的实际体积、投影引用总量与池内驻留引用数。 |
+| `UsedBytes` / `CapacityBytes` / `AllocationBytes` | 当帧驻留数据、配置容量和 RHI 分配要求，包括贴花私有缓冲、stencil 图像、256B 私有 stencil uniform upload 及硬件交换资源。 |
+| `DecalUsedBytes` / `DecalCapacityBytes` / `DecalAllocationBytes` | 总量中的贴花分项，包含 144B 体积、用户参数字节、Counts/Offsets/Writes、引用、每视图体积范围与 Work；统一 uniform arena 按贴花参数 slice 归属使用/容量字节。 |
 | `ReusedIndex` | 当前帧复用已有投影及候选内容。 |
+| `ReusedDecalIndex` | 当前帧复用已有贴花候选内容。 |
 
-`SceneTiming.Blending` 汇总三段的平均值、中位数、P95、构建/复用帧数及显存；整帧呈现间隔保留在原 `SceneTiming` 字段。逐帧原始数据保存在统一报告的 `BlendFrames`。
+`SceneTiming.Blending` 汇总五项时间的平均值、中位数、P95、两类索引的构建/复用帧数、体积/引用及显存；整帧呈现间隔保留在原 `SceneTiming` 字段。逐帧原始数据保存在统一报告的 `BlendFrames`。共享纹理、网格驻留和统一实例存储沿各自的数据持有者另计。
+
+计量由 Cluster 管线持有，纯 opaque 贴花同样产生数据。固定 128B 回读承载 12 个时间戳与两份 4×uint 工作数。每个提交保留当帧已更新的缓冲容量和 RHI 分配描述，回读以同一提交的数据计算；用户分组或资源显式 reconcile 时才维护计时完成边。
 
 `SceneTiming.Instances` 在场景完成时记录共用实例存储的实际行数、批次数、容量与属性字节数，效果增加的实例属性进入该项；共享几何仍由 `GeometryUsedBytes` 等既有字段记录。
 

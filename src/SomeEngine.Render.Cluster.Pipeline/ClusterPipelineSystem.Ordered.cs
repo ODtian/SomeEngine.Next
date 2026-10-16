@@ -12,7 +12,11 @@ public sealed partial class ClusterPipelineSystem
     public ClusterStencil GetStencil()
     {
         if (GraphData.Stencil is not null) return GraphData.Stencil;
-        EditGraph((ref RenderGraphEdit edit) => _ = CreateStencil(ref edit));
+        EditGraph((ref RenderGraphEdit edit) =>
+        {
+            _ = CreateStencil(ref edit);
+            ReconcileBlendMeasurements(ref edit);
+        });
         return GraphData.Stencil!;
     }
 

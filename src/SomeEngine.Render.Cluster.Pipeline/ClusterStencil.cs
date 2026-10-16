@@ -39,6 +39,11 @@ public sealed class ClusterStencil
         uint alignment = Math.Max(512u, device.Capabilities.Limits.TextureDataPlacementAlignment);
         _viewBytes = ((_rowPitch * _height + alignment - 1u) / alignment) * alignment;
         _uniformBuffer = backend.CreateBuffer(device, new(256, BufferUsages.Constant), MemoryType.Upload);
+        CapacityBytes = (ulong)_width * _height * _views * 4u + 256u;
+        AllocationBytes = backend.GetTextureMemoryRequirements(device,
+            new(TextureDimension.Texture2D, _width, _height, 1, 1, views, 1, Format.R32UInt,
+                TextureUsages.Sampled | TextureUsages.Storage)).Size +
+            backend.GetBufferMemoryRequirements(device, new(256, BufferUsages.Constant), MemoryType.Upload).Size;
         using (MappedBuffer mapped = backend.Map(_uniformBuffer, MapType.Write, BufferRange.Whole))
         {
             Span<uint> values = stackalloc uint[8] { _width, _height, views, _rowPitch, _viewBytes, 0, 0, 0 };
@@ -60,6 +65,8 @@ public sealed class ClusterStencil
     /// <summary>Retained graph region for custom hardware and following integer-image stages.</summary>
     public GraphRegionId Region { get; }
     internal GraphPassId ClearPass { get; }
+    internal ulong CapacityBytes { get; }
+    internal ulong AllocationBytes { get; }
     /// <summary>The latest completed integer-image stage in the declared chain.</summary>
     public GraphPassId CompletePass => _attachments.LastOrDefault()?.CompletePass ?? _sourceReady;
 

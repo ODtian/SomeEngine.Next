@@ -487,6 +487,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             GraphData.MaterialBuffers = materialResources.Buffers;
             GraphData.MaterialTextures = materialResources.Textures;
             ReconcileTransparency(ref edit, assignments, shadeStages);
+            ReconcileBlendMeasurements(ref edit);
         });
         _materialScalars = scalars;
         _textureScalarChanges.Clear();
@@ -680,6 +681,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
             BindMaterialDecalFrame(ref graph, views[..primaryViewCount]);
             BindTransparencyFrame(ref graph, batch, views[..primaryViewCount], binding.Publication is not null);
+            GraphData.BlendMeasurements?.Stage(ref graph, _measurementSimulationFrame,
+                GraphData.Transparency?.Reused ?? true, GraphData.Decals!.Reused, CaptureDecalBuffers());
             GraphData.Outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRange);
             _residentPageReads = GraphData.Outputs.Geometry.ResidentPageReads;
             _hasPendingFrame = true;
