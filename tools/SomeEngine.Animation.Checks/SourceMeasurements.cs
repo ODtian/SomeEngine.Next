@@ -52,7 +52,7 @@ internal static unsafe partial class FullPathMeasurements
         {
             Entity target = targets[item] = world.CreateEntity(new Plain());
             world.Add(target, TwoLayers());
-            world.AddBuffer<Contribution<float>>(target);
+            PropertyAnimation.DeclareContributions<float>(world, target, 2);
             PropertyAnimation.SetBase(world, target, channel, 0f);
         }
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -67,11 +67,10 @@ internal static unsafe partial class FullPathMeasurements
         {
             pair.Reverse = !pair.Reverse;
             foreach (Entity target in targets)
-                world.ExecuteBufferWrite<Contribution<float>, ContributionPair>(target, ref pair, static (buffer, ref pair) =>
-                {
-                    buffer.Add(pair.Reverse ? pair.Second : pair.First);
-                    buffer.Add(pair.Reverse ? pair.First : pair.Second);
-                });
+            {
+                PropertyAnimation.Contribute(world, target, pair.Reverse ? pair.Second : pair.First);
+                PropertyAnimation.Contribute(world, target, pair.Reverse ? pair.First : pair.Second);
+            }
             systems.Update();
         });
         Require(channel.Read(world, targets[^1]) == 17.5f, "Dynamic sources must follow the declared layer formula.");
@@ -125,10 +124,8 @@ internal static unsafe partial class FullPathMeasurements
     private static SystemGroup<ImmediateSystemContext> TweenSystems(World world)
     {
         var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        systems.Add(new TimelineSystem());
-        systems.Add(new TypedTrackSystem<float, FloatOps, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>());
-        systems.Add(new ComposeSystem<float, FloatOps>());
-        systems.Add(new TimelineEndSystem());
+        var spec = Spec.Tween<float, FloatOps, Linear>(10_000);
+        AnimationSystems.Add(systems, in spec);
         systems.Initialize();
         return systems;
     }

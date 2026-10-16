@@ -6,6 +6,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Checks;
 
@@ -19,7 +20,7 @@ internal static unsafe partial class FullPathMeasurements
     public static void Run(int[] counts)
     {
         Console.WriteLine($"framework={RuntimeInformation.FrameworkDescription}; architecture={RuntimeInformation.ProcessArchitecture}; nativeAot={!RuntimeFeature.IsDynamicCodeSupported}; executableBytes={new FileInfo(Environment.ProcessPath!).Length}; warmup={Warmups}; samples={Samples}; frameDelta={FrameDelta}; target={TargetValue}");
-        Console.WriteLine("category,name,count,median_ns_per_item,p95_ns_per_item,p99_ns_per_item,allocated_bytes_per_sample,first_ns,first_allocated_bytes,retained_heap_bytes,process_peak_working_set_bytes");
+        Console.WriteLine("category,name,count,median_ns_per_item,p95_ns_per_item,p99_ns_per_item,allocated_bytes_per_sample,first_ns,first_allocated_bytes,retained_heap_bytes,process_peak_working_set_bytes,warmup_allocated_bytes");
         MeasureSystemEntry();
         foreach (int count in counts)
         {
@@ -29,9 +30,11 @@ internal static unsafe partial class FullPathMeasurements
             MeasureFields<Plain, PlainAccess>("plain", count, static () => default, Channel<float>.Of<Plain, PlainAccess>(1, false, 0));
             MeasureFields<Nested, NestedAccess>("nested", count, static () => default, Channel<float>.Of<Nested, NestedAccess>(1, false, 0));
             MeasureFields<Referenced, ReferenceAccess>("reference", count, static () => new() { Value = new ReferenceValue() }, Channel<float>.Of<Referenced, ReferenceAccess>(1));
+            MeasureBoundFields(count);
             MeasureControls(count);
             MeasureLifecycle(count);
             MeasureSources(count);
+            MeasureGraphs(count);
         }
     }
 
@@ -104,7 +107,8 @@ internal static unsafe partial class FullPathMeasurements
     }
 
     private static void MeasureFull<TComponent, TAccess, TParameters, TState, TMotion>(string name, int count,
-        Func<TComponent> create, Channel<float> channel, Spec<float, FloatOps, TParameters, TState, TMotion> spec)
+        Func<TComponent> create, Channel<float> channel, Spec<float, FloatOps, TParameters, TState, TMotion> spec,
+        WorldExecution? execution = null)
         where TComponent : struct, IComponent
         where TAccess : struct, IFieldAccess<TComponent, float>
         where TParameters : struct
@@ -114,7 +118,7 @@ internal static unsafe partial class FullPathMeasurements
         long heapBefore = GC.GetTotalMemory(true);
         long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         long start = Stopwatch.GetTimestamp();
-        using var world = new World(count);
+        using var world = new World(count, execution);
         var targets = new Entity[count];
         for (int item = 0; item < count; item++)
         {
@@ -123,19 +127,31 @@ internal static unsafe partial class FullPathMeasurements
             PropertyAnimation.To(world, target, channel, TargetValue, spec);
         }
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        systems.Add(new TimelineSystem());
-        systems.Add(new TypedTrackSystem<float, FloatOps, TParameters, TState, TMotion>());
-        systems.Add(new ComposeSystem<float, FloatOps>());
-        systems.Add(new TimelineEndSystem());
+        AnimationSystems.Add(systems, in spec);
         systems.Initialize();
         double firstTime = Stopwatch.GetElapsedTime(start).TotalNanoseconds;
         long firstAllocation = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
         long retained = GC.GetTotalMemory(true) - heapBefore;
         var context = new ImmediateSystemContext(world, 0, 0, FrameDelta);
-        Record("full", name, count, () => systems.Update(ref context), firstTime, firstAllocation, retained);
+        Record("full", name, count, () => systems.Update(ref context), firstTime, firstAllocation, retained, heapBefore);
         Require(world.IsEnabled<Timeline>(targets[^1]), "Full field measurement requires continuously active tracks.");
         Require(world.ReadField<TComponent, float, TAccess>(targets[^1]) > 0, "Full field measurement must reach the declared field.");
         Console.WriteLine($"storage,{name},{count},track_bytes={Unsafe.SizeOf<Track<float>>()},motion_bytes={Unsafe.SizeOf<MotionInstance<float, FloatOps, TParameters, TState, TMotion>>()}");
+    }
+
+    private static void MeasureBoundFields(int count)
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        var spec = Spec.Tween<float, FloatOps, Linear>(10_000);
+        MeasureFull<Plain, PlainAccess, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>(
+            "tween-plain-worldjobs", count, static () => default,
+            Channel<float>.Of<Plain, PlainAccess>(1, false, 0), spec, new WorldJobs(scheduler));
+        MeasureFull<Nested, NestedAccess, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>(
+            "tween-nested-worldjobs", count, static () => default,
+            Channel<float>.Of<Nested, NestedAccess>(1, false, 0), spec, new WorldJobs(scheduler));
+        MeasureFull<Referenced, ReferenceAccess, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>(
+            "tween-reference-worldjobs", count, static () => new() { Value = new ReferenceValue() },
+            Channel<float>.Of<Referenced, ReferenceAccess>(1), spec, new WorldJobs(scheduler));
     }
 
     private static void MeasureControls(int count)
@@ -192,9 +208,7 @@ internal static unsafe partial class FullPathMeasurements
             foreach (Entity target in targets) PropertyAnimation.To(world, target, channel, TargetValue, spec);
         });
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        systems.Add(new TimelineSystem());
-        systems.Add(new TypedTrackSystem<float, FloatOps, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>());
-        systems.Add(new TimelineEndSystem());
+        AnimationSystems.Add(systems, in spec);
         systems.Initialize();
         var context = new ImmediateSystemContext(world, 0, 0, FrameDelta);
         RecordFirst("first-complete-frame", count, () => systems.Update(ref context));
@@ -216,7 +230,8 @@ internal static unsafe partial class FullPathMeasurements
         sample();
         double elapsed = Stopwatch.GetElapsedTime(start).TotalNanoseconds;
         long allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
-        Console.WriteLine(FormattableString.Invariant($"lifecycle,{name},{count},{elapsed / count:F3},{elapsed / count:F3},{elapsed / count:F3},{allocated},{elapsed:F0},{allocated},0,{Environment.WorkingSet}"));
+        using var process = Process.GetCurrentProcess();
+        Console.WriteLine(FormattableString.Invariant($"lifecycle,{name},{count},{elapsed / count:F3},{elapsed / count:F3},{elapsed / count:F3},{allocated},{elapsed:F0},{allocated},0,{process.PeakWorkingSet64},0"));
     }
 
     private static void ReadRoots<TComponent, TAccess>(QueryCursor query, ref float sum)
@@ -245,9 +260,12 @@ internal static unsafe partial class FullPathMeasurements
     private static void EmptyQuery(QueryCursor query) { }
 
     private static void Record(string category, string name, int count, Action sample,
-        double firstTime = 0, long firstAllocation = 0, long retained = 0)
+        double firstTime = 0, long firstAllocation = 0, long retained = 0, long heapBefore = 0)
     {
+        long allocatedBeforeWarmup = GC.GetAllocatedBytesForCurrentThread();
         for (int warmup = 0; warmup < Warmups; warmup++) sample();
+        long warmupAllocation = GC.GetAllocatedBytesForCurrentThread() - allocatedBeforeWarmup;
+        if (heapBefore != 0) retained = GC.GetTotalMemory(true) - heapBefore;
         var times = new double[Samples];
         long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         for (int index = 0; index < times.Length; index++)
@@ -259,7 +277,7 @@ internal static unsafe partial class FullPathMeasurements
         long allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
         Array.Sort(times);
         using var process = Process.GetCurrentProcess();
-        Console.WriteLine(FormattableString.Invariant($"{category},{name},{count},{times[Samples / 2]:F3},{times[(int)(Samples * 0.95)]:F3},{times[^1]:F3},{allocated / (double)Samples:F3},{firstTime:F0},{firstAllocation},{retained},{process.PeakWorkingSet64}"));
+        Console.WriteLine(FormattableString.Invariant($"{category},{name},{count},{times[Samples / 2]:F3},{times[(int)(Samples * 0.95)]:F3},{times[^1]:F3},{allocated / (double)Samples:F3},{firstTime:F0},{firstAllocation},{retained},{process.PeakWorkingSet64},{warmupAllocation}"));
     }
 
     private static void Require(bool condition, string message)

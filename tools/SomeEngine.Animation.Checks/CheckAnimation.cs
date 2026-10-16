@@ -24,6 +24,7 @@ internal static partial class CheckAnimation
         global::SomeEngine.Tools.EcsAotSmoke.ComponentBytesSmoke.Check();
         global::SomeEngine.Tools.EcsAotSmoke.TypedFieldSmoke.Check();
         CheckGeneratedFieldPlayback();
+        CheckBoundWorldFields();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.GeneratedFieldTargetsAnimateThroughTypedSpecs();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.EqualTargetsPreserveTheirElapsedProgress();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.ReferencedStateReceivesOnlyThePresentedValues();
