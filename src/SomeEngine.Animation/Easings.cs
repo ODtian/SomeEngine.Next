@@ -196,4 +196,3 @@ public readonly struct BounceOut : IEasing
         return factor * (t -= 2.625f / width) * t + 0.984375f;
     }
 }
-
