@@ -75,10 +75,15 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
                 bool hasStages = chunk.HasBuffer<TimelineStage>();
                 foreach (QueryRow row in chunk.Rows)
                 {
+                    DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
+                    int firstLegacy = 0;
+                    while (firstLegacy < tracks.Count && tracks.Read(firstLegacy).Typed)
+                        firstLegacy++;
+                    if (firstLegacy == tracks.Count)
+                        continue;
                     ReadOnlySpan<Keyframe> keyframes = hasKeyframes ? row.ReadBuffer<Keyframe>().AsSpan() : default;
                     ReadOnlySpan<TimelineStage> stages = hasStages ? row.ReadBuffer<TimelineStage>().AsSpan() : default;
                     ref Timeline timeline = ref row.ReadWrite<Timeline>();
-                    DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
                     int lastStage = FindLastSampledStage(stages, timeline.Stage, timeline.Time, timeline.Paused);
                     SubmitFinishedTracks(world, row.Entity, tracks, lastStage, timeline.Time, timeline.Starts, evaluation.WeightChannels);
                     if (!evaluation.Enabled)

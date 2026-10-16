@@ -28,6 +28,18 @@ internal static class FieldWrites<T> where T : unmanaged
 
     internal static void Flush(World world, FieldWrite<T>[] writes, ref int count)
     {
+        if (count == 0)
+            return;
+        Channel<T> channel = writes[0].Channel;
+        int sameChannel = 1;
+        while (sameChannel < count && writes[sameChannel].Channel == channel)
+            sameChannel++;
+        if (sameChannel == count)
+        {
+            channel.WriteBatch(world, writes.AsSpan(0, count));
+            count = 0;
+            return;
+        }
         for (int index = 0; index < count; index++)
         {
             bool written = false;

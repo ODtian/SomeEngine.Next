@@ -75,6 +75,16 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                 if (instances.Count == 0)
                     continue;
                 DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
+                int firstSelected = 0;
+                for (; firstSelected < tracks.Count; firstSelected++)
+                {
+                    Track<T> candidate = tracks.Read(firstSelected);
+                    if (Selected(in candidate, type, evaluation.Weights) &&
+                        (!evaluation.CaptureOnly || candidate.CaptureStart))
+                        break;
+                }
+                if (firstSelected == tracks.Count)
+                    continue;
                 DynamicBuffer<PropertySource<T>> sources = inlineDirect ? row.Buffer<PropertySource<T>>() : default;
                 Span<MotionData<T, TParameters, TState>> data = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Data(instances);
                 for (int index = 0; index < data.Length; index++)
@@ -88,7 +98,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     ? row.Read<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>().Values : default;
                 int lastStage = GraphTimes.LastStage(stages, timeline.Stage, timeline.Time, timeline.Paused);
                 bool evaluate = false;
-                for (int index = 0; index < tracks.Count; index++)
+                for (int index = firstSelected; index < tracks.Count; index++)
                 {
                     Track<T> previous = tracks.Read(index);
                     if (!Selected(in previous, type, evaluation.Weights))
@@ -209,7 +219,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     continue;
                 var batch = new MotionBatch<T, TParameters, TState>(data, parameters);
                 TEvaluator.EvaluateBatch<TEvaluator>(ref batch);
-                for (int index = 0; index < tracks.Count; index++)
+                for (int index = firstSelected; index < tracks.Count; index++)
                 {
                     ref Track<T> track = ref tracks[index];
                     if (!Selected(in track, type, evaluation.Weights) || !data[track.MotionIndex].Active)
