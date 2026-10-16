@@ -39,11 +39,6 @@ internal static class ShaderTestCompilation
         ShaderAsset asset,
         CancellationToken cancellationToken = default)
     {
-        return asset.GetBlock<ShaderBlock>().CreateAsync(
-            asset.GetBlock<ShaderSourceBlock>(),
-            Slang,
-            CreateSessionDescription(),
-            asset.Name,
-            cancellationToken: cancellationToken);
+        return asset.CreateAsync(Slang, CreateSessionDescription(), cancellationToken: cancellationToken);
     }
 }
