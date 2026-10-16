@@ -621,7 +621,10 @@ CPU、GPU benchmark 通过 tools/Invoke-Benchmark.ps1 提交到公共 FIFO 队�
 - [SomeUI Animation](https://github.com/ODtian/SomeEngine.Next/blob/codex/someui/wiki/architecture/someui/Animation.md)
 - #48–#52、#83 与 #94 的正文和讨论；票的范围见第 17 节。
 
-### 本稿对应的当前实现位置
+### 确认规格时的源码基线
+
+以下源码对照记录确认本规格时的基线；实施后的公开入口与执行证据见各原子 Wiki 和
+[本次验收记录](../wiki/evidence/Animation/2026-10-16/Typed-Execution.md)。
 
 - [Spec 与 Curve](https://github.com/ODtian/SomeEngine.Next/blob/codex/someui/src/SomeEngine.Animation/Spec.cs)：当前 Spec 持有 Duration 与 Curve。
 - [Curve](https://github.com/ODtian/SomeEngine.Next/blob/codex/someui/src/SomeEngine.Animation/Curve.cs)：当前按种类求值、标量函数指针与 Spring 推进。
