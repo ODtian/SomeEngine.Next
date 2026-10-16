@@ -43,7 +43,7 @@ internal static class RuntimeApplication
         int frames = 0;
         do
         {
-            if (platform is not null) options = platform.Options;
+            if (platform is not null) options = platform.Options with { MeasureBlending = platform.MeasureBlending };
             platform?.BeginScene();
             try
             {
@@ -336,7 +336,8 @@ internal static class RuntimeApplication
             Device = Backend.CreateDevice(new DeviceDesc(
                 adapterId,
                 queues,
-                requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands,
+                requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands |
+                    (options.MeasureBlending ? DeviceFeatures.CalibratedTimestamps : DeviceFeatures.None),
                 optionalFeatures: options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders,
                 label: "SomeEngine Runtime Device"));
             Swapchain = Backend.CreateSwapchain(Device, new SwapchainDesc(
@@ -551,7 +552,7 @@ internal static class RuntimeApplication
             if (options.ScenePlayback is not null)
                 scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
                     orbitCamera: options.ScenePlayback == "camera");
-            if (platform?.InitializeScene is null) extraction.Extract(mainWorld);
+            if (platform?.InitializeScene is null && platform?.UpdateScene is null) extraction.Extract(mainWorld);
         }
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
             scene.Camera.View,
@@ -570,7 +571,7 @@ internal static class RuntimeApplication
             device,
             renderWorld,
             ClusterRenderFeature.InstanceLayout,
-            script is null && platform?.InitializeScene is null ? new RenderInstanceOptions
+            script is null && platform?.InitializeScene is null && platform?.UpdateScene is null ? new RenderInstanceOptions
             {
                 RowCapacity = Math.Max(1, scene.MeshInstanceCount),
                 BatchCapacity = 1,
@@ -668,6 +669,8 @@ internal static class RuntimeApplication
         ClusterPipelineSystem pipeline = CreatePipeline(
             outputDescription,
             metrics: options.VerifyFrameOutput || options.LinearFrameOutputPath is not null || script is not null);
+        if (platform is not null && options.MeasureBlending)
+            pipeline.BlendFrameCompleted += platform.RecordBlendFrame;
         using var virtualShadows = new VirtualShadowFeature(
             backend,
             device,
@@ -740,6 +743,7 @@ internal static class RuntimeApplication
                 MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
                 UseInstanceGroups = options.UseInstanceGroups,
                 EnableFrameMetricsReadback = metrics,
+                MeasureBlending = preview is null && options.MeasureBlending,
             });
 
         void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
@@ -768,7 +772,8 @@ internal static class RuntimeApplication
 
         int frameIndex = 0;
         uint submittedFrames = 0;
-        var sceneEdit = script is not null || platform?.InitializeScene is not null ? new SceneEdit(scene, window) : null;
+        var sceneEdit = script is not null || platform?.InitializeScene is not null || platform?.UpdateScene is not null
+            ? new SceneEdit(scene, window) : null;
         int actionIndex = 0;
         int? captureFrame = options.CaptureFrame ?? (options.FrameLimit > 0 ? options.FrameLimit - 1 : null);
         bool outputSaved = false, linearOutputSaved = false;
@@ -830,6 +835,8 @@ internal static class RuntimeApplication
                     {
                         if (frameIndex == 0 && platform?.InitializeScene is { } initializeScene)
                             initializeScene(sceneEdit, platform.Current);
+                        if (platform?.UpdateScene is { } updateScene)
+                            updateScene(sceneEdit, platform.Current, frameIndex);
                         if (script is not null)
                             while (actionIndex < script.Actions.Count && script.Actions[actionIndex].Frame == frameIndex)
                                 script.Actions[actionIndex++].Execute(sceneEdit);
@@ -954,7 +961,8 @@ internal static class RuntimeApplication
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: applying extracted scene.");
-                if (options.SynchronousFrames || script is not null || (frameIndex == 0 && platform?.InitializeScene is not null))
+                if (options.SynchronousFrames || script is not null || platform?.UpdateScene is not null ||
+                    (frameIndex == 0 && platform?.InitializeScene is not null))
                 {
                     if (animateScene && options.ScenePlayback is null)
                         scene.Update(sceneSeconds);
@@ -1077,6 +1085,7 @@ internal static class RuntimeApplication
                 }) : null;
                 VirtualShadowFrameQuality? shadowQuality = null;
                 long executeStarted = Stopwatch.GetTimestamp();
+                pipeline.SetMeasurementFrame(frameIndex);
                 startup.RecordStage("PostProcessing");
                 FrameOutputMetrics? frameOutput = ExecuteFrame(
                     backend,
@@ -1217,7 +1226,7 @@ internal static class RuntimeApplication
                                 orbitCamera: options.ScenePlayback == "camera");
                         else if (updateScene)
                             scene.Update(nextSceneTime);
-                        if (script is null) extraction.Extract(mainWorld);
+                        if (script is null && platform?.UpdateScene is null) extraction.Extract(mainWorld);
                     });
                 }
 
@@ -1372,7 +1381,10 @@ internal static class RuntimeApplication
         finally
         {
             if (platform is not null)
+            {
                 virtualShadows.ResolutionBiasCompleted -= platform.RecordShadowResolutionBias;
+                pipeline.BlendFrameCompleted -= platform.RecordBlendFrame;
+            }
             if (nextGameUpdate is not null)
                 RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
             renderDevice.WaitForTrackedSubmissions(FrameTimeout);

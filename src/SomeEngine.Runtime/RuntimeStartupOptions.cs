@@ -44,6 +44,7 @@ public sealed record RuntimeStartupOptions(
     public bool HideDebugUi { get; init; }
     public bool TemporalAntialiasing { get; init; } = true;
     public bool VirtualShadows { get; init; } = true;
+    public bool MeasureBlending { get; init; }
     /// <summary>Optional directional and local ray count; zero selects hard depth comparison.</summary>
     public uint? ShadowRayCount { get; init; }
 
@@ -162,6 +163,7 @@ public sealed record RuntimeStartupOptions(
             HideDebugUi = args.Contains("--no-debug-ui", StringComparer.OrdinalIgnoreCase),
             TemporalAntialiasing = ReadBooleanOption(args, ["--taa"], ["--no-taa"], true),
             VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
+            MeasureBlending = args.Contains("--measure-blending", StringComparer.OrdinalIgnoreCase),
             ShadowRayCount = shadowRayCount,
         };
     }

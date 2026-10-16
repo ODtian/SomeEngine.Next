@@ -305,7 +305,7 @@ internal sealed class RuntimeScene : IDisposable
             Meshes = GetMeshEntities().Select(entity =>
             {
                 Mesh mesh = _world.Read<MeshInstance>(entity).Mesh;
-                Guid asset = _meshes.First(value => ReferenceEquals(value.Mesh, mesh)).Asset;
+                Guid asset = _meshes.FirstOrDefault(value => ReferenceEquals(value.Mesh, mesh)).Asset;
                 return new SceneMeshTransform(asset, _world.Read<WorldTransform>(entity).Qvvs.ToMatrix());
             }).ToArray(),
         };
@@ -322,6 +322,8 @@ internal sealed class RuntimeScene : IDisposable
         return material!;
     }
 
+    internal Mesh GetMesh(Entity entity) => _world.Read<MeshInstance>(entity).Mesh;
+
     internal void ReplaceMaterial(Entity entity, Material material, int index) =>
         _world.ExecuteBufferWrite<MeshMaterialBinding>(entity, values => values[index] = new(material));
 
@@ -329,10 +331,15 @@ internal sealed class RuntimeScene : IDisposable
     {
         MeshMaterialBinding[] bindings = [];
         _world.ExecuteBufferRead<MeshMaterialBinding>(source, values => bindings = values.AsSpan().ToArray());
+        return AddEntity(_world.Read<MeshInstance>(source), bindings, transform);
+    }
+
+    internal Entity AddEntity(MeshInstance mesh, MeshMaterialBinding[] bindings, TransformQvvs transform)
+    {
         Entity entity = _world.CreateEntity(new WorldTransform { Qvvs = transform });
         try
         {
-            _world.Add(entity, _world.Read<MeshInstance>(source));
+            _world.Add(entity, mesh);
             _world.AddBuffer<MeshMaterialBinding>(entity);
             _world.ExecuteBufferWrite<MeshMaterialBinding>(entity, values =>
             {
