@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Numerics;
 using SlangShaderSharp;
 using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
@@ -187,14 +188,19 @@ public sealed class AssetLoaderTests
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.shader.asset");
-        string sourcePath = Path.Combine(
-            AppContext.BaseDirectory,
-            "Content",
-            "Shaders",
-            "hello_triangle.shader.asset");
-        using ShaderAsset source = ShaderAsset.OpenAsync(sourcePath).AsTask().GetAwaiter().GetResult();
-        using ShaderAsset asset = source.CreateCopy(guid);
-        asset.Name = "stored-shader";
+        string sourcePath = directory.File("stored.slang");
+        File.WriteAllText(sourcePath, """
+            [shader("vertex")]
+            float4 VSMain(uint vertex : SV_VertexID) : SV_Position
+            {
+                return float4(vertex == 1 ? 1 : -1, vertex == 2 ? 1 : -1, 0, 1);
+            }
+            """);
+        using var asset = new ShaderAsset(guid) { Name = "stored-shader" };
+        asset.GetBlock<ShaderSourceBlock>().SourceNames = [sourcePath];
+        IGlobalSession slang = SlangShaderImporter.GlobalSession;
+        SessionDesc settings = TestShaderLoading.CreateSessionDescription(slang, SlangCompileTarget.Spirv);
+        asset.CompileAsync(slang, settings).GetAwaiter().GetResult();
         asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }
