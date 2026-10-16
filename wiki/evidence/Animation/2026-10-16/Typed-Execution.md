@@ -33,3 +33,7 @@ Debug 独立消费者通过 `FieldAccessChecks.VerifyAll` 运行 13 条共享公
 检查覆盖 table 与 sparse 的普通、值嵌套、引用嵌套和可写属性；行、列与任意实体批次写版本；当前对象身份；包含托管引用的泛型缓冲；managed 查询和系统回调的公共结果。任意实体批次共享一次根存储写权限和一个提交版本，批内解析当前行并调用具体访问类型。
 
 既有 ECS 与 Systems 测试工程的规则诊断保存在 [ECS 输出](ecs-rules.stdout.txt)、[ECS 结果](ecs-rules.result.json)、[Systems 输出](systems-rules.stdout.txt) 和 [Systems 结果](systems-rules.result.json)。独立消费者共用公开行为源文件，提供各能力的运行证据。
+
+## 算法与图公开行为
+
+核心与类型化图的 Release 定向验证通过 27 项，行为规则检查为 0 项违规。队列 `01c002753d7a438b89c8ff24354c7e7e`，退出码 0。[标准输出](core-typed-graph.stdout.txt) · [标准错误](core-typed-graph.stderr.txt) · [队列结果](core-typed-graph.result.json)。覆盖完整类型参数、managed 状态与消费者算法、阶段和完成、共享图定义、实例参数更新、固定截止时间重定目标、自定义条件及自定义叶生命周期。
