@@ -15,6 +15,8 @@ internal static class GraphConsumerChecks
     {
         CheckSequence();
         CheckSharedInstances();
+        CheckInstanceParameters();
+        CheckRetarget();
         CheckCustomCondition();
         CheckPublicLeaf();
         Console.WriteLine("GRAPH_CONSUMERS_PASSED typed-sequence shared-definition instance-state custom-condition public-leaf");
@@ -88,6 +90,52 @@ internal static class GraphConsumerChecks
             "A consumer condition advances only the instance with matching graph input.");
     }
 
+    private static void CheckRetarget()
+    {
+        using var world = new World();
+        Entity first = world.CreateEntity(new GraphValue());
+        Entity second = world.CreateEntity(new GraphValue());
+        var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 1, "retarget"));
+        using var builder = new AnimationBuilder(world);
+        builder.To(first, Value, 10, spec);
+        using CompiledGraph graph = builder.Compile();
+        Entity animation = graph.Play(world, first);
+        graph.Play(world, second);
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.Add(systems, spec);
+        Tick(systems, world, 0.5);
+        PropertyAnimation.Retarget(world, animation, Value, 20);
+        Tick(systems, world, 0.25);
+        Require(world.Read<GraphValue>(first).Value == 12.5f && world.Read<GraphValue>(second).Value == 7.5f,
+            "Retargeting uses the instance's current output and the remaining compiled interval.");
+        Tick(systems, world, 0.25);
+        Require(world.Read<GraphValue>(first).Value == 20 && world.Read<GraphValue>(second).Value == 10,
+            "Both instances reach their own endpoint at the shared definition's compiled deadline.");
+    }
+
+    private static void CheckInstanceParameters()
+    {
+        using var world = new World();
+        Entity first = world.CreateEntity(new GraphValue());
+        Entity second = world.CreateEntity(new GraphValue());
+        var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 1, "shared"));
+        using var builder = new AnimationBuilder(world);
+        builder.To(first, Value, 10, spec);
+        using CompiledGraph graph = builder.Compile();
+        Entity animation = graph.Play(world, first);
+        graph.Play(world, second);
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.Add(systems, spec);
+        Tick(systems, world, 0.25);
+        var changed = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 2, "instance"));
+        AnimationGraph.UpdateParameters(world, animation, Value, in changed);
+
+        Tick(systems, world, 0.25);
+
+        Require(world.Read<GraphValue>(first).Value == 10 && world.Read<GraphValue>(second).Value == 5,
+            "Formula parameter changes retain one instance's time while the other keeps its shared parameters.");
+    }
+
     private static void CheckPublicLeaf()
     {
         using var world = new World();
@@ -109,6 +157,10 @@ internal static class GraphConsumerChecks
         world.ExecuteBufferRead<MarkerState, (AnimationLeafBatch<TimedMarkerParameters>? Definition, bool Same)>(b, ref shared,
             static (states, ref shared) => shared.Same = ReferenceEquals(shared.Definition, states[0].Definition));
         Require(shared.Same, "Leaf instances reference the same compiled definition.");
+        PropertyAnimation.Stop(world, a);
+        Entity reused = graph.Play(world, first);
+        Require(reused == a && world.Read<MarkerReleases>(a).Count == 1,
+            "Stopping releases the consumer leaf once and its entity accepts the shared definition again.");
     }
 
     private static void Tick(SystemGroup<ImmediateSystemContext> systems, World world, double delta)

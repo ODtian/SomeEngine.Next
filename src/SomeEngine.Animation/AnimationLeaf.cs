@@ -10,6 +10,7 @@ public interface IAnimationLeaf<TParameters> where TParameters : struct
     static virtual LayerChannel Output(in TParameters parameters) => default;
     static virtual object? Prepare(ReadOnlySpan<TParameters> parameters) => null;
     static virtual void Complete(World world, Entity animation) { }
+    static virtual void Release(World world, Entity animation) { }
     static abstract void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<TParameters> definitions, int index, in AnimationLeafPlacement placement);
 }
@@ -68,12 +69,13 @@ internal sealed class GraphLeafData<TParameters, TLeaf>(in TParameters parameter
     }
 }
 
-internal static class GraphLeaves<TParameters, TLeaf>
+internal static unsafe class GraphLeaves<TParameters, TLeaf>
     where TParameters : struct
     where TLeaf : struct, IAnimationLeaf<TParameters>
 {
     internal static void Install(World world, Entity animation, in GraphTrack source, byte[] values, uint starts, Entity replacement)
     {
+        GraphReleases.Add(world, animation, &Release);
         Entity target = replacement == Entity.Null ? source.Node.Target : replacement;
         if (source.Node.DefinesLayer)
             GraphLeafLayers.Apply(world, target, source.Node.Layer, source.Node.LayerDefinition);
@@ -82,6 +84,8 @@ internal static class GraphLeaves<TParameters, TLeaf>
             source.MotionStage, starts, source.Node.Layer, source.Output, definitions.Parameters.Length);
         TLeaf.Install(world, animation, target, definitions, source.LeafIndex, in placement);
     }
+
+    private static void Release(World world, Entity animation) => TLeaf.Release(world, animation);
 }
 
 internal static class GraphLeafLayers

@@ -55,6 +55,11 @@ public struct GraphOutputSystem<T, TOps>(TrackFields fields = TrackFields.Proper
                     Entity target = leader.Target == Entity.Null ? row.Entity : leader.Target;
                     if (!world.IsAlive(target))
                         continue;
+                    if (!world.IsEnabled<Timeline>(row.Entity) && !world.Has<AnimationLayers>(target))
+                    {
+                        PropertyAnimation.FinishSource(world, row.Entity, in leader);
+                        continue;
+                    }
                     T value = default;
                     float total = 0;
                     Track<T> selected = default;

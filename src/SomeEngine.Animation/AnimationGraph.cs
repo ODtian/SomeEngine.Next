@@ -15,7 +15,7 @@ public struct GraphBranch : IBufferElement
     public Entity Animation;
 }
 
-public static class AnimationGraph
+public static partial class AnimationGraph
 {
     /// <summary>Reads the shared phase time and weight selected for an installed public leaf.</summary>
     public static AnimationLeafTime ReadTime(World world, Entity animation, in AnimationLeafPlacement placement)

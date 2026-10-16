@@ -181,18 +181,34 @@ public static partial class PropertyAnimation
         {
             Track<T> track = ReadTrack<T>(world, animation, index);
             if (track.Channel != channel || track.Finished || track.StartId != timeline.Starts || track.Stage != timeline.Stage) continue;
+            if (track.FromGraph && (track.CaptureStart || !track.Sampled)) continue;
+            float time = timeline.Time;
+            if (track.GraphMotion > 0)
+            {
+                GraphMotion motion = ReadBufferItem<GraphMotion>(world, animation, track.GraphMotion - 1);
+                if (motion.Weight <= 0 || track.MotionStage != motion.Stage) continue;
+                time = motion.Time;
+            }
             Entity target = track.Target == Entity.Null ? animation : track.Target;
             T current = track.Typed || world.Has<AnimationLayers>(target) || world.HasBuffer<Contribution<T>>(target)
                 ? track.Current : track.Channel.Read(world, target);
             track.From = track.Current = current;
             track.To = value;
             track.Endpoints = TrackEndpoints.Values;
-            track.Start = track.SampleTime = timeline.Time;
+            track.SampleTime = time;
+            if (track.FromGraph)
+            {
+                track.TimeOffset = time - track.Start;
+                track.TimeScale = track.End == StageEnd.Duration ? track.Duration / (track.Duration - track.TimeOffset) : 1;
+            }
+            else
+                track.Start = time;
             if (track.Typed)
             {
                 var values = new MotionValues<T>(current, value, current);
                 MotionAccesses<T>.Items[track.MotionType - 1].Retarget(world, animation, track.MotionIndex, in values);
-                UpdateDirectBoundary(world, animation, index, in track, in timeline, new(track.End, track.Duration));
+                if (!track.FromGraph)
+                    UpdateDirectBoundary(world, animation, index, in track, in timeline, new(track.End, track.Duration));
             }
             WriteTrack(world, animation, index, in track);
             found = true;
@@ -208,6 +224,7 @@ public static partial class PropertyAnimation
             int count = BufferCount<MotionStop>(world, animation);
             for (int index = 0; index < count; index++) ReadBufferItem<MotionStop>(world, animation, index).Stop(world, animation);
         }
+        GraphReleases.Release(world, animation);
         world.Disable<Timeline>(animation);
     }
 

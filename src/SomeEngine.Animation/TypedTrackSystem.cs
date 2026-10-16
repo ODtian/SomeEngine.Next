@@ -17,10 +17,12 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
     private readonly TrackFields _fields = fields;
     private QueryHandle _tracks;
     private FieldWrite<T>[] _writes = null!;
+    private GraphCapture<T>[] _captures = null!;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _writes = ArrayPool<FieldWrite<T>>.Shared.Rent(64);
+        _captures = ArrayPool<GraphCapture<T>>.Shared.Rent(64);
         _tracks = context.World.Query(context.World.QueryDefinition().ReadWrite<Timeline>().WriteBuffer<Track<T>>()
             .WriteBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>()
             .Optional<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(QueryAccess.Read)
@@ -28,22 +30,38 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
             .OptionalBuffer<PropertySource<T>>(QueryAccess.ReadWrite).Optional<AnimationLayers>(QueryAccess.Read)
             .OptionalBuffer<BaseValue<T>>(QueryAccess.Read).OptionalBuffer<LayerChannel>(QueryAccess.Read)
             .OptionalBuffer<Contribution<T>>(QueryAccess.ReadWrite)
-            .OptionalBuffer<TimelineStage>(QueryAccess.Read));
+            .OptionalBuffer<DirectBoundary>(QueryAccess.ReadWrite)
+            .OptionalBuffer<TimelineStage>(QueryAccess.ReadWrite));
     }
 
     public unsafe void OnUpdate(ref ImmediateSystemContext context)
     {
-        var evaluation = (World: context.World, Weights: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0);
+        var evaluation = (World: context.World, Weights: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0,
+            Captures: _captures, CaptureCount: 0, CaptureOnly: false);
         context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);
+        if (evaluation.CaptureCount > 0)
+        {
+            for (int index = 0; index < evaluation.CaptureCount; index++)
+            {
+                GraphCapture<T> capture = evaluation.Captures[index];
+                var value = (Index: capture.Track, Value: capture.Channel.Read(context.World, capture.Target));
+                context.World.ExecuteBufferWrite<Track<T>, (int Index, T Value)>(capture.Animation, ref value,
+                    static (tracks, ref value) => tracks[value.Index].Current = value.Value);
+            }
+            evaluation.CaptureOnly = true;
+            context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);
+        }
         _writes = evaluation.Writes;
+        _captures = evaluation.Captures;
         FieldWrites<T>.Flush(context.World, _writes, ref evaluation.Count);
     }
 
-    private static void Evaluate(QueryCursor rows, ref (World World, bool Weights, FieldWrite<T>[] Writes, int Count) evaluation)
+    private static void Evaluate(QueryCursor rows, ref (World World, bool Weights, FieldWrite<T>[] Writes, int Count,
+        GraphCapture<T>[] Captures, int CaptureCount, bool CaptureOnly) evaluation)
     {
         World world = evaluation.World;
         int type = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type;
-        int writeCount = 0;
+        int writeCount = evaluation.Count;
         foreach (QueryChunkView chunk in rows.Chunks)
         {
             bool hasStages = chunk.HasBuffer<TimelineStage>();
@@ -69,6 +87,8 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     Track<T> previous = tracks.Read(index);
                     if (!Selected(in previous, type, evaluation.Weights))
                         continue;
+                    if (evaluation.CaptureOnly && !previous.CaptureStart)
+                        continue;
                     if (previous.Target != Entity.Null && !world.IsAlive(previous.Target))
                     {
                         ref Track<T> removed = ref tracks[index];
@@ -77,10 +97,14 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                         removed.MotionInitialized = false;
                         removed.SourceActive = false;
                         removed.Finished = true;
+                        if (!removed.FromGraph)
+                            PropertyAnimation.RemoveDirectBoundary<T>(world, row.Entity, index, in timeline);
                         continue;
                     }
                     if (previous.Finished && previous.GraphMotion == 0 || !enabled || timeline.Paused)
                     {
+                        if (previous.Finished && !previous.FromGraph)
+                            PropertyAnimation.FinishSource(world, row.Entity, in previous);
                         if (enabled && !previous.Finished)
                             timeline.Submit(true);
                         if (!previous.FromGraph && (enabled && !previous.Finished && previous.Sampled ||
@@ -116,6 +140,8 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                             track.CaptureStart = true;
                             track.Finished = false;
                             track.SampleTime = track.Start;
+                            track.TimeOffset = 0;
+                            track.TimeScale = 1;
                             if (track.Endpoints == TrackEndpoints.DisplacementValues)
                             {
                                 track.Endpoints = TrackEndpoints.Displacement;
@@ -142,7 +168,21 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     }
                     Entity target = track.Target == Entity.Null ? row.Entity : track.Target;
                     if (track.CaptureStart)
+                    {
+                        if (!evaluation.CaptureOnly)
+                        {
+                            if (evaluation.CaptureCount == evaluation.Captures.Length)
+                            {
+                                GraphCapture<T>[] previousCaptures = evaluation.Captures;
+                                evaluation.Captures = ArrayPool<GraphCapture<T>>.Shared.Rent(previousCaptures.Length * 2);
+                                previousCaptures.CopyTo(evaluation.Captures, 0);
+                                ArrayPool<GraphCapture<T>>.Shared.Return(previousCaptures);
+                            }
+                            evaluation.Captures[evaluation.CaptureCount++] = new(row.Entity, target, track.Channel, index);
+                            continue;
+                        }
                         GraphTrackValues<T, TOps>.Capture(world, row.Entity, target, tracks, index, ref track);
+                    }
                     ref MotionData<T, TParameters, TState> motionData = ref data[track.MotionIndex];
                     motionData.Values = new(track.From, track.To, track.Current);
                     if (!track.MotionInitialized)
@@ -151,7 +191,9 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                         TEvaluator.Initialize(in definition, in motionData.Values, ref motionData.State);
                         track.MotionInitialized = true;
                     }
-                    motionData.Time = new(time - track.Start, Math.Max(0, time - track.SampleTime));
+                    float scale = track.TimeScale == 0 ? 1 : track.TimeScale;
+                    motionData.Time = new((time - track.Start - track.TimeOffset) * scale,
+                        Math.Max(0, time - track.SampleTime) * scale);
                     motionData.Active = true;
                     evaluate = true;
                 }
@@ -168,10 +210,13 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     track.Current = motion.Sample.Value;
                     track.Sampled = true;
                     track.Finished = motion.Sample.Finished;
-                    track.SampleTime = motion.Time.Time + track.Start;
+                    float scale = track.TimeScale == 0 ? 1 : track.TimeScale;
+                    track.SampleTime = motion.Time.Time / scale + track.Start + track.TimeOffset;
                     motion.Active = false;
                     if (!track.FromGraph)
+                    {
                         Submit(world, row.Entity, index, in track, ref evaluation.Writes, ref writeCount);
+                    }
                     if (!track.Finished)
                     {
                         if (track.GraphMotion != 0)
@@ -201,8 +246,11 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
     {
         context.World.ReleaseQuery(_tracks);
         ArrayPool<FieldWrite<T>>.Shared.Return(_writes);
+        ArrayPool<GraphCapture<T>>.Shared.Return(_captures);
     }
 }
+
+internal readonly record struct GraphCapture<T>(Entity Animation, Entity Target, Channel<T> Channel, int Track) where T : unmanaged;
 
 internal static class GraphTrackValues<T, TOps>
     where T : unmanaged
@@ -210,7 +258,7 @@ internal static class GraphTrackValues<T, TOps>
 {
     internal static void Capture(World world, Entity animation, Entity target, DynamicBuffer<Track<T>> tracks, int index, ref Track<T> track)
     {
-        T current = track.Channel.Read(world, target);
+        T current = track.Current;
         if (track.Channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target) &&
             world.Read<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
             PropertyAnimation.ReadBase(world, target, track.Channel, ref current);

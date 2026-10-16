@@ -14,6 +14,7 @@ public struct Track<T> : IBufferElement where T : unmanaged
     public T From, To, Current, Velocity;
     public float Start, Duration;
     public float SampleTime;
+    public float TimeOffset, TimeScale;
     public Curve Curve;
     public ushort Stage;
     public byte Layer;
@@ -35,5 +36,4 @@ public struct Track<T> : IBufferElement where T : unmanaged
     public bool MotionInitialized;
     public int SourceIndex;
     public StageEnd End;
-    public bool Sampled;
 }

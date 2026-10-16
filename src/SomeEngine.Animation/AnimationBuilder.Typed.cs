@@ -92,4 +92,7 @@ public readonly struct PropertyLeaf<T, TOps, TParameters, TState, TEvaluator> :
 
     public static void Complete(World world, Entity animation) =>
         GraphPropertyTracks<T, TOps, TParameters, TState, TEvaluator>.Complete(world, animation);
+
+    public static void Release(World world, Entity animation) =>
+        GraphPropertyTracks<T, TOps, TParameters, TState, TEvaluator>.Release(world, animation);
 }

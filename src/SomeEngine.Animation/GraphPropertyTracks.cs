@@ -37,7 +37,7 @@ internal static class GraphPropertyTracks<T, TOps, TParameters, TState, TEvaluat
         in PropertyLeafParameters<T, TOps, TParameters, TState, TEvaluator> definition,
         TParameters[] parameters, int index, in AnimationLeafPlacement placement)
     {
-        PropertyAnimation.Declare<T>(world, animation);
+        PropertyAnimation.DeclareStorage<T>(world, animation);
         if (!world.HasBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation))
             world.AddBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation);
         var shared = new GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator> { Values = parameters };
@@ -72,6 +72,7 @@ internal static class GraphPropertyTracks<T, TOps, TParameters, TState, TEvaluat
         {
             Target = target == animation ? Entity.Null : target,
             Channel = definition.Channel, To = definition.Value, Duration = definition.Spec.Boundary.Duration,
+            End = definition.Spec.Boundary.End,
             Layer = placement.Layer, Stage = placement.Stage, Start = placement.Start, SampleTime = placement.Start,
             StartId = placement.Starts, Endpoints = definition.Endpoints, CaptureStart = true,
             Typed = true, SourceActive = true,
@@ -88,10 +89,48 @@ internal static class GraphPropertyTracks<T, TOps, TParameters, TState, TEvaluat
     }
 
     internal static void Complete(World world, Entity animation) => GraphFieldOutputs<T>.Build(world, animation);
+
+    internal static void Release(World world, Entity animation)
+    {
+        GraphFieldOutputs<T>.Release(world, animation);
+        world.Replace(animation, default(GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>));
+    }
 }
 
 internal static class GraphFieldOutputs<T> where T : unmanaged
 {
+    internal static void Release(World world, Entity animation)
+    {
+        var targets = new HashSet<Entity>();
+        world.ExecuteBufferWrite<Track<T>, HashSet<Entity>>(animation, ref targets, static (tracks, ref targets) =>
+        {
+            for (int index = 0; index < tracks.Count; index++)
+            {
+                ref Track<T> track = ref tracks[index];
+                if (!track.FromGraph)
+                    continue;
+                targets.Add(track.Target);
+                track.SourceActive = false;
+            }
+        });
+        foreach (Entity stored in targets)
+        {
+            Entity target = stored == Entity.Null ? animation : stored;
+            if (!world.IsAlive(target) || !world.HasBuffer<PropertySource<T>>(target))
+                continue;
+            Entity source = animation;
+            world.ExecuteBufferWrite<PropertySource<T>, Entity>(target, ref source, static (sources, ref source) =>
+            {
+                for (int index = sources.Count - 1; index >= 0; index--)
+                    if (sources.Read(index).Animation == source)
+                        sources.SwapRemoveAt(index);
+            });
+            PropertyAnimation.RefreshSources<T>(world, target);
+        }
+        world.ExecuteBufferWrite<GraphFieldOutput<T>>(animation, static outputs => outputs.Clear());
+        world.ExecuteBufferWrite<GraphFieldTrack<T>>(animation, static tracks => tracks.Clear());
+    }
+
     internal static void Build(World world, Entity animation)
     {
         if (!world.HasBuffer<GraphFieldOutput<T>>(animation))

@@ -41,6 +41,7 @@ public readonly struct AfterSamplesCondition : IAnimationCondition<AfterSamplesP
 
 public readonly record struct TimedMarkerParameters(float Duration, int Value);
 public struct MarkerValue : IComponent { public int Value; }
+public struct MarkerReleases : IComponent { public int Count; }
 
 [BufferCapacity(1)]
 public struct MarkerState : IBufferElement
@@ -56,6 +57,15 @@ public readonly struct TimedMarkerLeaf : IAnimationLeaf<TimedMarkerParameters>
     private static readonly Channel<int> Value = Channel<int>.Of<MarkerValue>(static (ref MarkerValue value) => ref value.Value);
     public static MotionBoundary Describe(in TimedMarkerParameters parameters) => new(StageEnd.Duration, parameters.Duration);
     public static LayerChannel Output(in TimedMarkerParameters parameters) => LayerChannel.Of(Value);
+
+    public static void Release(World world, Entity animation)
+    {
+        MarkerReleases releases = world.Has<MarkerReleases>(animation) ? world.Read<MarkerReleases>(animation) : default;
+        releases.Count++;
+        if (world.Has<MarkerReleases>(animation)) world.Replace(animation, releases);
+        else world.Add(animation, releases);
+        world.ExecuteBufferWrite<MarkerState>(animation, static states => states.Clear());
+    }
 
     public static void Install(World world, Entity animation, Entity target, AnimationLeafBatch<TimedMarkerParameters> definitions,
         int index, in AnimationLeafPlacement placement)

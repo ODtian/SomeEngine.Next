@@ -83,6 +83,69 @@ public class TypedGraphTests
     }
 
     [Fact]
+    public void FormulaParametersChangeOnlyTheSelectedSharedInstance()
+    {
+        using var world = new World();
+        Entity first = world.CreateEntity(new GraphValue());
+        Entity second = world.CreateEntity(new GraphValue());
+        var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 1, "shared"));
+        using var builder = new AnimationBuilder(world);
+        builder.To(first, Value, 10, spec);
+        using CompiledGraph graph = builder.Compile();
+        Entity animation = graph.Play(world, first);
+        graph.Play(world, second);
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.Add(systems, spec);
+        var frame = new ImmediateSystemContext(world, 0, 0, 0.25);
+        systems.Update(ref frame);
+        var changed = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 2, "instance"));
+        AnimationGraph.UpdateParameters(world, animation, Value, in changed);
+
+        systems.Update(ref frame);
+
+        Assert.Equal((10, 5), (world.Read<GraphValue>(first).Value, world.Read<GraphValue>(second).Value));
+    }
+
+    [Fact]
+    public void RetargetingOneSharedInstanceKeepsTheCompiledDeadline()
+    {
+        using var world = new World();
+        Entity first = world.CreateEntity(new GraphValue());
+        Entity second = world.CreateEntity(new GraphValue());
+        var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 1, "retarget"));
+        using var builder = new AnimationBuilder(world);
+        builder.To(first, Value, 10, spec);
+        using CompiledGraph graph = builder.Compile();
+        Entity animation = graph.Play(world, first);
+        graph.Play(world, second);
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.Add(systems, spec);
+        var half = new ImmediateSystemContext(world, 0, 0, 0.5);
+        systems.Update(ref half);
+        PropertyAnimation.Retarget(world, animation, Value, 20);
+
+        systems.Update(ref half);
+
+        Assert.Equal((20, 10), (world.Read<GraphValue>(first).Value, world.Read<GraphValue>(second).Value));
+    }
+
+    [Fact]
+    public void PublicLeafIsReleasedOnceWhenItsEntityIsStoppedAndReused()
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new MarkerValue());
+        using var builder = new AnimationBuilder(world);
+        builder.Leaf<TimedMarkerParameters, TimedMarkerLeaf>(target, new(1, 7));
+        using CompiledGraph graph = builder.Compile();
+        Entity animation = graph.Play(world, target);
+
+        PropertyAnimation.Stop(world, animation);
+        graph.Play(world, target);
+
+        Assert.Equal(1, world.Read<MarkerReleases>(animation).Count);
+    }
+
+    [Fact]
     public void ConsumerConditionTransitionsOnlyTheMatchingInstance()
     {
         using var world = new World();
