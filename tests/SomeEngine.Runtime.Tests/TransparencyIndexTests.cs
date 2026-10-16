@@ -88,4 +88,41 @@ public sealed class TransparencyIndexTests(TransparencyContentFixture content)
         Assert.False(measurements.Single(frame => frame.SimulationFrame == 8).ReusedIndex);
         Assert.True(measurements.Single(frame => frame.SimulationFrame == 15).ReusedIndex);
     }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    public async Task BlendMeasurementsFollowDecalChangesAcrossSubmittedFrames(string backend)
+    {
+        var measurements = new List<ClusterBlendMetrics>();
+        using var red = new StandardMaterial { BaseColorTint = new(1, 0, 0, .5f) };
+        using var green = new StandardMaterial { BaseColorTint = new(0, 1, 0, .5f) };
+        TransformQvvs volume = new(new Vector3(0, 0, 7), Quaternion.Identity) { Stretch = new(4, 4, 4) };
+        await SceneImages.RunAsync(backend, new SceneScript(content.DirectoryPath, 16,
+        [
+            new(0, edit =>
+            {
+                var source = (UnlitMaterial)edit.GetMaterial(edit.MeshEntities[0]);
+                red.Shader = green.Shader = source.Shader;
+                red.AlbedoMap = green.AlbedoMap = source.AlbedoMap;
+                edit.AddMaterialDecal(red, volume);
+            }),
+            new(8, edit => edit.AddMaterialDecal(green, volume, 1)),
+        ]) { BlendReferenceCapacity = 1, BlendFrameCompleted = measurements.Add, WaitForFrames = false },
+            "--measure-blending", "--hardware-raster", "--no-taa", "--no-vsm", "--static-scene");
+
+        Assert.Equal(16, measurements.Count);
+        ClusterBlendMetrics before = measurements.Single(frame => frame.SimulationFrame == 7);
+        ClusterBlendMetrics changed = measurements.Single(frame => frame.SimulationFrame == 8);
+        Assert.Equal(1u, before.DecalVolumes);
+        Assert.Equal(2u, changed.DecalVolumes);
+        Assert.True(changed.DecalReferences > 0);
+        Assert.InRange(changed.DecalResidentReferences, 0u, 1u);
+        Assert.True(changed.DecalUsedBytes > before.DecalUsedBytes);
+        Assert.True(changed.DecalCapacityBytes > before.DecalCapacityBytes);
+        Assert.True(changed.CapacityBytes > before.CapacityBytes);
+        Assert.True(changed.DecalIndexMs > 0);
+        Assert.True(changed.OpaqueMaterialMs > 0);
+        Assert.False(changed.ReusedDecalIndex);
+        Assert.True(measurements.Single(frame => frame.SimulationFrame == 15).ReusedDecalIndex);
+    }
 }

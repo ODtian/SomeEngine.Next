@@ -35,7 +35,7 @@ public sealed partial class ClusterPipelineSystem
         internal ImmutableArray<IndexedTextureRead> TextureReads = [];
         internal RenderView[] Views = [];
         internal uint Version, CompletedVersion;
-        internal bool Completed;
+        internal bool Completed, Reused;
     }
 
     private sealed class MaterialDecalResources(ClusterPipelineSystem pipeline, IGraphResourceProvider? features) : IGraphResourceProvider
@@ -211,6 +211,7 @@ public sealed partial class ClusterPipelineSystem
     {
         MaterialDecalData data = GraphData.Decals!;
         bool reuse = data.Completed && data.Version == data.CompletedVersion && views.SequenceEqual(data.Views);
+        data.Reused = reuse;
         foreach (GraphPassId pass in data.Builds) graph.SetPassEnabled(pass, !reuse);
         if (reuse) return;
         data.Completed = false;

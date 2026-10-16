@@ -23,6 +23,7 @@ public sealed partial class ClusterPipelineSystem
     private sealed record ShadeGroup(ClusterShadeInvocation Stage, ImmutableArray<IndexedTextureRead> TextureReads)
     {
         internal GraphBufferSlice Uniforms;
+        internal GraphPassId Pass;
     }
 
     private sealed class ShadeGroupComparer : IEqualityComparer<ShadeGroup>
@@ -70,6 +71,7 @@ public sealed partial class ClusterPipelineSystem
                         _ = access.Read(data.Arguments, new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
                             PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
                     ClusterIndirectDispatchParameters.Record, region: region);
+                value.Pass = pass;
                 value.Uniforms = BindShadeResources(ref edit, pass, value.Stage, stages, receivers);
                 PassDefinition access = edit.GetPass(pass);
                 ReadIndexedMaterialTextures(ref edit, ref access, value.TextureReads, PipelineSync.ComputeShading);

@@ -32,7 +32,7 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId Offsets, Writes, Streams, Sources, SourceCounts, OrderedStates;
         internal GraphBufferSlice Parameters, ShadeParameters, GeometryParameters;
         internal uint TriangleCapacity, MaterialCapacity;
-        internal ClusterBlendMeasurements? Measurements;
+        internal GraphPassId RequestPass, ColorPass;
         internal GraphPassId[] Builds = [];
         internal RenderInstanceBatch? InstanceBatch;
         internal ulong InstanceRevision, GeometryRevision, RasterRevision;
@@ -62,17 +62,16 @@ public sealed partial class ClusterPipelineSystem
             UpdateTransparencyStates(ref edit, previous, assignments, stages);
             return;
         }
-        if (previous is not null) RemoveTransparency(ref edit, previous);
+        if (previous is not null)
+        {
+            RemoveBlendMeasurements(ref edit);
+            RemoveTransparency(ref edit, previous);
+        }
         GraphData.Transparency = null;
         GraphData.Outputs = GraphData.Outputs with { Transparency = null };
-        if (shaders is null)
-        {
-            if (GraphData.Stencil is { } existingStencil)
-                existingStencil.SetSourceReady(ref edit, existingStencil.ClearPass, null);
-            return;
-        }
+        if (shaders is null) return;
         FrameResources frame = GraphData.Resources;
-        ClusterStencil stencil = CreateStencil(ref edit);
+        _ = CreateStencil(ref edit);
         uint tiles = checked(_viewGrid.CellCountPerView * frame.ViewCount);
         GraphRegionId preparation = _transparencyRequestRegion != default ? _transparencyRequestRegion : _surfaceReceiverRegion;
         if (preparation == default) preparation = _regions.Shading;
@@ -119,7 +118,7 @@ public sealed partial class ClusterPipelineSystem
                 new DispatchArguments((tiles + 63u) / 64u, 1, 1), indirect, offsets[index]);
             if (index != 0) edit.OrderAfter(data.Builds[index], data.Builds[index - 1]);
         }
-        GraphPassId cleared = data.Builds[0], geometryReady = data.Builds[^1];
+        GraphPassId geometryReady = data.Builds[^1];
         GraphData.Outputs = GraphData.Outputs with { Transparency = new(data.Triangles, data.Counts,
             data.References, data.TriangleCount, capacity, shaders.TriangleStride, geometryReady)
             {
@@ -136,29 +135,8 @@ public sealed partial class ClusterPipelineSystem
         GraphPassId color = AddTransparencyPass(ref edit, data, shaders.Pipelines["ResolveTransparentColor"], "ResolveTransparentColor", data.Color,
             new DispatchArguments(((uint)frame.Width + 15u) / 16u, ((uint)frame.Height + 15u) / 16u, frame.ViewCount));
         edit.OrderAfter(color, geometryReady);
-        if (_options.MeasureBlending)
-        {
-            BufferDesc states = GraphData.BufferDescriptions[data.States].Description;
-            BufferDesc orderedStates = GraphData.BufferDescriptions[data.OrderedStates].Description;
-            BufferDesc[] descriptions = [triangles, counts, counts, counts, counts, references, triangleCount, arguments, states, orderedStates,
-                new((ulong)_options.MaxCandidates * 12, storage), new(16, storage)];
-            ulong imageBytes = (ulong)frame.Width * (ulong)frame.Height * frame.ViewCount * 4u;
-            var stencilDescription = new TextureDesc(TextureDimension.Texture2D, (uint)frame.Width, (uint)frame.Height,
-                1, 1, frame.ViewCount, 1, Format.R32UInt, TextureUsages.Sampled | TextureUsages.Storage);
-            ulong capacityBytes = imageBytes, allocationBytes = _backend.GetTextureMemoryRequirements(_device, stencilDescription).Size;
-            foreach (BufferDesc description in descriptions)
-            {
-                capacityBytes += description.Size;
-                allocationBytes += _backend.GetBufferMemoryRequirements(_device, description).Size;
-            }
-            data.Measurements = new(_backend, _device, _graph, ref edit,
-                new(data.Geometry, cleared, geometryReady, data.Requests, requests, data.Color, color, color, _regions.Feedback),
-                new(data.TriangleCount, shaders.TriangleStride,
-                    counts.Size * 4 + triangleCount.Size + arguments.Size + states.Size + orderedStates.Size + 16 + imageBytes,
-                    capacityBytes, allocationBytes, capacity),
-                ReceiveBlendFrame);
-        }
-        stencil.SetSourceReady(ref edit, color, data.Measurements);
+        data.RequestPass = requests;
+        data.ColorPass = color;
     }
 
     private static bool SameTransparencyBindings(ClusterShadeInvocation[] previous, ClusterShadeInvocation[] next) =>
@@ -357,7 +335,6 @@ public sealed partial class ClusterPipelineSystem
             if (data.Views.Length != views.Length) data.Views = new RenderView[views.Length];
             views.CopyTo(data.Views);
         }
-        data.Measurements?.Stage(ref graph, _measurementSimulationFrame, reuse);
     }
 
     private void CompleteTransparencyFrame(RenderGraphFrameResult result)
@@ -368,7 +345,6 @@ public sealed partial class ClusterPipelineSystem
 
     private void RemoveTransparency(ref RenderGraphEdit edit, TransparencyData data)
     {
-        data.Measurements?.Remove(ref edit);
         edit.Remove(data.Geometry); edit.Remove(data.Requests); edit.Remove(data.Color);
         edit.Remove(data.Triangles); edit.Remove(data.TriangleCount); edit.Remove(data.Counts); edit.Remove(data.References); edit.Remove(data.Arguments);
         edit.Remove(data.Offsets); edit.Remove(data.Writes); edit.Remove(data.Streams); edit.Remove(data.Sources); edit.Remove(data.SourceCounts);

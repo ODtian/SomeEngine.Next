@@ -22,6 +22,8 @@ public sealed partial class ClusterPipelineSystem
         if (_graphRemoved) return;
         if (_hasPendingFrame) throw new InvalidOperationException("A Cluster frame must finish before its graph is removed.");
         using RenderGraphEdit edit = _graph.BeginEdit();
+        RenderGraphEdit measurementEdit = edit;
+        RemoveBlendMeasurements(ref measurementEdit);
         if (GraphData.Transparency is { } transparency)
         {
             RenderGraphEdit transparencyEdit = edit;

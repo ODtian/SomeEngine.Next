@@ -29,7 +29,7 @@ DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-ind
 | `xray` | 64 个机械部件，共 10,752 个三角形，带独立遮挡板与完整 Standard 材质。 |
 | `decal-layers` | 16 组表面，每组包含三层玻璃、opaque 面板与 16 层材质贴花，共 256 个体积。 |
 | `decal-sparse` | 64 个局部贴花体积覆盖墙面，透明前景与墙面分别使用命中位置求值。 |
-| `ordered` | 四个 stencil 窗口与 16 个有序面板，演示 alpha、乘色和通道混合。 |
+| `ordered` | 四个旋转 stencil 窗口，共 16 个面板，依次执行遮罩写入、alpha 混合、乘色和通道混合。 |
 
 场景内容通过 `SceneTestPlatform.InitializeScene` 和 `UpdateScene` 编辑游戏实体。相机回放时专项物体使用同一相机相对布局，三个基础场景都保有对应的效果工作量。
 
@@ -77,12 +77,21 @@ edit.SetXray(entity, new Xray(
 | --- | --- |
 | `ProjectionIndexMs` | 当前几何的用户投影、候选计数、连续范围与引用构建。复用帧记录相应阶段的实际成本。 |
 | `CoverageReceiverMs` | 覆盖与各命中阴影 receiver 请求。 |
-| `MaterialCompositeMs` | 命中筛选、表面与材质求色、颜色和状态合成。 |
+| `MaterialCompositeMs` | 命中筛选、表面与材质求色、颜色和状态合成，以及声明在该链中的硬件 stencil 导出、硬件阶段和回传。末时间戳位于共同的 shading 外层，通过显式完成边覆盖硬件回传。 |
+| `DecalIndexMs` | 贴花 Clear、Count、Reserve、Scatter、Sort 五阶段的真实 GPU 区间。 |
+| `OpaqueMaterialMs` | opaque receiver 与 color 两组用户 pass 的区间之和。该项覆盖这些 pass 内耦合的基础材质、贴花属性组合及光照求值；两组分别计时。 |
 | `Triangles` / `References` | GPU 记录的实际工作量。 |
-| `UsedBytes` / `CapacityBytes` / `AllocationBytes` | 当帧驻留数据、配置容量和实际资源分配。共享网格驻留与统一参数存储沿各自已有计量维护。 |
+| `DecalVolumes` / `DecalReferences` / `DecalResidentReferences` | GPU 工作缓冲回读的实际体积、投影引用总量与池内驻留引用数。 |
+| `UsedBytes` / `CapacityBytes` / `AllocationBytes` | 当帧驻留数据、配置容量和 RHI 分配要求，包括贴花私有缓冲、stencil 图像、256B 私有 stencil uniform upload 及硬件交换资源。 |
+| `DecalUsedBytes` / `DecalCapacityBytes` / `DecalAllocationBytes` | 总量中的贴花分项，包含 144B 体积、用户参数字节、Counts/Offsets/Writes、引用、每视图体积范围与 Work；统一 uniform arena 按贴花参数 slice 归属使用/容量字节。 |
 | `ReusedIndex` | 当前帧复用已有投影及候选内容。 |
+| `ReusedDecalIndex` | 当前帧复用已有贴花候选内容。 |
 
-`SceneTiming.Blending` 汇总三段的平均值、中位数、P95、构建/复用帧数及显存；整帧呈现间隔保留在原 `SceneTiming` 字段。逐帧原始数据保存在统一报告的 `BlendFrames`。
+`SceneTiming.Blending` 汇总五项时间的平均值、中位数、P95、两类索引的构建/复用帧数、体积/引用及显存；整帧呈现间隔保留在原 `SceneTiming` 字段。逐帧原始数据保存在统一报告的 `BlendFrames`。共享纹理、网格驻留和统一实例存储沿各自的数据持有者另计。
+
+计量由 Cluster 管线持有，纯 opaque 贴花同样产生数据。固定 128B 回读承载 12 个时间戳与两份 4×uint 工作数。每个提交保留当帧已更新的缓冲容量和 RHI 分配描述，回读以同一提交的数据计算；用户分组或资源显式 reconcile 时才维护计时完成边。
+
+`BlendMeasurementsFollowDecalChangesAcrossSubmittedFrames` 已通过 D3D12 的 16 帧公共启动检查：引用预算为 1，纯 opaque 场景在第 8 帧从一个贴花增至两个，GPU 数量、驻留引用、使用字节及容量按提交更新，随后恢复候选复用。`OrderedRenderingTests` 的双次硬件 stencil 往返已在 Vulkan 开启计量通过，全图线性颜色容差为 0.001。
 
 `SceneTiming.Instances` 在场景完成时记录共用实例存储的实际行数、批次数、容量与属性字节数，效果增加的实例属性进入该项；共享几何仍由 `GeometryUsedBytes` 等既有字段记录。
 
@@ -96,6 +105,7 @@ edit.SetXray(entity, new Xray(
 | 7、15：硬软语义、容量分段 | [#224](https://github.com/ODtian/SomeEngine.Next/issues/224) | `TransparencyIndexTests.XyzCandidatesMatchFullScanWhileModelsAndCameraMoveAcrossCells` 在两种后端对比完整遍历、常规容量和单项容量。 |
 | 14：游戏编辑与当前帧更新 | [#224](https://github.com/ODtian/SomeEngine.Next/issues/224) | `StaticBlendCellsAreReusedUntilInstanceMembershipChanges` 与 `SceneInitializationAndFrameEditsMatchTheSameScriptedScene`。 |
 | 16：尾部误差界 | [#222](https://github.com/ODtian/SomeEngine.Next/issues/222) | 完整排序图像跨越四项局部队列继续求值；同一检查把材质误差界改为 0.04，与精确图比较整图误差。 |
+| 12、13：有序颜色与 stencil | [#227](https://github.com/ODtian/SomeEngine.Next/issues/227) | `OrderedRenderingTests` 分别对照只读遮罩、alpha 与乘色次序、stencil 的 fail/depth-fail/正反面与读写掩码。参考通过公共颜色 feature 使用 RHI 固定功能状态，并将同一整数图两次导出、导入硬件附件。 |
 | 17、18：专项与整帧、统一场景 | [#228](https://github.com/ODtian/SomeEngine.Next/issues/228) | `ClusterBlendMetrics`、DefaultGame 效果入口与 `Measure-ClusterEffects.ps1`。 |
 
 交付分支为 `codex/tile-blending-221`；[PR #229](https://github.com/ODtian/SomeEngine.Next/pull/229) 汇集全部规格工作。

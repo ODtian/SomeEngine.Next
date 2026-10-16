@@ -50,6 +50,7 @@ public sealed partial class ClusterPipelineSystem
         internal MaterialDecalData? Decals;
         internal ClusterStencil? Stencil;
         internal GraphRegionId BlendColors;
+        internal ClusterBlendMeasurements? BlendMeasurements;
         internal ClusterPipelineOutputs Outputs;
         internal ClusterLayerDispatch SceneBounds;
         internal ClusterLayerDispatch PrimarySeed;

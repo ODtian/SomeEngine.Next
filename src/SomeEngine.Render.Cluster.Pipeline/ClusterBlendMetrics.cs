@@ -12,4 +12,13 @@ public readonly record struct ClusterBlendMetrics(
     ulong UsedBytes,
     ulong CapacityBytes,
     ulong AllocationBytes,
-    bool ReusedIndex);
+    bool ReusedIndex,
+    double DecalIndexMs,
+    double OpaqueMaterialMs,
+    uint DecalVolumes,
+    uint DecalReferences,
+    uint DecalResidentReferences,
+    ulong DecalUsedBytes,
+    ulong DecalCapacityBytes,
+    ulong DecalAllocationBytes,
+    bool ReusedDecalIndex);
