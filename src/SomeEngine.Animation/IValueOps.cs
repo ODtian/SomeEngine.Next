@@ -10,6 +10,22 @@ public interface IValueOps<T> where T : unmanaged
     static abstract T Scale(in T a, float scale);
     static abstract float Distance(in T a, in T b);
 
+    static virtual bool Equals(in T a, in T b) => EqualityComparer<T>.Default.Equals(a, b);
+
+    static virtual void Equals<TOps>(ReadOnlySpan<T> a, ReadOnlySpan<T> b, Span<bool> result)
+        where TOps : struct, IValueOps<T>
+    {
+        for (int i = 0; i < a.Length; i++)
+            result[i] = TOps.Equals(in a[i], in b[i]);
+    }
+
+    static virtual void Lerp<TOps>(ReadOnlySpan<T> a, ReadOnlySpan<T> b, ReadOnlySpan<float> progress, Span<T> result)
+        where TOps : struct, IValueOps<T>
+    {
+        for (int i = 0; i < a.Length; i++)
+            result[i] = TOps.Lerp(in a[i], in b[i], progress[i]);
+    }
+
     static virtual void Lerp<TOps>(ReadOnlySpan<T> a, ReadOnlySpan<T> b, float t, Span<T> result)
         where TOps : struct, IValueOps<T>
     {
@@ -59,6 +75,14 @@ public static class ValueOps<T, TOps>
     where T : unmanaged
     where TOps : struct, IValueOps<T>
 {
+    public static bool Equals(in T a, in T b) => TOps.Equals(in a, in b);
+
+    public static void Equals(ReadOnlySpan<T> a, ReadOnlySpan<T> b, Span<bool> result) =>
+        TOps.Equals<TOps>(a, b, result);
+
+    public static void Lerp(ReadOnlySpan<T> a, ReadOnlySpan<T> b, ReadOnlySpan<float> progress, Span<T> result) =>
+        TOps.Lerp<TOps>(a, b, progress, result);
+
     public static void Lerp(ReadOnlySpan<T> a, ReadOnlySpan<T> b, float t, Span<T> result) =>
         TOps.Lerp<TOps>(a, b, t, result);
 

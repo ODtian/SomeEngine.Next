@@ -5,6 +5,7 @@ namespace SomeEngine.Animation;
 
 public readonly struct ColorOps : IValueOps<Color>
 {
+    public static bool Equals(in Color a, in Color b) => a.Equals(b);
     public static Color Lerp(in Color a, in Color b, float t) => FromVector(Vector4.Lerp(ToVector(a), ToVector(b), t));
     public static Color Add(in Color a, in Color b) => FromVector(ToVector(a) + ToVector(b));
     public static Color Subtract(in Color a, in Color b) => FromVector(ToVector(a) - ToVector(b));
@@ -17,6 +18,7 @@ public readonly struct ColorOps : IValueOps<Color>
 
 public readonly struct ThicknessOps : IValueOps<Thickness>
 {
+    public static bool Equals(in Thickness a, in Thickness b) => a.Equals(b);
     public static Thickness Lerp(in Thickness a, in Thickness b, float t) => FromVector(Vector4.Lerp(ToVector(a), ToVector(b), t));
     public static Thickness Add(in Thickness a, in Thickness b) => FromVector(ToVector(a) + ToVector(b));
     public static Thickness Subtract(in Thickness a, in Thickness b) => FromVector(ToVector(a) - ToVector(b));
@@ -29,6 +31,7 @@ public readonly struct ThicknessOps : IValueOps<Thickness>
 
 public readonly struct RectOps : IValueOps<Rect>
 {
+    public static bool Equals(in Rect a, in Rect b) => a.Equals(b);
     public static Rect Lerp(in Rect a, in Rect b, float t) => FromVector(Vector4.Lerp(ToVector(a), ToVector(b), t));
     public static Rect Add(in Rect a, in Rect b) => FromVector(ToVector(a) + ToVector(b));
     public static Rect Subtract(in Rect a, in Rect b) => FromVector(ToVector(a) - ToVector(b));

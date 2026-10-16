@@ -9,6 +9,7 @@ public struct Timeline : IEnableableComponent
     public Timeline() => Speed = 1;
 
     public float Time;
+    public float Delta;
     public float Speed;
     public ushort Stage;
     public TimelineClock Clock;
@@ -16,6 +17,14 @@ public struct Timeline : IEnableableComponent
     public uint Running;
     public uint Completions;
     public uint Starts;
+
+    public void Submit(bool running)
+    {
+        if (running)
+            Running |= 1;
+    }
+
+    public void Submit<T>(in MotionSample<T> sample) where T : unmanaged => Submit(!sample.Finished);
 }
 
 public enum TimelineClock : byte { Game, Interface, Unscaled }
@@ -46,10 +55,26 @@ public readonly record struct AnimationTime : IComponent
     public float GameScale { get; init; }
     public bool GamePaused { get; init; }
 
+    public AnimationDeltas Deltas => new(
+        GamePaused ? 0 : Delta * GameScale,
+        Delta,
+        GamePaused ? 0 : Delta);
+
     public float For(TimelineClock clock) => clock switch
     {
         TimelineClock.Interface => Delta,
         TimelineClock.Unscaled => GamePaused ? 0 : Delta,
         _ => GamePaused ? 0 : Delta * GameScale,
+    };
+}
+
+/// <summary>Clock selection uses the three deltas computed once at frame start.</summary>
+public readonly record struct AnimationDeltas(float Game, float Interface, float Unscaled)
+{
+    public float For(TimelineClock clock) => clock switch
+    {
+        TimelineClock.Interface => Interface,
+        TimelineClock.Unscaled => Unscaled,
+        _ => Game,
     };
 }

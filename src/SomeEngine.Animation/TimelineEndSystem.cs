@@ -24,6 +24,8 @@ public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
                 foreach (QueryRow row in chunk.Rows)
                 {
                     ref Timeline timeline = ref row.ReadWrite<Timeline>();
+                    if (timeline.Paused)
+                        continue;
                     if (hasStages && ContinueStages(ref timeline, row.ReadBuffer<TimelineStage>().AsSpan()))
                         continue;
                     if (timeline.Running != 0)
