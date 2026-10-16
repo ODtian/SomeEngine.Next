@@ -10,5 +10,10 @@
     <ProjectReference Include="../../src/SomeEngine.Views/SomeEngine.Views.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Animation/SomeEngine.Animation.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll;../../external/dxc/bin/x64/dxil.dll" Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 </Project>
