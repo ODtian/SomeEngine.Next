@@ -10,6 +10,8 @@
     <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../tests/SomeEngine.ECS.Tests/FieldAccessChecks.cs"
+             Link="FieldAccessChecks.cs" />
     <Compile Include="../../tests/SomeEngine.ECS.Tests/ManagedComponentChecks.cs"
              Link="ManagedComponentChecks.cs" />
     <Compile Include="../../tests/SomeEngine.Views.Tests/FirstBuildChecks.cs"

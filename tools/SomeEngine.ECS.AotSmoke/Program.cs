@@ -17,7 +17,7 @@ namespace SomeEngine.Tools.EcsAotSmoke;
 
 internal static class Program
 {
-    public static int Main()
+    public static int Main(string[] args)
     {
         JobSystem.Initialize(new JobRuntimeConfig
         {
@@ -28,6 +28,14 @@ internal static class Program
 
         try
         {
+            if (args is ["--typed-fields"])
+            {
+                global::SomeEngine.ECS.Tests.FieldAccessChecks.VerifyAll();
+                TypedFieldSmoke.Check();
+                Console.WriteLine("Typed ECS fields: values, versions, references, buffers and managed functions passed.");
+                return 0;
+            }
+
             AotSmokeResult result = Run();
             Console.WriteLine(JsonSerializer.Serialize(
                 result,
