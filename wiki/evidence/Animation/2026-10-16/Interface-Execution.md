@@ -1,5 +1,29 @@
 # Interface animation execution
 
+The final normal HUD run passes the fixed **1.00 ms animation P95 budget**:
+**0.9249 ms P95**, **0.7823 ms median**, **0.9938 ms P99**, and
+**0 B per animation frame**. It uses the original **64 cards, 128 warmup
+frames and 512 samples**, with D3D12 at 1280×720 on the RTX 3080.
+[Final capture](hud-final.png), [sampling summary](hud-final.sampling.json),
+[command](hud-final.commands.ps1), [result](hud-final.result.json),
+[stdout](hud-final.stdout.txt) and [stderr](hud-final.stderr.txt) retain
+FIFO run `99887e6cccc3487cad94845835140a19`, measured from source `11da31ce`.
+
+| Timing boundary | Median ms | P95 ms | P99 ms |
+| --- | ---: | ---: | ---: |
+| Animation CPU | 0.7823 | 0.9249 | 0.9938 |
+| Complete CPU frame | 6.1221 | 7.8269 | 8.9015 |
+| GPU timestamp interval | 0.224256 | 0.365568 | 0.37888 |
+| Actual Present interval | 6.1275 | 7.8329 | 8.9079 |
+
+Views median/P95/P99 are **2.6568/2.8887/3.1600 ms**, with **0 B/frame**.
+Complete managed CPU allocation is **134084.71875 B/frame**, including
+extraction, preparation and rendering execution. The recorded full-frame target
+is **3.333333 ms**. The first frame costs **6063.9591 ms**, and retained managed
+memory is **15654304 B**. The Release HUD build completed with **0 warnings /
+0 errors**; the same FIFO task passed
+`CompletedSourceRespondsToLayerWeightChanges` **1 / 1**.
+
 The application uses the public animation phases before layout and FLIP.
 `GameFrameSystems.AddAnimation(spec)` registers concrete motion combinations,
 `Describe()` expands the actual execution order, and `MeasureViews()` records
@@ -71,3 +95,48 @@ samples: [result](hud-profile.result.json), [stdout](hud-profile.stdout.txt),
 [stderr](hud-profile.stderr.txt). The next implementation shares typed field
 declarations through AnimatedField, reuses an already read component root and
 selects active algorithm/phase rows before borrowing their state.
+
+The normal run after phase selection and shared view declarations
+(`532917a522354c61b39a5b92956a832a`) measured animation median/P95/P99
+**0.9196/1.0997/1.1928 ms**, with **0 B/frame**. Views median/P95 were
+**2.7042/2.9915 ms**, also at **0 B/frame**. Full CPU median/P95 were
+**6.3903/8.4177 ms** and GPU median/P95 were **0.224256/0.354304 ms**.
+The fixed workload remains 64 cards, 128 warmup frames and 512 samples;
+the animation P95 is compared with the original **1.00 ms** budget.
+[Command](hud-532917.commands.ps1), [result](hud-532917.result.json),
+[stdout](hud-532917.stdout.txt), [stderr](hud-532917.stderr.txt),
+[sampling summary](hud-532917.sampling.json) and
+[swapchain capture](hud-532917.png) preserve this iteration separately.
+This command built the public Checks and HUD consumers with **0 warnings /
+0 errors**, passed the default public consumers, and passed the affected
+property/weight/manual-track selection **3 / 3**.
+
+The declaration and presented-value selection passed **15 / 15**:
+**11 TypedAnimationTests** and **4 ReadersFollowPresented cases**.
+It covers shared declarations, changing parameters, async reference targets,
+and dependencies that observe the presented ordinary and reference fields.
+[Result](view-declarations-tests.result.json),
+[stdout](view-declarations-tests.stdout.txt) and
+[stderr](view-declarations-tests.stderr.txt) retain the command and output.
+
+Splitting enabled and disabled timeline queries moves the enabled flag from
+per-row World access to the query's batch state. Run
+`566b9f99524645f08c258aa547c839d6` measured animation median/P95/P99
+**0.8498/1.0106/1.1517 ms**, with **0 B/frame**, using the same fixed workload.
+Views median/P95 were **2.6346/2.9296 ms** and **0 B/frame**; full CPU
+median/P95 were **6.2316/8.2716 ms**. The Release build had **0 warnings /
+0 errors**. [Command](hud-566b9f.commands.ps1),
+[result](hud-566b9f.result.json), [stdout](hud-566b9f.stdout.txt),
+[stderr](hud-566b9f.stderr.txt), [sampling summary](hud-566b9f.sampling.json)
+and [swapchain capture](hud-566b9f.png) preserve the iteration.
+The affected `CompletedSourceRespondsToLayerWeightChanges` public check passed
+**1 / 1** (`fba27963557c47e8b923f83f454cb0b7`):
+[result](hud-414-held.result.json), [stdout](hud-414-held.stdout.txt),
+[stderr](hud-414-held.stderr.txt).
+
+The final iteration uses `ReadSpan` for track selection, acquires one writable
+track span when a row first enters the sampling path, and reuses that span for
+input and output traversal. Finished and disabled tracks retain their existing
+read-only path. This removes repeated buffer indexing, track copies and version
+recording inside a batch. The final run and its affected public check are linked
+at the start of this page; all earlier captures and measurements remain above.

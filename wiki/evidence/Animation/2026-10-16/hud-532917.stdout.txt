@@ -1,0 +1,23 @@
+
+
+    0 个警告
+    0 个错误
+
+已用时间 00:01:11.58
+
+
+    0 个警告
+    0 个错误
+
+已用时间 00:01:11.71
+GRAPH_CONSUMERS_PASSED typed-sequence shared-definition instance-state custom-condition public-leaf
+ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graph
+VIEWS_DECLARED_SWITCHES samples=1000 bytes=96000
+F:\CodexProjects\2026-10-16\48-https-github-com-odtian-someengine\work\trees\fields\tests\SomeEngine.Animation.Tests\bin\Release\net10.0\SomeEngine.Animation.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行
+VSTest 版本 18.0.2 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+
+已通过! - 失败:     0，通过:     3，已跳过:     0，总计:     3，持续时间: 1 s - SomeEngine.Animation.Tests.dll (net10.0)
+{"Workload":"64 typed animated cards with reference fields and FLIP","Warmups":128,"Samples":512,"Device":"NVIDIA GeForce RTX 3080","Processor":"Intel64 Family 6 Model 63 Stepping 2, GenuineIntel","Framework":".NET 10.0.13","Backend":"D3D12","Width":1280,"Height":720,"PresentType":"Immediate","VSync":false,"Delta":"actual elapsed between frame starts","Animation":{"MedianMs":0.9196,"P95Ms":1.0997,"P99Ms":1.1928},"CpuFrame":{"MedianMs":6.3903,"P95Ms":8.4177,"P99Ms":9.2386},"Gpu":{"MedianMs":0.224256,"P95Ms":0.354304,"P99Ms":0.379904},"PresentInterval":{"MedianMs":6.396,"P95Ms":8.4235,"P99Ms":9.4976},"AnimationBytesPerFrame":0,"CpuBytesPerFrame":134085.46875,"Phases":[{"Name":"Views","Timing":{"MedianMs":2.7042,"P95Ms":2.9915,"P99Ms":3.1649},"BytesPerFrame":0},{"Name":"Animation","Timing":{"MedianMs":0.9196,"P95Ms":1.0997,"P99Ms":1.1928},"BytesPerFrame":0},{"Name":"Layout","Timing":{"MedianMs":0.4102,"P95Ms":0.591,"P99Ms":0.6712},"BytesPerFrame":0},{"Name":"FLIP","Timing":{"MedianMs":0.0096,"P95Ms":0.4346,"P99Ms":0.4795},"BytesPerFrame":0},{"Name":"Extraction","Timing":{"MedianMs":0.3289,"P95Ms":0.4433,"P99Ms":0.5003},"BytesPerFrame":65784},{"Name":"Prepare","Timing":{"MedianMs":0.0794,"P95Ms":0.1419,"P99Ms":0.1573},"BytesPerFrame":39064},{"Name":"Graph reconciliation","Timing":{"MedianMs":0.0064,"P95Ms":0.0092,"P99Ms":0.0196},"BytesPerFrame":416},{"Name":"Acquire","Timing":{"MedianMs":0.0143,"P95Ms":0.0186,"P99Ms":0.0271},"BytesPerFrame":0},{"Name":"Frame execution and GPU wait","Timing":{"MedianMs":1.364,"P95Ms":3.0899,"P99Ms":3.7496},"BytesPerFrame":28821.46875},{"Name":"Present","Timing":{"MedianMs":0.3821,"P95Ms":0.5228,"P99Ms":0.6674},"BytesPerFrame":0}],"FirstFrameMs":6581.5134,"StartupAndRunMs":14755.0153,"RetainedBytes":15550664,"AnimationBudgetMs":1,"AnimationWithinBudget":false,"FrameTargetMs":3.3333333333333335,"PresentedFrames":641,"Capture":"artifacts/hud-final.rgba"}
