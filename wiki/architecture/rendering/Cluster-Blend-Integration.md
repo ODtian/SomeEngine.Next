@@ -27,6 +27,7 @@ DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-ind
 | `foliage` | 64 组植被，每组三张交叉叶片。 |
 | `deformed-phong` | 16 个移动部件，使用 Wave 顶点变形与 Phong 曲面。 |
 | `xray` | 64 个机械部件，共 10,752 个三角形，带独立遮挡板与完整 Standard 材质。 |
+| `ordered` | 四个旋转 stencil 窗口，共 16 个面板，依次执行遮罩写入、alpha 混合、乘色和通道混合。 |
 
 场景内容通过 `SceneTestPlatform.InitializeScene` 和 `UpdateScene` 编辑游戏实体。相机回放时专项物体使用同一相机相对布局，三个基础场景都保有对应的效果工作量。
 
@@ -93,6 +94,7 @@ edit.SetXray(entity, new Xray(
 | 7、15：硬软语义、容量分段 | [#224](https://github.com/ODtian/SomeEngine.Next/issues/224) | `TransparencyIndexTests.XyzCandidatesMatchFullScanWhileModelsAndCameraMoveAcrossCells` 在两种后端对比完整遍历、常规容量和单项容量。 |
 | 14：游戏编辑与当前帧更新 | [#224](https://github.com/ODtian/SomeEngine.Next/issues/224) | `StaticBlendCellsAreReusedUntilInstanceMembershipChanges` 与 `SceneInitializationAndFrameEditsMatchTheSameScriptedScene`。 |
 | 16：尾部误差界 | [#222](https://github.com/ODtian/SomeEngine.Next/issues/222) | 完整排序图像跨越四项局部队列继续求值；同一检查把材质误差界改为 0.04，与精确图比较整图误差。 |
+| 12、13：有序颜色与 stencil | [#227](https://github.com/ODtian/SomeEngine.Next/issues/227) | `OrderedRenderingTests` 分别对照只读遮罩、alpha 与乘色次序、stencil 的 fail/depth-fail/正反面与读写掩码。参考通过公共颜色 feature 使用 RHI 固定功能状态，并将同一整数图两次导出、导入硬件附件。 |
 | 17、18：专项与整帧、统一场景 | [#228](https://github.com/ODtian/SomeEngine.Next/issues/228) | `ClusterBlendMetrics`、DefaultGame 效果入口与 `Measure-ClusterEffects.ps1`。 |
 
 交付分支为 `codex/tile-blending-221`；[PR #229](https://github.com/ODtian/SomeEngine.Next/pull/229) 汇集全部规格工作。
