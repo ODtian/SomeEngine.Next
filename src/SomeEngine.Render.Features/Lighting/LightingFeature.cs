@@ -76,6 +76,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     private readonly ClusteredLightGridParameters[] _viewParameters;
     private readonly GraphBufferInput _frameLights;
     private readonly GraphBufferInput _frameViews;
+    private ClusteredViewGrid? _tileGrid;
     private bool _cookieInitialized;
     private bool _disposed;
 
@@ -331,6 +332,18 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     public LightingFeatureResources Resources { get; }
     public ClusteredViewGrid ViewGrid => new(_frameViews, Resources.CellCountPerView, _viewCount);
 
+    /// <summary>Creates the shared view parameters for screen tile candidates with one depth slice.</summary>
+    public ClusteredViewGrid CreateTileGrid()
+    {
+        if (_tileGrid is { } grid) return grid;
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        grid = new(edit.CreateBufferInput(BufferUsages.ShaderRead),
+            Resources.CellCountPerView / _settings.DepthSliceCount, _viewCount);
+        edit.Commit();
+        _tileGrid = grid;
+        return grid;
+    }
+
     public void Record(
         ref RenderGraphFrame graph,
         RenderLightSet lights,
@@ -419,6 +432,18 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         if (!_cookieInitialized) graph.ObserveExecution(this);
         graph.SetPassEnabled(_buildPass, !useSinglePoint && enabled && nonDirectionalCount != 0);
         graph.SetPassEnabled(_compactPass, !useSinglePoint && enabled && nonDirectionalCount != 0);
+        if (_tileGrid is { } tileGrid)
+        {
+            for (int index = 0; index < views.Length; index++)
+            {
+                parameters[index].DepthSliceCount = 1;
+                parameters[index].CellCountPerView = tileGrid.CellCountPerView;
+            }
+            graph.SetBufferInput(tileGrid.Parameters, graph.Upload(
+                parameters,
+                BufferUsages.ShaderRead,
+                "Screen tile frame views"));
+        }
     }
 
     void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)

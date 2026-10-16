@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory)][string]$ApplicationPath,
     [string[]]$Effects = @('glass', 'smoke', 'foliage', 'deformed-phong', 'xray', 'decal-layers', 'decal-sparse', 'ordered'),
-    [ValidateSet('full', 'xyz')][string[]]$Methods = @('full', 'xyz'),
+    [ValidateSet('full', 'xy', 'xyz')][string[]]$Methods = @('xy', 'xyz'),
     [hashtable]$FirstFrames = @{ '1024 spheres' = 2048; 'Sponza' = 1024; 'Amazon Bistro' = 2048 },
     [int]$FrameCount = 256,
     [switch]$Static,

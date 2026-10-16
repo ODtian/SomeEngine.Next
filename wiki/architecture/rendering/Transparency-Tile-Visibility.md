@@ -493,13 +493,17 @@ DefaultGame 的 `--cluster-oit` 通过场景初始化与逐帧场景编辑，在
 dotnet templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.dll --measure-scene '1024 spheres' --cluster-oit --hardware-adapter --graphics-backend d3d12 --hardware-raster --frames 16 --hidden-window --no-debug-ui
 ```
 
-## Cluster Forward+ XYZ 候选
+## Cluster 混合候选
 
-正式 Cluster 透明候选与 LightingFeature 共用 `ClusteredViewGrid` 的参数输入；XY tile、视空间对数 Z 切片及 cell 编号由 `render_lighting.slang` 统一解释。`--blend-index=xyz` 选择连续 cell 索引，`--blend-index=full` 选择完整来源扫描，默认使用 XYZ。两种选择共享用户覆盖、表面重建、receiver、四层深度选择和合成。
+正式 Cluster 透明候选与 LightingFeature 共用 `ClusteredViewGrid` 的参数输入；XY tile、视空间对数 Z 切片及 cell 编号由 `render_lighting.slang` 统一解释。`--blend-index=xyz` 选择连续 XYZ cell 索引，`--blend-index=xy` 选择 XY tile 候选，`--blend-index=full` 选择完整来源扫描，默认使用 XYZ。三种选择共享用户覆盖、表面重建、receiver、四层深度选择和合成。
+
+XY 通过 `LightingFeature.CreateTileGrid()` 从同一份视图参数派生单切片 grid，`DepthSliceCount` 为 1、`CellCountPerView` 为 XY tile 数；视图变换、投影、tile 尺寸与深度范围沿用光照视图。透明与材质贴花绑定该候选 grid，PBR 使用原来的 16 切片光照 grid。既有深度切片计算将所有候选映射到 slice 0，查询遍历一个 tile，最终命中所属 cell 也回到这个 tile。现有 counts、offsets、引用及容量处理共用，各 cell 缓冲按所选 grid 的实际 cell 数分配。
 
 GPU 从 primary 两阶段的实际可见数量保存配套源请求，每项 12 B，持有页、实例、页内 cluster 和 view。source 编码由该表的条目与原 triangle 组成；微三角形通过同一用户域的 primitive 序号及原域重心来源重建。投影、覆盖、阴影和材质求值读取同一份源表。已保存的投影及 cell 引用与其源表共同复用，帧间可见队列的追加顺序变化由这份配套身份隔离。
 
-Count 对实际投影图元的保守 XYZ 范围计数，Reserve 为每 cell 分配连续引用区间，Scatter 写入投影引用。投影缓存与引用池分别由 `ClusterPipelineOptions.BlendTriangleCapacity/BlendReferenceCapacity` 设置；`SceneScript` 提供相同的公开预算。完整 cell 区间在预算内驻留，引用容量之外的 cell 扫描已保存的投影。投影容量之外的来源通过 wave 共享的用户投影状态继续生成，每次广播一份三角形；各像素执行自己的覆盖和完整次序累积。驻留引用路径对覆盖后的最终深度查询所属 cell；该 cell 执行最终命中的 receiver 和合成。
+Count 对实际投影图元的保守 cell 范围计数，Reserve 为每 cell 分配连续引用区间，Scatter 写入投影引用。投影缓存与引用池分别由 `ClusterPipelineOptions.BlendTriangleCapacity/BlendReferenceCapacity` 设置；`SceneScript` 提供相同的公开预算。完整 cell 区间在预算内驻留，引用容量之外的 cell 扫描已保存的投影。投影容量之外的来源通过 wave 共享的用户投影状态继续生成，每次广播一份三角形；各像素执行自己的覆盖和完整次序累积。驻留引用路径对覆盖后的最终深度查询所属 cell；该 cell 执行最终命中的 receiver 和合成。
+
+`Measure-ClusterEffects.ps1` 默认以 XY/XYZ 配对八类效果，比较同一屏幕 tile 候选增加 Z 筛选后的实际收益。`-Methods full,xy,xyz` 将完整遍历加入同输入对照。统一报告固定三个基础场景、分辨率、相机与效果行为、模拟帧、渲染和编译设置及采样，逐项保留五类 GPU 时间、引用与显存口径。
 
 每轮先扫描全部候选，选择剩余输入中最近四层，再更新颜色与透射率。源批次持续到实际输入结束；`MaximumError` 继续沿已完成前缀检查尾部颜色界。持久图保留五个固定几何阶段、资源与连接，当帧 GPU 计数决定其实际工作量。视图、实例 batch 与内容版本、几何/光栅版本、材质配置、驻留写入与 streaming quality 变化驱动刷新；完成后的相同输入复用配套源、投影和引用。
 
