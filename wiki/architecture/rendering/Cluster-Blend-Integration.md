@@ -58,10 +58,12 @@ GraphPassId completed = attachment.Import(ref edit, hardwarePass);
 有序像素状态处理与显式交接进入 `MaterialCompositeMs`。R32UInt 图、材质状态、交接缓冲和硬件附件进入显存口径；交接缓冲按 RHI 的 stencil plane footprint 组织行距和各视图偏移。
 
 ```powershell
-./tools/Measure-ClusterEffects.ps1 -ApplicationPath <NativeAOT Game.App.exe>
+& 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1' pwsh -NoProfile -File ./tools/Measure-ClusterEffects.ps1 -ApplicationPath ./templates/DefaultProject/Game.App/bin/Release/net10.0/publish/Game.App.exe
 ```
 
-该入口调用 `tools/Measure-Scenes.ps1`，每次同时测量 1024 小球、Sponza、Amazon Bistro，以完整且收敛的三场景报告交付对照。默认对八类效果逐一配对 XY 与 XYZ：XY 保留屏幕 tile 内的候选，XYZ 继续按深度切片筛选。每个场景采集固定的 64 个模拟帧，Wave/Phong 从第 192 帧开始；各效果的窗口由脚本统一指定。`-Methods full,xy,xyz` 可加入逐像素完整遍历作为图像和工作量参考。配对固定分辨率、模拟帧、场景行为、渲染配置、编译配置与采样。内容构建单列；trace 定位单列。
+本机共享入口 `F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1` 管理排队与执行。性能相关的启动、测量和捕获通过该入口提交；队列任务完成后读取结果报告。
+
+效果脚本调用 `tools/Measure-Scenes.ps1`，每次同时测量 1024 小球、Sponza、Amazon Bistro，以完整且收敛的三场景报告交付对照。默认对八类效果逐一配对 XY 与 XYZ：XY 保留屏幕 tile 内的候选，XYZ 继续按深度切片筛选。每个场景采集固定的 64 个模拟帧，Wave/Phong 从第 192 帧开始；各效果的窗口由脚本统一指定。`-Methods full,xy,xyz` 可加入逐像素完整遍历作为图像和工作量参考。配对固定分辨率、模拟帧、场景行为、渲染配置、编译配置与采样。内容构建单列；trace 定位单列。
 
 ## X-ray
 
