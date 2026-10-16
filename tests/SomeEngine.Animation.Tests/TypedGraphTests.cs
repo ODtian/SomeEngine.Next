@@ -166,7 +166,7 @@ public class TypedGraphTests
         world.Replace(animation, inputs);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         AnimationSystems.AddDefaults(systems);
-        var frame = new ImmediateSystemContext(world);
+        var frame = new ImmediateSystemContext(world, 0, 0, 0);
         systems.Update(ref frame);
 
         systems.Update(ref frame);
