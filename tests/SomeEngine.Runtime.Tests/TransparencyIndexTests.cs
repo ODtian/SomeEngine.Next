@@ -45,8 +45,47 @@ public sealed class TransparencyIndexTests(TransparencyContentFixture content)
                 "--blend-index=" + index, "--hardware-raster", "--no-taa", "--no-vsm");
             images.Add(frames);
         }
+        SceneLinearImage reference = images[0][0];
+        Matrix4x4.Invert(reference.Frame.View * reference.Frame.Projection, out Matrix4x4 inverse);
+        Half[] expected = reference.Pixels.ToArray();
+        for (int y = 25; y < 39; y++)
+        for (int x = 23; x < 41; x++)
+        {
+            Vector4 world = Vector4.Transform(new Vector4((x + .5f) / 32 - 1, 1 - (y + .5f) / 32, .5f, 1), inverse);
+            bool redNear = world.X / world.W < 0;
+            int pixel = (y * 64 + x) * 4;
+            expected[pixel] = (Half)(redNear ? .5f : .25f);
+            expected[pixel + 1] = (Half)(redNear ? .25f : .5f);
+            expected[pixel + 2] = (Half)0;
+            expected[pixel + 3] = (Half)1;
+        }
+        SceneImages.AssertLinearEqual(reference with { Pixels = expected }, reference, .001f);
         foreach (SceneLinearImage[] indexed in images.Skip(1))
             for (int frame = 0; frame < 2; frame++)
                 SceneImages.AssertLinearEqual(images[0][frame], indexed[frame], .001f);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    public async Task StaticBlendCellsAreReusedUntilInstanceMembershipChanges(string backend)
+    {
+        var measurements = new List<ClusterBlendMetrics>();
+        await SceneImages.RunAsync(backend, new SceneScript(content.DirectoryPath, 16,
+        [
+            new(0, edit =>
+            {
+                foreach (var entity in edit.MeshEntities)
+                {
+                    Material material = edit.GetMaterial(entity);
+                    material.State = material.State with { Surface = SurfaceMode.Translucent };
+                }
+            }),
+            new(8, edit => edit.AddEntity(edit.MeshEntities[0], new TransformQvvs(new Vector3(.25f, 0, 9), Quaternion.Identity))),
+        ]) { BlendFrameCompleted = measurements.Add, WaitForFrames = false },
+            "--measure-blending", "--hardware-raster", "--no-taa", "--no-vsm", "--static-scene");
+
+        Assert.True(measurements.Single(frame => frame.SimulationFrame == 7).ReusedIndex);
+        Assert.False(measurements.Single(frame => frame.SimulationFrame == 8).ReusedIndex);
+        Assert.True(measurements.Single(frame => frame.SimulationFrame == 15).ReusedIndex);
     }
 }
