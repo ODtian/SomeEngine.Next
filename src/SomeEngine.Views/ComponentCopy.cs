@@ -40,10 +40,11 @@ internal sealed class ComponentCopy<T>(Entity entity, T value) : ComponentCopy w
     internal override void Commit(World world, ChildChanges changes, bool reuseData)
     {
         bool exists = HasComponent(world, entity);
+        T previous = exists ? world.ReadComponentData<T>(entity) : default;
         T presented = Value;
-        if (AnimatedFields.PreservePresentation(world, entity, ref presented))
+        if (AnimatedFields.PreservePresentation(world, entity, ref presented, in previous))
             changes.WriteAnimation(this);
-        if (exists && EqualityComparer<T>.Default.Equals(world.ReadComponentData<T>(entity), presented))
+        if (exists && EqualityComparer<T>.Default.Equals(previous, presented))
             return;
         if (reuseData)
             changes.RememberComponent(world, entity, ref _previousData);

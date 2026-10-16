@@ -318,7 +318,7 @@ public static partial class Scope
             T previousTarget = previous;
             AnimatedFields.RestoreBase(current.World, existing, ref previousTarget);
             T parameters = view;
-            if (AnimatedFields.PreservePresentation(current.World, existing, ref parameters))
+            if (AnimatedFields.PreservePresentation(current.World, existing, ref parameters, in previous))
             {
                 var copies = current.ViewData.ComponentCopies ??= new();
                 var component = (existing, ComponentId<T>.Value, 0UL);

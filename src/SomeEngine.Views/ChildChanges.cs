@@ -142,8 +142,9 @@ internal sealed class ChildChanges
     private static void RestoreValue<T>(World world, Entity entity, in T value) where T : struct
     {
         T restored = value;
-        AnimatedFields.PreservePresentation(world, entity, ref restored);
-        if (EqualityComparer<T>.Default.Equals(world.ReadComponentData<T>(entity), restored))
+        T presented = world.ReadComponentData<T>(entity);
+        AnimatedFields.PreservePresentation(world, entity, ref restored, in presented);
+        if (EqualityComparer<T>.Default.Equals(presented, restored))
             world.OverwriteComponentData(entity, in restored);
         else
             world.ReplaceComponentData(entity, in restored);

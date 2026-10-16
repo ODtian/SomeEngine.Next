@@ -1,13 +1,11 @@
 using System.Runtime.CompilerServices;
 using SomeEngine.Animation;
 using SomeEngine.ECS;
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Views;
 
-[BufferCapacity(1)]
-internal struct FieldMotion<T, TOps, TParameters, TState, TEvaluator> : IBufferElement
+internal sealed class FieldMotion<T, TOps, TParameters, TState, TEvaluator>
     where T : unmanaged
     where TOps : struct, IValueOps<T>
     where TParameters : struct
@@ -29,30 +27,20 @@ internal static unsafe partial class AnimatedFields
         where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
     {
         PropertyAnimation.Declare(world, entity, channel, spec);
-        Declare(world, entity, channel, default(Spec), value, hasValue);
-        if (!world.HasBuffer<FieldMotion<T, TOps, TParameters, TState, TEvaluator>>(entity))
-            world.AddBuffer<FieldMotion<T, TOps, TParameters, TState, TEvaluator>>(entity);
-        var motion = new FieldMotion<T, TOps, TParameters, TState, TEvaluator> { Channel = channel, Spec = spec };
-        world.ExecuteBufferWrite<FieldMotion<T, TOps, TParameters, TState, TEvaluator>, FieldMotion<T, TOps, TParameters, TState, TEvaluator>>(
-            entity, ref motion, static (motions, ref motion) =>
-            {
-                for (int index = 0; index < motions.Count; index++)
-                    if (motions.Read(index).Channel == motion.Channel)
-                    {
-                        motions[index] = motion;
-                        return;
-                    }
-                motions.Add(motion);
-            });
-        var identity = (channel.Component, channel.Field);
-        world.ExecuteBufferWrite<AnimatedField, (ushort Component, uint Field)>(entity, ref identity,
-            static (fields, ref identity) =>
+        Declare(world, entity, channel, default(Spec), value, hasValue, keepMotion: true);
+        var declaration = (Channel: channel, Spec: spec);
+        world.ExecuteBufferWrite<AnimatedField, (Channel<T> Channel, Spec<T, TOps, TParameters, TState, TEvaluator> Spec)>(
+            entity, ref declaration, static (fields, ref declaration) =>
             {
                 for (int index = 0; index < fields.Count; index++)
                 {
                     ref AnimatedField field = ref fields[index];
-                    if (field.Component != identity.Component || field.Field != identity.Field)
+                    if (field.Component != declaration.Channel.Component || field.Field != declaration.Channel.Field)
                         continue;
+                    if (field.Motion is not FieldMotion<T, TOps, TParameters, TState, TEvaluator> motion)
+                        field.Motion = motion = new();
+                    motion.Channel = declaration.Channel;
+                    motion.Spec = declaration.Spec;
                     field.ValueFunction = &CopyTypedValue<T, TOps, TParameters, TState, TEvaluator>;
                     field.SubmitFunction = &SubmitTypedValue<T, TOps, TParameters, TState, TEvaluator>;
                     return;
@@ -101,9 +89,11 @@ internal static unsafe partial class AnimatedFields
         if (target.Index >= 0)
         {
             T submitted = value;
+            bool hadValue = target.Field.HasValue;
             target.Field.SubmitFunction(world, entity, ref target.Field, ref Unsafe.As<T, byte>(ref submitted));
-            world.ExecuteBufferWrite<AnimatedField, (Channel<T> Channel, int Index, AnimatedField Field)>(
-                entity, ref target, static (fields, ref target) => fields[target.Index] = target.Field);
+            if (target.Field.HasValue != hadValue)
+                world.ExecuteBufferWrite<AnimatedField, (Channel<T> Channel, int Index, AnimatedField Field)>(
+                    entity, ref target, static (fields, ref target) => fields[target.Index] = target.Field);
         }
         else channel.Write(world, entity, in value);
     }
@@ -135,38 +125,15 @@ internal static unsafe partial class AnimatedFields
         field.HasValue = true;
     }
 
-    private static FieldMotion<T, TOps, TParameters, TState, TEvaluator> ReadMotion<T, TOps, TParameters, TState, TEvaluator>(
-        World world, Entity entity, in AnimatedField field)
-        where T : unmanaged
-        where TOps : struct, IValueOps<T>
-        where TParameters : struct
-        where TState : struct
-        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
-    {
-        var result = (Component: field.Component, Field: field.Field, Motion: default(FieldMotion<T, TOps, TParameters, TState, TEvaluator>));
-        world.ExecuteBufferRead<FieldMotion<T, TOps, TParameters, TState, TEvaluator>,
-            (ushort Component, uint Field, FieldMotion<T, TOps, TParameters, TState, TEvaluator> Motion)>(entity, ref result,
-            static (motions, ref result) =>
-            {
-                foreach (var motion in motions.AsSpan())
-                    if (motion.Channel.Component == result.Component && motion.Channel.Field == result.Field)
-                    {
-                        result.Motion = motion;
-                        return;
-                    }
-            });
-        return result.Motion;
-    }
-
     private static void CopyTypedValue<T, TOps, TParameters, TState, TEvaluator>(World world, Entity entity,
-        ref AnimatedField field, ref byte component, FieldValue kind)
+        ref AnimatedField field, ref byte component, in byte presentation, FieldValue kind)
         where T : unmanaged
         where TOps : struct, IValueOps<T>
         where TParameters : struct
         where TState : struct
         where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
     {
-        var motion = ReadMotion<T, TOps, TParameters, TState, TEvaluator>(world, entity, in field);
+        var motion = (FieldMotion<T, TOps, TParameters, TState, TEvaluator>)field.Motion!;
         Channel<T> channel = motion.Channel;
         if (kind == FieldValue.Target)
         {
@@ -176,7 +143,7 @@ internal static unsafe partial class AnimatedFields
         }
         else if (field.HasValue)
         {
-            T value = kind == FieldValue.Base ? ReadTarget(world, entity, channel) : channel.Read(world, entity);
+            T value = kind == FieldValue.Base ? ReadTarget(world, entity, channel) : channel.ReadRoot(in presentation);
             channel.WriteRoot(ref component, in value);
         }
     }
@@ -189,7 +156,7 @@ internal static unsafe partial class AnimatedFields
         where TState : struct
         where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
     {
-        var motion = ReadMotion<T, TOps, TParameters, TState, TEvaluator>(world, entity, in field);
+        var motion = (FieldMotion<T, TOps, TParameters, TState, TEvaluator>)field.Motion!;
         SubmitTypedValue<T, TOps, TParameters, TState, TEvaluator>(world, entity, ref field, ref bytes, in motion);
     }
 
