@@ -20,4 +20,8 @@ typedef UnlitMaterial SurfaceEvaluate;
 #define TRANSPARENCY_MATERIAL_TYPE DeformedPhongTransparencyMaterial
 #include "cluster_transparency_material.slang"
 
+// Wave moves each vertex by at most .3 world units. Phong's edge control point
+// moves at most half the undeformed world edge beyond its source triangle.
+// Callers supply that sum as MeshInstance.BoundsExpansion (.66 for gallery parts).
+#define CLUSTER_TESSELLATION_BOUNDS "finite"
 #include "cluster_tessellation_entries.slang"

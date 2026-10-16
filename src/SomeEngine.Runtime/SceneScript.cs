@@ -148,10 +148,14 @@ public sealed class SceneEdit
     }
 
     /// <summary>Adds caller-supplied, ready geometry and materials to the Game world.</summary>
-    public Entity AddEntity(Mesh mesh, IReadOnlyList<Material> materials, TransformQvvs transform)
+    public Entity AddEntity(Mesh mesh, IReadOnlyList<Material> materials, TransformQvvs transform) =>
+        AddEntity(mesh, materials, transform, 0);
+
+    /// <summary>Adds ready geometry with a conservative world-space radius for the material's deformation.</summary>
+    public Entity AddEntity(Mesh mesh, IReadOnlyList<Material> materials, TransformQvvs transform, float boundsExpansion)
     {
         RequireAction();
-        return _scene.AddEntity(new MeshInstance { Mesh = mesh },
+        return _scene.AddEntity(new MeshInstance { Mesh = mesh, BoundsExpansion = boundsExpansion },
             materials.Select(material => new MeshMaterialBinding(material)).ToArray(), transform);
     }
 

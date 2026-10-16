@@ -26,7 +26,7 @@ internal sealed partial class ClusterBlendScene
                 TransformQvvs transform = new(new Vector3((group % 2 - .5f) * .9f,
                     (group / 2 - .5f) * .7f, 2.4f + layer * .2f), Quaternion.Identity, .35f);
                 _curvedParts.Add((_objects.Count, transform));
-                Add(edit, assets.Part, material, transform);
+                _objects.Add((edit.AddEntity(assets.Part, [material], transform, boundsExpansion: .66f), transform));
             }
         }
     }

@@ -48,7 +48,7 @@ public static partial class BehaviorScenes
             Entity redEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(-1, 0, 6), Quaternion.Identity) });
             world.Add(redEntity, new MeshSource { Mesh = red.Reference });
             Entity greenEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(1, 0, 6), Quaternion.Identity) });
-            world.Add(greenEntity, new MeshSource { Mesh = green.Reference });
+            world.Add(greenEntity, new MeshSource { Mesh = green.Reference, BoundsExpansion = 1.31f });
         });
         await SceneContent.SetOutputSizeAsync(destination, 128, 128);
     }
@@ -77,7 +77,7 @@ public static partial class BehaviorScenes
                 {
                     Qvvs = new(position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, index * .2f), .35f),
                 });
-                world.Add(entity, new MeshSource { Mesh = curved.Reference });
+                world.Add(entity, new MeshSource { Mesh = curved.Reference, BoundsExpansion = .66f });
             }
             world.CreateEntity(new PointLight(new(0, 2, 0), 20, Vector3.One, 30));
         });
