@@ -15,6 +15,14 @@ namespace Game.Build;
 
 public static class ImportedSceneBuild
 {
+    /// <summary>Updates the shared shader and pipeline assets of an existing imported scene.</summary>
+    public static void RefreshSharedAssets(string applicationDirectory, string projectRoot)
+    {
+        var project = new AssetProject(Path.GetFullPath(projectRoot), []);
+        CopySharedShaders(project, Path.GetFullPath(applicationDirectory));
+        Console.WriteLine($"Refreshed shared assets: {project.RootPath}");
+    }
+
     public static async Task RefreshShadersAsync(string applicationDirectory, string projectRoot, string engineRoot)
     {
         var project = new AssetProject(Path.GetFullPath(projectRoot), [],

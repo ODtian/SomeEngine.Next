@@ -1,5 +1,17 @@
 using Game.Build;
 
+if (args is ["--refresh-cluster-configuration", var clusterDirectory])
+{
+    DefaultContent.BuildClusterShaders(clusterDirectory);
+    return;
+}
+
+if (args is ["--refresh-shared-assets", var sharedDirectory, var importedDirectory])
+{
+    ImportedSceneBuild.RefreshSharedAssets(sharedDirectory, importedDirectory);
+    return;
+}
+
 if (args is ["--refresh-scene-shaders", var applicationDirectory, var sceneDirectory, var engineRoot])
 {
     await ImportedSceneBuild.RefreshShadersAsync(applicationDirectory, sceneDirectory, engineRoot);
