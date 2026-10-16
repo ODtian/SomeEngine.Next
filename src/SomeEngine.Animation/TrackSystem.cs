@@ -242,7 +242,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         track.Finished = finished;
     }
 
-    private static bool HasLaterTrack(DynamicBuffer<Track<T>> tracks, int index, Entity animation, Entity target,
+    internal static bool HasLaterTrack(DynamicBuffer<Track<T>> tracks, int index, Entity animation, Entity target,
         in Track<T> track, int lastStage, float time, bool finishedValuesOnly = false)
     {
         for (int i = 0; i < tracks.Count; i++)

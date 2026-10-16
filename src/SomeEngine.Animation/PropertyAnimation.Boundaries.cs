@@ -62,7 +62,6 @@ public static partial class PropertyAnimation
         world.ExecuteBufferWrite<TimelineStage, (int Index, TimelineStage Stage)>(animation, ref stage,
             static (stages, ref stage) =>
             {
-                while (stages.Count > stage.Index + 1) stages.SwapRemoveAt(stages.Count - 1);
                 while (stages.Count <= stage.Index) stages.Add(default);
                 stages[stage.Index] = stage.Stage;
             });

@@ -108,7 +108,9 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                         if (enabled && !previous.Finished)
                             timeline.Submit(true);
                         if (!previous.FromGraph && (enabled && !previous.Finished && previous.Sampled ||
-                            previous.Finished && PropertyAnimation.HoldsLayerValue(world, row.Entity, in previous)))
+                            previous.Finished && PropertyAnimation.HoldsLayerValue(world, row.Entity, in previous)) &&
+                            !(previous.Stage < lastStage && TrackSystem<T, TOps>.HasLaterTrack(tracks, index, row.Entity,
+                                previous.Target == Entity.Null ? row.Entity : previous.Target, in previous, lastStage, timeline.Time)))
                             Submit(world, row.Entity, index, in previous, ref evaluation.Writes, ref writeCount);
                         continue;
                     }
@@ -213,7 +215,8 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     float scale = track.TimeScale == 0 ? 1 : track.TimeScale;
                     track.SampleTime = motion.Time.Time / scale + track.Start + track.TimeOffset;
                     motion.Active = false;
-                    if (!track.FromGraph)
+                    if (!track.FromGraph && !(track.Stage < lastStage && TrackSystem<T, TOps>.HasLaterTrack(tracks, index, row.Entity,
+                        track.Target == Entity.Null ? row.Entity : track.Target, in track, lastStage, timeline.Time)))
                     {
                         Submit(world, row.Entity, index, in track, ref evaluation.Writes, ref writeCount);
                     }
