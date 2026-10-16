@@ -39,9 +39,19 @@ void ScatterTransparentCells(uint3 thread : SV_DispatchThreadID) { ScatterTransp
 [shader("compute")] [numthreads(16,16,1)]
 void RequestTransparentShadows<let visibilityDepth : uint, let tessellated : bool>(
     uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
-{ RequestTransparencyShadows(materials, pixel); }
+{ RequestTransparencyShadows<SingleTransparencyMaterials<visibilityDepth, tessellated>, false>(materials, pixel); }
+
+[shader("compute")] [numthreads(16,16,1)]
+void RequestProjectedTransparentShadows<let visibilityDepth : uint, let tessellated : bool>(
+    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
+{ RequestTransparencyShadows<SingleTransparencyMaterials<visibilityDepth, tessellated>, true>(materials, pixel); }
 
 [shader("compute")] [numthreads(16,16,1)]
 void ResolveTransparentColor<let visibilityDepth : uint, let tessellated : bool>(
     uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
-{ ResolveTransparency(materials, pixel); }
+{ ResolveTransparency<SingleTransparencyMaterials<visibilityDepth, tessellated>, false>(materials, pixel); }
+
+[shader("compute")] [numthreads(16,16,1)]
+void ResolveProjectedTransparentColor<let visibilityDepth : uint, let tessellated : bool>(
+    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
+{ ResolveTransparency<SingleTransparencyMaterials<visibilityDepth, tessellated>, true>(materials, pixel); }

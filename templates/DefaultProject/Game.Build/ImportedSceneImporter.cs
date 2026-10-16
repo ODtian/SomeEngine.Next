@@ -172,7 +172,8 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
         foreach (JsonNode? value in (JsonArray)definition["Blocks"]![0]!["Fields"]!["Specializations"]!)
             if (value!["EntryPoint"]!.GetValue<string>() is "ClusterSurfaceDataDepth" or "ClusterSurfaceDataMode" or
                 "ClusterShadowReceiver" or "ClusterForwardShade" or "BuildTransparentGeometry" or
-                "RequestTransparentShadows" or "ResolveTransparentColor")
+                "RequestTransparentShadows" or "RequestProjectedTransparentShadows" or
+                "ResolveTransparentColor" or "ResolveProjectedTransparentColor")
                 ((JsonArray)value["Arguments"]!)[0] = cutoff >= 0 ? "1" : "0";
         return definition;
     }
