@@ -165,6 +165,11 @@ public static partial class BehaviorScenes
         document["Fields"]!["Id"] = Guid.NewGuid().ToString();
         document["Fields"]!["Name"] = name;
         document["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang");
+        JsonArray specializations = document["Blocks"]![0]!["Fields"]!["Specializations"]!.AsArray();
+        for (int index = specializations.Count - 1; index >= 0; index--)
+            if (specializations[index]!["EntryPoint"]!.GetValue<string>() is
+                "BuildTransparentGeometry" or "RequestTransparentShadows" or "ResolveTransparentColor")
+                specializations.RemoveAt(index);
         string path = Path.Combine(shaderDirectory, name + ".shader");
         File.WriteAllText(path, document.ToJsonString());
         var project = new AssetProject(directory, [], sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);

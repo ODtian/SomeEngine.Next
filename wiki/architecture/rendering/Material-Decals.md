@@ -38,3 +38,5 @@ dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Re
 ```
 
 导入场景从同一项目模板生成材质表面代码，shader 搜索路径同时包含引擎与项目共享 include，因此刷新 Sponza、Amazon Bistro 的材质时使用同一层属性实现。
+
+`LitDecalNormalAndRoughnessMatchTheSameStandardSurface` 对照受点光源照明的 Standard 面板：先保留原表面，再将普通材质的法线图改为 `Blend coating normal`、粗糙度改为 `.85`；随后恢复原表面，通过全覆盖用户 coating 到达相同属性状态。原表面与参考图像不同，投影层与普通材质的整图线性误差满足 `.003`。2026-10-16 使用 `review/DefaultProject` 的 91 资产匹配包与 `2eafdd25` 源码，D3D12、Vulkan 各完成 16 帧，两项全部通过。与 Offset 深度组一起执行的行为规则检查为 0 违规。
