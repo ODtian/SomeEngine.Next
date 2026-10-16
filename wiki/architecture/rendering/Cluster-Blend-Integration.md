@@ -106,4 +106,6 @@ edit.SetXray(entity, new Xray(
 | 12、13：有序颜色与 stencil | [#227](https://github.com/ODtian/SomeEngine.Next/issues/227) | `OrderedRenderingTests` 分别对照只读遮罩、alpha 与乘色次序、stencil 的 fail/depth-fail/正反面与读写掩码。参考通过公共颜色 feature 使用 RHI 固定功能状态，并将同一整数图两次导出、导入硬件附件。 |
 | 17、18：专项与整帧、统一场景 | [#228](https://github.com/ODtian/SomeEngine.Next/issues/228) | `ClusterBlendMetrics`、DefaultGame 效果入口与 `Measure-ClusterEffects.ps1`。 |
 
+`OrderedRenderingTests` 的三类 D3D12 硬件对照均已通过，整图线性颜色容差为 0.001。Vulkan 的 stencil 写入检查以同一容差通过，并开启 `--measure-blending`，覆盖整数图与硬件附件的两次往返、正反面状态、depth-fail 和读写掩码。每项经过 16 个脚本帧，运行入口同时执行行为规则检查。
+
 交付分支为 `codex/tile-blending-221`；[PR #229](https://github.com/ODtian/SomeEngine.Next/pull/229) 汇集全部规格工作。
