@@ -70,7 +70,8 @@ public partial class Shader
         if (linkResult.Failed || linkedCode is null)
             throw new InvalidDataException("Slang link failed: " + DiagnosticText(diagnostics));
 
-        return CreateFromSlang(name, _slangGlobal, session, sourceUnits, entries, linkedCode, targets);
+        return CreateFromSlang(name, _slangGlobal, session, sourceUnits, entries, linkedCode, targets,
+            generateLibraryCode: false);
 
         void LoadLibrary(Shader library)
         {
