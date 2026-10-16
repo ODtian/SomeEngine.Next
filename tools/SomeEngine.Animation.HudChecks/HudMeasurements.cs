@@ -26,8 +26,9 @@ internal static class HudMeasurements
     private const int Warmups = 128, Samples = 512;
     private static readonly PassOptions Keep = new(Culling: PassCullingMode.NeverCull);
 
-    public static int Main()
+    public static int Main(string[] args)
     {
+        string? capture = args.Length == 2 && args[0] == "--capture-rgba" ? args[1] : null;
         long startup = Stopwatch.GetTimestamp();
         long memory = GC.GetTotalMemory(true);
         using var window = new HudWindow();
@@ -39,7 +40,7 @@ internal static class HudMeasurements
         using Device device = backend.CreateDevice(new DeviceDesc(adapters[0].Id, [new DeviceQueueDesc(QueueType.Graphics)],
             requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.CalibratedTimestamps));
         using SomeEngine.Graphics.Surface surface = backend.CreateSurface(new SurfaceDesc(NativeWindowType.Win32, window.Handle));
-        using Swapchain swapchain = backend.CreateSwapchain(device, new SwapchainDesc(surface, 3, TextureUsages.ColorAttachment,
+        using Swapchain swapchain = backend.CreateSwapchain(device, new SwapchainDesc(surface, 3, TextureUsages.ColorAttachment | TextureUsages.CopySource,
             new(1280, 720, Format.R8G8B8A8UNorm, ColorSpace.Srgb, PresentType.Immediate, true, 1)));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         ulong frequency = backend.CalibrateTimestamps(queue).QueueFrequency;
@@ -68,12 +69,16 @@ internal static class HudMeasurements
         Views.Views.Spawn(game, canvas, new HudView(frameNumber, values));
         using QueryPool timestamps = backend.CreateQueryPool(device, new QueryPoolDesc(QueryType.Timestamp, QueueType.Graphics, 2));
         using Buffer readback = backend.CreateBuffer(device, new BufferDesc(16, BufferUsages.CopyDestination), MemoryType.Readback);
+        TextureDesc targetDescription = new(TextureDimension.Texture2D, 1280, 720, 1, 1, 1, 1,
+            Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment | TextureUsages.CopySource);
+        TextureCopyFootprint footprint = backend.GetTextureCopyFootprint(device, targetDescription,
+            new BufferTextureCopy(null!, 0, 0, 0, null!, 0, 0, TextureAspects.Color, 0, 0, 0, 1280, 720, 1));
+        using Buffer pixels = backend.CreateBuffer(device, new BufferDesc(footprint.TotalSize, BufferUsages.CopyDestination), MemoryType.Readback);
         GraphTextureId target;
         GraphPassId begin, end;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            target = edit.DeclareExternalTexture(new TextureDesc(TextureDimension.Texture2D, 1280, 720, 1, 1, 1, 1,
-                Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment));
+            target = edit.DeclareExternalTexture(targetDescription);
             GraphQueryPoolId queries = edit.RegisterQueryPool(timestamps);
             GraphBufferId results = edit.RegisterExternalBuffer(readback,
                 [new(BufferRange.Whole, readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
@@ -107,7 +112,8 @@ internal static class HudMeasurements
         double firstFrameMs = 0;
         long previous = Stopwatch.GetTimestamp(), previousPresent = previous;
         QueueCompletion[] completions = [];
-        for (int index = 0; index < Warmups + Samples; index++)
+        int frameCount = Warmups + Samples + (capture is null ? 0 : 1);
+        for (int index = 0; index < frameCount; index++)
         {
             long started = Stopwatch.GetTimestamp();
             long allocated = GC.GetAllocatedBytesForCurrentThread();
@@ -149,6 +155,22 @@ internal static class HudMeasurements
             {
                 frame.BindExternalTexture(target, image, queue);
                 renderer.UpdateFrame(ref frame);
+                if (capture is not null && index == frameCount - 1)
+                {
+                    GraphBufferId destination = frame.Import(pixels,
+                        [new(BufferRange.Whole, pixels.InitialSync, pixels.InitialAccess, ResourceContentState.Undefined)]);
+                    frame.AddCopyPass("HUD capture", PassQueueSelection.Exact(queue), (target, destination, footprint), default,
+                        static (ref PassDefinition access, ref (GraphTextureId Source, GraphBufferId Destination, TextureCopyFootprint Footprint) data) =>
+                        {
+                            access.Read(data.Source, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                                PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+                            access.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+                        },
+                        static (ref CopyPassCommandScope commands, in (GraphTextureId Source, GraphBufferId Destination, TextureCopyFootprint Footprint) data) =>
+                            commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Destination),
+                                data.Footprint.Offset, data.Footprint.RowPitch, data.Footprint.RowCount, commands.GetTexture(data.Source),
+                                0, 0, TextureAspects.Color, 0, 0, 0, 1280, 720, 1)));
+                }
                 int count = frame.Execute(completions);
                 renderDevice.TrackSubmission(completions.AsSpan(0, count));
                 renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
@@ -157,7 +179,7 @@ internal static class HudMeasurements
             backend.Present(queue, image);
             long presented = Stopwatch.GetTimestamp();
             if (index == 0) firstFrameMs = Stopwatch.GetElapsedTime(started, presented).TotalMilliseconds;
-            if (index >= Warmups)
+            if (index >= Warmups && index < Warmups + Samples)
             {
                 int sample = index - Warmups;
                 animationMs[sample] = elapsed;
@@ -172,6 +194,14 @@ internal static class HudMeasurements
             }
             previousPresent = presented;
         }
+        if (capture is not null)
+        {
+            using MappedBuffer mapping = backend.Map(pixels, MapType.Read, BufferRange.Whole);
+            mapping.Invalidate(mapping.Range);
+            using FileStream output = File.Create(capture);
+            for (int row = 0; row < 720; row++)
+                output.Write(mapping.Bytes.Slice((int)(footprint.Offset + (ulong)row * footprint.RowPitch), 1280 * 4));
+        }
         Console.WriteLine(JsonSerializer.Serialize(new
         {
             Workload = "64 typed animated cards with reference fields and FLIP", Warmups, Samples,
@@ -183,7 +213,7 @@ internal static class HudMeasurements
             FirstFrameMs = firstFrameMs, StartupAndRunMs = Stopwatch.GetElapsedTime(startup).TotalMilliseconds,
             RetainedBytes = GC.GetTotalMemory(true) - memory,
             AnimationBudgetMs = 1d, AnimationWithinBudget = Quantile(animationMs, 0.95) <= 1,
-            FrameTargetMs = 1000d / 300, PresentedFrames = Warmups + Samples,
+            FrameTargetMs = 1000d / 300, PresentedFrames = frameCount, Capture = capture,
         }));
         if (!frames.TryBeginPrepare(out RenderPrepareScope? shutdown)) throw new InvalidOperationException("HUD shutdown prepare failed.");
         using (shutdown)
