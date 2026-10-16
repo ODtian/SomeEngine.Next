@@ -98,9 +98,16 @@ Copy pass 来自公开图帧诊断中的实际 Live Copy pass，图帧经过真�
 | 同一 StandardMaterial 的两组入口，分别使用 IR 与 CLI 保存代码进行 WARP 读回 | 2 项通过；修改前 `[.25, .75]`，修改后 `[.75, 1]` | `83a0ce75bbb74ae4b23520390c3fcfa9` |
 | 独立读取器的实际 Texture 及两项 Texture 提取行为 | 3 项通过 | `83a0ce75bbb74ae4b23520390c3fcfa9` |
 | 文件按需读取、具体资源创建及材质继续消费已提供引用 | 1 项通过 | `e6174ff6e1e344768d4deb4f02b3e72e` |
+| 自给 Shader 文件、资产结束后代码消费、替换及材质 IR 组合 | 5 项通过 | `c3f7386ee9b1494a83bf37d992c60693` 中的 Assets 检查 |
 | win-x64 NativeAOT 发布与原生执行 | 发布退出 0；原生执行输出 `assets-nativeaot-smoke:ok` | `2cd1d8cd457d4005bf0b3ad0b5461e82`、`e1a7637fa6fd48f4a4f38af2b7f75a76` |
 
 Shader 文件夹具通过当前 `ShaderAsset.CreateAsync` 和相对源码名构建完整 Shader；测试源路径由本次 Slang 设置明确传入。NativeAOT 覆盖资产导入、自定义材质创建更新、共享 Shader、独立打开、读取器关闭后消费、世界、Mesh 和材质继承。
+
+2026-10-16 22:12:49–22:14:15（Asia/Shanghai）的合并脚本中，Assets 定向检查通过 5 项、规则 0 违规，测试执行约 2 秒，代码为 `ccc951bc`。`ShaderFileTests` 从仓库 Slang 来源经 `CompileAsync`、`SaveAsync` 生成当前版本文件，临时目录随检查结束清理；测试项目的文件输入随自给夹具同步收敛。该步骤在公共队列启动的 PowerShell 脚本内直接调用原生命令，串行参数保留为单项：
+
+```powershell
+dotnet test tests/SomeEngine.Assets.Tests/SomeEngine.Assets.Tests.csproj -c Release --no-restore -m:1 -p:BuildInParallel=false --filter 'FullyQualifiedName~ShaderFileTests|FullyQualifiedName~MaterialShaderCompositionTests' --nologo -v minimal
+```
 
 对应的合并验收命令如下，均从集成工作树提交到同一公共队列：
 

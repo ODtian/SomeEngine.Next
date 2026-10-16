@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="templates/DefaultProject/Game.csproj" />
   <Project Path="samples/DefaultGame/DefaultGame.csproj" />
+  <Project Path="samples/DefaultGame/SceneContent/DefaultGame.SceneContent.csproj" />
   <Project Path="src\SomeEngine.Diagnostics\SomeEngine.Diagnostics.csproj" />
   <Project Path="tools\SomeEngine.Trace\SomeEngine.Trace.csproj" />
   <Project Path="tests\SomeEngine.Diagnostics.Tests\SomeEngine.Diagnostics.Tests.csproj" />

@@ -6,9 +6,9 @@ using SomeEngine.Assets.Schema;
 namespace DefaultGame.Content;
 
 /// <summary>The sample selects its Cluster entries before saving common release code.</summary>
-internal static class SampleMaterials
+public static class SampleMaterials
 {
-    internal static async Task BuildAsync(AssetProject project, CancellationToken cancellationToken)
+    public static async Task BuildAsync(AssetProject project, CancellationToken cancellationToken)
     {
         using ShaderAsset standard = await ShaderAsset.OpenSourceAsync(Path.Combine(project.RootPath, "assets/Shaders/standard.shader"), cancellationToken);
         using ShaderSourceBlock standardInputs = StandardMaterialInputs.Create();
