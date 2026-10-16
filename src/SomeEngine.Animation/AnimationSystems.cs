@@ -12,6 +12,23 @@ public static class AnimationSystems
 {
     private static readonly ConditionalWeakTable<SystemGroup<ImmediateSystemContext>, AnimationPipeline> Schedules = new();
 
+    /// <summary>Describes the concrete phase systems before and after their first update.</summary>
+    public static Type[] Describe(SystemGroup<ImmediateSystemContext> schedule)
+    {
+        Type[] systems = schedule.DescribeSystems();
+        if (!Schedules.TryGetValue(schedule, out AnimationPipeline? pipeline))
+            return systems;
+        var result = new List<Type>();
+        foreach (Type system in systems)
+        {
+            if (system == typeof(AnimationPipeline))
+                result.AddRange(pipeline.Describe());
+            else
+                result.Add(system);
+        }
+        return result.ToArray();
+    }
+
     /// <summary>Adds a user system after the built-in work of the selected animation phase.</summary>
     public static void Add<TSystem>(SystemGroup<ImmediateSystemContext> schedule, TSystem system, AnimationPhase phase)
         where TSystem : ISystem<ImmediateSystemContext> => For(schedule).Add(system, phase);

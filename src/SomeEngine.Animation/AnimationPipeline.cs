@@ -48,6 +48,20 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
     {
         var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(context.World));
         _systems = systems;
+        Build(new SystemCollection(systems));
+    }
+
+    internal Type[] Describe()
+    {
+        if (_systems is not null)
+            return _systems.DescribeSystems();
+        var types = new TypeCollection();
+        Build(types);
+        return types.Types.ToArray();
+    }
+
+    private void Build(ISystemCollection systems)
+    {
         systems.Add(new TimelineSystem(_time));
         AddAdditionalSystems(systems, AnimationPhase.Timeline);
         systems.Add(new GraphSystem());
@@ -112,14 +126,14 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
 
     public void OnDestroy(ref ImmediateSystemContext context) => _systems?.Dispose();
 
-    private void AddAdditionalSystems(SystemGroup<ImmediateSystemContext> systems, AnimationPhase phase)
+    private void AddAdditionalSystems(ISystemCollection systems, AnimationPhase phase)
     {
         foreach (AdditionalSystem additional in _additionalSystems)
             if (additional.Phase == phase)
                 additional.Add(systems);
     }
 
-    private static void AddExisting<T, TOps>(SystemGroup<ImmediateSystemContext> systems, HashSet<Type> compositions)
+    private static void AddExisting<T, TOps>(ISystemCollection systems, HashSet<Type> compositions)
         where T : unmanaged
         where TOps : struct, IValueOps<T>
     {
@@ -128,7 +142,7 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
     }
 
     private static void AddEvaluation<T, TOps, TParameters, TState, TEvaluator>(
-        SystemGroup<ImmediateSystemContext> systems, TrackFields fields)
+        ISystemCollection systems, TrackFields fields)
         where T : unmanaged
         where TOps : struct, IValueOps<T>
         where TParameters : struct
@@ -140,7 +154,7 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         systems.Add(new TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(fields));
     }
 
-    private static void AddComposition<T, TOps>(SystemGroup<ImmediateSystemContext> systems, TrackFields fields)
+    private static void AddComposition<T, TOps>(ISystemCollection systems, TrackFields fields)
         where T : unmanaged
         where TOps : struct, IValueOps<T>
     {
@@ -149,24 +163,41 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
     }
 
     private readonly struct Algorithm(Type type, Type composition,
-        delegate* managed<SystemGroup<ImmediateSystemContext>, TrackFields, void> evaluate,
-        delegate* managed<SystemGroup<ImmediateSystemContext>, TrackFields, void> compose)
+        delegate* managed<ISystemCollection, TrackFields, void> evaluate,
+        delegate* managed<ISystemCollection, TrackFields, void> compose)
     {
         public readonly Type Type = type;
         public readonly Type Composition = composition;
-        public readonly delegate* managed<SystemGroup<ImmediateSystemContext>, TrackFields, void> Evaluate = evaluate;
-        public readonly delegate* managed<SystemGroup<ImmediateSystemContext>, TrackFields, void> Compose = compose;
+        public readonly delegate* managed<ISystemCollection, TrackFields, void> Evaluate = evaluate;
+        public readonly delegate* managed<ISystemCollection, TrackFields, void> Compose = compose;
     }
 
     private abstract class AdditionalSystem(AnimationPhase phase)
     {
         public AnimationPhase Phase { get; } = phase;
-        public abstract void Add(SystemGroup<ImmediateSystemContext> systems);
+        public abstract void Add(ISystemCollection systems);
     }
 
     private sealed class AdditionalSystem<TSystem>(TSystem system, AnimationPhase phase) : AdditionalSystem(phase)
         where TSystem : ISystem<ImmediateSystemContext>
     {
-        public override void Add(SystemGroup<ImmediateSystemContext> systems) => systems.Add(system);
+        public override void Add(ISystemCollection systems) => systems.Add(system);
     }
+
+    private interface ISystemCollection
+    {
+        void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext>;
+    }
+
+    private sealed class SystemCollection(SystemGroup<ImmediateSystemContext> systems) : ISystemCollection
+    {
+        public void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> => systems.Add(system);
+    }
+
+    private sealed class TypeCollection : ISystemCollection
+    {
+        internal readonly List<Type> Types = new();
+        public void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> => Types.Add(typeof(TSystem));
+    }
+
 }
