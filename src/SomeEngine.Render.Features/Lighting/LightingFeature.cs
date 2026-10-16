@@ -329,6 +329,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     }
 
     public LightingFeatureResources Resources { get; }
+    public ClusteredViewGrid ViewGrid => new(_frameViews, Resources.CellCountPerView, _viewCount);
 
     public void Record(
         ref RenderGraphFrame graph,

@@ -45,6 +45,7 @@ public sealed record RuntimeStartupOptions(
     public bool TemporalAntialiasing { get; init; } = true;
     public bool VirtualShadows { get; init; } = true;
     public bool MeasureBlending { get; init; }
+    public ClusterBlendIndex BlendIndex { get; init; } = ClusterBlendIndex.Xyz;
     /// <summary>Optional directional and local ray count; zero selects hard depth comparison.</summary>
     public uint? ShadowRayCount { get; init; }
 
@@ -164,6 +165,12 @@ public sealed record RuntimeStartupOptions(
             TemporalAntialiasing = ReadBooleanOption(args, ["--taa"], ["--no-taa"], true),
             VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
             MeasureBlending = args.Contains("--measure-blending", StringComparer.OrdinalIgnoreCase),
+            BlendIndex = (ReadOptionalValue(args, "--blend-index") ?? "xyz").ToLowerInvariant() switch
+            {
+                "full" => ClusterBlendIndex.FullScan,
+                "xyz" => ClusterBlendIndex.Xyz,
+                _ => throw new ArgumentException("--blend-index requires 'full' or 'xyz'.", "--blend-index"),
+            },
             ShadowRayCount = shadowRayCount,
         };
     }

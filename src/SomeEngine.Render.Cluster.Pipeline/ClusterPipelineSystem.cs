@@ -11,6 +11,7 @@ using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Instances;
+using SomeEngine.Render.Lighting;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
@@ -50,6 +51,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly GraphRegionId _targetPhaseTwoRegion;
     private readonly ClusterPipelineOutputDescription _outputDescription;
     private readonly IGraphResourceProvider? _stageResourceProvider;
+    private readonly ClusteredViewGrid _viewGrid;
     private readonly ClusterStreamingFeedbackChannel _streamingFeedback;
     private ClusterPipelineOptions _options;
     private readonly ClusterVisibilityMode _visibilityMode;
@@ -102,7 +104,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         in ClusterPipelineOutputDescription outputDescription,
         ClusterStreamingFeedbackChannel streamingFeedback,
         IGraphResourceProvider? stageResourceProvider = null,
-        ClusterPipelineOptions? options = null)
+        ClusterPipelineOptions? options = null,
+        ClusteredViewGrid viewGrid = default)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
@@ -120,6 +123,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _outputDescription = outputDescription;
         _streamingFeedback = streamingFeedback ?? throw new ArgumentNullException(nameof(streamingFeedback));
         _stageResourceProvider = stageResourceProvider;
+        _viewGrid = viewGrid;
         _options = options ?? new ClusterPipelineOptions();
         _visibilityMode = _options.SelectVisibilityMode(device.Capabilities);
         _packedViews = new ClusterViewUniforms[checked((int)outputDescription.ViewCount)];
@@ -400,8 +404,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
         if (!assignmentsChanged && !materialResourcesChanged && !shadingChanged)
         {
-            if (GraphData.Transparency is not null)
-                EditGraph((ref RenderGraphEdit edit) => ReconcileTransparency(ref edit, assignments, _installedShadeStages!));
             ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments,
                 _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
             if (!ReferenceEquals(updated, _materialScalars))
@@ -671,6 +673,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 }
             }
 
+            BindTransparencyFrame(ref graph, batch, views[..primaryViewCount], writeGeometry);
             GraphData.Outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRange);
             _residentPageReads = GraphData.Outputs.Geometry.ResidentPageReads;
             _hasPendingFrame = true;
@@ -919,6 +922,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         }
         try
         {
+            CompleteTransparencyFrame(result);
             bool geometryWritten = result.TryGetPassCompletion(GraphData.Outputs.Geometry.CompletePass, out _);
             _history!.FinishFrame(geometryWritten);
             foreach (GraphBufferId buffer in GraphData.BufferWrites.Keys)
@@ -965,7 +969,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         Dispose(ref _shadeStages, ref failures);
         foreach (TransparencyShaders shaders in _transparencyShaders)
         {
-            foreach (ClusterComputePipeline pipeline in new[] { shaders.Clear, shaders.Build, shaders.Request, shaders.Resolve })
+            foreach (ClusterComputePipeline pipeline in shaders.Pipelines.Values)
                 try { pipeline.Dispose(); }
                 catch (Exception error) { (failures ??= []).Add(error); }
         }
