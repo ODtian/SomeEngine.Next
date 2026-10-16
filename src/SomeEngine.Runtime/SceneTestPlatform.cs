@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using SomeEngine.Diagnostics;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Cluster.Pipeline;
+using SomeEngine.Render.Instances;
 
 namespace SomeEngine.Runtime;
 
@@ -222,6 +223,7 @@ public sealed partial class SceneTestPlatform
     }
 
     internal void RecordFrame(FrameTiming frame, ClusterRenderDiagnostics diagnostics,
+        RenderInstanceStorageSystem instances,
         bool shadowDynamicResolutionEnabled)
     {
         if (!IsMeasuring) return;
@@ -307,7 +309,10 @@ public sealed partial class SceneTestPlatform
             _frames.Count == 0 ? null : _frames.Average(f => f.PresentMs),
             _frames.Count == 0 ? null : _frames.Average(f => f.GraphExecuteMs),
             _frames.Count == 0 ? null : _frames.Average(f => f.CompletionWaitMs),
-            _frames.Count == 0 ? null : _frames.Average(f => f.OtherFrameMs)));
+            _frames.Count == 0 ? null : _frames.Average(f => f.OtherFrameMs))
+        {
+            Instances = instances.CaptureDiagnostics(),
+        });
         ReloadRequested = true;
 
         void CollectFrame()
@@ -518,6 +523,7 @@ public sealed partial class SceneTestPlatform
         double? GraphExecuteMs, double? CompletionWaitMs, double? OtherFrameMs)
     {
         public SceneBlendTiming? Blending { get; init; }
+        public RenderInstanceDiagnostics? Instances { get; init; }
     }
     internal sealed record SceneFrameWindow(
         string Scene, int FirstRenderedFrame, float FixedFrameSeconds, FrameTiming[] Frames,

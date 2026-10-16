@@ -46,6 +46,8 @@ DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-ind
 
 `SceneTiming.Blending` 汇总三段的平均值、中位数、P95、构建/复用帧数及显存；整帧呈现间隔保留在原 `SceneTiming` 字段。逐帧原始数据保存在统一报告的 `BlendFrames`。
 
+`SceneTiming.Instances` 在场景完成时记录共用实例存储的实际行数、批次数、容量与属性字节数，效果增加的实例属性进入该项；共享几何仍由 `GeometryUsedBytes` 等既有字段记录。
+
 ## 行为与交付对应
 
 所有图像检查经过 `Application.RunAsync`、`SceneScript`、游戏编辑和线性图像读回，失败图沿公共设施输出实际、期望与差异 PNG。默认 `dotnet test` 同时执行 [行为检查规则](../../harness/Behavior-Checks.md)。
