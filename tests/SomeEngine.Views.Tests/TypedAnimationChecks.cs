@@ -62,6 +62,31 @@ public static partial class TypedAnimationChecks
         Require(ReferenceEquals(presented, frames.World.Read<AnimatedPanel>(panel).Progress), "The referenced state keeps its identity.");
     }
 
+    public static void EqualHeldTargetsPreserveTheirPresentationVersion()
+    {
+        using var frames = new TypedFrames();
+        var target = new State<float>();
+        var revision = new State<int>();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new FieldTargets(target, revision));
+        frames.Frame(0);
+        Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        var layers = new AnimationLayers { Count = 1 };
+        layers.Items[0] = new AnimationLayer { Weight = 1 };
+        frames.World.Add(panel, layers);
+        PropertyAnimation.RefreshSources<float>(frames.World, panel);
+        target.Value = 10;
+        frames.Frame(0);
+        frames.Frame(1);
+        frames.Frame(0);
+        uint version = frames.World.WriteVersion<AnimatedPanel>(panel);
+
+        revision.Value++;
+        frames.Frame(0);
+
+        Require(frames.World.Read<AnimatedPanel>(panel).Opacity == 10 && frames.World.WriteVersion<AnimatedPanel>(panel) == version,
+            "Submitting the same completed layer target preserves its presentation version.");
+    }
+
     public static void AReversedReferenceTargetContinuesFromItsPresentedValue()
     {
         using var frames = new TypedFrames();

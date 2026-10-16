@@ -9,6 +9,9 @@ public sealed class TypedAnimationTests
     public void EqualTargetsPreserveTheirElapsedProgress() => TypedAnimationChecks.EqualTargetsPreserveTheirElapsedProgress();
 
     [Fact]
+    public void EqualHeldTargetsPreserveTheirPresentationVersion() => TypedAnimationChecks.EqualHeldTargetsPreserveTheirPresentationVersion();
+
+    [Fact]
     public void ReferencedStateReceivesOnlyThePresentedValues() => TypedAnimationChecks.ReferencedStateReceivesOnlyThePresentedValues();
 
     [Fact]

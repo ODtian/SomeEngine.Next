@@ -129,8 +129,8 @@ internal static unsafe partial class AnimatedFields
         Channel<T> channel = FindChannel<T>(world, entity, in field);
         T target = Unsafe.ReadUnaligned<T>(ref bytes);
         T previous = ReadTarget(world, entity, channel);
-        if (SameValue(in target, in previous)) return;
-        PropertyAnimation.SetBase(world, entity, channel, target);
+        if (!SameValue(in target, in previous))
+            PropertyAnimation.SetBase(world, entity, channel, target);
         PropertyAnimation.To(world, entity, channel, target, field.Spec);
         field.HasValue = true;
     }
@@ -191,7 +191,9 @@ internal static unsafe partial class AnimatedFields
     {
         var motion = ReadMotion<T, TOps, TParameters, TState, TEvaluator>(world, entity, in field);
         T target = Unsafe.ReadUnaligned<T>(ref bytes);
-        PropertyAnimation.SetBase(world, entity, motion.Channel, target);
+        T previous = ReadTarget(world, entity, motion.Channel);
+        if (!TOps.Equals(in target, in previous))
+            PropertyAnimation.SetBase(world, entity, motion.Channel, target);
         if (field.HasValue)
             PropertyAnimation.To(world, entity, motion.Channel, target, motion.Spec);
         else

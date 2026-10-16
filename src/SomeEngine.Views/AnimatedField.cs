@@ -146,9 +146,8 @@ internal static unsafe partial class AnimatedFields
             PropertyAnimation.SetBase(world, entity, basis.Value.Channel, target);
             return;
         }
-        if (SameValue(in target, in basis.Value.Value))
-            return;
-        PropertyAnimation.SetBase(world, entity, basis.Value.Channel, target);
+        if (!SameValue(in target, in basis.Value.Value))
+            PropertyAnimation.SetBase(world, entity, basis.Value.Channel, target);
         PropertyAnimation.To(world, entity, basis.Value.Channel, target, field.Spec);
     }
 

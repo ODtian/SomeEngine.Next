@@ -37,6 +37,7 @@ internal static partial class CheckAnimation
         CheckBoundWorldFields();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.GeneratedFieldTargetsAnimateThroughTypedSpecs();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.EqualTargetsPreserveTheirElapsedProgress();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.EqualHeldTargetsPreserveTheirPresentationVersion();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.ReferencedStateReceivesOnlyThePresentedValues();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.AReversedReferenceTargetContinuesFromItsPresentedValue();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.AParameterUpdateUsesTheExistingElapsedTime();
