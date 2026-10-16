@@ -52,6 +52,36 @@ public static partial class BehaviorScenes
         await SceneContent.SetOutputSizeAsync(destination, 128, 128);
     }
 
+    /// <summary>Sixteen nearby Wave/Phong parts at the default gallery's window resolution.</summary>
+    public static async Task CreateDeformedPhongPartsAsync(string source, string destination)
+    {
+        CopyContent(source, destination);
+        var project = new AssetProject(destination, []);
+        await using var loader = new AssetLoader(project.CreateStorage());
+        using var part = await MeshAsset.OpenAsync(loader,
+            new(project.Manifest.Assets.Values.Single(value => value.Name == "Blend part" && value.AssetType == MeshAsset.FileType).AssetGuid));
+        using var curved = part.CreateCopy();
+        curved.GetBlock<MeshMaterialsBlock>().Materials =
+            [new(project.Manifest.Assets.Values.Single(value => value.Name == "Deformed Phong" && value.AssetType == MaterialAsset.FileType).AssetGuid)];
+        project.RegisterAsset(await curved.SaveAsync(Path.Combine(destination, "assets/Meshes/phong-part.mesh.asset")));
+        await WriteSceneAsync(project, world =>
+        {
+            for (int group = 0; group < 4; group++)
+            for (int layer = 0; layer < 4; layer++)
+            {
+                int index = group * 4 + layer;
+                Vector3 position = new((group % 2 - .5f) * .9f + MathF.Sin(index * .3f) * .15f,
+                    (group / 2 - .5f) * .7f, 2.4f + layer * .2f);
+                Entity entity = world.CreateEntity(new WorldTransform
+                {
+                    Qvvs = new(position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, index * .2f), .35f),
+                });
+                world.Add(entity, new MeshSource { Mesh = curved.Reference });
+            }
+        });
+        await SceneContent.SetOutputSizeAsync(destination, 1280, 720);
+    }
+
     public static async Task CreateShaderReplacementSpheresAsync(string source, string destination, string engineRoot)
     {
         CopyContent(source, destination);

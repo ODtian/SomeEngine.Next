@@ -71,49 +71,24 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         return value;
     }
 
-    bool primitiveBarycentrics(DomainEvaluate.TriangleData triangle, ClusterViewUniforms view,
-        uint primitive, bool tessellated, out float3 first, out float3 second, out float3 third)
-    {
-        first = float3(1, 0, 0);
-        second = float3(0, 1, 0);
-        third = float3(0, 0, 1);
-        if (!tessellated) return primitive == 0u;
-        TessellationTraversal traversal = BeginTessellationTraversal();
-        TessellationPatch patch;
-        while (NextTessellationPatch<VertexEvaluate.Vertex, DomainEvaluate>(Domain, triangle, view,
-            TransparencyGeometryUniforms.MaxFactor, TransparencyGeometryUniforms.TargetEdgePixels, traversal, patch))
-        {
-            uint3 factors = TessellationPatchEdgeFactors(patch);
-            uint factor = max(factors.x, max(factors.y, factors.z));
-            uint count = TessellationGridTriangleCount(factor);
-            if (primitive >= count) { primitive -= count; continue; }
-            uint3 vertices = TessellationGridTriangleVertexIndices(factor, primitive);
-            float3 bary0 = DecodeTessellationPatchBarycentric(patch, 0u);
-            float3 bary1 = DecodeTessellationPatchBarycentric(patch, 1u);
-            float3 bary2 = DecodeTessellationPatchBarycentric(patch, 2u);
-            first = TransformPatchBarycentric(bary0, bary1, bary2, TessellationGridBarycentric(factor, factors, vertices.x));
-            second = TransformPatchBarycentric(bary0, bary1, bary2, TessellationGridBarycentric(factor, factors, vertices.y));
-            third = TransformPatchBarycentric(bary0, bary1, bary2, TessellationGridBarycentric(factor, factors, vertices.z));
-            return true;
-        }
-        return false;
-    }
-
     float4 projectPosition(float3 position, ClusterViewUniforms view)
     {
         return mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
     }
 
     bool nextProjection(uint source, uint viewIndex, bool tessellated, inout Projection value,
-        out uint primitive, out float4 first, out float4 second, out float4 third)
+        out uint primitive, out float3x2 domain, out float4 first, out float4 second, out float4 third)
     {
         primitive = 0u;
+        domain = {};
         first = second = third = 0.0.xxxx;
         if (value.Enabled == 0u) return false;
         ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, value.Instance, Views[viewIndex]);
         if (!tessellated)
         {
             value.Enabled = 0u;
+            domain[1] = float2(1, 0);
+            domain[2] = float2(0, 1);
             first = projectPosition(Domain.cornerPosition(value.Triangle, 0u), view);
             second = projectPosition(Domain.cornerPosition(value.Triangle, 1u), view);
             third = projectPosition(Domain.cornerPosition(value.Triangle, 2u), view);
@@ -142,16 +117,19 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         float3 bary1 = DecodeTessellationPatchBarycentric(value.Patch, 1u);
         float3 bary2 = DecodeTessellationPatchBarycentric(value.Patch, 2u);
         primitive = value.Primitive++;
-        first = projectPosition(Domain.position(value.Triangle,
-            TransformPatchBarycentric(bary0, bary1, bary2, TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.x))), view);
-        second = projectPosition(Domain.position(value.Triangle,
-            TransformPatchBarycentric(bary0, bary1, bary2, TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.y))), view);
-        third = projectPosition(Domain.position(value.Triangle,
-            TransformPatchBarycentric(bary0, bary1, bary2, TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.z))), view);
+        domain[0] = TransformPatchBarycentric(bary0, bary1, bary2,
+            TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.x)).yz;
+        domain[1] = TransformPatchBarycentric(bary0, bary1, bary2,
+            TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.y)).yz;
+        domain[2] = TransformPatchBarycentric(bary0, bary1, bary2,
+            TessellationGridBarycentric(value.Factor, value.EdgeFactors, vertices.z)).yz;
+        first = projectPosition(Domain.position(value.Triangle, Barycentric(domain[0])), view);
+        second = projectPosition(Domain.position(value.Triangle, Barycentric(domain[1])), view);
+        third = projectPosition(Domain.position(value.Triangle, Barycentric(domain[2])), view);
         return true;
     }
 
-    bool cover(uint source, uint primitive, bool tessellated, uint3 coord, float depth, out float resultDepth)
+    bool cover(uint source, float3x2 domain, bool tessellated, uint3 coord, float depth, out float resultDepth)
     {
         TriangleInfo info = triangleInfo(source, coord.z);
         RenderInstanceTransform transform = GetCurrentInstanceTransform(info.instanceID);
@@ -160,9 +138,8 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         VertexEvaluate.Vertex third = Vertex.evaluate(makeVertexEvalContext(info, transform, 0u, info.vi2));
         DomainEvaluate.TriangleData triangle = Domain.makeTriangle(first, second, third);
         ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, info.instanceID, Views[coord.z]);
-        float3 bary0, bary1, bary2;
+        float3 bary0 = Barycentric(domain[0]), bary1 = Barycentric(domain[1]), bary2 = Barycentric(domain[2]);
         resultDepth = depth;
-        if (!primitiveBarycentrics(triangle, view, primitive, tessellated, bary0, bary1, bary2)) return false;
         float4 clip0 = projectPosition(tessellated ? Domain.position(triangle, bary0) : Domain.cornerPosition(triangle, 0u), view);
         float4 clip1 = projectPosition(tessellated ? Domain.position(triangle, bary1) : Domain.cornerPosition(triangle, 1u), view);
         float4 clip2 = projectPosition(tessellated ? Domain.position(triangle, bary2) : Domain.cornerPosition(triangle, 2u), view);
@@ -277,10 +254,10 @@ struct TRANSPARENCY_MATERIAL_TYPE
     Projection beginProjection(uint source, uint view, bool tessellated, float4 screenBounds)
     { return Material.beginProjection(source, view, tessellated, screenBounds); }
     bool nextProjection(uint source, uint view, bool tessellated, inout Projection value,
-        out uint primitive, out float4 first, out float4 second, out float4 third)
-    { return Material.nextProjection(source, view, tessellated, value, primitive, first, second, third); }
-    bool cover(uint source, uint primitive, bool tessellated, uint3 pixel, float depth, out float resultDepth)
-    { return Material.cover(source, primitive, tessellated, pixel, depth, resultDepth); }
+        out uint primitive, out float3x2 domain, out float4 first, out float4 second, out float4 third)
+    { return Material.nextProjection(source, view, tessellated, value, primitive, domain, first, second, third); }
+    bool cover(uint source, float3x2 domain, bool tessellated, uint3 pixel, float depth, out float resultDepth)
+    { return Material.cover(source, domain, tessellated, pixel, depth, resultDepth); }
     float4 shade<let visibilityDepth : uint>(uint source, uint primitive, uint3 pixel, float depth)
     { return Material.shade<visibilityDepth>(source, primitive, pixel, depth); }
     void receiver<let visibilityDepth : uint>(uint source, uint primitive, uint3 pixel, float depth,

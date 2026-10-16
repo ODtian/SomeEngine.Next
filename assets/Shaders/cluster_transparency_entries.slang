@@ -8,10 +8,10 @@ struct SingleTransparencyMaterials<let visibilityDepth : uint, let tessellated :
     Projection beginProjection(uint bin, uint source, uint view, float4 screenBounds)
     { return Material0.beginProjection(source, view, tessellated, screenBounds); }
     bool nextProjection(uint bin, uint source, uint view, inout Projection value,
-        out uint primitive, out float4 first, out float4 second, out float4 third)
-    { return Material0.nextProjection(source, view, tessellated, value, primitive, first, second, third); }
-    bool cover(uint bin, uint source, uint primitive, uint3 pixel, float depth, out float resultDepth)
-    { return Material0.cover(source, primitive, tessellated, pixel, depth, resultDepth); }
+        out uint primitive, out float3x2 domain, out float4 first, out float4 second, out float4 third)
+    { return Material0.nextProjection(source, view, tessellated, value, primitive, domain, first, second, third); }
+    bool cover(uint bin, uint source, float3x2 domain, uint3 pixel, float depth, out float resultDepth)
+    { return Material0.cover(source, domain, tessellated, pixel, depth, resultDepth); }
     float4 shade(uint bin, uint source, uint primitive, uint3 pixel, float depth)
     { return Material0.shade<visibilityDepth>(source, primitive, pixel, depth); }
     void receiver(uint bin, uint source, uint primitive, uint3 pixel, float depth,

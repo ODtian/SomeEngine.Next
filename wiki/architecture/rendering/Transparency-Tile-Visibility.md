@@ -519,9 +519,9 @@ Count 对实际投影图元的保守 cell 范围计数，Reserve 为每 cell 分
 
 透明几何沿 primary 的两轮可见结果读取硬件与软件来源。每份来源保留 12 字节 `DrawRequest`，用户 `VisibilityVertexInput.Source` 和 `VisibilityPixelInput.Source` 直接携带该请求，覆盖、求色与 receiver 从同一份 page、instance、cluster 和 view 解释几何。缓存保留的来源与当前全局可见列表具有各自的索引范围。
 
-`cluster_tessellation_geometry.slang` 统一 opaque 与透明使用的边因子、曲面误差、分片及子片计算。透明用户类型通过 `beginProjection` 创建自身的 `Projection`，由 `nextProjection` 顺序推进当前 `VertexEvaluate` 与 `DomainEvaluate` 的实际曲面。该类型持有用户三角形和深度优先细分状态，用户域的整体及分片范围用于屏幕查询裁剪。图元序号恢复微三角形在原三角形域中的三个角点；投影缓冲中的 `Source` 和 `Primitive` 供覆盖与材质求值恢复同一曲面位置、重心与梯度。
+`cluster_tessellation_geometry.slang` 统一 opaque 与透明使用的边因子、曲面误差、分片及子片计算。透明用户类型通过 `beginProjection` 创建自身的 `Projection`，由 `nextProjection` 顺序推进当前 `VertexEvaluate` 与 `DomainEvaluate` 的实际曲面。该类型持有用户三角形和深度优先细分状态，用户域的整体及分片范围用于屏幕查询裁剪。枚举时把微三角形三个原域角点的 y/z 分量保存在投影记录的 `Domain` 中，覆盖直接从三个 float2 恢复重心；`Primitive` 保留原枚举次序供排序。覆盖确认后的源身份和深度继续进入 opaque 与透明共用的用户表面反解和材质求值。
 
-溢出遍历由 wave 的一个 lane 持有同一份用户投影状态，查询范围覆盖该 wave 的像素中心。该 lane 依次生成实际微三角形，再广播 64 B 投影数据；像素保留自己的四层命中队列和合成状态。分片遍历使用细分层数决定的局部栈，原图元序号在裁剪后继续保留。该路径使用原有源表，投影和引用容量均为 `1` 时也完整推进实际贡献。
+溢出遍历由 wave 的一个 lane 持有同一份用户投影状态，查询范围覆盖该 wave 的像素中心。该 lane 依次生成实际微三角形，再广播屏幕投影、深度与同一份原域角点；像素保留自己的四层命中队列和合成状态。分片遍历使用细分层数决定的局部栈，原图元序号在裁剪后继续保留。该路径使用原有源表，投影和引用容量均为 `1` 时也完整推进实际贡献。新增原域角点的存储按 shader reflection 给出的实际 stride 进入图元缓冲的使用、容量与分配字节。
 
 覆盖输入的深度来自用户曲面投影平面，和硬件插值深度一致。Phong 的深度反解将近似微三角形覆盖点钳制到原域边界，使用该位置与导数判断表面有效性，细分精度继续由共享边长及误差条件决定。
 
