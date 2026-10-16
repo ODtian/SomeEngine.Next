@@ -142,7 +142,7 @@ public sealed partial class ClusterPipelineSystem
                 CellOffsets = data.Offsets, StreamingCells = data.Streams, Sources = data.Sources,
                 SourceCounts = data.SourceCounts, ReferenceCapacity = _options.BlendReferenceCapacity,
             } };
-        if (_transparencyRequestRegion != default)
+        if (_transparencyRequestRegion != default && shaders.Pipelines.ContainsKey("RequestTransparentShadows"))
             data.RequestPasses = AddPixelPasses(ref edit, ["RequestTransparentShadows", "RequestProjectedTransparentShadows"], data.Requests);
         data.ColorPasses = AddPixelPasses(ref edit, ["ResolveTransparentColor", "ResolveProjectedTransparentColor"], data.Color);
 

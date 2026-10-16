@@ -53,16 +53,31 @@ public sealed partial class ClusterPipelineSystem
         Shader? composition = saved ? null : ComposeTransparencyShaders(members, capacities, _device.Capabilities.CompileTarget);
         var pipelines = new Dictionary<string, TransparencyPipeline>();
         foreach (string entry in new[] { "ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry", "CountTransparentCells", "ReserveTransparentCells",
-                     "ScatterTransparentCells", "RequestTransparentShadows", "ResolveTransparentColor", "RequestProjectedTransparentShadows", "ResolveProjectedTransparentColor" })
+                     "ScatterTransparentCells", "ResolveTransparentColor", "ResolveProjectedTransparentColor" })
+            AddPipeline(entry);
+        if (UsesVirtualShadows("ResolveTransparentColor") || UsesVirtualShadows("ResolveProjectedTransparentColor"))
+        {
+            AddPipeline("RequestTransparentShadows");
+            AddPipeline("RequestProjectedTransparentShadows");
+        }
+        var result = new TransparencyShaders(members, capacities, pipelines);
+        _transparencyShaders.Add(result);
+        return result;
+
+        void AddPipeline(string entry)
         {
             Shader shader = composition ?? (entry is "BuildTransparentGeometry" or "RequestTransparentShadows" or "ResolveTransparentColor" or
                 "RequestProjectedTransparentShadows" or "ResolveProjectedTransparentColor"
                 ? source.RequireSpecialization(entry, arguments) : source);
             pipelines.Add(entry, new(shader, ClusterComputePipeline.Create(_backend, _device, shader, entry, entry)));
         }
-        var result = new TransparencyShaders(members, capacities, pipelines);
-        _transparencyShaders.Add(result);
-        return result;
+
+        bool UsesVirtualShadows(string entry)
+        {
+            ClusterLinkedStageLayout layout = ClusterLinkedStageLayout.Create(pipelines[entry].Shader,
+                _device.Capabilities.CompileTarget, entry);
+            return layout.Contains("VirtualShadowSampling") || layout.Contains("VirtualShadowPageTable");
+        }
 
         ClusterShadeInvocation[][] GroupResources(TransparencyMember[] types) => types.Select(member => materials
             .Where(stage => ReferenceEquals(stage.Material.Shader, member.Shader) && stage.VisibilityDepth == member.VisibilityDepth)
