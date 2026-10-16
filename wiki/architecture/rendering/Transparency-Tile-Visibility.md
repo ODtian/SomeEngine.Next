@@ -475,6 +475,18 @@ DefaultGame 的 `--cluster-oit` 通过场景初始化与逐帧场景编辑，在
 dotnet templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.dll --measure-scene '1024 spheres' --cluster-oit --hardware-adapter --graphics-backend d3d12 --hardware-raster --frames 16 --hidden-window --no-debug-ui
 ```
 
+## Cluster Forward+ XYZ 候选
+
+正式 Cluster 透明候选与 LightingFeature 共用 `ClusteredViewGrid` 的参数输入；XY tile、视空间对数 Z 切片及 cell 编号由 `render_lighting.slang` 统一解释。`--blend-index=xyz` 选择连续 cell 索引，`--blend-index=full` 选择完整来源扫描，默认使用 XYZ。两种选择共享用户覆盖、表面重建、receiver、四层深度选择和合成。
+
+GPU 从 primary 两阶段的实际可见数量保存配套源请求，每项 12 B，持有页、实例、页内 cluster 和 view。source 编码由该表的条目与原 triangle 组成；微三角形通过同一用户域的 primitive 序号及原域重心来源重建。投影、覆盖、阴影和材质求值读取同一份源表。已保存的投影及 cell 引用与其源表共同复用，帧间可见队列的追加顺序变化由这份配套身份隔离。
+
+Count 对实际投影图元的保守 XYZ 范围计数，Reserve 为每 cell 分配连续引用区间，Scatter 写入投影引用。投影缓存与引用池分别由 `ClusterPipelineOptions.BlendTriangleCapacity/BlendReferenceCapacity` 设置；`SceneScript` 提供相同的公开预算。完整 cell 区间在预算内驻留，后续 cell 继续枚举原来源及实际 primitive 数量。像素对覆盖后的最终深度查询所属 cell；该 cell 执行最终命中的 receiver 和合成。
+
+每轮先扫描全部候选，选择剩余输入中最近四层，再更新颜色与透射率。源批次持续到实际输入结束；`MaximumError` 继续沿已完成前缀检查尾部颜色界。持久图保留五个固定几何阶段、资源与连接，当帧 GPU 计数决定其实际工作量。视图、实例 batch 与内容版本、几何/光栅版本、材质配置、驻留写入与 streaming quality 变化驱动刷新；完成后的相同输入复用配套源、投影和引用。
+
+`ClusterBlendMetrics` 报告 GPU 投影/索引、覆盖/receiver、材质/合成三个区间，以及实际图元/引用、使用/容量/分配字节和静态复用标记。工作总数由 GPU 在构建时累计，与六个时间戳组成固定 64 B 回读；使用字节根据驻留引用、投影缓存中的实际数量和配套源数量计算。统一场景平台按 simulation frame 关联这些完成数据。
+
 ## 透明动态曲面与细分来源
 
 透明几何沿 primary 的两轮可见结果读取硬件与软件来源。每份来源保留 12 字节 `DrawRequest`，用户 `VisibilityVertexInput.Source` 和 `VisibilityPixelInput.Source` 直接携带该请求，覆盖、求色与 receiver 从同一份 page、instance、cluster 和 view 解释几何。缓存保留的来源与当前全局可见列表具有各自的索引范围。
