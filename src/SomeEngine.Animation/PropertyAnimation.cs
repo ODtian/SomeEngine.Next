@@ -153,7 +153,7 @@ public static partial class PropertyAnimation
 
     internal static bool HoldsLayerValue<T>(World world, Entity animation, in Track<T> track) where T : unmanaged
     {
-        if (!track.Finished || track.FromGraph || track.GraphMotion != 0 || track.Endpoints != TrackEndpoints.Values ||
+        if (track.Typed && !track.SourceActive || !track.Finished || track.FromGraph || track.GraphMotion != 0 || track.Endpoints != TrackEndpoints.Values ||
             track.Channel.Component == ComponentId<AnimationLayers>.Value)
             return false;
         Entity target = track.Target == Entity.Null ? animation : track.Target;
@@ -161,7 +161,7 @@ public static partial class PropertyAnimation
     }
 
     /// <summary>Retargets the current stage's active channel with its existing curve and duration.</summary>
-    public static void Retarget<T>(World world, Entity animation, Channel<T> channel, T value) where T : unmanaged
+    public static unsafe void Retarget<T>(World world, Entity animation, Channel<T> channel, T value) where T : unmanaged
     {
         DevelopmentCheck.Require(world.IsEnabled<Timeline>(animation), "Retarget requires an enabled animation.");
         Timeline timeline = world.Read<Timeline>(animation);
@@ -179,13 +179,18 @@ public static partial class PropertyAnimation
                         continue;
                     ref Track<T> track = ref tracks[i];
                     Entity target = track.Target == Entity.Null ? destination.Animation : track.Target;
-                    T current = destination.World.Has<AnimationLayers>(target) || destination.World.HasBuffer<Contribution<T>>(target)
+                    T current = track.Typed || destination.World.Has<AnimationLayers>(target) || destination.World.HasBuffer<Contribution<T>>(target)
                         ? previous.Current
                         : track.Channel.Read(destination.World, target);
                     track.From = track.Current = current;
                     track.To = destination.Value;
                     track.Endpoints = TrackEndpoints.Values;
                     track.Start = track.SampleTime = destination.Timeline.Time;
+                    if (track.Typed)
+                    {
+                        var values = new MotionValues<T>(current, destination.Value, current);
+                        MotionAccesses<T>.Items[track.MotionType - 1].Retarget(destination.World, destination.Animation, track.MotionIndex, in values);
+                    }
                     destination.Found = true;
                 }
             });
@@ -193,7 +198,19 @@ public static partial class PropertyAnimation
     }
 
     /// <summary>Stops playback at the currently presented values.</summary>
-    public static void Stop(World world, Entity animation) => world.Disable<Timeline>(animation);
+    public static unsafe void Stop(World world, Entity animation)
+    {
+        if (world.HasBuffer<MotionStop>(animation))
+        {
+            var stopping = (World: world, Animation: animation);
+            world.ExecuteBufferRead<MotionStop, (World World, Entity Animation)>(animation, ref stopping,
+                static (stops, ref stopping) =>
+                {
+                    foreach (MotionStop stop in stops.AsSpan()) stop.Stop(stopping.World, stopping.Animation);
+                });
+        }
+        world.Disable<Timeline>(animation);
+    }
 
     public static void Pause(World world, Entity animation)
     {

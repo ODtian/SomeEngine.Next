@@ -1,0 +1,313 @@
+using SomeEngine.Core.Diagnostics;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
+
+namespace SomeEngine.Animation;
+
+public static partial class PropertyAnimation
+{
+    /// <summary>Reserves the complete concrete algorithm and source capacity on a target.</summary>
+    public static void Declare<T, TOps, TParameters, TState, TEvaluator>(World world, Entity target,
+        Channel<T> channel, Spec<T, TOps, TParameters, TState, TEvaluator> spec, int capacity = 1, byte layer = 0)
+        where T : unmanaged
+        where TOps : struct, IValueOps<T>
+        where TParameters : struct
+        where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState> =>
+        DeclareTyped(world, target, target, channel, spec, capacity, layer);
+
+    private static unsafe void DeclareTyped<T, TOps, TParameters, TState, TEvaluator>(World world, Entity animation, Entity target,
+        Channel<T> channel, Spec<T, TOps, TParameters, TState, TEvaluator> spec, int capacity, byte layer)
+        where T : unmanaged
+        where TOps : struct, IValueOps<T>
+        where TParameters : struct
+        where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
+    {
+        DevelopmentCheck.Require(capacity > 0, "A declared animation requires positive source capacity.");
+        Declare<T>(world, animation);
+        if (!world.HasBuffer<PropertySource<T>>(target)) world.AddBuffer<PropertySource<T>>(target);
+        if (!world.HasBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation))
+            world.AddBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation);
+        if (!world.HasBuffer<MotionDeclaration<T>>(animation)) world.AddBuffer<MotionDeclaration<T>>(animation);
+        if (!world.HasBuffer<MotionStop>(animation)) world.AddBuffer<MotionStop>(animation);
+        var reservation = (Declaration: new MotionDeclaration<T> { Channel = channel, Layer = layer, Capacity = capacity,
+            Type = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type }, Additional: capacity);
+        world.ExecuteBufferWrite<MotionDeclaration<T>, (MotionDeclaration<T> Declaration, int Additional)>(animation, ref reservation,
+            static (declarations, ref reservation) =>
+            {
+                for (int index = 0; index < declarations.Count; index++)
+                {
+                    MotionDeclaration<T> previous = declarations.Read(index);
+                    if (previous.Channel != reservation.Declaration.Channel || previous.Layer != reservation.Declaration.Layer || previous.Type != reservation.Declaration.Type) continue;
+                    reservation.Additional = Math.Max(0, reservation.Declaration.Capacity - previous.Capacity);
+                    if (reservation.Additional > 0) declarations[index] = reservation.Declaration;
+                    return;
+                }
+                declarations.Add(reservation.Declaration);
+            });
+        int additional = reservation.Additional;
+        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>, int>(animation, ref additional,
+            static (instances, ref additional) =>
+            {
+                int count = instances.Count + additional;
+                instances.EnsureCapacity(count);
+                while (instances.Count < count) instances.Add(default);
+            });
+        var stop = new MotionStop { Type = reservation.Declaration.Type, ValueType = BufferComponents.Header<Track<T>>(),
+            Stop = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.StopFunction };
+        world.ExecuteBufferWrite<MotionStop, MotionStop>(animation, ref stop, static (stops, ref stop) =>
+        {
+            foreach (MotionStop previous in stops.AsSpan()) if (previous.Type == stop.Type && previous.ValueType == stop.ValueType) return;
+            stops.Add(stop);
+        });
+        var declaration = (World: world, Animation: animation, Target: target, Channel: channel, Capacity: capacity, Layer: layer);
+        world.ExecuteBufferWrite<Track<T>, (World World, Entity Animation, Entity Target, Channel<T> Channel, int Capacity, byte Layer)>(animation, ref declaration,
+            static (tracks, ref declaration) =>
+            {
+                int count = 0;
+                for (int index = 0; index < tracks.Count; index++)
+                {
+                    Track<T> track = tracks.Read(index);
+                    if (track.Typed && track.Channel == declaration.Channel && track.Layer == declaration.Layer &&
+                        (track.Target == Entity.Null ? declaration.Animation : track.Target) == declaration.Target)
+                        count++;
+                }
+                tracks.EnsureCapacity(tracks.Count + declaration.Capacity - count);
+                while (count++ < declaration.Capacity)
+                {
+                    var source = new PropertySource<T>
+                    {
+                        Animation = declaration.Animation, Channel = declaration.Channel, Layer = declaration.Layer, Track = tracks.Count,
+                    };
+                    tracks.Add(new Track<T>
+                    {
+                        Target = declaration.Animation == declaration.Target ? Entity.Null : declaration.Target,
+                        Channel = declaration.Channel, Layer = declaration.Layer, Typed = true, Finished = true,
+                    });
+                    declaration.World.ExecuteBufferWrite<PropertySource<T>, PropertySource<T>>(declaration.Target, ref source,
+                        static (sources, ref source) => sources.Add(source));
+                }
+            });
+        _ = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type;
+    }
+
+    public static Entity To<T, TOps, TParameters, TState, TEvaluator>(World world, Entity target,
+        Channel<T> channel, T value, Spec<T, TOps, TParameters, TState, TEvaluator> spec, byte layer = 0)
+        where T : unmanaged
+        where TOps : struct, IValueOps<T>
+        where TParameters : struct
+        where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState> =>
+        StartTyped(world, target, channel, value, spec, layer, TrackEndpoints.Values);
+
+    public static Entity By<T, TOps, TParameters, TState, TEvaluator>(World world, Entity target,
+        Channel<T> channel, T delta, Spec<T, TOps, TParameters, TState, TEvaluator> spec, byte layer = 0)
+        where T : unmanaged
+        where TOps : struct, IValueOps<T>
+        where TParameters : struct
+        where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState> =>
+        StartTyped(world, target, channel, delta, spec, layer, TrackEndpoints.Displacement);
+
+    private static unsafe Entity StartTyped<T, TOps, TParameters, TState, TEvaluator>(World world, Entity target,
+        Channel<T> channel, T value, Spec<T, TOps, TParameters, TState, TEvaluator> spec, byte layer, TrackEndpoints endpoints)
+        where T : unmanaged
+        where TOps : struct, IValueOps<T>
+        where TParameters : struct
+        where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
+    {
+        PropertySource<T> source = FindSource(world, target, channel, layer, endpoints);
+        if (source.Animation == Entity.Null)
+        {
+            Entity animation = world.Has<Timeline>(target) && world.HasBuffer<Track<T>>(target) ? target : FindTypedPool<T, TOps, TParameters, TState, TEvaluator>(world);
+            DeclareTyped(world, animation, target, channel, spec, 1, layer);
+            source = FindSource(world, target, channel, layer, endpoints);
+        }
+        Entity instance = source.Animation;
+        DevelopmentCheck.Require(world.HasBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(instance),
+            "The selected algorithm must be declared on the animation instance.");
+        Track<T> previous = ReadTrack<T>(world, instance, source.Track);
+        Timeline timeline = ReadStartingTimeline(world, instance);
+        T current = previous.SourceActive ? previous.Current : channel.Read(world, target);
+        if (endpoints == TrackEndpoints.Displacement && world.Has<AnimationLayers>(target)) ReadBase(world, target, channel, ref current);
+        T from = endpoints == TrackEndpoints.Displacement ? TOps.Add(in current, in value) : current;
+        T to = endpoints == TrackEndpoints.Displacement ? current : value;
+        var values = new MotionValues<T>(from, to, from);
+        int type = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type;
+        bool same = previous.MotionType == type;
+        bool running = same && previous.SourceActive && !previous.Finished;
+        if (!same && previous.MotionType != 0 && !previous.Finished)
+            MotionAccesses<T>.Items[previous.MotionType - 1].Release(world, instance, previous.MotionIndex);
+        int stateIndex = same ? previous.MotionIndex : FreeMotionIndex<T, TOps, TParameters, TState, TEvaluator>(world, instance);
+        var change = (Parameters: spec.Parameters, Previous: previous, Values: values, Running: running, Index: stateIndex,
+            Unchanged: false, Endpoints: endpoints, Target: value);
+        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>,
+            (TParameters Parameters, Track<T> Previous, MotionValues<T> Values, bool Running, int Index, bool Unchanged, TrackEndpoints Endpoints, T Target)>(instance, ref change,
+            static (instances, ref change) =>
+            {
+                ref MotionData<T, TParameters, TState> data = ref instances[change.Index].Data;
+                bool equal = TEvaluator.ParametersEqual(in data.Parameters, in change.Parameters);
+                bool sameTarget = change.Previous.Endpoints == TrackEndpoints.Values && change.Endpoints == TrackEndpoints.Values &&
+                    TOps.Distance(in change.Previous.To, in change.Target) == 0;
+                if (change.Previous.SourceActive && sameTarget && equal &&
+                    (change.Running || TOps.Distance(in change.Previous.Current, in change.Target) == 0) &&
+                    change.Previous.MotionType == MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type)
+                {
+                    change.Unchanged = true;
+                    return;
+                }
+                if (change.Running)
+                {
+                    if (!equal) TEvaluator.UpdateParameters(in data.Parameters, in change.Parameters, ref data.State);
+                    TEvaluator.Retarget(in data.Parameters, in change.Parameters, in change.Values, ref data.State);
+                }
+                else TEvaluator.Initialize(in change.Parameters, in change.Values, ref data.State);
+                data.Parameters = change.Parameters;
+                data.Values = change.Values;
+                data.Active = true;
+            });
+        if (change.Unchanged) return instance;
+        var track = new Track<T>
+        {
+            Target = target == instance ? Entity.Null : target, Channel = channel, Layer = layer,
+            Typed = true, SourceActive = true, MotionType = type, MotionIndex = change.Index,
+            From = from, To = to, Current = from, Start = timeline.Time, SampleTime = timeline.Time,
+            StartId = timeline.Starts, Stage = timeline.Stage, Duration = spec.Boundary.Duration,
+            Endpoints = endpoints == TrackEndpoints.Displacement ? TrackEndpoints.DisplacementValues : endpoints,
+            Displacement = endpoints == TrackEndpoints.Displacement ? value : default,
+        };
+        WriteTrack(world, instance, source.Track, in track);
+        world.Replace(instance, timeline);
+        world.Enable<Timeline>(instance);
+        return instance;
+    }
+
+    private static PropertySource<T> FindSource<T>(World world, Entity target, Channel<T> channel, byte layer, TrackEndpoints endpoints) where T : unmanaged
+    {
+        if (!world.HasBuffer<PropertySource<T>>(target)) return default;
+        var search = (World: world, Target: target, Channel: channel, Layer: layer, Endpoints: endpoints, Result: default(PropertySource<T>));
+        world.ExecuteBufferRead<PropertySource<T>, (World World, Entity Target, Channel<T> Channel, byte Layer, TrackEndpoints Endpoints, PropertySource<T> Result)>(target, ref search,
+            static (sources, ref search) =>
+            {
+                foreach (PropertySource<T> source in sources.AsSpan())
+                {
+                    if (source.Channel != search.Channel || source.Layer != search.Layer || !search.World.IsAlive(source.Animation)) continue;
+                    Track<T> track = ReadTrack<T>(search.World, source.Animation, source.Track);
+                    if ((track.Target == Entity.Null ? source.Animation : track.Target) != search.Target) continue;
+                    if (search.Endpoints == TrackEndpoints.Values && track.SourceActive && track.Endpoints == TrackEndpoints.Values)
+                    { search.Result = source; return; }
+                    if (!track.SourceActive || track.Finished) search.Result = source;
+                }
+            });
+        return search.Result;
+    }
+
+    private static int FreeMotionIndex<T, TOps, TParameters, TState, TEvaluator>(World world, Entity animation)
+        where T : unmanaged where TOps : struct, IValueOps<T> where TParameters : struct where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
+    {
+        int capacity = 0;
+        world.ExecuteBufferRead<MotionInstance<T, TOps, TParameters, TState, TEvaluator>, int>(animation, ref capacity,
+            static (instances, ref capacity) => capacity = instances.Count);
+        var search = (Capacity: capacity, Type: MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type, Index: -1);
+        world.ExecuteBufferRead<Track<T>, (int Capacity, int Type, int Index)>(animation, ref search,
+            static (tracks, ref search) =>
+            {
+                for (int candidate = 0; candidate < search.Capacity; candidate++)
+                {
+                    bool used = false;
+                    foreach (Track<T> track in tracks.AsSpan())
+                        if (track.SourceActive && track.MotionType == search.Type && track.MotionIndex == candidate) { used = true; break; }
+                    if (!used) { search.Index = candidate; return; }
+                }
+            });
+        DevelopmentCheck.Require(search.Index >= 0, "Playback requires declared algorithm capacity.");
+        return search.Index;
+    }
+
+    private static Entity FindTypedPool<T, TOps, TParameters, TState, TEvaluator>(World world)
+        where T : unmanaged where TOps : struct, IValueOps<T> where TParameters : struct where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
+    {
+        var query = world.Query(world.QueryDefinition().Read<Timeline>().Read<PooledAnimation>()
+            .WriteBuffer<Track<T>>().WriteBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>().Disabled<Timeline>());
+        var available = (World: world, Animation: Entity.Null);
+        world.ExecuteQuery(query, ref available, static (QueryCursor rows, ref (World World, Entity Animation) available) =>
+        {
+            foreach (QueryRow row in rows.Rows)
+            {
+                bool holds = false;
+                DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
+                for (int index = 0; index < tracks.Count; index++)
+                {
+                    Track<T> track = tracks.Read(index);
+                    holds |= HoldsLayerValue(available.World, row.Entity, in track);
+                }
+                if (holds) continue;
+                for (int index = 0; index < tracks.Count; index++)
+                {
+                    Track<T> track = tracks.Read(index);
+                    Entity target = track.Target == Entity.Null ? row.Entity : track.Target;
+                    if (!available.World.IsAlive(target) || !available.World.HasBuffer<PropertySource<T>>(target)) continue;
+                    Entity animation = row.Entity;
+                    available.World.ExecuteBufferWrite<PropertySource<T>, Entity>(target, ref animation,
+                        static (sources, ref animation) =>
+                        {
+                            for (int source = sources.Count - 1; source >= 0; source--)
+                                if (sources.Read(source).Animation == animation) sources.SwapRemoveAt(source);
+                        });
+                }
+                tracks.Clear();
+                available.Animation = row.Entity;
+                return;
+            }
+        });
+        world.ReleaseQuery(query);
+        if (available.Animation != Entity.Null) return available.Animation;
+        Entity animation = world.CreateEntity(new Timeline());
+        world.AddTag<PooledAnimation>(animation);
+        world.Disable<Timeline>(animation);
+        return animation;
+    }
+
+    private static Track<T> ReadTrack<T>(World world, Entity animation, int index) where T : unmanaged
+    {
+        var item = (Index: index, Track: default(Track<T>));
+        world.ExecuteBufferRead<Track<T>, (int Index, Track<T> Track)>(animation, ref item,
+            static (tracks, ref item) => item.Track = tracks[item.Index]);
+        return item.Track;
+    }
+
+    private static void WriteTrack<T>(World world, Entity animation, int index, in Track<T> track) where T : unmanaged
+    {
+        var item = (Index: index, Track: track);
+        world.ExecuteBufferWrite<Track<T>, (int Index, Track<T> Track)>(animation, ref item,
+            static (tracks, ref item) => tracks[item.Index] = item.Track);
+    }
+
+    internal static void SubmitTyped<T, TOps>(World world, Entity animation, uint output, in Track<T> track)
+        where T : unmanaged where TOps : struct, IValueOps<T>
+    {
+        Entity target = track.Target == Entity.Null ? animation : track.Target;
+        T value = track.Current;
+        if (track.Endpoints != TrackEndpoints.Values && world.Has<AnimationLayers>(target) &&
+            world.Read<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
+        {
+            T basis = track.To;
+            ReadBase(world, target, track.Channel, ref basis);
+            T displacement = TOps.Subtract(in value, in track.To);
+            value = TOps.Add(in basis, in displacement);
+        }
+        if (world.HasBuffer<Contribution<T>>(target))
+        {
+            var contribution = new Contribution<T> { Channel = track.Channel, Layer = track.Layer, Value = value, Source = animation, Output = output };
+            world.ExecuteBufferWrite<Contribution<T>, Contribution<T>>(target, ref contribution,
+                static (contributions, ref contribution) => contributions.Add(contribution));
+        }
+        else WriteSingle<T, TOps>(world, target, track.Channel, track.Layer, value);
+    }
+}

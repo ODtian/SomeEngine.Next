@@ -109,6 +109,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         for (int index = 0; index < tracks.Count; index++)
         {
             Track<T> track = tracks.Read(index);
+            if (track.Typed) continue;
             Entity target = track.Target == Entity.Null ? animation : track.Target;
             bool previousRun = track.StartId != starts;
             if (!PropertyAnimation.HoldsLayerValue(world, animation, in track) ||
@@ -144,7 +145,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         for (int i = 0; i < tracks.Count; i++)
         {
             Track<T> previous = tracks.Read(i);
-            if (previous.GraphMotion != 0 || previous.Finished && !previous.FromGraph || previous.Stage != stage || previous.StartId != starts)
+            if (previous.Typed || previous.GraphMotion != 0 || previous.Finished && !previous.FromGraph || previous.Stage != stage || previous.StartId != starts)
                 continue;
             bool weightChannel = previous.Channel.Component == ComponentId<AnimationLayers>.Value;
             if (weightChannel != weightChannels)

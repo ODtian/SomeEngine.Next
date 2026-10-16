@@ -85,7 +85,6 @@ public sealed class GeneratedChannelTests
         systems.Add(new TimelineSystem());
         systems.Add(new TrackSystem<float, FloatOps>());
         systems.Add(new TimelineEndSystem());
-        systems.Initialize(new ImmediateSystemContext { World = world });
         return systems;
     }
 }

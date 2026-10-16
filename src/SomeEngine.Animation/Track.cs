@@ -26,4 +26,8 @@ public struct Track<T> : IBufferElement where T : unmanaged
     public uint MotionStartId;
     public T Displacement;
     public bool FromGraph;
+    public bool Typed;
+    public bool SourceActive;
+    public int MotionType;
+    public int MotionIndex;
 }

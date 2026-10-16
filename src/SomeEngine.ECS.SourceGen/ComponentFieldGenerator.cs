@@ -130,6 +130,15 @@ public sealed class ComponentFieldGenerator : IIncrementalGenerator
                 source.AppendLine(");");
             }
             source.AppendLine("}");
+            if (compilation.GetTypeByMetadataName("SomeEngine.Views.Scope") is not null)
+            {
+                source.Append(visibility).Append(" static class ").Append(prefix).AppendLine("FieldTargets\n{");
+                foreach (Field field in fields)
+                    source.Append("    public static global::SomeEngine.ECS.Entities.Entity Set").Append(field.Name)
+                        .Append("(this global::SomeEngine.ECS.Entities.Entity node, ").Append(TypeName(field.Type)).AppendLine(" value)\n    {")
+                        .Append("        global::SomeEngine.Views.Scope.Set(node, ").Append(prefix).Append("Channels.").Append(Escape(field.Name)).AppendLine(", value);\n        return node;\n    }");
+                source.AppendLine("}");
+            }
         }
         output.AddSource(prefix + ".Fields.g.cs", source.ToString());
     }
