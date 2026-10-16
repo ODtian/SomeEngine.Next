@@ -59,7 +59,8 @@ public sealed class GameFrameSystems : IDisposable
 
     /// <summary>Describes actual registration and the surrounding application boundaries.</summary>
     public FrameStageDescription[] Describe() => _stages.Select(stage =>
-        new FrameStageDescription(stage.Stage, stage.Systems?.DescribeSystems() ?? [])).ToArray();
+        new FrameStageDescription(stage.Stage, stage.Systems is null ? [] : stage.Stage == FrameStage.Animation
+            ? AnimationSystems.Describe(stage.Systems) : stage.Systems.DescribeSystems())).ToArray();
 
     /// <summary>Consumes platform input using the previous layout, before game input runs.</summary>
     public void UpdateInput() => Group(FrameStage.InterfaceInput).Update();
