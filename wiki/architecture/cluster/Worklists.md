@@ -21,9 +21,17 @@ CPU dispatch 使用 `ClusterRenderContext.GetViewWorkGroupCount`，设备 produc
 `ClusterViewWorkGroups`：X 为 `ceil(instanceCount / 64)`，view 组数为每完整三十二 view 的十六组加尾部 view 数
 （至多十六）的下一二次幂。Y 为 `min(viewGroups, 65535)`，Z 为至少一的 `ceil(viewGroups / 65535)`；
 shader 以 `groupID.y + groupID.z * 65535` 读取 view 组。目标根参数由现有 view compaction producer 维护。
+
+叶切片按实际 cluster 和 view 逐项生成 `ClusterCandidate`，在当前 wave 内直接交给共同的
+`CullClusterCandidateData` 完成 LOD、目标过滤、HiZ 与可见窗口处理。候选值在本次调用内消费，
+`CandidateCount` 累加实际工作量并提供既有帧指标。主视图与目标视图共用这条数据通路。
+延期恢复把实际 cluster payload 写入共享队列；既有索引入口加载候选后调用同一个剔除函数。
+`CullWork.Arguments` 的第 28 字节保存延期队列实际条目数，领取批次与完成判断读取该值。
+累计工作量和本轮排队数量各自表达对应的数据。
+
 生产者先预留容量，
 把实际接受的子节点计入剩余工作，再写入 payload 并发布就绪标记；消费父节点后的计数递减发生在子节点发布之后。
-当前 node 范围等待发布时，worker 以一次原子累加领取六十四个 cluster 的批次位置，
+当前 node 范围等待发布时，worker 以一次原子累加领取六十四个延期 cluster 的批次位置，
 在组内保存该位置直到批次发布完整；剩余 node 为零时消费最后的部分批次。
 每轮领取的位置在本轮只使用一次。node 写入组内 payload 时清除其就绪标记，cluster 批次开始消费时清除批次标记；
 node 子工作发布后的设备屏障随后覆盖对应清除，cluster 组在下一轮工作选择前完成组内同步。
