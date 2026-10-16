@@ -14,11 +14,13 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
     public readonly ushort Offset;
     private readonly int _access;
 
-    private Channel(ushort component, ushort offset)
+    private Channel(ushort component, ushort offset,
+        delegate* managed<World, Channel<T>, ReadOnlySpan<FieldWrite<T>>, void> writeBatch)
     {
         Component = component;
         Field = 0x80000000u | offset;
         Offset = offset;
+        _access = FieldDescriptions<T>.Add(component, Field, new(null, null, null, null, writeBatch, false));
     }
 
     private Channel(ushort component, ushort field,
@@ -45,13 +47,13 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
 
     public bool ThroughReference => _access != 0 && FieldDescriptions<T>.Items[_access - 1].ThroughReference;
 
-    public T Read(World world, SomeEngine.ECS.Entities.Entity entity) => _access != 0
+    public T Read(World world, SomeEngine.ECS.Entities.Entity entity) => _access != 0 && FieldDescriptions<T>.Items[_access - 1].Read != null
         ? FieldDescriptions<T>.Items[_access - 1].Read(world, entity)
         : Unsafe.ReadUnaligned<T>(in world.ReadBytes(entity, Component, Offset, Unsafe.SizeOf<T>()));
 
     public void Write(World world, SomeEngine.ECS.Entities.Entity entity, in T value)
     {
-        if (_access != 0) FieldDescriptions<T>.Items[_access - 1].Write(world, entity, in value);
+        if (_access != 0 && FieldDescriptions<T>.Items[_access - 1].Write != null) FieldDescriptions<T>.Items[_access - 1].Write(world, entity, in value);
         else Unsafe.WriteUnaligned(ref world.WriteBytes(entity, Component, Offset, Unsafe.SizeOf<T>()), value);
     }
 
@@ -68,13 +70,13 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
     public T ReadRoot<TComponent>(in TComponent component) where TComponent : struct
     {
         ref byte root = ref Unsafe.As<TComponent, byte>(ref Unsafe.AsRef(in component));
-        return _access != 0 ? FieldDescriptions<T>.Items[_access - 1].ReadRoot(ref root) : Unsafe.ReadUnaligned<T>(ref Unsafe.Add(ref root, Offset));
+        return _access != 0 && FieldDescriptions<T>.Items[_access - 1].ReadRoot != null ? FieldDescriptions<T>.Items[_access - 1].ReadRoot(ref root) : Unsafe.ReadUnaligned<T>(ref Unsafe.Add(ref root, Offset));
     }
 
     public void WriteRoot<TComponent>(ref TComponent component, in T value) where TComponent : struct
     {
         ref byte root = ref Unsafe.As<TComponent, byte>(ref component);
-        if (_access != 0) FieldDescriptions<T>.Items[_access - 1].WriteRoot(ref root, in value);
+        if (_access != 0 && FieldDescriptions<T>.Items[_access - 1].WriteRoot != null) FieldDescriptions<T>.Items[_access - 1].WriteRoot(ref root, in value);
         else Unsafe.WriteUnaligned(ref Unsafe.Add(ref root, Offset), value);
     }
 
@@ -97,8 +99,36 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
     private static void WriteFields<TComponent, TAccess>(World world, Channel<T> channel, ReadOnlySpan<FieldWrite<T>> writes)
         where TComponent : struct, IComponent where TAccess : struct, IFieldAccess<TComponent, T>
     {
-        foreach (ref readonly FieldWrite<T> write in writes)
-            if (write.Channel == channel) world.WriteField<TComponent, T, TAccess>(write.Target, in write.Value);
+        var fields = new FieldBatch(channel, writes);
+        world.ExecuteComponentWrite<TComponent, FieldBatch>(ref fields, &WriteRoots<TComponent, TAccess>);
+    }
+
+    private readonly ref struct FieldBatch(Channel<T> channel, ReadOnlySpan<FieldWrite<T>> writes)
+    {
+        internal readonly Channel<T> Channel = channel;
+        internal readonly ReadOnlySpan<FieldWrite<T>> Writes = writes;
+    }
+
+    private static void WriteRoots<TComponent, TAccess>(ComponentWriteBatch<TComponent> roots, ref FieldBatch fields)
+        where TComponent : struct, IComponent where TAccess : struct, IFieldAccess<TComponent, T>
+    {
+        foreach (ref readonly FieldWrite<T> write in fields.Writes)
+            if (write.Channel == fields.Channel) TAccess.Write(ref roots.Write(write.Target), in write.Value);
+    }
+
+    private static void WriteOffsetFields<TComponent>(World world, Channel<T> channel, ReadOnlySpan<FieldWrite<T>> writes)
+        where TComponent : unmanaged, IComponent
+    {
+        var fields = new FieldBatch(channel, writes);
+        world.ExecuteComponentWrite<TComponent, FieldBatch>(ref fields, &WriteOffsetRoots<TComponent>);
+    }
+
+    private static void WriteOffsetRoots<TComponent>(ComponentWriteBatch<TComponent> roots, ref FieldBatch fields)
+        where TComponent : unmanaged, IComponent
+    {
+        foreach (ref readonly FieldWrite<T> write in fields.Writes)
+            if (write.Channel == fields.Channel)
+                Unsafe.WriteUnaligned(ref Unsafe.Add(ref Unsafe.As<TComponent, byte>(ref roots.Write(write.Target)), fields.Channel.Offset), write.Value);
     }
 
     /// <summary>Computes a field location once; callers can keep the result in a static readonly field.</summary>
@@ -110,7 +140,7 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
         nint offset = Unsafe.ByteOffset(ref Unsafe.As<TComponent, byte>(ref component), ref Unsafe.As<T, byte>(ref value));
         DevelopmentCheck.Require(offset >= 0 && offset <= ushort.MaxValue && offset <= Unsafe.SizeOf<TComponent>() - Unsafe.SizeOf<T>(),
             "A channel field must fit inside its component and its ushort byte offset.");
-        return new Channel<T>(ComponentId<TComponent>.Value, (ushort)offset);
+        return new Channel<T>(ComponentId<TComponent>.Value, (ushort)offset, &WriteOffsetFields<TComponent>);
     }
 
     public bool Equals(Channel<T> other) => Component == other.Component && Field == other.Field;
@@ -139,11 +169,11 @@ internal readonly unsafe struct FieldDescription<T>(
 internal static class FieldDescriptions<T> where T : unmanaged
 {
     internal static FieldDescription<T>[] Items = new FieldDescription<T>[16];
-    private static (ushort Component, ushort Field)[] _identities = new (ushort, ushort)[16];
+    private static (ushort Component, uint Field)[] _identities = new (ushort, uint)[16];
     private static int _count;
     private static readonly object Gate = new();
 
-    internal static int Add(ushort component, ushort field, FieldDescription<T> description)
+    internal static int Add(ushort component, uint field, FieldDescription<T> description)
     {
         lock (Gate)
         {
