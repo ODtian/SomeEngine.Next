@@ -57,5 +57,6 @@ public static class AnimationSystems
         Add(schedule, default(Spec<T, TOps, TweenParameters, TweenState, Tween<T, TOps, Linear>>));
         Add(schedule, default(Spec<T, TOps, SpringParameters, SpringState<T>, Spring<T, TOps>>));
         Add(schedule, default(Spec<T, TOps, KeyframeParameters, KeyframeState, Keyframes<T, TOps>>));
+        Add(schedule, default(Spec<T, TOps, FunctionTweenParameters, TweenState, FunctionTween<T, TOps>>));
     }
 }

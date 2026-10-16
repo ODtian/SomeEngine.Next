@@ -157,7 +157,7 @@ public readonly struct Keyframes<T, TOps> : IMotion<T, TOps, KeyframeParameters,
             Keyframe left = keys[state.Segment];
             Keyframe right = keys[state.Segment + 1];
             float interval = (progress - left.Time) / (right.Time - left.Time);
-            amount = left.Value + (right.Value - left.Value) * Easing.Evaluate(left.Easing, interval);
+            amount = left.Value + (right.Value - left.Value) * left.Sample(interval);
         }
         return new(TOps.Lerp(in values.From, in values.To, amount), false);
     }
