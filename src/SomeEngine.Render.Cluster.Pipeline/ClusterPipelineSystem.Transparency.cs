@@ -154,6 +154,7 @@ public sealed partial class ClusterPipelineSystem
                 passes[index] = AddTransparencyPass(ref graph, data, shaders.Pipelines[names[index]], names[index], region,
                     default, true, index == 0 ? 24u : 48u);
                 graph.OrderAfter(passes[index], index == 0 ? geometryReady : passes[index - 1]);
+                if (index == 0 && region == data.Color) graph.OrderAfter(passes[index], GraphData.Stencil!.ClearPass);
             }
             return passes;
         }
@@ -357,7 +358,6 @@ public sealed partial class ClusterPipelineSystem
     private void BindTransparencyFrame(ref RenderGraphFrame graph, RenderInstanceBatch batch,
         scoped ReadOnlySpan<RenderView> views, bool geometryChanged)
     {
-        if (GraphData.Stencil is { } stencil) graph.SetPassEnabled(stencil.ClearPass, GraphData.Transparency is null);
         if (GraphData.Transparency is not { } data) return;
         bool reuse = data.Completed && !geometryChanged && ReferenceEquals(data.InstanceBatch, batch) &&
             data.InstanceRevision == batch.ContentRevision && data.GeometryRevision == GeometryRevision &&

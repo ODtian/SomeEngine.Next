@@ -752,7 +752,6 @@ void ResolveOrderedTransparency<TMaterials : ITransparencyMaterials, let reproje
 void ResolveTransparency<TMaterials : ITransparencyMaterials, let reproject : bool>(uniform TMaterials materials, uint3 pixel)
 {
     if (pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height || pixel.z >= TransparencyUniforms.ViewCount) return;
-    OrderedStencil[pixel] = 0u;
     if (TransparencyTriangleCount.Load(0u) == 0u) return;
     float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
     float4 background = 0.0.xxxx;
