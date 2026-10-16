@@ -112,6 +112,13 @@ public static partial class PropertyAnimation
     {
         PropertySource<T> source = FindSource(world, target, channel, layer, endpoints);
         Entity animation = source.Animation;
+        if (animation != Entity.Null && animation != target && endpoints == TrackEndpoints.Values &&
+            world.Has<Timeline>(target) && world.HasBuffer<Track<T>>(target))
+        {
+            MoveDefaultSource<T, TOps>(world, target, source);
+            source = FindSource(world, target, channel, layer, endpoints);
+            animation = target;
+        }
         if (animation == Entity.Null && world.Has<Timeline>(target) && world.HasBuffer<Track<T>>(target)) animation = target;
         if (animation != Entity.Null)
         {
@@ -138,6 +145,99 @@ public static partial class PropertyAnimation
             }
         }
         return StartTyped(world, target, channel, value, spec, layer, endpoints);
+    }
+
+    private static void MoveDefaultSource<T, TOps>(World world, Entity target, PropertySource<T> source)
+        where T : unmanaged where TOps : struct, IValueOps<T>
+    {
+        Track<T> track = ReadTrack<T>(world, source.Animation, source.Track);
+        Timeline previous = world.Read<Timeline>(source.Animation);
+        Timeline timeline = world.Read<Timeline>(target);
+        if (!world.IsEnabled<Timeline>(target))
+        {
+            timeline.Time = previous.Time;
+            timeline.Stage = previous.Stage;
+            timeline.Starts++;
+            timeline.Paused = previous.Paused;
+            world.Replace(target, timeline);
+            if (world.IsEnabled<Timeline>(source.Animation)) world.Enable<Timeline>(target);
+        }
+        int state;
+        if (track.MotionType == MotionStorage<T, TOps, TweenParameters, TweenState, Tween<T, TOps, Linear>>.Type)
+            state = MoveDefaultState<T, TOps, TweenParameters, TweenState, Tween<T, TOps, Linear>>(world, source.Animation, target, in track);
+        else if (track.MotionType == MotionStorage<T, TOps, SpringParameters, SpringState<T>, Spring<T, TOps>>.Type)
+            state = MoveDefaultState<T, TOps, SpringParameters, SpringState<T>, Spring<T, TOps>>(world, source.Animation, target, in track);
+        else if (track.MotionType == MotionStorage<T, TOps, KeyframeParameters, KeyframeState, Keyframes<T, TOps>>.Type)
+            state = MoveDefaultState<T, TOps, KeyframeParameters, KeyframeState, Keyframes<T, TOps>>(world, source.Animation, target, in track);
+        else state = MoveDefaultState<T, TOps, FunctionTweenParameters, TweenState, FunctionTween<T, TOps>>(world, source.Animation, target, in track);
+        Track<T> moved = track;
+        moved.Target = Entity.Null;
+        moved.MotionIndex = state;
+        moved.Start += timeline.Time - previous.Time;
+        moved.SampleTime += timeline.Time - previous.Time;
+        moved.StartId = timeline.Starts;
+        moved.Stage = timeline.Stage;
+        int index = BufferCount<Track<T>>(world, target);
+        world.ExecuteBufferWrite<Track<T>, Track<T>>(target, ref moved, static (tracks, ref moved) => tracks.Add(moved));
+        var boundary = new DirectBoundary { ValueType = BufferComponents.Header<Track<T>>(), Track = index };
+        world.ExecuteBufferWrite<DirectBoundary, DirectBoundary>(target, ref boundary, static (boundaries, ref boundary) => boundaries.Add(boundary));
+        UpdateDirectBoundary(world, target, index, in moved, in timeline, new(moved.End, moved.Duration));
+        var relation = (Previous: source.Animation, Track: source.Track, Target: target, Next: index);
+        world.ExecuteBufferWrite<PropertySource<T>, (Entity Previous, int Track, Entity Target, int Next)>(target, ref relation,
+            static (sources, ref relation) =>
+            {
+                for (int index = 0; index < sources.Count; index++)
+                {
+                    PropertySource<T> value = sources.Read(index);
+                    if (value.Animation != relation.Previous || value.Track != relation.Track) continue;
+                    value.Animation = relation.Target;
+                    value.Track = relation.Next;
+                    sources[index] = value;
+                }
+            });
+        track.SourceActive = false;
+        track.MotionInitialized = false;
+        track.Finished = true;
+        WriteTrack(world, source.Animation, source.Track, in track);
+        bool running = false;
+        world.ExecuteBufferRead<Track<T>, bool>(source.Animation, ref running, static (tracks, ref running) =>
+        {
+            foreach (Track<T> value in tracks.AsSpan()) running |= value.SourceActive && !value.Finished;
+        });
+        if (!running) world.Disable<Timeline>(source.Animation);
+        RefreshSources<T>(world, target);
+    }
+
+    private static unsafe int MoveDefaultState<T, TOps, TParameters, TState, TEvaluator>(World world, Entity previous, Entity target, in Track<T> track)
+        where T : unmanaged where TOps : struct, IValueOps<T> where TParameters : struct where TState : struct
+        where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
+    {
+        MotionInstance<T, TOps, TParameters, TState, TEvaluator> value = ReadBufferItem<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(world, previous, track.MotionIndex);
+        int index = BufferCount<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(world, target);
+        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>, MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(target, ref value,
+            static (instances, ref value) => instances.Add(value));
+        int oldIndex = track.MotionIndex;
+        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>, int>(previous, ref oldIndex,
+            static (instances, ref oldIndex) => instances[oldIndex] = default);
+        var declaration = new MotionDeclaration<T> { Channel = track.Channel, Layer = track.Layer, Type = track.MotionType, Capacity = 1 };
+        world.ExecuteBufferWrite<MotionDeclaration<T>, MotionDeclaration<T>>(target, ref declaration, static (declarations, ref declaration) =>
+        {
+            for (int index = 0; index < declarations.Count; index++)
+            {
+                MotionDeclaration<T> value = declarations.Read(index);
+                if (value.Channel != declaration.Channel || value.Layer != declaration.Layer || value.Type != declaration.Type) continue;
+                declarations[index].Capacity++;
+                return;
+            }
+            declarations.Add(declaration);
+        });
+        var stop = new MotionStop { Type = track.MotionType, ValueType = BufferComponents.Header<Track<T>>(), Stop = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.StopFunction };
+        world.ExecuteBufferWrite<MotionStop, MotionStop>(target, ref stop, static (stops, ref stop) =>
+        {
+            foreach (MotionStop value in stops.AsSpan()) if (value.Type == stop.Type && value.ValueType == stop.ValueType) return;
+            stops.Add(stop);
+        });
+        return index;
     }
 
     private static ReadOnlyMemory<Keyframe> CopyKeyframes(World world, Entity target, in Curve curve)
