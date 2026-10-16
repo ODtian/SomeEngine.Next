@@ -25,4 +25,16 @@ DefaultProject 的 `coating_material.slang` 声明 `CoatingScalars`、纹理/sam
 
 两组均通过公共场景编辑更新体积变换。涂层使用 `Blend coating normal` 和烟雾 alpha 纹理显示法线、粗糙度与空间覆盖。
 
-公共图像检查从 `Application.RunAsync` 与 `SceneScript` 进入整条提取和绘制路径，比较已知的两层颜色次序。图像失败沿共享检查保存实际、期望及差异 PNG。
+公共图像检查从 `Application.RunAsync` 与 `SceneScript` 进入整条提取和绘制路径。`MaterialDecalRenderingTests` 覆盖：
+
+- opaque 蓝面依次叠加半透明红层和绿层，中心区域得到线性颜色 `(0.25, 0.5, 0.25)`。
+- `z=4` 与 `z=6` 的两个半透明蓝面分别接受同一个红色体积；体积先覆盖后面，再移动到前面，删除后整图恢复初始状态。该检查把引用预算设为 `1`，验证相同结果的容量续批。
+
+这两条行为已在 D3D12、Vulkan 各通过一次，线性颜色容差为 `0.001`。检查使用完成后的 91 资产内容包，分别运行 8 帧与 16 帧；图像失败沿共享检查保存实际、期望及差异 PNG。执行：
+
+```powershell
+$env:SOMEENGINE_TEST_COOKED_CONTENT = '<matching cooked DefaultProject>'
+dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~MaterialDecalRenderingTests'
+```
+
+导入场景从同一项目模板生成材质表面代码，shader 搜索路径同时包含引擎与项目共享 include，因此刷新 Sponza、Amazon Bistro 的材质时使用同一层属性实现。
