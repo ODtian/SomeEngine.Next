@@ -91,6 +91,8 @@ edit.SetXray(entity, new Xray(
 
 计量由 Cluster 管线持有，纯 opaque 贴花同样产生数据。固定 128B 回读承载 12 个时间戳与两份 4×uint 工作数。每个提交保留当帧已更新的缓冲容量和 RHI 分配描述，回读以同一提交的数据计算；用户分组或资源显式 reconcile 时才维护计时完成边。
 
+`BlendMeasurementsFollowDecalChangesAcrossSubmittedFrames` 已通过 D3D12 的 16 帧公共启动检查：引用预算为 1，纯 opaque 场景在第 8 帧从一个贴花增至两个，GPU 数量、驻留引用、使用字节及容量按提交更新，随后恢复候选复用。`OrderedRenderingTests` 的双次硬件 stencil 往返已在 Vulkan 开启计量通过，全图线性颜色容差为 0.001。
+
 `SceneTiming.Instances` 在场景完成时记录共用实例存储的实际行数、批次数、容量与属性字节数，效果增加的实例属性进入该项；共享几何仍由 `GeometryUsedBytes` 等既有字段记录。
 
 ## 行为与交付对应
