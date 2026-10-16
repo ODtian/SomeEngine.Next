@@ -479,6 +479,10 @@ dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Re
 
 配套 88 项 default 内容的 NativeAOT 冷启动使用 1280×720、Forward、VSM、TAA、32 片玻璃、混合计量与同步 compute 配置。应用到首帧为 43.808 s，16 帧进程总耗时 45.93 s，退出码为 0，2/2 网格与 6/6 页驻留。此记录用于启动定位；正式帧耗时及三场景预算由统一场景平台记录。
 
+保存单材质入口后，包含 PixelCenter、贴花与有序混合核心的 91 项 default 内容在相同应用选项下完成 NativeAOT 16 帧：应用到首帧 39.504 s，进程 41.48 s，退出码 0，1024 实例、2/2 网格、6/6 页驻留。两次启动记录分别对应各自的内容和核心版本。该版本的最小公共图像选取 Vulkan 六层 Unlit 合成与 D3D12 Standard 双采样器/Unlit 材质对照，两项全部通过，行为规则自动检查为 0 违规。
+
+一次顺序 CPU 定位恢复包内 70 个生产及示例 Shader，基础 IR、反射和保存代码合计 2.074 s；Standard、Unlit、Deformed Phong 的全部 87 个保存专门化再花 5.860 s。Standard 三个透明专门化各花约 68 ms，颜色入口直接取得 694,496 B 保存 DXIL。这个范围覆盖全部调试模式及曲面入口。`ClusterComputePipeline.Create` 随后把入口代码交给 RHI；D3D12 的 `DevicePipelineTrace.CreateComputePipelineState` 已提供原生 PSO 创建的 detail trace 边界，供统一场景反馈后的阶段定位使用。
+
 ```powershell
 templates/DefaultProject/Game.App/bin/Release/net10.0/publish/Game.App.exe --measure-scene '1024 spheres' --cluster-oit --hardware-adapter --graphics-backend d3d12 --hardware-raster --shading-path forward --measure-blending --no-async-compute --frames 16 --hidden-window --no-debug-ui
 ```
