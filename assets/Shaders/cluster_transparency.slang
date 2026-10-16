@@ -305,8 +305,9 @@ bool TransparencyCovered(TransparencyTriangle triangle, float2 pixel, out float 
     float2 delta = pixel - triangle.First;
     float b = (delta.x * edge2.y - delta.y * edge2.x) * triangle.InverseArea;
     float c = (edge1.x * delta.y - edge1.y * delta.x) * triangle.InverseArea;
-    float a = 1.0 - b - c;
-    depth = dot(float3(a, b, c), triangle.Depths);
+    // Interpolate depth differences to preserve the sample depth's precision.
+    depth = triangle.Depths.x + b * (triangle.Depths.y - triangle.Depths.x) +
+        c * (triangle.Depths.z - triangle.Depths.x);
     int winding = triangle.InverseArea < 0.0 ? 1 : -1;
     int2 coordinate = int2(pixel - .5);
     return ClusterRasterIntegerEdgeAccepts(triangle.Second, triangle.Third, coordinate, winding) &&
