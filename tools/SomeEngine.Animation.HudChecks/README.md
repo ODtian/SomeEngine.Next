@@ -8,7 +8,7 @@ reverse every sixteen frames through FLIP. All frames use actual elapsed time.
 Build and execution use the common benchmark queue:
 
 ```powershell
-./tools/Invoke-Benchmark.ps1 dotnet build tools/SomeEngine.Animation.HudChecks/SomeEngine.Animation.HudChecks.csproj -c Release -v quiet -m:1 -nodeReuse:false '--property:UseSharedCompilation=false'
+./tools/Invoke-Benchmark.ps1 dotnet build tools/SomeEngine.Animation.HudChecks/SomeEngine.Animation.HudChecks.csproj -c Release -v quiet '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false'
 # After the build result reports exit code 0:
 ./tools/Invoke-Benchmark.ps1 tools/SomeEngine.Animation.HudChecks/bin/Release/net10.0/SomeEngine.Animation.HudChecks.exe --capture-rgba artifacts/hud.rgba
 ```
