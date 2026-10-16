@@ -36,7 +36,8 @@ internal static partial class CheckAnimation
         CheckCustomValue();
         CheckFunction();
         CheckClocksAndCompletion();
-        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion");
+        GraphConsumerChecks.Check();
+        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graph");
         return 0;
     }
 

@@ -271,6 +271,8 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
 
     private static void Submit(World world, Entity target, Entity animation, uint output, in Track<T> track)
     {
+        if (track.FromGraph && world.HasBuffer<GraphFieldOutput<T>>(animation))
+            return;
         if (world.HasBuffer<Contribution<T>>(target))
             Append(world, target, animation, output, in track);
         else

@@ -150,6 +150,7 @@ public static partial class PropertyAnimation
         if (!same && previous.MotionInitialized)
             MotionAccesses<T>.Items[previous.MotionType - 1].Release(world, instance, previous.MotionIndex);
         int stateIndex = same ? previous.MotionIndex : FreeMotionIndex<T, TOps, TParameters, TState, TEvaluator>(world, instance);
+        MotionStorage<T, TOps, TParameters, TState, TEvaluator>.UseInstanceParameters(world, instance);
         var change = (Parameters: spec.Parameters, Previous: previous, Values: values, Running: running, Index: stateIndex,
             Unchanged: false, ParametersOnly: false, Endpoints: endpoints, Target: value);
         world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>,

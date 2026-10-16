@@ -7,7 +7,7 @@ using SomeEngine.ECS.Entities;
 namespace SomeEngine.Animation;
 
 /// <summary>Builds property animations with pooled data and nested scopes.</summary>
-public unsafe ref struct AnimationBuilder
+public unsafe ref partial struct AnimationBuilder
 {
     public const int TrackCapacity = 64;
     private BuildData[]? _data;
@@ -28,6 +28,8 @@ public unsafe ref struct AnimationBuilder
     private void AddTrack<T>(Entity target, Channel<T> channel, T value, Spec spec, byte layer, TrackEndpoints endpoints)
         where T : unmanaged
     {
+        if (GraphCurves<T>.TryAdd(ref this, _data![0].World, target, channel, value, spec, layer, endpoints))
+            return;
         ref BuildData data = ref _data![0];
         int offset = data.ValueCount;
         int size = Unsafe.SizeOf<Channel<T>>() + Unsafe.SizeOf<T>();

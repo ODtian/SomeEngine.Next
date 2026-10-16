@@ -96,6 +96,14 @@ public ref struct MotionBatch<T, TParameters, TState>
         Count = data.Length;
     }
 
+    /// <summary>Graph instances read their parameters directly from a shared definition.</summary>
+    public MotionBatch(Span<MotionData<T, TParameters, TState>> data, ReadOnlySpan<TParameters> parameters)
+    {
+        _data = data;
+        _parameters = parameters;
+        Count = data.Length;
+    }
+
     /// <summary>Single-element parameter and time spans provide shared inputs.</summary>
     public MotionBatch(ReadOnlySpan<TParameters> parameters, Span<TState> states,
         ReadOnlySpan<MotionValues<T>> values, ReadOnlySpan<MotionTime> times,
@@ -123,6 +131,8 @@ public ref struct MotionBatch<T, TParameters, TState>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref readonly TParameters Parameters(int index)
     {
+        if (!_parameters.IsEmpty)
+            return ref _parameters[_parameters.Length == 1 ? 0 : index];
         if (!_data.IsEmpty)
             return ref _data[index].Parameters;
         return ref _parameters[_parameters.Length == 1 ? 0 : index];

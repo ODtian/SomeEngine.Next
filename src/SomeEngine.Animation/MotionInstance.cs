@@ -101,14 +101,33 @@ internal static unsafe class MotionStorage<T, TOps, TParameters, TState, TEvalua
 
     private static void Retarget(World world, Entity animation, int index, in MotionValues<T> values)
     {
-        var update = (Index: index, Values: values);
-        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>, (int Index, MotionValues<T> Values)>(
+        TParameters[]? parameters = world.Has<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation)
+            ? world.Read<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation).Values : null;
+        var update = (Index: index, Values: values, Parameters: parameters);
+        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>, (int Index, MotionValues<T> Values, TParameters[]? Parameters)>(
             animation, ref update, static (instances, ref update) =>
             {
                 ref MotionData<T, TParameters, TState> data = ref instances[update.Index].Data;
-                TEvaluator.Retarget(in data.Parameters, in data.Parameters, in update.Values, ref data.State);
+                ref readonly TParameters parameters = ref (update.Parameters is null ? ref data.Parameters : ref update.Parameters[update.Index]);
+                TEvaluator.Retarget(in parameters, in parameters, in update.Values, ref data.State);
                 data.Values = update.Values;
             });
+    }
+
+    internal static void UseInstanceParameters(World world, Entity animation)
+    {
+        if (!world.Has<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation))
+            return;
+        TParameters[]? parameters = world.Read<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation).Values;
+        if (parameters is null)
+            return;
+        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>, TParameters[]>(
+            animation, ref parameters, static (instances, ref parameters) =>
+            {
+                for (int index = 0; index < parameters.Length; index++)
+                    instances[index].Data.Parameters = parameters[index];
+            });
+        world.Replace(animation, default(GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>));
     }
 
     private static void Release(World world, Entity animation, int index)

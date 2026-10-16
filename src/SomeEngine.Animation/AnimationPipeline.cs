@@ -57,6 +57,7 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         foreach (Algorithm algorithm in _algorithms)
             algorithm.Evaluate(systems, TrackFields.LayerWeights);
         AddAdditionalSystems(systems, AnimationPhase.LayerWeights);
+        systems.Add(new GraphOutputSystem<float, FloatOps>(TrackFields.LayerWeights));
         systems.Add(new ComposeSystem<float, FloatOps>(TrackFields.LayerWeights));
         AddAdditionalSystems(systems, AnimationPhase.LayerComposition);
 
@@ -79,6 +80,15 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
 
         if (_defaults)
         {
+            systems.Add(new GraphOutputSystem<float, FloatOps>());
+            systems.Add(new GraphOutputSystem<Vector2, Vector2Ops>());
+            systems.Add(new GraphOutputSystem<Vector3, Vector3Ops>());
+            systems.Add(new GraphOutputSystem<Vector4, Vector4Ops>());
+            systems.Add(new GraphOutputSystem<Quaternion, QuaternionOps>());
+            systems.Add(new GraphOutputSystem<Color, ColorOps>());
+            systems.Add(new GraphOutputSystem<Thickness, ThicknessOps>());
+            systems.Add(new GraphOutputSystem<Rect, RectOps>());
+            systems.Add(new GraphOutputSystem<Matrix3x2, Matrix3x2Ops>());
             systems.Add(new ComposeSystem<float, FloatOps>());
             systems.Add(new ComposeSystem<Vector2, Vector2Ops>());
             systems.Add(new ComposeSystem<Vector3, Vector3Ops>());
@@ -132,7 +142,11 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
 
     private static void AddComposition<T, TOps>(SystemGroup<ImmediateSystemContext> systems, TrackFields fields)
         where T : unmanaged
-        where TOps : struct, IValueOps<T> => systems.Add(new ComposeSystem<T, TOps>(fields));
+        where TOps : struct, IValueOps<T>
+    {
+        systems.Add(new GraphOutputSystem<T, TOps>(fields));
+        systems.Add(new ComposeSystem<T, TOps>(fields));
+    }
 
     private readonly struct Algorithm(Type type, Type composition,
         delegate* managed<SystemGroup<ImmediateSystemContext>, TrackFields, void> evaluate,

@@ -22,6 +22,7 @@ public struct Track<T> : IBufferElement where T : unmanaged
     public bool Finished;
     public bool CaptureStart;
     public int GraphMotion, GraphGroup;
+    public int GraphOutput;
     public ushort MotionStage;
     public uint MotionStartId;
     public T Displacement;
