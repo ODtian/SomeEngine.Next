@@ -89,15 +89,16 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                 if (instances.Count == 0)
                     continue;
                 DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
+                ReadOnlySpan<Track<T>> previousTracks = tracks.ReadSpan();
                 int firstSelected = 0;
-                for (; firstSelected < tracks.Count; firstSelected++)
+                for (; firstSelected < previousTracks.Length; firstSelected++)
                 {
-                    Track<T> candidate = tracks.Read(firstSelected);
+                    ref readonly Track<T> candidate = ref previousTracks[firstSelected];
                     if (Selected(in candidate, type, evaluation.Weights) &&
                         (!evaluation.CaptureOnly || candidate.CaptureStart))
                         break;
                 }
-                if (firstSelected == tracks.Count)
+                if (firstSelected == previousTracks.Length)
                     continue;
                 DynamicBuffer<PropertySource<T>> sources = inlineDirect ? row.Buffer<PropertySource<T>>() : default;
                 Span<MotionData<T, TParameters, TState>> data = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Data(instances);
@@ -111,9 +112,10 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     ? row.Read<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>().Values : default;
                 int lastStage = GraphTimes.LastStage(stages, timeline.Stage, timeline.Time, timeline.Paused);
                 bool evaluate = false;
-                for (int index = firstSelected; index < tracks.Count; index++)
+                Span<Track<T>> writableTracks = default;
+                for (int index = firstSelected; index < previousTracks.Length; index++)
                 {
-                    Track<T> previous = tracks.Read(index);
+                    ref readonly Track<T> previous = ref previousTracks[index];
                     if (!Selected(in previous, type, evaluation.Weights))
                         continue;
                     if (evaluation.CaptureOnly && !previous.CaptureStart)
@@ -143,7 +145,12 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                             Submit(world, row.Entity, index, in previous, sources, inlineDirect, ref evaluation.Writes, ref writeCount);
                         continue;
                     }
-                    ref Track<T> track = ref tracks[index];
+                    if (writableTracks.IsEmpty)
+                    {
+                        writableTracks = tracks.AsSpan();
+                        previousTracks = writableTracks;
+                    }
+                    ref Track<T> track = ref writableTracks[index];
                     float time;
                     if (track.GraphMotion == 0)
                     {
@@ -232,9 +239,9 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     continue;
                 var batch = new MotionBatch<T, TParameters, TState>(data, parameters);
                 TEvaluator.EvaluateBatch<TEvaluator>(ref batch);
-                for (int index = firstSelected; index < tracks.Count; index++)
+                for (int index = firstSelected; index < writableTracks.Length; index++)
                 {
-                    ref Track<T> track = ref tracks[index];
+                    ref Track<T> track = ref writableTracks[index];
                     if (!Selected(in track, type, evaluation.Weights) || !data[track.MotionIndex].Active)
                         continue;
                     ref MotionData<T, TParameters, TState> motion = ref data[track.MotionIndex];

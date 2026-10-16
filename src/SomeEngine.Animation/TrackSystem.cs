@@ -76,10 +76,11 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
                 foreach (QueryRow row in chunk.Rows)
                 {
                     DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
+                    ReadOnlySpan<Track<T>> values = tracks.ReadSpan();
                     int firstLegacy = 0;
-                    while (firstLegacy < tracks.Count && tracks.Read(firstLegacy).Typed)
+                    while (firstLegacy < values.Length && values[firstLegacy].Typed)
                         firstLegacy++;
-                    if (firstLegacy == tracks.Count)
+                    if (firstLegacy == values.Length)
                         continue;
                     ReadOnlySpan<Keyframe> keyframes = hasKeyframes ? row.ReadBuffer<Keyframe>().AsSpan() : default;
                     ReadOnlySpan<TimelineStage> stages = hasStages ? row.ReadBuffer<TimelineStage>().AsSpan() : default;
