@@ -40,14 +40,7 @@ internal static class RuntimeApplication
         where TMaterials : ISceneMaterials => Task.Factory.StartNew(() =>
     {
         using var display = new ApplicationDisplay();
-        string contentRoot = script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot();
-        AssetManifest manifest = AssetManifest.Load(Path.Combine(contentRoot, "Library", "AssetManifest"));
-        SlangCompileTarget target = options.GraphicsBackend == RuntimeGraphicsBackend.Vulkan
-            ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil;
-        SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession slang);
-        if (result.Failed) throw new InvalidOperationException($"Slang global session creation failed with {result}.");
-        var files = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
-        var content = new ApplicationContent(files, manifest, slang, CreateShaderSessionDescription(slang, target));
+        ApplicationContent? content = null;
         try
         {
             int frames = 0;
@@ -55,6 +48,21 @@ internal static class RuntimeApplication
             {
                 if (application is not null) options = application.Options;
                 if (application is not null) application.ReloadRequested = false;
+                string contentRoot = Path.GetFullPath(script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot());
+                DateTime catalogWriteTime = File.GetLastWriteTimeUtc(Path.Combine(contentRoot, "Library", "AssetManifest", AssetManifest.CatalogFileName));
+                if (content is null || !StringComparer.OrdinalIgnoreCase.Equals(content.Directory, contentRoot) ||
+                    content.GraphicsBackend != options.GraphicsBackend || content.CatalogWriteTime != catalogWriteTime)
+                {
+                    content?.Files.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    AssetManifest manifest = AssetManifest.Load(Path.Combine(contentRoot, "Library", "AssetManifest"));
+                    SlangCompileTarget target = options.GraphicsBackend == RuntimeGraphicsBackend.Vulkan
+                        ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil;
+                    SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession slang);
+                    if (result.Failed) throw new InvalidOperationException($"Slang global session creation failed with {result}.");
+                    var files = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
+                    content = new ApplicationContent(contentRoot, options.GraphicsBackend, catalogWriteTime,
+                        files, manifest, slang, CreateShaderSessionDescription(slang, target));
+                }
                 try
                 {
                     application?.SceneStarted?.Invoke(Stopwatch.GetTimestamp());
@@ -73,7 +81,7 @@ internal static class RuntimeApplication
             } while (application?.ReloadRequested == true);
             return frames;
         }
-        finally { files.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        finally { content?.Files.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     private static int RunScene<TMaterials>(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,

@@ -8,8 +8,12 @@ namespace SomeEngine.Runtime;
 
 /// <summary>Application file data and the actual shaders shared by its scenes.</summary>
 internal sealed class ApplicationContent(
+    string directory, RuntimeGraphicsBackend graphicsBackend, DateTime catalogWriteTime,
     AssetLoader files, AssetManifest manifest, IGlobalSession slang, SessionDesc shaderSettings)
 {
+    internal string Directory { get; } = directory;
+    internal RuntimeGraphicsBackend GraphicsBackend { get; } = graphicsBackend;
+    internal DateTime CatalogWriteTime { get; } = catalogWriteTime;
     internal AssetLoader Files { get; } = files;
     internal AssetManifest Manifest { get; } = manifest;
     internal IGlobalSession Slang { get; } = slang;
