@@ -15,6 +15,8 @@ Debug、优化时，先问是否是架构造成的，不要在错误的架构下
 # Testing
 测试范围仅覆盖行为与公共API，严禁针对内部具体实现进行测试
 
+CPU、GPU benchmark 通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提交到公共 FIFO 队列。比较期间需要独占 CPU/GPU 的构建、内容导入与捕获使用同一入口。提交返回任务编号和结果目录；交付保留 stdout、stderr、退出码与测量配置。用法见 `wiki/harness/Harness-Performance-Evidence.md`。
+
 渲染性能优化必须使用 DefaultGame 的统一场景平台，同时测试 1024 小球、Sponza、Amazon Bistro。使用 tools/Measure-Scenes.ps1 执行一次不超过 60 秒的多场景反馈；内容构建另计。未收敛、失败、缺失场景的报告不能视为性能通过。对比必须保持分辨率、场景行为、渲染选项、JIT 配置和采样方式一致；带 trace 的定位结果与不带 trace 的性能结果分开记录。
 
 # Rendering
