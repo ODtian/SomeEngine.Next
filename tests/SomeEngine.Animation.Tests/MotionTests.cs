@@ -1,9 +1,31 @@
 using SomeEngine.Animation.Consumers;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Tests;
 
 public class MotionTests
 {
+    [Fact]
+    public void ConsumerMotionAddedAfterDefaultsRunsInTheCommonEvaluationStage()
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new MotionTarget());
+        Channel<float> channel = Channel<float>.Of<MotionTarget>(static (ref MotionTarget value) => ref value.Value);
+        var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 0.5f, "path"));
+        PropertyAnimation.Declare(world, target, channel, spec);
+        PropertyAnimation.To(world, target, channel, 10, spec);
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.AddDefaults(systems);
+        AnimationSystems.Add(systems, spec);
+        var frame = new ImmediateSystemContext(world, 0, 0, 0.5);
+
+        systems.Update(ref frame);
+
+        Assert.Equal(2.5f, world.Read<MotionTarget>(target).Value);
+    }
+
     [Fact]
     public void BatchUsesEachElementsOwnTimeAndReportsCompletion()
     {
@@ -129,5 +151,10 @@ public class MotionTests
         HistoryMotion.Initialize(in next, in values, ref state);
 
         Assert.Equal(("next", 0), (state.Name, state.Samples));
+    }
+
+    private struct MotionTarget : IComponent
+    {
+        public float Value;
     }
 }

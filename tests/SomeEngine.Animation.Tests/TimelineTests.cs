@@ -197,7 +197,7 @@ public class TimelineTests
                 {
                     foreach (QueryRow row in rows.Rows)
                         if (running)
-                            row.ReadWrite<Timeline>().Running |= 4;
+                            row.ReadWrite<Timeline>().Submit(running);
                 });
         }
 

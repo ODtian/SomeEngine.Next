@@ -11,6 +11,7 @@ public interface IValueOps<T> where T : unmanaged
     static abstract T Subtract(in T a, in T b);
     static abstract T Scale(in T a, float s);
     static abstract float Distance(in T a, in T b);
+    static virtual bool Equals(in T a, in T b) => EqualityComparer<T>.Default.Equals(a, b);
 
     static virtual void Lerp<TOps>(ReadOnlySpan<T> a, ReadOnlySpan<T> b, float t, Span<T> result)
         where TOps : struct, IValueOps<T> { /* 调用 TOps.Lerp 的默认逐值实现 */ }
@@ -20,6 +21,10 @@ public interface IValueOps<T> where T : unmanaged
 ```
 
 C# 要求通过类型参数调用静态抽象成员，所以默认批量方法显式带上 `TOps`。调用方使用 `ValueOps<T, TOps>.Lerp(a, b, t, result)` 等入口，入口把同一个运算类型传给默认方法。`Subtract`、`Scale` 和 `Distance` 也有批量默认方法；用户可以实现对应的静态泛型方法来专门化批量运算。
+
+`Equals` 提供逐值和批量入口，内置运算直接使用叶值类型的相等语义。`Lerp` 还接受 `ReadOnlySpan<float> progress`，使每个元素使用自己的进度。内置与消费者的专用批量实现通过同一个 `ValueOps<T, TOps>` 入口选择。
+
+完整类型算法使用 `Spec.Tween<T, TOps, TEasing>`、`Spec.Spring<T, TOps>`、`Spec.Keyframes<T, TOps>` 或 `Spec.Create<T, TOps, TParameters, TState, TEvaluator>`。31 种内置 `IEasing` 类型分别包含自己的公式，批内保留具体缓动类型。生命周期与 managed 函数指针批量入口见 [[architecture/animation/Animation-Extension|Animation Extension]]。
 
 ## Invariants
 - 当前内置运算为 `FloatOps`、`Vector2Ops`、`Vector3Ops`、`Vector4Ops`、`QuaternionOps`、`ColorOps`、`ThicknessOps`、`RectOps` 与 `Matrix3x2Ops`。用户类型实现同一个 `IValueOps<T>` 即可。

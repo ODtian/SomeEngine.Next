@@ -73,6 +73,13 @@ public class ValueOpsTests
         T[] result = new T[2];
         T[] first = [a, a];
         T[] second = [b, b];
+        bool[] equal = new bool[2];
+        ValueOps<T, TOps>.Equals(first, first, equal);
+        Assert.Equal(new[] { true, true }, equal);
+        ValueOps<T, TOps>.Equals(first, second, equal);
+        Assert.Equal(new[] { false, false }, equal);
+        ValueOps<T, TOps>.Lerp(first, second, new float[] { 0.25f, 0.75f }, result);
+        Assert.InRange(TOps.Distance(TOps.Lerp(a, b, 0.75f), result[1]), 0, 0.00001f);
         ValueOps<T, TOps>.Lerp(first, second, 0.25f, result);
         foreach (T value in result)
             Assert.InRange(TOps.Distance(lerp, value), 0, 0.00001f);

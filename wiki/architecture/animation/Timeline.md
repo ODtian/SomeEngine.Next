@@ -8,6 +8,7 @@ public struct Timeline : IEnableableComponent
 {
     public Timeline() => Speed = 1;
     public float Time;
+    public float Delta;
     public float Speed;
     public ushort Stage;
     public TimelineClock Clock;
@@ -35,6 +36,10 @@ systems.Add(new TimelineEndSystem());
 ```
 
 调用方在帧开始前替换 `AnimationTime`，它是原始帧时长、游戏时间缩放与暂停标志的主要持有者。`TimelineSystem()` 直接使用 `ImmediateSystemContext.DeltaTime`，适合三种时钟都采用同一时长的调用者。`new Timeline()` 的速度为 1，原始零值数据的速度为 0。
+
+每帧开始从 `AnimationTime.Deltas` 一次计算 Game、Interface、Unscaled 三个公共增量。实例按 `Clock` 选择后应用 `Speed` 与 `Paused`，在 `Delta` 保存结果并推进 `Time`。算法的 `MotionTime` 使用这个增量和本阶段采样时间；Spring 自身的积分步长保留在算法参数中。
+
+求值系统可调用 `timeline.Submit(in sample)` 或 `timeline.Submit(running)` 汇总本阶段运行结果。统一收尾等待全部来源完成，再增加 `Completions` 并禁用时间线。暂停中的时间线保留当前阶段和完成计数。
 
 ## Invariants
 - 启动、暂停、停止、调速只修改字段或启用位，不改变 archetype。
