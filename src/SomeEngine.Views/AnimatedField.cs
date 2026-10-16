@@ -31,7 +31,8 @@ internal static unsafe partial class AnimatedFields
     internal static void Declare<T>(World world, Entity entity, Channel<T> channel, Spec spec, T value, bool hasValue)
         where T : unmanaged
     {
-        PropertyAnimation.Declare<T>(world, entity);
+        if (!world.HasBuffer<Track<T>>(entity))
+            PropertyAnimation.Declare<T>(world, entity);
         Timeline timeline = world.Read<Timeline>(entity);
         if (timeline.Clock != TimelineClock.Interface)
         {

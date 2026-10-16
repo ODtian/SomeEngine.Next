@@ -169,7 +169,7 @@ public static partial class TypedAnimationChecks
         {
             Entity panel = Scope.View(new AnimatedPanel { Progress = Presented }, 0)
                 .Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween<float, FloatOps, Linear>(1));
-            Scope.Set(panel, AnimatedPanelChannels.ProgressValue, Target.Value);
+            panel.SetProgressValue(Target.Value);
             return default;
         }
     }
