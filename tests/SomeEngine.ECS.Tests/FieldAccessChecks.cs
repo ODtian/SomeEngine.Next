@@ -17,12 +17,69 @@ internal static class FieldAccessChecks
         QueryFunctionWritesTypedComponentsAndCallerState();
         QueryFunctionAndDelegatePublishTheSameVersionRules();
         ManagedGenericBufferElementsKeepReferencesThroughGrowthAndRemoval();
+        TypedRootBatchesWriteFieldsWithOneSharedVersion();
+        SparseRootBatchesWriteFieldsWithOneSharedVersion();
 #if DEBUG
         QueryFieldWritesReportTheRequiredWritePermission();
         QueryFieldReadsReportTheCurrentChunkRowRange();
 #endif
     }
 
+
+    internal static unsafe void TypedRootBatchesWriteFieldsWithOneSharedVersion()
+    {
+        using var world = new World();
+        Entity first = world.CreateEntity(new FieldData<Box> { Reference = new Box() });
+        Entity second = world.CreateEntity(new FieldData<Box> { Reference = new Box() });
+        uint before = world.WriteVersion<FieldData<Box>>(first);
+        var batch = new FieldBatch([first, second], 7f);
+
+        world.ExecuteComponentWrite<FieldData<Box>, FieldBatch>(ref batch, &WriteRootBatch);
+
+        Require(batch.Version != before);
+        RequireEqual((batch.Version, batch.Version, 7f, 7f), (
+            world.WriteVersion<FieldData<Box>>(first), world.WriteVersion<FieldData<Box>>(second),
+            world.ReadField<FieldData<Box>, float, ReferenceAccess>(first),
+            world.ReadField<FieldData<Box>, float, ReferenceAccess>(second)));
+    }
+
+    internal static unsafe void SparseRootBatchesWriteFieldsWithOneSharedVersion()
+    {
+        using var world = new World();
+        Entity first = world.CreateEntity();
+        Entity second = world.CreateEntity();
+        world.AddSparse(first, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
+        world.AddSparse(second, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
+        uint before = world.SparseWriteVersion<SparseFields>(first);
+        var batch = new FieldBatch([first, second], 7f);
+
+        world.ExecuteComponentWrite<SparseFields, FieldBatch>(ref batch, &WriteSparseBatch);
+
+        Require(batch.Version != before);
+        RequireEqual((batch.Version, batch.Version, 7f, 7f), (
+            world.SparseWriteVersion<SparseFields>(first), world.SparseWriteVersion<SparseFields>(second),
+            world.ReadField<SparseFields, float, SparseAccess<ReferenceAccess>>(first),
+            world.ReadField<SparseFields, float, SparseAccess<ReferenceAccess>>(second)));
+    }
+
+    private static void WriteRootBatch(ComponentWriteBatch<FieldData<Box>> roots, ref FieldBatch batch)
+    {
+        foreach (Entity entity in batch.Entities) ReferenceAccess.Write(ref roots.Write(entity), in batch.Value);
+        batch.Version = roots.CurrentSystemVersion;
+    }
+
+    private static void WriteSparseBatch(ComponentWriteBatch<SparseFields> roots, ref FieldBatch batch)
+    {
+        foreach (Entity entity in batch.Entities) SparseAccess<ReferenceAccess>.Write(ref roots.Write(entity), in batch.Value);
+        batch.Version = roots.CurrentSystemVersion;
+    }
+
+    private ref struct FieldBatch(ReadOnlySpan<Entity> entities, float value)
+    {
+        public readonly ReadOnlySpan<Entity> Entities = entities;
+        public readonly float Value = value;
+        public uint Version;
+    }
 
     internal static void TableFieldsUseTypedAccessThroughValuesReferencesAndProperties()
     {
@@ -134,12 +191,13 @@ internal static class FieldAccessChecks
         using var world = new World();
         Entity entity = world.CreateEntity(new FieldData<Box> { Reference = new Box() });
         QueryHandle query = world.Query(world.QueryDefinition().Write<FieldData<Box>>());
+        uint before = world.WriteVersion<FieldData<Box>>(entity);
         world.ExecuteQuery(query, WriteNestedFields);
         uint delegateVersion = world.WriteVersion<FieldData<Box>>(entity);
 
         world.ExecuteQuery(query, &WriteNestedFields);
 
-        RequireDifferent(delegateVersion, world.WriteVersion<FieldData<Box>>(entity));
+        Require(delegateVersion != before && world.WriteVersion<FieldData<Box>>(entity) != delegateVersion);
     }
 
     internal static void ManagedGenericBufferElementsKeepReferencesThroughGrowthAndRemoval()

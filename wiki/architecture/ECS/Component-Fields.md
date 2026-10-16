@@ -61,6 +61,8 @@ world.ExecuteQuery(query, ref radius, &WriteRadius);
 
 调用方也可从已有 `chunk.Read<TComponent>()`、`chunk.Write<TComponent>()` 或 sparse 读写回调取得根组件 span，再在具体循环中调用 `TAccess`。包含引用的泛型根和缓冲元素继续使用共同的组件、缓冲和容量入口。
 
+跨任意实体的同组件批次使用 `World.ExecuteComponentWrite<TComponent, TState>(ref state, function)`。managed 函数指针接收 `ComponentWriteBatch<TComponent>` 和调用方的 `ref TState`；状态支持 `allows ref struct`。入口一次取得组件存储的写权限和共享版本，批内 `Write(entity)` 解析当前 table/sparse 根并返回 `ref TComponent`，具体访问实现随后直接调用。此能力适合按同一组件与字段归并后的动画最终写回。根引用的有效范围为当前批次回调。
+
 ## 版本与存储
 
 字段写入沿现有 table/sparse 写权限处理。单实体字段写入取得新 World 写版本；查询字段写入使用查询的 `CurrentSystemVersion`。整列写视图为该列全部行记录本次查询版本，单行写入记录对应行版本。

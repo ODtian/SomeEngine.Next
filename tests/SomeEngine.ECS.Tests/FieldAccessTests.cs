@@ -29,6 +29,12 @@ public sealed class FieldAccessTests
     [Fact]
     public void ManagedGenericBufferElementsKeepReferencesThroughGrowthAndRemoval() => FieldAccessChecks.ManagedGenericBufferElementsKeepReferencesThroughGrowthAndRemoval();
 
+    [Fact]
+    public void TypedRootBatchesWriteFieldsWithOneSharedVersion() => FieldAccessChecks.TypedRootBatchesWriteFieldsWithOneSharedVersion();
+
+    [Fact]
+    public void SparseRootBatchesWriteFieldsWithOneSharedVersion() => FieldAccessChecks.SparseRootBatchesWriteFieldsWithOneSharedVersion();
+
 #if DEBUG
     [Fact]
     public void QueryFieldWritesReportTheRequiredWritePermission() => FieldAccessChecks.QueryFieldWritesReportTheRequiredWritePermission();

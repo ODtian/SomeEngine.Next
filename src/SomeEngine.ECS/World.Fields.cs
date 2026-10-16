@@ -6,6 +6,33 @@ namespace SomeEngine.ECS;
 
 public partial class World
 {
+    /// <summary>Acquires typed component roots for one caller-defined batch, including sparse roots.</summary>
+    /// <remarks>References obtained from the batch are used within this callback. Exposed roots receive one shared write version.</remarks>
+    public unsafe void ExecuteComponentWrite<TComponent, TState>(ref TState state,
+        delegate* managed<ComponentWriteBatch<TComponent>, ref TState, void> execution)
+        where TComponent : struct, IComponent
+        where TState : allows ref struct
+    {
+        DevelopmentCheck.Require(ComponentMetadata<TComponent>.AllowsPublicValueMutation,
+            "Component batches require a component that permits direct value writes.");
+        bool sparse = ComponentMetadata<TComponent>.Storage == StoragePath.Sparse;
+        using WorldJobAdmissionScope admission = EnterJobAdmission(
+            WorldJobAdmissionRequest.ForStorage(
+                sparse ? WorldStorageKind.Sparse : WorldStorageKind.Table,
+                ComponentMetadata<TComponent>.Id,
+                WorldStorageAccess.Write));
+        BeginStorageBorrow();
+        try
+        {
+            execution(new ComponentWriteBatch<TComponent>(this, sparse, AcquireAdmittedSystemVersion()), ref state);
+        }
+        catch (Exception bodyFault)
+        {
+            EndStorageBorrowAfterFault(bodyFault);
+        }
+        EndStorageBorrow();
+    }
+
     /// <summary>Reads a field through its typed component access, including reference-bearing roots.</summary>
     public TValue ReadField<TComponent, TValue, TAccess>(Entity entity)
         where TComponent : struct, IComponent
