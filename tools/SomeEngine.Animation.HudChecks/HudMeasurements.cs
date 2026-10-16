@@ -68,7 +68,7 @@ internal static class HudMeasurements
         Entity canvas = game.CreateEntity(new Canvas { Size = new Size(1280, 720) });
         Views.Views.Spawn(game, canvas, new HudView(frameNumber, values));
         using QueryPool timestamps = backend.CreateQueryPool(device, new QueryPoolDesc(QueryType.Timestamp, QueueType.Graphics, 2));
-        using Buffer readback = backend.CreateBuffer(device, new BufferDesc(16, BufferUsages.CopyDestination), MemoryType.Readback);
+        using Buffer readback = backend.CreateBuffer(device, new BufferDesc(16, BufferUsages.QueryResolve), MemoryType.Readback);
         TextureDesc targetDescription = new(TextureDimension.Texture2D, 1280, 720, 1, 1, 1, 1,
             Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment | TextureUsages.CopySource);
         TextureCopyFootprint footprint = backend.GetTextureCopyFootprint(device, targetDescription,
