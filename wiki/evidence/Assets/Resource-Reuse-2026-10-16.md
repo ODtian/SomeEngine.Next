@@ -86,3 +86,30 @@ Shader、Texture 各覆盖六条公开行为：同一存活值重复取得；32 
 Copy pass 来自公开图帧诊断中的实际 Live Copy pass，图帧经过真实提交。每帧完成依次推进 `RenderDevice.WaitForTrackedSubmissions`、`RenderGraph.CollectCompleted` 与 `RenderDevice.CollectCompleted`；图的帧登记清除帧级实际 Texture 引用，设备队列完成原生收尾。回收由外部弱引用观察，原生释放通过创建 SRV 的公开调用触发 `ObjectDisposedException` 观察。
 
 本节计量上传工作、RHI 分配需求与释放事件。像素输入由一份托管数组持有，两项独立 Texture 直接引用这份数组；各自的设备分配和更新状态随实际 Texture 分开。CPU、Slang、字节 LRU 与弱句柄表费用分别沿本页前述结果及 Core 弱索引证据记录。
+
+## 集成验收
+
+本轮基于 PR #217 的 `f6c0f95d`，在 `codex/asset210-values` 汇集强类型材质输入、通用弱索引、普通引用和设备释放改动。三个工作树分别承担弱索引、材质和纹理任务，后续工作复用对应工作树及编译产物。下表记录合并后的定向检查；各项 `dotnet test` 同时完成默认行为规则检查，结果为 0 违规。
+
+| 公开行为 | 结果 | 公共队列任务 |
+| --- | --- | --- |
+| Shader 输入组合、共同字节码、导入及文件操作 | 31 项通过 | `ea5ea1adfc564f4588f9c98de2e2c635` |
+| 独立消费者材质创建、完整更新及 Block 源文件 | 9 项通过 | `660427543c0f46038fea8e2a0a38b9be` |
+| 同一 StandardMaterial 的两组入口，分别使用 IR 与 CLI 保存代码进行 WARP 读回 | 2 项通过；修改前 `[.25, .75]`，修改后 `[.75, 1]` | `83a0ce75bbb74ae4b23520390c3fcfa9` |
+| 独立读取器的实际 Texture 及两项 Texture 提取行为 | 3 项通过 | `83a0ce75bbb74ae4b23520390c3fcfa9` |
+| 文件按需读取、具体资源创建及材质继续消费已提供引用 | 1 项通过 | `e6174ff6e1e344768d4deb4f02b3e72e` |
+| win-x64 NativeAOT 发布与原生执行 | 发布退出 0；原生执行输出 `assets-nativeaot-smoke:ok` | `2cd1d8cd457d4005bf0b3ad0b5461e82`、`e1a7637fa6fd48f4a4f38af2b7f75a76` |
+
+Shader 文件夹具通过当前 `ShaderAsset.CreateAsync` 和相对源码名构建完整 Shader；测试源路径由本次 Slang 设置明确传入。NativeAOT 覆盖资产导入、自定义材质创建更新、共享 Shader、独立打开、读取器关闭后消费、世界、Mesh 和材质继承。
+
+对应的合并验收命令如下，均从集成工作树提交到同一公共队列：
+
+```powershell
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 dotnet test tests/SomeEngine.Assets.Tests/SomeEngine.Assets.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~ShaderInputBlockTests|FullyQualifiedName~ShaderBytecodeTests|FullyQualifiedName~AssetFileOperationsTests|FullyQualifiedName~AssetImportTests' --nologo -v minimal
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 dotnet test tests/SomeEngine.Assets.Consumer.Tests/SomeEngine.Assets.Consumer.Tests.csproj -c Release --filter 'FullyQualifiedName~MaterialCreationBehaviorTests|FullyQualifiedName~AssetBlockSourceTextTests' --nologo -v minimal
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 dotnet test tests/SomeEngine.Render.Tests/SomeEngine.Render.Tests.csproj -c Release --filter FullyQualifiedName~AssetLoaderTests.DomainCreationUsesLazyFilesAndMaterialsKeepProvidedResources --nologo -v minimal
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 dotnet publish tools/SomeEngine.Assets.AotSmoke/SomeEngine.Assets.AotSmoke.csproj -c Release -r win-x64 --nologo -v minimal
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 tools/SomeEngine.Assets.AotSmoke/bin/Release/net10.0/win-x64/publish/SomeEngine.Assets.AotSmoke.exe
+```
+
+Standards 与 Spec 两条独立源码复核已完成修正复核：材质使用普通引用，Shader Wiki 与同步的 `Create(name, shaders)` 入口一致。正式结果写入本页后清理队列临时文件。
