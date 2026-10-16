@@ -112,6 +112,64 @@ public static partial class TypedAnimationChecks
         Require(presented.Value == 5, "The consumer receives the expected intermediate value.");
     }
 
+    public static void AnAwaitedReferenceTargetContinuesFromItsPresentation()
+    {
+        using var frames = new TypedFrames();
+        var presented = new State<float>();
+        Entity panel = frames.World.CreateEntity(new AnimatedPanel { Progress = presented });
+        var resume = new TaskCompletionSource();
+        Views.Spawn(frames.World, Entity.Null, new AwaitedTargets(panel, 8, resume.Task, 16));
+        frames.Frame(0);
+        frames.Frame(0.25f);
+
+        resume.SetResult();
+        frames.Frame(0.5f);
+
+        Require(presented.Value == 9, "The resumed segment continues from the current referenced presentation.");
+    }
+
+    public static void CancelingAnAwaitedReferenceTargetKeepsTheReplacementTarget()
+    {
+        using var frames = new TypedFrames();
+        var presented = new State<float>();
+        Entity panel = frames.World.CreateEntity(new AnimatedPanel { Progress = presented });
+        Entity root = Views.Spawn(frames.World, Entity.Null, new AwaitedTargets(panel, 0, null, 0));
+        frames.Frame(0);
+        var resume = new TaskCompletionSource();
+        frames.World.Replace(root, new AwaitedTargets(panel, 8, resume.Task, 16));
+        frames.Frame(0);
+        frames.Frame(0.25f);
+
+        frames.World.Replace(root, new AwaitedTargets(panel, 4, null, 0));
+        frames.Frame(0);
+        frames.Frame(0.5f);
+        resume.SetResult();
+        frames.Frame(0.5f);
+
+        Require(presented.Value == 4, "The replacement target survives completion of the canceled segment.");
+    }
+
+    public static void ReferencePresentationRefreshesRootAndLeafReaders()
+    {
+        using var frames = new TypedFrames();
+        var target = new State<float>();
+        var presented = new State<float>();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new ReferenceTargets(target, presented));
+        frames.Frame(0);
+        Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity rootReader = Views.Spawn(frames.World, Entity.Null, new RootReader(panel));
+        Entity leafReader = Views.Spawn(frames.World, Entity.Null, new LeafReader(presented));
+        frames.Frame(0);
+
+        target.Value = 10;
+        frames.Frame(0);
+        frames.Frame(0.5f);
+        frames.Frame(0);
+
+        Require(frames.World.Read<Observation>(rootReader).Value == 5 && frames.World.Read<Observation>(leafReader).Value == 5,
+            "Root-only and leaf-only dependencies both observe the rendered reference value.");
+    }
+
     private static void Require(bool value, string message)
     {
         if (!value) throw new InvalidOperationException(message);
@@ -196,6 +254,41 @@ public static partial class TypedAnimationChecks
             return default;
         }
     }
+
+    private readonly record struct AwaitedTargets(Entity Panel, float Before, Task? Wait, float After) : IView, IComponent
+    {
+        public async BuildTask Build()
+        {
+            Panel.Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween<float, FloatOps, Linear>(1));
+            Scope.Set(Panel, AnimatedPanelChannels.ProgressValue, Before);
+            if (Wait is null) return;
+            await Wait;
+            Scope.Cancel.ThrowIfCancellationRequested();
+            Scope.Set(Panel, AnimatedPanelChannels.ProgressValue, After);
+        }
+    }
+
+    private readonly record struct RootReader(Entity Panel) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            AnimatedPanel panel = Scope.Read<AnimatedPanel>(Panel);
+            using var untracked = Scope.Untrack();
+            Scope.Write<Observation>(Scope.Entity) = new Observation(panel.Progress.Value);
+            return default;
+        }
+    }
+
+    private readonly record struct LeafReader(State<float> Value) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.Write<Observation>(Scope.Entity) = new Observation(Value.Value);
+            return default;
+        }
+    }
+
+    private readonly record struct Observation(float Value) : IComponent;
 
     private readonly record struct NamedParameters(float Duration, string Name);
     private struct NamedState { internal string? Name; }
