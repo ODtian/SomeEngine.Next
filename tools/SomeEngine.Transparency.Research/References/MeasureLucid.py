@@ -48,7 +48,7 @@ def combine_results(checkout, output):
 def main():
     arguments = argparse.ArgumentParser(description=__doc__)
     root = Path(__file__).resolve().parents[3]
-    arguments.add_argument("--output", type=Path, default=root / "wiki/architecture/rendering/Transparency-Lucid-Reference-2026-10-15.json")
+    arguments.add_argument("--output", type=Path, default=root / "artifacts/lucid-reference.json")
     options = arguments.parse_args()
     output = options.output.resolve()
     cmake = shutil.which("cmake") or r"C:\Program Files\CMake\bin\cmake.exe"

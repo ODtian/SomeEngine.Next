@@ -2,6 +2,8 @@
 
 本页记录 2026-10-14 至 2026-10-15 的研发原型与对应验证范围。源实现位于 `tools/SomeEngine.Transparency.Research`，公共启动验证使用 DefaultGame。
 
+本页保留当时的配置与文字结论，历史实验通过既有[研究提交 ce13d11d](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)读取。复现结果写入当轮 `artifacts` 文件，调用方读取后立即删除。
+
 通用材质的主要评价条件采用模型内部颜色随光照变化的输入。模型常色的整块合并作为专项优化独立记录，性能结论沿对应的颜色条件与几何条件读取。
 
 ## 算法
@@ -66,9 +68,9 @@ C_{true}=C+T C_{tail},\qquad C_{tail}\in[L,U].
 
 加权混合对照采用 `w(z)=(1-z)^3`，累加 `alpha * w * color` 和 `alpha * w`，并以全部 alpha 的乘积计算背景透射率。该对照的权函数由本次实验固定，比较结果属于上述输入分布。
 
-初版的颜色、重复帧差异与 GPU 时间由 [初版测量数据](Transparency-Research-2026-10-14.json) 持有。当前实现的十一组质量与时间数据由 [优化测量数据](Transparency-Optimization-2026-10-14.json) 持有，额外包含模型深度间隔 0.025 的交叠球体。行为检查覆盖指定颜色容差与输入顺序变化，命令执行仓库的自动测试规则检查。
+初版的颜色、重复帧差异与 GPU 时间由 [初版测量数据](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d) 持有。当前实现的十一组质量与时间数据由 [优化测量数据](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d) 持有，额外包含模型深度间隔 0.025 的交叠球体。行为检查覆盖指定颜色容差与输入顺序变化，命令执行仓库的自动测试规则检查。
 
-DefaultGame 对照采用 Release NativeAOT，分别启动默认模式和 `--transparency-research`。两轮都使用 `tools/Measure-Scenes.ps1`，每轮完成 1024 小球、Sponza、Amazon Bistro。对照增加相同的 8 个研究球体，三个原场景保留各自的动画和内容。完整配置与帧时间由 [统一场景对照](Transparency-Scenes-2026-10-14.json) 持有。
+DefaultGame 对照采用 Release NativeAOT，分别启动默认模式和 `--transparency-research`。两轮都使用 `tools/Measure-Scenes.ps1`，每轮完成 1024 小球、Sponza、Amazon Bistro。对照增加相同的 8 个研究球体，三个原场景保留各自的动画和内容。完整配置与帧时间由 [统一场景对照](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d) 持有。
 
 RTX 3080 上，十组 GPU 颜色验证的最大通道误差为 0.003386。8 个球体的 RMSE 为 0.000543，GPU 中位时间为 0.580 ms，P95 为 0.888 ms。32 面、alpha 0.5 的同输入重复帧像素差异为 0。
 
@@ -81,8 +83,6 @@ RTX 3080 上，十组 GPU 颜色验证的最大通道误差为 0.003386。8 个�
 | Amazon Bistro | 6.60 | 6.51 | -0.09 |
 
 这组帧均值变化包含运行波动。独立 GPU 计时给出覆盖查询与合成的直接成本。128 面、alpha 0.1 的 GPU 中位时间为 14.45 ms，体现大量低 alpha 重叠下的实际交点工作量。
-
-![颜色误差与 GPU 算子时间](Transparency-Research-2026-10-14.png)
 
 这些场景结果是 presented frame elapsed time 和 CPU 阶段时间。GPU 算子时间单独由 timestamp 测量给出。初始化几何与 shader 编译由启动过程承担。大量低 alpha 重叠会增加实际查询量；对应的 128 面、alpha 0.1 数据单独列在算子测量中。
 
@@ -102,9 +102,7 @@ RTX 3080 上，十组 GPU 颜色验证的最大通道误差为 0.003386。8 个�
 
 8 个球体的几何有效数据从 280,000 字节缩为 161,792 字节，减少 42.2%。原位颜色合成节省 1280×720×8 = 7,372,800 字节的颜色图数据。计入 256 字节常量数据，该透明功能的新增 GPU 有效数据由 7,653,056 字节降到 162,048 字节，减少 97.9%。这里按缓冲有效数据与纹理像素数据计量；后端分配对齐由其资源分配器处理。
 
-![算子时间与新增 GPU 数据](Transparency-Optimization-2026-10-14.png)
-
-同负载的 DefaultGame 优化前后对照使用 Release NativeAOT、相同的研究球体、三个原场景、渲染选项与采样方式。完整配置与结果由 [优化场景对照](Transparency-Optimization-Scenes-2026-10-14.json) 持有。
+同负载的 DefaultGame 优化前后对照使用 Release NativeAOT、相同的研究球体、三个原场景、渲染选项与采样方式。完整配置与结果由 [优化场景对照](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d) 持有。
 
 两轮工具总用时分别为 31.02 秒与 31.57 秒，三个场景均为 Measured，Complete 为 true；渲染尺寸均为 1280×720。TAA、VirtualShadows、AsyncCompute、场景行为、JIT 配置及采样方式一致。
 
@@ -118,7 +116,7 @@ RTX 3080 上，十组 GPU 颜色验证的最大通道误差为 0.003386。8 个�
 
 ## 同负载方法对照：2026-10-15
 
-[十二种负载、六种实现的完整测量](Transparency-Comparison-2026-10-15.json) 包含 72 组结果。GPU 时间为 RTX 3080、1280×720；误差以 128×128 全部覆盖点的标准排序合成为参考。所有输出为 RGBA16F，背景 RGB 为 0.125。新增 GPU 数据包含方法几何、常量和中间资源的有效字节，共同的输入颜色与深度由既有路径提供。
+[十二种负载、六种实现的完整测量](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d) 包含 72 组结果。GPU 时间为 RTX 3080、1280×720；误差以 128×128 全部覆盖点的标准排序合成为参考。所有输出为 RGBA16F，背景 RGB 为 0.125。新增 GPU 数据包含方法几何、常量和中间资源的有效字节，共同的输入颜色与深度由既有路径提供。
 
 各方法连续提交 32 帧预热、24 帧采样。每组方法计时前累计至少 250 ms GPU 预热，记录的 GPU 核心时钟为 1950–1980 MHz，显存时钟为 9501 MHz。背景通过相同 compute 写入后进入计时；GPU timestamp 覆盖方法所需清空、光栅绘制、屏障与最终合成。固定投影几何、树构建、shader 编译与排序容量统计在初始化交付。
 
@@ -154,13 +152,11 @@ GPU 时间的方向变化对应实际几何条件与算法路径。8 个常色�
 
 72 组输出均为有限值；覆盖遍历的最大通道误差为 0.003541，完整排序为 0.000488。排序误差落在输出舍入量级，覆盖遍历误差包含尾部近似。signed RGB bias、平均绝对误差、RMSE、最大误差、分 pass GPU 时间和容量信息由测量 JSON 持有。
 
-四项公共行为检查通过。当前覆盖遍历实现经 DefaultGame 统一平台完成 1024 小球、Sponza、Amazon Bistro，工具用时 29.95 秒，三个场景均为 Measured、Complete 为 true，Release NativeAOT、1280×720。该集成记录的帧均值分别为 3.75、3.33、6.38 ms；六种方法的同负载比较沿上方独立 GPU 算子测量读取。[当前实现的三场景集成记录](Transparency-Comparison-Scenes-2026-10-15.json)
-
-![同负载下 GPU 时间、图像误差与新增数据](Transparency-Comparison-2026-10-15.png)
+四项公共行为检查通过。当前覆盖遍历实现经 DefaultGame 统一平台完成 1024 小球、Sponza、Amazon Bistro，工具用时 29.95 秒，三个场景均为 Measured、Complete 为 true，Release NativeAOT、1280×720。该集成记录的帧均值分别为 3.75、3.33、6.38 ms；六种方法的同负载比较沿上方独立 GPU 算子测量读取。[当前实现的三场景集成记录](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)
 
 ## 材质颜色变化对照：2026-10-15
 
-[同一轮的常色与异色材质对照](Transparency-Material-Comparison-2026-10-15.json) 保持 8 个球体、1,344 个三角形、模型深度间隔 0.075 与 alpha 0.5。异色组根据三角形法线和同一方向光改变 RGB；几何和 alpha 与常色组一致。两组实际片元数均为 1,990,820，单像素峰值均为 16。
+[同一轮的常色与异色材质对照](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d) 保持 8 个球体、1,344 个三角形、模型深度间隔 0.075 与 alpha 0.5。异色组根据三角形法线和同一方向光改变 RGB；几何和 alpha 与常色组一致。两组实际片元数均为 1,990,820，单像素峰值均为 16。
 
 RTX 3080 上使用同一测量入口，GPU 时间为 1280×720、32 帧预热、24 帧采样；记录的核心时钟为 1965–1980 MHz，显存时钟为 9501 MHz。十二组颜色与时间对照完成，覆盖遍历的异色最大通道误差为 0.003531，RMSE 为 0.000968。
 
@@ -179,7 +175,7 @@ RTX 3080 上使用同一测量入口，GPU 时间为 1280×720、32 帧预热、
 
 ## 异色路径的几何证明优化：2026-10-15
 
-[当前实现的完整测量](Transparency-Progress-Comparison-2026-10-15.json) 包含十三种负载、六种方法的 78 组结果。交叠路径使用一次覆盖证明、屏幕 XY 查询树、已完成覆盖缓存与后续最小深度；深度分离路径直接推进实际覆盖区间。两条路径的颜色来自命中三角形，覆盖证明独立于颜色。
+[当前实现的完整测量](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d) 包含十三种负载、六种方法的 78 组结果。交叠路径使用一次覆盖证明、屏幕 XY 查询树、已完成覆盖缓存与后续最小深度；深度分离路径直接推进实际覆盖区间。两条路径的颜色来自命中三角形，覆盖证明独立于颜色。
 
 | 负载 | 前一版 GPU ms | 当前 GPU ms | 时间减少 |
 | --- | ---: | ---: | ---: |
@@ -193,7 +189,7 @@ RTX 3080 上使用同一测量入口，GPU 时间为 1280×720、32 帧预热、
 
 完整矩阵采用相同 RTX 3080、1280×720 GPU 时间、128×128 质量图、32 帧方法预热和 24 帧采样。背景、几何、alpha、颜色和各对照算法保持相同；本次修改后的深度分离分支单独测量面板负载，其余球体负载沿同次完整矩阵读取。JSON 的 MeasurementGroups 保存两组测量时间。78 组颜色对照通过，四项公共行为检查通过。
 
-DefaultGame 的统一场景透明输入采用同一组异色交叠球体。前后版本保持该输入、分辨率、场景行为、渲染选项、Release NativeAOT 和采样方式；对应结果由 [异色输入的三场景记录](Transparency-Progress-Scenes-2026-10-15.json) 持有。
+DefaultGame 的统一场景透明输入采用同一组异色交叠球体。前后版本保持该输入、分辨率、场景行为、渲染选项、Release NativeAOT 和采样方式；对应结果由 [异色输入的三场景记录](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d) 持有。
 
 | 场景 | 前一版帧均值 ms | 当前帧均值 ms |
 | --- | ---: | ---: |

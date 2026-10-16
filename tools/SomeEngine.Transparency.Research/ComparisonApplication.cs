@@ -10,7 +10,7 @@ public static class ComparisonApplication
 {
     public static int Run(string[] args)
     {
-        string output = Path.GetFullPath(args.Length == 0 ? "wiki/architecture/rendering/Transparency-Comparison-2026-10-15.json" : args[0]);
+        string output = Path.GetFullPath(args.Length == 0 ? "artifacts/transparency-comparison.json" : args[0]);
         string[] selected = args.Skip(1).ToArray();
         bool rgba8 = selected.Contains("--rgba8");
         bool tilesOnly = selected.Contains("--tiles-only");

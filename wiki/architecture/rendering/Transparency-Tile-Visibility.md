@@ -1,5 +1,7 @@
 # Tile visibility OIT
 
+本文保留研究阶段的配置、结论与正式接入说明，历史实验通过既有[研究提交 ce13d11d](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)读取。复现结果写入当轮 `artifacts` 文件，调用方读取后立即删除。
+
 2026-10-15 的实现把透明图元引用保存在连续 tile 数组中，像素在寄存器中提取最近交点，工作组通过 shared memory 共享覆盖与深度数据。排序通过 wave shuffle 交换同一 wave 内的键与引用，跨 wave 交换使用 shared memory。硬件光栅和软件光栅共用数据与合成器。处理终点由剩余几何和颜色误差阈值决定。
 
 当前可执行输入是研究材质生成的投影三角形、每三角形颜色和 alpha。模型内部异色、相交表面与多种 alpha 均进入比较。DefaultGame 在已有 opaque visibility 着色之后、TAA 之前安装持久透明 pass，直接合成当前场景颜色，读取已有 opaque 深度。
@@ -80,9 +82,7 @@ wave 的 lane 交换语义见 [Microsoft WaveReadLaneAt 文档](https://learn.mi
 | 128 平面，alpha 0.9 | 0.164864 | 0.126976 | 0.888832 | 0.860160 | 0.000530 |
 | 8 个内部异色相交球体，alpha 0.5 | 0.069632 | 0.064512 | 0.080896 | 0.079872 | 0.001797 |
 
-![同进程配对的软件与硬件耗时变化](Transparency-Tile-Optimization-2026-10-15.png)
-
-完整实验与最终原版 shader 源码见 [本轮优化证据](Transparency-Tile-Optimization-2026-10-15.json)。原版源码保存在最终结果的 `ReferenceShaderSource` 中，可通过测量入口的 `--tile-reference` 复现配对比较。下方八种方法与 Lucid 对照保留首轮时间，分别对应各自测量时的实现和输入颜色格式。
+完整实验与最终原版 shader 源码见 [本轮优化证据](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)。原版源码保存在最终结果的 `ReferenceShaderSource` 中，可通过测量入口的 `--tile-reference` 复现配对比较。下方八种方法与 Lucid 对照保留首轮时间，分别对应各自测量时的实现和输入颜色格式。
 
 ## 首轮同机比较
 
@@ -90,9 +90,7 @@ wave 的 lane 交换语义见 [Microsoft WaveReadLaneAt 文档](https://learn.mi
 
 本实现通过 Direct3D12 提交，原生 Lucid 通过 Vulkan 提交。对照图使用共同 RGBA8 输入：
 
-![同输入时间、颜色误差和显存比较](Transparency-Tile-Lucid-2026-10-15.png)
-
-[八种方法的原始证据](Transparency-Tile-Comparison-2026-10-15.json) 包含 13 组几何、alpha、内部异色组合，共 104 条结果。以下采用每三角形 RGBA32F 输入，时间为 GPU 中位数，显存包含源几何和中间存储。
+[八种方法的原始证据](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d) 包含 13 组几何、alpha、内部异色组合，共 104 条结果。以下采用每三角形 RGBA32F 输入，时间为 GPU 中位数，显存包含源几何和中间存储。
 
 | 8 个内部异色、相交球体，alpha 0.5 | GPU ms | 额外 MiB | 最大颜色误差 |
 | --- | ---: | ---: | ---: |
@@ -129,7 +127,7 @@ Lucid 的几何与 bin 引用分配按实际输入收紧，scratch 保留作者�
 
 硬件路径在 128 平面、alpha 0.9 时，覆盖收集约 0.744 ms、合成约 0.144 ms；软件路径合计约 0.164 ms。该负载中深层透明片元的掩码原子写入主导硬件成本，软件路径通过有证书的前缀提取提前完成像素。两条路径共同保留，以便依据材质、几何尺寸和已有硬件绘制选择入口。
 
-完整数据分别见 [同输入 tile 测量](Transparency-Lucid-Tile-2026-10-15.json) 与 [原生 Lucid 测量](Transparency-Lucid-Reference-2026-10-15.json)。跨平台、动态几何构建、通用材质着色与图元密度变化的结论，采用各自完整输入准备和整帧测量作为验收范围。
+完整数据分别见 [同输入 tile 测量](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d) 与 [原生 Lucid 测量](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)。跨平台、动态几何构建、通用材质着色与图元密度变化的结论，采用各自完整输入准备和整帧测量作为验收范围。
 
 ## Visibility 与持久图接入
 
@@ -145,7 +143,7 @@ Lucid 的几何与 bin 引用分配按实际输入收紧，scratch 保留作者�
 | Sponza | 3.1072 | 3.0336 | 3.1605 |
 | Amazon Bistro | 6.5487 | 6.4126 | 6.5467 |
 
-三次运行使用同一 NativeAOT 发布、1280×720 分辨率、相同场景行为与渲染选项，trace 关闭。整帧结果保留 CPU 提交、流送与呈现的共同成本，收益判断分别沿整帧与算子两组指标读取。原始证据见 [统一场景结果](Transparency-Tile-Scenes-2026-10-15.json)。
+三次运行使用同一 NativeAOT 发布、1280×720 分辨率、相同场景行为与渲染选项，trace 关闭。整帧结果保留 CPU 提交、流送与呈现的共同成本，收益判断分别沿整帧与算子两组指标读取。原始证据见 [统一场景结果](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)。
 
 ## 本轮统一场景验证
 
@@ -161,7 +159,7 @@ Lucid 的几何与 bin 引用分配按实际输入收紧，scratch 保留作者�
 
 软件整帧中位数下降约 0.51%～0.67%；Sponza 平均值和 P95 分别上升约 0.0614、0.0367 ms。完整帧包含 CPU 提交、流送和呈现的变化；本轮算法优化的主要证据是同进程配对的透明 GPU 算子时长。硬件列记录最终配置的整帧表现。
 
-四项透明合成行为检查通过，测量入口完成 52 条 GPU 颜色与性能对照。原始场景统计和共同渲染设置见 [本轮场景结果](Transparency-Tile-Optimization-Scenes-2026-10-15.json)。
+四项透明合成行为检查通过，测量入口完成 52 条 GPU 颜色与性能对照。原始场景统计和共同渲染设置见 [本轮场景结果](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)。
 
 ## 手动混合与 X-ray 的扩展目标
 
@@ -297,8 +295,6 @@ GPU 时间分辨率为 1280×720，每条路径按 GPU 估算时间设置目标 
 | 32 贴花 | 0.020480 | 0.028672 | 0.025600 | 0.022528 | 慢 25.0%，增加 0.005120 |
 | 128 贴花 | 0.069632 | 0.066560 | 0.034816 | 0.032768 | 快 50.0%，节省 0.034816 |
 
-![四条路径的 GPU 时间](Transparency-Cluster-Effects-2026-10-15.png)
-
 深度索引每帧刷新约 0.002–0.003 ms。收益由有效候选的削减量决定：大量深度分离的覆盖适合 cluster；较少覆盖、较少材质工作和较宽 X-ray 查询区间适合硬件前向。二维软件 tile 的重叠扫描成本显著，XYZ 深度条件在材质求值之前排除大批候选。
 
 ### 显存与误差
@@ -316,9 +312,7 @@ GPU 时间分辨率为 1280×720，每条路径按 GPU 估算时间设置目标 
 
 图像以 128×128 的同顺序硬件前向为参考。32 项检查全部通过；最大 RGB 差为 0.0021973，最大 RGB RMSE 为 0.0002388，重复帧差为 0。Tile、Cluster 与 ClusterCached 在各输入上产生相同误差，误差来自覆盖插值和 FP16 混合舍入。Compute 在每次混合后舍入到 FP16。候选查询保留各效果所需的完整覆盖。
 
-DefaultGame 的第 160 帧图像对照如下。图像采集使用同步帧、相同固定时间步，并关闭 TAA 与 VSM，以独立比较当前帧效果；性能测试继续启用 TAA 与 VSM。1280×720 下，X-ray 的 RGB RMSE 为 0.0001952，贴花为 0.0002488，最大通道差均为 1/255。1024 小球场景的效果深度整体平移 32，使效果覆盖相机前约 68 处的球体表面。含 TAA/VSM 的跨进程预览差异另存于 JSON 的 `TemporalImageComparisons`。
-
-![DefaultGame 的 X-ray 与颜色贴花](Transparency-Cluster-Effects-Images-2026-10-15.png)
+DefaultGame 的图像对照采集第 160 帧，使用同步帧、相同固定时间步，并关闭 TAA 与 VSM，以独立比较当前帧效果；性能测试继续启用 TAA 与 VSM。1280×720 下，X-ray 的 RGB RMSE 为 0.0001952，贴花为 0.0002488，最大通道差均为 1/255。1024 小球场景的效果深度整体平移 32，使效果覆盖相机前约 68 处的球体表面。含 TAA/VSM 的跨进程预览差异保留在历史研究提交的 `TemporalImageComparisons`。
 
 ### 统一三场景整帧反馈
 
@@ -352,10 +346,10 @@ Z 占用位集提高了深度不连续场景的候选筛选效率。整帧结果
 
 最终占用位集版本通过 `WaveActiveBitOr` 保留波内深度空隙。它与前一版最小/最大范围查询的完整 GPU 与三场景对照保存在 variants 报告的同名实验中；最后一项保存独立索引准备的图顺序对照。相同输入下的覆盖、材质、混合次序和存储保持一致。
 
-- [最终 GPU 时间、显存、质量与采样设置](Transparency-Cluster-Effects-2026-10-15.json)
-- [密集 Z 位集首版及源码](Transparency-Cluster-Effects-Dense-2026-10-15.json)
-- [紧凑表示和 wave 对照及源码](Transparency-Cluster-Effects-Variants-2026-10-15.json)
-- [统一三场景端到端记录](Transparency-Cluster-Effects-Scenes-2026-10-15.json)
+- [最终 GPU 时间、显存、质量与采样设置](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)
+- [密集 Z 位集首版及源码](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)
+- [紧凑表示和 wave 对照及源码](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)
+- [统一三场景端到端记录](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)
 
 ## 2026-10-16 性能基线与效果场景
 
@@ -400,13 +394,9 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 
 30 项图像比较全部满足最大通道差 0.003、RMSE 0.0005 的检查值；实际最大差为 0.0019531，重复帧差均为 0。原版与当前版在各效果输入中具有相同图像误差。
 
-![效果专项 GPU 时间](Transparency-Workloads-2026-10-16.png)
-
 ### OIT 的场景对照
 
 三类输入均对照完整排序颜色，执行八种方法。软件 tile 在玻璃、烟雾和植被中分别为 0.185344、0.051200、0.040960 ms；硬件 tile 分别为 0.233472、0.061440、0.045056 ms。具体中位数、P95、阶段计时、显存与图像误差保存在本轮 JSON。两种 tile 的最大通道差分别约为 0.000488、0.000242、0.000422。
-
-![OIT 场景 GPU 时间](Transparency-OIT-Workloads-2026-10-16.png)
 
 ### 统一三场景反馈
 
@@ -425,7 +415,7 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 | 交错玻璃，软件 tile | 2.1413 | 4.6690 | 5.0990 |
 | 交错玻璃，硬件 tile | 2.1213 | 4.7000 | 5.1814 |
 
-逐帧数据和相应模拟帧区间保存在 [统一场景原始数据](Transparency-Workload-Scenes-2026-10-16.json)。复现工具为 `tools/Measure-Transparency.ps1`，该工具逐组调用 `tools/Measure-Scenes.ps1`，归档结果并恢复场景配置。
+逐帧数据和相应模拟帧区间保存在 [统一场景原始数据](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)。复现工具为 `tools/Measure-Transparency.ps1`，该工具逐组调用 `tools/Measure-Scenes.ps1`，输出当轮结果并恢复场景配置。
 
 ### 验收与接入
 
@@ -441,9 +431,9 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 | [#227](https://github.com/ODtian/SomeEngine.Next/issues/227) | 手动混合与 stencil | #224 |
 | [#228](https://github.com/ODtian/SomeEngine.Next/issues/228) | 统一场景验收并启用正式功能 | #223、#225、#226、#227 |
 
-- [效果专项原始数据及两份 resolver 源码](Transparency-Workloads-2026-10-16.json)
-- [优化过程中的配对数据](Transparency-Workload-Variants-2026-10-16.json)
-- [OIT 八种方法的场景对照](Transparency-OIT-Workloads-2026-10-16.json)
+- [效果专项原始数据及两份 resolver 源码](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)
+- [优化过程中的配对数据](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)
+- [OIT 八种方法的场景对照](https://github.com/ODtian/SomeEngine.Next/commit/ce13d11d)
 
 ## 2026-10-16 Cluster 完整材质 OIT 接入
 

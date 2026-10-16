@@ -1,9 +1,11 @@
 param(
     [Parameter(Mandatory)][string]$ApplicationPath,
     [string]$ReferenceShaderPath,
-    [string]$OutputPath = 'wiki/architecture/rendering/Transparency-Workload-Scenes-2026-10-16.json'
+    [string]$OutputPath = 'artifacts/transparency-scenes.json'
 )
 $ErrorActionPreference = 'Stop'
+$OutputPath = [IO.Path]::GetFullPath($OutputPath)
+[void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($OutputPath))
 $application = [IO.Path]::GetFullPath($ApplicationPath)
 $applicationDirectory = [IO.Path]::GetDirectoryName($application)
 $sceneSettingsPath = Join-Path $applicationDirectory 'test-scenes.json'

@@ -65,6 +65,8 @@ GraphPassId completed = attachment.Import(ref edit, hardwarePass);
 
 效果脚本调用 `tools/Measure-Scenes.ps1`，每次同时测量 1024 小球、Sponza、Amazon Bistro，以完整且收敛的三场景报告交付对照。默认对八类效果逐一配对 XY 与 XYZ：XY 保留屏幕 tile 内的候选，XYZ 继续按深度切片筛选。每个场景采集固定的 64 个模拟帧，Wave/Phong 从第 192 帧开始；各效果的窗口由脚本统一指定。`-Methods full,xy,xyz` 可加入逐像素完整遍历作为图像和工作量参考。配对固定分辨率、模拟帧、场景行为、渲染配置、编译配置与采样。内容构建单列；trace 定位单列。
 
+测量结果用于当轮读取：`Measure-ClusterEffects.ps1` 默认写入 `artifacts/cluster-blend-scenes.json`，研究场景脚本写入 `artifacts/transparency-scenes.json`，研究应用的两组对照分别写入 `artifacts/transparency-comparison.json` 与 `artifacts/transparency-effects.json`。调用方读取结果后立即删除对应 JSON，图像与日志沿同一使用周期清理。
+
 ## X-ray
 
 网格实体的 `Xray` 组件分别持有可见侧与遮挡侧的颜色倍率、透明度，以及遮挡距离区间。编辑入口与其他游戏数据一致：

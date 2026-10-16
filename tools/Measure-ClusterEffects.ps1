@@ -5,9 +5,11 @@ param(
     [hashtable]$FirstFrames,
     [int]$FrameCount = 64,
     [switch]$Static,
-    [string]$OutputPath = 'wiki/architecture/rendering/Cluster-Blend-Scenes-2026-10-16.json'
+    [string]$OutputPath = 'artifacts/cluster-blend-scenes.json'
 )
 $ErrorActionPreference = 'Stop'
+$OutputPath = [IO.Path]::GetFullPath($OutputPath)
+[void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($OutputPath))
 $application = [IO.Path]::GetFullPath($ApplicationPath)
 $applicationDirectory = [IO.Path]::GetDirectoryName($application)
 $sceneSettingsPath = Join-Path $applicationDirectory 'test-scenes.json'

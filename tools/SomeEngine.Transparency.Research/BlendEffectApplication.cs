@@ -12,7 +12,7 @@ public static class BlendEffectApplication
     public static int Run(string[] args)
     {
         string output = Path.GetFullPath(args.Length == 0
-            ? "wiki/architecture/rendering/Transparency-Cluster-Effects-2026-10-15.json" : args[0]);
+            ? "artifacts/transparency-effects.json" : args[0]);
         bool validate = args.Contains("--validate");
         string? referencePath = args.FirstOrDefault(static value => value.StartsWith("--blend-reference="))?["--blend-reference=".Length..];
         string[] selected = args.Skip(1).Where(static value => !value.StartsWith("--")).ToArray();
