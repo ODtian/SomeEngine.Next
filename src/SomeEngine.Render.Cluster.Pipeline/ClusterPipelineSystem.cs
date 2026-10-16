@@ -673,7 +673,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 }
             }
 
-            BindTransparencyFrame(ref graph, batch, views[..primaryViewCount], writeGeometry);
+            BindTransparencyFrame(ref graph, batch, views[..primaryViewCount], binding.Publication is not null);
             GraphData.Outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRange);
             _residentPageReads = GraphData.Outputs.Geometry.ResidentPageReads;
             _hasPendingFrame = true;
