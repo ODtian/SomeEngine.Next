@@ -145,6 +145,32 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         Assert.Same(texture, render.Read<RenderLightCookie>(mirror).Texture);
     }
 
+    [Fact]
+    public void TextureAllocationChangesCrossTheExistingExtractionBoundary()
+    {
+        using World game = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
+        Texture texture = TextureAsset(93, 1);
+        using var material = new StandardMaterial { AlbedoMap = texture };
+        Entity source = AddMeshSource(game, MeshAsset(5, 1), 0, Vector3.Zero);
+        SetSourceBindings(game, source, material, default!, 1);
+        ExtractAndApply(extraction, game, render);
+        TextureVersions before = render.ReadTextureVersions(texture);
+        _ = graphics.RenderDevice.GetTexture(texture);
+        Assert.True(texture.Versions.Allocation > before.Allocation);
+        Assert.Equal(before, render.ReadTextureVersions(texture));
+        extraction.Extract(game);
+        graphics.Apply(extraction, render);
+        TextureVersions allocated = render.ReadTextureVersions(texture);
+        Assert.Equal(texture.Versions, allocated);
+        graphics.RenderDevice.ReleaseTexture(texture);
+        Assert.Equal(allocated, render.ReadTextureVersions(texture));
+        ExtractAndApply(extraction, game, render);
+        Assert.True(render.ReadTextureVersions(texture).Allocation > allocated.Allocation);
+        Assert.Equal(before.Content, render.ReadTextureVersions(texture).Content);
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(129)]

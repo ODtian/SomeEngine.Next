@@ -19,20 +19,20 @@ public sealed class TextureTests
     }
 
     [Fact]
-    public void ReadyPixelsSurviveTextureDisposal()
+    public void ReadyPixelsRemainSharedAcrossOrdinaryTextureReferences()
     {
         TextureMipTile fine = Tile(0, 4);
         TextureMipTile coarse = Tile(1, 2);
         var pixels = new List<TexturePixels>();
         pixels.Add(new(coarse, Enumerable.Repeat((byte)7, 16).ToArray()));
-        using var texture = Create([fine, coarse], pixels);
+        var texture = Create([fine, coarse], pixels);
         Assert.True(texture.HasBootstrap);
         Assert.False(texture.TryGetTile(fine.ChunkKey, out _));
         Assert.True(texture.TryGetTile(coarse.ChunkKey, out ReadOnlyMemory<byte> read));
-                {
-            texture.Dispose();
-            Assert.Equal(Enumerable.Repeat((byte)7, 16), read.ToArray());
-        }
+        Texture shared = texture;
+        Assert.True(shared.TryGetTile(coarse.ChunkKey, out ReadOnlyMemory<byte> sharedRead));
+        Assert.True(read.Equals(sharedRead));
+        Assert.Equal(Enumerable.Repeat((byte)7, 16), read.ToArray());
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public sealed class TextureTests
         TextureMipTile fine = Tile(0, 4), coarse = Tile(1, 2);
         var initial = new List<TexturePixels>();
         initial.Add(new(coarse, Enumerable.Repeat((byte)7, 16).ToArray()));
-        using var texture = Create([fine, coarse], initial);
+        var texture = Create([fine, coarse], initial);
         ulong revision = texture.Revision;
         ulong pixelsRevision = texture.PixelsRevision;
         var additional = new List<TexturePixels>();
@@ -53,27 +53,25 @@ public sealed class TextureTests
         Assert.True(texture.TryGetTile(fine.ChunkKey, out ReadOnlyMemory<byte> fineRead));
         Assert.Equal(Enumerable.Repeat((byte)9, 64), fineRead.ToArray());
         Assert.True(texture.TryGetTile(coarse.ChunkKey, out ReadOnlyMemory<byte> oldRead));
-                {
-            Texture replacement = Texture.Create(new(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
-                    Format.R8G8B8A8UNorm, TextureUsages.Sampled),
-                [new TexturePixels(Tile(0, 1), new byte[] { 1, 2, 3, 4 })], GraphicsViewDimension.Texture2D);
-            await texture.UpdateAsync(replacement);
-            Assert.True(replacement.IsDisposed);
-            Assert.Equal(revision + 1, texture.Revision);
-            Assert.Equal(1u, texture.Width);
-            Assert.Equal(Enumerable.Repeat((byte)7, 16), oldRead.ToArray());
-            Assert.Throws<InvalidOperationException>(() => texture.AddPixels(additional, revision));
-        }
+        Texture replacement = Texture.Create(new(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
+                Format.R8G8B8A8UNorm, TextureUsages.Sampled),
+            [new TexturePixels(Tile(0, 1), new byte[] { 1, 2, 3, 4 })], GraphicsViewDimension.Texture2D);
+        await texture.UpdateAsync(replacement);
+        Assert.True(replacement.TryGetTile(replacement.MipTiles[0].ChunkKey, out _));
+        Assert.Equal(revision + 1, texture.Revision);
+        Assert.Equal(1u, texture.Width);
+        Assert.Equal(Enumerable.Repeat((byte)7, 16), oldRead.ToArray());
+        Assert.Throws<InvalidOperationException>(() => texture.AddPixels(additional, revision));
     }
 
     [Fact]
-    public async Task CanceledReplacementClosesOnlyTheReplacement()
+    public async Task CanceledReplacementKeepsBothTexturesAvailable()
     {
-        using var original = SinglePixel(3);
+        var original = SinglePixel(3);
         var replacement = SinglePixel(9);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => original.UpdateAsync(replacement, new(true)).AsTask());
-        Assert.True(replacement.IsDisposed);
-        Assert.False(original.IsDisposed);
+        Assert.True(replacement.TryGetTile(replacement.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> replacementPixels));
+        Assert.Equal(new byte[] { 9, 9, 9, 9 }, replacementPixels.ToArray());
         Assert.Equal(1ul, original.Revision);
         Assert.True(original.TryGetTile(original.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> pixels));
         Assert.Equal(new byte[] { 3, 3, 3, 3 }, pixels.ToArray());
@@ -114,7 +112,7 @@ public sealed class TextureTests
                 Width = 2, Height = 2, ArrayLayer = layer, Face = face, DepthSlice = slice,
                 RowPitch = 2, SlicePitch = 4,
             }, Enumerable.Repeat(checked((byte)(inputs.Count + 1)), 4).ToArray()));
-        using var texture = Texture.Create(new(volume ? TextureDimension.Texture3D : TextureDimension.Texture2D,
+        var texture = Texture.Create(new(volume ? TextureDimension.Texture3D : TextureDimension.Texture2D,
             2, 2, depth, 1, layers, 1, Format.R8UNorm, TextureUsages.Sampled), inputs, view);
         Assert.Equal(layers, texture.GetDescription().ArrayLayerCount);
         Assert.Equal(depth, texture.Depth);
@@ -125,7 +123,6 @@ public sealed class TextureTests
             Assert.True(texture.TryGetTile(tile.ChunkKey, out ReadOnlyMemory<byte> bytes));
             Assert.Equal(inputs[index].Bytes.ToArray(), bytes.ToArray());
         }
-        texture.Dispose();
     }
     private static Texture SinglePixel(byte value)
         => Texture.Create(new(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,

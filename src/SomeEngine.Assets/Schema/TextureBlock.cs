@@ -81,7 +81,6 @@ public sealed partial class TextureBlock : AssetBlock
     public async ValueTask LoadMipAsync(EngineTexture texture, uint mipLevel, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(texture);
-        ObjectDisposedException.ThrowIf(texture.IsDisposed, texture);
         using TextureBlock copy = Duplicate();
         var content = copy.ReadTiles();
         if (mipLevel >= copy.MipLevelCount) throw new ArgumentOutOfRangeException(nameof(mipLevel));
@@ -107,8 +106,7 @@ public sealed partial class TextureBlock : AssetBlock
     public async ValueTask UpdateAsync(EngineTexture texture, string? name = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(texture);
-        ObjectDisposedException.ThrowIf(texture.IsDisposed, texture);
-        await using EngineTexture replacement = await CreateAsync(name, cancellationToken).ConfigureAwait(false);
+        EngineTexture replacement = await CreateAsync(name, cancellationToken).ConfigureAwait(false);
         await texture.UpdateAsync(replacement, cancellationToken).ConfigureAwait(false);
     }
 
