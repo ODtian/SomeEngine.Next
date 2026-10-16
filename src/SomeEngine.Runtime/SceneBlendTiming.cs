@@ -7,8 +7,8 @@ public sealed partial class SceneTestPlatform
     private const string BlendTimingScopes =
         "GPU milliseconds on the graphics queue, matched to the recorded SimulationFrame. " +
         "ProjectionIndexMs covers geometry projection and candidate-index construction; " +
-        "CoverageReceiverMs covers hit coverage and shadow-receiver requests; " +
-        "MaterialCompositeMs covers user-material evaluation and color/state composition. " +
+        "CoverageReceiverMs covers hit coverage for shadow-receiver requests; " +
+        "MaterialCompositeMs covers covered-hit selection, user-material evaluation and color/state composition. " +
         "These intervals are separate from presented-frame elapsed and CPU stage times. " +
         "UsedBytes counts active effect records and index/state buffers; CapacityBytes counts their buffer descriptions; " +
         "AllocationBytes counts their device-local allocation requirements. Shared shader parameters use the existing uniform arena. " +
