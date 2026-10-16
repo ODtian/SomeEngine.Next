@@ -49,7 +49,7 @@ public static class Easing
         EasingType.ElasticOut => &ElasticOut.Sample,
         EasingType.ElasticInOut => &ElasticInOut.Sample,
         EasingType.BounceIn => &BounceIn.Sample,
-        EasingType.BounceOut => &BounceOut.Sample,
+        EasingType.BounceOut => &global::SomeEngine.Animation.BounceOut.Sample,
         EasingType.BounceInOut => &BounceInOut.Sample,
         _ => &Linear.Sample,
     };
