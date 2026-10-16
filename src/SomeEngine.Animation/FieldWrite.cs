@@ -5,7 +5,12 @@ using SomeEngine.ECS.Entities;
 namespace SomeEngine.Animation;
 
 /// <summary>A final field value ready for its generated typed write batch.</summary>
-public readonly record struct FieldWrite<T>(Entity Target, Channel<T> Channel, T Value) where T : unmanaged;
+public readonly struct FieldWrite<T>(Entity target, Channel<T> channel, T value) where T : unmanaged
+{
+    public readonly Entity Target = target;
+    public readonly Channel<T> Channel = channel;
+    public readonly T Value = value;
+}
 
 internal static class FieldWrites<T> where T : unmanaged
 {

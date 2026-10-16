@@ -1,95 +1,66 @@
 # Property Animation
 
-## Definition
-属性动画在 `SomeEngine.Animation` 中实现。通道按组件编号与字节偏移定位 unmanaged 组件字段，轨道缓冲持有值、曲线与采样状态，普通 ECS 系统完成求值。使用者包括界面、FLIP 和游戏中的各种渐变。
+属性动画以 `Channel<T>` 定位组件字段，叶值为 unmanaged，组件根为 ECS struct，根内可持有对象引用。时间线、来源输出和具体算法状态分别持有自己的数据。
 
 ```csharp
-public readonly struct Channel<T> : IEquatable<Channel<T>> where T : unmanaged
+[GenerateFields]
+[ComponentField("Style.Corner.Radius", Name = "Radius")]
+[ComponentField(typeof(CustomOpacity), "Custom")]
+public struct PanelData : IComponent
 {
-    public readonly ushort Component;
-    public readonly ushort Offset;
-    public static Channel<T> Of<TComponent>(FieldRef<TComponent, T> field) where TComponent : unmanaged, IComponent;
-}
-public delegate ref TValue FieldRef<TComponent, TValue>(ref TComponent component);
-
-public enum TrackEndpoints : byte { Values, Displacement, DisplacementValues }
-
-[BufferCapacity(4)]
-public struct Track<T> : IBufferElement where T : unmanaged
-{
-    public Entity Target;                 // Entity.Null：写本实体
-    public Channel<T> Channel;
-    public T From, To, Current, Velocity;
-    public float Start, Duration, SampleTime;
-    public Curve Curve;
-    public ushort Stage;
-    public byte Layer;
-    public TrackEndpoints Endpoints;
-    public uint StartId;
-    public bool Finished;
-    public bool CaptureStart, FromGraph;
-    public int GraphMotion, GraphGroup;
-    public ushort MotionStage;
-    public uint MotionStartId;
-    public T Displacement;
+    public float Opacity;
+    public Style Style;
+    public float Width { get; set; }
 }
 
-public struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Properties) : ISystem<ImmediateSystemContext>
-    where T : unmanaged
-    where TOps : struct, IValueOps<T>;
-
-public static partial class PropertyAnimation
-{
-    public static void Declare<T>(World world, Entity entity) where T : unmanaged;
-    public static void SetBase<T>(World world, Entity target, Channel<T> channel, T value) where T : unmanaged;
-    public static Entity To<T>(World world, Entity target, Channel<T> channel, T value, Spec spec, byte layer = 0) where T : unmanaged;
-    public static Entity By<T>(World world, Entity target, Channel<T> channel, T delta, Spec spec, byte layer = 0) where T : unmanaged;
-    public static void Retarget<T>(World world, Entity animation, Channel<T> channel, T value) where T : unmanaged;
-    public static void Stop(World world, Entity animation);
-    public static void Pause(World world, Entity animation);
-    public static void Resume(World world, Entity animation);
-    public static void SetSpeed(World world, Entity animation, float speed);
-}
+var fade = Spec.Tween<float, FloatOps, CubicOut>(0.15f);
+var spring = Spec.Spring<float, FloatOps>(180f, 20f);
+PropertyAnimation.Declare(world, node, PanelDataChannels.Radius, fade);
+PropertyAnimation.Declare(world, node, PanelDataChannels.Radius, spring);
+Entity animation = PropertyAnimation.To(world, node, PanelDataChannels.Radius, 16f, spring);
+PropertyAnimation.Retarget(world, animation, PanelDataChannels.Radius, 8f);
 ```
 
-## Invariants
-- 使用者把 `Channel<T>.Of<TComponent>(field)` 的返回值保存为静态只读字段。创建时，在默认组件实例上调用字段引用函数一次，用 `Unsafe.ByteOffset` 得到偏移；求值消费组件编号与偏移数据。
-- `TrackSystem<T, TOps>` 是公开 struct 系统，与时间线系统使用相同的系统接口，使内置类型与用户类型通过相同的静态泛型路径求值。
-- 系统按块遍历带轨道缓冲和启用 `Timeline` 的实体，在块内处理选中的行。当前播放、当前阶段、持续求值的轨道采样线性、缓动、弹簧、关键帧或函数指针曲线，并设置属性求值运行位 `1`。
-- 一帧跨过固定时长阶段时，各类型求值系统按阶段顺序采样所经过的轨道。离开的阶段采样到边界，后续固定时长或外部阶段使用越界时间采样；新收敛阶段沿时间线规则交给下一帧。同一时间线、目标、通道和层提交最后到达的对应阶段值，单来源直接写入一次，多来源交给层合成写入一次。时间线的阶段与完成状态统一由收尾系统写回，完整跨过阶段表的帧先写完最终字段值再完成。
-- `SampleTime` 是弹簧上一次采样的阶段时间。弹簧步进使用本次时间与上次时间之差，暂停、游戏时钟暂停、时间缩放与速度变化均沿时间线产生效果。
-- tween 完成时写目标值；弹簧按 `TOps.Distance` 与曲线容差收敛并写目标值。`Finished` 表达轨道完成。
-  普通字段随后可由调用方继续修改；分层 `To` 的结束采样继续参与层合成，规则见 Animation Layers。
-- 图轨道用 `CaptureStart` 在区间起点形成起始值，用图内来源编号选择阶段与混合权重；完成的来源在图内等待与混合期间保留采样值。构建与共享规则见 [[architecture/animation/Animation-Graph|Animation Graph]]。
-- 关键帧存于动画实体的 `DynamicBuffer<Keyframe>`；调用方在初始化或配置实例时填充缓冲，`Spec.Keyframes` 选择其中的范围。
-- 入口是作用于 `World` 的静态函数和普通系统，轨道数据与 ECS 查询承担查找和放置。
+## 字段声明
 
-## Placement and controls
-- `Declare<T>` 声明目标上的 `Timeline` 与 `Track<T>` 缓冲。首次创建的时间线处于禁用状态；重复声明复用已有组件。调用方可在初始化时为其它值类型、阶段与关键帧一并声明所需缓冲。
-- 已声明内联存储的目标使用自身作为动画实体；普通目标使用池化动画实体。池通过 ECS 查询找到同类轨道缓冲上的空闲实体，扩容时创建实体，完成和停止时禁用时间线。
-- 空闲池化实体再次取用时，重置轨道、播放速度、时钟与阶段表，保留启动和完成计数。
-  持有结束层值的实例复用对应字段轨道，继续保留其它字段的层值。内联目标的时钟与速度配置由调用方持有。
-- 同一目标、同一通道、同一层上的新 `To` 复用对应值轨道。独立字段从当前呈现值出发；分层字段从该来源的当前采样值继续。当前弹簧重定到弹簧时保留速度。新增其它字段的轨道沿共享时间线的当前时间启动，其它字段保留自己的进度。
-  已完成的分层值轨道沿同一规则重定目标，完整权重与部分权重下的首个样本均保持呈现值连续。
-- 运行中首次声明内联存储后，下一个 `To` 转移到目标自身，接替池化轨道并保留当前弹簧速度。
-- `By` 表达一次衰减位移：独立字段以启动时字段值为终点，以该值加 `delta` 为起点；叠加层围绕调用方的基准值播放。泛型求值系统第一次采样时通过 `TOps.Add` 形成端点，并将 `Displacement` 改为 `DisplacementValues`，保留位移来源的身份。同层的多次 `By` 分别保留自己的轨道；空闲存储与池化实体继续承担复用。
-- `Retarget` 调整当前阶段中请求通道的活动轨道，沿用原曲线与时长，保留弹簧速度。同一实例有多个目标使用该通道时，全部匹配的活动轨道一起调整。开发检查要求启用的动画与匹配的活动通道。
-- `Stop` 保留已呈现的字段值并禁用时间线。`Pause` 和 `Resume` 修改 `Timeline.Paused`；`SetSpeed` 修改非负、有限的 `Timeline.Speed`，暂停期间可继续设置恢复后的速度。
-- 显式暂停时，属性求值保留呈现值与轨道状态并设置运行位；首个衰减位移样本也在恢复后求值。
-- `Timeline.Starts` 是启动计数；`Track.StartId` 记录所属播放。禁用后再次启动时增加计数，以当前播放编号选择轨道。这使停止后启动一个值类型的字段时，其它值类型的字段保留停止时的值。
-- 多目标共用一个池化时间线时，可通过公开轨道缓冲添加目标明确的轨道，并令 `StartId` 对应 `Timeline.Starts`。手工阶段轨道还需填写 `Stage`、端点、曲线与起始时间。
-- 外部目标销毁后，对应轨道完成；其余轨道继续求值。时间线收尾后池化实体继续可供复用，后续创建的实体保留自身字段值。
-- 单来源经轨道直接写字段；共享字段经目标的贡献缓冲和 `ComposeSystem<T, TOps>` 更新一次。`SetBase` 由调用方维护参考值，层的确定性顺序、权重动画、遮罩与外部求值入口见 [[architecture/animation/Animation-Layers|Animation Layers]]。
-- 启动、重定目标、暂停、停止、调速与缓冲元素变化保留实体的表格成员关系；存储声明与池扩容负责结构变化。
+共同的 ECS 生成器为 `[GenerateFields]` 组件生成 `PanelDataFields` 字段身份枚举、`PanelDataFieldAccess` 类型化访问和 `PanelDataChannels` 通道。普通公开字段与可写属性自动加入，`ComponentField` 补充嵌套路径与手写 `IFieldAccess<TComponent,TValue>`。同一声明中的编号从 1 自动分配。引用 Views 的消费者还获得 `PanelDataFieldTargets.SetRadius(node,value)` 等目标修饰器，经 `Scope.Set` 提交目标。
 
-## ECS field writes
+`Channel<T>` 的身份是 `Component + Field`，叶值类型由 T 保留。通道保存共享访问描述的索引；读取、写入、组件副本访问与批次函数地址由声明共享。可直接按 CLR 布局访问的字段路径在类型初始化时取得实际偏移，后续复用该偏移。嵌套值属性通过具体 C# 路径读取并回写中间值；引用路径在有效 ECS 访问范围内取得当前对象。
 
-`Channel<T>` stores the type number obtained from `ComponentId<TComponent>.Value`. Field updates use `World.WriteBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>())` and write the value with `Unsafe.WriteUnaligned`. Starting and retargeting capture the field through `World.ReadBytes` and `Unsafe.ReadUnaligned`, preserving its write version until sampling writes a value. The public byte access, write versions and development range checks are defined by [[architecture/ECS/Component-Bytes|Component Bytes]]. Generic track storage uses the existing `BufferCapacity(4)` attribute defined by [[architecture/ECS/Dynamic-Buffers|Dynamic Buffers]].
+```csharp
+T value = channel.Read(world, node);
+channel.Write(world, node, in value);
+T submitted = channel.ReadRoot(in componentCopy);
+channel.WriteRoot(ref componentCopy, in submitted);
+bool throughReference = channel.ThroughReference;
+```
 
-## Verification
-`tests/SomeEngine.Animation.Tests/PropertyAnimationTests.cs` 经公开 API 覆盖 tween 与弹簧的字段值和逐帧写版本、100 次内联启动/重定/停止的表格成员关系与实体数量、池化与多目标复用、弹簧速度连续性、位移、播放控制、自定义值运算、关键帧、函数指针、阶段轨道、目标销毁与覆盖层顺序。分层行为的验收入口为 `AnimationLayersTests.cs`。
+`ThroughReference` 表达组件副本与叶值之间的引用路径；手写访问默认采用该语义。Views 使用独立字段目标提交保存引用叶值。旧的 `Channel<T>.Of<TComponent>(FieldRef)` 继续提供原有偏移字段便利入口。
 
-稳态分配验收通过 `AnimationSystems.AddDefaults` 注册完整默认系统组，覆盖内联、池化目标和八个并发叠加位移；经公开 `SystemGroup.Update` 预热 512 帧后连续采样 128 帧，托管分配为 0 字节。调度的提交观察者由线程持有可复用栈，系统回调沿同一提交与清理边界进入和退出。NativeAOT 的 ECS 验收程序同时覆盖完整默认帧、字段只读版本、多个轨道类型跨阶段、池化复用与自定义值运算。
+## 声明与数据
 
-## Relations
-[[architecture/animation/Value-Ops|Value Ops]] · [[architecture/animation/Animation-Layers|Animation Layers]] · [[architecture/someui/Animation|SomeUI Animation]]
+完整的 `Spec<T,TOps,TParameters,TState,TEvaluator>` 保留到 `MotionInstance<T,TOps,TParameters,TState,TEvaluator>` 的实际 ECS 缓冲与 `TypedTrackSystem`。参数和状态采用 struct 约束，可包含托管引用。`MotionInstance` 的唯一 Data 字段保持连续的具体参数、状态、输入与采样结果，求值批次直接借用这段存储。
+
+`Declare(world,target,channel,spec,capacity,layer)` 建立目标内联时间线、共同轨道、具体算法容量、来源关系及生命周期入口。同一通道声明多个算法时共用通用轨道，各具体算法保有自己的类型化存储；多个通道的声明容量累计进入实际组合。具体算法状态默认内联 1 个元素，调用方按并发来源数声明容量。
+
+目标上的 `PropertySource<T>` 是来源关系的主要持有者：记录通道、层、动画实体与输出轨道。声明及显式 `RefreshSources<T>` 更新确定性顺序、基准值索引、遮罩成员与直接/合成方式，并把索引写回轨道。运行中的 To 在当前目标的已解析来源范围内定位。完成实例通过现有 ECS 池复用，首次放置与容量增长属于启动成本。
+
+通用轨道持有目标、端点、本来源 Current、层、阶段、具体状态索引与来源索引。Spring 的速度等算法历史存于相应 TState。来源缓存中的输出是供合成读取的派生值，主要采样值由轨道持有。
+
+## 控制和生命周期
+
+- To 从本来源当前输出继续；新来源从字段或叠加层基准捕获起点。By 从启动基准加位移开始，衰减回启动基准，叠加层保持围绕最新基准的位移。
+- 同算法改目标调用 Retarget，保留状态；参数变化调用 UpdateParameters。只有参数变化时保留原始时间与端点；相同参数和目标保留进度。叶值比较采用 TOps.Equals。
+- 已声明算法切换时，从当前来源输出初始化新状态，并调用原算法 Release。完成保留来源输出与算法历史，下一次同算法目标变化可继续历史；Stop、切换与池复用按各自回收点释放状态。
+- Retarget 使用已取得动画实体上的活动通道。Pause、Resume、SetSpeed 继续操作同一时间线。Stop 保留呈现值并禁用时间线。
+- Timeline 是时间、时钟、暂停、速度与事件计数的主要持有者。具体算法报告 MotionSample.Finished，共同收尾阶段汇总完成。
+
+## 执行与写回
+
+`AnimationSystems.Add(schedule,spec)` 进入共同阶段，时间线与图推进后先求值和合成层权重，再处理普通字段，最后统一收尾。查询执行入口使用 managed 函数指针，批内保留具体算法与值运算类型。
+
+单来源采用直接写回批次；固定多来源及分层值由 [[architecture/animation/Animation-Layers|Animation Layers]] 合成。`FieldWrite<T>` 保存最终字段值，`Channel.WriteBatch` 在共享访问入口后用具体根与 IFieldAccess 循环写入。写入沿 [[architecture/ECS/Component-Fields|Component Fields]] 推进根组件版本，table 与 sparse 根共享调用形状。
+
+## 验收
+
+`GeneratedChannelTests` 覆盖普通字段、值嵌套、引用嵌套、属性与手写访问。`TypedPropertyAnimationTests` 覆盖完整 Spec、参数/目标控制、Spring 速度、含引用的用户状态、声明后 100 次控制与池复用。`TypedCompositionTests` 覆盖固定关系、持值及共同写回。成本、容量内存、NativeAOT 与机器码证据单独形成性能记录。

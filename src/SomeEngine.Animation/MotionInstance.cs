@@ -108,6 +108,10 @@ internal static unsafe class MotionStorage<T, TOps, TParameters, TState, TEvalua
                 ref MotionData<T, TParameters, TState> data = ref instances[index].Data;
                 TEvaluator.Release(ref data.State);
                 data.Active = false;
+                data.Parameters = default;
+                data.Values = default;
+                data.Time = default;
+                data.Sample = default;
             });
     }
 
