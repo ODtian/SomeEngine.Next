@@ -81,6 +81,8 @@ AnimationSystems.Add(schedule, Spec.Spring<float, FloatOps>());
 
 编译阶段按实际输出组建立字段轨道范围与顺序，同一组中的算法在各自具体批次采样后，由 `GraphOutputSystem<T,TOps>` 统一提交一个来源。目标来源关系复用 `PropertySource<T>`，层混合与批次字段写回沿共同属性合成路径执行。
 
+`PropertyAnimation.RemoveSource` 移除图来源时，释放该编译输出范围的全部叶状态并移除输出描述。字段保持当前呈现值，其余输出继续求值；目标关系重排后更新余下来源的索引。
+
 固定绝对区间、开放阶段、分支部分、组内活动 motion、每个状态的候选过渡范围及 Blend1D 的已排序采样点都在编译时建立。每帧检查当前部分的活动组、当前状态的候选范围；Blend1D 以二分查找确定相邻点。参数与关系由编译定义持有，实例只推进阶段、时间、输入与混合状态。
 
 首次激活的字段起点在 ECS 查询返回后读取，随后仅采样新激活轨道；稳态继续一次具体组合查询。字段写回在查询返回后按 Channel 成批提交。根组件的读取和写入通过同一个公开 ECS 字段接口取得调度访问能力。
@@ -152,6 +154,10 @@ world.Replace(animation, parameters);
 `tests/SomeEngine.Animation.Tests/AnimationGraphTests.cs` 通过公开 API 验证手算区间、弹簧序列、并行开放阶段、内联与池化复用、独立分支、按钮状态机、交叉淡入、Blend1D、层、共享编译图、多来源叠加、容量后的统一暂停、自定义节点与值运算，以及开发检查。`TypedGraphTests` 验证跨算法顺序区间、消费者收敛、共享定义的独立时钟、实例公式更新、重定目标的固定截止时间、公开叶释放与用户条件。
 
 `tools/SomeEngine.Animation.Checks` 在独立消费者程序及 NativeAOT 中复用完整泛型算法、公开叶节点、共享实例和条件。性能入口分别记录编译、实例化、图推进、算法求值、控制、分配和保留内存；冷期构建的对象与共享数组按实际记录，热帧按具体组合批次执行。队列编号、测量配置及原始输出沿 [[harness/Harness-Performance-Evidence|性能证据]] 保存。
+
+2026-10-16 的完整类型化图与核心定向检查通过 27 项，队列 `01c002753d7a438b89c8ff24354c7e7e` 退出码 0。该批包含独立共享实例、公式参数更新、编译截止时间重定目标、用户条件与公开叶回收；完整命令见 [[architecture/animation/Animation-Extension#Verification|核心验证]]，原始输出见 [[evidence/Animation/2026-10-16/Typed-Execution|类型化执行证据]]。
+
+既有 18 项公开图编排中，17 项在队列 `596e263075544938b03ffc9912204152` 通过；销毁句柄的清理路径修复后，在队列 `956116ffcd8044deb491f5d2a0900856` 专项通过。命令、生命周期说明及全部原始记录见 [[evidence/Animation/2026-10-16/Graph-Checks|图行为证据]]。
 
 本页把图节点原语细化为已实现的 `To`、`By` 与作用域，并公开参数、分支和共享实例入口。多维混合扩展沿构建器原语继续表达。
 

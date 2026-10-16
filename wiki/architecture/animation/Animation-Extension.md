@@ -7,11 +7,11 @@
 
 | 扩展 | 方式 |
 |---|---|
-| 值类型 | 写一个实现 `IValueOps<T>` 的 struct，把 `TrackSystem<T, TOps>` 加入调度（需要合成时再加 `ComposeSystem<T, TOps>`） |
+| 值类型 | 实现 `IValueOps<T>`，创建完整泛型 Spec，通过 `AnimationSystems.Add` 登记具体组合 |
 | 缓动 | 实现 `IEasing.Sample(float)`，与 `Tween<T, TOps, TEasing>` 组合 |
 | 有状态算法 | 实现 `IMotion<T, TOps, TParameters, TState>`，通过 `Spec.Create` 与 `AnimationSystems.Add` 接入 |
 | 标量函数曲线 | `Spec.FromFunction<T, TOps>(duration, function)` 适配 managed 函数指针 |
-| 图节点 | 写一个调用构建器原语的普通函数 |
+| 图节点 | `IAnimationLeaf<TParameters>` 安装具体实例数据；组合节点调用公开构建原语 |
 | 运行时行为（物理驱动、沿路径运动等） | 写自己的组件加系统，读同一个 `Timeline`，并设置自己的 `Running` 位 |
 | 默认配置 | `AnimationSystems.AddDefaults(schedule)` 只是把内置系统加入调度的便利函数，可以不用 |
 
@@ -50,9 +50,9 @@ AnimationSystems.Add(schedule, path);
 用户系统也可直接放在公开 `TimelineSystem` 与 `TimelineEndSystem` 之间，通过 `Timeline.Submit(sample)` 提交共同运行结果。共同调度按 Timeline、图、层权重求值与合成、字段求值与合成、图与 Timeline 收尾组织。
 
 ## Property evaluators
-用户定义值类型与其 `ops struct` 后，通过 `Channel<T>.Of<TComponent>` 声明字段，使用 `PropertyAnimation.To`、`By` 和 `Retarget`，并把 `TrackSystem<T, TOps>` 放在时间推进与收尾之间。求值与位移端点计算都调用同一个 `TOps`。
+用户定义值类型与其 `ops struct` 后，通过 `Channel<T>.Of<TComponent>` 声明字段，把完整泛型 Spec 传给 `PropertyAnimation.Declare`、`To` 和 `By`，并通过 `AnimationSystems.Add(schedule, spec)` 登记具体批次、图输出与合成。`Retarget` 延续本来源状态；求值与位移端点计算都调用同一个 `TOps`。既有 `TrackSystem<T,TOps>` 同时支持便利输入与手动系统编排。
 
-`AnimationSystems.AddDefaults(SystemGroup<ImmediateSystemContext> schedule, Entity time = default)` 通过 `Add` 登记 float、Vector2/3/4、Quaternion、Color、Thickness、Rect、Matrix3x2 的 Linear Tween、Spring、Keyframes 组合，并接入已有 Curve 输入。其他具体缓动与用户组合通过 `Add(schedule, spec)` 登记。
+`AnimationSystems.AddDefaults(SystemGroup<ImmediateSystemContext> schedule, Entity time = default)` 通过 `Add` 登记 float、Vector2/3/4、Quaternion、Color、Thickness、Rect、Matrix3x2 的 Linear Tween、Spring、Keyframes、FunctionTween 组合，并在绑定时解析已有 Curve 输入。其他具体缓动与用户组合通过 `Add(schedule, spec)` 登记。
 
 共同动画管线在首次创建时按阶段展开到一个 ECS 系统组：`TimelineSystem(time)`、`GraphSystem`、float 层权重求值与合成、字段求值与合成、`GraphEndSystem`、`TimelineEndSystem`。具体系统各自保留版本基线与查询。首次更新前追加的组合进入相应阶段，重复组合共用一个入口。调用方也可按自己的值类型与行为直接组合公开系统：
 
@@ -76,6 +76,12 @@ schedule.Add(new TimelineEndSystem());
 
 ## Verification
 `MotionTests` 从消费者程序集验证缓动、值运算、包含托管引用的参数与状态、生命周期、Spring 速度、共享关键帧、逐元素时间和专用批量。`tools/SomeEngine.Animation.Checks` 复用同一消费者源码，提供 Release / NativeAOT 行为与 `--benchmark` 规模成本入口。
+
+2026-10-16 的 Release 定向检查通过 27 项，覆盖 Motion、Timeline、ValueOps 与完整类型化图公开行为；行为规则检查为 0 项违规。队列 `01c002753d7a438b89c8ff24354c7e7e` 退出码 0，原始日志与结果保存在 [[evidence/Animation/2026-10-16/Typed-Execution|类型化执行证据]]。
+
+```powershell
+& 'F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1' dotnet test tests/SomeEngine.Animation.Tests/SomeEngine.Animation.Tests.csproj -c Release '--filter=FullyQualifiedName~TypedGraphTests|FullyQualifiedName~MotionTests|FullyQualifiedName~TimelineTests|FullyQualifiedName~ValueOpsTests' --disable-build-servers '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false' '--property:PublishAot=false'
+```
 
 ## Relations
 
