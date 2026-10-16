@@ -120,8 +120,10 @@ public sealed partial class ClusterPipelineSystem
                     _ => throw new InvalidDataException($"Unknown material decal resource '{resource.Name}'."),
                 };
                 uint stride = resource.Name switch { "MaterialDecalVolumes" => 144u, "MaterialDecalRanges" => 32u, "MaterialDecalWork" => 0u, _ => 4u };
+                BufferContentScope scope = resource.Name is "MaterialDecalVolumes" or "MaterialDecalRanges" or "MaterialDecalReferenceOutput"
+                    ? BufferContentScope.CountBoundedPrefix : BufferContentScope.FullRange;
                 if (resource.Type == ResourceBindingType.BufferSrv)
-                    pass.Bind(edit.CreateBufferSrv(buffer, structureStride: stride), PipelineSync.ComputeShading, BufferContentScope.CountBoundedPrefix);
+                    pass.Bind(edit.CreateBufferSrv(buffer, structureStride: stride), PipelineSync.ComputeShading, scope);
                 else
                 {
                     GraphAccessMode mode = (index, resource.Name) switch
@@ -138,7 +140,7 @@ public sealed partial class ClusterPipelineSystem
                     };
                     pass.Bind(edit.CreateBufferUav(buffer, structureStride: stride), PipelineSync.ComputeShading, mode,
                         index is 0 or 2 ? WriteCoverage.Complete : WriteCoverage.Partial,
-                        ResourceContentState.Defined, BufferContentScope.CountBoundedPrefix);
+                        ResourceContentState.Defined, scope);
                 }
             }
         }
