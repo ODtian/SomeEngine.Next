@@ -44,8 +44,16 @@ public sealed partial class ClusterPipelineSystem
 
     private void ReconcileTransparency(ref RenderGraphEdit edit, ClusterMaterialAssignmentSet assignments, ClusterShadeStageSet stages)
     {
-        ClusterShadeInvocation[] materials = stages.Invocations.Where(stage =>
-            stage.Material.State.Surface == SurfaceMode.Translucent || assignments.UsesXray(stage.Material)).ToArray();
+        var bins = new HashSet<uint>();
+        Span<byte> binBytes = stackalloc byte[4];
+        foreach (int address in assignments.ActiveOffsets)
+            if (assignments.TryGetEntry(address, out Material material, out _) &&
+                (material.State.Surface == SurfaceMode.Translucent || assignments.UsesXray(material)))
+            {
+                stages.BinIndices.CopyTo(binBytes, address * 4);
+                bins.Add(BinaryPrimitives.ReadUInt32LittleEndian(binBytes));
+            }
+        ClusterShadeInvocation[] materials = bins.Order().Select(stages.GetBin).ToArray();
         uint capacity = _options.BlendTriangleCapacity;
         ClusterShadeInvocation[][] resources = [];
         TransparencyShaders? shaders = materials.Length == 0 ? null : GetTransparencyShaders(materials, out resources);
