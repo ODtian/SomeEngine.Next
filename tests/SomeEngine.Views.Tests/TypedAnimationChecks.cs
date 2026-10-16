@@ -3,6 +3,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Views.Tests;
 
@@ -177,12 +178,14 @@ public static partial class TypedAnimationChecks
 
     private sealed class TypedFrames : IDisposable
     {
-        internal World World { get; } = new();
+        private readonly Scheduler _scheduler = new(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        internal World World { get; }
         private readonly SystemGroup<ImmediateSystemContext> _builds;
         private readonly SystemGroup<ImmediateSystemContext> _animations;
 
         internal TypedFrames()
         {
+            World = WorldJobs.CreateWorld(scheduler: _scheduler);
             _builds = new(new ImmediateSystemDriver(World));
             _builds.Add(new ViewRebuildSystem());
             _animations = new(new ImmediateSystemDriver(World));
@@ -207,6 +210,7 @@ public static partial class TypedAnimationChecks
             _animations.Dispose();
             _builds.Dispose();
             World.Dispose();
+            _scheduler.Dispose();
         }
     }
 
