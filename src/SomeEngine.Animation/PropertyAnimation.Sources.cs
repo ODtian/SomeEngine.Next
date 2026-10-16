@@ -53,7 +53,11 @@ public static partial class PropertyAnimation
         }
         RefreshSources<T>(world, target);
         T basis = default;
-        if (ReadBase(world, target, channel, ref basis)) channel.Write(world, target, in basis);
+        if (ReadBase(world, target, channel, ref basis))
+        {
+            DeclareContributions<T>(world, target);
+            SetBase(world, target, channel, basis);
+        }
     }
 
     /// <summary>Resolves source order, field ranges, bases, masks, and writeback after explicit relationship changes.</summary>

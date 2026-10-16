@@ -161,7 +161,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                     if (!dirty || !hasValue) continue;
                     T result = basis;
                     int fixedValue = fixedStart, dynamicValue = dynamicStart;
-                    bool contributed = false;
+                    bool contributed = false, included = false;
                     Contribution<T> previous = default;
                     while (fixedValue < fixedIndex || dynamicValue < dynamicIndex)
                     {
@@ -194,6 +194,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                         previous = contribution;
                         contributed = true;
                         if (!selected) continue;
+                        included = true;
                         AnimationLayer layer = hasLayers && !weightChannel ? layers.Items[contribution.Layer] : new() { Weight = 1 };
                         T value = contribution.Value;
                         if (endpoints != TrackEndpoints.Values && layer.Mode == LayerMode.Additive)
@@ -203,9 +204,21 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                         }
                         result = PropertyAnimation.Blend<T, TOps>(in result, in value, in basis, hasBase, in layer);
                     }
-                    if (hasBase || contributed) FieldWrites<T>.Add(ref composition.Writes, ref composition.Count, row.Entity, channel, in result);
+                    if (hasBase || included) FieldWrites<T>.Add(ref composition.Writes, ref composition.Count, row.Entity, channel, in result);
                     for (int index = fixedStart; index < fixedIndex; index++)
                     { sources[index].Dirty = false; sources[index].HadDynamic = index == fixedStart && dynamicStart != dynamicIndex; }
+                }
+                if (basesChanged)
+                {
+                    foreach (ref readonly BaseValue<T> basis in bases)
+                    {
+                        if ((basis.Channel.Component == ComponentId<AnimationLayers>.Value) != composition.WeightChannels) continue;
+                        bool hasSource = false;
+                        foreach (PropertySource<T> source in sources) if (source.Channel == basis.Channel) { hasSource = true; break; }
+                        if (!hasSource)
+                            foreach (Contribution<T> value in dynamic) if (value.Channel == basis.Channel) { hasSource = true; break; }
+                        if (!hasSource) FieldWrites<T>.Add(ref composition.Writes, ref composition.Count, row.Entity, basis.Channel, in basis.Value);
+                    }
                 }
                 for (int index = dynamicBuffer.Count - 1; index >= 0; index--)
                     if ((dynamicBuffer.Read(index).Channel.Component == ComponentId<AnimationLayers>.Value) == composition.WeightChannels)
