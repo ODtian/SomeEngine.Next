@@ -671,6 +671,8 @@ internal static class RuntimeApplication
             metrics: options.VerifyFrameOutput || options.LinearFrameOutputPath is not null || script is not null);
         if (platform is not null && options.MeasureBlending)
             pipeline.BlendFrameCompleted += platform.RecordBlendFrame;
+        if (script?.BlendFrameCompleted is { } blendCompleted)
+            pipeline.BlendFrameCompleted += blendCompleted;
         using var virtualShadows = new VirtualShadowFeature(
             backend,
             device,
@@ -744,7 +746,10 @@ internal static class RuntimeApplication
                 UseInstanceGroups = options.UseInstanceGroups,
                 EnableFrameMetricsReadback = metrics,
                 MeasureBlending = preview is null && options.MeasureBlending,
-            });
+                BlendIndex = options.BlendIndex,
+                BlendTriangleCapacity = script?.BlendTriangleCapacity ?? 262_144,
+                BlendReferenceCapacity = script?.BlendReferenceCapacity ?? 1_048_576,
+            }, viewGrid: lighting.ViewGrid);
 
         void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
         {

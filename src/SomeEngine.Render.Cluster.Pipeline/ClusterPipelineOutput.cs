@@ -82,13 +82,21 @@ public readonly record struct ClusterPipelineOutputs(
         ViewCount > 0;
 }
 
-/// <summary>Current projected transparent geometry and its counted tile references, rebuilt from Cluster geometry each frame.</summary>
+/// <summary>Projected transparent geometry, source data and continuous view-cell references.</summary>
 /// <remarks>TriangleCount stores the actual projected triangle count at byte 0.
-/// Tile counts address contiguous ranges at tile index multiplied by TriangleCapacity. Triangle records
-/// retain screen projection, depth, view, material bin and source visibility identity.</remarks>
+/// Cell counts and offsets address complete continuous ranges. Streaming cells enumerate the paired
+/// source geometry in batches. Triangle records retain screen projection, depth, view, material bin,
+/// source identity and primitive number. TriangleCapacity specifies the resident projection budget.</remarks>
 public sealed record ClusterTransparencyGeometry(GraphBufferId Triangles, GraphBufferId TileCounts,
     GraphBufferId TileReferences, GraphBufferId TriangleCount, uint TriangleCapacity, uint TriangleStride,
-    GraphPassId GeometryReady);
+    GraphPassId GeometryReady)
+{
+    public GraphBufferId CellOffsets { get; init; }
+    public GraphBufferId StreamingCells { get; init; }
+    public GraphBufferId Sources { get; init; }
+    public GraphBufferId SourceCounts { get; init; }
+    public uint ReferenceCapacity { get; init; }
+}
 
 /// <summary>
 /// Feature-owned policy data for views participating in the shared Cluster work stream.

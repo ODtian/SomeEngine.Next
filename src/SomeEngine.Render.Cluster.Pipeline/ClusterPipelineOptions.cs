@@ -20,6 +20,13 @@ public enum ClusterShadingPath : byte
     Forward,
 }
 
+/// <summary>The candidate source used by transparent coverage and compositing.</summary>
+public enum ClusterBlendIndex : byte
+{
+    FullScan,
+    Xyz,
+}
+
 /// <summary>Capacity and quality policy for Cluster visibility graph construction.</summary>
 public sealed record ClusterPipelineOptions
 {
@@ -67,6 +74,11 @@ public sealed record ClusterPipelineOptions
     public bool EnableFrameMetricsReadback { get; init; }
     /// <summary>Measures blend phases on the graphics queue and reads back their work and resource sizes.</summary>
     public bool MeasureBlending { get; init; }
+    public ClusterBlendIndex BlendIndex { get; init; } = ClusterBlendIndex.Xyz;
+    /// <summary>Projected primitives retained together; remaining primitives continue through the source batches.</summary>
+    public uint BlendTriangleCapacity { get; init; } = 262_144;
+    /// <summary>Continuous cell references retained together; remaining cells continue through the source batches.</summary>
+    public uint BlendReferenceCapacity { get; init; } = 1_048_576;
 
     internal void Validate()
     {
