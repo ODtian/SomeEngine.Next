@@ -131,6 +131,41 @@ public sealed class TypedPropertyAnimationTests
         Assert.Equal(1, history.Retargets);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ADeclaredTargetTakesOverAPooledUserSource(bool continueHistory)
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new FieldPanel());
+        var history = new MotionHistory();
+        var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(history));
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.Add(systems, spec);
+        AnimationSystems.Add(systems, Spec.Tween<float, FloatOps, Linear>(1));
+        Entity pooled = PropertyAnimation.To(world, target, FieldPanelChannels.Opacity, 100f, spec);
+        Tick(systems, world, 0.1);
+        Entity animation;
+        if (continueHistory)
+        {
+            PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, spec);
+            animation = PropertyAnimation.To(world, target, FieldPanelChannels.Opacity, 200f, spec);
+            Tick(systems, world, 0.1);
+        }
+        else
+        {
+            PropertyAnimation.Declare<float>(world, target);
+            animation = PropertyAnimation.To(world, target, FieldPanelChannels.Opacity, 2f, Spec.Tween(1));
+            Tick(systems, world, 0.5);
+        }
+
+        Assert.Equal(target, animation);
+        Assert.False(world.IsEnabled<Timeline>(pooled));
+        Assert.Equal(continueHistory ? 3f : 1.5f, world.Read<FieldPanel>(target).Opacity);
+        Assert.Equal(continueHistory ? 1 : 0, history.Retargets);
+        Assert.Equal(continueHistory ? 0 : 1, history.Releases);
+    }
+
     [Fact]
     public void SwitchingDeclaredAlgorithmsReleasesThePreviousUserState()
     {

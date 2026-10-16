@@ -127,6 +127,13 @@ public static partial class PropertyAnimation
         where TEvaluator : struct, IMotion<T, TOps, TParameters, TState>
     {
         PropertySource<T> source = FindSource(world, target, channel, layer, endpoints);
+        if (source.Animation != Entity.Null && source.Animation != target && endpoints == TrackEndpoints.Values &&
+            world.Has<Timeline>(target) && world.HasBuffer<Track<T>>(target))
+        {
+            DeclareTyped(world, target, target, channel, spec, 1, layer);
+            MoveTypedSource<T, TOps, TParameters, TState, TEvaluator>(world, target, source);
+            source = FindSource(world, target, channel, layer, endpoints);
+        }
         if (source.Animation == Entity.Null)
         {
             Entity animation = world.Has<Timeline>(target) && world.HasBuffer<Track<T>>(target) ? target : FindTypedPool<T, TOps, TParameters, TState, TEvaluator>(world);
