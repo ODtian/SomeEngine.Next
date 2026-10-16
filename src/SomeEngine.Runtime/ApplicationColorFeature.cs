@@ -1,12 +1,16 @@
 using System.Numerics;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
+using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Runtime;
 
 public readonly record struct ApplicationRendering(IGraphicsBackend Backend, Device Device,
     global::SomeEngine.RenderGraph.RenderGraph Graph, int Width, int Height, Matrix4x4 Projection = default,
-    GraphRegionId Region = default);
+    GraphRegionId Region = default)
+{
+    public ClusterStencil? Stencil { get; init; }
+}
 
 /// <summary>A persistent color feature consuming the renderer's color and depth.</summary>
 public interface IApplicationColorFeature : IDisposable

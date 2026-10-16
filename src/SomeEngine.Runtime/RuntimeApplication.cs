@@ -544,7 +544,7 @@ internal static class RuntimeApplication
     {
         using World mainWorld = loadedWorld;
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
-        using var extraction = new RenderExtractionSystems(renderWorld, new WorldOriginRenderExtractor(), new MeshRenderExtractor(), new LightRenderExtractor(), new MaterialDecalRenderExtractor());
+        using var extraction = new RenderExtractionSystems(renderWorld, new WorldOriginRenderExtractor(), new MeshRenderExtractor(), new LightRenderExtractor(), new MaterialDecalRenderExtractor(), new XrayRenderExtractor());
 
 
         if (!options.SynchronousFrames && script is null)
@@ -1031,7 +1031,10 @@ internal static class RuntimeApplication
                 bool connectColorFeature = temporal is null;
                 if (connectColorFeature && platform?.CreateColorFeature is { } createColorFeature)
                     colorFeature = createColorFeature(new(backend, device, renderGraph, boot.Width, boot.Height,
-                        viewFrame.View.Projection, colorEffectsRegion), platform.Current);
+                        viewFrame.View.Projection, colorEffectsRegion) { Stencil = clusterOutputs.Stencil }, platform.Current);
+                else if (connectColorFeature && script?.CreateColorFeature is { } createScriptColorFeature)
+                    colorFeature = createScriptColorFeature(new(backend, device, renderGraph, boot.Width, boot.Height,
+                        viewFrame.View.Projection, colorEffectsRegion) { Stencil = clusterOutputs.Stencil });
                 temporal ??= new TemporalFeature(
                     backend,
                     device,

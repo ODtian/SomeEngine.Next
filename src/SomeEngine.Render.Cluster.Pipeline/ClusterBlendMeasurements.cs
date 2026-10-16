@@ -8,7 +8,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 internal readonly record struct BlendMeasurementPasses(
     GraphRegionId Geometry, GraphPassId GeometryFirst, GraphPassId GeometryLast,
     GraphRegionId Requests, GraphPassId Request,
-    GraphRegionId Color, GraphPassId Resolve, GraphRegionId Feedback);
+    GraphRegionId Color, GraphPassId ColorFirst, GraphPassId Resolve, GraphRegionId Feedback);
 
 internal readonly record struct BlendMeasurementBuffers(
     GraphBufferId TriangleCount, uint TriangleStride, ulong FixedBytes, ulong CapacityBytes, ulong AllocationBytes, uint TriangleCapacity);
@@ -23,7 +23,8 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
     private readonly GraphPassId _resolve;
     private readonly List<GraphPassId> _timestamps = [];
     private readonly ulong _frequency;
-    private readonly BlendMeasurementBuffers _buffers;
+    private BlendMeasurementBuffers _buffers;
+    private readonly GraphPassId _colorEnd;
     private readonly Action<ClusterBlendMetrics> _completed;
     private readonly Dictionary<ulong, MeasuredFrame> _frames = [];
     private ulong _frameTag;
@@ -52,7 +53,7 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
             passes.Request == default ? passes.GeometryLast : passes.Request,
             passes.Request == default ? passes.GeometryLast : passes.Request,
             empty: passes.Request == default);
-        AddInterval(ref edit, queries, 4, passes.Color, passes.Resolve, passes.Resolve);
+        _colorEnd = AddInterval(ref edit, queries, 4, passes.Color, passes.ColorFirst, passes.Resolve);
         ulong byteCount = 6u * sizeof(ulong) + 16u;
         GraphBufferId results = _results = edit.CreateBuffer(new BufferDesc(byteCount,
             BufferUsages.QueryResolve | BufferUsages.CopyDestination | BufferUsages.CopySource,
@@ -122,7 +123,14 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
         _completed(result);
     }
 
-    private void AddInterval(ref RenderGraphEdit edit, GraphQueryPoolId queries, uint index,
+    internal void IncludeColorPass(ref RenderGraphEdit edit, GraphPassId complete, ulong capacityBytes, ulong allocationBytes)
+    {
+        edit.OrderAfter(_colorEnd, complete);
+        _buffers = _buffers with { FixedBytes = _buffers.FixedBytes + capacityBytes,
+            CapacityBytes = _buffers.CapacityBytes + capacityBytes, AllocationBytes = _buffers.AllocationBytes + allocationBytes };
+    }
+
+    private GraphPassId AddInterval(ref RenderGraphEdit edit, GraphQueryPoolId queries, uint index,
         GraphRegionId region, GraphPassId first, GraphPassId last, bool empty = false)
     {
         GraphPassId start = edit.AddGeneralFramePass("Start Cluster blend phase timing",
@@ -136,6 +144,7 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
         if (empty) edit.OrderAfter(start, last);
         else edit.OrderAfter(first, start);
         edit.OrderAfter(end, empty ? start : last);
+        return end;
     }
 
     private readonly record struct Timestamp(GraphQueryPoolId Queries, uint Index)

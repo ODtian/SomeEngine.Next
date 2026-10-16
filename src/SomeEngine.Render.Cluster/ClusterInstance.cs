@@ -18,6 +18,9 @@ public static class ClusterRenderFeature
     public static RenderInstancePropertyKey MaterialSlotOffsetKey { get; } =
         new("someengine.cluster.material_slot_offset");
 
+    public static RenderInstancePropertyKey BlendOcclusionKey { get; } =
+        new("someengine.cluster.blend_occlusion");
+
     public static RenderInstancePropertyKey BoundsExpansionKey { get; } =
         new("someengine.cluster.bounds_expansion");
 
@@ -25,6 +28,7 @@ public static class ClusterRenderFeature
         new("someengine.shadow.depth_cache_class");
 
     public static RenderInstancePropertyKey FirstPersonKey { get; } = new("someengine.shadow.first_person");
+    public static RenderInstancePropertyKey XrayKey { get; } = new("someengine.xray");
 
     public const uint MissingBvhRoot = uint.MaxValue;
     public const uint MissingMaterialSlots = uint.MaxValue;
@@ -66,6 +70,9 @@ public static class ClusterRenderFeature
         _ = builder.Register<FirstPersonMeshData>("SomeEngine.Render", FirstPersonKey,
             new RenderInstancePropertyEncoding("someengine.render.first_person.v1", valueSize: 8,
                 storageAlignment: 4, storageStride: 8, metadataWordCount: 1));
+        _ = builder.Register<RenderXray>("SomeEngine.Render", XrayKey,
+            new RenderInstancePropertyEncoding("someengine.render.xray.v1", valueSize: 48,
+                storageAlignment: 4, storageStride: 48, metadataWordCount: 1));
         return builder.Freeze();
     }
 
@@ -76,6 +83,7 @@ public static class ClusterRenderFeature
             "SomeEngine.Render.Cluster.MaterialBinding",
             MaterialSlotOffsetKey,
             UInt32Encoding);
+        _ = builder.Register<uint>("SomeEngine.Render.Cluster.MaterialBinding", BlendOcclusionKey, UInt32Encoding);
         return builder.Freeze();
     }
 }
