@@ -86,8 +86,8 @@ public struct MarkerSystem : ISystem<ImmediateSystemContext>
 {
     private QueryHandle _markers;
     public void OnCreate(ref ImmediateSystemContext context) =>
-        _markers = context.World.Query(context.World.QueryDefinition().ReadWrite<Timeline>().Enabled<Timeline>()
-            .ReadBuffer<MarkerState>().Optional<MarkerValue>(QueryAccess.ReadWrite).OptionalBuffer<TimelineStage>(QueryAccess.Read));
+        _markers = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
+            .ReadWrite<Timeline>().Enabled<Timeline>().ReadBuffer<MarkerState>().Optional<MarkerValue>(QueryAccess.ReadWrite)));
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {

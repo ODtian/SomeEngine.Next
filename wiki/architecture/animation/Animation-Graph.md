@@ -71,7 +71,7 @@ AnimationSystems.Add(schedule, Spec.Spring<float, FloatOps>());
 | `Complete(world, animation)` | 同类叶安装完成后建立输出范围 |
 | `Release(world, animation)` | 停止或替换时释放本实例数据 |
 
-`AnimationLeafBatch<TParameters>.Parameters` 和 `Data` 属于编译定义，多实例共享。`AnimationLeafPlacement` 给出 Stage、Start、Motion、Group、MotionStage、Starts、Layer、Output 和本具体组合 Capacity。用户叶通过公开 World 接口持有自己的类型化状态，系统通过 `AnimationGraph.ReadTime` 读取本叶阶段时间、权重与启动次数，再通过 `AnimationGraph.Submit` 汇总运行结果。
+`AnimationLeafBatch<TParameters>.Parameters` 和 `Data` 属于编译定义，多实例共享。`AnimationLeafPlacement` 给出 Stage、Start、Motion、Group、MotionStage、Starts、Layer、Output 和本具体组合 Capacity。用户叶通过公开 World 接口持有自己的类型化状态，查询通过 `AnimationGraph.WithTimeAccess(query)` 声明共同时间和完成数据访问，系统通过 `AnimationGraph.ReadTime` 读取本叶阶段时间、权重与启动次数，再通过 `AnimationGraph.Submit` 汇总运行结果。
 
 属性叶的共享参数保存在定义数组，实际 `MotionInstance<T,TOps,TParameters,TState,TEvaluator>` 缓冲持有实例状态、值、时间与输出。`AnimationGraph.UpdateParameters(world, animation, channel, in spec)` 更新指定实例的公式参数，并调用 `TEvaluator.UpdateParameters` 保留算法历史；首次显式修改将该具体组合的参数复制到实例缓冲。固定时长和阶段类型保持编译值，时间或结构变更通过重编译并播放新定义提交。
 

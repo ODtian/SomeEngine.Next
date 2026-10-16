@@ -17,6 +17,11 @@ public struct GraphBranch : IBufferElement
 
 public static partial class AnimationGraph
 {
+    /// <summary>Declares the shared time and completion storage used by public leaf systems.</summary>
+    public static QueryDefinitionBuilder WithTimeAccess(QueryDefinitionBuilder query) => query
+        .Optional<Timeline>(QueryAccess.ReadWrite).Optional<GraphInstance>(QueryAccess.Read)
+        .OptionalBuffer<TimelineStage>(QueryAccess.Read).OptionalBuffer<GraphMotion>(QueryAccess.ReadWrite);
+
     /// <summary>Reads the shared phase time and weight selected for an installed public leaf.</summary>
     public static AnimationLeafTime ReadTime(World world, Entity animation, in AnimationLeafPlacement placement)
     {
