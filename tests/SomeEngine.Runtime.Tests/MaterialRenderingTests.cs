@@ -240,8 +240,8 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
     [InlineData("vulkan")]
     public async Task UpdatingASharedTextureMatchesStartingWithTheNewPixels(string backend)
     {
-        using Texture shared = CreateColorTexture(255);
-        using Texture directTexture = CreateColorTexture(128);
+        Texture shared = CreateColorTexture(255);
+        Texture directTexture = CreateColorTexture(128);
         Task? update = null;
         SceneImage? before = null, changed = null, expected = null;
         await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 16,
@@ -265,8 +265,8 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
     [InlineData("d3d12")]
     public async Task ReplacingTheLastMaterialTextureReferenceMatchesStartingWithReplacement(string backend)
     {
-        using Texture original = CreateColorTexture(255);
-        using Texture replacement = CreateColorTexture(128);
+        Texture original = CreateColorTexture(255);
+        Texture replacement = CreateColorTexture(128);
         SceneImage? before = null, changed = null, expected = null;
         await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 12,
         [

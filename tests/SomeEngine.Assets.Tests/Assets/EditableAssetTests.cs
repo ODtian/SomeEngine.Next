@@ -77,7 +77,7 @@ public sealed class EditableAssetTests
         Assert.Empty(branch.GetBlock<TextureBlock>().Chunks.Keys);
         await branch.SaveAsync(directory.File("edited.texture.asset"));
         using var reloaded = await TextureAsset.OpenAsync(directory.File("edited.texture.asset"));
-        await using var value = await reloaded.GetBlock<TextureBlock>().CreateAsync(reloaded.Name);
+        var value = await reloaded.GetBlock<TextureBlock>().CreateAsync(reloaded.Name);
         Assert.True(value.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
         Assert.Equal(new byte[] { 37 }, bytes.ToArray());
         Assert.Equal("after", value.Name);
