@@ -56,7 +56,7 @@ PPLL 节点池按硬件光栅统计的完整覆盖量分配。峰值覆盖数在
 DefaultGame 在 opaque visibility 着色之后、TAA 之前安装持久颜色 pass。研究场景由 8 个内部随法线光照变化的交叠球体网格组成，alpha 为 0.5、模型深度间隔为 0.025；每个球体包含 168 个三角形。场景几何在初始化时形成，帧内执行覆盖查询与合成。
 
 ```powershell
-& 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1' dotnet publish samples/DefaultGame/DefaultGame.csproj -c Release -o samples/DefaultGame/bin/game/Release/net10.0 -p:ValidateExecutableReferencesMatchSelfContained=false
+& 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1' dotnet publish templates/DefaultProject/Game.App/Game.App.csproj -c Release -o templates/DefaultProject/Game.App/bin/Release/net10.0/publish
 & 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1' pwsh -NoProfile -File tools/Measure-Scenes.ps1
 & 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1' pwsh -NoProfile -File tools/Measure-Scenes.ps1 -ApplicationArguments '--transparency-research'
 & 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1' pwsh -NoProfile -File tools/Measure-Scenes.ps1 -ApplicationArguments '--transparency-tiles-hardware'

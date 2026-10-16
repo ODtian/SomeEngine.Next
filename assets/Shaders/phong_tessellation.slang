@@ -109,13 +109,15 @@ float3 EvalPhongPosition(
             triangle.Normal0, triangle.Normal1, barycentric.y);
     float u = barycentric.y;
     float v = barycentric.z;
-    return
+    // Cache and replay retain the same interior position before depth ordering.
+    precise float3 position =
         coefficients.Constant +
         coefficients.LinearU * u +
         coefficients.LinearV * v +
         coefficients.QuadraticUU * (u * u) +
         coefficients.QuadraticUV * (u * v) +
         coefficients.QuadraticVV * (v * v);
+    return position;
 }
 
 SurfaceEval EvalPhongSurface(
