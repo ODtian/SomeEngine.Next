@@ -35,6 +35,7 @@ internal static unsafe partial class FullPathMeasurements
             MeasureLifecycle(count);
             MeasureSources(count);
             MeasureGraphs(count);
+            MeasureDeclaredMemory(count);
         }
     }
 
