@@ -168,26 +168,19 @@ struct PhongTessellation : IDomainEvaluate<StandardVertex>
                 triangle,
                 coefficients,
                 Barycentric(parameters));
-            float3 residual = evaluation.Position - input.TargetPosition;
-            float a = dot(evaluation.DpDu, evaluation.DpDu);
-            float b = dot(evaluation.DpDu, evaluation.DpDv);
-            float c = dot(evaluation.DpDv, evaluation.DpDv);
-            float damping = max(1e-10, (a + c) * 1e-7);
-            float2 delta = SolveSurfaceNormalEquations(
-                a + damping,
-                b,
-                c + damping,
-                float2(
-                    dot(evaluation.DpDu, residual),
-                    dot(evaluation.DpDv, residual)));
+            float4 clip = mul(float4(evaluation.Position + input.WorldTranslation, 1.0), input.ViewProjection);
+            float2 pixel = (clip.xy / clip.w * float2(.5, -.5) + .5) * float2(input.ScreenSize);
+            float3 barycentricDx, barycentricDy;
+            ResolveParametricScreenDerivatives(evaluation, input, barycentricDx, barycentricDy);
+            float2 residual = pixel - input.PixelCenter;
+            float2 delta = barycentricDx.yz * residual.x + barycentricDy.yz * residual.y;
             float maximumStep = max(abs(delta.x), abs(delta.y));
             delta *= min(1.0, 0.25 / max(maximumStep, 1e-12));
             parameters -= delta;
         }
 
         float3 unresolved = Barycentric(parameters);
-        // Raster coverage selects this source domain. Clamp the inverse of the
-        // diced depth to its boundary; patch error controls the approximation.
+        // Raster coverage selects this source domain and its surface boundary.
         float3 value = ClampBarycentric(unresolved);
         SurfaceEval evaluation = EvalPhongSurface(triangle, coefficients, value);
         float3 barycentricDx;
