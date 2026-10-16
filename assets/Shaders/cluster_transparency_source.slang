@@ -2,6 +2,7 @@
 #define CLUSTER_TRANSPARENCY_SOURCE_SLANG
 
 #include "cluster_structures.slang"
+#include "visbuffer_encoding.slang"
 
 struct TransparencySource
 {
