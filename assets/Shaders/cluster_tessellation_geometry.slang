@@ -202,4 +202,61 @@ uint BuildTessellationChildren(
     return 4u;
 }
 
+// A depth-first traversal retains siblings for the five supported split levels.
+// Each emitted patch can be diced before advancing, so storage follows depth.
+struct TessellationTraversal
+{
+    TessellationPatch Patches[16];
+    uint Count;
+};
+
+TessellationTraversal BeginTessellationTraversal()
+{
+    TessellationTraversal traversal = (TessellationTraversal)0;
+    TessellationPatch root = (TessellationPatch)0;
+    SetTessellationPatchBarycentrics(root, float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1));
+    SetTessellationPatchState(root, 0u, 1u.xxx);
+    traversal.Patches[0] = root;
+    traversal.Count = 1u;
+    return traversal;
+}
+
+bool NextTessellationPatch<TVertex, TDomain>(
+    uniform TDomain domain,
+    TDomain.TriangleData triangle,
+    ClusterViewUniforms view,
+    uint maxFactor,
+    float targetEdgePixels,
+    inout TessellationTraversal traversal,
+    out TessellationPatch patch)
+    where TDomain : IDomainEvaluate<TVertex>
+{
+    while (traversal.Count != 0u)
+    {
+        patch = traversal.Patches[--traversal.Count];
+        uint3 edgeFactors;
+        uint splitMask;
+        bool splitInterior;
+        EvaluateTessellationPatch<TVertex, TDomain>(domain, triangle, view,
+            DecodeTessellationPatchBarycentric(patch, 0u),
+            DecodeTessellationPatchBarycentric(patch, 1u),
+            DecodeTessellationPatchBarycentric(patch, 2u), targetEdgePixels,
+            edgeFactors, splitMask, splitInterior);
+        uint depth = TessellationPatchDepth(patch);
+        if ((splitMask != 0u || splitInterior) && depth < TessellationMaximumSplitDepth(maxFactor))
+        {
+            TessellationPatch children[4];
+            uint count = BuildTessellationChildren(patch, splitMask, splitInterior, children);
+            for (uint index = count; index > 0u; index--)
+                traversal.Patches[traversal.Count++] = children[index - 1u];
+            continue;
+        }
+        edgeFactors = clamp(edgeFactors, 1u.xxx, min(maxFactor, TESS_PATTERN_MAX_FACTOR).xxx);
+        SetTessellationPatchState(patch, depth, edgeFactors);
+        return true;
+    }
+    patch = (TessellationPatch)0;
+    return false;
+}
+
 #endif
