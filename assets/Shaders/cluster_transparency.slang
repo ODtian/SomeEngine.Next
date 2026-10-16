@@ -204,12 +204,13 @@ bool ProjectTransparency(uint source, uint primitive, uint bin, uint material, u
     value = {};
     if (first.w <= 0.0 || second.w <= 0.0 || third.w <= 0.0) return false;
     float2 size = float2(TransparencyUniforms.Width, TransparencyUniforms.Height);
-    float2 a = (first.xy / first.w * float2(.5, -.5) + .5) * size;
-    float2 b = (second.xy / second.w * float2(.5, -.5) + .5) * size;
-    float2 c = (third.xy / third.w * float2(.5, -.5) + .5) * size;
-    a = floor(a * CLUSTER_RASTER_SUBPIXEL_SCALE_F + .5) / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
-    b = floor(b * CLUSTER_RASTER_SUBPIXEL_SCALE_F + .5) / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
-    c = floor(c * CLUSTER_RASTER_SUBPIXEL_SCALE_F + .5) / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
+    // Cache and replay quantize the same projection before integer coverage.
+    float2 a = mad(first.xy / first.w, float2(.5, -.5), .5.xx) * size;
+    float2 b = mad(second.xy / second.w, float2(.5, -.5), .5.xx) * size;
+    float2 c = mad(third.xy / third.w, float2(.5, -.5), .5.xx) * size;
+    a = floor(mad(a, CLUSTER_RASTER_SUBPIXEL_SCALE_F.xx, .5.xx)) / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
+    b = floor(mad(b, CLUSTER_RASTER_SUBPIXEL_SCALE_F.xx, .5.xx)) / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
+    c = floor(mad(c, CLUSTER_RASTER_SUBPIXEL_SCALE_F.xx, .5.xx)) / CLUSTER_RASTER_SUBPIXEL_SCALE_F;
     float2 edge1 = b - a, edge2 = c - a;
     float area = edge1.x * edge2.y - edge1.y * edge2.x;
     if (area == 0.0 || ((TransparencyMaterialStates[material].x & 3u) == 1u && area >= 0.0)) return false;
