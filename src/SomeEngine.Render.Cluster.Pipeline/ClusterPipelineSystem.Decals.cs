@@ -83,7 +83,7 @@ public sealed partial class ClusterPipelineSystem
         if (_viewGrid.Parameters is null)
             data.EmptyViews = CreateBufferData(ref edit, new byte[192], BufferUsages.ShaderRead, "Material decal empty views");
         GraphData.Decals = data;
-        Span<uint> parameters = stackalloc uint[4] { 0, cells, _options.BlendReferenceCapacity, _options.BlendIndex == ClusterBlendIndex.Xyz ? 1u : 0u };
+        Span<uint> parameters = stackalloc uint[4] { 0, cells, _options.BlendReferenceCapacity, _options.BlendIndex == ClusterBlendIndex.FullScan ? 0u : 1u };
         UpdateParameters(ref edit, data.Parameters, MemoryMarshal.AsBytes(parameters));
         ClusterComputePipeline[] pipelines = [_pipelines!.DecalClear, _pipelines.DecalCount, _pipelines.DecalReserve, _pipelines.DecalScatter, _pipelines.DecalSort];
         string[] entries = ["ClearMaterialDecalCells", "CountMaterialDecalCells", "ReserveMaterialDecalCells", "ScatterMaterialDecalCells", "SortMaterialDecalCells"];
@@ -200,7 +200,7 @@ public sealed partial class ClusterPipelineSystem
             edit.SetBufferDescription(data.Ranges, new(Math.Max(32ul, (ulong)sources.Length * _outputDescription.ViewCount * 32),
                 BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Material decal cell ranges"));
             Span<uint> parameters = stackalloc uint[4] { (uint)sources.Length, _viewGrid.CellCountPerView * _outputDescription.ViewCount,
-                _options.BlendReferenceCapacity, _options.BlendIndex == ClusterBlendIndex.Xyz ? 1u : 0u };
+                _options.BlendReferenceCapacity, _options.BlendIndex == ClusterBlendIndex.FullScan ? 0u : 1u };
             UpdateParameters(ref edit, data.Parameters, MemoryMarshal.AsBytes(parameters));
         });
         data.Sources = sources; data.TextureReads = textureReads; data.Version++;

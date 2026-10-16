@@ -50,12 +50,13 @@ public sealed class TransparencyIndexTests(TransparencyContentFixture content)
     [SceneTheory]
     [InlineData("d3d12")]
     [InlineData("vulkan")]
-    public async Task XyzCandidatesMatchFullScanWhileModelsAndCameraMoveAcrossCells(string backend)
+    public async Task XyAndXyzCandidatesMatchFullScanWhileModelsAndCameraMoveAcrossCells(string backend)
     {
         var images = new List<SceneLinearImage[]>();
         foreach (var (index, triangles, references) in new[]
         {
-            ("full", 4096u, 4096u), ("xyz", 4096u, 4096u), ("xyz", 1u, 1u),
+            (ClusterBlendIndex.FullScan, 4096u, 4096u), (ClusterBlendIndex.Xy, 4096u, 4096u),
+            (ClusterBlendIndex.Xyz, 4096u, 4096u), (ClusterBlendIndex.Xyz, 1u, 1u),
         })
         {
             var frames = new SceneLinearImage[2];
@@ -79,7 +80,8 @@ public sealed class TransparencyIndexTests(TransparencyContentFixture content)
                 }),
                 new(15, edit => edit.CaptureLinearImage(image => frames[1] = image)),
             ]) { BlendTriangleCapacity = triangles, BlendReferenceCapacity = references, WaitForFrames = false },
-                "--blend-index=" + index, "--hardware-raster", "--no-taa", "--no-vsm");
+                "--blend-index=" + (index == ClusterBlendIndex.FullScan ? "full" : index.ToString().ToLowerInvariant()),
+                "--hardware-raster", "--no-taa", "--no-vsm");
             images.Add(frames);
         }
         SceneLinearImage reference = images[0][0];

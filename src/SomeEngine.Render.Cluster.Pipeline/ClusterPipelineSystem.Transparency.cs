@@ -175,7 +175,7 @@ public sealed partial class ClusterPipelineSystem
             Width = (uint)frame.Width, Height = (uint)frame.Height, ViewCount = frame.ViewCount,
             MaterialCapacity = assignments.SlotCapacity, TriangleCapacity = data.TriangleCapacity,
             VisibleCapacity = _options.MaxCandidates, ReferenceCapacity = _options.BlendReferenceCapacity,
-            UseIndex = _options.BlendIndex == ClusterBlendIndex.Xyz ? 1u : 0u, CellCount = _viewGrid.CellCountPerView * frame.ViewCount,
+            UseIndex = _options.BlendIndex == ClusterBlendIndex.FullScan ? 0u : 1u, CellCount = _viewGrid.CellCountPerView * frame.ViewCount,
             Effects = (assignments.HasXray ? 1u : 0u) | (assignments.HasOrdered ? 2u : 0u),
             ColorLimit = colorLimit,
             MaximumError = assignments.HasXray ? 0 : maximumError,

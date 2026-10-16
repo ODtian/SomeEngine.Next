@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory)][string]$ApplicationPath,
     [string[]]$Effects = @('glass', 'smoke', 'foliage', 'deformed-phong', 'xray', 'decal-layers', 'decal-sparse', 'ordered'),
-    [ValidateSet('full', 'xyz')][string[]]$Methods = @('full', 'xyz'),
+    [ValidateSet('full', 'xy', 'xyz')][string[]]$Methods = @('xy', 'xyz'),
     [hashtable]$FirstFrames = @{ '1024 spheres' = 2048; 'Sponza' = 1024; 'Amazon Bistro' = 2048 },
     [int]$FrameCount = 256,
     [switch]$Static,
@@ -39,7 +39,7 @@ try {
                     throw "GPU sample count differs from presented-frame samples for $($scene.Scene)."
                 }
             }
-            $runs.Add(@{ Effect = $effect; Method = $method; Arguments = $arguments; Report = $report; FrameSamples = $frames })
+            $runs.Add(@{ Effect = $effect; Method = $method; Arguments = $arguments; WallSeconds = ([DateTime]::UtcNow - $started).TotalSeconds; Report = $report; FrameSamples = $frames })
             @{ Complete = $runs.Count -eq $Effects.Count * $Methods.Count; Trace = $false; SceneSettings = $sceneSettings; Runs = $runs } |
                 ConvertTo-Json -Depth 40 | Set-Content -LiteralPath $OutputPath -Encoding utf8
             Remove-Item -LiteralPath $reportFile.FullName

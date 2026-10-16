@@ -6,7 +6,7 @@
 
 游戏实体持有网格、材质和效果组件；提取系统更新 Rendering world；Cluster 管线从该世界形成 GPU 实例数据、源图元与候选引用。`Material.State` 与材质属性共用资源修订机制。顶点解码、变形、细分曲面与表面材质由用户 shader 求值。
 
-几何 cluster 表示网格分组。Forward+ cell 表示屏幕 XY tile 与视空间 Z 分区。多覆盖功能复用光照视图的分区约定，先计数、保留连续范围，再散布图元引用。命中按自身深度所属 cell 执行一次；容量设置决定驻留批次，后续源图元继续参与覆盖与合成。
+几何 cluster 表示网格分组。Forward+ cell 表示屏幕 XY tile 与视空间 Z 分区。多覆盖功能复用光照视图的分区约定，先计数、保留连续范围，再散布图元引用。XYZ 命中按自身深度所属 cell 执行一次；XY 将每个 tile 的全部深度合到一个 cell，逐命中求值一次。容量设置决定驻留批次，后续源图元继续参与覆盖与合成。
 
 每个透明命中重建自己的位置、UV、法线、导数与 `SurfaceReceiver`，执行自己的材质与阴影求值。OIT 依真实深度推进颜色与透射率。`Material.State.MaximumError = 0` 遍历全部贡献；正值结合材质声明的 `ColorLimit` 限定尾部误差。
 
@@ -18,7 +18,9 @@
 
 ## 统一场景
 
-DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-index=full|xyz` 选择完整遍历或 XYZ 候选。两种方式消费相同的几何、用户材质和效果规则。`--cluster-static` 固定效果物体，静态性能对照同时固定场景行为。
+DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-index=full|xy|xyz` 选择完整遍历、XY tile 或 XYZ 候选，默认使用 XYZ。三种方式消费相同的几何、用户材质和效果规则。`--cluster-static` 固定效果物体，静态性能对照同时固定场景行为。
+
+`LightingFeature.CreateTileGrid()` 提供 XY 候选的同视图参数，沿同一份视图数据派生 `DepthSliceCount=1` 与每视图 tile 数。透明与材质贴花绑定这份参数后，现有 cell 构建、遍历和最终命中所属 cell 查询自然收敛到单切片。PBR 光照使用原来的 16 切片参数。两种索引共用 counts、offsets、引用与容量规则，各 cell 缓冲按所选 grid 的实际 cell 数分配。
 
 | 效果 | 场景内容 |
 | --- | --- |
@@ -53,7 +55,7 @@ GraphPassId completed = attachment.Import(ref edit, hardwarePass);
 ./tools/Measure-ClusterEffects.ps1 -ApplicationPath <NativeAOT Game.App.exe>
 ```
 
-该入口调用 `tools/Measure-Scenes.ps1`，每次同时测量 1024 小球、Sponza、Amazon Bistro，以完整且收敛的三场景报告交付对照。配对固定分辨率、模拟帧、场景行为、渲染配置、编译配置与采样。内容构建单列；trace 定位单列。
+该入口调用 `tools/Measure-Scenes.ps1`，每次同时测量 1024 小球、Sponza、Amazon Bistro，以完整且收敛的三场景报告交付对照。默认对八类效果逐一配对 XY 与 XYZ：XY 保留屏幕 tile 内的候选，XYZ 继续按深度切片筛选。`-Methods full,xy,xyz` 可加入逐像素完整遍历作为图像和工作量参考。配对固定分辨率、模拟帧、场景行为、渲染配置、编译配置与采样。内容构建单列；trace 定位单列。
 
 ## X-ray
 
@@ -101,6 +103,8 @@ edit.SetXray(entity, new Xray(
 
 `SceneTiming.Instances` 在场景完成时记录共用实例存储的实际行数、批次数、容量与属性字节数，效果增加的实例属性进入该项；共享几何仍由 `GeometryUsedBytes` 等既有字段记录。
 
+XY 额外的候选视图参数由同一 LightingFeature 持有，透明与贴花共用。计量在统一使用与容量字节中计入一次 `192 × viewCount`；上传 arena 的 RHI 分配沿既有共享分配口径记录。PBR 光照继续使用原来的 16 切片参数。
+
 ## 行为与交付对应
 
 所有图像检查经过 `Application.RunAsync`、`SceneScript`、游戏编辑和线性图像读回，失败图沿公共设施输出实际、期望与差异 PNG。默认 `dotnet test` 同时执行 [行为检查规则](../../harness/Behavior-Checks.md)。
@@ -109,7 +113,7 @@ edit.SetXray(entity, new Xray(
 | --- | --- | --- |
 | 1–5：网格材质、用户求值、每命中属性、相交排序、光照阴影 | [#222](https://github.com/ODtian/SomeEngine.Next/issues/222) | `TransparencyRenderingTests` 的完整排序与全不透明材质对照；`Material.State`、源图元和用户表面求值。 |
 | 6、7、15：动态曲面、光栅入口与容量分段 | [#223](https://github.com/ODtian/SomeEngine.Next/issues/223) | `TransparencyGeometryTests` 从用户 Wave 顶点变形和 Phong 曲面生成透明几何，对比硬件、软件、单项三角形与引用容量，并对比脚本移动和启动时的相同变换。 |
-| 7、15：硬软语义、容量分段 | [#224](https://github.com/ODtian/SomeEngine.Next/issues/224) | `TransparencyIndexTests.XyzCandidatesMatchFullScanWhileModelsAndCameraMoveAcrossCells` 在两种后端对比完整遍历、常规容量和单项容量。 |
+| 7、15：硬软语义、容量分段 | [#224](https://github.com/ODtian/SomeEngine.Next/issues/224) | `TransparencyIndexTests.XyAndXyzCandidatesMatchFullScanWhileModelsAndCameraMoveAcrossCells` 在两种后端对比完整遍历、XY、XYZ 常规容量和 XYZ 单项容量。 |
 | 8、9、14：完整材质 X-ray、两侧规则与连续编辑 | [#225](https://github.com/ODtian/SomeEngine.Next/issues/225) | `XrayRenderingTests` 对比同一 Standard 材质的硬件可见表面与 X-ray 命中，检查纹理、两侧透明度、独立遮挡体阴影，以及移入、移除、替换实体和返回后的画面。 |
 | 10、11、14：光照前材质贴花与逐命中空间查询 | [#226](https://github.com/ODtian/SomeEngine.Next/issues/226) | `MaterialDecalRenderingTests` 对照指定次序的分层颜色，移动贴花体积经过前后两层透明面后移除；用户 coating shader 同时组合基础色、法线和粗糙度。 |
 | 14：游戏编辑与当前帧更新 | [#224](https://github.com/ODtian/SomeEngine.Next/issues/224) | `StaticBlendCellsAreReusedUntilInstanceMembershipChanges` 与 `SceneInitializationAndFrameEditsMatchTheSameScriptedScene`。 |

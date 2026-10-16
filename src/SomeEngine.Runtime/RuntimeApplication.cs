@@ -647,6 +647,8 @@ internal static class RuntimeApplication
             lightingShader,
             boot.LightingEntryPoint,
             region: sceneRegion);
+        ClusteredViewGrid blendGrid = options.BlendIndex == ClusterBlendIndex.Xy
+            ? lighting.CreateTileGrid() : lighting.ViewGrid;
         var stageResources = new GraphResourceGroup();
         stageResources.Add(lighting);
         var lightSystem = new RenderLightSetSystem();
@@ -749,7 +751,7 @@ internal static class RuntimeApplication
                 BlendIndex = options.BlendIndex,
                 BlendTriangleCapacity = script?.BlendTriangleCapacity ?? 262_144,
                 BlendReferenceCapacity = script?.BlendReferenceCapacity ?? 1_048_576,
-            }, viewGrid: lighting.ViewGrid);
+            }, viewGrid: blendGrid);
 
         void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
         {
