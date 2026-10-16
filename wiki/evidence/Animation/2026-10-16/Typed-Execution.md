@@ -52,6 +52,14 @@
 
 补充字段边界队列 `f69a85438aaf4b58960a400215b3c1b5`，退出码 0。[机器码与输出](codegen-field-jit.stdout.txt) · [队列结果](codegen-field-jit.result.json)。类型化 `Channel.WriteBatch` 为 242 字节，在批次边界从字段描述取得具体函数地址并执行一次 `call rax`；具体 `WriteFields<FieldRoot, FieldAccess>` 为 76 字节，将 span 和 Channel 放入栈上后调用具体根批次。加上 World 边界的一次回调，共两次应用层间接调用服务整个字段批次；每项的具体访问和 setter 继续内联到根循环。727 字节的 `ReferenceFieldEntry` 包含世界、对象、实体、输入数组创建及最终值检查，作为公开入口的对应证据。
 
+### 系统调度的实际调用
+
+队列 `af5d141657a0452ebb965fba03d7e70b` 同时执行全部公开消费者并输出系统机器码，退出码 0。[机器码与公开结果](systems-jit.stdout.txt) · [队列结果](systems-jit.result.json)。`SystemGroup<ImmediateSystemContext>.UpdateCore` 为 1,580 字节，持续更新每个启用系统时执行一次节点 managed 函数地址调用，以及驱动的四次接口调用：取得版本、创建上下文、`BeforeUpdate`、`AfterUpdate`。首次创建另经生命周期虚调用执行 `OnCreate`。这些调用及提交作用域均计入完整路径测量。
+
+完整 `SystemFunctions<TSystem,TContext>` 地址表在具体系统和上下文类型上初始化。struct `TimelineSystem` 更新跳板为 58 字节，节点类型检查后取得内嵌系统地址，尾跳至确定的 `OnUpdate` 方法。class 系统采用共享泛型跳板，110 字节包含泛型字典解析、节点类型检查和系统引用读取，最终通过 `ISystem<ImmediateSystemContext>.OnUpdate` 的接口地址尾跳。`ViewRebuildSystem` 等引用类型系统沿这个共同形状执行，动态扩展成本据此计入系统入口。
+
+NativeAOT 的同类跳板分别为 54 / 68 字节，系统组主体 1,787 字节。具体 Immediate 驱动的版本取得与上下文创建被编译成主体内指令，保留两次 `BeforeUpdate` / `AfterUpdate` 接口调用、一次节点函数地址调用，class 系统内部再经过一次接口尾跳。Native managed 地址根据标签位选择直接地址或携带泛型上下文的入口，每次分发实际执行其中一个分支。静态图或函数表的符号、主体与实际指令见下述 NativeAOT 证据。
+
 ## ECS 公开行为
 
 Debug 独立消费者通过 `FieldAccessChecks.VerifyAll` 运行 13 条共享公开行为，另执行包含引用的泛型根及缓冲元素操作。最新根批次运行队列 `9615540e72d340fe83141c7abec6bf37`，退出码 0。[标准输出](ecs-root-batch.stdout.txt) · [标准错误](ecs-root-batch.stderr.txt) · [队列结果](ecs-root-batch.result.json)。
@@ -153,3 +161,121 @@ Debug 独立消费者通过 `FieldAccessChecks.VerifyAll` 运行 13 条共享公
 实际公开缓冲容量：`Track<float>` 元素 160 B、容量 4；Tween Motion 40 B、容量 1；Spring Motion 52 B、容量 1；大历史状态 272 B，其 Motion 元素 328 B、容量 1。大状态包含 64 个 float、托管字符串引用与计数。具体算法默认内联容量采用 1，混用时仅增加声明过的算法存储。全进程累积峰值工作集为 853,454,848 B。
 
 首次类型使用包含相应 JIT 和共享描述初始化：首组 1,000 普通 Tween 的世界、目标、声明、启动和系统初始化合计 541.872 ms；后续专门声明内存组的 1,000 Tween 为 25.514 ms。共享代码地址由具体类型持有：每个 MotionDispatcher 一个 8 B 地址载荷，MotionAccess 每种实际算法两个地址共 16 B；字段描述的实际步长为 48 B，字段身份为 8 B，按叶值类型共享的初始 16 项数组载荷共 896 B。实例保存紧凑 Channel、实体与具体数据，公开字段访问代码按路径共享。
+
+## NativeAOT 代表性扩展
+
+独立消费者以 `win-x64`、self-contained、`PublishAot=true`、`OptimizationPreference=Speed` 发布，生成同一次映像的方法映射。首个有效发布队列 `51e5545ba01744f993609d4508e68fcc` 退出码 0，[发布输出](native-publish.stdout.txt) · [结果](native-publish.result.json)。该映像为 9,671,680 B。公开验证队列 `df0ea10629eb42c18ea96b329e6d650b` 退出码 0，[完整结果](public-native-baseline.stdout.txt) · [队列结果](public-native-baseline.result.json)。
+
+消费者运行了包含引用的组件根和缓冲、生成字段、字节兼容入口、managed 查询与系统、强类型 `.Animate`、引用 `State.Value`、完整泛型自定义算法、managed 历史、批次算法、自定义值运算与缓动、时钟与完成，以及共享图定义、独立实例状态、自定义条件、公开叶和输出卸载。成功标记为 `GRAPH_CONSUMERS_PASSED` 与 `ANIMATION_CHECKS_PASSED`。相同公开行为的 Release 执行及系统反汇编也保存在上述 `af5d1416…` 任务中。
+
+系统函数地址采用完整 `SystemFunctions<TSystem,TContext>` 共享表，实际 Native 发布与运行确认节点恢复到对应系统类型。原先构造器在派生类型与泛型基类构造签名交汇处直接执行 `ldftn`，ILC 输出曾出现错误的双上下文类型实例；将 `ldftn` 放在完整二参数静态表中后，公开系统与 Views 运行通过。原始诊断保存在 [地址绑定诊断](native-address-diagnostic.stdout.txt) 和 [原始结果](native-address-diagnostic.result.json)，实际机器码中的每帧函数地址调用保留为一次。
+
+发布诊断记录 `TraceCapture.JsonSerializer.Serialize` 的 IL2026 / IL3050，以及 `JobStorageTypeShape.GetFields` 的 IL2070；三个位置均列于原始发布输出，代表性消费路径以实际执行结果验收。
+
+### 纯算法 NativeAOT
+
+队列 `183b46a312284166b1fc9f82326c450a`，退出码 0。[42 组结果](batch-native.stdout.txt) · [队列结果](batch-native.result.json)。全部为 0 B/批，数组首次分配为 `元素字节 × 条数 + 24`，保留数组载荷为 `元素字节 × 条数`。
+
+| 100,000 条轨道 | 批次中位数 ns | P95 | P99 | 直接循环中位数 ns |
+| --- | ---: | ---: | ---: | ---: |
+| Tween | 5.978 | 9.383 | 10.410 | 4.063 |
+| Spring | 11.034 | 12.326 | 12.696 | 6.871 |
+| 消费者 Spring | 11.427 | 12.480 | 15.359 | 6.666 |
+| 消费者 History | 6.693 | 7.274 | 7.951 | 5.067 |
+| 消费者 History 专用批次 | 6.760 | 7.340 | 8.203 | 5.296 |
+| 静态 Square | 5.375 | 6.125 | 6.533 | 3.564 |
+| 函数 Square | 6.335 | 7.058 | 7.413 | 4.975 |
+
+### NativeAOT 实际机器码
+
+公开 `--codegen` 队列 `7a774a171e2e41868812d5854ce9e89c` 退出码 0，[执行结果](codegen-native-run.stdout.txt)。映射与地址采集 `43fd2925d6db422cae14c2d7d0e786a8`、最终 PE 指令采集 `36e897c38d9043fc9fca32129f4b9733` 均退出码 0：[方法字节与 PDB 地址](codegen-native-name-symbols.stdout.txt) · [实际指令](codegen-native-instructions.stdout.txt) · [指令队列结果](codegen-native-instructions.result.json)。`.text` 地址由 PE 分节取得，方法起点由同一次 PDB 的 section 1 十进制偏移计算；方法字节来自对应映射。
+
+| 具体组合或入口 | NativeAOT 字节 | 正常批内行为 |
+| --- | ---: | --- |
+| MotionDispatcher 跳板 | 5 | 固定跳入具体批次 |
+| Tween / SquareEasing 批次 | 451 | 缓动平方与 FloatOps 内联 |
+| Spring 批次 | 503 | 调用固定类型的 254 B 积分体 |
+| 消费者 History 批次 | 433 | 历史更新与采样内联 |
+| FunctionTween 批次 | 468 | 每个未完成样本额外调用一次标量函数地址 |
+| ScalarEasing | 5 | 标量平方指令 |
+| Channel.WriteBatch | 275 | 按字段描述调用一次具体批次地址 |
+| 具体引用字段 WriteFields | 66 | 建立栈上批次并调用根存储入口 |
+| World.ExecuteComponentWrite | 776 | 一次权限、版本及具体根循环回调 |
+| 具体引用字段 WriteRoots | 1,232 | 解析当前行，setter 内联为 `[对象 + 8]` 浮点写入 |
+| ReferenceFieldEntry | 660 | 创建公开输入并验证引用对象结果 |
+
+Tween、Spring、History 的应用层动态算法分发位于批次边界一次；FunctionTween 的额外动态调用发生在每个未完成活动样本。NativeAOT 的 managed 函数地址带标签检查，实际选择普通入口或携带上下文的入口后执行一次调用。引用字段批次共享 Channel 和 World 两个应用层动态入口；每项具体访问形成对象引用读取与常量偏移写入。表中根循环主体包含 table/sparse、行解析、COW、版本及异常分支，具体方法字节覆盖整个主体。映射记录的每个 MotionDispatcher / SystemFunctions 非 GC 静态块为 16 B，其中函数地址载荷为 8 B；共享静态块与实例存储分别计量。
+
+### GC 后恢复与诊断字符串
+
+Release 单组公开路径队列 `023ce9e248dc432ea1a729cc75953cd6` 退出码 0，[原始分解](allocation-release-baseline.stdout.txt) · [结果](allocation-release-baseline.result.json)。1,000 普通 Tween 的 48 帧总分配为 208 B：完整 GC 后首帧 208 B，随后 47 帧合计 0 B。这与完整 Release 矩阵每组 208 B 的原始计数一致。
+
+NativeAOT 基线的 1,000 目标全路径队列 `041c17fc2c1046a78f39fbc78cdcd66a` 退出码 0，[全部结果](full-native-baseline.stdout.txt) · [结果](full-native-baseline.result.json)。全部 18 组字段持续帧出现 80,000 B/帧；普通 Tween 的完整 GC 后首帧为 80,296 B，随后 47 帧合计 3,760,000 B。固定来源、图和控制中的 Timeline 访问也按调用次数产生相应费用，根列与直接字段写入仍为 0 B。
+
+实际 Native 指令将原因定位到 `World.IsEnabled<Timeline>` 正常路径：`0x14045B7F0` 在进入 `Owners.Components.IsEnabled` 前调用 RuntimeType 名称接口。泛型启用读写原先把 `typeof(T).Name` 作为通用实现的诊断参数，Native 每次取得 `Timeline` 名称形成 40 B 字符串，两次访问构成每目标 80 B。实现现传递 `Type`，在既有缺组件诊断分支创建名称；组件身份、存储权限、启用读写和诊断文本沿共同入口保持一致。Release 的 GC 后缓存恢复与 Native 的逐帧字符串费用由最终同一公开路径采样确认。
+
+## 最终集成采样
+
+最终版本包含空算法存储早退、当前行来源更新、Views 元数据与 FieldMotion 复用，以及上述诊断名称延后创建。Native 发布 `457279ad74ab4167b661fa98df3b20e7` 与 Release 构建 `f06ff6974d5f4262a7a2cede14ab5734` 均退出码 0：[Native 发布](native-final-publish.stdout.txt) · [Native 结果](native-final-publish.result.json) · [Release 构建](public-final-release-build.stdout.txt) · [Release 结果](public-final-release-build.result.json)。Native 映像为 9,660,928 B，Release apphost 为 162,816 B；Native 发布保留前述三处诊断，Release 构建为 0 警告、0 错误。
+
+最终公开消费者在 Native 队列 `8d8c20af24bc472a9dc00358a47b6b3c` 和 Release 队列 `2776232742dd43388072164f3ce44d34` 均退出码 0，包含全部十项 Views 公开行为和 ECS、算法、图的共同检查：[Native 输出](public-final-native.stdout.txt) · [Native 结果](public-final-native.result.json) · [Release 输出](public-final-release.stdout.txt) · [Release 结果](public-final-release.result.json)。
+
+### 字段与 GC 分配
+
+Native 最小完整矩阵使用 1,000 目标，队列 `5b22bd78e1034420a4f51dca4249f68d`，退出码 0，UTC 16:12:53–16:13:02：[全部 CSV](full-final-native.stdout.txt) · [队列结果](full-final-native.result.json)。下表单位为 ns/目标，所有 18 组每个样本分配 0 B，完整 GC 后首帧 0 B、后续 47 帧合计 0 B。
+
+| 算法与字段 | 中位数 | P95 | P99 |
+| --- | ---: | ---: | ---: |
+| Tween 普通 | 2125.900 | 2380.400 | 2448.900 |
+| Spring 普通 | 2019.900 | 2279.800 | 2585.000 |
+| History 普通 | 1982.500 | 2240.400 | 2280.700 |
+| 静态 Square 普通 | 1968.800 | 2296.000 | 2507.700 |
+| 函数 Square 普通 | 1930.900 | 2131.900 | 2309.500 |
+| Tween 值嵌套 | 2121.700 | 3765.900 | 3931.900 |
+| Spring 值嵌套 | 1960.900 | 2479.400 | 2922.400 |
+| History 值嵌套 | 2054.300 | 2819.700 | 3792.000 |
+| 静态 Square 值嵌套 | 1914.100 | 2250.600 | 2616.700 |
+| 函数 Square 值嵌套 | 1997.200 | 2181.400 | 2774.100 |
+| Tween 引用属性 | 2036.900 | 2497.200 | 2605.400 |
+| Spring 引用属性 | 1968.400 | 2793.000 | 3738.000 |
+| History 引用属性 | 1921.500 | 2383.300 | 2588.700 |
+| 静态 Square 引用属性 | 1875.500 | 2086.400 | 2349.900 |
+| 函数 Square 引用属性 | 1940.000 | 2082.900 | 2349.000 |
+| Tween 普通 WorldJobs | 2413.200 | 2748.000 | 2889.900 |
+| Tween 值嵌套 WorldJobs | 2391.400 | 2721.100 | 3401.800 |
+| Tween 引用属性 WorldJobs | 2487.600 | 2846.800 | 3362.200 |
+
+Release 单组 `fccb0678e1db4a94a053723cc3ac9e6a` 复用相同 1,000 普通 Tween，退出码 0：[原始输出](allocation-final-release.stdout.txt) · [队列结果](allocation-final-release.result.json)。中位数 2292.900、P95 2503.000、P99 2542.300 ns/目标；完整 GC 后首帧为 0 B，随后 47 帧合计 0 B。原有 54 组 Release 全规模记录与 Native 原始 80 B/目标记录保留为定位证据，最终共同入口的分配结果由这组最小补充和 Native 18 组实跑确认。
+
+### 控制、来源与图
+
+最终 Native 的声明后重定目标、算法切换、停止并播放、固定双来源、动态提交、三类保持输出，以及十二组图阶段持续帧均为 0 B。下列中位数按控制和图的目标数、来源的实际来源数计量：
+
+| 操作 | ns/项 |
+| --- | ---: |
+| Retarget | 2950.700 |
+| 已声明算法切换 | 6377.200 |
+| Stop 后 To | 10281.400 |
+| 固定双来源 | 2391.450 |
+| 动态提交、排序与合成 | 543.050 |
+| 保持且输入相同 | 2952.050 |
+| 保持、层权重变化 | 3873.050 |
+| 保持、基准值变化 | 3289.050 |
+| 固定序列完整执行 | 4258.400 |
+| 收敛序列完整执行 | 4363.300 |
+| 状态机和输入完整执行 | 5599.500 |
+| Blend 和输入完整执行 | 5151.100 |
+
+1,000 项首次声明为 28.772 ms、分配 4,117,896 B；已声明后首次播放为 6.787 ms、0 B；首次完成帧为 2.588 ms、分配 93,120 B，包含首次工作容量增长。后续完成并复用为 7445.900 ns/目标，P95 7828.600、P99 8286.000，0 B/批。公共空查询委托和 managed 函数入口中位数为 201.953 / 219.043 ns/次，完整系统组为 364.062 ns/次，二者各持续样本为 0 B。
+
+### 三组 Native 声明内存
+
+1,000 目标，实际缓冲大小与容量沿用前述公开布局。总保留字节包含 World、目标、声明与激活后的执行数据。
+
+| 声明 | 声明 ms | 声明分配 B | 激活 ms | 激活分配 B | 激活后保留 B | B/目标 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 单 Tween | 25.440 | 4212728 | 8.638 | 98752 | 3298592 | 3298.592 |
+| Tween 和 Spring | 32.094 | 4971304 | 20.296 | 165720 | 3970560 | 3970.560 |
+| 大历史状态 | 28.331 | 6595192 | 9.002 | 131448 | 5683616 | 5683.616 |
+
+该进程累积峰值工作集为 50,831,360 B。首次类型及共同结构初始化后的专门声明采样提供以上三组；整个测量的首组普通 Tween 创建、声明、启动与系统初始化合计为 40.383 ms。

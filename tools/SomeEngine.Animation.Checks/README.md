@@ -61,5 +61,10 @@ $nativeChecks = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/ne
 $nativeDirectory = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish'
 $nativeMap = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/obj/Release/net10.0/win-x64/native/SomeEngine.Animation.Checks.map.xml'
 $nativeCodeReader = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/Read-NativeCode.ps1'
-& ./tools/Invoke-Benchmark.ps1 pwsh -NoProfile -File $nativeCodeReader -NativeDirectory $nativeDirectory -MapPath $nativeMap -LlvmBinDirectory 'C:/Program Files/LLVM/bin'
+$symbolTask = (& ./tools/Invoke-Benchmark.ps1 pwsh -NoProfile -File $nativeCodeReader -NativeDirectory $nativeDirectory -MapPath $nativeMap -LlvmBinDirectory 'C:/Program Files/LLVM/bin') | ConvertFrom-Json
+$nativeSymbolsPath = Join-Path $symbolTask.OutputDirectory 'stdout.log'
+$nativeInstructions = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/Read-NativeInstructions.ps1'
+& ./tools/Invoke-Benchmark.ps1 pwsh -NoProfile -File $nativeInstructions -SymbolsPath $nativeSymbolsPath -NativeDirectory $nativeDirectory -LlvmBinDirectory 'C:/Program Files/LLVM/bin'
 ```
+
+`Read-NativeInstructions.ps1` 按符号采集任务记录的映像地址和方法长度，输出最终 PE 中的代表批次、字段写入、系统回调与 Timeline 启用读取指令。两个诊断任务沿共同 FIFO 顺序执行，使用同一次发布的映像与符号。
