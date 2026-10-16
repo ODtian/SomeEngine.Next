@@ -499,7 +499,7 @@ dotnet templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.dll --meas
 
 GPU 从 primary 两阶段的实际可见数量保存配套源请求，每项 12 B，持有页、实例、页内 cluster 和 view。source 编码由该表的条目与原 triangle 组成；微三角形通过同一用户域的 primitive 序号及原域重心来源重建。投影、覆盖、阴影和材质求值读取同一份源表。已保存的投影及 cell 引用与其源表共同复用，帧间可见队列的追加顺序变化由这份配套身份隔离。
 
-Count 对实际投影图元的保守 XYZ 范围计数，Reserve 为每 cell 分配连续引用区间，Scatter 写入投影引用。投影缓存与引用池分别由 `ClusterPipelineOptions.BlendTriangleCapacity/BlendReferenceCapacity` 设置；`SceneScript` 提供相同的公开预算。完整 cell 区间在预算内驻留，后续 cell 继续枚举原来源及实际 primitive 数量。像素对覆盖后的最终深度查询所属 cell；该 cell 执行最终命中的 receiver 和合成。
+Count 对实际投影图元的保守 XYZ 范围计数，Reserve 为每 cell 分配连续引用区间，Scatter 写入投影引用。投影缓存与引用池分别由 `ClusterPipelineOptions.BlendTriangleCapacity/BlendReferenceCapacity` 设置；`SceneScript` 提供相同的公开预算。完整 cell 区间在预算内驻留，引用容量之外的 cell 扫描已保存的投影。投影容量之外的来源通过 wave 共享的用户投影状态继续生成，每次广播一份三角形；各像素执行自己的覆盖和完整次序累积。驻留引用路径对覆盖后的最终深度查询所属 cell；该 cell 执行最终命中的 receiver 和合成。
 
 每轮先扫描全部候选，选择剩余输入中最近四层，再更新颜色与透射率。源批次持续到实际输入结束；`MaximumError` 继续沿已完成前缀检查尾部颜色界。持久图保留五个固定几何阶段、资源与连接，当帧 GPU 计数决定其实际工作量。视图、实例 batch 与内容版本、几何/光栅版本、材质配置、驻留写入与 streaming quality 变化驱动刷新；完成后的相同输入复用配套源、投影和引用。
 
@@ -509,7 +509,9 @@ Count 对实际投影图元的保守 XYZ 范围计数，Reserve 为每 cell 分�
 
 透明几何沿 primary 的两轮可见结果读取硬件与软件来源。每份来源保留 12 字节 `DrawRequest`，用户 `VisibilityVertexInput.Source` 和 `VisibilityPixelInput.Source` 直接携带该请求，覆盖、求色与 receiver 从同一份 page、instance、cluster 和 view 解释几何。缓存保留的来源与当前全局可见列表具有各自的索引范围。
 
-`cluster_tessellation_geometry.slang` 统一 opaque 与透明使用的边因子、曲面误差、分片及子片计算。透明用户类型的 `primitiveCount` 和 `project` 按当前 `VertexEvaluate` 与 `DomainEvaluate` 遍历实际曲面；图元序号恢复微三角形在原三角形域中的三个角点。投影缓冲中的 `Source` 和 `Primitive` 供覆盖与材质求值恢复同一曲面位置、重心与梯度。分片遍历使用细分层数决定的局部栈，投影和引用缓冲容量决定每批保留的数据；其余来源和微三角形继续通过同一用户入口处理。
+`cluster_tessellation_geometry.slang` 统一 opaque 与透明使用的边因子、曲面误差、分片及子片计算。透明用户类型通过 `beginProjection` 创建自身的 `Projection`，由 `nextProjection` 顺序推进当前 `VertexEvaluate` 与 `DomainEvaluate` 的实际曲面。该类型持有用户三角形和深度优先细分状态，用户域的整体及分片范围用于屏幕查询裁剪。图元序号恢复微三角形在原三角形域中的三个角点；投影缓冲中的 `Source` 和 `Primitive` 供覆盖与材质求值恢复同一曲面位置、重心与梯度。
+
+溢出遍历由 wave 的一个 lane 持有同一份用户投影状态，查询范围覆盖该 wave 的像素中心。该 lane 依次生成实际微三角形，再广播 64 B 投影数据；像素保留自己的四层命中队列和合成状态。分片遍历使用细分层数决定的局部栈，原图元序号在裁剪后继续保留。该路径使用原有源表，投影和引用容量均为 `1` 时也完整推进实际贡献。
 
 覆盖输入的深度来自用户曲面投影平面，和硬件插值深度一致。Phong 的深度反解将近似微三角形覆盖点钳制到原域边界，使用该位置与导数判断表面有效性，细分精度继续由共享边长及误差条件决定。
 
@@ -519,4 +521,11 @@ DefaultGame 的 `--cluster-effect=deformed-phong` 创建 16 个带棋盘贴图�
 
 ```powershell
 dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Release --filter 'FullyQualifiedName~TransparentDeformedPhongSurfaceMatchesOpaqueSurfaceAtFullOpacity|FullyQualifiedName~TransparencyGeometryTests' --nologo -v minimal
+```
+
+2026-10-16 的容量继续处理检查通过 `TransparentCurvedGeometryMatchesAcrossRasterSourcesAndBufferBatches` 对照三次应用：硬件来源（8 px、投影/引用各 4096）、软件来源（256 px、各 4096）和软件来源（256 px、各 1）。每次完成 8 帧并驻留 6/6 页，D3D12 与 Vulkan 的完整线性图像均在 `0.001` 内一致，两个 backend 检查共 2/2 通过，行为规则为 0 违规。该轮先记录容量为 `1` 时的 D3D12 `DeviceLost`，随后采用顺序细分和 wave 共享投影通过原检查。匹配内容位于 `F:/AI-Workspaces/tile-blending-221-content/223-fallback/DefaultProject`（91 资产），新 `Assets` 编译后通过原 `DefaultContent.BuildAsync` 重写配置。
+
+```powershell
+$env:SOMEENGINE_TEST_COOKED_CONTENT='F:/AI-Workspaces/tile-blending-221-content/223-fallback/DefaultProject'
+dotnet test tests/SomeEngine.Runtime.Tests/SomeEngine.Runtime.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~TransparentCurvedGeometryMatchesAcrossRasterSourcesAndBufferBatches' --nologo -v minimal
 ```
