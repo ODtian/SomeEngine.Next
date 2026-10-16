@@ -20,7 +20,9 @@
         "Specializations": [
           { "EntryPoint": "BuildTransparentGeometry", "Arguments": ["0", "true"] },
           { "EntryPoint": "RequestTransparentShadows", "Arguments": ["0", "true"] },
+          { "EntryPoint": "RequestProjectedTransparentShadows", "Arguments": ["0", "true"] },
           { "EntryPoint": "ResolveTransparentColor", "Arguments": ["0", "true"] },
+          { "EntryPoint": "ResolveProjectedTransparentColor", "Arguments": ["0", "true"] },
           {
             "EntryPoint": "ClusterSurfaceDataDepth",
             "Arguments": [
