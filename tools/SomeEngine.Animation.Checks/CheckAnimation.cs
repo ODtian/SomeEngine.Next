@@ -31,6 +31,9 @@ internal static partial class CheckAnimation
         global::SomeEngine.Views.Tests.TypedAnimationChecks.AReversedReferenceTargetContinuesFromItsPresentedValue();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.AParameterUpdateUsesTheExistingElapsedTime();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.AConsumerMotionUsesItsManagedHistoryThroughAnimate();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.AnAwaitedReferenceTargetContinuesFromItsPresentation();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.CancelingAnAwaitedReferenceTargetKeepsTheReplacementTarget();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.ReferencePresentationRefreshesRootAndLeafReaders();
         CheckTypedBatch();
         CheckManagedHistory();
         CheckSpring();

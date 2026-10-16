@@ -90,6 +90,7 @@ internal static unsafe partial class FullPathMeasurements
             using var evaluate = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
             evaluate.Add(new TypedTrackSystem<float, FloatOps, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>());
             evaluate.Add(new TypedTrackSystem<float, FloatOps, SpringParameters, SpringState<float>, Spring<float, FloatOps>>());
+            evaluate.Add(new GraphOutputSystem<float, FloatOps>());
             evaluate.Add(new ComposeSystem<float, FloatOps>());
             evaluate.Add(new GraphEndSystem());
             evaluate.Add(new TimelineEndSystem());
@@ -105,6 +106,7 @@ internal static unsafe partial class FullPathMeasurements
             Action evaluateFrame = () => evaluate.Update(ref context);
             RecordGraphPhases(name, count, advanceFrame, evaluateFrame);
             Require(world.IsEnabled<Timeline>(instances[^1]), "Graph measurements require active shared definitions.");
+            Require(channel.Read(world, targets[^1]) > 0, "Graph measurements must write the compiled output field.");
         }
         finally { graph.Dispose(); }
     }

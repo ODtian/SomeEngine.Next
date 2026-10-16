@@ -3,6 +3,7 @@ using SomeEngine.Animation.Consumers;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Checks;
 
@@ -62,7 +63,8 @@ internal static class GraphConsumerChecks
 
     private static void CheckCustomCondition()
     {
-        using var world = new World();
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Entity first = world.CreateEntity(new GraphValue());
         Entity second = world.CreateEntity(new GraphValue());
         var parameters = new GraphParameters();
