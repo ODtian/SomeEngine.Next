@@ -167,14 +167,14 @@ internal sealed class RuntimeScene : IDisposable
             foreach (Entity entity in instances)
             {
                 MeshSource source = world.Read<MeshSource>(entity);
-                var content = meshes[source.Mesh.Value];
+                var meshData = meshes[source.Mesh.Value];
                 TransformQvvs transform = world.Read<WorldTransform>(entity).Qvvs;
                 meshPositionMin = Vector3.Min(meshPositionMin, transform.Position);
                 meshPositionMax = Vector3.Max(meshPositionMax, transform.Position);
-                world.Add(entity, new MeshInstance { Mesh = content.Mesh, PageSource = content.Source,
+                world.Add(entity, new MeshInstance { Mesh = meshData.Mesh, PageSource = meshData.Source,
                     BoundsExpansion = source.BoundsExpansion });
                 world.AddBuffer<MeshMaterialBinding>(entity);
-                MeshMaterialBinding[] bindings = content.Bindings;
+                MeshMaterialBinding[] bindings = meshData.Bindings;
                 world.ExecuteBufferWrite<MeshMaterialBinding, MeshMaterialBinding[]>(entity, ref bindings,
                     static (DynamicBuffer<MeshMaterialBinding> buffer, ref MeshMaterialBinding[] values) =>
                     {

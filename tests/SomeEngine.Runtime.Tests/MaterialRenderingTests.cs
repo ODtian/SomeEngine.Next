@@ -2,7 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
-Texture = SomeEngine.Resources.Texture;
+using Texture = SomeEngine.Resources.Texture;
 
 namespace SomeEngine.Runtime.Tests;
 

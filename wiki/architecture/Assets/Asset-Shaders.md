@@ -106,7 +106,7 @@ Cluster 的提前准备与材质阶段解析共用入口选择。应用启动通
 
 `ShaderRef` 保存 `AssetId<ShaderAsset>` 与入口名。调用方为具体 Shader 创建提供 `IGlobalSession`、`SessionDesc` 与所选编译 target。`ShaderRef.LoadAsync` 接收文件读取器、强类型 WeakValues 及明确的 Slang 输入，通过 `ShaderAsset.GetAsync` 取得存活的共同 Shader，返回 `AssetId<ShaderAsset>` 到实际 Shader 的引用字典。Cluster、VirtualShadowMap Block 的 `Create(name, shaders)` 直接从这些实际引用解析入口。
 
-`ClusterShadersAsset` 与 `VirtualShadowMapShadersAsset` 保存角色到 `ShaderRef` 的配置集合。对应 Block 的 `CreateAsync(name, loader, cancellationToken)` 从加载器取得共用 Shader，创建的资源组持有该 `Shader` 和由它锚定的 `EntryPointReflection`。
+`ClusterShadersAsset` 与 `VirtualShadowMapShadersAsset` 保存角色到 `ShaderRef` 的配置集合。对应 Block 的 `Create(name, shaders)` 同步消费已取得的实际引用，创建的资源组持有该 `Shader` 和由它锚定的 `EntryPointReflection`。
 
 ## 构建与失效
 

@@ -58,7 +58,7 @@ public sealed class AssetBlockSourceTextTests : IDisposable
         ReadOnlyMemory<byte> expected = pixels.Chunks[key];
         ReadOnlyMemory<byte> actual = restored.Chunks[key];
         Assert.Equal(expected.ToArray(), actual.ToArray());
-        using SomeEngine.Resources.Texture ready = await restored.CreateAsync(source.Description.Name);
+        SomeEngine.Resources.Texture ready = await restored.CreateAsync(source.Description.Name);
         Assert.Equal(8u, ready.Width);
         Assert.True(ready.HasBootstrap);
     }
@@ -122,7 +122,7 @@ public sealed class AssetBlockSourceTextTests : IDisposable
         Assert.Equal(2, target.Chunks.Count);
         Assert.Equal(65536, target.Chunks[target.MipTiles[0].ChunkKey].Length);
         Assert.Equal(16384, target.Chunks[target.MipTiles[1].ChunkKey].Length);
-        using SomeEngine.Resources.Texture texture = await target.CreateAsync();
+        SomeEngine.Resources.Texture texture = await target.CreateAsync();
         Assert.True(texture.TryGetTile(target.MipTiles[0].ChunkKey, out var bytes));
         target.Dispose();
         source.Dispose();

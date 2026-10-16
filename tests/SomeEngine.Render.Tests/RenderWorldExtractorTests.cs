@@ -152,7 +152,7 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         using RenderWorld render = new();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
         Texture texture = TextureAsset(93, 1);
-        using var material = new StandardMaterial { AlbedoMap = texture };
+        var material = new StandardMaterial { AlbedoMap = texture };
         Entity source = AddMeshSource(game, MeshAsset(5, 1), 0, Vector3.Zero);
         SetSourceBindings(game, source, material, default!, 1);
         ExtractAndApply(extraction, game, render);
