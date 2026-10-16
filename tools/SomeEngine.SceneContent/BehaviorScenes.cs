@@ -24,15 +24,15 @@ public static partial class BehaviorScenes
         await SetGreenShaderAsync(destination, engineRoot, "tessellated-unlit", shader);
     }
 
-    public static async Task CreateDeformedPhongSpheresAsync(string source, string destination, string engineRoot)
+    public static async Task CreateDeformedPhongSpheresAsync(string source, string destination)
     {
         CopyContent(source, destination);
-        string shader = File.ReadAllText(Path.Combine(destination, "assets/Shaders/unlit.slang"))
-            .Replace("typedef StaticVertexEval VertexEvaluate;", "typedef WaveVertexEval VertexEvaluate;")
-            .Replace("typedef LinearSurface DomainEvaluate;", "#include \"phong_tessellation.slang\"\ntypedef PhongTessellation DomainEvaluate;")
-            .Replace("UnlitTransparencyMaterial", "DeformedPhongTransparencyMaterial")
-            + "\n#include \"cluster_tessellation_entries.slang\"\n";
-        await SetGreenShaderAsync(destination, engineRoot, "deformed-phong", shader);
+        var project = new AssetProject(destination, []);
+        await using var loader = new AssetLoader(project.CreateStorage());
+        AssetEntry entry = project.Manifest.Assets.Values.Single(value => value.Name == "green sphere" && value.AssetType == MaterialAsset.FileType);
+        using var material = await UnlitMaterialAsset.OpenAsync(loader, new(entry.AssetGuid));
+        material.GetBlock<MaterialBlock>().Shader = new(project.Resolve("assets/Shaders/deformed-phong.shader")!.Value);
+        project.RegisterAsset(await material.SaveAsync(Path.Combine(destination, entry.Path)));
         await SceneContent.SetOutputSizeAsync(destination, 128, 128);
     }
 

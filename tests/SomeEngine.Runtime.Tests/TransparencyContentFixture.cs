@@ -25,7 +25,7 @@ public sealed class TransparencyContentFixture : IAsyncLifetime
                 await SomeEngine.SceneContent.SceneContent.GenerateSpheresFromCookedAsync(Spheres, cookedContent);
             await SomeEngine.SceneContent.BehaviorScenes.CreateIntersectingPanelsAsync(Spheres, DirectoryPath);
             await SomeEngine.SceneContent.BehaviorScenes.CreateLitTransparencyAsync(Spheres, Lit);
-            await SomeEngine.SceneContent.BehaviorScenes.CreateDeformedPhongSpheresAsync(Spheres, DeformedPhong, source);
+            await SomeEngine.SceneContent.BehaviorScenes.CreateDeformedPhongSpheresAsync(Spheres, DeformedPhong);
         }
         catch { await DisposeAsync(); throw; }
     }
