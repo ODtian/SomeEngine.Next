@@ -10,10 +10,16 @@ internal static partial class CheckAnimation
 {
     public static int Main(string[] args)
     {
+        if (args.Contains("--view-switch-benchmark"))
+        {
+            var measurement = global::SomeEngine.Views.Tests.TypedAnimationChecks.MeasureDeclaredMotionSwitches();
+            Console.WriteLine($"VIEWS_DECLARED_SWITCHES samples={measurement.Samples} bytes={measurement.Bytes}");
+            return 0;
+        }
         if (args.Contains("--views-checks"))
         {
             CheckViews();
-            Console.WriteLine("VIEWS_CHECKS_PASSED 10");
+            Console.WriteLine("VIEWS_CHECKS_PASSED 11");
             return 0;
         }
         if (args.Contains("--codegen"))
@@ -70,6 +76,7 @@ internal static partial class CheckAnimation
         global::SomeEngine.Views.Tests.TypedAnimationChecks.AnAwaitedReferenceTargetContinuesFromItsPresentation();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.CancelingAnAwaitedReferenceTargetKeepsTheReplacementTarget();
         global::SomeEngine.Views.Tests.TypedAnimationChecks.ReferencePresentationRefreshesRootAndLeafReaders();
+        global::SomeEngine.Views.Tests.TypedAnimationChecks.DeclaredAlgorithmsCanBeSelectedRepeatedly();
     }
 
     private static void CheckTypedBatch()

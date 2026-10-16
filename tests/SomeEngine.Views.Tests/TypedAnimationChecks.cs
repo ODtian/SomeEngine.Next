@@ -198,6 +198,72 @@ public static partial class TypedAnimationChecks
             "Root-only and leaf-only dependencies both observe the rendered reference value.");
     }
 
+    public static void DeclaredAlgorithmsCanBeSelectedRepeatedly()
+    {
+        using var frames = new TypedFrames();
+        frames.Add(Spec.Tween<float, FloatOps, CubicOut>(1));
+        var selection = new State<int>();
+        var target = new State<float>();
+        var presented = new State<float>();
+        Entity root = Views.Spawn(frames.World, Entity.Null, new DeclaredTargets(selection, target, presented));
+        frames.Frame(0);
+        for (int index = 0; index < 3; index++)
+        {
+            selection.Value = index;
+            target.Value = (index + 1) * 10;
+            frames.Frame(0);
+            frames.Frame(0.5f);
+        }
+        Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        using var tables = frames.World.ObserveEntityTables();
+        tables.Accept(tables.Read());
+        int count = frames.World.EntityCount;
+
+        for (int index = 0; index < 9; index++)
+        {
+            selection.Value = index % 3;
+            target.Value = 40 + index;
+            float previous = presented.Value;
+            frames.Frame(0);
+            Require(presented.Value == previous, "Selecting a declared algorithm preserves the current presentation.");
+            frames.Frame(0.5f);
+            float progress = index % 3 == 1 ? 0.875f : 0.5f;
+            float expected = previous + (target.Value - previous) * progress;
+            Require(MathF.Abs(presented.Value - expected) < 0.0001f,
+                "The reselected typed or convenience algorithm produces its declared interpolation.");
+        }
+
+        Require(frames.World.EntityCount == count && tables.Read().Count == 0,
+            "Repeated algorithm selection reuses the declared entity and component storage.");
+        Require(ReferenceEquals(frames.World.Read<AnimatedPanel>(panel).Progress, presented),
+            "Repeated algorithm selection retains the referenced field.");
+    }
+
+    public static (int Samples, long Bytes) MeasureDeclaredMotionSwitches()
+    {
+        using var frames = new TypedFrames();
+        frames.Add(Spec.Tween<float, FloatOps, CubicOut>(1));
+        var selection = new State<int>();
+        var target = new State<float>();
+        Views.Spawn(frames.World, Entity.Null, new DeclaredTargets(selection, target, new State<float>()));
+        const int warmups = 128, samples = 1000;
+        for (int index = 0; index < warmups; index++)
+        {
+            selection.Value = index % 3;
+            target.Value = index + 1;
+            frames.Frame(1f / 120);
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < samples; index++)
+        {
+            selection.Value = (warmups + index) % 3;
+            target.Value = warmups + index + 1;
+            frames.Frame(1f / 120);
+        }
+        return (samples, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
+
     private static void Require(bool value, string message)
     {
         if (!value) throw new InvalidOperationException(message);
@@ -282,6 +348,30 @@ public static partial class TypedAnimationChecks
                 .Animate(AnimatedPanelChannels.ProgressValue,
                     Spec.Create<float, FloatOps, NamedParameters, NamedState, NamedMotion>(new(1, "xx")));
             Scope.Set(panel, AnimatedPanelChannels.ProgressValue, Target.Value);
+            return default;
+        }
+    }
+
+    private readonly record struct DeclaredTargets(State<int> Selection, State<float> Target, State<float> Presented) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            Entity panel = Scope.View(new AnimatedPanel { Progress = Presented }, 0)
+                .Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween<float, FloatOps, Linear>(1))
+                .Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween<float, FloatOps, CubicOut>(1))
+                .Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween(1));
+            State<int> selection = Selection;
+            State<float> target = Target;
+            Scope.Compute(() =>
+            {
+                switch (selection.Value % 3)
+                {
+                    case 0: panel.Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween<float, FloatOps, Linear>(1)); break;
+                    case 1: panel.Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween<float, FloatOps, CubicOut>(1)); break;
+                    case 2: panel.Animate(AnimatedPanelChannels.ProgressValue, Spec.Tween(1)); break;
+                }
+                Scope.Set(panel, AnimatedPanelChannels.ProgressValue, target.Value);
+            });
             return default;
         }
     }

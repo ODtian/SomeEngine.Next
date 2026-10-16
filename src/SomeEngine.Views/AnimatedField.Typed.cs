@@ -5,7 +5,12 @@ using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Views;
 
-internal sealed class FieldMotion<T, TOps, TParameters, TState, TEvaluator>
+internal abstract class FieldMotion
+{
+    internal FieldMotion? Next;
+}
+
+internal sealed class FieldMotion<T, TOps, TParameters, TState, TEvaluator> : FieldMotion
     where T : unmanaged
     where TOps : struct, IValueOps<T>
     where TParameters : struct
@@ -14,6 +19,18 @@ internal sealed class FieldMotion<T, TOps, TParameters, TState, TEvaluator>
 {
     internal Channel<T> Channel;
     internal Spec<T, TOps, TParameters, TState, TEvaluator> Spec;
+
+    internal static FieldMotion<T, TOps, TParameters, TState, TEvaluator> Select(ref AnimatedField field)
+    {
+        if (field.Motion is FieldMotion<T, TOps, TParameters, TState, TEvaluator> current)
+            return current;
+        for (FieldMotion? declared = field.Motions; declared is not null; declared = declared.Next)
+            if (declared is FieldMotion<T, TOps, TParameters, TState, TEvaluator> existing)
+                return existing;
+        var motion = new FieldMotion<T, TOps, TParameters, TState, TEvaluator> { Next = field.Motions };
+        field.Motions = motion;
+        return motion;
+    }
 }
 
 internal static unsafe partial class AnimatedFields
@@ -37,8 +54,8 @@ internal static unsafe partial class AnimatedFields
                     ref AnimatedField field = ref fields[index];
                     if (field.Component != declaration.Channel.Component || field.Field != declaration.Channel.Field)
                         continue;
-                    if (field.Motion is not FieldMotion<T, TOps, TParameters, TState, TEvaluator> motion)
-                        field.Motion = motion = new();
+                    var motion = FieldMotion<T, TOps, TParameters, TState, TEvaluator>.Select(ref field);
+                    field.Motion = motion;
                     motion.Channel = declaration.Channel;
                     motion.Spec = declaration.Spec;
                     field.ValueFunction = &CopyTypedValue<T, TOps, TParameters, TState, TEvaluator>;

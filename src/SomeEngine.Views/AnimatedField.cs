@@ -17,7 +17,8 @@ internal unsafe struct AnimatedField : IBufferElement
     internal uint Field;
     internal bool ThroughReference;
     internal Spec Spec;
-    internal object? Motion;
+    internal FieldMotion? Motions;
+    internal FieldMotion? Motion;
     internal bool HasValue;
 #if DEBUG
     internal int ValueComponent;

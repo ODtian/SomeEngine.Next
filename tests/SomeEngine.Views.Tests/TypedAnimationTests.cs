@@ -31,4 +31,7 @@ public sealed class TypedAnimationTests
 
     [Fact]
     public void ReferencePresentationRefreshesRootAndLeafReaders() => TypedAnimationChecks.ReferencePresentationRefreshesRootAndLeafReaders();
+
+    [Fact]
+    public void DeclaredAlgorithmsCanBeSelectedRepeatedly() => TypedAnimationChecks.DeclaredAlgorithmsCanBeSelectedRepeatedly();
 }
