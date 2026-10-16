@@ -4,7 +4,7 @@ param(
     [string]$LlvmBinDirectory
 )
 
-$methodFilter = 'MotionDispatcher.*Evaluate|IMotion.*EvaluateBatch|Spring.*Evaluate|HistoryMotion.*Evaluate|FunctionTween.*Evaluate|CodeGenerationChecks.*BatchEntry|CodeGenerationChecks.*ReferenceFieldEntry|Channel.*WriteRoots|Channel.*WriteFields|Channel.*WriteBatch|World.*ExecuteComponentWrite|SystemFunctions.*UpdateSystem|SystemGroup.*UpdateCore'
+$methodFilter = 'MotionDispatcher.*Evaluate|IMotion.*EvaluateBatch|Spring.*Evaluate|HistoryMotion.*Evaluate|FunctionTween.*Evaluate|CodeGenerationChecks.*BatchEntry|CodeGenerationChecks.*ReferenceFieldEntry|ScalarEasing|Channel.*WriteRoots|Channel.*WriteFields|Channel.*WriteBatch|World.*ExecuteComponentWrite|World.*IsEnabled|Owners_Components.*IsEnabled|RuntimeType.*get_Name|RhpBox|RhpNewFast|SystemFunctions.*UpdateSystem|SystemGroup.*UpdateCore'
 $reader = [System.Xml.XmlReader]::Create($MapPath)
 try {
     while ($reader.Read()) {
