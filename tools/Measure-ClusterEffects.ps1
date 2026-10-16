@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory)][string]$ApplicationPath,
     [string[]]$Effects = @('glass', 'smoke', 'foliage', 'deformed-phong', 'xray', 'decal-layers', 'decal-sparse', 'ordered'),
     [ValidateSet('full', 'xyz')][string[]]$Methods = @('full', 'xyz'),
+    [hashtable]$FirstFrames = @{ '1024 spheres' = 2048; 'Sponza' = 1024; 'Amazon Bistro' = 2048 },
+    [int]$FrameCount = 256,
     [switch]$Static,
     [string]$OutputPath = 'wiki/architecture/rendering/Cluster-Blend-Scenes-2026-10-16.json'
 )
@@ -11,10 +13,9 @@ $applicationDirectory = [IO.Path]::GetDirectoryName($application)
 $sceneSettingsPath = Join-Path $applicationDirectory 'test-scenes.json'
 $originalSceneSettings = [IO.File]::ReadAllText($sceneSettingsPath)
 $sceneSettings = $originalSceneSettings | ConvertFrom-Json
-$firstFrames = @{ '1024 spheres' = 2048; 'Sponza' = 1024; 'Amazon Bistro' = 2048 }
 foreach ($scene in $sceneSettings) {
-    $scene.MeasurementFrames.FirstFrame = $firstFrames[$scene.Name]
-    $scene.MeasurementFrames.FrameCount = 256
+    $scene.MeasurementFrames.FirstFrame = $FirstFrames[$scene.Name]
+    $scene.MeasurementFrames.FrameCount = $FrameCount
     if ($Static) { $scene | Add-Member -NotePropertyName Animate -NotePropertyValue $false -Force }
 }
 $runs = [Collections.Generic.List[object]]::new()
