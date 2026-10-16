@@ -24,8 +24,11 @@ public sealed partial class MaterialBlock : AssetBlock, IAssetBlockWriter,
     {
         _shader = source._shader;
         _parent = source._parent;
+        Name = source.Name;
         _parameters.AddRange(source._parameters);
     }
+    /// <summary>The asset name supplied when resolving complete material content.</summary>
+    [BinaryIgnore] public string? Name { get; internal set; }
     public AssetId<ShaderAsset> Shader { get => _shader; set { _shader = value; MarkChanged(); } }
     public AssetId<MaterialAsset> Parent { get => _parent; set { _parent = value; MarkChanged(); } }
     public IList<MaterialParameter> Parameters => _parameters;

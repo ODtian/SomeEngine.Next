@@ -200,10 +200,10 @@ public sealed class MaterialGen : IIncrementalGenerator
                 .AppendLine(" replacement) => material.Update(replacement);");
             source.Append("public void Update(").Append(material.Name).AppendLine(" replacement) {");
             source.AppendLine("BeginUpdate();");
-            source.AppendLine("try { Name = replacement.Name; Shader = replacement.Shader;");
+            source.AppendLine("Name = replacement.Name; Shader = replacement.Shader;");
             foreach (PropertyInfo p in material.Properties)
                 source.Append(p.Name).Append(" = replacement.").Append(p.Name).AppendLine(";");
-            source.AppendLine("} finally { FinishUpdate(); } }");
+            source.AppendLine("FinishUpdate(); }");
         }
         source.AppendLine("}");
         return source.ToString();

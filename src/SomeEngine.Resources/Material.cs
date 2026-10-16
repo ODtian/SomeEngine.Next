@@ -6,23 +6,20 @@ namespace SomeEngine.Resources;
 /// <summary>A material has concrete properties and actual shader and texture references.</summary>
 /// <remarks>Business changes fields between CPU frame recording and the next extraction.</remarks>
 [SomeEngine.Serialization.AssetUse]
-public abstract partial class Material : IDisposable
+public abstract partial class Material
 {
     private ulong[]? _changes;
     private bool _changingProperties;
-    private int _disposed;
     private Shader? _shader;
     private static long _nextMaterialId;
     private readonly long _materialId = Interlocked.Increment(ref _nextMaterialId);
     public long MaterialId => _materialId;
-    public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
     public string? Name { get; set; }
     public Shader? Shader
     {
         get => _shader;
         set
         {
-            ObjectDisposedException.ThrowIf(IsDisposed, this);
             if (ReferenceEquals(_shader, value)) return;
             _shader = value;
             if (!_changingProperties) Revision++;
@@ -34,7 +31,6 @@ public abstract partial class Material : IDisposable
 
     protected void SetProperty<T>(ref T field, T value, uint index)
     {
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
         if (EqualityComparer<T>.Default.Equals(field, value)) return;
         field = value;
         _changes ??= new ulong[PropertyCount];
@@ -53,7 +49,6 @@ public abstract partial class Material : IDisposable
     protected void FinishContent() => _changingProperties = false;
     protected void BeginUpdate()
     {
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
         _changingProperties = true;
     }
     protected void FinishUpdate()
@@ -61,7 +56,6 @@ public abstract partial class Material : IDisposable
         _changingProperties = false;
         Revision++;
     }
-    public void Dispose() => Interlocked.Exchange(ref _disposed, 1);
 }
 
 public readonly record struct MaterialPropertyDefinition(uint Index, string Name, Type ValueType);
