@@ -48,6 +48,7 @@ internal static class Program
     private static AotSmokeResult Run()
     {
         ComponentBytesSmoke.Check();
+        TypedFieldSmoke.Check();
         AnimationSmoke.Check();
         global::SomeEngine.ECS.Tests.ManagedComponentChecks.VerifyAll();
         global::SomeEngine.Views.Tests.FirstBuildChecks.Verify();

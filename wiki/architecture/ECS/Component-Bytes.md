@@ -37,6 +37,8 @@ public readonly ref partial struct QueryChunkView
 
 ## Field writes
 
+Managed component roots and generated field paths use [[architecture/ECS/Component-Fields|Typed Component Fields]]. Their field access and byte access share ECS component numbers, storage permissions and write versions.
+
 A channel holds a component number and a byte offset calculated when the channel is created. Its update can write a typed value through the checked region entry:
 
 ```csharp
