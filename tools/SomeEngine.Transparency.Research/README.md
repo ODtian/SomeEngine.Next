@@ -103,8 +103,14 @@ DefaultGame 在 opaque visibility 着色之后、TAA 之前安装持久颜色 pa
 统一场景采用相同 NativeAOT 应用和已构建内容。`Measure-Transparency.ps1` 通过 `Measure-Scenes.ps1` 顺序测量机械 X-ray、重叠贴花及交错玻璃，保存整帧与逐帧数据。三个场景的采样起点分别为 2048、1024、2048，每个场景采样 256 帧。工具在结束时恢复应用原有场景配置。
 
 ```powershell
-$effectApplication = 'templates/DefaultProject/Game.App/bin/Release/net10.0/win-x64/publish/Game.App.exe'
+$effectApplication = 'templates/DefaultProject/Game.App/bin/Release/net10.0/publish/Game.App.exe'
 & 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1' pwsh -NoProfile -File tools/Measure-Transparency.ps1 -ApplicationPath $effectApplication
 ```
 
 传入 `-ReferenceShaderPath` 可同时测量原版 XYZ，得到八组完整三场景反馈。原版 resolver 可以从 `fa94e04e` 的同名 shader 导出；临时参考文件在使用后删除。本轮内容输入复用渲染性能分支已经构建的 1024 小球、Sponza 与 Bistro 数据。
+
+正式 Cluster 八效果使用 `Measure-ClusterEffects.ps1`，各场景保留完整预热与收敛要求后采集固定的 64 帧。Sponza 对效果默认首帧达到 768 的组从第 384 帧采样，其余场景沿用各效果首帧；同一场景的 XY/XYZ 使用相同窗口。`-FirstFrames` 显式设置优先，实际窗口记录在结果的 `SceneSettings`，默认首帧表见[统一场景指南](../../wiki/architecture/rendering/Cluster-Blend-Integration.md)。
+
+```powershell
+& 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1' pwsh -NoProfile -File tools/Measure-ClusterEffects.ps1 -ApplicationPath $effectApplication
+```

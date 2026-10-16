@@ -63,7 +63,20 @@ GraphPassId completed = attachment.Import(ref edit, hardwarePass);
 
 本机共享入口 `F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1` 管理排队与执行。性能相关的启动、测量和捕获通过该入口提交；队列任务完成后读取结果报告。
 
-效果脚本调用 `tools/Measure-Scenes.ps1`，每次同时测量 1024 小球、Sponza、Amazon Bistro，以完整且收敛的三场景报告交付对照。默认对八类效果逐一配对 XY 与 XYZ：XY 保留屏幕 tile 内的候选，XYZ 继续按深度切片筛选。每个场景采集固定的 64 个模拟帧，Wave/Phong 从第 192 帧开始；各效果的窗口由脚本统一指定。`-Methods full,xy,xyz` 可加入逐像素完整遍历作为图像和工作量参考。配对固定分辨率、模拟帧、场景行为、渲染配置、编译配置与采样。内容构建单列；trace 定位单列。
+效果脚本调用 `tools/Measure-Scenes.ps1`，每次同时测量 1024 小球、Sponza、Amazon Bistro，以完整且收敛的三场景报告交付对照。默认对八类效果逐一配对 XY 与 XYZ：XY 保留屏幕 tile 内的候选，XYZ 继续按深度切片筛选。每个场景采集固定的 64 个模拟帧，保留完整预热与收敛要求。各场景可以使用不同采样首帧；同一场景的 XY/XYZ 保持相同窗口、分辨率、模拟帧、场景行为、渲染配置、编译配置与采样。`-FirstFrames` 显式指定的场景首帧优先于默认值。`-Methods full,xy,xyz` 可加入逐像素完整遍历作为图像和工作量参考。内容构建单列；trace 定位单列。
+
+| 效果 | 1024 小球首帧 | Sponza 首帧 | Amazon Bistro 首帧 |
+| --- | ---: | ---: | ---: |
+| `glass` | 384 | 384 | 384 |
+| `smoke` | 256 | 256 | 256 |
+| `foliage` | 1280 | 384 | 1280 |
+| `deformed-phong` | 192 | 192 | 192 |
+| `xray` | 1280 | 384 | 1280 |
+| `decal-layers` | 768 | 384 | 768 |
+| `decal-sparse` | 1280 | 384 | 1280 |
+| `ordered` | 1280 | 384 | 1280 |
+
+Sponza 对效果默认首帧达到 768 的组从第 384 帧开始采样，其余场景沿用各效果的首帧。实际场景窗口随每轮结果的 `SceneSettings` 保存。
 
 测量结果用于当轮读取：`Measure-ClusterEffects.ps1` 默认写入 `artifacts/cluster-blend-scenes.json`，研究场景脚本写入 `artifacts/transparency-scenes.json`，研究应用的两组对照分别写入 `artifacts/transparency-comparison.json` 与 `artifacts/transparency-effects.json`。调用方读取结果后立即删除对应 JSON，图像与日志沿同一使用周期清理。
 

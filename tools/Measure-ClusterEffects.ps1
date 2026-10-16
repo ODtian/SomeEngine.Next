@@ -29,7 +29,9 @@ try {
     foreach ($effect in $Effects) {
         $sceneSettings = $originalSceneSettings | ConvertFrom-Json
         foreach ($scene in $sceneSettings) {
-            $scene.MeasurementFrames.FirstFrame = if ($FirstFrames) { $FirstFrames[$scene.Name] } else { $effectFirstFrames[$effect] }
+            $scene.MeasurementFrames.FirstFrame = if ($FirstFrames) { $FirstFrames[$scene.Name] }
+                elseif ($scene.Name -eq 'Sponza' -and $effectFirstFrames[$effect] -ge 768) { 384 }
+                else { $effectFirstFrames[$effect] }
             $scene.MeasurementFrames.FrameCount = $FrameCount
             if ($Static) { $scene | Add-Member -NotePropertyName Animate -NotePropertyValue $false -Force }
         }
