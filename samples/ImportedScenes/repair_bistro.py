@@ -10,9 +10,15 @@ import math
 import pathlib
 import struct
 import shutil
+import sys
 
 root = pathlib.Path(__file__).parent
 source = root / "Sources/Bistro/Bistro.glb"
+destination = root / "Sources/BistroRepaired/Bistro.glb"
+if (destination.exists() and destination.with_name("repair.json").exists()
+        and destination.stat().st_mtime_ns >= max(source.stat().st_mtime_ns, pathlib.Path(__file__).stat().st_mtime_ns)):
+    print(f"Reusing repaired source: {destination}")
+    sys.exit(0)
 data = bytearray(source.read_bytes())
 assert hashlib.sha256(data).hexdigest() == "5cc23d52b95fa1ba8b585d998185904becf8bcaa8f424fd74cf6950addb63deb"
 json_size = struct.unpack_from("<I", data, 12)[0]
@@ -56,7 +62,6 @@ for mesh in model["meshes"]:
         if changed:
             changes.append({"accessor": index, "vectors": changed})
 
-destination = root / "Sources/BistroRepaired/Bistro.glb"
 destination.parent.mkdir(exist_ok=True)
 destination.write_bytes(data)
 for name in ("source.json", "ATTRIBUTION.txt"):

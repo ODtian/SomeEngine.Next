@@ -13,12 +13,13 @@ public sealed record AssetPackEntry(
     ulong ChunkKey,
     ulong SchemaFingerprint)
 {
+    public Guid DocumentVersion { get; init; }
     internal Digest256 DocumentAuthenticationDigest { get; init; }
 }
 
 internal sealed class AssetPackIndex : IBinarySerializable<AssetPackIndex>
 {
-    internal const ulong Fingerprint = 0x63EA1D127C5B449BUL;
+    internal const ulong Fingerprint = 0x63EA1D127C5B449CUL;
     private static readonly Guid StableTypeId = new("bdb11d99-34cb-52ef-c55c-85bf52ac89db");
 
     internal AssetPackIndex(int capacity = 0)
@@ -31,7 +32,7 @@ internal sealed class AssetPackIndex : IBinarySerializable<AssetPackIndex>
     public static Guid TypeId => StableTypeId;
     public static ulong SchemaFingerprint => Fingerprint;
     public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
-    public static uint SchemaEpoch => 1;
+    public static uint SchemaEpoch => 2;
 
     public static void Write(ref BinaryDataWriter writer, AssetPackIndex value)
     {
@@ -43,6 +44,7 @@ internal sealed class AssetPackIndex : IBinarySerializable<AssetPackIndex>
             writer.WriteString(entry.AssetType);
             writer.WriteUInt64(entry.ChunkKey);
             writer.WriteUInt64(entry.SchemaFingerprint);
+            writer.WriteGuid(entry.DocumentVersion);
             entry.DocumentAuthenticationDigest.Write(authenticationDigest);
             writer.WriteBytes(authenticationDigest);
         }
@@ -67,6 +69,7 @@ internal sealed class AssetPackIndex : IBinarySerializable<AssetPackIndex>
                     ?? throw new InvalidDataException("Asset pack entry type cannot be null.");
                 ulong chunkKey = reader.ReadUInt64();
                 ulong schemaFingerprint = reader.ReadUInt64();
+                Guid documentVersion = reader.ReadGuid();
                 Digest256 authenticationDigest = Digest256.Read(
                     reader.ReadBytes(Digest256.Size));
                 if (assetId == Guid.Empty)
@@ -84,6 +87,7 @@ internal sealed class AssetPackIndex : IBinarySerializable<AssetPackIndex>
 
                 result.Entries.Add(new AssetPackEntry(assetId, assetType, chunkKey, schemaFingerprint)
                 {
+                    DocumentVersion = documentVersion,
                     DocumentAuthenticationDigest = authenticationDigest,
                 });
             }
@@ -315,6 +319,7 @@ public sealed class AssetPackBuilder
             documentBytes,
             schemaFingerprint,
             compression,
+            validation.Header.Generation,
             validation.AuthenticationDigest));
         return this;
     }
@@ -577,6 +582,7 @@ public sealed class AssetPackBuilder
                 key,
                 asset.SchemaFingerprint)
             {
+                DocumentVersion = asset.DocumentVersion,
                 DocumentAuthenticationDigest = asset.AuthenticationDigest,
             });
         }
@@ -619,6 +625,7 @@ public sealed class AssetPackBuilder
         ReadOnlyMemory<byte> Document,
         ulong SchemaFingerprint,
         ChunkCompression Compression,
+        Guid DocumentVersion,
         Digest256 AuthenticationDigest);
 
     private readonly record struct NestedDocumentValidation(

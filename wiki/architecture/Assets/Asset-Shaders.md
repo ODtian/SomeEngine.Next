@@ -132,3 +132,11 @@ Cluster 的提前准备与材质阶段解析共用入口选择。应用启动通
 `ShaderAsset.GetAsync(files, id, values, slang, settings)` 接收业务持有的 `WeakValues<AssetResourceKey<ShaderAsset>, Shader>`。一个索引的使用范围固定 Slang 设置；完整取得键保存文件读取器来源、资产 ID 和存储选定版本。所有可变特化输入通过 `ShaderAsset.CreateAsync` 的明确调用建立独立结果。
 
 索引命中直接返回存活 Shader；唯一创建发起者在索引锁外打开 ShaderAsset、读取全部选定输入并创建完整 Shader。业务在自己的对象中保留实际引用；Shader 代码、反射与 Slang 数据的使用期由这些普通引用表达。完整取得与分批清理见 [WeakValues](../Weak-Values.md)。
+
+## 编译测量与后端并行
+
+`ShaderAsset.CompileAsync` 是资产编译入口；`AssetProject.BuildAsync` 和 `SlangShaderImporter.CompileDefinition` 负责来源、依赖与保存编排，不替代该入口。
+
+编译过程使用 `SomeEngine.Shaders` 活动源，记录 `Shader.Inputs`、`Shader.Compile`、`Shader.Save`、`Shader.Layout`、`Shader.TargetCode`、`Shader.EntryCode`。编译事件记录资产身份，保存事件记录实际输出路径。通用开发工具库的 `ShaderBuildMeasurements` 为导入/构建命令提供编译次数统计；设置 `SOMEENGINE_SHADER_MEASUREMENTS` 时写出阶段测量。样例专有内容命令只创建这一库作用域，不复制统计实现。
+
+所有 target 的 layout 先串行取得。完全特化且已链接的 component 才并行取得逐入口代码，最多四项；含未绑定 generic 的 component 保留串行路径。`generateLibraryCode=false` 仍仅省略整 target 代码，不省略已绑定入口代码。frontend 的会话串行约束和 `SlangShaderData` 生命周期保持不变。

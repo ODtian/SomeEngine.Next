@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using SlangShaderSharp;
 using SomeEngine.Graphics;
 
@@ -7,6 +8,7 @@ namespace SomeEngine.Resources;
 
 public unsafe partial class Shader
 {
+    private static readonly ActivitySource s_compilationActivities = new("SomeEngine.Shaders");
     private IGlobalSession _slangGlobal => SlangCode.Global;
     private readonly ImmutableArray<IModule> _slangUnits;
     private readonly ImmutableArray<IEntryPoint> _slangEntries;
@@ -84,11 +86,11 @@ public unsafe partial class Shader
         ImmutableArray<bool> unboundEntries = entries.Select(entry =>
             unbound && entry.GetSpecializationParamCount() != 0).ToImmutableArray();
         var reflections = ImmutableArray.CreateBuilder<ShaderReflection>(targets.Length);
-        var targetBlobs = ImmutableArray.CreateBuilder<ISlangBlob?>(targets.Length);
-        var entryBlobs = ImmutableArray.CreateBuilder<ISlangBlob?>();
         int entryCount = -1;
         for (int targetIndex = 0; targetIndex < targets.Length; targetIndex++)
         {
+            using var layoutActivity = s_compilationActivities.StartActivity("Shader.Layout");
+            layoutActivity?.SetTag("target", targetIndex);
             ShaderReflection reflection = linkedCode.GetLayout(
                 targetIndex,
                 out ISlangBlob? layoutDiagnostics);
@@ -108,19 +110,36 @@ public unsafe partial class Shader
                 throw new InvalidDataException("Slang reflection differs from the supplied entry points.");
 
             reflections.Add(reflection);
-            targetBlobs.Add(generateCode && generateLibraryCode && !unbound
-                ? GetTargetBlob(linkedCode, targetIndex)
-                : null);
-
-            for (int entryIndex = 0; entryIndex < reflectedEntryCount; entryIndex++)
-            {
-                entryBlobs.Add(generateCode && !unboundEntries[entryIndex]
-                    ? GetEntryBlob(linkedCode, targetIndex, entryIndex)
-                    : null);
-            }
         }
 
         int codeCount = checked(targets.Length * entryCount);
+        var targetBlobs = new ISlangBlob?[targets.Length];
+        var entryBlobs = new ISlangBlob?[codeCount];
+        if (generateCode && !unbound)
+        {
+            // Complete layout queries before using Slang's experimental parallel backend.
+            // Front-end work remains serialized by the caller.
+            if (generateLibraryCode)
+                for (int targetIndex = 0; targetIndex < targets.Length; targetIndex++)
+                    targetBlobs[targetIndex] = GetTargetBlob(linkedCode, targetIndex);
+
+            Parallel.ForAsync(0, codeCount,
+                new ParallelOptions { MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 4) },
+                (index, _) =>
+                {
+                    entryBlobs[index] = GetEntryBlob(linkedCode, index / entryCount, index % entryCount);
+                    return ValueTask.CompletedTask;
+                }).GetAwaiter().GetResult();
+        }
+        else if (generateCode)
+        {
+            // A component with unbound generics is outside the parallel-backend guarantee.
+            for (int targetIndex = 0; targetIndex < targets.Length; targetIndex++)
+                for (int entryIndex = 0; entryIndex < entryCount; entryIndex++)
+                    if (!unboundEntries[entryIndex])
+                        entryBlobs[targetIndex * entryCount + entryIndex] =
+                            GetEntryBlob(linkedCode, targetIndex, entryIndex);
+        }
         return new Shader(
             name,
             slangCode,
@@ -128,8 +147,8 @@ public unsafe partial class Shader
             entries.ToImmutableArray(),
             targets.ToArray().ToImmutableArray(),
             reflections.ToImmutable(),
-            targetBlobs.ToImmutable(),
-            entryBlobs.ToImmutable(),
+            targetBlobs.ToImmutableArray(),
+            entryBlobs.ToImmutableArray(),
             Enumerable.Repeat<byte[]?>(null, targets.Length).ToImmutableArray(),
             Enumerable.Repeat(Array.Empty<byte>(), codeCount).ToImmutableArray(),
             entryCount,
@@ -305,6 +324,8 @@ public unsafe partial class Shader
 
     private static ISlangBlob? GetTargetBlob(IComponentType linkedCode, int targetIndex)
     {
+        using var activity = s_compilationActivities.StartActivity("Shader.TargetCode");
+        activity?.SetTag("target", targetIndex);
         SlangResult result = linkedCode.GetTargetCode(
             targetIndex,
             out ISlangBlob blob,
@@ -319,6 +340,9 @@ public unsafe partial class Shader
         int targetIndex,
         int entryIndex)
     {
+        using var activity = s_compilationActivities.StartActivity("Shader.EntryCode");
+        activity?.SetTag("target", targetIndex);
+        activity?.SetTag("entry", entryIndex);
         SlangResult result = linkedCode.GetEntryPointCode(
             entryIndex,
             targetIndex,

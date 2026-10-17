@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
@@ -6,6 +7,7 @@ namespace SomeEngine.Assets.Importers;
 
 public static partial class SlangShaderImporter
 {
+    private static readonly ActivitySource s_compilationActivities = new("SomeEngine.Shaders");
     private const string DefaultTargetSetting = "slang-targets:dxil-sm_6_6|spirv-glsl_460";
 
     public static ImportInputs? GetDefinitionInputs(
@@ -15,6 +17,8 @@ public static partial class SlangShaderImporter
         IReadOnlyList<string>? includeDirectories = null,
         string? projectRoot = null)
     {
+        using var activity = s_compilationActivities.StartActivity("Shader.Inputs");
+        activity?.SetTag("path", definitionPath);
         using ShaderAsset copy = definition.Duplicate();
         string fullPath = Path.GetFullPath(definitionPath);
         projectRoot = Path.GetFullPath(projectRoot ?? Path.GetDirectoryName(fullPath)!);

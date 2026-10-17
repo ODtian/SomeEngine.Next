@@ -495,7 +495,7 @@ public sealed partial class SceneTestPlatform
             for (int index = 0; index < Scenes.Count; index++)
             {
                 TestScene scene = Scenes[index];
-                bool available = File.Exists(Path.Combine(scene.ContentDirectory, "Library", "AssetManifest", "catalog.json"));
+                bool available = SomeEngine.Assets.AssetContent.Exists(scene.ContentDirectory);
                 ImGui.BeginDisabled(!available);
                 if (ImGui.Selectable(available ? scene.Name : scene.Name + " (build content first)", index == SelectedScene))
                     SelectScene(index);

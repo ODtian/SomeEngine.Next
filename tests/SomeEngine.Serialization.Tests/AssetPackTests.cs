@@ -61,6 +61,8 @@ public sealed class AssetPackTests
             ownsSource: true);
         await using BinaryDocument<TestRoot> opened =
             await OpenPackDataAsync<TestRoot>(pack, assetId);
+        Assert.True(pack.TryGetEntry(assetId, out AssetPackEntry? entry));
+        Assert.Equal(opened.Generation, entry!.DocumentVersion);
         using ChunkLease chunk = await opened.AcquireChunkAsync(1001);
 
         Assert.Equal("range-source", opened.Root.Text);

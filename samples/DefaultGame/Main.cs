@@ -16,12 +16,14 @@ public static class SampleApplication
 #if SOMEENGINE_DEVELOPMENT
         if (args is ["sample"])
         {
+            using var measurements = ShaderBuildMeasurements.Start(Console.Out);
             await SampleContent.BuildAsync(ProjectPaths.Root,
                 Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")));
             return 0;
         }
         if (args is ["import-scene", var application, var source, var output])
         {
+            using var measurements = ShaderBuildMeasurements.Start(Console.Out);
             await ImportedSceneBuild.BuildAsync(application, source, output,
                 Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")));
             return 0;
@@ -34,6 +36,7 @@ public static class SampleApplication
                 SampleAssetCapabilities.BuildVersion);
             if (args is ["prepare-materials"])
             {
+                using var measurements = ShaderBuildMeasurements.Start(Console.Out);
                 await SampleMaterials.BuildAsync(project, CancellationToken.None);
                 return 0;
             }

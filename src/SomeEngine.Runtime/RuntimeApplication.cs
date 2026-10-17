@@ -54,18 +54,18 @@ internal static class RuntimeApplication
                 if (script is null && application is not null) options = application.Options;
                 if (application is not null) application.ReloadRequested = false;
                 string contentRoot = Path.GetFullPath(script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot());
-                DateTime catalogWriteTime = File.GetLastWriteTimeUtc(Path.Combine(contentRoot, "Library", "AssetManifest", AssetManifest.CatalogFileName));
                 if (content is null || !StringComparer.OrdinalIgnoreCase.Equals(content.Directory, contentRoot) ||
-                    content.GraphicsBackend != options.GraphicsBackend || content.CatalogWriteTime != catalogWriteTime)
+                    content.GraphicsBackend != options.GraphicsBackend || content.Assets.HasChanges)
                 {
-                    content?.Files.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                    AssetManifest manifest = AssetManifest.Load(Path.Combine(contentRoot, "Library", "AssetManifest"));
+                    content?.Assets.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    content = null;
                     SlangCompileTarget target = options.GraphicsBackend == RuntimeGraphicsBackend.Vulkan
                         ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil;
                     IGlobalSession slang = Shader.CreateSlangGlobalSession();
-                    var files = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
-                    content = new ApplicationContent(contentRoot, options.GraphicsBackend, catalogWriteTime,
-                        files, manifest, slang, CreateShaderSessionDescription(slang, target));
+                    SessionDesc shaderSettings = CreateShaderSessionDescription(slang, target);
+                    AssetContent assets = display.Wait(AssetContent.OpenAsync(contentRoot).AsTask());
+                    content = new ApplicationContent(contentRoot, options.GraphicsBackend,
+                        assets, slang, shaderSettings);
                 }
                 try
                 {
@@ -85,7 +85,7 @@ internal static class RuntimeApplication
             } while (application?.ReloadRequested == true);
             return frames;
         }
-        finally { content?.Files.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        finally { content?.Assets.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     private static int RunScene<TMaterials>(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
@@ -1700,10 +1700,9 @@ internal static class RuntimeApplication
     private static string FindContentRoot()
     {
         string root = AppContext.BaseDirectory;
-        string manifest = Path.Combine(root, "Library", "AssetManifest", AssetManifest.CatalogFileName);
-        if (File.Exists(manifest)) return root;
+        if (AssetContent.Exists(root)) return root;
         throw new DirectoryNotFoundException(
-            "The application directory has no Library/AssetManifest/catalog.json. Build this project's content before starting the application.");
+            "The application directory has no Library/AssetPacks/packs.json or Library/AssetManifest/catalog.json. Build this project's content before starting the application.");
     }
 
     private static string contentRootLabel(string value) => Path.GetFullPath(value);

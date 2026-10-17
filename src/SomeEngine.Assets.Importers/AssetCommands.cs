@@ -20,6 +20,9 @@ public static class AssetCommands
         TextWriter output, CancellationToken cancellationToken = default)
     {
         AssetCommand command = GetCommand(arguments);
+        using ShaderBuildMeasurements? measurements = arguments.Count > 1
+            && (command is AssetCommand.Import or AssetCommand.Build)
+                ? ShaderBuildMeasurements.Start(output) : null;
         if (arguments.Count > 1 && command == AssetCommand.Import)
         {
             for (int index = 1; index < arguments.Count; index++)

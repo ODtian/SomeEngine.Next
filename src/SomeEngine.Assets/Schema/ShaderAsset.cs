@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using SlangShaderSharp;
 using SomeEngine.Graphics;
 using SomeEngine.Serialization;
@@ -10,6 +11,7 @@ namespace SomeEngine.Assets.Schema;
 [BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
 public sealed partial class ShaderAsset : Asset
 {
+    private static readonly ActivitySource s_compilationActivities = new("SomeEngine.Shaders");
     public const uint Version = ShaderBlock.Version;
     public const string FileType = "SomeEngine.Assets.Schema.Shader";
     public const string PathSuffix = ".shader.asset";
@@ -87,7 +89,10 @@ public sealed partial class ShaderAsset : Asset
     public async ValueTask<ShaderCompilation> CompileAsync(
         IGlobalSession slang, SessionDesc sessionDescription, CancellationToken cancellationToken = default)
     {
+        using var activity = s_compilationActivities.StartActivity("Shader.Compile");
         using ShaderAsset copy = Duplicate();
+        activity?.SetTag("asset", copy.Id.ToString("N"));
+        activity?.SetTag("name", copy.Name);
         ShaderSourceBlock source = await copy.GetBlockAsync<ShaderSourceBlock>(cancellationToken).ConfigureAwait(false);
         ShaderCompilation compiled;
         ShaderInputSource[] inputs;
@@ -195,7 +200,10 @@ public sealed partial class ShaderAsset : Asset
 
     public override async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
+        using var activity = s_compilationActivities.StartActivity("Shader.Save");
+        activity?.SetTag("path", path);
         using ShaderAsset copy = Duplicate();
+        activity?.SetTag("asset", copy.Id.ToString("N"));
         return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);
     }
 
