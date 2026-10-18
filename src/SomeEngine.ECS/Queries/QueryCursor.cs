@@ -18,6 +18,12 @@ public delegate void QueryExecution(QueryCursor cursor);
 public delegate void QueryExecution<TState>(QueryCursor cursor, ref TState state)
     where TState : allows ref struct;
 
+/// <summary>Executes a query within its callback-scoped component access.</summary>
+public interface IQueryExecution
+{
+    void Execute(QueryCursor query);
+}
+
 public readonly ref struct QueryCursor
 {
     private readonly World _world;

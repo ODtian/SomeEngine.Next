@@ -52,6 +52,31 @@ public sealed class QueryDefinition
 
     public QueryKey Key { get; }
 
+    /// <summary>Adds component read access while retaining this query's membership conditions.</summary>
+    public QueryDefinition WithOptionalRead<T>() where T : struct
+    {
+        QueryableTypeInfo info = QueryableTypeInfo.For<T>();
+        info.Validate(QueryTermKind.Optional, QueryAccess.Read, QueryTermFilter.None);
+        QueryTerm[] terms = (QueryTerm[])_terms.Clone();
+        bool found = false;
+        for (int i = 0; i < terms.Length; i++)
+        {
+            QueryTerm term = terms[i];
+            if (term.ComponentId != info.ComponentId)
+                continue;
+            if (term.Kind == QueryTermKind.None)
+                return this;
+            terms[i] = new QueryTerm(term.ComponentId, term.Kind,
+                QueryAccessExtensions.Merge(term.Access, QueryAccess.Read), term.Filters);
+            found = true;
+        }
+
+        if (found)
+            return CreateNormalized(terms);
+        return CreateNormalized(_terms,
+            [new QueryTerm(info.ComponentId, QueryTermKind.Optional, QueryAccess.Read)]);
+    }
+
     internal ReadOnlyMemory<WorldJobStorageAccess> JobStorageAccesses =>
         _jobStorageAccesses;
 
