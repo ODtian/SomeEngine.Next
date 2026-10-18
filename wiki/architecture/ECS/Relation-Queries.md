@@ -100,7 +100,7 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 
 ### 空间执行 API 扩展去向
 
-空间描述的 `Prepare` 和节点对枚举进入 `ICollisionPartitionEnumerable`；`FillPairs` 与 `FillPairsParallel` 通过原有 RelationQuery 读取范围接入单线程和并行计数／前缀／填充。两种终端都提供显式 lastSystemVersion 重载。`CollisionPairBuffer.Count/Pairs` 交付真实输出范围，FillAccess 和 ReadAccess 交给对应 Scheduler 工作。Systems 的 `ReadOnlyQueryPairJobs` 提供回调期间的并行借用与同步 join。生命周期、实际输出区间和成对业务调用见 [空间关系分区执行](Spatial-Parallel-Queries.md)。
+空间描述的 `Prepare` 和节点对枚举进入 `ICollisionPartitionEnumerable`；`FillPairs` 与 `FillPairsParallel` 通过原有 RelationQuery 读取范围接入单线程和并行计数／前缀／填充。两种终端都提供显式 lastSystemVersion 重载。`CollisionPairBuffer.Count/Pairs` 交付真实输出范围，FillAccess 和 ReadAccess 交给对应 Scheduler 工作。Systems 的 `ReadOnlyQueryPairJobs` 提供回调期间的并行借用与同步 join。生命周期、实际输出区间和成对业务调用见 [空间关系分区执行](Spatial-Parallel-Queries.md)。实际包依赖、构建时元数据及原生使用方见 [关系包与 NativeAOT](Relation-Packages-and-AOT.md)。
 
 ## 已存储关系边
 

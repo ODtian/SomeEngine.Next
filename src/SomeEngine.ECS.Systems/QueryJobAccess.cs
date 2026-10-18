@@ -22,11 +22,7 @@ public static class QueryJobAccess
             {
                 ref readonly ComponentInfo info = ref ComponentRegistry.Get(storage.ComponentId);
                 if (!info.IsJobAliasFree)
-                {
-                    if (!JobStorageTypeShape.IsAliasFree(info.Type))
-                        throw new InvalidOperationException($"Query Job access requires alias-free {info.Type.Name} storage.");
-                    ComponentRegistry.MarkJobAliasFree(storage.ComponentId);
-                }
+                    throw new InvalidOperationException($"Query Job access requires alias-free {info.Type.Name} storage.");
             }
             var key = new WorldStorageResourceKey(storage.Kind, storage.ComponentId);
             destination[count++] = storage.Access == WorldStorageAccess.Write

@@ -82,9 +82,15 @@ public readonly record struct RelationSchema(
 
 internal static class RelationSchemaCache<T> where T : struct, IComponent
 {
-    private static readonly Lazy<RelationSchema> s_value = new(Create);
+    private static Lazy<RelationSchema> s_value = new(Create);
 
     internal static RelationSchema Value => s_value.Value;
+
+    internal static void Register(RelationSchema schema) => s_value = new(() =>
+    {
+        schema.ValidateFor(typeof(T));
+        return schema;
+    });
 
     private static RelationSchema Create()
     {
