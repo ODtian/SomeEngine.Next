@@ -50,3 +50,19 @@ ilspycmd -il src/SomeEngine.Physics/bin/Release/net10.0/SomeEngine.Physics.dll
 - `IL_02c7` 的 `constrained. !!TOutput` 进入 `IRelationOutput<(Entity,Entity)>.Add`，输出行通过只读引用传入。
 
 `SpatialBitmapFilter` 还保留对 TGroupPermission 和 TPermission 的 constrained 静态调用。NativeAOT 完整使用方与性能场景由 #242、#243 接续验证。
+
+## 持续维护 #240
+
+在同一 worker3 的 Release 输出集合执行：
+
+```powershell
+dotnet test tests/SomeEngine.Physics.Tests/SomeEngine.Physics.Tests.csproj -c Release --nologo -v minimal --no-restore
+```
+
+结果为 13/13 通过，TestRules 0 项违规，其中新增的三个 `CollisionMaintenanceTests` 通过真实 checked World 观察：
+
+- 连续系统窗口的位置、类别和角色键写入，扩展及独立手写维护各自给出字面接触对，最终结果与完整重建一致；只读枚举保留当前版本。
+- Body 移除、成员插入、标签迁移及实体销毁，双方维护各自树和摘要，结果与字面身份对及完整重建一致。
+- 两个 worker 的组件写作业通过显式同步点开始，维护依赖写入，查询及消费依赖各自维护。两侧得到三对接触，每个参与实体有两次接触，穿透深度总量分别为 1.2、1.0、1.4。
+
+首个切片从缺少 CreateMaintenance 的公共调用 red 开始；随后分别从缺少手写维护和帧消费入口的 red 实施对应切片。最终命令覆盖已有空间候选、组证明与本次持续维护行为。维护数据和资源生命周期见 [碰撞树维护](../wiki/architecture/ECS/Spatial-Maintenance.md)。

@@ -87,3 +87,5 @@ public struct PairList(List<(Entity, Entity)> pairs) : IRelationOutput<(Entity, 
 `benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialCollision.cs` 提供同算法、同节点布局的实际手写遍历，动力学与角色键判断直接写在叶子对处理中。两侧分别调用 `Collision.Build` 持有自己的树，进入相同的 World 读取范围、当前集合成员检查和实体对输出。行为检查将两侧结果分别与上面的五个字面实体对比较。
 
 这个夹具作为后续成对测量的输入：初建计入各自的 `Build`，持续成本计入各自的维护、查询准备、宽相、筛选与输出，接触消费使用同一步骤。性能证据按 [性能证据](../../harness/Harness-Performance-Evidence.md) 的公共队列形成。
+
+成员、范围及具体摘要的持续帧更新见 [碰撞树维护](Spatial-Maintenance.md)。

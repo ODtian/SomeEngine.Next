@@ -89,4 +89,4 @@ bool any = contacts.Any();
 
 `HandwrittenSpatialGroups.cs` 提供独立的实际遍历，直接合写类别组证明、角色组证明、动力学判断与输出。两侧各持有自己的树和具体摘要，节点布局、正反结论、嵌套结果、查询范围和输出格式保持一致。树构建与摘要填充使用相同具体数据操作，手写节点访问与规则组合分别展开。初建、维护、查询准备和结果消费接入统一物理 benchmark 场景。
 
-本次公开行为、实际生成入口和 IL 接点见 [空间筛选交付检查](../../../docs/ECS-Relations-Spatial-Checks-2026-10-19.md)。
+持续帧的具体摘要更新和 Job 依赖见 [碰撞树维护](Spatial-Maintenance.md)。本次公开行为、实际生成入口和 IL 接点见 [空间筛选交付检查](../../../docs/ECS-Relations-Spatial-Checks-2026-10-19.md)。

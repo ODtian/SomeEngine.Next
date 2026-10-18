@@ -54,6 +54,10 @@ public readonly struct SpatialKeyFilter<TRelation, TImplementation, TComponent, 
 
     public void RefitSummary(int node, QueryCursor access) => Summary.Refit(node, access);
 
+    public bool HasSummaryChange(QueryChunkView chunk, int row) =>
+        chunk.Has<TComponent>() && chunk.HasChangedSinceLastSystemVersion<TComponent>() &&
+        chunk.RowChangedSinceLastSystemVersion<TComponent>(row);
+
     public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results)
     {
         if (inherited != GroupMatch.Unknown)
@@ -108,6 +112,9 @@ public readonly struct SpatialAnd<TFirst, TSecond, TFirstResults, TSecondResults
         Second.RefitSummary(node, access);
     }
 
+    public bool HasSummaryChange(QueryChunkView chunk, int row) =>
+        First.HasSummaryChange(chunk, row) || Second.HasSummaryChange(chunk, row);
+
     public GroupMatch MatchGroups(int firstNode, int secondNode,
         in (TFirstResults, TSecondResults) inherited, out (TFirstResults, TSecondResults) results)
     {
@@ -134,6 +141,8 @@ public readonly struct SpatialExcept<TFilter, TGroupResults>(TFilter filter) : I
     public void RebuildSummaries(QueryCursor access) => Filter.RebuildSummaries(access);
 
     public void RefitSummary(int node, QueryCursor access) => Filter.RefitSummary(node, access);
+
+    public bool HasSummaryChange(QueryChunkView chunk, int row) => Filter.HasSummaryChange(chunk, row);
 
     public GroupMatch MatchGroups(int firstNode, int secondNode, in TGroupResults inherited, out TGroupResults results) =>
         GroupMatches.Except(Filter.MatchGroups(firstNode, secondNode, in inherited, out results));

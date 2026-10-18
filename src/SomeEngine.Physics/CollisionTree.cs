@@ -1,5 +1,6 @@
 using System.Numerics;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 
@@ -9,6 +10,8 @@ namespace SomeEngine.Physics;
 public sealed partial class CollisionTree
 {
     private CollisionNode[] _nodes = [];
+    private readonly Dictionary<Entity, int> _leaves = [];
+    private int _freeNode = -1;
 
     public int Root { get; private set; } = -1;
 
@@ -45,6 +48,8 @@ public sealed partial class CollisionTree
         where TComponent : struct
         where TBoundsReader : struct, ICollisionBoundsReader<TComponent>
     {
+        _leaves.Clear();
+        _freeNode = -1;
         LeafCount = 0;
         var rows = members.Rows;
         while (rows.MoveNext(out var member))
@@ -59,6 +64,8 @@ public sealed partial class CollisionTree
         EnsureCapacity(2 * LeafCount - 1);
         NodeCount = LeafCount;
         Root = LeafCount == 0 ? -1 : BuildBranch(0, LeafCount, -1);
+        for (int leaf = 0; leaf < LeafCount; leaf++)
+            _leaves.Add(_nodes[leaf].Entity, leaf);
     }
 
     private int BuildBranch(int start, int count, int parent)
