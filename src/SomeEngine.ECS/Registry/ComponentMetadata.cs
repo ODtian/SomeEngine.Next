@@ -112,6 +112,7 @@ public static unsafe class ComponentMetadata<T> where T : struct
     {
         return new ComponentOperations
         {
+            GetJobAliasFree = &JobStorageTypeMetadata<T>.GetIsAliasFree,
             GetReference = &DoGetReference,
             CopyValue = &DoCopy,
             SwapRemove = &DoSwapRemove,

@@ -84,7 +84,8 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
             .Select(static (symbol, _) => symbol!)
             .Collect();
 
-        context.RegisterSourceOutput(jobs, static (sourceContext, symbols) => Execute(sourceContext, symbols));
+        context.RegisterSourceOutput(jobs.Combine(context.CompilationProvider),
+            static (sourceContext, input) => Execute(sourceContext, input.Left, input.Right));
     }
 
     private static INamedTypeSymbol? GetJobSymbol(GeneratorSyntaxContext context)
@@ -97,21 +98,23 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
 
     private static void Execute(
         SourceProductionContext context,
-        ImmutableArray<INamedTypeSymbol> symbols)
+        ImmutableArray<INamedTypeSymbol> symbols,
+        Compilation compilation)
     {
+        var storage = new JobStorageTypeAnalysis(compilation);
         var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
         foreach (INamedTypeSymbol symbol in symbols)
         {
             if (!seen.Add(symbol))
                 continue;
-            JobModel? model = BuildModel(context, symbol);
+            JobModel? model = BuildModel(context, symbol, storage);
             if (model is null)
                 continue;
             context.AddSource(model.HintName, Generate(model));
         }
     }
 
-    private static JobModel? BuildModel(SourceProductionContext context, INamedTypeSymbol job)
+    private static JobModel? BuildModel(SourceProductionContext context, INamedTypeSymbol job, JobStorageTypeAnalysis storage)
     {
         bool valid = true;
         if (job.IsRefLikeType)
@@ -171,7 +174,7 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
             if (field.IsStatic || field.IsConst)
                 continue;
             ISymbol diagnosticMember = field.AssociatedSymbol ?? field;
-            if (!IsSafeDirectType(field.Type))
+            if (!storage.IsAliasFree(field.Type))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     ManagedField,
@@ -237,7 +240,7 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
                 supportsParallel = false;
                 serialReason ??= $"{model.ValueType.Name} is a canonical relationship source";
             }
-            if (model.Kind != ParameterKind.Entity && !IsSafeDirectType(model.ValueType))
+            if (model.Kind != ParameterKind.Entity && !storage.IsAliasFree(model.ValueType))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     ManagedDirectStorage,
@@ -579,35 +582,6 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
 
     private static bool IsGeneratedAccessible(Accessibility accessibility) =>
         accessibility is Accessibility.Public or Accessibility.Internal;
-
-    private static bool IsSafeDirectType(ITypeSymbol type)
-    {
-        return IsSafeDirectType(type, new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default));
-    }
-
-    private static bool IsSafeDirectType(ITypeSymbol type, HashSet<ITypeSymbol> seen)
-    {
-        if (!type.IsUnmanagedType || type.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer)
-            return false;
-        if (type.SpecialType is SpecialType.System_IntPtr or SpecialType.System_UIntPtr)
-            return false;
-        if (type is ITypeParameterSymbol)
-            return true;
-        if (type is not INamedTypeSymbol named || named.TypeKind == TypeKind.Enum || !seen.Add(type))
-            return true;
-        foreach (IFieldSymbol field in named.GetMembers().OfType<IFieldSymbol>())
-        {
-            // Auto-properties are represented by implicitly-declared instance backing fields.
-            // They are part of the stored value just like explicitly-declared fields, so skipping
-            // them would allow a native-sized handle (or another alias-bearing type) to receive a
-            // generated alias certificate.
-            if (field.IsStatic || field.IsConst)
-                continue;
-            if (field.IsFixedSizeBuffer || !IsSafeDirectType(field.Type, seen))
-                return false;
-        }
-        return true;
-    }
 
     private static DiagnosticDescriptor Create(string id, string title, string message) =>
         new(
