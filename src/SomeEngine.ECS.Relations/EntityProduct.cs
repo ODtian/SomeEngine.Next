@@ -3,7 +3,7 @@ using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.ECS.Relations;
 
-public static class RelationQueries
+public static partial class RelationQueries
 {
     public static RelationQuery<EntityProduct, Entity> Product(this World world, QueryHandle members) =>
         new(new EntityProduct(world, members));
@@ -20,6 +20,8 @@ public readonly struct EntityProduct : IQueryRelationEnumerable<Entity>
     }
 
     public World World { get; }
+
+    public int QueryCount => 1;
 
     public QueryHandle GetQuery(int position) => _members;
 
