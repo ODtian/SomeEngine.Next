@@ -15,6 +15,8 @@
              Link="SpatialCollisionExample.cs" />
     <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialCollision.cs"
              Link="HandwrittenSpatialCollision.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialGroups.cs"
+             Link="HandwrittenSpatialGroups.cs" />
     <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
