@@ -90,6 +90,8 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 
 共享执行体以输入位置递归进入既有 World 查询回调，值类型句柄缓冲保存八个参与查询及其外层访问查询。每层在结束时回写泛型输出。固定泛型族和查询视图由同一库构建生成器覆盖一至八元；使用方生成器按接口元数组装标准实体元组与共享泛型类型。空间来源可以提供自己的具体枚举，并复用 QueryCount、Access 与同一泛型输出；资源范围与版本继续由现有 ECS/WorldJobs 执行。
 
+`SomeEngine.Physics` 的真实二叉 AABB 空间来源、复用树的调用与手写宽相对照见 [空间候选](Spatial-Candidates.md)。
+
 ## 已存储关系边
 
 Direct relation query 以 edge entity 为 row identity，一条 edge 一行。Endpoint filters 是 semi-join：一个 endpoint entity 至多产生一行，不因 parallel edges 自动展开。
