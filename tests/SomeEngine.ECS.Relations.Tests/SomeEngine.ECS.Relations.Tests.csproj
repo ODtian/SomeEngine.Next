@@ -13,6 +13,14 @@
   <ItemGroup>
     <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenKeyPairs.cs"
              Link="HandwrittenKeyPairs.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCollisionExample.cs"
+             Link="BitmapCollisionExample.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCandidatePairs.cs"
+             Link="BitmapCandidatePairs.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCollisionConsumption.cs"
+             Link="BitmapCollisionConsumption.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenBitmapCollision.cs"
+             Link="HandwrittenBitmapCollision.cs" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Relations/SomeEngine.ECS.Relations.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
