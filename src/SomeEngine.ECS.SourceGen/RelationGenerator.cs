@@ -25,11 +25,11 @@ public sealed class RelationGenerator : IIncrementalGenerator
     {
         if (context.SemanticModel.GetDeclaredSymbol(context.Node) is not INamedTypeSymbol type || !type.IsValueType)
             return null;
-        return type.AllInterfaces.Any(IsUnaryRelation) ? type : null;
+        return type.AllInterfaces.Any(IsRelation) ? type : null;
     }
 
-    private static bool IsUnaryRelation(INamedTypeSymbol type) =>
-        type.Name == "IRelation" && type.Arity == 1 &&
+    private static bool IsRelation(INamedTypeSymbol type) =>
+        type.Name == "IRelation" && type.Arity is >= 1 and <= 8 &&
         type.ContainingNamespace.ToDisplayString() == RelationsNamespace;
 
     private static void Generate(SourceProductionContext context, ImmutableArray<INamedTypeSymbol> types)
@@ -40,8 +40,12 @@ public sealed class RelationGenerator : IIncrementalGenerator
             if (!seen.Add(type))
                 continue;
             string relation = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            string component = type.AllInterfaces.First(IsUnaryRelation).TypeArguments[0]
-                .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var components = type.AllInterfaces.First(IsRelation).TypeArguments;
+            string componentTypes = string.Join(", ", components.Select(component =>
+                component.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+            string entityType = "global::SomeEngine.ECS.Entities.Entity";
+            string rowType = components.Length == 1 ? entityType :
+                $"({string.Join(", ", Enumerable.Repeat(entityType, components.Length))})";
             var parameters = TypeParameters(type).ToArray();
             string sourceType = "TEnumerable";
             while (parameters.Any(parameter => parameter.Name == sourceType))
@@ -54,15 +58,15 @@ public sealed class RelationGenerator : IIncrementalGenerator
             text.AppendLine("public static partial class RelationQueryExtensions\n{");
             foreach (string operation in new[] { "Where", "Except" })
             {
-                string binding = $"global::{RelationsNamespace}.Component{operation}<{sourceType}, {relation}, {component}>";
+                string binding = $"global::{RelationsNamespace}.Component{operation}<{sourceType}, {relation}, {componentTypes}>";
                 text.Append("    ").Append(access).Append(" static global::").Append(RelationsNamespace)
-                    .Append(".RelationQuery<").Append(binding).Append(", global::SomeEngine.ECS.Entities.Entity> ")
+                    .Append(".RelationQuery<").Append(binding).Append(", ").Append(rowType).Append("> ")
                     .Append(operation).Append('<').Append(genericTypes).AppendLine(">(")
                     .Append("        this global::").Append(RelationsNamespace).Append(".RelationQuery<")
-                    .Append(sourceType).AppendLine(", global::SomeEngine.ECS.Entities.Entity> source,")
+                    .Append(sourceType).Append(", ").Append(rowType).AppendLine("> source,")
                     .Append("        ").Append(relation).AppendLine(" relation)")
                     .Append("        where ").Append(sourceType).Append(" : struct, global::").Append(RelationsNamespace)
-                    .AppendLine(".IQueryRelationEnumerable<global::SomeEngine.ECS.Entities.Entity>");
+                    .Append(".IQueryRelationEnumerable<").Append(rowType).AppendLine(">");
                 foreach (var parameter in parameters)
                     AppendConstraints(text, parameter);
                 text.Append("        => new(new ").Append(binding).AppendLine("(source.Enumerable, relation));\n");
