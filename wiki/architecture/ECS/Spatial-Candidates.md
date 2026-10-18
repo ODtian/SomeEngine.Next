@@ -14,6 +14,8 @@
 
 遍历使用值类型节点对的栈，从 `(root, root)` 开始。同一分支展开两个子树内部和两个子树之间的组合；不同分支先比较 AABB，再按树高细分，叶子对调用 `EntityOrder.OrderPair`。每个无序实体对访问一次，输出携带完整身份。`QueryCount` 为一个输入查询，其二元行使用 `(Entity, Entity)`。
 
+类别与键摘要、逐条件组证明及显式摘要构建见 [空间筛选下推](Spatial-Filtering.md)。普通语义和具体实现入口均可继续组合为同一个空间遍历。
+
 ## 完整业务例子
 
 下面的 `MotionKind`、`Body`、`Hair`、`BodyBoundsReader`、`DefaultContacts`、`SameCharacterHair`、`PairList` 是业务例子代码。`CollisionBounds`、`CollisionTree`、`Collision.Candidates` 和关系接口来自库。

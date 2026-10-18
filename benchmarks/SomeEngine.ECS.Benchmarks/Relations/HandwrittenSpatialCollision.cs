@@ -6,7 +6,7 @@ using SomeEngine.Physics;
 namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
 /// <summary>The same tree traversal with the example's rules written directly at each leaf pair.</summary>
-public static class HandwrittenSpatialCollision
+public static partial class HandwrittenSpatialCollision
 {
     public static bool Enumerate<TOutput>(World world, QueryHandle bodies, CollisionTree tree, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct

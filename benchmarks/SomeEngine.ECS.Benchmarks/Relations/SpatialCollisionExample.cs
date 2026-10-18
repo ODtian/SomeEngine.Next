@@ -17,11 +17,14 @@ public struct Body : IComponent
 {
     public MotionKind Kind;
     public CollisionBounds Bounds;
+    public CategoryBits CollisionCategories;
 }
 
-public struct Hair : IComponent
+public struct Hair : IIndexedComponent<Entity>
 {
     public Entity Character;
+
+    public readonly Entity GetKey() => Character;
 }
 
 public struct ExcludedBody : ITag;
@@ -40,4 +43,32 @@ public readonly struct DefaultContacts : IRelation<Body, Body>
 public readonly struct SameCharacterHair : IRelation<Hair, Hair>
 {
     public bool Matches(in Hair first, in Hair second) => first.Character == second.Character;
+}
+
+public readonly struct HairCharacterIndex : IKeyRelation<SameCharacterHair, Hair, Entity>
+{
+    public bool Matches(in SameCharacterHair relation, in Entity first, in Entity second) => first == second;
+}
+
+public readonly struct OneWayCategories : IRelation<Body, Body>
+{
+    public bool Matches(in Body first, in Body second) =>
+        (first.CollisionCategories.AllowedCategories & second.CollisionCategories.Categories) != 0;
+}
+
+public readonly struct OneWayCategoryBitmap : IBitmapRelation<OneWayCategories, Body, OneWayPermission>
+{
+    public CategoryBits Read(in OneWayCategories relation, in Body component) => component.CollisionCategories;
+}
+
+public readonly struct MutualCategories : IRelation<Body, Body>
+{
+    public bool Matches(in Body first, in Body second) =>
+        (first.CollisionCategories.AllowedCategories & second.CollisionCategories.Categories) != 0 &&
+        (second.CollisionCategories.AllowedCategories & first.CollisionCategories.Categories) != 0;
+}
+
+public readonly struct MutualCategoryBitmap : IBitmapRelation<MutualCategories, Body, MutualPermission>
+{
+    public CategoryBits Read(in MutualCategories relation, in Body component) => component.CollisionCategories;
 }
