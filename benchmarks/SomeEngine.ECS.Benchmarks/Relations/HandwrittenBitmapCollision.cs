@@ -61,12 +61,10 @@ public static class HandwrittenBitmapCollision
         {
             foreach (var pair in _candidates)
             {
-                if (!query.TryGetRow(pair.Item1, out var first) || !first.Has<CollisionLayer>() ||
-                    !query.TryGetRow(pair.Item2, out var second) || !second.Has<CollisionLayer>())
+                if (!query.TryGetRow(pair.Item1, out var first) || !first.TryReadRef<CollisionLayer>(out var firstLayer) ||
+                    !query.TryGetRow(pair.Item2, out var second) || !second.TryReadRef<CollisionLayer>(out var secondLayer))
                     continue;
-                ref readonly CollisionLayer firstLayer = ref first.ReadRef<CollisionLayer>();
-                ref readonly CollisionLayer secondLayer = ref second.ReadRef<CollisionLayer>();
-                if ((firstLayer.AllowedCategories & secondLayer.Categories) == 0)
+                if ((firstLayer.Value.AllowedCategories & secondLayer.Value.Categories) == 0)
                     continue;
                 if (!Output.Add(in pair))
                 {
@@ -96,13 +94,11 @@ public static class HandwrittenBitmapCollision
         {
             foreach (var pair in _candidates)
             {
-                if (!query.TryGetRow(pair.Item1, out var first) || !first.Has<CollisionLayer>() ||
-                    !query.TryGetRow(pair.Item2, out var second) || !second.Has<CollisionLayer>())
+                if (!query.TryGetRow(pair.Item1, out var first) || !first.TryReadRef<CollisionLayer>(out var firstLayer) ||
+                    !query.TryGetRow(pair.Item2, out var second) || !second.TryReadRef<CollisionLayer>(out var secondLayer))
                     continue;
-                ref readonly CollisionLayer firstLayer = ref first.ReadRef<CollisionLayer>();
-                ref readonly CollisionLayer secondLayer = ref second.ReadRef<CollisionLayer>();
-                if ((firstLayer.AllowedCategories & secondLayer.Categories) == 0 ||
-                    (secondLayer.AllowedCategories & firstLayer.Categories) == 0)
+                if ((firstLayer.Value.AllowedCategories & secondLayer.Value.Categories) == 0 ||
+                    (secondLayer.Value.AllowedCategories & firstLayer.Value.Categories) == 0)
                     continue;
                 if (!Output.Add(in pair))
                 {

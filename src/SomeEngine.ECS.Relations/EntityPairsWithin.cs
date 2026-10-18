@@ -39,7 +39,9 @@ public readonly struct EntityPairsWithin : IQueryRelationEnumerable<(Entity, Ent
             while (secondRows.MoveNext(out var second))
             {
                 var pair = EntityOrder.OrderPair(first.Entity, second.Entity);
-                bool continued = pair.Item1 == first.Entity ? output.Add(in pair, in first, in second) : output.Add(in pair, in second, in first);
+                bool continued = TOutput.ReadsComponentRows
+                    ? pair.Item1 == first.Entity ? output.Add(in pair, in first, in second) : output.Add(in pair, in second, in first)
+                    : output.Add(in pair);
                 if (!continued)
                     return false;
             }

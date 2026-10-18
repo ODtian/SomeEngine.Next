@@ -2,6 +2,7 @@ using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Registry;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Queries;
 
@@ -47,6 +48,19 @@ public readonly ref struct QueryRow
     {
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
         return ref _chunk.ComponentRows<T>(column)[_row];
+    }
+
+    /// <summary>Finds one present readable component and borrows its value without copying it.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryReadRef<T>(out ComponentReference<T> component) where T : struct
+    {
+        if (QueryAccessGuards.TryRequireReadAccess<T>(_match, out int column))
+        {
+            component = new(in _chunk.ComponentRows<T>(column)[_row]);
+            return true;
+        }
+        component = default;
+        return false;
     }
 
     public ref T Write<T>() where T : struct

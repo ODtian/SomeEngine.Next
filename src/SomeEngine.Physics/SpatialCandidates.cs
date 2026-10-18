@@ -114,8 +114,8 @@ internal static class SpatialTraversal
                 pair.First != pair.Second && !first.Bounds.Overlaps(in second.Bounds))
                 continue;
 
-            GroupMatch forward = filter.MatchGroups(pair.First, pair.Second, in pair.Forward, out var forwardResults);
-            GroupMatch reverse = filter.MatchGroups(pair.Second, pair.First, in pair.Reverse, out var reverseResults);
+            GroupMatch forward = filter.MatchGroups(pair.First, pair.Second, in first, in second, in pair.Forward, out var forwardResults);
+            GroupMatch reverse = filter.MatchGroups(pair.Second, pair.First, in second, in first, in pair.Reverse, out var reverseResults);
             if (forward == GroupMatch.None && reverse == GroupMatch.None)
                 continue;
 

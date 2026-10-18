@@ -26,7 +26,8 @@ public readonly struct SpatialComponentFilter<TRelation, TFirst, TSecond>
 
     public bool HasSummaryChange(QueryChunkView chunk, int row) => false;
 
-    public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results) =>
+    public GroupMatch MatchGroups(int firstNode, int secondNode,
+        in CollisionNode first, in CollisionNode second, in GroupMatch inherited, out GroupMatch results) =>
         results = inherited;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -69,7 +70,8 @@ public readonly struct SpatialKeyFilter<TRelation, TImplementation, TComponent, 
         chunk.RowChangedSinceLastSystemVersion<TComponent>(row);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results)
+    public GroupMatch MatchGroups(int firstNode, int secondNode,
+        in CollisionNode firstTreeNode, in CollisionNode secondTreeNode, in GroupMatch inherited, out GroupMatch results)
     {
         if (inherited != GroupMatch.Unknown)
             return results = inherited;
@@ -81,8 +83,7 @@ public readonly struct SpatialKeyFilter<TRelation, TImplementation, TComponent, 
         {
             if (!_implementation.Matches(in _relation, in first.UniformKey, in second.UniformKey))
                 return results = GroupMatch.None;
-            if (first.KeyCount == Summary.Tree.Nodes[firstNode].MemberCount &&
-                second.KeyCount == Summary.Tree.Nodes[secondNode].MemberCount)
+            if (first.KeyCount == firstTreeNode.MemberCount && second.KeyCount == secondTreeNode.MemberCount)
                 return results = GroupMatch.All;
         }
         return results = GroupMatch.Unknown;
@@ -133,10 +134,11 @@ public readonly struct SpatialAnd<TFirst, TSecond, TFirstResults, TSecondResults
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public GroupMatch MatchGroups(int firstNode, int secondNode,
+        in CollisionNode first, in CollisionNode second,
         in (TFirstResults, TSecondResults) inherited, out (TFirstResults, TSecondResults) results)
     {
-        GroupMatch firstMatch = First.MatchGroups(firstNode, secondNode, in inherited.Item1, out var firstResults);
-        GroupMatch secondMatch = Second.MatchGroups(firstNode, secondNode, in inherited.Item2, out var secondResults);
+        GroupMatch firstMatch = First.MatchGroups(firstNode, secondNode, in first, in second, in inherited.Item1, out var firstResults);
+        GroupMatch secondMatch = Second.MatchGroups(firstNode, secondNode, in first, in second, in inherited.Item2, out var secondResults);
         results = (firstResults, secondResults);
         return GroupMatches.And(firstMatch, secondMatch);
     }
@@ -165,8 +167,9 @@ public readonly struct SpatialExcept<TFilter, TGroupResults>(TFilter filter) : I
     public bool HasSummaryChange(QueryChunkView chunk, int row) => Filter.HasSummaryChange(chunk, row);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public GroupMatch MatchGroups(int firstNode, int secondNode, in TGroupResults inherited, out TGroupResults results) =>
-        GroupMatches.Except(Filter.MatchGroups(firstNode, secondNode, in inherited, out results));
+    public GroupMatch MatchGroups(int firstNode, int secondNode,
+        in CollisionNode first, in CollisionNode second, in TGroupResults inherited, out TGroupResults results) =>
+        GroupMatches.Except(Filter.MatchGroups(firstNode, secondNode, in first, in second, in inherited, out results));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MatchesLeaves(scoped in QueryRow first, scoped in QueryRow second,

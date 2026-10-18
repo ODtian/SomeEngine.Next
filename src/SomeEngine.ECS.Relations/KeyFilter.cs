@@ -39,8 +39,8 @@ public readonly struct KeyFilter<TEnumerable, TRelation, TImplementation, TCompo
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        var relation = new KeyRelation<TRelation, TImplementation, TComponent, TKey>(queries.Access, _relation, _implementation, _exclude);
-        var filtered = new RelationFilterOutput<KeyRelation<TRelation, TImplementation, TComponent, TKey>, TOutput, (Entity, Entity)>(relation, output);
+        var relation = new KeyRelation<TRelation, TImplementation, TComponent, TKey>(queries.Access, _relation, _implementation);
+        var filtered = new RelationFilterOutput<KeyRelation<TRelation, TImplementation, TComponent, TKey>, TOutput, (Entity, Entity)>(relation, output, _exclude);
         try
         {
             return _enumerable.Enumerate(queries, ref filtered);
@@ -61,31 +61,29 @@ public ref struct KeyRelation<TRelation, TImplementation, TComponent, TKey> : IQ
     private readonly QueryCursor _query;
     private TRelation _relation;
     private TImplementation _implementation;
-    private readonly bool _exclude;
 
-    public KeyRelation(QueryCursor query, TRelation relation, TImplementation implementation, bool exclude)
+    public KeyRelation(QueryCursor query, TRelation relation, TImplementation implementation)
     {
         _query = query;
         _relation = relation;
         _implementation = implementation;
-        _exclude = exclude;
     }
 
     public bool Matches(in (Entity, Entity) pair)
     {
         return _query.TryGetRow(pair.Item1, out var first) && _query.TryGetRow(pair.Item2, out var second)
-            ? Matches(in pair, in first, in second) : _exclude;
+            && Matches(in pair, in first, in second);
     }
 
     public bool Matches(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second)
     {
         bool matches = false;
-        if (first.Has<TComponent>() && second.Has<TComponent>())
+        if (first.TryReadRef<TComponent>(out var firstValue) && second.TryReadRef<TComponent>(out var secondValue))
         {
-            TKey firstKey = first.ReadRef<TComponent>().GetKey();
-            TKey secondKey = second.ReadRef<TComponent>().GetKey();
+            TKey firstKey = firstValue.Value.GetKey();
+            TKey secondKey = secondValue.Value.GetKey();
             matches = _implementation.Matches(in _relation, in firstKey, in secondKey);
         }
-        return matches != _exclude;
+        return matches;
     }
 }

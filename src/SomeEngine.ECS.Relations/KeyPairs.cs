@@ -72,7 +72,7 @@ public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent
                             ? reverseAccepted : forwardAccepted;
                         if (!accepted)
                             continue;
-                        bool continued = TPairing.ReadsFromSingleQuery
+                        bool continued = TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows
                             ? output.Add(in pair, in firstRow, in secondRow) : output.Add(in pair);
                         if (!continued)
                             return false;

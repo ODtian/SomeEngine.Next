@@ -13,32 +13,30 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
     private readonly QueryCursor _query;
     private TRelation _relation;
     private TImplementation _implementation;
-    private readonly bool _exclude;
 
-    public BitmapRelation(QueryCursor query, TRelation relation, TImplementation implementation, bool exclude)
+    public BitmapRelation(QueryCursor query, TRelation relation, TImplementation implementation)
     {
         _query = query;
         _relation = relation;
         _implementation = implementation;
-        _exclude = exclude;
     }
 
     public bool Matches(in (Entity, Entity) pair)
     {
         return _query.TryGetRow(pair.Item1, out var first) && _query.TryGetRow(pair.Item2, out var second)
-            ? Matches(in pair, in first, in second) : _exclude;
+            && Matches(in pair, in first, in second);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Matches(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second)
     {
         bool matches = false;
-        if (first.Has<TComponent>() && second.Has<TComponent>())
+        if (first.TryReadRef<TComponent>(out var firstValue) && second.TryReadRef<TComponent>(out var secondValue))
         {
-            CategoryBits firstBits = _implementation.Read(in _relation, in first.ReadRef<TComponent>());
-            CategoryBits secondBits = _implementation.Read(in _relation, in second.ReadRef<TComponent>());
+            CategoryBits firstBits = _implementation.Read(in _relation, in firstValue.Value);
+            CategoryBits secondBits = _implementation.Read(in _relation, in secondValue.Value);
             matches = TPermission.Matches(in firstBits, in secondBits);
         }
-        return matches != _exclude;
+        return matches;
     }
 }

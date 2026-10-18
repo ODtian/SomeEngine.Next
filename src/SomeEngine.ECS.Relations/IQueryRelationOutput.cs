@@ -6,6 +6,8 @@ namespace SomeEngine.ECS.Relations;
 /// <summary>Callback-scoped pair rows forwarded between ECS bindings before emitting public identities.</summary>
 public interface IQueryRelationOutput<TRow> : IRelationOutput<TRow>
 {
+    static virtual bool ReadsComponentRows => true;
+
     bool Add(in TRow row, scoped in QueryRow first, scoped in QueryRow second);
 }
 
@@ -18,6 +20,8 @@ public interface IQueryRelation<TRow> : IRelation<TRow>
 internal ref struct QueryIdentityOutput<TOutput, TRow>(TOutput output) : IQueryRelationOutput<TRow>
     where TOutput : struct, IRelationOutput<TRow>, allows ref struct
 {
+    public static bool ReadsComponentRows => false;
+
     internal TOutput Output = output;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

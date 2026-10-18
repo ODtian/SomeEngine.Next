@@ -92,7 +92,7 @@ public sealed class GenericQueryExecutionTests
         {
             int index = 0;
             foreach (var row in query.Rows)
-                _lengths[index++] = row.Has<DisplayName>() ? row.ReadRef<DisplayName>().Value.Length : -1;
+                _lengths[index++] = row.TryReadRef<DisplayName>(out var name) ? name.Value.Value.Length : -1;
         }
     }
 }

@@ -29,6 +29,8 @@ $index = foreach ($submission in $submissions) {
         RelationMemory = $report.RelationMemory
         HandwrittenMemory = $report.HandwrittenMemory
         Queue = $queueResult
+        Stdout = [IO.File]::ReadAllText((Join-Path $submission.QueueDirectory 'stdout.log'))
+        Stderr = [IO.File]::ReadAllText((Join-Path $submission.QueueDirectory 'stderr.log'))
     }
 }
 $index | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath (Join-Path $evidence 'index.json') -Encoding utf8

@@ -7,6 +7,8 @@ public ref struct RelationFilterOutput<TRelation, TOutput, TRow> : IQueryRelatio
     where TRelation : struct, IQueryRelation<TRow>, allows ref struct
     where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
 {
+    public static bool ReadsComponentRows => true;
+
     private TRelation _relation;
     private readonly bool _exclude;
 
@@ -25,6 +27,7 @@ public ref struct RelationFilterOutput<TRelation, TOutput, TRow> : IQueryRelatio
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Add(in TRow row, scoped in QueryRow first, scoped in QueryRow second)
     {
-        return _relation.Matches(in row, in first, in second) == _exclude || Output.Add(in row, in first, in second);
+        return _relation.Matches(in row, in first, in second) == _exclude || (TOutput.ReadsComponentRows
+            ? Output.Add(in row, in first, in second) : Output.Add(in row));
     }
 }

@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 
@@ -25,21 +24,21 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
         var firstRows = queries.First.Rows;
         while (firstRows.MoveNext(out var first))
         {
-            bool hasFirst = first.Has<TFirst>();
-            bool hasSecond = first.Has<TSecond>();
-            ref readonly TFirst firstValue = ref (hasFirst ? ref first.ReadRef<TFirst>() : ref Unsafe.NullRef<TFirst>());
-            ref readonly TSecond secondValue = ref (hasSecond ? ref first.ReadRef<TSecond>() : ref Unsafe.NullRef<TSecond>());
+            bool hasFirst = first.TryReadRef<TFirst>(out var firstValue);
+            bool hasSecond = first.TryReadRef<TSecond>(out var secondValue);
             var secondRows = firstRows;
             while (secondRows.MoveNext(out var second))
             {
                 bool ascending = EntityOrder.Compare(first.Entity, second.Entity) < 0;
                 bool matches = ascending
-                    ? hasFirst && second.Has<TSecond>() && predicate.Matches(in firstValue, in second.ReadRef<TSecond>())
-                    : hasSecond && second.Has<TFirst>() && predicate.Matches(in second.ReadRef<TFirst>(), in secondValue);
+                    ? hasFirst && second.TryReadRef<TSecond>(out var lastValue) && predicate.Matches(in firstValue.Value, in lastValue.Value)
+                    : hasSecond && second.TryReadRef<TFirst>(out var startValue) && predicate.Matches(in startValue.Value, in secondValue.Value);
                 if (matches == exclude)
                     continue;
                 var pair = ascending ? (first.Entity, second.Entity) : (second.Entity, first.Entity);
-                bool continued = ascending ? output.Add(in pair, in first, in second) : output.Add(in pair, in second, in first);
+                bool continued = TOutput.ReadsComponentRows
+                    ? ascending ? output.Add(in pair, in first, in second) : output.Add(in pair, in second, in first)
+                    : output.Add(in pair);
                 if (!continued)
                     return false;
             }

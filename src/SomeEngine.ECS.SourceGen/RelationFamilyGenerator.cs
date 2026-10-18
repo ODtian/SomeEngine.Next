@@ -80,7 +80,7 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
         string rowArguments = string.Join(", ", Positions.Take(arity).Select(name => $"in {name}"));
         string rowParameters = string.Join(", ", Positions.Take(arity).Select(name => $"scoped in QueryRow {name}"));
         string arguments = string.Join(", ", Enumerable.Range(0, arity).Select(i =>
-            $"in {Positions[i]}.ReadRef<T{i + 1}>()"));
+            $"in {Positions[i]}Component.Value"));
         text.AppendLine(")")
             .AppendLine("            return false;")
             .AppendLine($"        return Matches({rowArguments});")
@@ -92,7 +92,7 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
         for (int i = 0; i < arity; i++)
         {
             if (i > 0) text.Append(" || ");
-            text.Append($"!{Positions[i]}.Has<T{i + 1}>()");
+            text.Append($"!{Positions[i]}.TryReadRef<T{i + 1}>(out var {Positions[i]}Component)");
         }
         text.AppendLine(")")
             .AppendLine("            return false;")

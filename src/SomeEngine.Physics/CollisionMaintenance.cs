@@ -33,7 +33,8 @@ public readonly struct SpatialAll : ISpatialFilter<GroupMatch>
     public void RebuildSummaries(QueryCursor access) { }
     public void RefitSummary(int node, QueryCursor access) { }
     public bool HasSummaryChange(QueryChunkView chunk, int row) => false;
-    public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results) =>
+    public GroupMatch MatchGroups(int firstNode, int secondNode,
+        in CollisionNode first, in CollisionNode second, in GroupMatch inherited, out GroupMatch results) =>
         results = GroupMatch.All;
     public bool MatchesLeaves(scoped in QueryRow first, scoped in QueryRow second,
         int firstNode, int secondNode, in GroupMatch results) => true;

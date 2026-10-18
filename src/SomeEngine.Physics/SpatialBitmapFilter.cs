@@ -6,19 +6,19 @@ namespace SomeEngine.Physics;
 
 public interface ISpatialBitmapProof
 {
-    static abstract GroupMatch Match(in CollisionBitmapData first, int firstMembers,
-        in CollisionBitmapData second, int secondMembers);
+    static abstract GroupMatch Match(in CollisionBitmapData first, in CollisionBitmapData second,
+        in CollisionNode firstNode, in CollisionNode secondNode);
 }
 
 public readonly struct OneWaySpatialPermission : ISpatialBitmapProof
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static GroupMatch Match(in CollisionBitmapData first, int firstMembers,
-        in CollisionBitmapData second, int secondMembers)
+    public static GroupMatch Match(in CollisionBitmapData first, in CollisionBitmapData second,
+        in CollisionNode firstNode, in CollisionNode secondNode)
     {
         if ((first.AllowedAny & second.CategoriesAny) == 0)
             return GroupMatch.None;
-        if (first.ComponentCount == firstMembers && second.ComponentCount == secondMembers &&
+        if (first.ComponentCount == firstNode.MemberCount && second.ComponentCount == secondNode.MemberCount &&
             (first.AllowedCommon & second.CategoriesCommon) != 0)
             return GroupMatch.All;
         return GroupMatch.Unknown;
@@ -28,16 +28,22 @@ public readonly struct OneWaySpatialPermission : ISpatialBitmapProof
 public readonly struct MutualSpatialPermission : ISpatialBitmapProof
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static GroupMatch Match(in CollisionBitmapData first, int firstMembers,
-        in CollisionBitmapData second, int secondMembers) =>
-        GroupMatches.And(OneWaySpatialPermission.Match(in first, firstMembers, in second, secondMembers),
-            OneWaySpatialPermission.Match(in second, secondMembers, in first, firstMembers));
+    public static GroupMatch Match(in CollisionBitmapData first, in CollisionBitmapData second,
+        in CollisionNode firstNode, in CollisionNode secondNode)
+    {
+        if ((first.AllowedAny & second.CategoriesAny) == 0 || (second.AllowedAny & first.CategoriesAny) == 0)
+            return GroupMatch.None;
+        if (first.ComponentCount == firstNode.MemberCount && second.ComponentCount == secondNode.MemberCount &&
+            (first.AllowedCommon & second.CategoriesCommon) != 0 && (second.AllowedCommon & first.CategoriesCommon) != 0)
+            return GroupMatch.All;
+        return GroupMatch.Unknown;
+    }
 }
 
 public readonly struct UnknownSpatialPermission : ISpatialBitmapProof
 {
-    public static GroupMatch Match(in CollisionBitmapData first, int firstMembers,
-        in CollisionBitmapData second, int secondMembers) => GroupMatch.Unknown;
+    public static GroupMatch Match(in CollisionBitmapData first, in CollisionBitmapData second,
+        in CollisionNode firstNode, in CollisionNode secondNode) => GroupMatch.Unknown;
 }
 
 public readonly struct SpatialBitmapFilter<TRelation, TImplementation, TComponent, TPermission, TGroupPermission>
@@ -64,10 +70,10 @@ public readonly struct SpatialBitmapFilter<TRelation, TImplementation, TComponen
         chunk.RowChangedSinceLastSystemVersion<TComponent>(row);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results) =>
+    public GroupMatch MatchGroups(int firstNode, int secondNode,
+        in CollisionNode first, in CollisionNode second, in GroupMatch inherited, out GroupMatch results) =>
         results = inherited != GroupMatch.Unknown ? inherited :
-            TGroupPermission.Match(in Summary[firstNode], Summary.Tree.Nodes[firstNode].MemberCount,
-                in Summary[secondNode], Summary.Tree.Nodes[secondNode].MemberCount);
+            TGroupPermission.Match(in Summary[firstNode], in Summary[secondNode], in first, in second);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MatchesLeaves(scoped in QueryRow firstRow, scoped in QueryRow secondRow,

@@ -27,6 +27,7 @@ public interface ISpatialFilter<TGroupResults> where TGroupResults : unmanaged
     bool HasSummaryChange(QueryChunkView chunk, int row) => false;
 
     GroupMatch MatchGroups(int firstNode, int secondNode,
+        in CollisionNode first, in CollisionNode second,
         in TGroupResults inherited, out TGroupResults results);
 
     /// <summary>Reads a pair of leaves ordered by their complete Entity identities.</summary>
