@@ -30,6 +30,8 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
         try
         {
             QueryDefinition access = QueryDefinition.Empty;
+            if (queryCount == 0)
+                access = Enumerable.AddReads(access, 0);
             for (int position = 0; position < queryCount; position++)
             {
                 QueryDefinition definition = world.GetQueryDefinition(Enumerable.GetQuery(position));
