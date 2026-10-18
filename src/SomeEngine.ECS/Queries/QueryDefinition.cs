@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Registry;
+using System.Runtime.InteropServices;
 
 namespace SomeEngine.ECS.Queries;
 
@@ -60,6 +61,27 @@ public sealed class QueryDefinition
     public ReadOnlySpan<QueryAccessEntry> Accesses => _accesses;
 
     public QueryKey Key { get; }
+
+    /// <summary>Creates the optional storage-access union of both definitions.</summary>
+    public QueryDefinition WithAccessFrom(QueryDefinition definition)
+    {
+        var terms = new List<QueryTerm>(_dataAccesses.Length + definition._dataAccesses.Length);
+        AddAccessTerms(_dataAccesses, terms);
+        AddAccessTerms(definition._dataAccesses, terms);
+        return CreateNormalized(CollectionsMarshal.AsSpan(terms));
+    }
+
+    private static void AddAccessTerms(ReadOnlySpan<QueryDataAccess> accesses, List<QueryTerm> terms)
+    {
+        foreach (QueryDataAccess access in accesses)
+        {
+            QueryAccess mode = access.Filters == QueryTermFilter.None
+                ? access.Access
+                : QueryAccessExtensions.Merge(access.Access, QueryAccess.Read);
+            if (mode != QueryAccess.None)
+                terms.Add(new QueryTerm(access.ComponentId, QueryTermKind.Optional, mode));
+        }
+    }
 
     /// <summary>Adds component read access while retaining this query's membership conditions.</summary>
     public QueryDefinition WithOptionalRead<T>() where T : struct

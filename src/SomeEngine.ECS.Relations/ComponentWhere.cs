@@ -19,6 +19,8 @@ public readonly struct ComponentWhere<TEnumerable, TRelation, TComponent> : IQue
 
     public World World => _enumerable.World;
 
+    public int QueryCount => _enumerable.QueryCount;
+
     public QueryHandle GetQuery(int position) => _enumerable.GetQuery(position);
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>
@@ -27,7 +29,7 @@ public readonly struct ComponentWhere<TEnumerable, TRelation, TComponent> : IQue
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IRelationOutput<Entity>, allows ref struct
     {
-        var relation = new ComponentRelation<TRelation, TComponent>(queries.First, _relation);
+        var relation = new ComponentRelation<TRelation, TComponent>(queries.Access, _relation);
         var filtered = new RelationFilterOutput<ComponentRelation<TRelation, TComponent>, TOutput, Entity>(relation, output);
         try
         {

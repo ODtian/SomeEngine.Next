@@ -19,6 +19,8 @@ public readonly struct ComponentExcept<TEnumerable, TRelation, TComponent> : IQu
 
     public World World => _enumerable.World;
 
+    public int QueryCount => _enumerable.QueryCount;
+
     public QueryHandle GetQuery(int position) => _enumerable.GetQuery(position);
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>
@@ -27,7 +29,7 @@ public readonly struct ComponentExcept<TEnumerable, TRelation, TComponent> : IQu
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IRelationOutput<Entity>, allows ref struct
     {
-        var component = new ComponentRelation<TRelation, TComponent>(queries.First, _relation);
+        var component = new ComponentRelation<TRelation, TComponent>(queries.Access, _relation);
         var relation = new NegatedRelation<ComponentRelation<TRelation, TComponent>, Entity>(component);
         var filtered = new RelationFilterOutput<NegatedRelation<ComponentRelation<TRelation, TComponent>, Entity>, TOutput, Entity>(relation, output);
         try
