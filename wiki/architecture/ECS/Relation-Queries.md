@@ -96,6 +96,8 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 
 `SomeEngine.Physics` 的真实二叉 AABB 空间来源、复用树的调用与手写宽相对照见 [空间候选](Spatial-Candidates.md)。
 
+类别和角色键的节点摘要、逐条件证明及空间薄入口见 [空间筛选下推](Spatial-Filtering.md)；排序、范围、多路连接及其它空间实现的接入数据见 [关系实现扩展](Relation-Query-Extensions.md)。
+
 ## 已存储关系边
 
 显式边来源使用 `RelationEdge<T>` 作为身份行，每条平行边各自输出。来源描述是普通 struct，保存 World 与端点参数；终端执行时读取原有邻接或端点间边视图。

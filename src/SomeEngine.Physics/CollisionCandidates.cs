@@ -71,6 +71,11 @@ public readonly struct CollisionCandidates<TComponent, TBoundsReader> : IQueryRe
 
     public CollisionTree Tree { get; }
 
+    internal bool BuildsFromQuery => _buildFromQuery;
+
+    internal void BuildTree(RelationQueryViews queries) =>
+        Tree.Rebuild<TComponent, TBoundsReader>(queries.First, queries.Access, _boundsReader);
+
     public int QueryCount => 1;
 
     public QueryHandle GetQuery(int position) => _bodies;
