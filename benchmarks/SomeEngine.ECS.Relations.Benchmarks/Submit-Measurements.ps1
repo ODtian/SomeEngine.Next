@@ -2,12 +2,14 @@ param(
     [string]$Series = 'initial',
     [string[]]$CaseId = @(),
     [ValidateSet('NativeAOT', 'JIT')][string]$Backend = 'NativeAOT',
-    [ValidateSet('measure', 'phases')][string]$Mode = 'measure'
+    [ValidateSet('measure', 'phases')][string]$Mode = 'measure',
+    [string]$QueueScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../tools/Invoke-Benchmark.ps1')),
+    [string]$SourceCommit
 )
 $ErrorActionPreference = 'Stop'
-$queueTool = 'F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1'
+$queueTool = [IO.Path]::GetFullPath($QueueScript)
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$sourceCommit = (& git -C $repositoryRoot rev-parse HEAD).Trim()
+if (!$SourceCommit) { $SourceCommit = (& git -C $repositoryRoot rev-parse HEAD).Trim() }
 $reportDirectory = Join-Path $repositoryRoot "artifacts/ecs-relations/measurements/$Series"
 New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null
 $executable = Join-Path $PSScriptRoot 'bin/Release/net10.0/win-x64/native-publish/SomeEngine.ECS.Relations.Benchmarks.exe'

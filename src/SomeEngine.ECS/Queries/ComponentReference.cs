@@ -9,6 +9,12 @@ public readonly ref struct ComponentReference<T> where T : struct
 
     internal ComponentReference(ref readonly T component) => _component = ref component;
 
+    public bool HasValue
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => !Unsafe.IsNullRef(in _component);
+    }
+
     public ref readonly T Value
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

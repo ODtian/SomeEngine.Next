@@ -30,13 +30,10 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Matches(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second)
     {
-        bool matches = false;
-        if (first.TryReadRef<TComponent>(out var firstValue) && second.TryReadRef<TComponent>(out var secondValue))
-        {
-            CategoryBits firstBits = _implementation.Read(in _relation, in firstValue.Value);
-            CategoryBits secondBits = _implementation.Read(in _relation, in secondValue.Value);
-            matches = TPermission.Matches(in firstBits, in secondBits);
-        }
-        return matches;
+        if (!first.TryReadRef<TComponent>(out var firstValue) || !second.TryReadRef<TComponent>(out var secondValue))
+            return false;
+        CategoryBits firstBits = _implementation.Read(in _relation, in firstValue.Value);
+        CategoryBits secondBits = _implementation.Read(in _relation, in secondValue.Value);
+        return TPermission.Matches(in firstBits, in secondBits);
     }
 }

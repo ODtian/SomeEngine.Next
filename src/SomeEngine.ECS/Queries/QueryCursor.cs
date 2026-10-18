@@ -72,6 +72,11 @@ public readonly ref struct QueryCursor
     public QueryRowEnumerator<NoSharedFilter> Rows =>
         new(_world, _plan, LastSystemVersion, CurrentSystemVersion, default);
 
+    /// <summary>Visits the same member rows while binding optional component columns at chunk boundaries.</summary>
+    public ComponentRowEnumerator<TFirst, TSecond> ReadRows<TFirst, TSecond>()
+        where TFirst : struct
+        where TSecond : struct => new(Rows);
+
     public QueryRowEnumerator<SingleSharedFilter> RowsWithShared<T>(in T value)
         where T : struct, ISharedComponent
     {

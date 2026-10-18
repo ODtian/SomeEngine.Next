@@ -24,6 +24,26 @@ public sealed class GenericQueryExecutionTests
     }
 
     [Fact]
+    public void TypedRowReadsRetainOptionalComponentsAndOriginalMembers()
+    {
+        using var world = new World();
+        var named = world.CreateEntity(new Position { X = 1 });
+        world.Add(named, new DisplayName { Value = "Iris" });
+        world.CreateEntity(new Position { X = 2 });
+        world.CreateEntity(new DisplayName { Value = "Other" });
+        var definition = world.QueryDefinition().All<Position>().Build()
+            .WithOptionalRead<Position>().WithOptionalRead<DisplayName>();
+        var query = world.Query(definition);
+        Span<int> values = stackalloc int[2];
+        var execution = new TypedNameLengths(values);
+
+        world.ExecuteQuery(query, ref execution);
+
+        values.Sort();
+        Assert.Equal([2, 5], values.ToArray());
+    }
+
+    [Fact]
     public void OptionalReadsRetainAnyAndExcludedMemberConditions()
     {
         using var world = new World();
@@ -93,6 +113,19 @@ public sealed class GenericQueryExecutionTests
             int index = 0;
             foreach (var row in query.Rows)
                 _lengths[index++] = row.TryReadRef<DisplayName>(out var name) ? name.Value.Value.Length : -1;
+        }
+    }
+
+    private ref struct TypedNameLengths(Span<int> values) : IQueryExecution
+    {
+        private readonly Span<int> _values = values;
+
+        public void Execute(QueryCursor query)
+        {
+            int index = 0;
+            var rows = query.ReadRows<Position, DisplayName>();
+            while (rows.MoveNext(out var row, out var position, out var name))
+                _values[index++] = (int)position.Value.X + (name.HasValue ? name.Value.Value.Length : 0);
         }
     }
 }

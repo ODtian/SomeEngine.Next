@@ -27,18 +27,18 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         TRelation predicate = relation;
-        var firstRows = queries.First.Rows;
-        while (firstRows.MoveNext(out var first))
+        var firstRows = queries.First.ReadRows<TFirst, TSecond>();
+        while (firstRows.MoveNext(out var first, out var firstValue, out var secondValue))
         {
-            bool hasFirst = first.TryReadRef<TFirst>(out var firstValue);
-            bool hasSecond = first.TryReadRef<TSecond>(out var secondValue);
+            bool hasFirst = firstValue.HasValue;
+            bool hasSecond = secondValue.HasValue;
             var secondRows = firstRows;
-            while (secondRows.MoveNext(out var second))
+            while (secondRows.MoveNext(out var second, out var startValue, out var lastValue))
             {
                 bool ascending = EntityOrder.Compare(first.Entity, second.Entity) < 0;
                 bool matches = ascending
-                    ? hasFirst && second.TryReadRef<TSecond>(out var lastValue) && predicate.Matches(in firstValue.Value, in lastValue.Value)
-                    : hasSecond && second.TryReadRef<TFirst>(out var startValue) && predicate.Matches(in startValue.Value, in secondValue.Value);
+                    ? hasFirst && lastValue.HasValue && predicate.Matches(in firstValue.Value, in lastValue.Value)
+                    : hasSecond && startValue.HasValue && predicate.Matches(in startValue.Value, in secondValue.Value);
                 if (!TSelection.Accepts(matches))
                     continue;
                 var pair = ascending ? (first.Entity, second.Entity) : (second.Entity, first.Entity);

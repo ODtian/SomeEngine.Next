@@ -27,6 +27,9 @@ public ref struct QueryRowEnumerator<TFilter>
 
     public QueryRow Current => _rows.Current;
 
+    internal QueryArchetypeMatch CurrentMatch => _rows.Match;
+    internal Chunk? CurrentChunk => _rows.Chunk;
+
     public QueryRowEnumerator<TFilter> GetEnumerator() => this;
 
     public bool MoveNext()
@@ -78,6 +81,9 @@ internal ref struct QueryRowCursor
     }
 
     internal QueryRow Current { get; set; }
+
+    internal QueryArchetypeMatch Match => _match!;
+    internal Chunk? Chunk => _chunk;
 
     internal void Reset(QueryArchetypeMatch match, Chunk chunk)
     {

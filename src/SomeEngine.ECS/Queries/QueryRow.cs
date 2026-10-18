@@ -31,6 +31,8 @@ public readonly ref struct QueryRow
 
     public Entity Entity => _chunk.Entities[_row];
 
+    internal int RowIndex => _row;
+
     public uint LastSystemVersion { get; }
 
     public uint CurrentSystemVersion { get; }

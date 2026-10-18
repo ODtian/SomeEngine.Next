@@ -1,5 +1,7 @@
+param([string]$QueueScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../tools/Invoke-Benchmark.ps1')))
+
 $ErrorActionPreference = 'Stop'
-$queueTool = 'F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1'
+$queueTool = [IO.Path]::GetFullPath($QueueScript)
 $consumerProject = Join-Path $PSScriptRoot 'SomeEngine.ECS.Relations.AotSmoke.csproj'
 [xml]$consumerXml = Get-Content -LiteralPath $consumerProject -Raw
 $packageVersion = [string]$consumerXml.Project.PropertyGroup.SomeEnginePackageVersion
