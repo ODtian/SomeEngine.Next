@@ -86,12 +86,63 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 
 `tests/SomeEngine.ECS.Relations.Tests/MultiRelationTests.cs` 是独立使用方的多元行为检查，覆盖三至八元、不同参与集合、重复组件类型、托管组件、筛选、排除、计数、存在性及八元输出提前结束。这组业务例子定义 12 个语义类型，对应 24 个薄入口，合入同一扩展类；一元与二元行为沿用同项目的公开使用方检查。
 
-`IQueryRelationEnumerable<TRow>` 保存参与查询的位置接口：`QueryCount` 表示输入查询数量，`GetQuery(position)` 返回既有集合身份，`AddReads(definition, position)` 累积该位置的语义读取需求，`Enumerate(RelationQueryViews, ref output)` 在已进入的查询视图中执行具体枚举。`Within` 的 QueryCount 为 1，其行元数为 2；`Product(A,B)` 与 `Between(A,B)` 的 QueryCount 为 2。
+`IQueryRelationEnumerable<TRow>` 保存参与查询的位置接口：`QueryCount` 表示输入查询数量，`GetQuery(position)` 返回既有集合身份，`AddReads(definition, position)` 累积该位置的语义读取需求，`Enumerate(RelationQueryViews, ref output)` 在已进入的查询视图中执行具体枚举。`Within` 的 QueryCount 为 1，其行元数为 2；`Product(A,B)` 与 `Between(A,B)` 的 QueryCount 为 2。原生邻接来源的 QueryCount 为 0；执行体调用一次 `AddReads(definition, 0)`，并在外层 Access 查询中枚举。零个或一个输入查询的绑定将全部语义位置的组件读取加入 Access。
 
 共享执行体以输入位置递归进入既有 World 查询回调，值类型句柄缓冲保存八个参与查询及其外层访问查询。每层在结束时回写泛型输出。固定泛型族和查询视图由同一库构建生成器覆盖一至八元；使用方生成器按接口元数组装标准实体元组与共享泛型类型。空间来源可以提供自己的具体枚举，并复用 QueryCount、Access 与同一泛型输出；资源范围与版本继续由现有 ECS/WorldJobs 执行。
 
 ## 已存储关系边
 
-Direct relation query 以 edge entity 为 row identity，一条 edge 一行。Endpoint filters 是 semi-join：一个 endpoint entity 至多产生一行，不因 parallel edges 自动展开。
+显式边来源使用 `RelationEdge<T>` 作为身份行，每条平行边各自输出。来源描述是普通 struct，保存 World 与端点参数；终端执行时读取原有邻接或端点间边视图。
 
-需要 endpoint-edge expansion 时必须显式选择，并在可写场景证明不会从两个 endpoint 路径重复写同一 edge。
+| 入口 | 具体来源 | 成员来源 | 行顺序 |
+| --- | --- | --- | --- |
+| `world.Edge(edge)` | `SingleRelationEdge<T>` | 指定的存活边实体 | 单条边 |
+| `world.OutgoingEdges<T>(source)` | `OutgoingRelationEdges<T>` | source 的原生出边邻接 | 原生出边局部顺序 |
+| `world.IncomingEdges<T>(target)` | `IncomingRelationEdges<T>` | target 的原生入边邻接 | 原生入边局部顺序 |
+| `world.IncidentEdges<T>(endpoint)` | `IncidentRelationEdges<T>` | endpoint 的原生关联边邻接 | 原生关联边局部顺序 |
+| `world.EdgesBetween<T>(first,second)` | `RelationEdgesBetween<T>` | 原生端点间边查询 | 原生来源邻接局部顺序 |
+
+这些来源返回 `RelationQuery<具体来源,RelationEdge<T>>`，共用 `Enumerate`、`Count`、`Any` 与提前结束输出。创建、立即重定向、销毁、基数约束与端点角色继续由原有显式边实现持有；有序邻接的插入及重排直接体现在来源顺序中。
+
+二元语义可直接用于边的 `Where` 与 `Except`。`RelationEdgeGenerator` 为每个二元业务语义另外生成两个薄入口，返回共享的 `EdgeComponentWhere` / `EdgeComponentExcept`。绑定从 Access 读取当前端点组件，构成临时实体位置对，再通过既有 `ComponentRelation<TRelation,T1,T2>` 分别读取语义组件。筛选输出继续传递原始 `RelationEdge<T>`。Directed 使用 Source/Target；Undirected 使用创建或重定向参数的 EndpointA/EndpointB 角色。
+
+邻接成员读取已应用的派生状态，端点语义读取当前端点组件。`RetargetRelationDeferred` 修改后，来源仍使用上次已应用的邻接成员，语义读取新端点；`MaintainRelations<T>` 或 `RelationMaintenanceSystem<T>.Schedule` 完成后，来源切换到更新后的邻接。需要维护结果的 Job 显式依赖维护 handle，端点读取沿用 `RelationJobAccess<T>.EndpointsRead` 与 topology-read；语义组件读取按既有组件资源声明加入。
+
+端点集合通过显式投影得到标准 `(Entity,Entity)` 行：
+
+| 投影 | 位置含义 | 去重键 | 输出顺序 |
+| --- | --- | --- | --- |
+| `edges.DistinctEndpoints()` | Source/Target 或 EndpointA/EndpointB | 保留位置的完整实体身份对 | 来源首次出现顺序 |
+| `edges.DistinctUnorderedEndpoints()` | 完整实体身份升序 | 排序后的完整实体身份对 | 来源首次出现顺序 |
+
+投影使用本次枚举持有的 `HashSet<(Entity,Entity)>` 记录已输出对，结束后随枚举释放。平行边投影到同一端点对时输出一行。保留角色的投影把 `(A,B)` 与 `(B,A)` 分别输出；无序投影把两者输出为同一对。投影结果继续使用普通二元语义、计数、存在性与提前结束输出。
+
+```csharp
+var selectedEdges = world.OutgoingEdges<Shipment>(source)
+    .Where(new ScoreWeightGap(5))
+    .Except(new ScoreWeightGap(9));
+int edgeCount = selectedEdges.Count();
+int pairCount = selectedEdges.DistinctEndpoints().Count();
+```
+
+这里的 `Shipment` 与 `ScoreWeightGap` 是业务例子。完整的公开行为检查位于 `tests/SomeEngine.ECS.Relations.Tests/EdgeRelationTests.cs`，包括平行边、角色局部顺序、端点绑定、输出状态、维护依赖及两种投影。
+
+### 普通实体持有多元事实的业务例子
+
+`StoredRelationFactExample.cs` 演示由一个普通 ECS 实体持有三元 `TransferFact`：Source、Carrier、Destination 三个 Entity 字段保存参与位置。事实实体的创建与销毁沿用 World 普通实体生命周期，事实集合使用 `All<TransferFact>()` 的原查询。业务枚举 `TransferFacts` 在 First 成员视图中遍历事实实体，从 Access 读取组件，再输出 `(Source,Carrier,Destination)`。
+
+```csharp
+public struct TransferFact : IComponent
+{
+    public Entity Source;
+    public Entity Carrier;
+    public Entity Destination;
+}
+
+var facts = world.Query(world.QueryDefinition().All<TransferFact>());
+var transfers = world.Transfers(facts).Where(new TransferFits());
+int count = transfers.Count();
+world.ReleaseQuery(facts);
+```
+
+`Transfers`、`TransferFacts` 与 `TransferFits` 都属于该业务例子。它们通过公共 `IQueryRelationEnumerable<(Entity,Entity,Entity)>` 接入共享关系执行体，三元规则读取三个参与位置的组件。完整业务代码和行为检查分别位于 `tests/SomeEngine.ECS.Relations.Tests/StoredRelationFactExample.cs`、`StoredRelationFactTests.cs`。

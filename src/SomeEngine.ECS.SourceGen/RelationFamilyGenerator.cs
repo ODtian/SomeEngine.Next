@@ -108,7 +108,7 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
             .AppendLine("    {")
             .AppendLine("        definition = _enumerable.AddReads(definition, position);");
         for (int i = 0; i < arity; i++)
-            text.AppendLine($"        if (position == {i} || QueryCount == 1)")
+            text.AppendLine($"        if (position == {i} || QueryCount <= 1)")
                 .AppendLine($"            definition = definition.WithOptionalRead<T{i + 1}>();");
         text.AppendLine("        return definition;")
             .AppendLine("    }\n")
