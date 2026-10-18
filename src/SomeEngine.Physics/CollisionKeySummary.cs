@@ -30,6 +30,8 @@ public sealed class CollisionKeySummary<TComponent, TKey>
 
     public ReadOnlySpan<CollisionKeyData<TKey>> Nodes => _nodes.AsSpan(0, Tree.NodeCount);
 
+    public int NodeCapacity => _nodes.Length;
+
     public void Rebuild(QueryCursor access)
     {
         Resize();

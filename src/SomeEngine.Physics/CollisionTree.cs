@@ -19,6 +19,12 @@ public sealed partial class CollisionTree
 
     public int NodeCount { get; private set; }
 
+    public int NodeCapacity => _nodes.Length;
+
+    public int LeafMapCount => _leaves.Count;
+
+    public int LeafMapCapacity => _leaves.EnsureCapacity(0);
+
     public int Height => Root < 0 ? 0 : _nodes[Root].Height;
 
     public ReadOnlySpan<CollisionNode> Nodes => _nodes.AsSpan(0, NodeCount);

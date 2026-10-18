@@ -97,6 +97,10 @@ public sealed class CollisionPairBuffer : IDisposable
     }
 
     public int Count { get; private set; }
+    public int PairCapacity => _pairs.Length;
+    public int PartitionCapacity => _partitions.Length;
+    public int PartitionCount { get; private set; }
+    public int FilledPartitionCount { get; private set; }
     public ReadOnlySpan<(Entity, Entity)> Pairs => _pairs.AsSpan(0, Count);
     public JobResourceAccess FillAccess => JobResourceAccess.Write(_queryResource);
     public JobResourceAccess ReadAccess => JobResourceAccess.Read(_pairResource);
@@ -106,6 +110,7 @@ public sealed class CollisionPairBuffer : IDisposable
     {
         source.Prepare(queries);
         int partitionCount = source.Tree.CreatePartitions(_partitions);
+        PartitionCount = partitionCount;
         for (int index = 0; index < partitionCount; index++)
             _countAccesses[index] = JobResourceAccess.Write(_countResource, index, 1);
         var countJob = new CountJob<TEnumerable>(source, this);
@@ -140,6 +145,7 @@ public sealed class CollisionPairBuffer : IDisposable
             fillCount++;
         }
         var fillJob = new FillJob<TEnumerable>(source, this);
+        FilledPartitionCount = fillCount;
         if (parallel)
             ReadOnlyQueryPairJobs.ExecuteParallel(queries.Access, queries.First, in fillJob,
                 fillCount, _fillAccesses.AsSpan(0, 2 * fillCount), 2, prefixed);

@@ -45,6 +45,8 @@ public sealed class CollisionBitmapSummary<TRelation, TImplementation, TComponen
 
     public ReadOnlySpan<CollisionBitmapData> Nodes => _nodes.AsSpan(0, Tree.NodeCount);
 
+    public int NodeCapacity => _nodes.Length;
+
     public void Rebuild(QueryCursor access)
     {
         Resize();
