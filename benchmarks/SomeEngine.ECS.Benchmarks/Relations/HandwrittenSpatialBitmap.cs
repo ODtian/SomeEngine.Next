@@ -68,7 +68,7 @@ public static class HandwrittenSpatialBitmap
                 }
                 else if (first.IsLeaf && second.IsLeaf)
                 {
-                    bool ascending = EntityOrder.Compare(first.Entity, second.Entity) < 0;
+                    bool ascending = EntityOrder.Precedes(first.Entity, second.Entity);
                     int firstNode = ascending ? pair.First : pair.Second;
                     int secondNode = ascending ? pair.Second : pair.First;
                     GroupMatch match = ascending ? forward : reverse;
@@ -179,7 +179,7 @@ public static class HandwrittenSpatialBitmap
                 }
                 else if (first.IsLeaf && second.IsLeaf)
                 {
-                    bool ascending = EntityOrder.Compare(first.Entity, second.Entity) < 0;
+                    bool ascending = EntityOrder.Precedes(first.Entity, second.Entity);
                     int firstNode = ascending ? pair.First : pair.Second;
                     int secondNode = ascending ? pair.Second : pair.First;
                     GroupMatch match = ascending ? forward : reverse;

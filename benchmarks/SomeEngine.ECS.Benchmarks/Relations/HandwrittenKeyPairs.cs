@@ -96,10 +96,9 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
                             continue;
                         foreach (Entity second in secondEntities)
                         {
-                            int order = first.Index.CompareTo(second.Index);
-                            if (order == 0)
-                                order = first.Generation.CompareTo(second.Generation);
-                            if (order >= 0 || !members.TryGetRow(second, out _))
+                            bool ascending = first.Index < second.Index ||
+                                first.Index == second.Index && first.Generation < second.Generation;
+                            if (!ascending || !members.TryGetRow(second, out _))
                                 continue;
                             var pair = (first, second);
                             if (!Output.Add(in pair))

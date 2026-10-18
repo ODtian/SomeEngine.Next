@@ -30,18 +30,19 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
         var firstRows = queries.First.ReadRows<TFirst, TSecond>();
         while (firstRows.MoveNext(out var first, out var firstValue, out var secondValue))
         {
-            bool hasFirst = firstValue.HasValue;
-            bool hasSecond = secondValue.HasValue;
+            Entity firstEntity = first.Entity;
             var secondRows = firstRows;
             while (secondRows.MoveNext(out var second, out var startValue, out var lastValue))
             {
-                bool ascending = EntityOrder.Compare(first.Entity, second.Entity) < 0;
-                bool matches = ascending
-                    ? hasFirst && lastValue.HasValue && predicate.Matches(in firstValue.Value, in lastValue.Value)
-                    : hasSecond && startValue.HasValue && predicate.Matches(in startValue.Value, in secondValue.Value);
+                Entity secondEntity = second.Entity;
+                bool ascending = EntityOrder.Precedes(firstEntity, secondEntity);
+                ComponentReference<TFirst> relationFirst = ascending ? firstValue : startValue;
+                ComponentReference<TSecond> relationSecond = ascending ? lastValue : secondValue;
+                bool matches = relationFirst.HasValue && relationSecond.HasValue &&
+                    predicate.Matches(in relationFirst.Value, in relationSecond.Value);
                 if (!TSelection.Accepts(matches))
                     continue;
-                var pair = ascending ? (first.Entity, second.Entity) : (second.Entity, first.Entity);
+                var pair = ascending ? (firstEntity, secondEntity) : (secondEntity, firstEntity);
                 bool continued = TOutput.ReadsComponentRows
                     ? ascending ? output.Add(in pair, in first, in second) : output.Add(in pair, in second, in first)
                     : output.Add(in pair);

@@ -89,6 +89,26 @@ public sealed class BinaryRelationTests
         Assert.Equal(1, world.Between(left, right).Where(new ScoreWeightGap(5)).Count(baseline));
     }
 
+    [Fact]
+    public void WithinBindsDifferentOptionalComponentsByOutputPosition()
+    {
+        using var world = new World();
+        var score = world.CreateEntity(new Score { Value = 1 });
+        var weight = world.CreateEntity(new Weight { Value = 8 });
+        var ordinary = world.CreateEntity();
+        world.AddTag<LeftSet>(weight);
+        world.AddTag<LeftSet>(score);
+        world.AddTag<LeftSet>(ordinary);
+        var members = world.Query(world.QueryDefinition().All<LeftSet>());
+        var pairs = new List<(Entity, Entity)>();
+        var output = new PairList(pairs);
+
+        world.Within(members).Where(new ScoreWeightGap(5)).Enumerate(ref output);
+
+        Assert.Equal([(score, weight)], pairs);
+        Assert.Equal(2, world.Within(members).Except(new ScoreWeightGap(5)).Count());
+    }
+
     private struct PairList(List<(Entity, Entity)> pairs) : IRelationOutput<(Entity, Entity)>
     {
         public bool Add(in (Entity, Entity) pair)

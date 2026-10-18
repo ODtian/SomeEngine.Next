@@ -13,6 +13,10 @@ public static class EntityOrder
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool Precedes(Entity first, Entity second) =>
+        first.Index < second.Index || first.Index == second.Index && first.Generation < second.Generation;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static (Entity, Entity) OrderPair(Entity first, Entity second) =>
-        Compare(first, second) < 0 ? (first, second) : (second, first);
+        Precedes(first, second) ? (first, second) : (second, first);
 }

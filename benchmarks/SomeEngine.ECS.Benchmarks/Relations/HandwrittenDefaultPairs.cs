@@ -35,12 +35,13 @@ public static class HandwrittenDefaultPairs
             var firstRows = members.ReadRows<Body, Body>();
             while (firstRows.MoveNext(out var first, out var firstBody, out _))
             {
+                Entity firstEntity = first.Entity;
                 var secondRows = firstRows;
                 while (secondRows.MoveNext(out var second, out var secondBody, out _))
                 {
                     if (firstBody.Value.Kind != MotionKind.Dynamic && secondBody.Value.Kind != MotionKind.Dynamic)
                         continue;
-                    var pair = EntityOrder.OrderPair(first.Entity, second.Entity);
+                    var pair = EntityOrder.OrderPair(firstEntity, second.Entity);
                     if (!Output.Add(in pair))
                     {
                         Completed = false;
