@@ -19,6 +19,12 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+        => exclude ? Enumerate<ExceptSelection, TOutput>(queries, ref output)
+            : Enumerate<WhereSelection, TOutput>(queries, ref output);
+
+    private bool Enumerate<TSelection, TOutput>(RelationQueryViews queries, ref TOutput output)
+        where TSelection : struct, IRelationSelection
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         TRelation predicate = relation;
         var firstRows = queries.First.Rows;
@@ -33,7 +39,7 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
                 bool matches = ascending
                     ? hasFirst && second.TryReadRef<TSecond>(out var lastValue) && predicate.Matches(in firstValue.Value, in lastValue.Value)
                     : hasSecond && second.TryReadRef<TFirst>(out var startValue) && predicate.Matches(in startValue.Value, in secondValue.Value);
-                if (matches == exclude)
+                if (!TSelection.Accepts(matches))
                     continue;
                 var pair = ascending ? (first.Entity, second.Entity) : (second.Entity, first.Entity);
                 bool continued = TOutput.ReadsComponentRows

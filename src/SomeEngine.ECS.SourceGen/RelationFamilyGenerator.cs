@@ -139,7 +139,7 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
             .AppendLine($"        where TOutput : struct, IQueryRelationOutput<{row}>, allows ref struct")
             .AppendLine("    {");
         text.AppendLine($"        var relation = new {binding}(queries.Access, _relation);");
-        text.AppendLine($"        var filtered = new RelationFilterOutput<{predicate}, TOutput, {row}>(relation, output, {(operation == "Except" ? "true" : "false")});")
+        text.AppendLine($"        var filtered = new RelationFilterOutput<{predicate}, TOutput, {row}, {operation}Selection>(relation, output);")
             .AppendLine("        try")
             .AppendLine("        {")
             .AppendLine("            return _enumerable.Enumerate(queries, ref filtered);")

@@ -38,9 +38,15 @@ public readonly struct KeyFilter<TEnumerable, TRelation, TImplementation, TCompo
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+        => _exclude ? Enumerate<ExceptSelection, TOutput>(queries, ref output)
+            : Enumerate<WhereSelection, TOutput>(queries, ref output);
+
+    private bool Enumerate<TSelection, TOutput>(RelationQueryViews queries, ref TOutput output)
+        where TSelection : struct, IRelationSelection
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         var relation = new KeyRelation<TRelation, TImplementation, TComponent, TKey>(queries.Access, _relation, _implementation);
-        var filtered = new RelationFilterOutput<KeyRelation<TRelation, TImplementation, TComponent, TKey>, TOutput, (Entity, Entity)>(relation, output, _exclude);
+        var filtered = new RelationFilterOutput<KeyRelation<TRelation, TImplementation, TComponent, TKey>, TOutput, (Entity, Entity), TSelection>(relation, output);
         try
         {
             return _enumerable.Enumerate(queries, ref filtered);
