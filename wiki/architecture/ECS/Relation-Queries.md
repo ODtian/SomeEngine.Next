@@ -28,6 +28,8 @@
 
 通过 `IIndexedComponent<TKey>` 与既有键桶提供的可选实现见[键关系查询](Key-Relation-Queries.md)。
 
+通过类别位数据与具体单向、双方许可操作提供的可选实现见[有限类别关系](Bitmap-Relation-Queries.md)。
+
 ### 业务示例
 
 以下分数规则是演示一元 API 的业务例子。`Score` 和 `MinimumScore` 属于业务代码；`Product`、`Count`、`Any` 与共享组件绑定属于关系库。
