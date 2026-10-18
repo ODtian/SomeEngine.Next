@@ -97,6 +97,59 @@ public partial class World
             execution);
     }
 
+    public void ExecuteQuery<TExecution>(QueryHandle query, ref TExecution execution)
+        where TExecution : struct, IQueryExecution, allows ref struct
+    {
+        using WorldJobAdmissionScope admission = EnterJobQuery(query, out bool relationshipWrite);
+        AcquireAdmittedQueryVersions(query, out uint lastSystemVersion, out uint currentSystemVersion);
+        ExecuteQueryAdmitted(query, lastSystemVersion, currentSystemVersion, relationshipWrite, ref execution);
+    }
+
+    public void ExecuteQuery<TExecution>(QueryHandle query, uint lastSystemVersion, ref TExecution execution)
+        where TExecution : struct, IQueryExecution, allows ref struct
+    {
+        using WorldJobAdmissionScope admission = EnterJobQuery(query, out bool relationshipWrite);
+        uint currentSystemVersion = AcquireAdmittedQueryVersion(query);
+        ExecuteQueryAdmitted(query, lastSystemVersion, currentSystemVersion, relationshipWrite, ref execution);
+    }
+
+    private void ExecuteQueryAdmitted<TExecution>(
+        QueryHandle query,
+        uint lastSystemVersion,
+        uint currentSystemVersion,
+        bool relationshipWrite,
+        ref TExecution execution)
+        where TExecution : struct, IQueryExecution, allows ref struct
+    {
+        BeginQueryIteration(relationshipWrite);
+        try
+        {
+            execution.Execute(new QueryCursor(this, _queries.Get(query).State,
+                lastSystemVersion, currentSystemVersion));
+        }
+        catch (Exception bodyFault)
+        {
+            try
+            {
+                EndQueryIteration(relationshipWrite, completed: false);
+            }
+            catch (Exception rollbackFault)
+            {
+                throw new AggregateException(
+                    relationshipWrite
+                        ? "Query body and relationship topology rollback both failed."
+                        : "Query body and query scope release both failed.",
+                    bodyFault,
+                    rollbackFault);
+            }
+
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(bodyFault).Throw();
+            throw;
+        }
+
+        EndQueryIteration(relationshipWrite, completed: true);
+    }
+
     /// <summary>
     /// Executes one read-only query as a synchronous, mutation-free World snapshot. Unlike an
     /// ordinary unbound query, the snapshot owns the whole topology frontier until the callback

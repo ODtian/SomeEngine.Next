@@ -1,0 +1,42 @@
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
+
+namespace SomeEngine.ECS.Relations;
+
+public readonly struct ComponentExcept<TEnumerable, TRelation, TComponent> : IQueryRelationEnumerable<Entity>
+    where TEnumerable : struct, IQueryRelationEnumerable<Entity>
+    where TRelation : struct, IRelation<TComponent>
+    where TComponent : struct
+{
+    private readonly TEnumerable _enumerable;
+    private readonly TRelation _relation;
+
+    public ComponentExcept(TEnumerable enumerable, TRelation relation)
+    {
+        _enumerable = enumerable;
+        _relation = relation;
+    }
+
+    public World World => _enumerable.World;
+
+    public QueryHandle GetQuery(int position) => _enumerable.GetQuery(position);
+
+    public QueryDefinition AddReads(QueryDefinition definition, int position) =>
+        _enumerable.AddReads(definition, position).WithOptionalRead<TComponent>();
+
+    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IRelationOutput<Entity>, allows ref struct
+    {
+        var component = new ComponentRelation<TRelation, TComponent>(queries.First, _relation);
+        var relation = new NegatedRelation<ComponentRelation<TRelation, TComponent>, Entity>(component);
+        var filtered = new RelationFilterOutput<NegatedRelation<ComponentRelation<TRelation, TComponent>, Entity>, TOutput, Entity>(relation, output);
+        try
+        {
+            return _enumerable.Enumerate(queries, ref filtered);
+        }
+        finally
+        {
+            output = filtered.Output;
+        }
+    }
+}
