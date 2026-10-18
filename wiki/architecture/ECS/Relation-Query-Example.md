@@ -78,3 +78,63 @@ public static partial class RelationQueryExtensions
 ```
 
 共享组件绑定在执行回调中分别读取两个实体的 `ref readonly` 组件，并调用具体 `Matches(in first, in second)`。计数、存在性与自定义输出均保留源枚举、关系和输出的具体泛型类型。
+
+## 可选角色键实现
+
+以下类型仍属于业务例子。优化版本将 `Hair` 的声明替换为索引组件，并补充 `HairCharacterIndex`；关系库的通用设计通过 `IKeyRelation` 表达语义与键实现的类型关联。
+
+```csharp
+using SomeEngine.ECS.Components;
+
+public struct Hair : IComponent, IIndexedComponent<Entity>
+{
+    public Entity Character;
+    public readonly Entity GetKey() => Character;
+}
+
+public readonly struct HairCharacterIndex : IKeyRelation<SameCharacterHair, Hair, Entity>
+{
+    public bool Matches(in SameCharacterHair relation, in Entity first, in Entity second) => first == second;
+}
+```
+
+使用相同的 World、六个物体和 `bodies` 查询，可以显式选择角色键实现。直接从 `Within` 附加键规则时，具体枚举按已有桶形成键组；已有普通组合链也接受相同的语义与实现参数。
+
+```csharp
+int directCount = world.Within(bodies)
+    .Where(default(DefaultContacts))
+    .Except(default(SameCharacterHair))
+    .Count();
+
+int indexedCount = world.Within(bodies)
+    .Except(default(SameCharacterHair), default(HairCharacterIndex))
+    .Where(default(DefaultContacts))
+    .Count();
+
+int composedCount = world.Within(bodies)
+    .Where(default(DefaultContacts))
+    .Except(default(SameCharacterHair), default(HairCharacterIndex))
+    .Count();
+// 三者均为 13，输出对应相同的十三个实体对。
+```
+
+此键实现产生八个额外入口，业务组件专属生成类型数量为零。直接 `Within` 与普通组合链的两个实际入口如下；其余入口按 `Where`、`Between`、二元 `Product` 的对应具体来源生成。
+
+```csharp
+public static partial class RelationQueryExtensions
+{
+    public static RelationQuery<KeyPairs<KeyPairsWithin, SameCharacterHair, HairCharacterIndex, Hair, Entity>, (Entity, Entity)>
+        Except(this RelationQuery<EntityPairsWithin, (Entity, Entity)> source,
+            SameCharacterHair relation, HairCharacterIndex implementation)
+        => new(new(source.Enumerable.World, source.Enumerable.GetQuery(0), source.Enumerable.GetQuery(0),
+            relation, implementation, true));
+
+    public static RelationQuery<KeyFilter<TEnumerable, SameCharacterHair, HairCharacterIndex, Hair, Entity>, (Entity, Entity)>
+        Except<TEnumerable>(this RelationQuery<TEnumerable, (Entity, Entity)> source,
+            SameCharacterHair relation, HairCharacterIndex implementation)
+        where TEnumerable : struct, IQueryRelationEnumerable<(Entity, Entity)>
+        => new(new(source.Enumerable, relation, implementation, true));
+}
+```
+
+键数据维护、生成规则和实际手写桶循环见[键关系查询](Key-Relation-Queries.md)。可执行的业务类型位于 `CollisionRelationExample.cs`，键实现与手写对照的行为检查位于 `KeyRelationTests.cs`。
