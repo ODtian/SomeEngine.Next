@@ -60,7 +60,7 @@ public readonly struct SameCharacterHair : IRelation<Hair, Hair>
 
 ## 生成入口
 
-这两个业务关系共生成四个薄入口：每个关系分别具有 `Where` 与 `Except`。它们合入同一个 `RelationQueryExtensions` 类；业务组件专属生成类型数量为 0。上述调用使用的两个入口形状如下，其组件类型参数来自关系签名。
+这两个二元业务关系共生成八个薄入口：每个关系的实体对形式与显式边形式分别具有 `Where` 与 `Except`。它们合入同一个 `RelationQueryExtensions` 类；业务组件专属生成类型数量为 0。上述调用使用实体对形式，所用的两个入口形状如下，其组件类型参数来自关系签名。显式边形式见 [已存储关系边](Relation-Queries.md#已存储关系边)。
 
 ```csharp
 public static partial class RelationQueryExtensions
