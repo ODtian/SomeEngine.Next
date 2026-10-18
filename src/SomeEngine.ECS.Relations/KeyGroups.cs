@@ -13,6 +13,20 @@ internal readonly ref struct KeyGroups<TComponent, TKey>
     private readonly HashSet<TKey> _keys;
     private readonly List<Entity> _missing;
 
+    public KeyGroups(World world, QueryCursor members)
+    {
+        _world = world;
+        _keys = new HashSet<TKey>();
+        _missing = new List<Entity>();
+        foreach (var member in members.Rows)
+        {
+            if (member.Has<TComponent>())
+                _keys.Add(member.ReadRef<TComponent>().GetKey());
+            else
+                _missing.Add(member.Entity);
+        }
+    }
+
     public KeyGroups(World world, QueryCursor members, QueryCursor access)
     {
         _world = world;

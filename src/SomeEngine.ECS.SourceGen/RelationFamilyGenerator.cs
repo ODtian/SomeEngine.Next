@@ -103,6 +103,7 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
             .AppendLine("    }\n")
             .AppendLine("    public World World => _enumerable.World;\n")
             .AppendLine("    public int QueryCount => _enumerable.QueryCount;\n")
+            .AppendLine("    public static bool ReadsFromSingleQuery => TEnumerable.ReadsFromSingleQuery;\n")
             .AppendLine("    public QueryHandle GetQuery(int position) => _enumerable.GetQuery(position);\n")
             .AppendLine("    public QueryDefinition AddReads(QueryDefinition definition, int position)")
             .AppendLine("    {")
@@ -157,6 +158,8 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
         text.AppendLine("    }\n")
             .AppendLine("    public World World { get; }\n")
             .AppendLine($"    public int QueryCount => {arity};\n");
+        if (arity == 1)
+            text.AppendLine("    public static bool ReadsFromSingleQuery => true;\n");
         if (arity == 1)
             text.AppendLine("    public QueryHandle GetQuery(int position) => _members;\n");
         else

@@ -33,6 +33,8 @@ public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent
 
     public int QueryCount => TPairing.QueryCount;
 
+    public static bool ReadsFromSingleQuery => TPairing.ReadsFromSingleQuery;
+
     public QueryHandle GetQuery(int position) => position == 0 ? _first : _second;
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition.WithOptionalRead<TComponent>();
@@ -41,7 +43,8 @@ public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         QueryCursor second = QueryCount == 1 ? queries.First : queries.Second;
-        var firstGroups = new KeyGroups<TComponent, TKey>(World, queries.First, queries.Access);
+        var firstGroups = TPairing.ReadsFromSingleQuery ? new KeyGroups<TComponent, TKey>(World, queries.First)
+            : new KeyGroups<TComponent, TKey>(World, queries.First, queries.Access);
         var secondGroups = QueryCount == 1 ? firstGroups : new KeyGroups<TComponent, TKey>(World, second, queries.Access);
         foreach (var firstGroup in firstGroups)
         {
@@ -62,8 +65,8 @@ public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent
                         continue;
                     foreach (Entity secondEntity in secondGroup.Entities)
                     {
-                        if (!second.TryGetRow(secondEntity, out _) ||
-                            !TPairing.TryPair(queries, firstEntity, secondEntity, out var pair))
+                        if (!TPairing.TryPair(in queries, firstEntity, secondEntity, out var pair) ||
+                            !second.TryGetRow(secondEntity, out _))
                             continue;
                         bool accepted = TPairing.ReordersPairs && pair.Item1 != firstEntity
                             ? reverseAccepted : forwardAccepted;

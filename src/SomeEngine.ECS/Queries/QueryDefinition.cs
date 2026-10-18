@@ -79,6 +79,12 @@ public sealed class QueryDefinition
     {
         QueryableTypeInfo info = QueryableTypeInfo.For<T>();
         info.Validate(QueryTermKind.Optional, QueryAccess.Read, QueryTermFilter.None);
+        foreach (QueryDataAccess access in _dataAccesses)
+            if (access.ComponentId == info.ComponentId && access.Access.CanRead())
+                return this;
+        foreach (QueryTerm term in _terms)
+            if (term.ComponentId == info.ComponentId && term.Kind == QueryTermKind.None)
+                return this;
         QueryTerm[] terms = (QueryTerm[])_terms.Clone();
         bool found = false;
         for (int i = 0; i < terms.Length; i++)
@@ -106,7 +112,7 @@ public sealed class QueryDefinition
 
     internal bool HasRelationshipWrite { get; }
 
-    internal bool CanWrite { get; }
+    public bool CanWrite { get; }
 
     /// <summary>
     /// Normalizes query terms once for every construction path. Keeping merge, conflict, and

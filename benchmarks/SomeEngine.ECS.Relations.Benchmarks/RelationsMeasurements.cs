@@ -51,7 +51,7 @@ public static class RelationsMeasurements
         if (mode == "verify")
             return 0;
         var cold = new List<ColdSample>();
-        for (int pair = 0; pair < input.ColdPairs; pair++)
+        for (int pair = 0; pair < (mode == "phases" ? 0 : input.ColdPairs); pair++)
         {
             bool relationFirst = pair % 2 == 0;
             foreach (bool relation in relationFirst ? new[] { true, false } : new[] { false, true })
@@ -76,7 +76,8 @@ public static class RelationsMeasurements
             Run(input, handwritten, frame, input.PrimaryBoundary);
         }
         var raw = new List<FrameSample>();
-        string[] sampleBoundaries = input.ChangesEveryFrame ? ["MaintenanceAndQuery", "FrameTotal"] : [input.PrimaryBoundary];
+        string[] sampleBoundaries = mode == "phases" ? ["IndependentStages"] :
+            input.ChangesEveryFrame ? ["MaintenanceAndQuery", "FrameTotal"] : [input.PrimaryBoundary];
         foreach (string boundary in sampleBoundaries)
         {
             for (int round = 0; round < input.Rounds; round++)
@@ -100,13 +101,15 @@ public static class RelationsMeasurements
             GCSettings.IsServerGC, Environment.GetEnvironmentVariable("DOTNET_TieredCompilation") ?? "default",
             Environment.GetEnvironmentVariable("DOTNET_ReadyToRun") ?? "default", Stopwatch.Frequency,
             Environment.CommandLine, compiledCommit, Option("--backend", "NativeAOT"));
-        bool passed = comparisons.Where(value => value.Required).All(value => value.Passed);
-        var report = new MeasurementReport(input, device, started, DateTime.UtcNow,
+        bool? passed = comparisons.Any(value => value.Required)
+            ? comparisons.Where(value => value.Required).All(value => value.Passed) : null;
+        var report = new MeasurementReport(mode, input, device, started, DateTime.UtcNow,
             ["Query: complete public call including query preparation, traversal, filters and real pair writes.",
              "FrameTotal: actual writes and scheduled maintenance/query/consumption to final completion, or direct query plus consumption.",
              "MaintenanceAndQuery: writes excluded; schedule maintenance and query, complete filled output; consumption follows outside this boundary.",
              "ScheduledPairOutput: outer submit through completed count/prefix/fill; all child scheduling and joins included.",
              "PairsAndConsume: direct public query and same actual geometric consumption.",
+             "Independent stages: diagnostic samples complete actual maintenance, query and consumption separately; each submit-to-completion timer follows its completed prerequisites.",
              "Cold total: World/query/output setup, actual index initialization, first public query and first consumption."],
             ["PayloadBytes counts actual value-array elements at the target backend's sizeof<T>.",
              "Live counts root topology; Addressed counts the high-water node address range including reusable entries; Capacity counts backing arrays.",
@@ -173,7 +176,30 @@ public static class RelationsMeasurements
         long managed = GC.GetTotalMemory(false), working = Environment.WorkingSet;
         long start = Stopwatch.GetTimestamp();
         long written = start, queried, consumed, queryTicks = 0, consumeTicks = 0;
-        if (input.ChangesEveryFrame)
+        long maintenanceTicks = 0, maintenanceBytes = 0, queryBytes = 0, consumeBytes = 0;
+        if (input.ChangesEveryFrame && boundary == "IndependentStages")
+        {
+            side.Data.WriteFrame(frame);
+            written = Stopwatch.GetTimestamp();
+            long before = GC.GetTotalAllocatedBytes(true);
+            long maintenanceStarted = Stopwatch.GetTimestamp();
+            side.ScheduleMaintenance().Complete();
+            maintenanceTicks = Stopwatch.GetTimestamp() - maintenanceStarted;
+            maintenanceBytes = GC.GetTotalAllocatedBytes(true) - before;
+            before = GC.GetTotalAllocatedBytes(true);
+            long queryStarted = Stopwatch.GetTimestamp();
+            side.ScheduleQuery().Complete();
+            queried = Stopwatch.GetTimestamp();
+            queryTicks = queried - queryStarted;
+            queryBytes = GC.GetTotalAllocatedBytes(true) - before;
+            before = GC.GetTotalAllocatedBytes(true);
+            long consumeStarted = Stopwatch.GetTimestamp();
+            side.ScheduleConsume().Complete();
+            consumed = Stopwatch.GetTimestamp();
+            consumeTicks = consumed - consumeStarted;
+            consumeBytes = GC.GetTotalAllocatedBytes(true) - before;
+        }
+        else if (input.ChangesEveryFrame)
         {
             side.Data.WriteFrame(frame);
             written = Stopwatch.GetTimestamp();
@@ -227,6 +253,7 @@ public static class RelationsMeasurements
         foreach (float depth in side.Depths)
             depths += depth;
         return new(0, "", "", frame, boundary, elapsed, queryTicks, consumeTicks, end - start, written - start,
+            maintenanceTicks, maintenanceBytes, queryBytes, consumeBytes,
             side.Count, incidences, depths, bytes, threadBytes, GC.CollectionCount(0) - gen0,
             GC.CollectionCount(1) - gen1, GC.CollectionCount(2) - gen2, managed, GC.GetTotalMemory(false), working, Environment.WorkingSet);
     }
@@ -237,6 +264,13 @@ public static class RelationsMeasurements
         foreach (string boundary in samples.Select(value => value.Boundary).Distinct())
         {
             FrameSample[] frames = samples.Where(value => value.Boundary == boundary).ToArray();
+            if (boundary == "IndependentStages")
+            {
+                Add("IndependentMaintenance", false, frames, value => value.MaintenanceTicks);
+                Add("IndependentQuery", false, frames, value => value.QueryTicks);
+                Add("IndependentConsume", false, frames, value => value.ConsumeTicks);
+                continue;
+            }
             Add(boundary, true, frames, value => value.ElapsedTicks);
             if (input.Class == "complete")
                 Add("FrameTotal", true, frames, value => value.FrameTicks);

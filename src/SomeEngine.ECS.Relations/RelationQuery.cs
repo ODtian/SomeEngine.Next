@@ -23,6 +23,12 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
     {
         World world = Enumerable.World;
         int queryCount = Enumerable.QueryCount;
+        if (queryCount == 1 && TEnumerable.ReadsFromSingleQuery)
+        {
+            QueryDefinition definition = Enumerable.AddReads(world.GetQueryDefinition(Enumerable.GetQuery(0)), 0);
+            if (!definition.CanWrite)
+                return EnumerateSingle(definition, ref output, lastSystemVersion);
+        }
         RelationQueryHandles queries = default;
         int acquired = 0;
         var execution = new RelationExecution<TOutput>(Enumerable, queries, queryCount,
@@ -35,6 +41,8 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
             for (int position = 0; position < queryCount; position++)
             {
                 QueryDefinition definition = world.GetQueryDefinition(Enumerable.GetQuery(position));
+                if (queryCount == 1 && TEnumerable.ReadsFromSingleQuery)
+                    definition = Enumerable.AddReads(definition, position);
                 queries[acquired++] = world.Query(definition);
                 access = access.WithAccessFrom(definition);
                 access = Enumerable.AddReads(access, position);
@@ -55,6 +63,36 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
             for (int index = acquired - 1; index >= 0; index--)
                 world.ReleaseQuery(queries[index]);
         }
+    }
+
+    private bool EnumerateSingle<TOutput>(QueryDefinition definition, ref TOutput output, uint? lastSystemVersion)
+        where TOutput : struct, IRelationOutput<TRow>, allows ref struct
+    {
+        World world = Enumerable.World;
+        QueryHandle query = world.Query(definition);
+        var execution = new SingleExecution<TOutput>(Enumerable, output);
+        try
+        {
+            if (lastSystemVersion is { } baseline)
+                world.ExecuteQuery(query, baseline, ref execution);
+            else
+                world.ExecuteQuery(query, ref execution);
+            return execution.Completed;
+        }
+        finally
+        {
+            output = execution.Output;
+            world.ReleaseQuery(query);
+        }
+    }
+
+    private ref struct SingleExecution<TOutput>(TEnumerable enumerable, TOutput output) : IQueryExecution
+        where TOutput : struct, IRelationOutput<TRow>, allows ref struct
+    {
+        public TOutput Output = output;
+        public bool Completed;
+
+        public void Execute(QueryCursor query) => Completed = enumerable.Enumerate(new RelationQueryViews(query), ref Output);
     }
 
     public int Count() => CountRows(null);

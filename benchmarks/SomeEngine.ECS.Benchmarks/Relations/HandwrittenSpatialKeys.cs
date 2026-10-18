@@ -13,43 +13,17 @@ public static class HandwrittenSpatialKeys
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         QueryDefinition definition = world.GetQueryDefinition(bodies);
-        QueryHandle members = world.Query(definition);
-        QueryHandle access = world.Query(QueryDefinition.Empty.WithAccessFrom(definition)
-            .WithOptionalRead<Body>().WithOptionalRead<Hair>());
-        var execution = new KeyAccess<TOutput>(world, members, tree, keys, output);
+        QueryHandle query = world.Query(definition.WithOptionalRead<Body>().WithOptionalRead<Hair>());
+        var execution = new KeyPairs<TOutput>(tree, keys, output);
         try
         {
-            world.ExecuteQuery(access, ref execution);
+            world.ExecuteQuery(query, ref execution);
             return execution.Completed;
         }
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(access);
-            world.ReleaseQuery(members);
-        }
-    }
-
-    private ref struct KeyAccess<TOutput>(World world, QueryHandle members, CollisionTree tree,
-        ReadOnlySpan<CollisionKeyData<Entity>> keys, TOutput output) : IQueryExecution
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
-    {
-        private readonly ReadOnlySpan<CollisionKeyData<Entity>> _keys = keys;
-        public TOutput Output = output;
-        public bool Completed;
-
-        public void Execute(QueryCursor access)
-        {
-            var execution = new KeyPairs<TOutput>(tree, _keys, Output);
-            try
-            {
-                world.ExecuteQuery(members, ref execution);
-                Completed = execution.Completed;
-            }
-            finally
-            {
-                Output = execution.Output;
-            }
+            world.ReleaseQuery(query);
         }
     }
 

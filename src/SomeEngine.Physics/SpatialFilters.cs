@@ -1,6 +1,7 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Physics;
 
@@ -17,9 +18,12 @@ public readonly struct SpatialComponentFilter<TRelation, TFirst, TSecond>(Collis
 
     public void RefitSummary(int node, QueryCursor access) { }
 
+    public bool HasSummaryChange(QueryChunkView chunk, int row) => false;
+
     public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results) =>
         results = inherited;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in GroupMatch results)
     {
         if (results != GroupMatch.Unknown)
@@ -58,12 +62,13 @@ public readonly struct SpatialKeyFilter<TRelation, TImplementation, TComponent, 
         chunk.Has<TComponent>() && chunk.HasChangedSinceLastSystemVersion<TComponent>() &&
         chunk.RowChangedSinceLastSystemVersion<TComponent>(row);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results)
     {
         if (inherited != GroupMatch.Unknown)
             return results = inherited;
-        ref readonly var first = ref Summary.Nodes[firstNode];
-        ref readonly var second = ref Summary.Nodes[secondNode];
+        ref readonly var first = ref Summary[firstNode];
+        ref readonly var second = ref Summary[secondNode];
         if (first.KeyCount == 0 || second.KeyCount == 0)
             return results = GroupMatch.None;
         if (first.HasUniformKey && second.HasUniformKey)
@@ -77,12 +82,13 @@ public readonly struct SpatialKeyFilter<TRelation, TImplementation, TComponent, 
         return results = GroupMatch.Unknown;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in GroupMatch results)
     {
         if (results != GroupMatch.Unknown)
             return results == GroupMatch.All;
-        ref readonly var first = ref Summary.Nodes[firstNode];
-        ref readonly var second = ref Summary.Nodes[secondNode];
+        ref readonly var first = ref Summary[firstNode];
+        ref readonly var second = ref Summary[secondNode];
         return first.KeyCount != 0 && second.KeyCount != 0 &&
             _implementation.Matches(in _relation, in first.UniformKey, in second.UniformKey);
     }
@@ -112,9 +118,11 @@ public readonly struct SpatialAnd<TFirst, TSecond, TFirstResults, TSecondResults
         Second.RefitSummary(node, access);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool HasSummaryChange(QueryChunkView chunk, int row) =>
         First.HasSummaryChange(chunk, row) || Second.HasSummaryChange(chunk, row);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public GroupMatch MatchGroups(int firstNode, int secondNode,
         in (TFirstResults, TSecondResults) inherited, out (TFirstResults, TSecondResults) results)
     {
@@ -124,6 +132,7 @@ public readonly struct SpatialAnd<TFirst, TSecond, TFirstResults, TSecondResults
         return GroupMatches.And(firstMatch, secondMatch);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode,
         in (TFirstResults, TSecondResults) results) =>
         First.MatchesLeaves(access, firstNode, secondNode, in results.Item1) &&
@@ -144,9 +153,11 @@ public readonly struct SpatialExcept<TFilter, TGroupResults>(TFilter filter) : I
 
     public bool HasSummaryChange(QueryChunkView chunk, int row) => Filter.HasSummaryChange(chunk, row);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public GroupMatch MatchGroups(int firstNode, int secondNode, in TGroupResults inherited, out TGroupResults results) =>
         GroupMatches.Except(Filter.MatchGroups(firstNode, secondNode, in inherited, out results));
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in TGroupResults results) =>
         !Filter.MatchesLeaves(access, firstNode, secondNode, in results);
 }

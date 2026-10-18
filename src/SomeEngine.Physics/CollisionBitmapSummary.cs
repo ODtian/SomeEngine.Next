@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Physics;
 
@@ -46,6 +47,12 @@ public sealed class CollisionBitmapSummary<TRelation, TImplementation, TComponen
     public ReadOnlySpan<CollisionBitmapData> Nodes => _nodes.AsSpan(0, Tree.NodeCount);
 
     public int NodeCapacity => _nodes.Length;
+
+    public ref readonly CollisionBitmapData this[int node]
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => ref _nodes[node];
+    }
 
     public void Rebuild(QueryCursor access)
     {

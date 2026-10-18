@@ -71,6 +71,24 @@ public sealed class RelationGenerator : IIncrementalGenerator
                     AppendConstraints(text, parameter);
                 text.Append("        => new(new ").Append(binding).AppendLine("(source.Enumerable, relation));\n");
             }
+            if (components.Length == 2)
+            {
+                foreach (string operation in new[] { "Where", "Except" })
+                {
+                    string binding = $"global::{RelationsNamespace}.ComponentPairsWithin<{relation}, {componentTypes}>";
+                    text.Append("    ").Append(access).Append(" static global::").Append(RelationsNamespace)
+                        .Append(".RelationQuery<").Append(binding).Append(", ").Append(rowType).Append("> ").Append(operation);
+                    if (parameters.Length > 0)
+                        text.Append('<').Append(string.Join(", ", parameters.Select(parameter => parameter.Name))).Append('>');
+                    text.AppendLine("(").Append("        this global::").Append(RelationsNamespace)
+                        .Append(".RelationQuery<global::").Append(RelationsNamespace).Append(".EntityPairsWithin, ")
+                        .Append(rowType).AppendLine("> source,").Append("        ").Append(relation).AppendLine(" relation)");
+                    foreach (var parameter in parameters)
+                        AppendConstraints(text, parameter);
+                    text.Append("        => new(new ").Append(binding).Append("(source.Enumerable, relation, ")
+                        .Append(operation == "Except" ? "true" : "false").AppendLine("));\n");
+                }
+            }
             text.AppendLine("}");
             string hint = type.ToDisplayString().Replace('.', '_').Replace('<', '_').Replace('>', '_').Replace(',', '_').Replace(' ', '_');
             context.AddSource($"Relation_{hint}.g.cs", text.ToString());

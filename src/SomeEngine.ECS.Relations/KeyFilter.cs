@@ -29,6 +29,8 @@ public readonly struct KeyFilter<TEnumerable, TRelation, TImplementation, TCompo
 
     public int QueryCount => _enumerable.QueryCount;
 
+    public static bool ReadsFromSingleQuery => TEnumerable.ReadsFromSingleQuery;
+
     public QueryHandle GetQuery(int position) => _enumerable.GetQuery(position);
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>

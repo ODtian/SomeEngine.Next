@@ -83,6 +83,8 @@ public readonly struct CollisionCandidates<TComponent, TBoundsReader> : ICollisi
 
     public int QueryCount => 1;
 
+    public static bool ReadsFromSingleQuery => true;
+
     public QueryHandle GetQuery(int position) => _bodies;
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>

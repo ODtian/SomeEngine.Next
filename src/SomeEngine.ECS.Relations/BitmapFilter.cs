@@ -28,6 +28,8 @@ public readonly struct BitmapFilter<TEnumerable, TRelation, TImplementation, TCo
 
     public int QueryCount => _enumerable.QueryCount;
 
+    public static bool ReadsFromSingleQuery => TEnumerable.ReadsFromSingleQuery;
+
     public QueryHandle GetQuery(int position) => _enumerable.GetQuery(position);
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>

@@ -12,6 +12,7 @@ public sealed record EquivalenceData(bool Equal, int VerifiedFrames, int FinalPa
 
 public sealed record FrameSample(int Round, string SideOrder, string Side, int Frame, string Boundary,
     long ElapsedTicks, long QueryTicks, long ConsumeTicks, long FrameTicks, long DataWriteTicks,
+    long MaintenanceTicks, long MaintenanceAllocatedBytes, long QueryAllocatedBytes, long ConsumeAllocatedBytes,
     int OutputPairCount, long ContactIncidences, double PenetrationDepthTotal,
     long FrameAllocatedBytes, long FrameCurrentThreadAllocatedBytes, int Gen0, int Gen1, int Gen2,
     long ManagedBytesBefore, long ManagedBytesAfter, long WorkingSetBefore, long WorkingSetAfter);
@@ -25,10 +26,10 @@ public sealed record Distribution(double MedianTicks, double P95Ticks, double Iq
 public sealed record MetricComparison(string Boundary, bool Required, Distribution Relation, Distribution Handwritten,
     double MedianRatio, double P95Ratio, bool Passed);
 
-public sealed record MeasurementReport(MeasurementCase Input, DeviceData Device, DateTime StartedAtUtc,
+public sealed record MeasurementReport(string ReportKind, MeasurementCase Input, DeviceData Device, DateTime StartedAtUtc,
     DateTime FinishedAtUtc, string[] Boundaries, string[] MemoryScope, EquivalenceData Equivalence,
     ColdSample[] ColdSamples, FrameSample[] RawSamples, MetricComparison[] Comparisons,
-    IndexMemory RelationMemory, IndexMemory HandwrittenMemory, bool Passed);
+    IndexMemory RelationMemory, IndexMemory HandwrittenMemory, bool? Passed);
 
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(MeasurementReport))]

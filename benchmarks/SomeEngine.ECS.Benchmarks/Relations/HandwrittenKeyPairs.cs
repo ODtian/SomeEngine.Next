@@ -23,52 +23,17 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         QueryDefinition definition = world.GetQueryDefinition(members);
-        QueryHandle memberQuery = world.Query(definition);
-        QueryHandle accessQuery = world.Query(QueryDefinition.Empty.WithAccessFrom(definition).WithOptionalRead<TComponent>());
-        var execution = new AccessExecution<TOutput>(world, memberQuery, exclude, output);
+        QueryHandle query = world.Query(definition.WithOptionalRead<TComponent>());
+        var execution = new MemberExecution<TOutput>(world, exclude, output);
         try
         {
-            world.ExecuteQuery(accessQuery, ref execution);
+            world.ExecuteQuery(query, ref execution);
             return execution.Completed;
         }
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(accessQuery);
-            world.ReleaseQuery(memberQuery);
-        }
-    }
-
-    private ref struct AccessExecution<TOutput> : IQueryExecution
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
-    {
-        private readonly World _world;
-        private readonly QueryHandle _members;
-        private readonly bool _exclude;
-
-        public AccessExecution(World world, QueryHandle members, bool exclude, TOutput output)
-        {
-            _world = world;
-            _members = members;
-            _exclude = exclude;
-            Output = output;
-        }
-
-        public TOutput Output;
-        public bool Completed { get; private set; }
-
-        public void Execute(QueryCursor access)
-        {
-            var execution = new MemberExecution<TOutput>(_world, access, _exclude, Output);
-            try
-            {
-                _world.ExecuteQuery(_members, ref execution);
-                Completed = execution.Completed;
-            }
-            finally
-            {
-                Output = execution.Output;
-            }
+            world.ReleaseQuery(query);
         }
     }
 
@@ -76,13 +41,11 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         private readonly World _world;
-        private readonly QueryCursor _access;
         private readonly bool _exclude;
 
-        public MemberExecution(World world, QueryCursor access, bool exclude, TOutput output)
+        public MemberExecution(World world, bool exclude, TOutput output)
         {
             _world = world;
-            _access = access;
             _exclude = exclude;
             Output = output;
         }
@@ -96,8 +59,8 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
             var missing = new List<Entity>();
             foreach (var member in members.Rows)
             {
-                if (_access.TryGetRow(member.Entity, out var row) && row.Has<TComponent>())
-                    keys.Add(row.ReadRef<TComponent>().GetKey());
+                if (member.Has<TComponent>())
+                    keys.Add(member.ReadRef<TComponent>().GetKey());
                 else
                     missing.Add(member.Entity);
             }

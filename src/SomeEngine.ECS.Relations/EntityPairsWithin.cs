@@ -23,6 +23,8 @@ public readonly struct EntityPairsWithin : IQueryRelationEnumerable<(Entity, Ent
 
     public int QueryCount => 1;
 
+    public static bool ReadsFromSingleQuery => true;
+
     public QueryHandle GetQuery(int position) => _members;
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;

@@ -13,42 +13,17 @@ public static class HandwrittenSpatialBitmap
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         QueryDefinition definition = world.GetQueryDefinition(bodies);
-        QueryHandle members = world.Query(definition);
-        QueryHandle access = world.Query(QueryDefinition.Empty.WithAccessFrom(definition).WithOptionalRead<Body>());
-        var execution = new OneWayAccess<TOutput>(world, members, tree, categories, output);
+        QueryHandle query = world.Query(definition.WithOptionalRead<Body>());
+        var execution = new OneWayPairs<TOutput>(tree, categories, output);
         try
         {
-            world.ExecuteQuery(access, ref execution);
+            world.ExecuteQuery(query, ref execution);
             return execution.Completed;
         }
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(access);
-            world.ReleaseQuery(members);
-        }
-    }
-
-    private ref struct OneWayAccess<TOutput>(World world, QueryHandle members, CollisionTree tree,
-        ReadOnlySpan<CollisionBitmapData> categories, TOutput output) : IQueryExecution
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
-    {
-        private readonly ReadOnlySpan<CollisionBitmapData> _categories = categories;
-        public TOutput Output = output;
-        public bool Completed;
-
-        public void Execute(QueryCursor access)
-        {
-            var execution = new OneWayPairs<TOutput>(tree, _categories, Output);
-            try
-            {
-                world.ExecuteQuery(members, ref execution);
-                Completed = execution.Completed;
-            }
-            finally
-            {
-                Output = execution.Output;
-            }
+            world.ReleaseQuery(query);
         }
     }
 
@@ -149,42 +124,17 @@ public static class HandwrittenSpatialBitmap
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         QueryDefinition definition = world.GetQueryDefinition(bodies);
-        QueryHandle members = world.Query(definition);
-        QueryHandle access = world.Query(QueryDefinition.Empty.WithAccessFrom(definition).WithOptionalRead<Body>());
-        var execution = new MutualAccess<TOutput>(world, members, tree, categories, output);
+        QueryHandle query = world.Query(definition.WithOptionalRead<Body>());
+        var execution = new MutualPairs<TOutput>(tree, categories, output);
         try
         {
-            world.ExecuteQuery(access, ref execution);
+            world.ExecuteQuery(query, ref execution);
             return execution.Completed;
         }
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(access);
-            world.ReleaseQuery(members);
-        }
-    }
-
-    private ref struct MutualAccess<TOutput>(World world, QueryHandle members, CollisionTree tree,
-        ReadOnlySpan<CollisionBitmapData> categories, TOutput output) : IQueryExecution
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
-    {
-        private readonly ReadOnlySpan<CollisionBitmapData> _categories = categories;
-        public TOutput Output = output;
-        public bool Completed;
-
-        public void Execute(QueryCursor access)
-        {
-            var execution = new MutualPairs<TOutput>(tree, _categories, Output);
-            try
-            {
-                world.ExecuteQuery(members, ref execution);
-                Completed = execution.Completed;
-            }
-            finally
-            {
-                Output = execution.Output;
-            }
+            world.ReleaseQuery(query);
         }
     }
 

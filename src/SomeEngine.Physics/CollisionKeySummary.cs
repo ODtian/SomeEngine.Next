@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Queries;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Physics;
 
@@ -31,6 +32,12 @@ public sealed class CollisionKeySummary<TComponent, TKey>
     public ReadOnlySpan<CollisionKeyData<TKey>> Nodes => _nodes.AsSpan(0, Tree.NodeCount);
 
     public int NodeCapacity => _nodes.Length;
+
+    public ref readonly CollisionKeyData<TKey> this[int node]
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => ref _nodes[node];
+    }
 
     public void Rebuild(QueryCursor access)
     {

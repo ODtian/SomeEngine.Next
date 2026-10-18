@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Physics;
 
@@ -11,6 +12,7 @@ public interface ISpatialBitmapProof
 
 public readonly struct OneWaySpatialPermission : ISpatialBitmapProof
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static GroupMatch Match(in CollisionBitmapData first, int firstMembers,
         in CollisionBitmapData second, int secondMembers)
     {
@@ -25,6 +27,7 @@ public readonly struct OneWaySpatialPermission : ISpatialBitmapProof
 
 public readonly struct MutualSpatialPermission : ISpatialBitmapProof
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static GroupMatch Match(in CollisionBitmapData first, int firstMembers,
         in CollisionBitmapData second, int secondMembers) =>
         GroupMatches.And(OneWaySpatialPermission.Match(in first, firstMembers, in second, secondMembers),
@@ -60,17 +63,19 @@ public readonly struct SpatialBitmapFilter<TRelation, TImplementation, TComponen
         chunk.Has<TComponent>() && chunk.HasChangedSinceLastSystemVersion<TComponent>() &&
         chunk.RowChangedSinceLastSystemVersion<TComponent>(row);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results) =>
         results = inherited != GroupMatch.Unknown ? inherited :
-            TGroupPermission.Match(in Summary.Nodes[firstNode], Summary.Tree.Nodes[firstNode].MemberCount,
-                in Summary.Nodes[secondNode], Summary.Tree.Nodes[secondNode].MemberCount);
+            TGroupPermission.Match(in Summary[firstNode], Summary.Tree.Nodes[firstNode].MemberCount,
+                in Summary[secondNode], Summary.Tree.Nodes[secondNode].MemberCount);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in GroupMatch results)
     {
         if (results != GroupMatch.Unknown)
             return results == GroupMatch.All;
-        ref readonly var first = ref Summary.Nodes[firstNode];
-        ref readonly var second = ref Summary.Nodes[secondNode];
+        ref readonly var first = ref Summary[firstNode];
+        ref readonly var second = ref Summary[secondNode];
         if (first.ComponentCount == 0 || second.ComponentCount == 0)
             return false;
         var firstBits = new CategoryBits(first.CategoriesAny, first.AllowedAny);

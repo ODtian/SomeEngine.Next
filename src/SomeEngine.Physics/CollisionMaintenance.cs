@@ -32,6 +32,7 @@ public readonly struct SpatialAll : ISpatialFilter<GroupMatch>
     public QueryDefinition AddReads(QueryDefinition definition) => definition;
     public void RebuildSummaries(QueryCursor access) { }
     public void RefitSummary(int node, QueryCursor access) { }
+    public bool HasSummaryChange(QueryChunkView chunk, int row) => false;
     public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results) =>
         results = GroupMatch.All;
     public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in GroupMatch results) => true;
@@ -171,6 +172,7 @@ public sealed class CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGro
 
         public void Execute(QueryCursor members)
         {
+            TFilter filter = maintenance.Query.Enumerable.Filter;
             foreach (Entity entity in changes.Entities)
                 maintenance.Reconcile(entity, members, _access);
             foreach (QueryChunkView chunk in members.ChangedChunks(changes))
@@ -181,7 +183,7 @@ public sealed class CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGro
                 foreach (int row in chunk.RowIndices)
                 {
                     if (geometryChanged && chunk.RowChangedSinceLastSystemVersion<TGeometry>(row) ||
-                        maintenance.Query.Enumerable.Filter.HasSummaryChange(chunk, row))
+                        filter.HasSummaryChange(chunk, row))
                         maintenance.Reconcile(chunk.GetEntity(row), members, _access);
                 }
             }

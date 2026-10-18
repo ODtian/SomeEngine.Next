@@ -9,7 +9,9 @@ public interface IKeyPairing
 
     static abstract bool ReordersPairs { get; }
 
-    static abstract bool TryPair(RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair);
+    static virtual bool ReadsFromSingleQuery => false;
+
+    static abstract bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair);
 }
 
 public readonly struct KeyPairsWithin : IKeyPairing
@@ -18,7 +20,9 @@ public readonly struct KeyPairsWithin : IKeyPairing
 
     public static bool ReordersPairs => false;
 
-    public static bool TryPair(RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
+    public static bool ReadsFromSingleQuery => true;
+
+    public static bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
     {
         pair = (first, second);
         return EntityOrder.Compare(first, second) < 0;
@@ -31,7 +35,7 @@ public readonly struct KeyProduct2 : IKeyPairing
 
     public static bool ReordersPairs => false;
 
-    public static bool TryPair(RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
+    public static bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
     {
         pair = (first, second);
         return true;
@@ -44,7 +48,7 @@ public readonly struct KeyPairsBetween : IKeyPairing
 
     public static bool ReordersPairs => true;
 
-    public static bool TryPair(RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
+    public static bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
     {
         int order = EntityOrder.Compare(first, second);
         pair = order < 0 ? (first, second) : (second, first);

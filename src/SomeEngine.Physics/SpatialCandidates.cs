@@ -33,6 +33,8 @@ public readonly struct SpatialCandidates<TGeometry, TBoundsReader, TFilter, TGro
     public CollisionTree Tree => Source.Tree;
     public World World => Source.World;
     public int QueryCount => 1;
+
+    public static bool ReadsFromSingleQuery => true;
     public QueryHandle GetQuery(int position) => Source.GetQuery(position);
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>

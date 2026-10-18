@@ -16,7 +16,7 @@ public static partial class HandwrittenSpatialCollision
         CollisionTree tree, CollisionKeySummary<Hair, Entity> keys, CategorySummary categories, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        var execution = new FilteredPairs<TOutput>(tree, keys, categories, queries.Access, output, partition);
+        var execution = new FilteredPairs<TOutput>(tree, keys, categories, output, partition);
         try
         {
             execution.Execute(queries.First);
@@ -49,26 +49,17 @@ public static partial class HandwrittenSpatialCollision
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         QueryDefinition definition = world.GetQueryDefinition(bodies);
-        QueryHandle members = world.Query(definition);
+        QueryHandle query = world.Query(definition.WithOptionalRead<Body>().WithOptionalRead<Hair>());
+        var execution = new FilteredPairs<TOutput>(tree, keys, categories, output);
         try
         {
-            QueryHandle access = world.Query(QueryDefinition.Empty.WithAccessFrom(definition)
-                .WithOptionalRead<Body>().WithOptionalRead<Hair>());
-            var execution = new FilteredAccess<TOutput>(world, members, tree, keys, categories, output);
-            try
-            {
-                world.ExecuteQuery(access, ref execution);
-                return execution.Completed;
-            }
-            finally
-            {
-                output = execution.Output;
-                world.ReleaseQuery(access);
-            }
+            world.ExecuteQuery(query, ref execution);
+            return execution.Completed;
         }
         finally
         {
-            world.ReleaseQuery(members);
+            output = execution.Output;
+            world.ReleaseQuery(query);
         }
     }
 
@@ -81,48 +72,24 @@ public static partial class HandwrittenSpatialCollision
         }
     }
 
-    private ref struct FilteredAccess<TOutput>(World world, QueryHandle members, CollisionTree tree,
-        CollisionKeySummary<Hair, Entity> keys, CategorySummary categories, TOutput output) : IQueryExecution
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
-    {
-        public TOutput Output = output;
-        public bool Completed;
-
-        public void Execute(QueryCursor access)
-        {
-            var execution = new FilteredPairs<TOutput>(tree, keys, categories, access, Output);
-            try
-            {
-                world.ExecuteQuery(members, ref execution);
-                Completed = execution.Completed;
-            }
-            finally
-            {
-                Output = execution.Output;
-            }
-        }
-    }
-
     private ref struct FilteredPairs<TOutput> : IQueryExecution
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         private readonly CollisionTree _tree;
         private readonly CollisionKeySummary<Hair, Entity> _keys;
         private readonly CategorySummary _categories;
-        private readonly QueryCursor _access;
         private readonly CollisionNodePair _partition;
 
         public FilteredPairs(CollisionTree tree, CollisionKeySummary<Hair, Entity> keys,
-            CategorySummary categories, QueryCursor access, TOutput output)
-            : this(tree, keys, categories, access, output, new CollisionNodePair(tree.Root, tree.Root)) { }
+            CategorySummary categories, TOutput output)
+            : this(tree, keys, categories, output, new CollisionNodePair(tree.Root, tree.Root)) { }
 
         public FilteredPairs(CollisionTree tree, CollisionKeySummary<Hair, Entity> keys,
-            CategorySummary categories, QueryCursor access, TOutput output, CollisionNodePair partition)
+            CategorySummary categories, TOutput output, CollisionNodePair partition)
         {
             _tree = tree;
             _keys = keys;
             _categories = categories;
-            _access = access;
             _partition = partition;
             Output = output;
             Completed = false;
@@ -169,10 +136,8 @@ public static partial class HandwrittenSpatialCollision
                     if (match == GroupMatch.None)
                         continue;
                     var entities = (nodes[firstNode].Entity, nodes[secondNode].Entity);
-                    if (!members.TryGetRow(entities.Item1, out _) || !members.TryGetRow(entities.Item2, out _))
+                    if (!members.TryGetRow(entities.Item1, out var firstRow) || !members.TryGetRow(entities.Item2, out var secondRow))
                         continue;
-                    _access.TryGetRow(entities.Item1, out var firstRow);
-                    _access.TryGetRow(entities.Item2, out var secondRow);
                     if (firstRow.ReadRef<Body>().Kind != MotionKind.Dynamic && secondRow.ReadRef<Body>().Kind != MotionKind.Dynamic)
                         continue;
                     if (results.Item1.Item2 == GroupMatch.Unknown)

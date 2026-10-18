@@ -15,6 +15,7 @@ public readonly struct HandwrittenSpatialPartitions(World world, QueryHandle bod
     public World World => world;
     public CollisionTree Tree => tree;
     public int QueryCount => 1;
+    public static bool ReadsFromSingleQuery => true;
     public QueryHandle GetQuery(int position) => bodies;
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>
         definition.WithOptionalRead<Body>().WithOptionalRead<Hair>();

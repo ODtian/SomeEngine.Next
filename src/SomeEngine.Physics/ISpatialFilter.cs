@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Queries;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Physics;
 
@@ -32,10 +33,12 @@ public interface ISpatialFilter<TGroupResults> where TGroupResults : unmanaged
 
 internal static class GroupMatches
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static GroupMatch And(GroupMatch first, GroupMatch second) =>
         first == GroupMatch.None || second == GroupMatch.None ? GroupMatch.None :
         first == GroupMatch.All && second == GroupMatch.All ? GroupMatch.All : GroupMatch.Unknown;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static GroupMatch Except(GroupMatch match) => match switch
     {
         GroupMatch.None => GroupMatch.All,

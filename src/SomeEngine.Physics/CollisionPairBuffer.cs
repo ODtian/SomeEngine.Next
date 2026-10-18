@@ -43,6 +43,7 @@ public static class CollisionPairQueries
     {
         public World World => source.World;
         public int QueryCount => source.QueryCount;
+        public static bool ReadsFromSingleQuery => TEnumerable.ReadsFromSingleQuery;
         public QueryHandle GetQuery(int position) => source.GetQuery(position);
         public QueryDefinition AddReads(QueryDefinition definition, int position) => source.AddReads(definition, position);
 

@@ -1,7 +1,8 @@
 param(
     [string]$Series = 'initial',
     [string[]]$CaseId = @(),
-    [ValidateSet('NativeAOT', 'JIT')][string]$Backend = 'NativeAOT'
+    [ValidateSet('NativeAOT', 'JIT')][string]$Backend = 'NativeAOT',
+    [ValidateSet('measure', 'phases')][string]$Mode = 'measure'
 )
 $ErrorActionPreference = 'Stop'
 $queueTool = 'F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1'
@@ -15,16 +16,17 @@ $prefix = if ($Backend -eq 'NativeAOT') { @($executable) } else { @('dotnet', $m
 $previousDirectory = Get-Location
 try {
     Set-Location -LiteralPath $repositoryRoot
-    $listing = & $queueTool @($prefix + @('--mode', 'list')) | ConvertFrom-Json
+    [string[]]$listingArguments = $prefix + @('--mode', 'list')
+    $listing = & $queueTool @listingArguments | ConvertFrom-Json
     $listingResult = Join-Path $listing.OutputDirectory 'result.json'
     while (!(Test-Path -LiteralPath $listingResult)) { Start-Sleep -Seconds 1 }
     $completed = Get-Content -Raw -LiteralPath $listingResult | ConvertFrom-Json
     if ($completed.ExitCode -ne 0) { throw "Case listing failed: $($listing.Id)" }
     $cases = Get-Content -Raw -LiteralPath (Join-Path $listing.OutputDirectory 'stdout.log') | ConvertFrom-Json
-    $selected = $cases | Where-Object { $CaseId.Count -eq 0 -or $_.Id -in $CaseId }
+    $selected = $cases | Where-Object { ($CaseId.Count -eq 0 -or $_.Id -in $CaseId) -and ($Mode -ne 'phases' -or $_.ChangesEveryFrame) }
     $submissions = foreach ($case in $selected) {
         $report = Join-Path $reportDirectory "$($case.Id).json"
-        [string[]]$arguments = $prefix + @('--case', $case.Class, '--size', $case.Size,
+        [string[]]$arguments = $prefix + @('--mode', $Mode, '--case', $case.Class, '--size', $case.Size,
             '--variant', $case.Variant, '--source', $sourceCommit, '--backend', $Backend, '--output', $report)
         $submitted = & $queueTool @arguments | ConvertFrom-Json
         Write-Host "QUEUED $($submitted.Id) $($case.Id)"
