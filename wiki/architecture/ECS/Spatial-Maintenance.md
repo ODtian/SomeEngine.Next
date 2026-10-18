@@ -49,3 +49,5 @@ ReadOnlySpan<(Entity, Entity)> pairs = results.Pairs;
 `CollisionMaintenanceTests` 通过真实 checked World 和公开查询观察三个行为：连续位置、类别和角色键写入；成员插入、移除、标签迁移与销毁；带显式同步点的写入、维护、接触消费依赖。前两项分别核对字面身份对以及完整重建结果，最后一项核对完整身份对、接触次数和穿透深度。
 
 空间条件和组证明见 [空间筛选](Spatial-Filtering.md)，来源与初建见 [空间候选](Spatial-Candidates.md)。
+
+计数、前缀和填充共享读取范围，输出 token 按实际区间声明，以及单线程／并行与手写帧调用见 [空间关系分区执行](Spatial-Parallel-Queries.md)。

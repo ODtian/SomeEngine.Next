@@ -16,7 +16,7 @@ public static class SpatialQueries
 }
 
 public readonly struct SpatialCandidates<TGeometry, TBoundsReader, TFilter, TGroupResults>
-    : IQueryRelationEnumerable<(Entity, Entity)>
+    : ICollisionPartitionEnumerable
     where TGeometry : struct
     where TBoundsReader : struct, ICollisionBoundsReader<TGeometry>
     where TFilter : struct, ISpatialFilter<TGroupResults>
@@ -57,14 +57,23 @@ public readonly struct SpatialCandidates<TGeometry, TBoundsReader, TFilter, TGro
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
+        Prepare(queries);
+        return SpatialTraversal.Enumerate<TFilter, TGroupResults, TOutput>(
+            Tree, queries, Filter, !Source.BuildsFromQuery, ref output);
+    }
+
+    public void Prepare(RelationQueryViews queries)
+    {
         if (Source.BuildsFromQuery)
         {
             Source.BuildTree(queries);
             Filter.RebuildSummaries(queries.Access);
         }
-        return SpatialTraversal.Enumerate<TFilter, TGroupResults, TOutput>(
-            Tree, queries, Filter, !Source.BuildsFromQuery, ref output);
     }
+
+    public bool Enumerate<TOutput>(CollisionNodePair partition, RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct =>
+        SpatialTraversal.Enumerate<TFilter, TGroupResults, TOutput>(Tree, queries, Filter, true, partition, ref output);
 
     private struct SummaryExecution(TFilter filter) : IQueryExecution
     {
@@ -79,13 +88,21 @@ internal static class SpatialTraversal
         where TFilter : struct, ISpatialFilter<TGroupResults>
         where TGroupResults : unmanaged
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        => Enumerate<TFilter, TGroupResults, TOutput>(tree, queries, filter, checkMembers,
+            new(tree.Root, tree.Root), ref output);
+
+    internal static bool Enumerate<TFilter, TGroupResults, TOutput>(CollisionTree tree,
+        RelationQueryViews queries, TFilter filter, bool checkMembers, CollisionNodePair partition, ref TOutput output)
+        where TFilter : struct, ISpatialFilter<TGroupResults>
+        where TGroupResults : unmanaged
+        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         if (tree.Root < 0)
             return true;
         ReadOnlySpan<CollisionNode> nodes = tree.Nodes;
         Span<SpatialNodePair<TGroupResults>> nodePairs = stackalloc SpatialNodePair<TGroupResults>[2 * tree.Height + 1];
         int pairCount = 0;
-        nodePairs[pairCount++] = new(tree.Root, tree.Root, default, default);
+        nodePairs[pairCount++] = new(partition.First, partition.Second, default, default);
         while (pairCount > 0)
         {
             SpatialNodePair<TGroupResults> pair = nodePairs[--pairCount];

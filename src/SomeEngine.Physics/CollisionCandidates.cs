@@ -43,7 +43,7 @@ public static class Collision
 }
 
 /// <summary>Builds the current input's AABB tree and emits unique unordered overlaps.</summary>
-public readonly struct CollisionCandidates<TComponent, TBoundsReader> : IQueryRelationEnumerable<(Entity, Entity)>
+public readonly struct CollisionCandidates<TComponent, TBoundsReader> : ICollisionPartitionEnumerable
     where TComponent : struct
     where TBoundsReader : struct, ICollisionBoundsReader<TComponent>
 {
@@ -87,6 +87,16 @@ public readonly struct CollisionCandidates<TComponent, TBoundsReader> : IQueryRe
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>
         definition.WithOptionalRead<TComponent>();
+
+    public void Prepare(RelationQueryViews queries)
+    {
+        if (_buildFromQuery)
+            BuildTree(queries);
+    }
+
+    public bool Enumerate<TOutput>(CollisionNodePair partition, RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct =>
+        SpatialTraversal.Enumerate<SpatialAll, GroupMatch, TOutput>(Tree, queries, default, true, partition, ref output);
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct

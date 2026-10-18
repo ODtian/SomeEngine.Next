@@ -66,3 +66,22 @@ dotnet test tests/SomeEngine.Physics.Tests/SomeEngine.Physics.Tests.csproj -c Re
 - 两个 worker 的组件写作业通过显式同步点开始，维护依赖写入，查询及消费依赖各自维护。两侧得到三对接触，每个参与实体有两次接触，穿透深度总量分别为 1.2、1.0、1.4。
 
 首个切片从缺少 CreateMaintenance 的公共调用 red 开始；随后分别从缺少手写维护和帧消费入口的 red 实施对应切片。最终命令覆盖已有空间候选、组证明与本次持续维护行为。维护数据和资源生命周期见 [碰撞树维护](../wiki/architecture/ECS/Spatial-Maintenance.md)。
+
+## 分区输出与并行 #241
+
+同一 Release 输出集合执行上述 Physics 命令，结果为 16/16 通过，TestRules 0 项违规。新增三个 `SpatialParallelTests`：
+
+- 完整条件链的单线程及并行 count/prefix/fill 都返回四个指定身份对，读取保持当前版本。
+- 扩展单线程、扩展并行、独立手写单线程及手写并行在角色键、类别和成员更新后，从五对变为三对；实际接触次数与穿透深度累计一致。
+- 显式同步点在首个计数语义调用时安排组件写作业。当前填充交付原三对，写入完成后的维护交付更新的一对；带显式系统基线的 Changed 成员查询交付对应的成员窗口。
+
+首个切片由缺少 CollisionPairBuffer/FillPairs 的公开调用 red 开始，随后由缺少手写分区和真实帧消费入口实施第二个切片。显式版本重载从缺少 FillPairsParallel(lastSystemVersion,buffer) 的编译 red 实施。
+
+实际 Release DLL 的 `ilspycmd -il` 输出保留以下接点：
+
+- `CollisionPairBuffer.CountJob<TEnumerable>.Execute` 的 `IL_0034 constrained. !TEnumerable` 调用 `Enumerate<PairCount>`。
+- `CollisionPairBuffer.FillJob<TEnumerable>.Execute` 的 `IL_0075 constrained. !TEnumerable` 调用 `Enumerate<PairArrayOutput>`，输出通过引用传入。
+- `CollisionPairBuffer.Fill<TEnumerable>` 的 `IL_0003 constrained. !!TEnumerable` 调用具体来源 Prepare。
+- `ReadOnlyQueryPairJobs.PairJob<TJob>.Execute` 的 `IL_0025 constrained. !TJob` 调用具体分区 Execute；两个 QueryCursor 在实际子任务中取得。
+
+有效读取范围、每分区实际 token 区间、阶段依赖与成对业务调用见 [空间关系分区执行](../wiki/architecture/ECS/Spatial-Parallel-Queries.md)。
