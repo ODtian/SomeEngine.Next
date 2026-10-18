@@ -40,7 +40,7 @@ public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition.WithOptionalRead<TComponent>();
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         QueryCursor second = QueryCount == 1 ? queries.First : queries.Second;
         var firstGroups = TPairing.ReadsFromSingleQuery ? new KeyGroups<TComponent, TKey>(World, queries.First)
@@ -61,18 +61,20 @@ public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent
                     continue;
                 foreach (Entity firstEntity in firstGroup.Entities)
                 {
-                    if (!queries.First.TryGetRow(firstEntity, out _))
+                    if (!queries.First.TryGetRow(firstEntity, out var firstRow))
                         continue;
                     foreach (Entity secondEntity in secondGroup.Entities)
                     {
                         if (!TPairing.TryPair(in queries, firstEntity, secondEntity, out var pair) ||
-                            !second.TryGetRow(secondEntity, out _))
+                            !second.TryGetRow(secondEntity, out var secondRow))
                             continue;
                         bool accepted = TPairing.ReordersPairs && pair.Item1 != firstEntity
                             ? reverseAccepted : forwardAccepted;
                         if (!accepted)
                             continue;
-                        if (!output.Add(in pair))
+                        bool continued = TPairing.ReadsFromSingleQuery
+                            ? output.Add(in pair, in firstRow, in secondRow) : output.Add(in pair);
+                        if (!continued)
                             return false;
                     }
                 }

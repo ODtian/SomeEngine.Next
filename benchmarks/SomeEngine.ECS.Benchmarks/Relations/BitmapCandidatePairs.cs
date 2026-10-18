@@ -24,13 +24,16 @@ public readonly struct FixedCandidatePairs : IQueryRelationEnumerable<(Entity, E
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         foreach (var pair in _pairs.AsSpan())
         {
-            if (queries.First.TryGetRow(pair.Item1, out _) && queries.First.TryGetRow(pair.Item2, out _) &&
-                !output.Add(in pair))
-                return false;
+            if (queries.First.TryGetRow(pair.Item1, out var first) && queries.First.TryGetRow(pair.Item2, out var second))
+            {
+                bool continued = output.Add(in pair, in first, in second);
+                if (!continued)
+                    return false;
+            }
         }
         return true;
     }

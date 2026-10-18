@@ -4,13 +4,17 @@
 
 `SomeEngine.ECS.Relations` 通过公开 ECS 查询 API 扩展关系枚举。一至八元关系使用 `IRelation<T1,…,Tn>.Matches(in …)` 定义语义。参与集合使用原有 `QueryHandle`；一元身份行采用 `Entity`，二至八元身份行采用相应的标准实体 `ValueTuple`。八元行可直接使用 `row.Item8` 读取第八个实体。
 
-关系描述是普通 struct，保存 World、原查询身份、具体枚举类型和语义参数。终端获取一个外层访问查询及各参与查询，在结束时逐个释放本次获取。原查询由调用方按既有生命周期释放。参与查询使用原定义，保留 All、Any、None、Optional、启用、共享和变更条件原有的成员含义。
+关系描述是普通 struct，保存 World、原查询身份、具体枚举类型和语义参数。终端按具体来源取得成员与组件读取查询，在结束时释放本次获取。原查询由调用方按既有生命周期释放。参与查询使用原定义，保留 All、Any、None、Optional、启用、共享和变更条件原有的成员含义。
 
 `QueryDefinition.WithAccessFrom` 将两份定义的存储访问归一化为可选访问并集，其中包含变更、启用等过滤条件所需的读取。`Where`、`Except` 通过 `WithOptionalRead<T>` 将签名读取补入这一并集。外层查询持有完整访问范围，内层嵌套各参与集合的成员查询，执行沿用 `World.ExecuteQuery<TExecution>` 的资源访问、版本与查询进入/结束流程。
+
+静态 `ReadsFromSingleQuery` 为 true 的来源声明所有输出参与实体都属于唯一输入集合。该集合只有只读访问时，终端在原成员定义上累积完整语义读取，用一次 `ExecuteQuery` 同时提供成员与组件视图。Within、键桶 Within 和空间单集合来源采用此路径。多集合、写入集合、普通实体持有的多元事实及原生边来源按各自读取范围执行。`WithOptionalRead` 在现有访问已经包含读取时复用当前定义。
 
 回调内的 `RelationQueryViews.Access` 提供完整读取视图，`First` 至 `Eighth` 保留输入集合各自的成员视图。共享 `ComponentRelation<…>` 从 Access 通过 `TryGetRow`、`Has`、`ReadRef` 取得组件只读引用，再分别传入具体关系语义。组件缺失时关系判断为 false，`Where` 保留判断成立的行，`Except` 保留其余行。携带托管引用的 struct 组件沿用相同读取方式。`Between` 在排序后的实体位置上读取组件，因此两个输入集合原来的角色可以交换。
 
 `RelationQuery<TEnumerable,TRow>` 实现 `IRelationEnumerable<TRow>`。`Count()`、`Any()` 使用具体值类型输出；`Enumerate(ref output)` 接受自定义 `IRelationOutput<TRow>`。输出 `Add` 返回 true 表示继续，false 表示提前结束；枚举返回 true 表示自然完成，false 表示提前结束。泛型输出转发在每层结束时回写输出状态，支持带 `Span` 的 ref struct 输出。组件绑定、查询视图和筛选输出均在实际回调期间持有借用。
+
+查询内部的 `IQueryRelationOutput<TRow>` 与 `IQueryRelation<TRow>` 为二元行增加显式 `scoped in QueryRow` 回调。来源把已经取得的两行按最终身份位置传给组件、键、位图绑定，后续筛选继续传递同一组行。来源只有身份行时沿原组件绑定读取。公开终端通过一次 `QueryIdentityOutput` 将结果交给原 `IRelationOutput.Add(in identity)`；用户的 Span 输出继续实现这一原有成员。事实实体和显式边的身份位置按各自语义绑定参与实体。
 
 `Count(lastSystemVersion)`、`Any(lastSystemVersion)` 和 `Enumerate(lastSystemVersion, ref output)` 接受既有系统版本基线，用于 Added/Changed 等成员筛选。只读关系执行保持 World 时钟及组件变更版本。
 
@@ -23,6 +27,8 @@
 | `world.Between(A,B)` | `(Entity, Entity)` | 完整实体身份升序 | 排除 | 集合交叠时每个无序实体对一次 |
 
 `EntityOrder.Compare` 先比较 Index，再比较 Generation。`Within` 从当前行枚举器复制剩余范围，一次访问每个候选对，再排列输出身份。`Between` 通过相反输入的成员视图识别已有反向组合，保留只有一个输入方向的候选。排序后的身份行决定随后关系语义的输入位置。
+
+二元普通语义另有接收 `EntityPairsWithin` 的生成薄入口，返回共享 `ComponentPairsWithin<TRelation,TFirst,TSecond>`。该枚举缓存外层行的组件引用，内层直接读取已经取得的行；身份换位时组件位置一同换位。Where、Except、计数、存在性与提前结束共用这条具体链。
 
 完整 Body/Hair 业务代码、13 个实体对及对应生成入口见 [二元关系业务例子](Relation-Query-Example.md)。
 
@@ -74,6 +80,8 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 ### 生成入口与扩展位置
 
 `RelationGenerator` 从 Roslyn 关系接口与方法签名取得组件类型，正常 C# 编译负责语义方法体。每个业务关系产生薄的 `Where`、`Except` 方法，方法返回共享泛型绑定；同一命名空间中的方法合入一个 `RelationQueryExtensions` 类。上述单关系示例产生两个入口方法，业务组件专属生成类型数量为零。库中的组件绑定和输出转发按泛型类型共享。
+
+二元语义再产生两个 Within 具体来源重载，仍返回同一共享泛型族；其它来源继续使用通用重载。
 
 `SomeEngine.ECS.Relations.csproj` 通过 `SomeEngineGenerateRelationFamilies` 构建属性启用 `RelationFamilyGenerator`。库构建统一生成一至八元固定族，使用方从实际关系程序集引用这些类型。每个元数的位置积采用展开的嵌套循环，绑定对每个语义输入分别传入 `ref readonly` 组件。
 

@@ -28,10 +28,10 @@ internal static class RelationEdgeEndpoints<T>
     }
 }
 
-internal ref struct EdgeRelationFilterOutput<TPayload, TRelation, TOutput> : IRelationOutput<RelationEdge<TPayload>>
+internal ref struct EdgeRelationFilterOutput<TPayload, TRelation, TOutput> : IQueryRelationOutput<RelationEdge<TPayload>>
     where TPayload : struct, IComponent
     where TRelation : struct, IRelation<(Entity, Entity)>, allows ref struct
-    where TOutput : struct, IRelationOutput<RelationEdge<TPayload>>, allows ref struct
+    where TOutput : struct, IQueryRelationOutput<RelationEdge<TPayload>>, allows ref struct
 {
     private readonly QueryCursor _query;
     private TRelation _relation;
@@ -50,4 +50,6 @@ internal ref struct EdgeRelationFilterOutput<TPayload, TRelation, TOutput> : IRe
         var pair = RelationEdgeEndpoints<TPayload>.Read(_query, in edge);
         return !_relation.Matches(in pair) || Output.Add(in edge);
     }
+
+    public bool Add(in RelationEdge<TPayload> edge, scoped in QueryRow first, scoped in QueryRow second) => Add(in edge);
 }

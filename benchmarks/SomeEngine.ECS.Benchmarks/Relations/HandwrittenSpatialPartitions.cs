@@ -22,10 +22,10 @@ public readonly struct HandwrittenSpatialPartitions(World world, QueryHandle bod
     public void Prepare(RelationQueryViews queries) { }
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct =>
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct =>
         Enumerate(new(tree.Root, tree.Root), queries, ref output);
 
     public bool Enumerate<TOutput>(CollisionNodePair partition, RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct =>
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct =>
         HandwrittenSpatialCollision.EnumeratePartition(partition, queries, tree, keys, categories, ref output);
 }

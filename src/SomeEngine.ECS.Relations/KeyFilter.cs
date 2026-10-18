@@ -37,7 +37,7 @@ public readonly struct KeyFilter<TEnumerable, TRelation, TImplementation, TCompo
         _enumerable.AddReads(definition, position).WithOptionalRead<TComponent>();
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         var relation = new KeyRelation<TRelation, TImplementation, TComponent, TKey>(queries.Access, _relation, _implementation, _exclude);
         var filtered = new RelationFilterOutput<KeyRelation<TRelation, TImplementation, TComponent, TKey>, TOutput, (Entity, Entity)>(relation, output);
@@ -52,7 +52,7 @@ public readonly struct KeyFilter<TEnumerable, TRelation, TImplementation, TCompo
     }
 }
 
-public ref struct KeyRelation<TRelation, TImplementation, TComponent, TKey> : IRelation<(Entity, Entity)>
+public ref struct KeyRelation<TRelation, TImplementation, TComponent, TKey> : IQueryRelation<(Entity, Entity)>
     where TRelation : struct, IRelation<TComponent, TComponent>
     where TImplementation : struct, IKeyRelation<TRelation, TComponent, TKey>
     where TComponent : struct, IIndexedComponent<TKey>
@@ -73,9 +73,14 @@ public ref struct KeyRelation<TRelation, TImplementation, TComponent, TKey> : IR
 
     public bool Matches(in (Entity, Entity) pair)
     {
+        return _query.TryGetRow(pair.Item1, out var first) && _query.TryGetRow(pair.Item2, out var second)
+            ? Matches(in pair, in first, in second) : _exclude;
+    }
+
+    public bool Matches(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second)
+    {
         bool matches = false;
-        if (_query.TryGetRow(pair.Item1, out var first) && first.Has<TComponent>() &&
-            _query.TryGetRow(pair.Item2, out var second) && second.Has<TComponent>())
+        if (first.Has<TComponent>() && second.Has<TComponent>())
         {
             TKey firstKey = first.ReadRef<TComponent>().GetKey();
             TKey secondKey = second.ReadRef<TComponent>().GetKey();

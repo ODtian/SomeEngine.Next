@@ -48,14 +48,14 @@ public static class CollisionPairQueries
         public QueryDefinition AddReads(QueryDefinition definition, int position) => source.AddReads(definition, position);
 
         public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-            where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+            where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
         {
             pairs.Fill(source, queries, parallel);
             return true;
         }
     }
 
-    internal struct PairCount : IRelationOutput<(Entity, Entity)>
+    internal struct PairCount : IQueryRelationOutput<(Entity, Entity)>
     {
         internal int Count;
         public bool Add(in (Entity, Entity) pair)
@@ -63,6 +63,8 @@ public static class CollisionPairQueries
             Count++;
             return true;
         }
+
+        public bool Add(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second) => Add(in pair);
     }
 }
 
@@ -191,7 +193,7 @@ public sealed class CollisionPairBuffer : IDisposable
         }
     }
 
-    private ref struct PairArrayOutput(Span<(Entity, Entity)> pairs) : IRelationOutput<(Entity, Entity)>
+    private ref struct PairArrayOutput(Span<(Entity, Entity)> pairs) : IQueryRelationOutput<(Entity, Entity)>
     {
         private readonly Span<(Entity, Entity)> _pairs = pairs;
         private int _count;
@@ -201,6 +203,8 @@ public sealed class CollisionPairBuffer : IDisposable
             _pairs[_count++] = pair;
             return true;
         }
+
+        public bool Add(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second) => Add(in pair);
     }
 
     public void Dispose()

@@ -32,7 +32,7 @@ public readonly struct DistinctEdgeEndpoints<TEnumerable, TPayload>(TEnumerable 
         RelationEdgeEndpoints<TPayload>.AddReads(enumerable.AddReads(definition, position));
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         var projected = new EdgeEndpointOutput<TPayload, TOutput>(queries.Access, unordered, output);
         try
@@ -46,9 +46,9 @@ public readonly struct DistinctEdgeEndpoints<TEnumerable, TPayload>(TEnumerable 
     }
 }
 
-internal ref struct EdgeEndpointOutput<TPayload, TOutput> : IRelationOutput<RelationEdge<TPayload>>
+internal ref struct EdgeEndpointOutput<TPayload, TOutput> : IQueryRelationOutput<RelationEdge<TPayload>>
     where TPayload : struct, IComponent
-    where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+    where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
 {
     private readonly QueryCursor _query;
     private readonly bool _unordered;
@@ -71,4 +71,6 @@ internal ref struct EdgeEndpointOutput<TPayload, TOutput> : IRelationOutput<Rela
             pair = EntityOrder.OrderPair(pair.Item1, pair.Item2);
         return !_pairs.Add(pair) || Output.Add(in pair);
     }
+
+    public bool Add(in RelationEdge<TPayload> edge, scoped in QueryRow first, scoped in QueryRow second) => Add(in edge);
 }

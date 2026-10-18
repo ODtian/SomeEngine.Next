@@ -57,7 +57,7 @@ public readonly struct SpatialCandidates<TGeometry, TBoundsReader, TFilter, TGro
     }
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         Prepare(queries);
         return SpatialTraversal.Enumerate<TFilter, TGroupResults, TOutput>(
@@ -74,7 +74,7 @@ public readonly struct SpatialCandidates<TGeometry, TBoundsReader, TFilter, TGro
     }
 
     public bool Enumerate<TOutput>(CollisionNodePair partition, RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct =>
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct =>
         SpatialTraversal.Enumerate<TFilter, TGroupResults, TOutput>(Tree, queries, Filter, true, partition, ref output);
 
     private struct SummaryExecution(TFilter filter) : IQueryExecution
@@ -89,7 +89,7 @@ internal static class SpatialTraversal
         RelationQueryViews queries, TFilter filter, bool checkMembers, ref TOutput output)
         where TFilter : struct, ISpatialFilter<TGroupResults>
         where TGroupResults : unmanaged
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
         => Enumerate<TFilter, TGroupResults, TOutput>(tree, queries, filter, checkMembers,
             new(tree.Root, tree.Root), ref output);
 
@@ -97,7 +97,7 @@ internal static class SpatialTraversal
         RelationQueryViews queries, TFilter filter, bool checkMembers, CollisionNodePair partition, ref TOutput output)
         where TFilter : struct, ISpatialFilter<TGroupResults>
         where TGroupResults : unmanaged
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         if (tree.Root < 0)
             return true;
@@ -135,10 +135,12 @@ internal static class SpatialTraversal
                 if (match == GroupMatch.None)
                     continue;
                 var entities = (nodes[firstNode].Entity, nodes[secondNode].Entity);
-                if (checkMembers && (!queries.First.TryGetRow(entities.Item1, out _) ||
-                    !queries.First.TryGetRow(entities.Item2, out _)))
-                    continue;
-                if (match == GroupMatch.Unknown && !filter.MatchesLeaves(queries.Access, firstNode, secondNode, in results))
+                QueryRow firstRow = default, secondRow = default;
+                if (checkMembers || TFilter.ReadsComponentRows)
+                    if (!queries.First.TryGetRow(entities.Item1, out firstRow) ||
+                        !queries.First.TryGetRow(entities.Item2, out secondRow))
+                        continue;
+                if (match == GroupMatch.Unknown && !filter.MatchesLeaves(in firstRow, in secondRow, firstNode, secondNode, in results))
                     continue;
                 if (!output.Add(in entities))
                     return false;

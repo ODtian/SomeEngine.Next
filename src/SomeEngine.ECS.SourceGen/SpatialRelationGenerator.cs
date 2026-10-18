@@ -115,7 +115,8 @@ public sealed class SpatialRelationGenerator : IIncrementalGenerator
         }
         foreach (var parameter in parameters)
             AppendConstraints(text, parameter);
-        string expression = $"new {atom}(source.Enumerable.Tree, relation" + (implementation is null ? ")" : ", implementation)");
+        string expression = implementation is null ? $"new {atom}(relation)" :
+            $"new {atom}(source.Enumerable.Tree, relation, implementation)";
         if (operation == "Except")
             expression = $"new {appended}({expression})";
         if (composed)

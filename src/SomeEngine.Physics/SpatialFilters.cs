@@ -5,12 +5,18 @@ using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Physics;
 
-public readonly struct SpatialComponentFilter<TRelation, TFirst, TSecond>(CollisionTree tree, TRelation relation)
+public readonly struct SpatialComponentFilter<TRelation, TFirst, TSecond>
     : ISpatialFilter<GroupMatch>
     where TRelation : struct, IRelation<TFirst, TSecond>
     where TFirst : struct
     where TSecond : struct
 {
+    private readonly TRelation _relation;
+
+    public SpatialComponentFilter(TRelation relation) => _relation = relation;
+
+    public static bool ReadsComponentRows => true;
+
     public QueryDefinition AddReads(QueryDefinition definition) =>
         definition.WithOptionalRead<TFirst>().WithOptionalRead<TSecond>();
 
@@ -24,13 +30,13 @@ public readonly struct SpatialComponentFilter<TRelation, TFirst, TSecond>(Collis
         results = inherited;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in GroupMatch results)
+    public bool MatchesLeaves(scoped in QueryRow first, scoped in QueryRow second,
+        int firstNode, int secondNode, in GroupMatch results)
     {
         if (results != GroupMatch.Unknown)
             return results == GroupMatch.All;
-        var pair = (tree.Nodes[firstNode].Entity, tree.Nodes[secondNode].Entity);
-        var bound = new ComponentRelation<TRelation, TFirst, TSecond>(access, relation);
-        return bound.Matches(in pair);
+        var bound = new ComponentRelation<TRelation, TFirst, TSecond>(default, _relation);
+        return bound.Matches(in first, in second);
     }
 }
 
@@ -83,7 +89,8 @@ public readonly struct SpatialKeyFilter<TRelation, TImplementation, TComponent, 
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in GroupMatch results)
+    public bool MatchesLeaves(scoped in QueryRow firstRow, scoped in QueryRow secondRow,
+        int firstNode, int secondNode, in GroupMatch results)
     {
         if (results != GroupMatch.Unknown)
             return results == GroupMatch.All;
@@ -101,6 +108,8 @@ public readonly struct SpatialAnd<TFirst, TSecond, TFirstResults, TSecondResults
     where TFirstResults : unmanaged
     where TSecondResults : unmanaged
 {
+    public static bool ReadsComponentRows => TFirst.ReadsComponentRows || TSecond.ReadsComponentRows;
+
     public TFirst First { get; } = first;
     public TSecond Second { get; } = second;
 
@@ -133,16 +142,18 @@ public readonly struct SpatialAnd<TFirst, TSecond, TFirstResults, TSecondResults
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode,
+    public bool MatchesLeaves(scoped in QueryRow firstRow, scoped in QueryRow secondRow, int firstNode, int secondNode,
         in (TFirstResults, TSecondResults) results) =>
-        First.MatchesLeaves(access, firstNode, secondNode, in results.Item1) &&
-        Second.MatchesLeaves(access, firstNode, secondNode, in results.Item2);
+        First.MatchesLeaves(in firstRow, in secondRow, firstNode, secondNode, in results.Item1) &&
+        Second.MatchesLeaves(in firstRow, in secondRow, firstNode, secondNode, in results.Item2);
 }
 
 public readonly struct SpatialExcept<TFilter, TGroupResults>(TFilter filter) : ISpatialFilter<TGroupResults>
     where TFilter : struct, ISpatialFilter<TGroupResults>
     where TGroupResults : unmanaged
 {
+    public static bool ReadsComponentRows => TFilter.ReadsComponentRows;
+
     public TFilter Filter { get; } = filter;
 
     public QueryDefinition AddReads(QueryDefinition definition) => Filter.AddReads(definition);
@@ -158,6 +169,7 @@ public readonly struct SpatialExcept<TFilter, TGroupResults>(TFilter filter) : I
         GroupMatches.Except(Filter.MatchGroups(firstNode, secondNode, in inherited, out results));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in TGroupResults results) =>
-        !Filter.MatchesLeaves(access, firstNode, secondNode, in results);
+    public bool MatchesLeaves(scoped in QueryRow first, scoped in QueryRow second,
+        int firstNode, int secondNode, in TGroupResults results) =>
+        !Filter.MatchesLeaves(in first, in second, firstNode, secondNode, in results);
 }

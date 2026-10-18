@@ -13,6 +13,8 @@ public enum GroupMatch : byte
 /// <summary>Ordered node-pair proofs and callback-scoped leaf reads for the collision tree.</summary>
 public interface ISpatialFilter<TGroupResults> where TGroupResults : unmanaged
 {
+    static virtual bool ReadsComponentRows => false;
+
     QueryDefinition AddReads(QueryDefinition definition);
 
     /// <summary>Writes attached arrays during initial build or an explicit rebuild.</summary>
@@ -28,7 +30,8 @@ public interface ISpatialFilter<TGroupResults> where TGroupResults : unmanaged
         in TGroupResults inherited, out TGroupResults results);
 
     /// <summary>Reads a pair of leaves ordered by their complete Entity identities.</summary>
-    bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in TGroupResults results);
+    bool MatchesLeaves(scoped in QueryRow first, scoped in QueryRow second,
+        int firstNode, int secondNode, in TGroupResults results);
 }
 
 internal static class GroupMatches

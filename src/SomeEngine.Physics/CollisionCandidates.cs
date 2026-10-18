@@ -97,11 +97,11 @@ public readonly struct CollisionCandidates<TComponent, TBoundsReader> : ICollisi
     }
 
     public bool Enumerate<TOutput>(CollisionNodePair partition, RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct =>
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct =>
         SpatialTraversal.Enumerate<SpatialAll, GroupMatch, TOutput>(Tree, queries, default, true, partition, ref output);
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         if (_buildFromQuery)
             Tree.Rebuild<TComponent, TBoundsReader>(queries.First, queries.Access, _boundsReader);

@@ -35,7 +35,7 @@ public readonly struct TransferFacts(World world, QueryHandle facts) : IQueryRel
         definition.WithOptionalRead<TransferFact>();
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity, Entity)>, allows ref struct
     {
         foreach (var entity in queries.First.Rows)
         {

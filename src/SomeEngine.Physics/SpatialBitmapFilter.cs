@@ -70,7 +70,8 @@ public readonly struct SpatialBitmapFilter<TRelation, TImplementation, TComponen
                 in Summary[secondNode], Summary.Tree.Nodes[secondNode].MemberCount);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in GroupMatch results)
+    public bool MatchesLeaves(scoped in QueryRow firstRow, scoped in QueryRow secondRow,
+        int firstNode, int secondNode, in GroupMatch results)
     {
         if (results != GroupMatch.Unknown)
             return results == GroupMatch.All;

@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Entities;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Relations;
 
@@ -22,6 +23,7 @@ public readonly struct KeyPairsWithin : IKeyPairing
 
     public static bool ReadsFromSingleQuery => true;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
     {
         pair = (first, second);
@@ -35,6 +37,7 @@ public readonly struct KeyProduct2 : IKeyPairing
 
     public static bool ReordersPairs => false;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
     {
         pair = (first, second);
@@ -48,6 +51,7 @@ public readonly struct KeyPairsBetween : IKeyPairing
 
     public static bool ReordersPairs => true;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
     {
         int order = EntityOrder.Compare(first, second);

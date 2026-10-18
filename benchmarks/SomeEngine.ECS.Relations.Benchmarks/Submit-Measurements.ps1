@@ -12,7 +12,7 @@ $reportDirectory = Join-Path $repositoryRoot "artifacts/ecs-relations/measuremen
 New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null
 $executable = Join-Path $PSScriptRoot 'bin/Release/net10.0/win-x64/native-publish/SomeEngine.ECS.Relations.Benchmarks.exe'
 $managed = Join-Path $PSScriptRoot 'bin/Release/net10.0/win-x64/SomeEngine.ECS.Relations.Benchmarks.dll'
-$prefix = if ($Backend -eq 'NativeAOT') { @($executable) } else { @('dotnet', $managed) }
+[string[]]$prefix = if ($Backend -eq 'NativeAOT') { @($executable) } else { @('dotnet', $managed) }
 $previousDirectory = Get-Location
 try {
     Set-Location -LiteralPath $repositoryRoot

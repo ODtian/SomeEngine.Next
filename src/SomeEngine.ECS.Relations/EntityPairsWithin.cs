@@ -30,7 +30,7 @@ public readonly struct EntityPairsWithin : IQueryRelationEnumerable<(Entity, Ent
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         var firstRows = queries.First.Rows;
         while (firstRows.MoveNext(out var first))
@@ -39,7 +39,8 @@ public readonly struct EntityPairsWithin : IQueryRelationEnumerable<(Entity, Ent
             while (secondRows.MoveNext(out var second))
             {
                 var pair = EntityOrder.OrderPair(first.Entity, second.Entity);
-                if (!output.Add(in pair))
+                bool continued = pair.Item1 == first.Entity ? output.Add(in pair, in first, in second) : output.Add(in pair, in second, in first);
+                if (!continued)
                     return false;
             }
         }

@@ -35,7 +35,8 @@ public readonly struct SpatialAll : ISpatialFilter<GroupMatch>
     public bool HasSummaryChange(QueryChunkView chunk, int row) => false;
     public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results) =>
         results = GroupMatch.All;
-    public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in GroupMatch results) => true;
+    public bool MatchesLeaves(scoped in QueryRow first, scoped in QueryRow second,
+        int firstNode, int secondNode, in GroupMatch results) => true;
 }
 
 /// <summary>Maintains one collision tree and its concrete filter summaries from World changes.</summary>

@@ -30,7 +30,7 @@ public readonly struct EntityPairsBetween : IQueryRelationEnumerable<(Entity, En
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         foreach (var first in queries.First.Rows)
         {

@@ -21,6 +21,20 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
     private bool EnumerateQuery<TOutput>(ref TOutput output, uint? lastSystemVersion)
         where TOutput : struct, IRelationOutput<TRow>, allows ref struct
     {
+        var identities = new QueryIdentityOutput<TOutput, TRow>(output);
+        try
+        {
+            return EnumerateBoundQuery(ref identities, lastSystemVersion);
+        }
+        finally
+        {
+            output = identities.Output;
+        }
+    }
+
+    private bool EnumerateBoundQuery<TOutput>(ref TOutput output, uint? lastSystemVersion)
+        where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
+    {
         World world = Enumerable.World;
         int queryCount = Enumerable.QueryCount;
         if (queryCount == 1 && TEnumerable.ReadsFromSingleQuery)
@@ -66,7 +80,7 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
     }
 
     private bool EnumerateSingle<TOutput>(QueryDefinition definition, ref TOutput output, uint? lastSystemVersion)
-        where TOutput : struct, IRelationOutput<TRow>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
         World world = Enumerable.World;
         QueryHandle query = world.Query(definition);
@@ -87,7 +101,7 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
     }
 
     private ref struct SingleExecution<TOutput>(TEnumerable enumerable, TOutput output) : IQueryExecution
-        where TOutput : struct, IRelationOutput<TRow>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
         public TOutput Output = output;
         public bool Completed;
@@ -118,7 +132,7 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
     }
 
     private ref struct RelationExecution<TOutput> : IQueryExecution
-        where TOutput : struct, IRelationOutput<TRow>, allows ref struct
+        where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
         private TEnumerable _enumerable;
         private readonly RelationQueryHandles _queries;
