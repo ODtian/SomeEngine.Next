@@ -48,6 +48,8 @@ public sealed class HandwrittenSpatialMaintenance : IDisposable
     public CategorySummary Categories { get; }
     public uint LastSystemVersion { get; private set; }
     public int AccessCount => _updateAccesses.Length;
+    public RelationQuery<HandwrittenSpatialPartitions, (Entity, Entity)> Query =>
+        new(new HandwrittenSpatialPartitions(World, Bodies, Tree, Keys, Categories));
 
     public int CopyReadAccesses(Span<JobResourceAccess> destination)
     {

@@ -45,6 +45,7 @@ public readonly ref struct QueryCursor
     public uint CurrentSystemVersion { get; }
 
     internal World Owner => _world;
+    internal QueryState State => _plan;
 
     /// <summary>Finds one entity within this query, applying the same filters and access rules as row iteration.</summary>
     public bool TryGetRow(Entity entity, out QueryRow row) =>

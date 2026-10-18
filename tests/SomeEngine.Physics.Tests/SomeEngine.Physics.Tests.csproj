@@ -23,6 +23,10 @@
              Link="SpatialCollisionConsumption.cs" />
     <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialCollisionFrames.cs"
              Link="SpatialCollisionFrames.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialPartitions.cs"
+             Link="HandwrittenSpatialPartitions.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialParallelFrames.cs"
+             Link="SpatialParallelFrames.cs" />
     <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"

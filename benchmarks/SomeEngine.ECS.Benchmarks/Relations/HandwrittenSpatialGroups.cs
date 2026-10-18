@@ -12,6 +12,22 @@ namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
 public static partial class HandwrittenSpatialCollision
 {
+    public static bool EnumeratePartition<TOutput>(CollisionNodePair partition, RelationQueryViews queries,
+        CollisionTree tree, CollisionKeySummary<Hair, Entity> keys, CategorySummary categories, ref TOutput output)
+        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+    {
+        var execution = new FilteredPairs<TOutput>(tree, keys, categories, queries.Access, output, partition);
+        try
+        {
+            execution.Execute(queries.First);
+            return execution.Completed;
+        }
+        finally
+        {
+            output = execution.Output;
+        }
+    }
+
     public static void RebuildFilteredSummaries(World world, QueryHandle bodies,
         CollisionKeySummary<Hair, Entity> keys, CategorySummary categories)
     {
@@ -94,14 +110,20 @@ public static partial class HandwrittenSpatialCollision
         private readonly CollisionKeySummary<Hair, Entity> _keys;
         private readonly CategorySummary _categories;
         private readonly QueryCursor _access;
+        private readonly CollisionNodePair _partition;
 
         public FilteredPairs(CollisionTree tree, CollisionKeySummary<Hair, Entity> keys,
             CategorySummary categories, QueryCursor access, TOutput output)
+            : this(tree, keys, categories, access, output, new CollisionNodePair(tree.Root, tree.Root)) { }
+
+        public FilteredPairs(CollisionTree tree, CollisionKeySummary<Hair, Entity> keys,
+            CategorySummary categories, QueryCursor access, TOutput output, CollisionNodePair partition)
         {
             _tree = tree;
             _keys = keys;
             _categories = categories;
             _access = access;
+            _partition = partition;
             Output = output;
             Completed = false;
         }
@@ -118,7 +140,7 @@ public static partial class HandwrittenSpatialCollision
             ReadOnlySpan<CollisionNode> nodes = _tree.Nodes;
             Span<FilteredNodePair> nodePairs = stackalloc FilteredNodePair[2 * _tree.Height + 1];
             int pairCount = 0;
-            nodePairs[pairCount++] = new(_tree.Root, _tree.Root, default, default);
+            nodePairs[pairCount++] = new(_partition.First, _partition.Second, default, default);
             while (pairCount > 0)
             {
                 FilteredNodePair pair = nodePairs[--pairCount];

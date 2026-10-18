@@ -98,6 +98,10 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 
 类别和角色键的节点摘要、逐条件证明及空间薄入口见 [空间筛选下推](Spatial-Filtering.md)；排序、范围、多路连接及其它空间实现的接入数据见 [关系实现扩展](Relation-Query-Extensions.md)。
 
+### 空间执行 API 扩展去向
+
+空间描述的 `Prepare` 和节点对枚举进入 `ICollisionPartitionEnumerable`；`FillPairs` 与 `FillPairsParallel` 通过原有 RelationQuery 读取范围接入单线程和并行计数／前缀／填充。两种终端都提供显式 lastSystemVersion 重载。`CollisionPairBuffer.Count/Pairs` 交付真实输出范围，FillAccess 和 ReadAccess 交给对应 Scheduler 工作。Systems 的 `ReadOnlyQueryPairJobs` 提供回调期间的并行借用与同步 join。生命周期、实际输出区间和成对业务调用见 [空间关系分区执行](Spatial-Parallel-Queries.md)。
+
 ## 已存储关系边
 
 显式边来源使用 `RelationEdge<T>` 作为身份行，每条平行边各自输出。来源描述是普通 struct，保存 World 与端点参数；终端执行时读取原有邻接或端点间边视图。
