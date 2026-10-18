@@ -6,7 +6,7 @@ using SomeEngine.Physics;
 namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
 /// <summary>Actual frame calls used by both the maintained-query example and paired measurements.</summary>
-public static class SpatialCollisionFrames
+public static partial class SpatialCollisionFrames
 {
     public static JobHandle Schedule<TGeometry, TBoundsReader, TFilter, TGroupResults>(
         CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGroupResults> maintenance,
