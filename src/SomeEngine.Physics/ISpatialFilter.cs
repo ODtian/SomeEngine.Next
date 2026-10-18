@@ -20,6 +20,9 @@ public interface ISpatialFilter<TGroupResults> where TGroupResults : unmanaged
     /// <summary>Writes one leaf or a branch whose children have already been updated.</summary>
     void RefitSummary(int node, QueryCursor access);
 
+    /// <summary>Reports row writes that affect this filter's cached leaf data.</summary>
+    bool HasSummaryChange(QueryChunkView chunk, int row) => false;
+
     GroupMatch MatchGroups(int firstNode, int secondNode,
         in TGroupResults inherited, out TGroupResults results);
 

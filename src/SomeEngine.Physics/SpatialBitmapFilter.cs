@@ -56,6 +56,10 @@ public readonly struct SpatialBitmapFilter<TRelation, TImplementation, TComponen
 
     public void RefitSummary(int node, QueryCursor access) => Summary.Refit(node, access);
 
+    public bool HasSummaryChange(QueryChunkView chunk, int row) =>
+        chunk.Has<TComponent>() && chunk.HasChangedSinceLastSystemVersion<TComponent>() &&
+        chunk.RowChangedSinceLastSystemVersion<TComponent>(row);
+
     public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results) =>
         results = inherited != GroupMatch.Unknown ? inherited :
             TGroupPermission.Match(in Summary.Nodes[firstNode], Summary.Tree.Nodes[firstNode].MemberCount,
