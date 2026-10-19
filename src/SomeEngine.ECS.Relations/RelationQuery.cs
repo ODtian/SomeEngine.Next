@@ -23,8 +23,15 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
     private bool EnumerateQuery<TOutput>(ref TOutput output, uint? lastSystemVersion)
         where TOutput : struct, IRelationOutput<TRow>, allows ref struct
     {
-        var identities = new QueryIdentityOutput<TOutput, TRow>(ref output);
-        return EnumerateBoundQuery(ref identities, lastSystemVersion);
+        var identities = new QueryIdentityOutput<TOutput, TRow>(output);
+        try
+        {
+            return EnumerateBoundQuery(ref identities, lastSystemVersion);
+        }
+        finally
+        {
+            output = identities.Value;
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

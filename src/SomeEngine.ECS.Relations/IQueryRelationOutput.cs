@@ -17,16 +17,16 @@ public interface IQueryRelation<TRow> : IRelation<TRow>
     bool Matches(in TRow row, scoped QueryRow first, scoped QueryRow second);
 }
 
-internal ref struct QueryIdentityOutput<TOutput, TRow>(ref TOutput output) : IQueryRelationOutput<TRow>
+internal ref struct QueryIdentityOutput<TOutput, TRow>(TOutput output) : IQueryRelationOutput<TRow>
     where TOutput : struct, IRelationOutput<TRow>, allows ref struct
 {
     public static bool ReadsComponentRows => false;
 
-    private readonly RelationOutputReference<TOutput> _output = new(ref output);
+    public TOutput Value = output;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Add(in TRow row) => _output.Value.Add(in row);
+    public bool Add(in TRow row) => Value.Add(in row);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Add(in TRow row, scoped QueryRow first, scoped QueryRow second) => _output.Value.Add(in row);
+    public bool Add(in TRow row, scoped QueryRow first, scoped QueryRow second) => Value.Add(in row);
 }
