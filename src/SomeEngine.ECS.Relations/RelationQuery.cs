@@ -87,6 +87,7 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool EnumerateSingle<TOutput>(QueryDefinition definition, ref TOutput output, uint? lastSystemVersion)
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {

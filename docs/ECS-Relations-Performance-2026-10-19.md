@@ -81,6 +81,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | d361242b | static结果和原身份直接写输出；两端候选loop各展开两大份World匹配 | TryGetEntityQueryRow与Contains保留共同点匹配边界，内部复用同一record helper，具体许可与结果继续内联 | [optimized-13](evidence/ECS-Relations-2026-10-19/optimized-13/summary.md)、[实际原生与分布读取](evidence/ECS-Relations-2026-10-19/commands-r13-r14.json) |
 | 0f4fdf4b | 行匹配保留同一独立入口；Key caller仍形成216B视图，bitmap输出引用跨组件绑定存活 | 键轻入口向静态桶循环仅传具体成员与访问输入；先绑定组件引用，再向具体许可借用唯一输出 | [optimized-14](evidence/ECS-Relations-2026-10-19/optimized-14/summary.md) |
 | cc08ae37 | 默认Bound在轻分支前清1136B回退状态；固定候选先持两份QueryRow跨第二次点读取 | 轻只读选择与完整回退的数据形成分开；固定身份通用绑定先取得第一组件再进入第二次点读取 | [optimized-15](evidence/ECS-Relations-2026-10-19/optimized-15/summary.md)、[实际原生与IL](evidence/ECS-Relations-2026-10-19/commands-r15.json) |
+| 92d8b230 | Bound回退清零已裁剪；Single仍独立清120B、复制32B描述两次并判断可空版本 | 明确内联现有Single，在轻入口继续合并普通调用的版本与执行准备 | [optimized-16](evidence/ECS-Relations-2026-10-19/optimized-16/summary.md)、[外层原生与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r16-r17.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -121,6 +122,10 @@ r15 的[实际原生读取](evidence/ECS-Relations-2026-10-19/commands-r15.json)
 默认外层的独立读取定位到实际数据形成范围：EnumerateBoundQuery入口为1192B栈，在只读CanWrite条件前清1136B；只读分支随后进入另一个168B栈、清120B的Single。手写入口为104B栈、清56B。双方GetQueryDefinition、WithOptionalRead、AcquireQueryRecord和ReleaseQuery各执行一次。完整回退的数据形成因而需要独立于轻量的单成员选择入口；实际边界与指令由同一原生记录持有。
 
 固定候选的身份数组由当次参与实体形成，有限类别采样保持该成员集合。来源直接转发身份后，通用identity binder依次执行第一成员点读取、第一组件引用、第二成员点读取、第二组件引用；手写保持相同两次公共点读取并直接执行字段位运算。多层固定身份筛选各自绑定的成本进入其完整调用，已经取得行的Within/键/空间来源继续复用查询专用借用输出。
+
+r16 的32个反馈场景形成33项主/完整帧判断，其中5项通过。小规模角色16聚集/交错为0.90826284970722182/0.93446435379336668、0.92376388586364622/0.96284720521236455；稀疏维护和完整帧、空间角色交错均通过。位图18项的实际median比为1.0010687566797292至1.153845045045045，默认配对9项为1.0008403633609675至1.02089081592432，原精度逐项保存在同一报告中。
+
+r16 原生外层确认Bound的1192B栈和1136B回退清零已裁剪，Single仍保留120B初始化、两次32B描述复制和可空版本分支；两侧外层初始化合计176B/80B。[有限类别函数摘录](evidence/ECS-Relations-2026-10-19/native-r16-mutual-excerpt.json)保留明确的选取范围与源队列元数据：查询字段和输出已在候选循环前形成局部，第一组件引用跨第二次point读取存活；每候选仍有覆盖两份40B QueryRow的六次16B零写，手写在入口初始化行home。该记录为按函数选取的有界摘录，范围说明随证据保存。
 
 ## 执行与复现
 
