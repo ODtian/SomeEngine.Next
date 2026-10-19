@@ -118,6 +118,7 @@ public static class RelationsMeasurements
              "LeafMapKeyValues counts live Entity/int payload; entry capacity is separate; dictionary management and object headers enter actual allocation and process memory.",
              "Partition payload includes node pairs, counts, offsets and nonempty partition indices; access-data arrays are separate.",
              "FrameAllocatedBytes includes the whole actual query/consumption frame around the selected primary boundary, across all workers.",
+             "Allocation counters start after before-frame memory/processor observations and end before after-frame observations; report objects and observations are outside this range.",
              "World, Scheduler, query/observer data, object headers and pooled child handles enter measured allocations/Managed/WorkingSet."],
             equivalence, cold.ToArray(), raw.ToArray(), comparisons, extension.Memory(), handwritten.Memory(), passed);
         string output = Option("--output", Path.Combine("artifacts", "ecs-relations", "measurements", input.Id + ".json"));
@@ -172,11 +173,11 @@ public static class RelationsMeasurements
 
     private static FrameSample Run(MeasurementCase input, MeasurementSide side, int frame, string boundary)
     {
-        long allocated = GC.GetTotalAllocatedBytes(true);
-        long threadAllocated = GC.GetAllocatedBytesForCurrentThread();
-        int gen0 = GC.CollectionCount(0), gen1 = GC.CollectionCount(1), gen2 = GC.CollectionCount(2);
         long managed = GC.GetTotalMemory(false), working = Environment.WorkingSet;
         uint processorBefore = MeasurementProcessors.GetCurrentProcessorNumber();
+        int gen0 = GC.CollectionCount(0), gen1 = GC.CollectionCount(1), gen2 = GC.CollectionCount(2);
+        long allocated = GC.GetTotalAllocatedBytes(true);
+        long threadAllocated = GC.GetAllocatedBytesForCurrentThread();
         long start = Stopwatch.GetTimestamp();
         long written = start, queried, consumed, queryTicks = 0, consumeTicks = 0;
         long maintenanceTicks = 0, maintenanceBytes = 0, queryBytes = 0, consumeBytes = 0;
@@ -241,7 +242,6 @@ public static class RelationsMeasurements
             consumeTicks = consumed - queried;
         }
         long end = consumed;
-        uint processorAfter = MeasurementProcessors.GetCurrentProcessorNumber();
         long elapsed = boundary switch
         {
             "MaintenanceAndQuery" => queried - written,
@@ -250,6 +250,10 @@ public static class RelationsMeasurements
         };
         long bytes = GC.GetTotalAllocatedBytes(true) - allocated;
         long threadBytes = GC.GetAllocatedBytesForCurrentThread() - threadAllocated;
+        int gen0After = GC.CollectionCount(0) - gen0;
+        int gen1After = GC.CollectionCount(1) - gen1;
+        int gen2After = GC.CollectionCount(2) - gen2;
+        uint processorAfter = MeasurementProcessors.GetCurrentProcessorNumber();
         long incidences = 0;
         double depths = 0;
         foreach (int count in side.ContactCounts)
@@ -258,8 +262,8 @@ public static class RelationsMeasurements
             depths += depth;
         return new(0, "", "", frame, boundary, elapsed, queryTicks, consumeTicks, end - start, written - start,
             maintenanceTicks, maintenanceBytes, queryBytes, consumeBytes,
-            side.Count, incidences, depths, bytes, threadBytes, GC.CollectionCount(0) - gen0,
-            GC.CollectionCount(1) - gen1, GC.CollectionCount(2) - gen2, managed, GC.GetTotalMemory(false), working, Environment.WorkingSet,
+            side.Count, incidences, depths, bytes, threadBytes, gen0After,
+            gen1After, gen2After, managed, GC.GetTotalMemory(false), working, Environment.WorkingSet,
             processorBefore, processorAfter);
     }
 

@@ -43,6 +43,8 @@ JIT在同一Release输出目录以PublishAot=false、SelfContained=false及实�
 
 测量前逐行核对完整Entity身份和真实消费数组，持续更新覆盖完整八帧周期。原始记录包含 ticks、先后顺序、输出数、接触次数／深度、全线程与当前线程分配、GC、Managed/WorkingSet。median及R-7 p95按原始精度计算，分别以扩展/手写≤1.00判断主场景及表中额外要求的完整帧。融合的遍历、筛选和输出属于同一个Query边界。
 
+机器配置版的allocation起始计数位于before-Managed/WorkingSet/CPU观察之后，结束计数紧跟实际frame工作并先于after观察，记录当前及全部线程的实际工作分配。r24及以前系列的FrameAllocatedBytes同时包含before-WorkingSet观察的分配；其原始值和原scope随历史系列保留。elapsed查询/整帧时钟及31×8采样边界继续按原定义执行。
+
 内存按实际值数组payload记录Live、Addressed与Capacity；Tree.NodeCount为包含复用地址的范围，存活二叉拓扑由LeafCount形成。叶映射单列有效键值payload及entry容量，分区四数组、访问数组、输出容量、接触累计、维护访问与已有ECS键桶分列。对象头、字典管理、查询／观察者／Scheduler和租用句柄同时进入真实分配与进程内存指标。
 
 原始报告、每次优化前后结果及公共队列 result/stdout/stderr 保留并由最终证据索引链接。实际启动采用新进程独立观察；入口前的元数据初始化计入进程到首结果，Main和首次公共查询分别使用自身真实边界。后续源码优化完成后刷新同一八包feed/cache及实际包NativeAOT消费方。

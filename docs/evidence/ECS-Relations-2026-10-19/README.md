@@ -22,3 +22,5 @@ $report.Comparisons
 [报告导出脚本](../../../benchmarks/SomeEngine.ECS.Relations.Benchmarks/Export-Evidence.ps1) 保留原始 JSON 字节并压缩；[汇总脚本](../../../benchmarks/SomeEngine.ECS.Relations.Benchmarks/Write-MeasurementReport.ps1) 读取同一数据形成可读表格。实际构建与性能命令通过公共队列执行，完整命令见 index.Queue；[运行器提交脚本](../../../benchmarks/SomeEngine.ECS.Relations.Benchmarks/Submit-Measurements.ps1) 接收 QueueScript 和实际 SourceCommit。
 
 受控完整系列同时保存queue-submission.json，将独占准备的起止、显式session、固定列表命令、实际源码和预排报告任务关联。逐case原始队列时间戳用于核对准备与实际测量的边界；早期反馈系列保留其原有提交方式和实际活动记录。
+
+机器配置系列的Device.Machine与processors.csv保存实际进程/主线程mask、优先级、设置后CPU及每侧CPU端点汇总，RawSamples保留逐帧ProcessorBefore/After。该版allocation计数位于memory/CPU观察之外；r24及以前的FrameAllocatedBytes包含before-WorkingSet观察分配，历史记录继续保存原值。两版的elapsed时钟仍覆盖各自相同实际工作边界。

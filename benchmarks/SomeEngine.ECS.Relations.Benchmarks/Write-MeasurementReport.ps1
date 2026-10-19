@@ -11,6 +11,7 @@ $submissions = Get-Content -Raw -LiteralPath (Join-Path $reports 'submissions.js
 $metrics = [Collections.Generic.List[object]]::new()
 $memory = [Collections.Generic.List[object]]::new()
 $cold = [Collections.Generic.List[object]]::new()
+$processors = [Collections.Generic.List[object]]::new()
 $lines = [Collections.Generic.List[string]]::new()
 $lines.Add("# $Series measurements")
 $lines.Add('')
@@ -58,6 +59,21 @@ foreach ($submission in $submissions) {
             IndexBuildTicks = $sample.IndexBuildTicks; FirstQueryTicks = $sample.FirstQueryTicks; FirstConsumeTicks = $sample.FirstConsumeTicks
             TotalTicks = $sample.TotalTicks; OutputPairCount = $sample.OutputPairCount; AllocatedBytes = $sample.AllocatedBytes })
     }
+    if ($null -ne $report.Device.Machine) {
+        foreach ($side in 'relation', 'handwritten') {
+            $samples = @($report.RawSamples | Where-Object Side -eq $side)
+            $machine = $report.Device.Machine
+            $processors.Add([pscustomobject]@{
+                CaseId = $submission.CaseId; Side = $side; Configuration = $machine.Configuration
+                ProcessMask = $machine.ProcessMask; MainThreadMask = $machine.MainThreadMask
+                PreviousMainThreadMask = $machine.PreviousMainThreadMask; ProcessPriority = $machine.ProcessPriority
+                MainThreadPriority = $machine.MainThreadPriority; ProcessorAfterSetting = $machine.ProcessorAfterSetting
+                Samples = $samples.Count
+                ObservedProcessors = (@($samples.ProcessorBefore) + @($samples.ProcessorAfter) | Sort-Object -Unique) -join ','
+                ChangedEndpoints = @($samples | Where-Object { $_.ProcessorBefore -ne $_.ProcessorAfter }).Count
+            })
+        }
+    }
 }
 $required = @($metrics | Where-Object Required)
 $passed = @($required | Where-Object Passed)
@@ -69,6 +85,9 @@ $lines | Set-Content -LiteralPath (Join-Path $evidence 'summary.md') -Encoding u
 $metrics | Export-Csv -LiteralPath (Join-Path $evidence 'metrics.csv') -NoTypeInformation -Encoding utf8
 $memory | Export-Csv -LiteralPath (Join-Path $evidence 'memory.csv') -NoTypeInformation -Encoding utf8
 $cold | Export-Csv -LiteralPath (Join-Path $evidence 'cold.csv') -NoTypeInformation -Encoding utf8
+if ($processors.Count -gt 0) {
+    $processors | Export-Csv -LiteralPath (Join-Path $evidence 'processors.csv') -NoTypeInformation -Encoding utf8
+}
 Write-Output "$Series`: cases=$($submissions.Count); required=$($required.Count); passed=$($passed.Count); $evidence"
 foreach ($group in ($required | Group-Object Class)) {
     Write-Output ("CLASS {0}: {1}/{2}" -f $group.Name, @($group.Group | Where-Object Passed).Count, $group.Count)
