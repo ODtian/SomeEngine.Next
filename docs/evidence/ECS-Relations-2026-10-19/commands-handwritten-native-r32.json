@@ -1,0 +1,222 @@
+[
+  {
+    "Queue": {
+      "Id": "b173a1bd83bc4590bf1a0f685f36cc10",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-Command",
+        "& 'F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Submit-Measurements.ps1' -Series 'handwritten-native-r32' -HandwrittenControlsOnly -HandwrittenControlCaseId @('default-large-dynamic50', 'finite-large-mask1-mutual') -Backend 'NativeAOT' -Mode 'measure' -Machine 'Fixed' -QueueScript 'F:\\SomeEngine.Next\\tools\\Invoke-Benchmark.ps1' -Session '01a15090-f5bd-7a12-860a-e214325db5bb' -CollectReports -SourceCommit '3b582fe541d86d7f556b3f9d6854962d292454ef'"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T16:32:59.4784478+08:00",
+      "StartedAtUtc": "2026-10-19T16:36:34.6373061+08:00",
+      "FinishedAtUtc": "2026-10-19T16:36:37.6281879+08:00"
+    },
+    "Stdout": "LIST F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe --mode list --source 3b582fe541d86d7f556b3f9d6854962d292454ef\r\nQUEUED 9f004fb87b4d43d8adfa57e056e3692e finite-large-mask1-mutual-control\r\nQUEUED 04ca5c4aca8c4ab9b863dc7dc2a89c5b default-large-dynamic50-control\r\nQUEUED 47463abf6cc5473d9997d3f6f156e257 Collect-Measurements.ps1\r\nQUEUED d921ac9c3ade43bc9e2c0d8bb250d86a Export-Evidence.ps1\r\nQUEUED ecc988176f5e4df6892431fc15c14faa Write-MeasurementReport.ps1\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "9f004fb87b4d43d8adfa57e056e3692e",
+      "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+      "Arguments": [
+        "--mode",
+        "measure",
+        "--case",
+        "finite",
+        "--size",
+        "large",
+        "--variant",
+        "mask1-mutual",
+        "--source",
+        "3b582fe541d86d7f556b3f9d6854962d292454ef",
+        "--backend",
+        "NativeAOT",
+        "--machine",
+        "Fixed",
+        "--comparison",
+        "HandwrittenControl",
+        "--output",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\handwritten-native-r32\\finite-large-mask1-mutual-control.json"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T16:36:35.9306259+08:00",
+      "StartedAtUtc": "2026-10-19T16:38:20.4200084+08:00",
+      "FinishedAtUtc": "2026-10-19T16:38:35.7183983+08:00"
+    },
+    "Stdout": "EQUIVALENT finite-large-mask1-mutual: frames=1; pairs=0\r\nfinite-large-mask1-mutual Query: H1/H2 median=1.0008691104454903 p95=1.003360874205223 required=false\r\nfinite-large-mask1-mutual Consume: H1/H2 median=1 p95=1.0588235294117647 required=false\r\nCONTROL_REPORT F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\handwritten-native-r32\\finite-large-mask1-mutual-control.json; H1=HandwrittenMutualCandidatesSide; H2=HandwrittenMutualCandidatesSide\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "04ca5c4aca8c4ab9b863dc7dc2a89c5b",
+      "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+      "Arguments": [
+        "--mode",
+        "measure",
+        "--case",
+        "default",
+        "--size",
+        "large",
+        "--variant",
+        "dynamic50",
+        "--source",
+        "3b582fe541d86d7f556b3f9d6854962d292454ef",
+        "--backend",
+        "NativeAOT",
+        "--machine",
+        "Fixed",
+        "--comparison",
+        "HandwrittenControl",
+        "--output",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\handwritten-native-r32\\default-large-dynamic50-control.json"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T16:36:36.2493426+08:00",
+      "StartedAtUtc": "2026-10-19T16:46:16.5186382+08:00",
+      "FinishedAtUtc": "2026-10-19T16:46:35.3059396+08:00"
+    },
+    "Stdout": "EQUIVALENT default-large-dynamic50: frames=1; pairs=1572352\r\ndefault-large-dynamic50 Query: H1/H2 median=0.9990263372202286 p95=0.9919834021627087 required=false\r\ndefault-large-dynamic50 Consume: H1/H2 median=1.0088247860099886 p95=1.0180152508647053 required=false\r\nCONTROL_REPORT F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\handwritten-native-r32\\default-large-dynamic50-control.json; H1=HandwrittenDefaultSide; H2=HandwrittenDefaultSide\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "47463abf6cc5473d9997d3f6f156e257",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1",
+        "-Series",
+        "handwritten-native-r32"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T16:36:36.5898678+08:00",
+      "StartedAtUtc": "2026-10-19T16:48:33.6189656+08:00",
+      "FinishedAtUtc": "2026-10-19T16:48:34.8273449+08:00"
+    },
+    "Stdout": "\r\nCaseId                            Boundary Required MedianRatio P95Ratio Status     QueueId\r\n------                            -------- -------- ----------- -------- ------     -------\r\nfinite-large-mask1-mutual-control Query       False        1.00     1.00 diagnostic 9f004fb87b4d43d8adfa57e056e3692e\r\nfinite-large-mask1-mutual-control Consume     False           1     1.06 diagnostic 9f004fb87b4d43d8adfa57e056e3692e\r\ndefault-large-dynamic50-control   Query       False        1.00     0.99 diagnostic 04ca5c4aca8c4ab9b863dc7dc2a89c5b\r\ndefault-large-dynamic50-control   Consume     False        1.01     1.02 diagnostic 04ca5c4aca8c4ab9b863dc7dc2a89c5b\r\n\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "d921ac9c3ade43bc9e2c0d8bb250d86a",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1",
+        "-Series",
+        "handwritten-native-r32"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T16:36:36.8838476+08:00",
+      "StartedAtUtc": "2026-10-19T16:50:57.9068032+08:00",
+      "FinishedAtUtc": "2026-10-19T16:50:59.2183042+08:00"
+    },
+    "Stdout": "handwritten-native-r32: 2 reports; F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\docs\\evidence\\ECS-Relations-2026-10-19\\handwritten-native-r32\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "ecc988176f5e4df6892431fc15c14faa",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1",
+        "-Series",
+        "handwritten-native-r32"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T16:36:37.1818783+08:00",
+      "StartedAtUtc": "2026-10-19T16:51:26.4908616+08:00",
+      "FinishedAtUtc": "2026-10-19T16:51:27.937876+08:00"
+    },
+    "Stdout": "handwritten-native-r32: cases=2; required=0; passed=0; F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\docs\\evidence\\ECS-Relations-2026-10-19\\handwritten-native-r32\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "31deba029a424a2fa0d6ac0c574e8cca",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/Audit-MeasurementQueue.ps1",
+        "-Series",
+        "handwritten-native-r32",
+        "-PreparationQueueId",
+        "b173a1bd83bc4590bf1a0f685f36cc10"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T16:52:02.5018072+08:00",
+      "StartedAtUtc": "2026-10-19T17:00:54.1027806+08:00",
+      "FinishedAtUtc": "2026-10-19T17:00:55.3904368+08:00"
+    },
+    "Stdout": "{\r\n  \"Series\": \"handwritten-native-r32\",\r\n  \"SourceCommit\": \"3b582fe541d86d7f556b3f9d6854962d292454ef\",\r\n  \"Backend\": \"NativeAOT\",\r\n  \"CaseCount\": 2,\r\n  \"SessionIds\": [\r\n    \"01a15090-f5bd-7a12-860a-e214325db5bb\"\r\n  ],\r\n  \"PreparationExitCode\": 0,\r\n  \"CaseExitCodes\": [\r\n    0\r\n  ],\r\n  \"AnalysisExitCodes\": [\r\n    0\r\n  ],\r\n  \"LastCaseSubmittedAtUtc\": \"2026-10-19T16:36:36.2493426+08:00\",\r\n  \"FirstCaseStartedAtUtc\": \"2026-10-19T16:38:20.4200084+08:00\",\r\n  \"PreparationFinishedAtUtc\": \"2026-10-19T16:36:37.6281879+08:00\",\r\n  \"LastCaseFinishedAtUtc\": \"2026-10-19T16:46:35.3059396+08:00\",\r\n  \"FirstAnalysisStartedAtUtc\": \"2026-10-19T16:48:33.6189656+08:00\",\r\n  \"AllCasesSubmittedBeforeExecution\": true,\r\n  \"PreparationFinishedBeforeExecution\": true,\r\n  \"AnalysisStartedAfterExecution\": true,\r\n  \"MeasurementSeconds\": 494.8859312,\r\n  \"CaseExecutionSeconds\": 34.0856913,\r\n  \"BetweenCasesSeconds\": 460.8002399,\r\n  \"LongestBetweenCasesSeconds\": 460.8002399,\r\n  \"PreparationWaitingSeconds\": 215.1588583\r\n}\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "785e2a10bb384c9a9b6c1f10810d28fd",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-Command",
+        "\n$ErrorActionPreference = 'Stop'\nfunction Quantile([double[]]$values, [double]$percentile) {\n    [Array]::Sort($values)\n    $position = ($values.Length - 1) * $percentile\n    $lower = [int][Math]::Floor($position)\n    $upper = [int][Math]::Ceiling($position)\n    return $values[$lower] + ($values[$upper] - $values[$lower]) * ($position - $lower)\n}\n$series = 'handwritten-native-r32'\n$directory = Join-Path (Get-Location) \"artifacts/ecs-relations/measurements/$series\"\n$rows = @(foreach ($id in @('default-large-dynamic50-control', 'finite-large-mask1-mutual-control')) {\n    $report = Get-Content -Raw -LiteralPath (Join-Path $directory \"$id.json\") | ConvertFrom-Json\n    foreach ($boundary in @('Query','Consume')) {\n        foreach ($side in @('H1','H2')) {\n            foreach ($position in @('First','Second')) {\n                $samples = @($report.RawSamples | Where-Object {\n                    $_.Boundary -eq $boundary -and $_.Side -eq $side -and\n                    $(if (($_.SideOrder -split '/')[0] -eq $side) { 'First' } else { 'Second' }) -eq $position\n                })\n                [double[]]$values = @($samples.ElapsedTicks)\n                [pscustomobject]@{\n                    CaseId=$id; Boundary=$boundary; Side=$side; Position=$position\n                    Samples=$values.Length; MedianTicks=(Quantile $values 0.5); P95Ticks=(Quantile $values 0.95)\n                    TotalFrameAllocatedBytes=($samples.FrameAllocatedBytes | Measure-Object -Sum).Sum\n                    Gen0=($samples.Gen0 | Measure-Object -Sum).Sum\n                    Gen1=($samples.Gen1 | Measure-Object -Sum).Sum\n                    Gen2=($samples.Gen2 | Measure-Object -Sum).Sum\n                    Processors=@($samples.ProcessorBefore + $samples.ProcessorAfter | Select-Object -Unique)\n                }\n            }\n        }\n    }\n})\n$destination = Join-Path (Get-Location) \"docs/evidence/ECS-Relations-2026-10-19/$series/handwritten-order.json\"\n[pscustomobject]@{Series=$series;SourceCommit='3b582fe541d86d7f556b3f9d6854962d292454ef';Required=$false;Quantiles='R7, raw tick precision';Rows=$rows} |\n    ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $destination -Encoding utf8\n$rows | Format-Table CaseId,Boundary,Side,Position,Samples,MedianTicks,P95Ticks,TotalFrameAllocatedBytes,Gen0,Gen1,Gen2 -AutoSize\nWrite-Output \"ORDER_REPORT $destination\"\n"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T16:53:06.6016948+08:00",
+      "StartedAtUtc": "2026-10-19T17:00:55.3915255+08:00",
+      "FinishedAtUtc": "2026-10-19T17:00:57.056967+08:00"
+    },
+    "Stdout": "\r\nCaseId                            Boundary Side Position Samples MedianTicks  P95Ticks TotalFrameAllocatedBytes Gen0 Ge\r\n                                                                                                                     n1\r\n------                            -------- ---- -------- ------- -----------  -------- ------------------------ ---- --\r\ndefault-large-dynamic50-control   Query    H1   First        128   279630.00 298908.80                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Query    H1   Second       128   278384.00 304217.55                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Query    H2   First        128   277758.50 301682.30                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Query    H2   Second       128   280328.00 305473.30                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Consume  H1   First          1        0.00      0.00                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Consume  H1   Second         1        0.00      0.00                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Consume  H2   First          1        0.00      0.00                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Consume  H2   Second         1        0.00      0.00                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Query    H1   First        128   263168.00 280610.35                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Query    H1   Second       128   263021.50 275026.60                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Query    H2   First        128   262821.50 276927.90                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Query    H2   Second       128   263316.50 278458.10                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Consume  H1   First          1        0.00      0.00                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Consume  H1   Second         1        0.00      0.00                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Consume  H2   First          1        0.00      0.00                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Consume  H2   Second         1        0.00      0.00                     0.00 0.00 ��0\r\n\r\nORDER_REPORT F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\docs\\evidence\\ECS-Relations-2026-10-19\\handwritten-native-r32\\handwritten-order.json\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "a64df66043f34145b3a5dfe4087de243",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-Command",
+        "\n$ErrorActionPreference = 'Stop'\nfunction Quantile([double[]]$values, [double]$percentile) {\n    [Array]::Sort($values)\n    $position = ($values.Length - 1) * $percentile\n    $lower = [int][Math]::Floor($position)\n    $upper = [int][Math]::Ceiling($position)\n    return $values[$lower] + ($values[$upper] - $values[$lower]) * ($position - $lower)\n}\n$series = 'handwritten-native-r32'\n$directory = Join-Path (Get-Location) \"artifacts/ecs-relations/measurements/$series\"\n$rows = @(foreach ($id in @('default-large-dynamic50-control', 'finite-large-mask1-mutual-control')) {\n    $report = Get-Content -Raw -LiteralPath (Join-Path $directory \"$id.json\") | ConvertFrom-Json\n    foreach ($boundary in @('Query','Consume')) {\n        foreach ($side in @('H1','H2')) {\n            foreach ($position in @('First','Second')) {\n                $samples = @($report.RawSamples | Where-Object {\n                    $_.Boundary -eq 'Query' -and $_.Side -eq $side -and\n                    $(if (($_.SideOrder -split '/')[0] -eq $side) { 'First' } else { 'Second' }) -eq $position\n                })\n                [double[]]$values = @($samples | ForEach-Object { if ($boundary -eq 'Query') { $_.QueryTicks } else { $_.ConsumeTicks } })\n                [pscustomobject]@{\n                    CaseId=$id; Boundary=$boundary; Side=$side; Position=$position\n                    Samples=$values.Length; MedianTicks=(Quantile $values 0.5); P95Ticks=(Quantile $values 0.95)\n                    TotalFrameAllocatedBytes=($samples.FrameAllocatedBytes | Measure-Object -Sum).Sum\n                    Gen0=($samples.Gen0 | Measure-Object -Sum).Sum\n                    Gen1=($samples.Gen1 | Measure-Object -Sum).Sum\n                    Gen2=($samples.Gen2 | Measure-Object -Sum).Sum\n                    Processors=@($samples.ProcessorBefore + $samples.ProcessorAfter | Select-Object -Unique)\n                }\n            }\n        }\n    }\n})\n$destination = Join-Path (Get-Location) \"docs/evidence/ECS-Relations-2026-10-19/$series/handwritten-order.json\"\n[pscustomobject]@{Series=$series;SourceCommit='3b582fe541d86d7f556b3f9d6854962d292454ef';Required=$false;Quantiles='R7, raw tick precision';BoundaryFields=@{Query='QueryTicks';Consume='ConsumeTicks'};Rows=$rows} |\n    ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $destination -Encoding utf8\n$rows | Format-Table CaseId,Boundary,Side,Position,Samples,MedianTicks,P95Ticks,TotalFrameAllocatedBytes,Gen0,Gen1,Gen2 -AutoSize\nWrite-Output \"ORDER_REPORT $destination\"\n"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T17:07:05.3624445+08:00",
+      "StartedAtUtc": "2026-10-19T17:23:59.1783635+08:00",
+      "FinishedAtUtc": "2026-10-19T17:24:00.9430813+08:00"
+    },
+    "Stdout": "\r\nCaseId                            Boundary Side Position Samples MedianTicks  P95Ticks TotalFrameAllocatedBytes Gen0 Ge\r\n                                                                                                                     n1\r\n------                            -------- ---- -------- ------- -----------  -------- ------------------------ ---- --\r\ndefault-large-dynamic50-control   Query    H1   First        128   279630.00 298908.80                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Query    H1   Second       128   278384.00 304217.55                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Query    H2   First        128   277758.50 301682.30                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Query    H2   Second       128   280328.00 305473.30                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Consume  H1   First        128    34270.50  38143.65                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Consume  H1   Second       128    34158.50  37408.80                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Consume  H2   First        128    34269.50  37452.50                     0.00 0.00 ��0\r\ndefault-large-dynamic50-control   Consume  H2   Second       128    33604.00  37344.75                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Query    H1   First        128   263168.00 280610.35                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Query    H1   Second       128   263021.50 275026.60                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Query    H2   First        128   262821.50 276927.90                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Query    H2   Second       128   263316.50 278458.10                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Consume  H1   First        128       28.00     37.65                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Consume  H1   Second       128       28.00     35.65                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Consume  H2   First        128       27.50     34.00                     0.00 0.00 ��0\r\nfinite-large-mask1-mutual-control Consume  H2   Second       128       28.00     34.00                     0.00 0.00 ��0\r\n\r\nORDER_REPORT F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\docs\\evidence\\ECS-Relations-2026-10-19\\handwritten-native-r32\\handwritten-order.json\r\n",
+    "Stderr": ""
+  }
+]

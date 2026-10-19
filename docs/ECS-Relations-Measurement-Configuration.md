@@ -62,6 +62,8 @@ JIT在同一Release输出目录以PublishAot=false、SelfContained=false及实�
 
 测量前先执行第一侧Query与Consume，立即保存其完整Entity身份行和真实contact/depth值，再执行第二侧并逐项核对；这些物化与比较均在Verify阶段完成。持续更新核对覆盖完整八帧周期。原始记录包含 ticks、先后顺序、输出数、接触次数／深度、全线程与当前线程分配、GC、Managed/WorkingSet。median及R-7 p95按原始精度计算。用户于2026-10-19确定最终每项扩展/手写median与p95均≤1.01，报告以ApprovedRatioLimit=1.01及ApprovedPassed单列这一口径；原生报告既有Passed继续保存≤1.00的严格对照，原始样本保持原值。H1/H2同函数波动在独立中性报告中单列。融合的遍历、筛选和输出属于同一个Query边界。
 
+第三个分析入口[Write-MeasurementReport.ps1](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/Write-MeasurementReport.ps1)在同一任务内输出严格与批准两组列，并以approved-summary.json记录Required指标的两种计数；其ApprovedRatioLimit默认值为1.01。
+
 机器配置版的allocation起始计数位于before-Managed/WorkingSet/CPU观察之后，结束计数紧跟实际frame工作并先于after观察，记录当前及全部线程的实际工作分配。r24及以前系列的FrameAllocatedBytes同时包含before-WorkingSet观察的分配；其原始值和原scope随历史系列保留。elapsed查询/整帧时钟与单帧采样边界继续按原定义执行。
 
 内存按实际值数组payload记录Live、Addressed与Capacity；Tree.NodeCount为包含复用地址的范围，存活二叉拓扑由LeafCount形成。叶映射单列有效键值payload及entry容量，分区四数组、访问数组、输出容量、接触累计、维护访问与已有ECS键桶分列。对象头、字典管理、查询／观察者／Scheduler和租用句柄同时进入真实分配与进程内存指标。

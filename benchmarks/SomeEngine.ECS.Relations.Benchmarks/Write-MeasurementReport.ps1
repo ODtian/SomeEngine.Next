@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory)][string]$Series,
-    [string]$Destination = 'docs/evidence/ECS-Relations-2026-10-19'
+    [string]$Destination = 'docs/evidence/ECS-Relations-2026-10-19',
+    [double]$ApprovedRatioLimit = 1.01
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -22,8 +23,8 @@ $lines.Add("# $Series measurements")
 $lines.Add('')
 $lines.Add('E/H ratios use the original double precision values. Each row includes its actual source commit, backend and public queue command in index.json. Raw JSON includes all paired samples, variance, throughput, allocations, cold execution, memory and equivalent results.')
 $lines.Add('')
-$lines.Add('| Case | Boundary | Required | E median ticks | H median ticks | E/H median | E/H p95 | Pass |')
-$lines.Add('| --- | --- | --- | --- | --- | --- | --- | --- |')
+$lines.Add("| Case | Boundary | Required | E median ticks | H median ticks | E/H median | E/H p95 | Pass <=1.00 | Pass <=$ApprovedRatioLimit |")
+$lines.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- |')
 foreach ($submission in $submissions) {
     $reportId = [string]@($submission.CaseId)[0]
     $report = Get-Content -Raw -LiteralPath $submission.Report | ConvertFrom-Json
@@ -53,6 +54,8 @@ foreach ($submission in $submissions) {
         $metric = [pscustomobject]@{
             CaseId = $reportId; Class = $report.Input.Class; Boundary = $comparison.Boundary; Required = $comparison.Required
             Equal = $report.Equivalence.Equal; Passed = $comparison.Passed; SourceCommit = $submission.SourceCommit
+            ApprovedRatioLimit = $ApprovedRatioLimit
+            ApprovedPassed = $comparison.MedianRatio -le $ApprovedRatioLimit -and $comparison.P95Ratio -le $ApprovedRatioLimit
             Backend = $submission.Backend; QueueId = $submission.QueueId; Frequency = $report.Device.StopwatchFrequency
             Machine = $report.Device.Machine.Configuration; MainThreadMask = $report.Device.Machine.MainThreadMask
             ProcessMask = $report.Device.Machine.ProcessMask; ProcessPriority = $report.Device.Machine.ProcessPriority
@@ -71,7 +74,7 @@ foreach ($submission in $submissions) {
         $metrics.Add($metric)
         $median = ([double]$metric.MedianRatio).ToString('G17', [Globalization.CultureInfo]::InvariantCulture)
         $p95 = ([double]$metric.P95Ratio).ToString('G17', [Globalization.CultureInfo]::InvariantCulture)
-        $lines.Add("| $($metric.CaseId) | $($metric.Boundary) | $($metric.Required) | $($metric.RelationMedianTicks) | $($metric.HandwrittenMedianTicks) | $median | $p95 | $($metric.Passed) |")
+        $lines.Add("| $($metric.CaseId) | $($metric.Boundary) | $($metric.Required) | $($metric.RelationMedianTicks) | $($metric.HandwrittenMedianTicks) | $median | $p95 | $($metric.Passed) | $($metric.ApprovedPassed) |")
     }
     $sides = if ($control) { @('FirstHandwritten', 'SecondHandwritten') } else { @('Relation', 'Handwritten') }
     foreach ($side in $sides) {
@@ -131,12 +134,32 @@ foreach ($submission in $submissions) {
 }
 $required = @($metrics | Where-Object Required)
 $passed = @($required | Where-Object Passed)
+$approved = @($required | Where-Object ApprovedPassed)
 $lines.Add('')
-$lines.Add("Required metrics: $($passed.Count)/$($required.Count) pass. Case reports: $formalCases.")
+$lines.Add("Required metrics: $($passed.Count)/$($required.Count) pass <=1.00; $($approved.Count)/$($required.Count) pass <=$ApprovedRatioLimit. Case reports: $formalCases.")
 $lines.Add('')
 $lines.Add('Memory.csv records each actual live/addressed/capacity payload and count separately. Cold.csv preserves seven alternating setup/index/first-query/first-consumption pairs per case. Metrics.csv records both distributions and throughput; raw compressed JSON preserves the individual frame allocation and process-memory readings.')
 $lines | Set-Content -LiteralPath (Join-Path $evidence 'summary.md') -Encoding utf8
 $metrics | Export-Csv -LiteralPath (Join-Path $evidence 'metrics.csv') -NoTypeInformation -Encoding utf8
+if ($required.Count -gt 0) {
+    [pscustomobject]@{
+        Summary = [pscustomobject]@{
+            Series = $Series; SourceCommit = $submissions[0].SourceCommit
+            ApprovedRatioLimit = $ApprovedRatioLimit; StrictRatioLimit = 1.0
+            Cases = $formalCases; Equal = @($metrics | Where-Object Equal | Select-Object -ExpandProperty CaseId -Unique).Count
+            Required = $required.Count; StrictPassed = $passed.Count
+            ApprovedPassed = $approved.Count; ApprovedUnmet = $required.Count - $approved.Count
+        }
+        Classes = @($required | Group-Object Class | ForEach-Object {
+            [pscustomobject]@{
+                Class = $_.Name; Required = $_.Count
+                StrictPassed = @($_.Group | Where-Object Passed).Count
+                ApprovedPassed = @($_.Group | Where-Object ApprovedPassed).Count
+            }
+        })
+        Metrics = $required
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidence 'approved-summary.json') -Encoding utf8
+}
 $memory | Export-Csv -LiteralPath (Join-Path $evidence 'memory.csv') -NoTypeInformation -Encoding utf8
 $cold | Export-Csv -LiteralPath (Join-Path $evidence 'cold.csv') -NoTypeInformation -Encoding utf8
 if ($processors.Count -gt 0) {
@@ -165,7 +188,7 @@ if ($controlMetrics.Count -gt 0) {
     }
     $controlLines | Set-Content -LiteralPath (Join-Path $evidence 'control-summary.md') -Encoding utf8
 }
-Write-Output "$Series`: cases=$($submissions.Count); required=$($required.Count); passed=$($passed.Count); $evidence"
+Write-Output "$Series`: cases=$($submissions.Count); required=$($required.Count); passed=$($passed.Count); approved=$($approved.Count); approvedRatioLimit=$ApprovedRatioLimit; $evidence"
 foreach ($group in ($required | Group-Object Class)) {
     Write-Output ("CLASS {0}: {1}/{2}" -f $group.Name, @($group.Group | Where-Object Passed).Count, $group.Count)
 }

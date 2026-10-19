@@ -26,6 +26,37 @@
 
 前序完整`matrix-r15`对应源码`cc08ae37b03e7d9066adbd78207a6e8249a4b1d1`，126项中99项通过；其[原精度表](evidence/ECS-Relations-2026-10-19/matrix-r15/summary.md)与[原始报告](evidence/ECS-Relations-2026-10-19/matrix-r15/index.json)保留。后续受影响子集按各自完整系列保存，结果由其实际源码和原始门槛确定。
 
+## 同函数波动
+
+独立系列`handwritten-native-r32`使用同一C#源码`3b582fe541d86d7f556b3f9d6854962d292454ef`与同一NativeAOT产物。H1和H2分别持有自己的侧状态，顺序复用相同真实工作区，并执行同一个独立手写类型。每侧32×8帧，先运行与后运行各128帧，16次预热与7对冷构建沿正式配置执行。两项实际结果等价，Required=false；[原始报告](evidence/ECS-Relations-2026-10-19/handwritten-native-r32/index.json)、[中性汇总](evidence/ECS-Relations-2026-10-19/handwritten-native-r32/control-summary.md)与[逐顺序分布](evidence/ECS-Relations-2026-10-19/handwritten-native-r32/handwritten-order.json)保存独立诊断。
+
+| 场景 | 边界 | H1 median ticks | H2 median ticks | median H1/H2 | H1 p95 ticks | H2 p95 ticks | p95 H1/H2 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| default-large-dynamic50 | Query | 279085.5 | 279357.5 | 0.9990263372202286 | 302176 | 304618 | 0.9919834021627087 |
+| finite-large-mask1-mutual | Query | 263141 | 262912.5 | 1.0008691104454903 | 278763.25 | 277829.5 | 1.003360874205223 |
+| default-large-dynamic50 | Consume | 34238 | 33938.5 | 1.0088247860099886 | 38115 | 37440.5 | 1.0180152508647053 |
+| finite-large-mask1-mutual | Consume | 28 | 28 | 1 | 36 | 34 | 1.0588235294117647 |
+
+计时频率为10000000 ticks/s，两项两侧帧内分配总量均0，GC0/1/2均为0。Default两端类型均为HandwrittenDefaultSide，finite两端均为HandwrittenMutualCandidatesSide。Consume记录真实接触累计；finite本项为零输出，保留其28 tick的实际边界。逐顺序统计由每帧QueryTicks和ConsumeTicks投影，两个边界沿同一真实帧顺序。各项median/p95与正式EH结果分别呈现。
+
+独占准备于08:36:34.6373061Z开始、08:36:37.6281879Z结束，最后case提交08:36:36.2493426Z；两个case分别执行于08:38:20.4200084Z–08:38:35.7183983Z和08:46:16.5186382Z–08:46:35.3059396Z。最终分析于08:51:27.9378760Z结束，监听事件08:51:27.9383666Z释放保护窗口。[完整边界审计](evidence/ECS-Relations-2026-10-19/handwritten-native-r32/queue-boundaries.json)与[命令、stdout、stderr](evidence/ECS-Relations-2026-10-19/commands-handwritten-native-r32.json)保留实际调度和采样边界。
+
+## 正式3b读取状态的编译证据
+
+正式产物的默认配对核心由实际World回调调用位置选定。两份完整机器码及后续文本统计保存在[当前核心证据](evidence/ECS-Relations-2026-10-19/commands-native-r32-core.json)。原读取任务7704f5da已输出两个完整函数，后置统计的变量覆盖使总退出码为1；ee23bbaf继续读取原stdout完成修正统计。下表的代码位置采用同一obj的`.managedcode$I`节偏移。
+
+| 同一要素 | 关系Required核心 | 独立手写核心 |
+| --- | --- | --- |
+| 函数入口 | 0x1d49c0 | 0x15e5e0 |
+| 入口栈 / 初始化 | 920B / 848B | 920B / 848B |
+| 双循环热区 | 0x1d4a75..0x1d4d16 | 0x15e698..0x15e939 |
+| 热区指令 / 字节 | 137 / 673B | 137 / 673B |
+| 热区起点mod32 / mod64 | 21 / 53 | 24 / 24 |
+| 每outer的剩余行枚举值复制 | 200B | 200B |
+| 行推进 / chunk推进 / 列绑定 | 0xd8e0 / 0x154d40 / 0x161600 | 0xd8e0 / 0x154d40 / 0x161600 |
+
+组件引用、Kind短路、完整Entity顺序、输出字段以及共同调用逐项对应；实际代码地址与分支边界各自保留。Current重构针对这组共有枚举数据：当前位置字段作为主要持有处，QueryRow与QueryChunkView在读取Current时形成，后续产物记录实际复制量、栈和测量结果。
+
 ## 测量边界
 
 | 名称 | 开始 | 完成 | 实际工作 |
@@ -48,7 +79,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 
 ## 对照算法与共同内核
 
-两侧各持自己的 World、成员查询、索引、树/摘要、观察者、Scheduler、输出和接触累计。固定输入、身份创建顺序、业务值、遍历顺序、摘要布局、分区/线程配置、输出格式、采样与消费相同。
+静态warm顺序复用同一World、成员查询、候选与pair/contact工作数组；每侧持自己的计数、索引、树/摘要、维护观察者和作业输出资源。cold和持续更新各自持有实际构建的数据。固定输入、身份创建顺序、业务值、遍历顺序、摘要布局、分区/线程配置、输出格式、采样与消费相同，报告分别记录共同工作区与每侧资源。
 
 | 工作 | 扩展入口/独立部分 | 手写入口/独立部分 | 共同具体内核 |
 | --- | --- | --- | --- |
