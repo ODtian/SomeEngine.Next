@@ -19,6 +19,10 @@
 
 两个标量读取替代原先整体 `Read` 投影。单向许可只读取第一位置的 AllowedCategories 和第二位置的 Categories，双方许可在正向成立后读取反向所需字段。具体读取器以 `ref TReader` 进入静态许可调用，其状态沿原具体实例传递。自定义许可在自己的两个 Matches 入口保持相同算法，空间未知组继续调用其具体许可。
 
+`ICategoryPermission.Evaluate<TPermission,TRelation,TComponent,TReader,TOutput,TResult>` 把具体匹配结果交给 `ICategoryPermissionOutput<TOutput>.Matched/Unmatched`。默认实现调用该具体许可的泛型 Matches；库内单向与双方实现按方向判断后直接进入对应结果回调。自定义许可沿其原有算法形成结果。`TOutput` 以 ref 进入回调，结果状态继续由原 BitmapFilterOutput 持有。
+
+末端身份输出由同一 BitmapFilterOutput 保存当前pair并直接消费许可回调。需要向后续筛选转发组件行时，静态 ReadsComponentRows 选择原有Matches和借用行转发，行的有效期继续限定为当前Add。Where/Except由现有选择类型决定匹配或其余行的输出，提前结束继续返回原输出的 bool。
+
 `BitmapRelationGenerator` 读取这三个类型符号，生成接受语义实例与具体实现实例的 `Where`、`Except`。返回类型为 `RelationQuery<BitmapFilter<TEnumerable,TRelation,TImplementation,TComponent,TPermission>,(Entity,Entity)>`，完整保留枚举、语义、读取器、组件、操作及输出的具体类型。`BitmapFilter` 保存普通查询描述；临时 `BitmapRelation` 在回调中通过 `TryReadRef<TComponent>()` 取得组件只读引用，再进入具体许可的泛型标量读取操作。
 
 位筛选补充组件的可选读取，参与集合保持原有成员含义。某个位置缺少该组件时关系判断为 false，`Except` 因而保留该行。计数、存在性、结果输出和提前结束沿用统一关系流程。

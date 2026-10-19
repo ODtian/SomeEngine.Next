@@ -20,6 +20,7 @@ public partial class World
         return false;
     }
 
+    [MethodImpl(MethodImplOptions.NoInlining)]
     internal bool ContainsEntityQuery(QueryState query, Entity entity, uint last) =>
         TryGetEntityQueryRecord(query, entity, last, out _, out _);
 
@@ -27,9 +28,10 @@ public partial class World
     private bool TryGetEntityQueryRecord(QueryState query, Entity entity, uint last,
         out EntityRecord record, out QueryArchetypeMatch match)
     {
-        if (_entities.Store.IsAlive(entity))
+        EntityStore entities = _entities.Store;
+        if (entities.IsAlive(entity))
         {
-            record = _entities.Store.GetRecordReadOnly(entity);
+            record = entities.GetRecordReadOnly(entity);
             if (record.Archetype is not null && query.TryGetMatch(record.Archetype, out match) &&
                 match.MatchesChunkFilter(record.Chunk!, last) &&
                 match.MatchesRow(record.Chunk!, record.RowInChunk, last))

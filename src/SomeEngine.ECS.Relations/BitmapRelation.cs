@@ -35,4 +35,26 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
         return TPermission.Matches<TRelation, TComponent, TImplementation>(in _relation, ref _implementation,
             in firstValue.Value, in secondValue.Value);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool Evaluate<TOutput, TResult>(in (Entity, Entity) pair, scoped ref TOutput output, scoped ref TResult result)
+        where TOutput : allows ref struct
+        where TResult : struct, ICategoryPermissionOutput<TOutput>, allows ref struct
+    {
+        if (!_query.TryGetRow(pair.Item1, out var first) || !_query.TryGetRow(pair.Item2, out var second))
+            return result.Unmatched(ref output);
+        return Evaluate(in first, in second, ref output, ref result);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool Evaluate<TOutput, TResult>(scoped in QueryRow first, scoped in QueryRow second,
+        scoped ref TOutput output, scoped ref TResult result)
+        where TOutput : allows ref struct
+        where TResult : struct, ICategoryPermissionOutput<TOutput>, allows ref struct
+    {
+        if (!first.TryReadRef<TComponent>(out var firstValue) || !second.TryReadRef<TComponent>(out var secondValue))
+            return result.Unmatched(ref output);
+        return TPermission.Evaluate<TPermission, TRelation, TComponent, TImplementation, TOutput, TResult>(
+            in _relation, ref _implementation, in firstValue.Value, in secondValue.Value, ref output, ref result);
+    }
 }

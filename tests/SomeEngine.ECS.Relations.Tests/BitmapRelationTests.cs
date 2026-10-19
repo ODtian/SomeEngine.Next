@@ -8,6 +8,25 @@ namespace SomeEngine.ECS.Relations.Tests;
 public sealed class BitmapRelationTests
 {
     [Fact]
+    public void CustomPermissionsKeepTheirMatchAlgorithmThroughResultCallbacks()
+    {
+        using var world = new World();
+        var first = world.CreateEntity(new CollisionLayer
+            { Categories = CollisionCategory.Character, AllowedCategories = CollisionCategory.Character | CollisionCategory.Scenery });
+        var second = world.CreateEntity(new CollisionLayer { Categories = CollisionCategory.Scenery });
+        world.CreateEntity(new CollisionLayer { Categories = CollisionCategory.Scenery | CollisionCategory.Sensor });
+        var layers = world.Query(world.QueryDefinition().All<CollisionLayer>());
+        var rows = new List<(Entity, Entity)>();
+        var output = new PairList(rows);
+
+        world.Within(layers).Where(default(WholeCategoryContacts), default(WholeCategoryBitmap)).Enumerate(ref output);
+
+        Assert.Equal([(first, second)], rows);
+        Assert.Equal(2, world.Within(layers).Except(default(WholeCategoryContacts), default(WholeCategoryBitmap)).Count());
+        world.ReleaseQuery(layers);
+    }
+
+    [Fact]
     public void OneWayBitmapUsesFirstMaskAndSecondCategories()
     {
         using var world = new World();
@@ -227,5 +246,36 @@ public sealed class BitmapRelationTests
             pairs.Add(pair);
             return true;
         }
+    }
+}
+
+// Business example for a custom permission that requires the complete target category set.
+public readonly struct WholeCategoryContacts : IRelation<CollisionLayer, CollisionLayer>
+{
+    public bool Matches(in CollisionLayer first, in CollisionLayer second) =>
+        second.Categories != 0 && (first.AllowedCategories & second.Categories) == second.Categories;
+}
+
+public readonly struct WholeCategoryBitmap : IBitmapRelation<WholeCategoryContacts, CollisionLayer, WholeCategoryPermission>
+{
+    public ulong ReadCategories(in WholeCategoryContacts relation, in CollisionLayer component) => (ulong)component.Categories;
+    public ulong ReadAllowedCategories(in WholeCategoryContacts relation, in CollisionLayer component) => (ulong)component.AllowedCategories;
+}
+
+public readonly struct WholeCategoryPermission : ICategoryPermission
+{
+    public static bool RequiresBothDirections => false;
+
+    public static bool Matches(in CategoryBits first, in CategoryBits second) =>
+        second.Categories != 0 && (first.AllowedCategories & second.Categories) == second.Categories;
+
+    public static bool Matches<TRelation, TComponent, TReader>(in TRelation relation, ref TReader reader,
+        in TComponent first, in TComponent second)
+        where TRelation : struct
+        where TComponent : struct
+        where TReader : struct, ICategoryBitsReader<TRelation, TComponent>
+    {
+        ulong categories = reader.ReadCategories(in relation, in second);
+        return categories != 0 && (reader.ReadAllowedCategories(in relation, in first) & categories) == categories;
     }
 }

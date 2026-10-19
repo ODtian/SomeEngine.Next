@@ -29,18 +29,17 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
         bool required = members.Requires<TFirst>() &&
             (typeof(TFirst) == typeof(TSecond) || members.Requires<TSecond>());
         if (exclude)
-            return required ? Enumerate<ExceptSelection, RequiredRelationComponents, TOutput>(members, ref output)
-                : Enumerate<ExceptSelection, OptionalRelationComponents, TOutput>(members, ref output);
-        return required ? Enumerate<WhereSelection, RequiredRelationComponents, TOutput>(members, ref output)
-            : Enumerate<WhereSelection, OptionalRelationComponents, TOutput>(members, ref output);
+            return required ? Enumerate<ExceptSelection, RequiredRelationComponents, TOutput>(members, relation, ref output)
+                : Enumerate<ExceptSelection, OptionalRelationComponents, TOutput>(members, relation, ref output);
+        return required ? Enumerate<WhereSelection, RequiredRelationComponents, TOutput>(members, relation, ref output)
+            : Enumerate<WhereSelection, OptionalRelationComponents, TOutput>(members, relation, ref output);
     }
 
-    private bool Enumerate<TSelection, TPresence, TOutput>(QueryCursor members, ref TOutput output)
+    private static bool Enumerate<TSelection, TPresence, TOutput>(QueryCursor members, TRelation predicate, ref TOutput output)
         where TSelection : struct, IRelationSelection
         where TPresence : struct, IRelationComponentPresence
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        TRelation predicate = relation;
         var firstRows = members.ReadRows<TFirst, TSecond>();
         while (firstRows.MoveNext(out var first, out var firstValue, out var secondValue))
         {

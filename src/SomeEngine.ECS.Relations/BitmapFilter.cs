@@ -45,7 +45,7 @@ public readonly struct BitmapFilter<TEnumerable, TRelation, TImplementation, TCo
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         var relation = new BitmapRelation<TRelation, TImplementation, TComponent, TPermission>(queries.Access, _relation, _implementation);
-        var filtered = new RelationFilterOutput<BitmapRelation<TRelation, TImplementation, TComponent, TPermission>, TOutput, (Entity, Entity), TSelection>(relation, output);
+        var filtered = new BitmapFilterOutput<TRelation, TImplementation, TComponent, TPermission, TOutput, TSelection>(relation, output);
         try
         {
             return _enumerable.Enumerate(queries, ref filtered);
