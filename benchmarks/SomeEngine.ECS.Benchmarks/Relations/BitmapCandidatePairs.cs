@@ -33,19 +33,11 @@ public readonly struct FixedCandidatePairs : IQueryRelationEnumerable<(Entity, E
     private static bool Enumerate<TOutput>((Entity, Entity)[] pairs, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        TOutput filtered = output;
-        try
+        foreach (var pair in pairs)
         {
-            foreach (var pair in pairs)
-            {
-                if (!filtered.Add(in pair))
-                    return false;
-            }
-            return true;
+            if (!output.Add(in pair))
+                return false;
         }
-        finally
-        {
-            output = filtered;
-        }
+        return true;
     }
 }
