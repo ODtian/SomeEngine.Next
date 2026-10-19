@@ -34,7 +34,7 @@
 
 `EntityOrder.Compare` 先比较 Index，再比较 Generation，提供三向排序结果；`EntityOrder.Precedes` 按同一完整身份顺序直接判断先后。`Within` 从当前行枚举器复制剩余范围，一次访问每个候选对，再排列输出身份。`Between` 通过相反输入的成员视图识别已有反向组合，保留只有一个输入方向的候选。排序后的身份行决定随后关系语义的输入位置。
 
-二元普通语义另有接收 `EntityPairsWithin` 的生成薄入口，返回共享 `ComponentPairsWithin<TRelation,TFirst,TSecond>`。该枚举缓存外层行的组件引用，内层直接读取已经取得的行；身份换位时组件位置一同换位。Where、Except、计数、存在性与提前结束共用这条具体链。
+二元普通语义另有接收 `EntityPairsWithin` 的生成薄入口，返回共享 `ComponentPairsWithin<TRelation,TFirst,TSecond,TSelection>`。生成Where选择WhereSelection，Except选择ExceptSelection，IRelationSelection.RequiresMatch静态声明接受匹配结果或其余结果。普通组合值由其具体选择类型确定进入的实现。该枚举缓存外层行的组件引用，内层直接读取已经取得的行；身份换位时组件位置一同换位。Where、Except、计数、存在性与提前结束共用这条具体链。
 
 二元 `IRelation<TFirst,TSecond>.IsSymmetric` 是关系作者提供的静态语义事实，默认值为 false。当两个组件类型相同且作者声明 true，交换两个输入保持 Matches 结果，Within 因此按自然行顺序匹配，再将接受的身份对排列成完整 Entity 升序。默认运动规则的业务例子声明这一事实。其余关系按排序后的身份确定组件位置再调用 Matches。该能力由固定二元接口持有，生成入口继续薄转发。
 

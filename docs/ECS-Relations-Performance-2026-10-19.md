@@ -87,6 +87,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | bb799424 | typed point已通过RAX返回；循环首引用/count仍有栈存取，默认仍两段32B描述 | 深point直接借用原QueryCursor输入；轻只读选择直接读取原readonly描述字段 | [optimized-19](evidence/ECS-Relations-2026-10-19/optimized-19/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r19-r20.json) |
 | 81478391 | 许可/首引用/count热段已对应手写，输出准备仍有两段24B，候选loop展开在World作用域 | 薄入口与独立数组core分开；filtered直接形成现有字段；已有读取轻复用与新定义创建分开 | [optimized-20](evidence/ECS-Relations-2026-10-19/optimized-20/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r20-r21.json) |
 | 9f749801 | 独立数组core接受热段30条/101B，手写29条/100B；每候选多一次输出引用探测及提前地址形成 | core以单一局部具体输出执行整个候选循环，finally回写原输出；普通调用、异常和提前结束沿同一回写范围 | [optimized-21](evidence/ECS-Relations-2026-10-19/optimized-21/summary.md)、[实际四函数与7项行为](evidence/ECS-Relations-2026-10-19/commands-r21-r22.json) |
+| 0ac01593 | 单向28/29条、双方31/32条热段已直接对应；默认准备仍有第一份32B metadata值及固定初始化，Where/Except在描述中为bool | BitmapFilter与ComponentPairsWithin以TSelection闭合接受选择；生成Where/Except直接返回对应普通组合值，既有过滤输出与许可继续复用 | [受控完整系列](evidence/ECS-Relations-2026-10-19/controlled-r22/summary.md)、[后继五函数与10项行为](evidence/ECS-Relations-2026-10-19/commands-r22-r23.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -151,6 +152,12 @@ r20 单向接受热段的扩展为28条/105B，手写为29条/100B：首组件�
 r21 的30项反馈中11项通过：finite 3/18、default 6/9、character 2/3。独立core使World作用域状态留在调用侧；caller准备从360B降至280B，新增core为88B，二者峰值368B。filtered.Output从原输出直接复制一次24B。默认WithOptionalRead命中已有读取定义时在轻入口返回原值，创建路径独立；实际描述仍为两段32B、输出一段24B。
 
 原始调度记录补充了测量控制层的实际活动：r20提交30项用时9.1070587秒，其中13项在最后一次提交前开始执行。后续完整系列将Submit-Measurements自身作为公共队列独占准备任务：准备期间直接取得固定场景列表，显式使用同一session依序提交全部case及collect/export/report，然后退出。case在准备任务结束后开始，报告读取与计算沿预排CPU任务完成。每份系列保留queue-submission.json中的准备起止、session、源码和报告任务编号；原有系列保留其实际时间戳与原始判定。
+
+首个[受控完整系列controlled-r22](evidence/ECS-Relations-2026-10-19/controlled-r22/summary.md)对应源码0ac0159349d41d46fa8197b86a4e1bd148debf4a，108项均完成等价核对，126项严格指标通过108项。有限类别4/18、默认配对8/9、角色键11/12、bitmap加空间17/18、键加空间5/6；完整配对主/完整帧18/18、持续更新主/完整帧18/18、串并行调度输出18/18、物理消费9/9。每项原精度median/p95及18个剩余判断随同原始样本保存。
+
+[队列边界审计](evidence/ECS-Relations-2026-10-19/controlled-r22/queue-boundaries.json)确认最后case提交03:28:27.997716Z、独占准备完成03:28:29.2372729Z、首case开始03:28:29.2382396Z；末case完成03:40:42.8891869Z，首分析任务03:40:42.8898856Z开始。测量733.6509473秒，108case及3个分析任务同session、退出码均为0。[完整命令与输出](evidence/ECS-Relations-2026-10-19/commands-controlled-r22.json)保留独占准备的result/stdout/stderr及r22实际候选函数。
+
+r22 单向候选的扩展接受热段为28条/93B，手写为29条/100B；逐候选输出引用探测与提前Output地址形成已收敛，首引用跨第二点读取保存在寄存器，count为单次读取及递增。原具体输出局部56B在进入core时形成一次，并沿正常/finally路径回写；core准备为136B。该事实与首轮受控结果共同记录，后继定位继续按实际剩余路径进行。
 
 ## 执行与复现
 

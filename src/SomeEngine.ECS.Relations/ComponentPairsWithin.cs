@@ -5,11 +5,12 @@ using System.Runtime.CompilerServices;
 namespace SomeEngine.ECS.Relations;
 
 /// <summary>Within-query pairing that binds its existing component rows before emitting identities.</summary>
-public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
-    EntityPairsWithin source, TRelation relation, bool exclude) : IQueryRelationEnumerable<(Entity, Entity)>
+public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond, TSelection>(
+    EntityPairsWithin source, TRelation relation) : IQueryRelationEnumerable<(Entity, Entity)>
     where TRelation : struct, IRelation<TFirst, TSecond>
     where TFirst : struct
     where TSecond : struct
+    where TSelection : struct, IRelationSelection
 {
     public World World => source.World;
     public int QueryCount => 1;
@@ -28,15 +29,11 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
         QueryCursor members = queries.First;
         bool required = members.Requires<TFirst>() &&
             (typeof(TFirst) == typeof(TSecond) || members.Requires<TSecond>());
-        if (exclude)
-            return required ? Enumerate<ExceptSelection, RequiredRelationComponents, TOutput>(members, relation, ref output)
-                : Enumerate<ExceptSelection, OptionalRelationComponents, TOutput>(members, relation, ref output);
-        return required ? Enumerate<WhereSelection, RequiredRelationComponents, TOutput>(members, relation, ref output)
-            : Enumerate<WhereSelection, OptionalRelationComponents, TOutput>(members, relation, ref output);
+        return required ? Enumerate<RequiredRelationComponents, TOutput>(members, relation, ref output)
+            : Enumerate<OptionalRelationComponents, TOutput>(members, relation, ref output);
     }
 
-    private static bool Enumerate<TSelection, TPresence, TOutput>(QueryCursor members, TRelation predicate, ref TOutput output)
-        where TSelection : struct, IRelationSelection
+    private static bool Enumerate<TPresence, TOutput>(QueryCursor members, TRelation predicate, ref TOutput output)
         where TPresence : struct, IRelationComponentPresence
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {

@@ -75,7 +75,8 @@ public sealed class RelationGenerator : IIncrementalGenerator
             {
                 foreach (string operation in new[] { "Where", "Except" })
                 {
-                    string binding = $"global::{RelationsNamespace}.ComponentPairsWithin<{relation}, {componentTypes}>";
+                    string selection = $"global::{RelationsNamespace}.{operation}Selection";
+                    string binding = $"global::{RelationsNamespace}.ComponentPairsWithin<{relation}, {componentTypes}, {selection}>";
                     text.Append("    ").Append(access).Append(" static global::").Append(RelationsNamespace)
                         .Append(".RelationQuery<").Append(binding).Append(", ").Append(rowType).Append("> ").Append(operation);
                     if (parameters.Length > 0)
@@ -85,8 +86,7 @@ public sealed class RelationGenerator : IIncrementalGenerator
                         .Append(rowType).AppendLine("> source,").Append("        ").Append(relation).AppendLine(" relation)");
                     foreach (var parameter in parameters)
                         AppendConstraints(text, parameter);
-                    text.Append("        => new(new ").Append(binding).Append("(source.Enumerable, relation, ")
-                        .Append(operation == "Except" ? "true" : "false").AppendLine("));\n");
+                    text.Append("        => new(new ").Append(binding).AppendLine("(source.Enumerable, relation));\n");
                 }
             }
             text.AppendLine("}");

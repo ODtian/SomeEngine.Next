@@ -23,7 +23,7 @@
 
 末端身份输出先通过BitmapRelation绑定两端组件引用，再把原pair的in参数和当前输出借用交给具体许可及结果操作。身份绑定先取得第一成员行及组件引用，再取得第二成员行及组件引用；原查询的完整成员和版本条件在两次点读取中生效。组件引用绑定与输出借用各在实际消费处形成。需要向后续筛选转发组件行时，静态 ReadsComponentRows 选择原有Matches和借用行转发，行的有效期继续限定为当前Add。Where/Except由现有选择类型决定匹配或其余行的输出，提前结束继续返回原输出的 bool。
 
-`BitmapRelationGenerator` 读取这三个类型符号，生成接受语义实例与具体实现实例的 `Where`、`Except`。返回类型为 `RelationQuery<BitmapFilter<TEnumerable,TRelation,TImplementation,TComponent,TPermission>,(Entity,Entity)>`，完整保留枚举、语义、读取器、组件、操作及输出的具体类型。`BitmapFilter` 保存普通查询描述；临时 `BitmapRelation` 在回调中通过 `TryReadRef<TComponent>()` 取得组件只读引用，再进入具体许可的泛型标量读取操作。
+`BitmapRelationGenerator` 读取这三个类型符号，生成接受语义实例与具体实现实例的 `Where`、`Except`。返回类型为 `RelationQuery<BitmapFilter<TEnumerable,TRelation,TImplementation,TComponent,TPermission,TSelection>,(Entity,Entity)>`，完整保留枚举、语义、读取器、组件、许可、接受选择及输出的具体类型。生成的Where使用WhereSelection，Except使用ExceptSelection；这两个普通值类型通过IRelationSelection.RequiresMatch分别声明接受匹配结果或其余结果，选择在组合类型形成时闭合。`BitmapFilter` 保存原枚举、语义与读取器值；临时 `BitmapRelation` 在回调中通过 `TryReadRef<TComponent>()` 取得组件只读引用，再进入具体许可的泛型标量读取操作。
 
 位筛选补充组件的可选读取，参与集合保持原有成员含义。某个位置缺少该组件时关系判断为 false，`Except` 因而保留该行。计数、存在性、结果输出和提前结束沿用统一关系流程。
 
