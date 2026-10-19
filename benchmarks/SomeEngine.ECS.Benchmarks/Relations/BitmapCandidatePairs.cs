@@ -28,12 +28,8 @@ public readonly struct FixedCandidatePairs : IQueryRelationEnumerable<(Entity, E
     {
         foreach (var pair in _pairs.AsSpan())
         {
-            if (queries.First.TryGetRow(pair.Item1, out var first) && queries.First.TryGetRow(pair.Item2, out var second))
-            {
-                bool continued = output.Add(in pair, in first, in second);
-                if (!continued)
-                    return false;
-            }
+            if (!output.Add(in pair))
+                return false;
         }
         return true;
     }

@@ -32,6 +32,7 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool EnumerateBoundQuery<TOutput>(ref TOutput output, uint? lastSystemVersion)
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
@@ -43,6 +44,13 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
             if (!definition.CanWrite)
                 return EnumerateSingle(definition, ref output, lastSystemVersion);
         }
+        return EnumerateQueries(world, queryCount, ref output, lastSystemVersion);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool EnumerateQueries<TOutput>(World world, int queryCount, ref TOutput output, uint? lastSystemVersion)
+        where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
+    {
         RelationQueryHandles queries = default;
         int acquired = 0;
         var execution = new RelationExecution<TOutput>(Enumerable, queries, queryCount,

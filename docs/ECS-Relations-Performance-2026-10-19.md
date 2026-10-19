@@ -4,6 +4,22 @@
 
 这些优化对应的公开读取、静态事实、许可与借用回调归属见[接口调整表](ECS-Relations-API-Changes-2026-10-19.md)。
 
+## 完整矩阵记录
+
+`matrix-r15` 对应源码 `cc08ae37b03e7d9066adbd78207a6e8249a4b1d1` 的同一NativeAOT产物，108项均完成完整结果核对，126项严格指标中99项通过。[逐项原精度表](evidence/ECS-Relations-2026-10-19/matrix-r15/summary.md)和[原始报告索引](evidence/ECS-Relations-2026-10-19/matrix-r15/index.json)保存每项的实际判断。该轮继续提供后继优化的完整输入，分布、内存、冷执行和队列输出分别保留在同目录。
+
+| 场景类 | 主指标通过/数量 | 额外完整帧通过/数量 |
+| --- | --- | --- |
+| finite | 4/18 | — |
+| default | 1/9 | — |
+| character | 9/12 | — |
+| bitmap-space | 18/18 | — |
+| character-space | 5/6 | — |
+| complete | 9/9 | 9/9 |
+| updates | 8/9 | 9/9 |
+| threads | 18/18 | — |
+| consume | 9/9 | — |
+
 ## 测量边界
 
 | 名称 | 开始 | 完成 | 实际工作 |
@@ -64,6 +80,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | 89a59155 | 许可两方向直接test/je；pair中转有四次int写入、16B重读和回调this读取 | 无状态static abstract结果操作，原pair以scoped in直达输出；默认私有loop仅接members/predicate/output，共同Contains单次取得Store | [optimized-12](evidence/ECS-Relations-2026-10-19/optimized-12/summary.md)、[实际指令与检查](evidence/ECS-Relations-2026-10-19/commands-r12-r13.json) |
 | d361242b | static结果和原身份直接写输出；两端候选loop各展开两大份World匹配 | TryGetEntityQueryRow与Contains保留共同点匹配边界，内部复用同一record helper，具体许可与结果继续内联 | [optimized-13](evidence/ECS-Relations-2026-10-19/optimized-13/summary.md)、[实际原生与分布读取](evidence/ECS-Relations-2026-10-19/commands-r13-r14.json) |
 | 0f4fdf4b | 行匹配保留同一独立入口；Key caller仍形成216B视图，bitmap输出引用跨组件绑定存活 | 键轻入口向静态桶循环仅传具体成员与访问输入；先绑定组件引用，再向具体许可借用唯一输出 | [optimized-14](evidence/ECS-Relations-2026-10-19/optimized-14/summary.md) |
+| cc08ae37 | 默认Bound在轻分支前清1136B回退状态；固定候选先持两份QueryRow跨第二次点读取 | 轻只读选择与完整回退的数据形成分开；固定身份通用绑定先取得第一组件再进入第二次点读取 | [optimized-15](evidence/ECS-Relations-2026-10-19/optimized-15/summary.md)、[实际原生与IL](evidence/ECS-Relations-2026-10-19/commands-r15.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -96,6 +113,14 @@ r13 的16项反馈中8项严格通过。原生读取确认了static结果操作�
 r13 单向mask4小场景的高尾集中在连续时段：扩展后段变慢后，紧随的手写帧也连续变慢；其原精度1.3779131621735523判定仍保存。中规模角色64交错的扩展分布整体右移，median61225/59574.5ticks，两侧先后次序均出现持续差值。所核对的五项每侧248样本均记录GC=0、DataWrite=0及恒定一致的输出量，后续优化据此区分具体执行成本和实际波动。
 
 r14 保留共同点匹配边界后，16项反馈中3项严格通过；单向mask1小规模为0.90920840064620356/0.94650281360586308，中规模角色64交错为0.99643525823937729/0.9909627398585259。双方许可mask4大规模为1.0090796568356213/1.0141933825092542。原生键caller仍构造Access/First共48B并清零其余168B，再独立进入大循环；其具体配对规则只读取两个成员集合。后继将公开入口与桶循环分开，Within沿同一First借用，Between/Product保留各自实际读取范围；语义和实现以scoped in继续保持描述的只读调用含义。
+
+r15 的16项代表反馈中9项严格通过。小/中角色键的median/p95比值分别为0.93889668573896146/0.72199782401740809、0.92901277737097154/0.92179233462713184；大规模角色16交错为1.0002589194514533/1.0174027101224457。小规模mask4单向与双方为0.9789706696181516/0.94767167825777465、0.99105545617173529/0.93550897237590025；大规模mask4双方为0.9885768930983212/0.97329500175662587。两向匹配、自定义结果转发及缺失组件规则由7项公开检查覆盖，键位置、组合和提前结束由5项检查覆盖。
+
+r15 的[实际原生读取](evidence/ECS-Relations-2026-10-19/commands-r15.json)确认键caller只形成24B第一成员输入，并将同一地址传给Within桶循环的三个查询借用；core栈为248B。位图两侧各调用两次同一World行匹配函数，输出在组件引用形成后直接取地址，原输出地址的跨绑定栈存放已收敛。当前固定身份来源先形成两份40B行，再进入组件绑定；手写在第二次点匹配前已形成第一组件的8B借用，二者的实际寿命与frame分别记录在同一输出中。
+
+默认外层的独立读取定位到实际数据形成范围：EnumerateBoundQuery入口为1192B栈，在只读CanWrite条件前清1136B；只读分支随后进入另一个168B栈、清120B的Single。手写入口为104B栈、清56B。双方GetQueryDefinition、WithOptionalRead、AcquireQueryRecord和ReleaseQuery各执行一次。完整回退的数据形成因而需要独立于轻量的单成员选择入口；实际边界与指令由同一原生记录持有。
+
+固定候选的身份数组由当次参与实体形成，有限类别采样保持该成员集合。来源直接转发身份后，通用identity binder依次执行第一成员点读取、第一组件引用、第二成员点读取、第二组件引用；手写保持相同两次公共点读取并直接执行字段位运算。多层固定身份筛选各自绑定的成本进入其完整调用，已经取得行的Within/键/空间来源继续复用查询专用借用输出。
 
 ## 执行与复现
 

@@ -43,9 +43,8 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
     {
         firstValue = default;
         secondValue = default;
-        if (!_query.TryGetRow(pair.Item1, out var first) || !_query.TryGetRow(pair.Item2, out var second))
-            return false;
-        return TryReadComponents(in first, in second, out firstValue, out secondValue);
+        return _query.TryGetRow(pair.Item1, out var first) && first.TryReadRef(out firstValue)
+            && _query.TryGetRow(pair.Item2, out var second) && second.TryReadRef(out secondValue);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

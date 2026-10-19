@@ -21,7 +21,7 @@
 
 `ICategoryPermission.Evaluate<TPermission,TRelation,TComponent,TReader,TItem,TOutput,TResult>` 把具体匹配结果交给 `ICategoryPermissionOutput<TItem,TOutput>.Matched/Unmatched`。默认实现调用该具体许可的泛型 Matches；库内单向与双方实现按方向判断后直接进入对应结果回调。自定义许可沿其原有算法形成结果。具体结果类型为无状态struct，Matched/Unmatched是static abstract操作；输入以scoped in传递，`TOutput`以scoped ref进入，结果状态继续由原BitmapFilterOutput持有。
 
-末端身份输出先通过BitmapRelation绑定两端组件引用，再把原pair的in参数和当前输出借用交给具体许可及结果操作。组件引用绑定与输出借用各在实际消费处形成。需要向后续筛选转发组件行时，静态 ReadsComponentRows 选择原有Matches和借用行转发，行的有效期继续限定为当前Add。Where/Except由现有选择类型决定匹配或其余行的输出，提前结束继续返回原输出的 bool。
+末端身份输出先通过BitmapRelation绑定两端组件引用，再把原pair的in参数和当前输出借用交给具体许可及结果操作。身份绑定先取得第一成员行及组件引用，再取得第二成员行及组件引用；原查询的完整成员和版本条件在两次点读取中生效。组件引用绑定与输出借用各在实际消费处形成。需要向后续筛选转发组件行时，静态 ReadsComponentRows 选择原有Matches和借用行转发，行的有效期继续限定为当前Add。Where/Except由现有选择类型决定匹配或其余行的输出，提前结束继续返回原输出的 bool。
 
 `BitmapRelationGenerator` 读取这三个类型符号，生成接受语义实例与具体实现实例的 `Where`、`Except`。返回类型为 `RelationQuery<BitmapFilter<TEnumerable,TRelation,TImplementation,TComponent,TPermission>,(Entity,Entity)>`，完整保留枚举、语义、读取器、组件、操作及输出的具体类型。`BitmapFilter` 保存普通查询描述；临时 `BitmapRelation` 在回调中通过 `TryReadRef<TComponent>()` 取得组件只读引用，再进入具体许可的泛型标量读取操作。
 
@@ -51,6 +51,8 @@ BitmapCollisionConsumption.CountContacts(bitmap.Pairs, contactCounts);
 ```
 
 单向例子分别使用 `OneWayContacts`、`OneWayContactBitmap`、`HandwrittenBitmapCollision.OneWay`，保留同一输入和消费流程。`HandwrittenBitmapCollision.cs` 在查询回调中直接读取业务组件字段并展开位运算循环；`BitmapCandidatePairs.cs` 保存候选身份及参与查询；`BitmapCollisionConsumption.cs` 提供 Span 输出和逐实体接触次数累加。调用方为每次完整执行提供相同成员与候选数据，统计查询进入、筛选、输出和消费成本。
+
+固定候选来源属于这个业务例子的设计：调用方从参与集合形成有序身份数组，`FixedCandidatePairs` 直接转发其中身份；通用BitmapRelation在实际筛选时交错绑定两端组件。多层固定身份筛选各自在当前读取范围完成绑定，其成本进入完整公共调用。Within、键桶和空间等已经取得组件行的来源继续通过查询专用输出接口复用这些借用行。性能运行器的finite输入从当次成员实体数组形成候选，并在这类采样中保持该集合。
 
 `BitmapRelationTests` 通过真实 World 检查三种实现的单向及双方结果。动力学与头发业务例子组合后，单向许可得到十个实体对，双方许可得到九个实体对；`K–D` 的正向许可成立，反向许可将其从双方结果中筛出。其余九对与字面期望逐行对应。checked World 中的查询同时检查 Count、Any 与 Span 输出提前结束。
 
