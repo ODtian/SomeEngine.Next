@@ -1,0 +1,2234 @@
+[
+  {
+    "CaseId": "finite-small-mask1-oneway",
+    "Source": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "OutputPairs": 520,
+    "Gc": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Groups": [
+      {
+        "Group": "all",
+        "FramesPerSide": 256,
+        "RelationMedian": 3972.0,
+        "HandwrittenMedian": 3977.5,
+        "RelationP95": 4636.75,
+        "HandwrittenP95": 4575.25,
+        "MedianRatio": 0.9986172218730358,
+        "P95Ratio": 1.0134418884213978
+      },
+      {
+        "Group": "E/H",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "H/E",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds0-7",
+        "FramesPerSide": 256,
+        "RelationMedian": 3972.0,
+        "HandwrittenMedian": 3977.5,
+        "RelationP95": 4636.75,
+        "HandwrittenP95": 4575.25,
+        "MedianRatio": 0.9986172218730358,
+        "P95Ratio": 1.0134418884213978
+      },
+      {
+        "Group": "rounds8-15",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds16-23",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds24-31",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      }
+    ],
+    "TopRelation": [
+      {
+        "Round": 8,
+        "Frame": 2,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5847,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 18,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5097,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 12,
+        "Frame": 4,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4996,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 14,
+        "Frame": 3,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4965,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 14,
+        "Frame": 2,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4852,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 12,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4811,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 21,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4742,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 10,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4741,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 15,
+        "Frame": 1,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4730,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 10,
+        "Frame": 2,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4728,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 13,
+        "Frame": 4,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4696,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 14,
+        "Frame": 0,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4660,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 16,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4645,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ],
+    "TopHandwritten": [
+      {
+        "Round": 16,
+        "Frame": 4,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 7356,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 8,
+        "Frame": 1,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 7014,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 21,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5195,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 14,
+        "Frame": 2,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5135,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 29,
+        "Frame": 7,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4937,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 14,
+        "Frame": 3,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4910,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 3,
+        "Frame": 7,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4875,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 25,
+        "Frame": 3,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4835,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 10,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4661,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 2,
+        "Frame": 3,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4628,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 9,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4601,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 23,
+        "Frame": 1,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4586,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 16,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4585,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-small-mask1-mutual",
+    "Source": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "OutputPairs": 0,
+    "Gc": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Groups": [
+      {
+        "Group": "all",
+        "FramesPerSide": 256,
+        "RelationMedian": 4050.0,
+        "HandwrittenMedian": 4080.5,
+        "RelationP95": 4663.75,
+        "HandwrittenP95": 4573.5,
+        "MedianRatio": 0.992525425805661,
+        "P95Ratio": 1.0197332458729638
+      },
+      {
+        "Group": "E/H",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "H/E",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds0-7",
+        "FramesPerSide": 256,
+        "RelationMedian": 4050.0,
+        "HandwrittenMedian": 4080.5,
+        "RelationP95": 4663.75,
+        "HandwrittenP95": 4573.5,
+        "MedianRatio": 0.992525425805661,
+        "P95Ratio": 1.0197332458729638
+      },
+      {
+        "Group": "rounds8-15",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds16-23",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds24-31",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      }
+    ],
+    "TopRelation": [
+      {
+        "Round": 3,
+        "Frame": 3,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5969,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 31,
+        "Frame": 3,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5254,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 9,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5013,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 1,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5003,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 15,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4959,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 30,
+        "Frame": 4,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4894,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 22,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4794,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 13,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4735,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 24,
+        "Frame": 1,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4703,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 4,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4684,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 29,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4680,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 2,
+        "Frame": 2,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4679,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 12,
+        "Frame": 3,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4675,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ],
+    "TopHandwritten": [
+      {
+        "Round": 20,
+        "Frame": 4,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5726,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 19,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5389,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 18,
+        "Frame": 3,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5184,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 12,
+        "Frame": 0,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4997,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 10,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4963,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 28,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4855,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 7,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4769,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 16,
+        "Frame": 2,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4764,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 9,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4717,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 2,
+        "Frame": 0,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4688,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 25,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4686,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 27,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4607,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 12,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4605,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-small-mask4-oneway",
+    "Source": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "OutputPairs": 2048,
+    "Gc": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Groups": [
+      {
+        "Group": "all",
+        "FramesPerSide": 256,
+        "RelationMedian": 4123.0,
+        "HandwrittenMedian": 4129.0,
+        "RelationP95": 4682.75,
+        "HandwrittenP95": 4716.5,
+        "MedianRatio": 0.9985468636473722,
+        "P95Ratio": 0.9928442701155518
+      },
+      {
+        "Group": "E/H",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "H/E",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds0-7",
+        "FramesPerSide": 256,
+        "RelationMedian": 4123.0,
+        "HandwrittenMedian": 4129.0,
+        "RelationP95": 4682.75,
+        "HandwrittenP95": 4716.5,
+        "MedianRatio": 0.9985468636473722,
+        "P95Ratio": 0.9928442701155518
+      },
+      {
+        "Group": "rounds8-15",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds16-23",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds24-31",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      }
+    ],
+    "TopRelation": [
+      {
+        "Round": 19,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5202,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 30,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5159,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 11,
+        "Frame": 1,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5156,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 1,
+        "Frame": 1,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5038,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 25,
+        "Frame": 7,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5005,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 13,
+        "Frame": 7,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4935,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 4,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4908,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 18,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4825,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 15,
+        "Frame": 3,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4823,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 8,
+        "Frame": 0,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4745,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 0,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4737,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 26,
+        "Frame": 0,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4721,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 0,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4685,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ],
+    "TopHandwritten": [
+      {
+        "Round": 30,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5368,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 23,
+        "Frame": 7,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5355,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 17,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5080,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 26,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5041,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 9,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5011,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 13,
+        "Frame": 3,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4979,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 2,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4916,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 3,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4848,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 30,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4825,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 25,
+        "Frame": 1,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4803,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 1,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4774,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 16,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4759,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 7,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4754,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-small-mask4-mutual",
+    "Source": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "OutputPairs": 1008,
+    "Gc": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Groups": [
+      {
+        "Group": "all",
+        "FramesPerSide": 256,
+        "RelationMedian": 4460.0,
+        "HandwrittenMedian": 4510.5,
+        "RelationP95": 5199.25,
+        "HandwrittenP95": 5530.5,
+        "MedianRatio": 0.9888039020064294,
+        "P95Ratio": 0.9401048729771269
+      },
+      {
+        "Group": "E/H",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "H/E",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds0-7",
+        "FramesPerSide": 256,
+        "RelationMedian": 4460.0,
+        "HandwrittenMedian": 4510.5,
+        "RelationP95": 5199.25,
+        "HandwrittenP95": 5530.5,
+        "MedianRatio": 0.9888039020064294,
+        "P95Ratio": 0.9401048729771269
+      },
+      {
+        "Group": "rounds8-15",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds16-23",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds24-31",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      }
+    ],
+    "TopRelation": [
+      {
+        "Round": 24,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 8192,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 25,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 7726,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 27,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 6730,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 16,
+        "Frame": 2,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 6125,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 16,
+        "Frame": 3,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5775,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 28,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5659,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 16,
+        "Frame": 0,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5633,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 9,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5549,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 31,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5498,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 12,
+        "Frame": 2,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5496,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 15,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5444,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 22,
+        "Frame": 1,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5408,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 1,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5245,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ],
+    "TopHandwritten": [
+      {
+        "Round": 25,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 7507,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 24,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 7500,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 21,
+        "Frame": 7,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 6706,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 11,
+        "Frame": 1,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 6424,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 14,
+        "Frame": 1,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 6396,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 12,
+        "Frame": 1,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 6169,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 23,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 6133,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 8,
+        "Frame": 4,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5953,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 25,
+        "Frame": 1,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5762,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 31,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5671,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 9,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5619,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 25,
+        "Frame": 3,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5612,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 28,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5547,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-small-mask8-oneway",
+    "Source": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "OutputPairs": 4096,
+    "Gc": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Groups": [
+      {
+        "Group": "all",
+        "FramesPerSide": 256,
+        "RelationMedian": 4187.0,
+        "HandwrittenMedian": 4157.0,
+        "RelationP95": 4652.25,
+        "HandwrittenP95": 4904.25,
+        "MedianRatio": 1.0072167428433967,
+        "P95Ratio": 0.948615996329714
+      },
+      {
+        "Group": "E/H",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "H/E",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds0-7",
+        "FramesPerSide": 256,
+        "RelationMedian": 4187.0,
+        "HandwrittenMedian": 4157.0,
+        "RelationP95": 4652.25,
+        "HandwrittenP95": 4904.25,
+        "MedianRatio": 1.0072167428433967,
+        "P95Ratio": 0.948615996329714
+      },
+      {
+        "Group": "rounds8-15",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds16-23",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds24-31",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      }
+    ],
+    "TopRelation": [
+      {
+        "Round": 23,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 6078,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 23,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5863,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 0,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5445,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 6,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5277,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 0,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5233,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 7,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5191,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 7,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5190,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 21,
+        "Frame": 4,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5082,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 29,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4912,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 7,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4829,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 6,
+        "Frame": 4,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4732,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 1,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4694,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 21,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4653,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ],
+    "TopHandwritten": [
+      {
+        "Round": 5,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 6195,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 23,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5977,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 19,
+        "Frame": 3,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5376,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 23,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5278,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 23,
+        "Frame": 7,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5183,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 7,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5168,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 6,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5156,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 27,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5116,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 13,
+        "Frame": 1,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5064,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 7,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5027,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 23,
+        "Frame": 1,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4983,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 22,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4964,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 7,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4929,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-small-mask8-mutual",
+    "Source": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "OutputPairs": 4096,
+    "Gc": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Groups": [
+      {
+        "Group": "all",
+        "FramesPerSide": 256,
+        "RelationMedian": 4140.0,
+        "HandwrittenMedian": 4112.0,
+        "RelationP95": 4792.0,
+        "HandwrittenP95": 4679.75,
+        "MedianRatio": 1.0068093385214008,
+        "P95Ratio": 1.0239863240557723
+      },
+      {
+        "Group": "E/H",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "H/E",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds0-7",
+        "FramesPerSide": 256,
+        "RelationMedian": 4140.0,
+        "HandwrittenMedian": 4112.0,
+        "RelationP95": 4792.0,
+        "HandwrittenP95": 4679.75,
+        "MedianRatio": 1.0068093385214008,
+        "P95Ratio": 1.0239863240557723
+      },
+      {
+        "Group": "rounds8-15",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds16-23",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      },
+      {
+        "Group": "rounds24-31",
+        "FramesPerSide": 0,
+        "RelationMedian": 0.0,
+        "HandwrittenMedian": 0.0,
+        "RelationP95": 0.0,
+        "HandwrittenP95": 0.0,
+        "MedianRatio": "NaN",
+        "P95Ratio": "NaN"
+      }
+    ],
+    "TopRelation": [
+      {
+        "Round": 0,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5653,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 20,
+        "Frame": 0,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5231,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 19,
+        "Frame": 7,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5216,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 25,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5127,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 11,
+        "Frame": 2,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5113,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 18,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5092,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 31,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 5040,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 2,
+        "Frame": 2,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5016,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 26,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4968,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 30,
+        "Frame": 5,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4876,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 24,
+        "Frame": 2,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4863,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 3,
+        "Frame": 4,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4821,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 7,
+        "Frame": 0,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4819,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ],
+    "TopHandwritten": [
+      {
+        "Round": 18,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 5164,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 25,
+        "Frame": 6,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4956,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 18,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4925,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 17,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4903,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 13,
+        "Frame": 4,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4857,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 21,
+        "Frame": 4,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4829,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 14,
+        "Frame": 0,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4825,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 19,
+        "Frame": 5,
+        "SideOrder": "H/E",
+        "ElapsedTicks": 4821,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 10,
+        "Frame": 6,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4793,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 4,
+        "Frame": 7,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4762,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 18,
+        "Frame": 1,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4751,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 20,
+        "Frame": 0,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4714,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      },
+      {
+        "Round": 24,
+        "Frame": 4,
+        "SideOrder": "E/H",
+        "ElapsedTicks": 4703,
+        "ProcessorBefore": 2,
+        "ProcessorAfter": 2,
+        "Gen0": 0,
+        "Gen1": 0,
+        "Gen2": 0
+      }
+    ]
+  }
+]
