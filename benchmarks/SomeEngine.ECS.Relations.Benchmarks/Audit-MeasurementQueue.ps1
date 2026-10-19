@@ -19,6 +19,39 @@ $lastSubmission = @($cases.Queue | ForEach-Object { [DateTimeOffset]$_.Submitted
 $firstStart = @($cases.Queue | ForEach-Object { [DateTimeOffset]$_.StartedAtUtc } | Sort-Object)[0]
 $lastFinish = @($cases.Queue | ForEach-Object { [DateTimeOffset]$_.FinishedAtUtc } | Sort-Object)[-1]
 $firstAnalysis = @($analyses | ForEach-Object { [DateTimeOffset]$_.StartedAtUtc } | Sort-Object)[0]
+$orderedCases = @($cases | Sort-Object { [DateTimeOffset]$_.Queue.StartedAtUtc })
+$executionSeconds = 0.0
+$betweenCases = for ($index = 0; $index -lt $orderedCases.Count; $index++) {
+    $current = $orderedCases[$index]
+    $executionSeconds += ([DateTimeOffset]$current.Queue.FinishedAtUtc - [DateTimeOffset]$current.Queue.StartedAtUtc).TotalSeconds
+    if ($index -gt 0) {
+        $previous = $orderedCases[$index - 1]
+        [pscustomobject]@{
+            BeforeCaseId = $previous.CaseId; AfterCaseId = $current.CaseId
+            StartedAtUtc = [DateTimeOffset]$previous.Queue.FinishedAtUtc
+            FinishedAtUtc = [DateTimeOffset]$current.Queue.StartedAtUtc
+            Seconds = ([DateTimeOffset]$current.Queue.StartedAtUtc - [DateTimeOffset]$previous.Queue.FinishedAtUtc).TotalSeconds
+        }
+    }
+}
+$observationPath = Join-Path (Split-Path -Parent $destination) 'protected-observation.json'
+$observation = if (Test-Path -LiteralPath $observationPath) {
+    $reading = Get-Content -Raw -LiteralPath $observationPath | ConvertFrom-Json
+    $readStart = [DateTimeOffset]$reading.ObservationStartedAtUtc
+    $readFinish = [DateTimeOffset]$reading.ObservationFinishedAtUtc
+    [pscustomobject]@{
+        StartedAtUtc = $readStart; FinishedAtUtc = $readFinish
+        Seconds = ($readFinish - $readStart).TotalSeconds
+        OverlappingCases = @($cases | Where-Object {
+            [DateTimeOffset]$_.Queue.StartedAtUtc -le $readFinish -and [DateTimeOffset]$_.Queue.FinishedAtUtc -ge $readStart
+        } | ForEach-Object {
+            [pscustomobject]@{
+                CaseId = $_.CaseId; QueueId = $_.Queue.Id
+                StartedAtUtc = $_.Queue.StartedAtUtc; FinishedAtUtc = $_.Queue.FinishedAtUtc
+            }
+        })
+    }
+}
 $summary = [pscustomobject]@{
     Series = $Series; SourceCommit = $submission.SourceCommit; Backend = $submission.Backend
     CaseCount = $cases.Count; SessionIds = @($cases.Queue.SessionId | Select-Object -Unique)
@@ -32,7 +65,12 @@ $summary = [pscustomobject]@{
     PreparationFinishedBeforeExecution = [DateTimeOffset]$preparation.FinishedAtUtc -le $firstStart
     AnalysisStartedAfterExecution = $firstAnalysis -ge $lastFinish
     MeasurementSeconds = ($lastFinish - $firstStart).TotalSeconds
+    CaseExecutionSeconds = $executionSeconds
+    BetweenCasesSeconds = ($betweenCases.Seconds | Measure-Object -Sum).Sum
+    LongestBetweenCasesSeconds = ($betweenCases.Seconds | Measure-Object -Maximum).Maximum
+    PreparationWaitingSeconds = ([DateTimeOffset]$preparation.StartedAtUtc - [DateTimeOffset]$preparation.SubmittedAtUtc).TotalSeconds
 }
-[pscustomobject]@{ Summary = $summary; Preparation = $preparation; Cases = $cases; Analyses = $analyses } |
+[pscustomobject]@{ Summary = $summary; Preparation = $preparation; Cases = $cases; Analyses = $analyses
+    BetweenCases = @($betweenCases); ProtectedObservation = $observation } |
     ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $destination -Encoding utf8
 $summary | ConvertTo-Json -Depth 6

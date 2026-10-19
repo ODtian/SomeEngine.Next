@@ -186,6 +186,8 @@ r24 单默认入口确认metadata24B临时消去，直接从原字段取得World
 
 r28当前原生五函数同时确认：Default候选体137条/673B逐条对应，Mutual四条拒绝路径分别为11/16/19/22条，两侧点读取次数为1/2/2/2；九字段视图已裁剪到24B成员值及24B调用参数。下一处准备优化把Requires判断集中到不可变QueryDefinition，QueryCursor委托同一事实，ComponentPairsWithin构造时保存两位置的_componentsRequired。原查询定义固定，WithOptionalRead保持成员Kind，枚举直接选择既有Required/Optional核心。构造成本进入实际描述准备和冷初始化；[红绿及聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r29-checks.json)记录缺少公开入口的CS1061，以及All/唯一Any/混合Any、可选两位置、Where/Except和ref输出提前结束的五项通过。
 
+[controlled-required-r29](evidence/ECS-Relations-2026-10-19/controlled-required-r29/diagnostic.md)对应e17a82f594c8e6c9ed4f4ff35b5e316a67afa314，严格通过10/27（finite8/18、default2/9），27项实际输出与消费均等价。Default caller的Requires调用已收为保存事实的字段分支，栈136→104B、初始化48→24B，24B查询参数副本也收为同址传参，原673B核心继续保留。本轮场景执行合计169.6701125秒、场景间隔1585.6874934000002秒，全部收据及原精度结果随同保存。授权状态读取06:07:41.1781258Z–06:07:41.3298360Z位于实际场景间隔；最终分析的result.json事件在成功或失败时结束监听。
+
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：
