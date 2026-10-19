@@ -8,7 +8,7 @@ public sealed record MeasurementCase(
     public string Id => $"{Class}-{Size}-{Variant}";
     public int Seed => 231243;
     public int WarmupFrames => 16;
-    public int Rounds => 31;
+    public int Rounds => 32;
     public int FramesPerRound => 8;
     public int ColdPairs => 7;
     public int IterationsPerFrame => 1;

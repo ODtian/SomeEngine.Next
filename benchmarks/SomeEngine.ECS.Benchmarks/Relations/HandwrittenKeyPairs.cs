@@ -22,8 +22,10 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
     private static bool Enumerate<TOutput>(World world, QueryHandle members, bool exclude, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition definition = world.GetQueryDefinition(members);
-        QueryHandle query = world.Query(definition.WithOptionalRead<TComponent>());
+        QueryDefinition original = world.GetQueryDefinition(members);
+        QueryDefinition definition = original.WithOptionalRead<TComponent>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : members;
         var execution = new MemberExecution<TOutput>(world, exclude, output);
         try
         {
@@ -33,7 +35,8 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(query);
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 

@@ -12,8 +12,10 @@ public static class HandwrittenSpatialBitmap
         ReadOnlySpan<CollisionBitmapData> categories, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition definition = world.GetQueryDefinition(bodies);
-        QueryHandle query = world.Query(definition.WithOptionalRead<Body>());
+        QueryDefinition original = world.GetQueryDefinition(bodies);
+        QueryDefinition definition = original.WithOptionalRead<Body>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : bodies;
         var execution = new OneWayPairs<TOutput>(tree, categories, output);
         try
         {
@@ -23,7 +25,8 @@ public static class HandwrittenSpatialBitmap
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(query);
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 
@@ -123,8 +126,10 @@ public static class HandwrittenSpatialBitmap
         ReadOnlySpan<CollisionBitmapData> categories, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition definition = world.GetQueryDefinition(bodies);
-        QueryHandle query = world.Query(definition.WithOptionalRead<Body>());
+        QueryDefinition original = world.GetQueryDefinition(bodies);
+        QueryDefinition definition = original.WithOptionalRead<Body>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : bodies;
         var execution = new MutualPairs<TOutput>(tree, categories, output);
         try
         {
@@ -134,7 +139,8 @@ public static class HandwrittenSpatialBitmap
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(query);
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 

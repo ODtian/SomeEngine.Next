@@ -196,6 +196,10 @@ r30的两侧Default World回调实码均为104B栈/24B初始化，均各调一�
 
 [controlled-inline-r31](evidence/ECS-Relations-2026-10-19/controlled-inline-r31/diagnostic.md)记录私有核心内联提示的两项受控回归，源码edbd5ab42d3dac63c7c4a98deecc070b57c8cf77，Default-S10/L50 median为1.1234684260131951/1.1375282213467639，p95为1.1492156001756415/1.1311168276851726。关系完整World回调由104B栈/24B初始化变为1848B/1744B，Required/Optional两体合并且行推进形成显式callee；手写同范围保持原值。后继只撤回该提示，恢复原独立私有核心；原始数据与全部命令继续保留。
 
+原持久成员定义已包含全部只读访问时，后继终端通过引用相等确认同一定义，直接借用原句柄进入World.ExecuteQuery，省去同key的临时Query/Release登记。实际派生定义与可写/多输入路径沿原范围管理自身查询；独立手写Default、Bitmap、Key与空间入口同步采用同一复用规则。原句柄由原持有者最终释放，输出仍通过finally回写。
+
+后继全部场景采用32轮×8帧，使每侧256帧中先执行与后执行各128帧；16warm、7cold、每帧实际调用、时钟/observer和严格门槛沿当前定义。[测量配置](ECS-Relations-Measurement-Configuration.md)记录该对称分组；r31及此前31轮系列的248帧与128先/120后分布保持原始记录。
+
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：

@@ -10,7 +10,10 @@ public static class HandwrittenDefaultPairs
     public static bool Enumerate<TOutput>(World world, QueryHandle bodies, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryHandle members = world.Query(world.GetQueryDefinition(bodies).WithOptionalRead<Body>());
+        QueryDefinition original = world.GetQueryDefinition(bodies);
+        QueryDefinition definition = original.WithOptionalRead<Body>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle members = temporaryQuery ? world.Query(definition) : bodies;
         var execution = new PairExecution<TOutput>(output);
         try
         {
@@ -20,7 +23,8 @@ public static class HandwrittenDefaultPairs
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(members);
+            if (temporaryQuery)
+                world.ReleaseQuery(members);
         }
     }
 

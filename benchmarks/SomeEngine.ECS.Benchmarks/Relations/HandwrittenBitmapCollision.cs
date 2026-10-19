@@ -11,7 +11,10 @@ public static class HandwrittenBitmapCollision
         ReadOnlySpan<(Entity, Entity)> candidates, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryHandle query = world.Query(world.GetQueryDefinition(members).WithOptionalRead<CollisionLayer>());
+        QueryDefinition original = world.GetQueryDefinition(members);
+        QueryDefinition definition = original.WithOptionalRead<CollisionLayer>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : members;
         var execution = new OneWayExecution<TOutput>(candidates, output);
         try
         {
@@ -21,7 +24,8 @@ public static class HandwrittenBitmapCollision
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(query);
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 
@@ -29,7 +33,10 @@ public static class HandwrittenBitmapCollision
         ReadOnlySpan<(Entity, Entity)> candidates, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryHandle query = world.Query(world.GetQueryDefinition(members).WithOptionalRead<CollisionLayer>());
+        QueryDefinition original = world.GetQueryDefinition(members);
+        QueryDefinition definition = original.WithOptionalRead<CollisionLayer>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : members;
         var execution = new MutualExecution<TOutput>(candidates, output);
         try
         {
@@ -39,7 +46,8 @@ public static class HandwrittenBitmapCollision
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(query);
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 

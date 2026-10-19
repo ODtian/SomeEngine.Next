@@ -12,7 +12,8 @@ public static partial class HandwrittenSpatialCollision
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         QueryDefinition definition = world.GetQueryDefinition(bodies);
-        QueryHandle members = world.Query(definition);
+        bool temporaryQuery = definition.CanWrite;
+        QueryHandle members = temporaryQuery ? world.Query(definition) : bodies;
         try
         {
             QueryHandle access = world.Query(QueryDefinition.Empty.WithAccessFrom(definition)
@@ -31,7 +32,8 @@ public static partial class HandwrittenSpatialCollision
         }
         finally
         {
-            world.ReleaseQuery(members);
+            if (temporaryQuery)
+                world.ReleaseQuery(members);
         }
     }
 

@@ -14,7 +14,7 @@ public sealed class BenchmarkSpatialFixtureTests
         var first = world.CreateEntity(new Body { Bounds = Box(0.8f), CollisionCategories = new(1, 2) });
         var second = world.CreateEntity(new Body { Bounds = Box(0.4f), CollisionCategories = new(2, 0) });
         var third = world.CreateEntity(new Body { Bounds = Box(0), CollisionCategories = new(2, 1) });
-        var bodies = world.Query(world.QueryDefinition().All<Body>());
+        var bodies = world.Query(world.QueryDefinition().Read<Body>());
         var tree = Collision.Build<Body, BodyBoundsReader>(world, bodies, default);
         var contacts = Collision.Candidates<Body, BodyBoundsReader>(world, bodies, tree, default)
             .Where(default(OneWayCategories), default(OneWayCategoryBitmap));

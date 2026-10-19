@@ -48,8 +48,10 @@ public static partial class HandwrittenSpatialCollision
         CollisionKeySummary<Hair, Entity> keys, CategorySummary categories, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition definition = world.GetQueryDefinition(bodies);
-        QueryHandle query = world.Query(definition.WithOptionalRead<Body>().WithOptionalRead<Hair>());
+        QueryDefinition original = world.GetQueryDefinition(bodies);
+        QueryDefinition definition = original.WithOptionalRead<Body>().WithOptionalRead<Hair>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : bodies;
         var execution = new FilteredPairs<TOutput>(tree, keys, categories, output);
         try
         {
@@ -59,7 +61,8 @@ public static partial class HandwrittenSpatialCollision
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(query);
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 

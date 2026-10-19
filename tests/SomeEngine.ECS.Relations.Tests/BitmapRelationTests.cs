@@ -155,7 +155,7 @@ public sealed class BitmapRelationTests
             { Categories = CollisionCategory.Scenery, AllowedCategories = CollisionCategory.Character });
         var third = world.CreateEntity(new CollisionLayer
             { Categories = CollisionCategory.Sensor, AllowedCategories = CollisionCategory.Scenery });
-        var layers = world.Query(world.QueryDefinition().All<CollisionLayer>());
+        var layers = world.Query(world.QueryDefinition().Read<CollisionLayer>());
         (Entity, Entity)[] candidates = [(first, second), (second, first), (first, third), (third, second)];
         var selected = BitmapCollisionExample.Candidates(world, layers, candidates)
             .Where(default(OneWayContacts), default(OneWayContactBitmap))

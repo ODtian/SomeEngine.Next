@@ -42,9 +42,12 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
         int queryCount = _enumerable.QueryCount;
         if (queryCount == 1 && TEnumerable.ReadsFromSingleQuery)
         {
-            QueryDefinition definition = _enumerable.AddReads(world.GetQueryDefinition(_enumerable.GetQuery(0)), 0);
+            QueryHandle members = _enumerable.GetQuery(0);
+            QueryDefinition original = world.GetQueryDefinition(members);
+            QueryDefinition definition = _enumerable.AddReads(original, 0);
             if (!definition.CanWrite)
-                return EnumerateSingle(definition, ref output, lastSystemVersion);
+                return EnumerateSingle(world, members, definition, !ReferenceEquals(original, definition),
+                    ref output, lastSystemVersion);
         }
         return EnumerateQueries(world, queryCount, ref output, lastSystemVersion);
     }
@@ -90,11 +93,11 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool EnumerateSingle<TOutput>(QueryDefinition definition, ref TOutput output, uint? lastSystemVersion)
+    private bool EnumerateSingle<TOutput>(World world, QueryHandle members, QueryDefinition definition,
+        bool temporaryQuery, ref TOutput output, uint? lastSystemVersion)
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
-        World world = _enumerable.World;
-        QueryHandle query = world.Query(definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : members;
         SingleExecution<TOutput> execution;
         execution.Enumerable = _enumerable;
         execution.Output = output;
@@ -110,7 +113,8 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(query);
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 

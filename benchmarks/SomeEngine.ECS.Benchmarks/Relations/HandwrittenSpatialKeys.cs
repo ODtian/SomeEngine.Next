@@ -12,8 +12,10 @@ public static class HandwrittenSpatialKeys
         ReadOnlySpan<CollisionKeyData<Entity>> keys, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition definition = world.GetQueryDefinition(bodies);
-        QueryHandle query = world.Query(definition.WithOptionalRead<Body>().WithOptionalRead<Hair>());
+        QueryDefinition original = world.GetQueryDefinition(bodies);
+        QueryDefinition definition = original.WithOptionalRead<Body>().WithOptionalRead<Hair>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : bodies;
         var execution = new KeyPairs<TOutput>(tree, keys, output);
         try
         {
@@ -23,7 +25,8 @@ public static class HandwrittenSpatialKeys
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(query);
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 

@@ -4,7 +4,7 @@
 
 设备读取：Intel Xeon E5-2698B v3 @ 2.00GHz，16核/32线程；总内存68,552,818,688字节；Windows 11专业工作站版10.0.26200（build26200）。SDK10.0.113、Runtime10.0.13、win-x64。各份正式报告继续保存其实际CPU标识、处理器数、OS、Framework、GC、JIT配置、WorkerCount、计时频率与完整命令。
 
-机器配置以运行器的`--machine Normal|Fixed`显式选择，实际字段记录于Device.Machine。两配置的输入、31×8采样、预热和实现相同：
+机器配置以运行器的`--machine Normal|Fixed`显式选择，实际字段记录于Device.Machine。两配置的输入、32×8采样、预热和实现相同：
 
 | 配置字段 | Normal | Fixed |
 | --- | --- | --- |
@@ -44,7 +44,9 @@
 
 几何消费继续以Empty.WithAccessFrom形成自身访问查询，其取得、读取和释放成本计入原Consume或实际整帧边界。持久Members、两侧各自描述/索引和消费访问查询按各自真实生命周期记录。
 
-同函数控制通过--comparison HandwrittenControl选择，使用独立HandwrittenControlReport。两侧明确命名H1/H2，保存FirstHandwrittenType与SecondHandwrittenType、各自分布/初始化/内存和真实完整结果，Required=false。Verify、Run、31×8分布与计时共用正式测量流程。Submit-Measurements的HandwrittenControlCaseId将指定控制项紧随同输入正式项排入同一次独占准备；控制项生成单独control-summary.md/control-metrics.csv，正式E/H报告保留其字段与严格判断。
+同函数控制通过--comparison HandwrittenControl选择，使用独立HandwrittenControlReport。两侧明确命名H1/H2，保存FirstHandwrittenType与SecondHandwrittenType、各自分布/初始化/内存和真实完整结果，Required=false。Verify、Run、32×8分布与计时共用正式测量流程。Submit-Measurements的HandwrittenControlCaseId将指定控制项紧随同输入正式项排入同一次独占准备；控制项生成单独control-summary.md/control-metrics.csv，正式E/H报告保留其字段与严格判断。
+
+读取声明与原Definition为同一引用的单输入只读查询直接借用原Members句柄执行，描述执行结束后由原持有者继续管理该句柄；实际派生的定义形成并释放自身临时查询。扩展与独立手写Default、Bitmap、Key及对应空间入口采用同一规则。World.ExecuteQuery继续承担读取准入、版本和迭代作用域，输出沿finally回写。
 
 输入采用 seed=231243 的固定整数 LCG 产生候选端点，保留候选位置及重复。类别域为8位；类别为一个已声明位，允许掩码为旋转的1/4/8位集合，实际通过率记录输出行数。75%成员具有Hair，其余成员保留普通物体语义。角色数量为 `ceil(N*75%/每角色根数)`，随规模增长；角色身份先于Body按固定顺序创建。
 
@@ -52,13 +54,15 @@
 
 持续更新每帧改变10%位置、2%类别与运动类型、2%角色键、1%成员；固定八帧周期。成员变化按三组执行标签加入／移除、Body加入／移除、销毁／创建。写入前取得系统版本，维护各自读取/接受变更并推进成功基线。
 
-Release NativeAOT 为必验后端，JIT 独立记录。每轮双方各执行8帧，共31轮；每个frame立即依次执行双方，round顺序E/H、H/E交替，因此SideSwitchIntervalFrames=1。预热16帧、冷初始化7对、每帧实际调用一次，FramesPerSample=1。最小场景仍执行真实 World/查询和成组候选。分区容量16，实际分区数随树记录。Scheduler采用Fast，双方参数一致。
+Release NativeAOT 为必验后端，JIT 独立记录。每轮双方各执行8帧，共32轮；每个frame立即依次执行双方，round顺序E/H、H/E交替，因此SideSwitchIntervalFrames=1。每侧256个实际样本，其中128帧先执行、128帧后执行。预热16帧、冷初始化7对、每帧实际调用一次，FramesPerSample=1。最小场景仍执行真实 World/查询和成组候选。分区容量16，实际分区数随树记录。Scheduler采用Fast，双方参数一致。
+
+r31及以前系列保留31×8原始配置，每侧248帧、128先/120后；[r30 HH按SideOrder统计](evidence/ECS-Relations-2026-10-19/controlled-reads-r30/handwritten-order.json)逐项列出这份原始分组。后继统一使用32×8，单帧计时、observer、输入、16warm、7cold与原精度严格门槛沿当前定义。
 
 JIT在同一Release输出目录以PublishAot=false、SelfContained=false及实际SourceRevisionId构建普通托管入口，采用.NET10默认TieredCompilation/ReadyToRun配置，环境项记录为default；双方在同一进程使用相同配置和上述固定预热/采样。JIT报告独立记录Backend、实际命令、源码、原始样本和阶段，NativeAOT验收使用其独立报告。
 
 测量前先执行第一侧Query与Consume，立即保存其完整Entity身份行和真实contact/depth值，再执行第二侧并逐项核对；这些物化与比较均在Verify阶段完成。持续更新核对覆盖完整八帧周期。原始记录包含 ticks、先后顺序、输出数、接触次数／深度、全线程与当前线程分配、GC、Managed/WorkingSet。median及R-7 p95按原始精度计算，分别以扩展/手写≤1.00判断主场景及表中额外要求的完整帧。融合的遍历、筛选和输出属于同一个Query边界。
 
-机器配置版的allocation起始计数位于before-Managed/WorkingSet/CPU观察之后，结束计数紧跟实际frame工作并先于after观察，记录当前及全部线程的实际工作分配。r24及以前系列的FrameAllocatedBytes同时包含before-WorkingSet观察的分配；其原始值和原scope随历史系列保留。elapsed查询/整帧时钟及31×8采样边界继续按原定义执行。
+机器配置版的allocation起始计数位于before-Managed/WorkingSet/CPU观察之后，结束计数紧跟实际frame工作并先于after观察，记录当前及全部线程的实际工作分配。r24及以前系列的FrameAllocatedBytes同时包含before-WorkingSet观察的分配；其原始值和原scope随历史系列保留。elapsed查询/整帧时钟与单帧采样边界继续按原定义执行。
 
 内存按实际值数组payload记录Live、Addressed与Capacity；Tree.NodeCount为包含复用地址的范围，存活二叉拓扑由LeafCount形成。叶映射单列有效键值payload及entry容量，分区四数组、访问数组、输出容量、接触累计、维护访问与已有ECS键桶分列。对象头、字典管理、查询／观察者／Scheduler和租用句柄同时进入真实分配与进程内存指标。
 
