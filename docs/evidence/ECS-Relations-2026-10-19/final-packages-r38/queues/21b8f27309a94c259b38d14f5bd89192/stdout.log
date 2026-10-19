@@ -1,0 +1,14 @@
+  SomeEngine.Job.Contracts -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Job.Contracts\bin\Release\net10.0\SomeEngine.Job.Contracts.dll
+  SomeEngine.Diagnostics -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Diagnostics\bin\Release\net10.0\SomeEngine.Diagnostics.dll
+  SomeEngine.ECS.SourceGen -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS.SourceGen\bin\Release\netstandard2.0\SomeEngine.ECS.SourceGen.dll
+  SomeEngine.Job -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Job\bin\Release\net10.0\SomeEngine.Job.dll
+  SomeEngine.ECS -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS\bin\Release\net10.0\SomeEngine.ECS.dll
+  SomeEngine.ECS.Systems -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS.Systems\bin\Release\net10.0\SomeEngine.ECS.Systems.dll
+  SomeEngine.ECS.Relations -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS.Relations\bin\Release\net10.0\SomeEngine.ECS.Relations.dll
+  SomeEngine.Physics -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Physics\bin\Release\net10.0\SomeEngine.Physics.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:14.43

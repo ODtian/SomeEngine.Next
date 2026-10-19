@@ -1,0 +1,48 @@
+SOURCE 51c8ce75949cf16d7190e14028c655f526d5697b DLL UTC=2026-10-19T22:01:17.5611514Z Length=69120 OBJECT UTC=2026-10-19T22:01:35.5801336Z Length=25066602
+IL TARGET count=1 Consumer EcsTypeRegistration::RegisterTypes
+IL TARGET count=1 Consumer WeightedTotal8::Matches
+IL TARGET count=1 Consumer EighthEntity::Add
+IL TARGET count=1 Consumer NumberPointValue::Execute
+IL TARGET count=2 Consumer ForwardedMutualPermission::Matches
+IL TARGET count=1 Consumer FillContacts`1::Execute
+IL TARGET count=3 Relations ComponentRelation`9::Matches
+IL TARGET count=2 Relations BitmapRelation`4::Matches
+IL TARGET count=2 Relations BitmapRelation`4::Evaluate
+IL TARGET count=1 Relations ICategoryPermission::Evaluate
+IL TARGET count=2 Relations OneWayPermission::Matches
+IL TARGET count=1 Relations OneWayPermission::Evaluate
+IL TARGET count=2 Relations MutualPermission::Matches
+IL TARGET count=1 Relations MutualPermission::Evaluate
+IL TARGET count=1 Relations IdentityPermissionOutput`2::Matched
+IL TARGET count=1 Relations IdentityPermissionOutput`2::Unmatched
+IL TARGET count=1 ECS GeneratedEcsTypes::RegisterJobStorage
+IL TARGET count=1 ECS GeneratedEcsTypes::RegisterRelationSchema
+IL TARGET count=1 ECS JobStorageTypeMetadata`1::Register
+IL TARGET count=1 ECS JobStorageTypeMetadata`1::get_IsAliasFree
+IL TARGET count=1 ECS JobStorageTypeMetadata`1::GetIsAliasFree
+IL TARGET count=1 ECS ComponentMetadata`1::CreateOperations
+IL TARGET count=1 ECS ComponentInfo::get_IsJobAliasFree
+IL TARGET count=1 ECS RelationSchema::For
+IL TARGET count=1 ECS RelationSchemaCache`1::Register
+IL TARGET count=1 ECS RelationSchemaCache`1::get_Value
+IL TARGET count=1 ECS QueryCursor::TryReadRef
+IL TARGET count=1 ECS World::ReadEntityQueryRef
+IL TARGET count=1 Systems QueryJobAccess::CopyAccesses
+IL TARGET count=2 Physics SpatialTraversal::Enumerate
+IL TARGET count=1 Physics SpatialBitmapFilter`5::MatchesLeaves
+IL TARGET count=1 Physics CountJob`1::Execute
+IL TARGET count=1 Physics FillJob`1::Execute
+IL TARGET count=1 Physics CollisionPairBuffer::Fill
+DISCOVERY NumberPoint=1 SpatialFill=1
+NATIVE TARGET Weighted8 count=1
+NATIVE TARGET Component8 count=1
+NATIVE TARGET NumberPoint count=1
+NATIVE TARGET SpatialFill count=1
+NATIVE FUNCTION {"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"Weighted8","Start":"0x20c30","EndExclusive":"0x20c8f","Bytes":95,"Instructions":32,"StackBytes":0,"InitialXmm4Bytes":0,"DirectXmm4Clears":0,"LoopInitial":0,"LoopStep":0,"IndexedClears":0,"CopyCallSites":0,"CallSites":0,"StartMod32":16,"StartMod64":48}
+NATIVE FUNCTION {"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"Component8","Start":"0xe0740","EndExclusive":"0xe14c9","Bytes":3465,"Instructions":907,"StackBytes":616,"InitialXmm4Bytes":0,"DirectXmm4Clears":0,"LoopInitial":288,"LoopStep":48,"IndexedClears":0,"CopyCallSites":0,"CallSites":61,"StartMod32":0,"StartMod64":0}
+NATIVE FUNCTION {"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"NumberPoint","Start":"0x19c1a0","EndExclusive":"0x19c593","Bytes":1011,"Instructions":300,"StackBytes":136,"InitialXmm4Bytes":32,"DirectXmm4Clears":2,"LoopInitial":0,"LoopStep":0,"IndexedClears":0,"CopyCallSites":0,"CallSites":17,"StartMod32":0,"StartMod64":32}
+NATIVE FUNCTION {"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"SpatialFill","Start":"0x1d8560","EndExclusive":"0x1d9564","Bytes":4100,"Instructions":1057,"StackBytes":520,"InitialXmm4Bytes":0,"DirectXmm4Clears":0,"LoopInitial":96,"LoopStep":48,"IndexedClears":0,"CopyCallSites":0,"CallSites":27,"StartMod32":0,"StartMod64":32}
+EVIDENCE F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\docs\evidence\ECS-Relations-2026-10-19\final-packages-r38
+OBJECT AFTER UTC=2026-10-19T22:01:35.5801336Z Length=25066602
+DLL AFTER UTC=2026-10-19T22:01:17.5611514Z Length=69120
+AUDIT END UTC=2026-10-19T22:08:25.0969376Z

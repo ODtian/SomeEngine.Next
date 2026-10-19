@@ -1,0 +1,31 @@
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCandidatePairs.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenDefaultPairs.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialBitmap.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialKeys.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Relations.Benchmarks/Submit-Measurements.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/ECS-Relations-API-Changes-2026-10-19.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/SomeEngine.ECS.Relations/BitmapFilterOutput.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/SomeEngine.ECS.Relations/ComponentPairsWithin.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/SomeEngine.ECS.Relations/IQueryRelationOutput.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCandidatePairs.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenDefaultPairs.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialBitmap.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialKeys.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/SomeEngine.ECS.Relations/BitmapFilterOutput.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/SomeEngine.ECS.Relations/ComponentPairsWithin.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/SomeEngine.ECS.Relations/IQueryRelationOutput.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCandidatePairs.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenDefaultPairs.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialBitmap.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialKeys.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Relations.Benchmarks/Submit-Measurements.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/ECS-Relations-API-Changes-2026-10-19.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/SomeEngine.ECS.Relations/BitmapFilterOutput.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/SomeEngine.ECS.Relations/ComponentPairsWithin.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/SomeEngine.ECS.Relations/IQueryRelationOutput.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'benchmarks/SomeEngine.ECS.Relations.Benchmarks/Complete-Measurements.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/SomeEngine.ECS.Relations/RelationOutputReference.cs', LF will be replaced by CRLF the next time Git touches it
+Auto packing the repository in background for optimum performance.
+See "git help gc" for manual housekeeping.
+To https://github.com/ODtian/SomeEngine.Next.git
+   4839541d..51c8ce75  codex/ecs-relations-243 -> codex/ecs-relations-243

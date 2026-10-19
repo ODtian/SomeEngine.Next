@@ -1,0 +1,199 @@
+{"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"Weighted8","Start":"0x20c30","EndExclusive":"0x20c8f","Bytes":95,"Instructions":32,"StackBytes":0,"InitialXmm4Bytes":0,"DirectXmm4Clears":0,"LoopInitial":0,"LoopStep":0,"IndexedClears":0,"CopyCallSites":0,"CallSites":0,"StartMod32":16,"StartMod64":48}
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c30 movl	(%rdx), %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c32 movl	(%r8), %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c35 addl	%edx, %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c37 addl	%edx, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c39 movl	(%r9), %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c3c leal	(%rdx,%rdx,2), %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c3f addl	%edx, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c41 movq	0x28(%rsp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c46 movl	(%rdx), %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c48 shll	$0x2, %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c4b addl	%edx, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c4d movq	0x30(%rsp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c52 movl	(%rdx), %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c54 leal	(%rdx,%rdx,4), %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c57 addl	%edx, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c59 movq	0x38(%rsp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c5e movl	(%rdx), %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c60 leal	(%rdx,%rdx,2), %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c63 addl	%edx, %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c65 addl	%edx, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c67 movq	0x40(%rsp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c6c movl	(%rdx), %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c6e leal	(,%rdx,8), %r8d
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c76 subl	%edx, %r8d
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c79 addl	%r8d, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c7c movq	0x48(%rsp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c81 movl	(%rdx), %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c83 leal	(%rax,%rdx,8), %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c86 cmpl	(%rcx), %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c88 setge	%al
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c8b movzbl	%al, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Weighted8 0x20c8e retq
+{"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"Component8","Start":"0xe0740","EndExclusive":"0xe14c9","Bytes":3465,"Instructions":907,"StackBytes":616,"InitialXmm4Bytes":0,"DirectXmm4Clears":0,"LoopInitial":288,"LoopStep":48,"IndexedClears":0,"CopyCallSites":0,"CallSites":61,"StartMod32":0,"StartMod64":0}
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0740 pushq	%rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0741 pushq	%r15
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0743 pushq	%r14
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0745 pushq	%r13
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0747 pushq	%r12
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0749 pushq	%rdi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe074a pushq	%rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe074b pushq	%rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe074c subq	$0x228, %rsp            # imm = 0x228
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0753 leaq	0x260(%rsp), %rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe075b xorl	%eax, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe075d movq	%rax, -0x178(%rbp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0764 xorps	%xmm4, %xmm4
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0767 movaps	%xmm4, -0x170(%rbp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe076e movabsq	$-0x120, %rax           # imm = 0xFEE0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0778 movaps	%xmm4, -0x40(%rbp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe077d movaps	%xmm4, -0x30(%rbp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0782 movaps	%xmm4, -0x20(%rbp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0787 addq	$0x30, %rax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe078b jne	0xe0778 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe078d movq	%rax, -0x40(%rbp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0791 movq	%rcx, %rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0794 movq	%rdx, %rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0797 movq	(%rbx), %r9
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe079a movl	0x14(%r9), %ecx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe079e movl	%ecx, 0x20(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07a2 leaq	-0x60(%rbp), %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07a6 movq	%rcx, 0x28(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07ab movq	(%r9), %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07ae movq	0x8(%r9), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07b2 movl	0x10(%r9), %r9d
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07b6 movq	(%rsi), %r8
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07b9 cmpl	%ecx, (%rcx)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07bb callq	0x4b60 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07c0 testl	%eax, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07c2 je	0xe12a5 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07c8 movq	(%rbx), %r9
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07cb movl	0x14(%r9), %ecx
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe078b -> 0xe0778 startMod32=11 startMod64=11 targetMod32=24 targetMod64=56
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07bb callq	0x4b60 <SomeEngine_ECS_SomeEngine_ECS_World__TryGetEntityQueryRow>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe07f0 callq	0x4b60 <SomeEngine_ECS_SomeEngine_ECS_World__TryGetEntityQueryRow>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0825 callq	0x4b60 <SomeEngine_ECS_SomeEngine_ECS_World__TryGetEntityQueryRow>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe085a callq	0x4b60 <SomeEngine_ECS_SomeEngine_ECS_World__TryGetEntityQueryRow>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe088f callq	0x4b60 <SomeEngine_ECS_SomeEngine_ECS_World__TryGetEntityQueryRow>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe08c4 callq	0x4b60 <SomeEngine_ECS_SomeEngine_ECS_World__TryGetEntityQueryRow>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe08f9 callq	0x4b60 <SomeEngine_ECS_SomeEngine_ECS_World__TryGetEntityQueryRow>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe092e callq	0x4b60 <SomeEngine_ECS_SomeEngine_ECS_World__TryGetEntityQueryRow>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0ac3 -> 0xe0a79 startMod32=3 startMod64=3 targetMod32=25 targetMod64=57
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0ba7 -> 0xe0b61 startMod32=7 startMod64=39 targetMod32=1 targetMod64=33
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0c8d -> 0xe0c47 startMod32=13 startMod64=13 targetMod32=7 targetMod64=7
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0d78 -> 0xe0d32 startMod32=24 startMod64=56 targetMod32=18 targetMod64=50
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0e64 -> 0xe0e19 startMod32=4 startMod64=36 targetMod32=25 targetMod64=25
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe0f47 -> 0xe0f01 startMod32=7 startMod64=7 targetMod32=1 targetMod64=1
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe102f -> 0xe0fe9 startMod32=15 startMod64=47 targetMod32=9 targetMod64=41
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe111b -> 0xe10d4 startMod32=27 startMod64=27 targetMod32=20 targetMod64=20
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b Component8 0xe12c0 -> 0xe0a63 startMod32=0 startMod64=0 targetMod32=3 targetMod64=35
+{"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"NumberPoint","Start":"0x19c1a0","EndExclusive":"0x19c593","Bytes":1011,"Instructions":300,"StackBytes":136,"InitialXmm4Bytes":32,"DirectXmm4Clears":2,"LoopInitial":0,"LoopStep":0,"IndexedClears":0,"CopyCallSites":0,"CallSites":17,"StartMod32":0,"StartMod64":32}
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1a0 pushq	%r14
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1a2 pushq	%rdi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1a3 pushq	%rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1a4 pushq	%rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1a5 pushq	%rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1a6 subq	$0x60, %rsp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1aa xorl	%eax, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1ac movq	%rax, 0x38(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1b1 xorps	%xmm4, %xmm4
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1b4 movaps	%xmm4, 0x40(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1b9 movaps	%xmm4, 0x50(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1be movq	%rdx, 0x98(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1c6 movq	(%rcx), %rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1c9 movq	0x8(%rcx), %rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1cd movl	0x10(%rcx), %edi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1d0 cmpb	%bl, (%rbx)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1d2 movq	%gs:0x58, %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1db movl	(%rip), %eax            # 0x19c1e1 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1e1 movl	$0x0, %edx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1e6 addq	(%rcx,%rax,8), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1ea movq	(%rdx), %rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1ed testq	%rbp, %rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1f0 je	0x19c523 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1f6 movq	0x18(%rbp), %rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1fa testq	%rbp, %rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1fd je	0x19c219 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c1ff cmpq	%rbx, 0x8(%rbp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c203 je	0x19c223 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c205 movq	0x18(%rbp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c209 movq	%rbx, %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c20c callq	0x4560 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c211 movq	%rax, %rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c214 testq	%rbp, %rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c217 jne	0x19c223 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c219 movq	0x30(%rbx), %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c21d movq	0x8(%rcx), %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c221 jmp	0x19c227 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c223 movq	0x10(%rbp), %rcx
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c31c -> 0x19c2b1 startMod32=28 startMod64=28 targetMod32=17 targetMod64=49
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c321 -> 0x19c2b3 startMod32=1 startMod64=33 targetMod32=19 targetMod64=51
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c397 -> 0x19c32c startMod32=23 startMod64=23 targetMod32=12 targetMod64=44
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c39c -> 0x19c32e startMod32=28 startMod64=28 targetMod32=14 targetMod64=46
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c487 -> 0x19c442 startMod32=7 startMod64=7 targetMod32=2 targetMod64=2
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c532 -> 0x19c1f6 startMod32=18 startMod64=50 targetMod32=22 targetMod64=54
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b NumberPoint 0x19c53c -> 0x19c436 startMod32=28 startMod64=60 targetMod32=22 targetMod64=54
+{"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"SpatialFill","Start":"0x1d8560","EndExclusive":"0x1d9564","Bytes":4100,"Instructions":1057,"StackBytes":520,"InitialXmm4Bytes":0,"DirectXmm4Clears":0,"LoopInitial":96,"LoopStep":48,"IndexedClears":0,"CopyCallSites":0,"CallSites":27,"StartMod32":0,"StartMod64":32}
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8560 pushq	%rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8561 pushq	%r15
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8563 pushq	%r14
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8565 pushq	%r13
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8567 pushq	%r12
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8569 pushq	%rdi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d856a pushq	%rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d856b pushq	%rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d856c subq	$0x1c8, %rsp            # imm = 0x1C8
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8573 leaq	0x30(%rsp), %rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8578 xorps	%xmm4, %xmm4
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d857b movaps	%xmm4, 0x120(%rbp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8582 movabsq	$-0x60, %rax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d858c movaps	%xmm4, 0x190(%rbp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8594 movaps	%xmm4, 0x1a0(%rbp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d859c movaps	%xmm4, 0x1b0(%rbp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85a4 addq	$0x30, %rax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85a8 jne	0x1d858c <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85aa movq	%rax, 0x190(%rbp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85b1 movq	(%rip), %rax            # 0x1d85b8 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85b8 movq	%rax, (%rbp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85bc movl	%r9d, 0x1f8(%rbp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85c3 movq	%rcx, %rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85c6 movq	0x8(%rdx), %r14
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85ca movq	0x8(%r8), %r15
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85ce movq	%r15, 0x48(%rbp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85d2 movq	0x10(%r8), %r13
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85d6 movq	%r13, 0x40(%rbp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85da cmpl	$0x0, 0x1c(%rsi)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85de jl	0x1d8d8a <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85e4 leaq	0x188(%rbp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85eb movq	%rsi, %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85ee callq	0x38950 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85f3 movq	%rsi, %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85f6 callq	0x38920 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85fb leal	0x1(,%rax,2), %esi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8602 movl	%esi, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8604 movl	$0x10, %ecx
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d85a8 -> 0x1d858c startMod32=8 startMod64=40 targetMod32=12 targetMod64=12
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d862d -> 0x1d8626 startMod32=13 startMod64=45 targetMod32=6 targetMod64=38
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8d84 -> 0x1d86af startMod32=4 startMod64=4 targetMod32=15 targetMod64=47
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8dc4 -> 0x1d8c9b startMod32=4 startMod64=4 targetMod32=27 targetMod64=27
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8dce -> 0x1d8d6d startMod32=14 startMod64=14 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8e7b -> 0x1d8d6d startMod32=27 startMod64=59 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8efb -> 0x1d8d6d startMod32=27 startMod64=59 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d8f90 -> 0x1d8d6d startMod32=16 startMod64=16 targetMod32=13 targetMod64=45
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d903e callq	0x4b60 <SomeEngine_ECS_SomeEngine_ECS_World__TryGetEntityQueryRow>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d904b -> 0x1d8d6d startMod32=11 startMod64=11 targetMod32=13 targetMod64=45
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d9078 callq	0x4b60 <SomeEngine_ECS_SomeEngine_ECS_World__TryGetEntityQueryRow>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d9085 -> 0x1d8d6d startMod32=5 startMod64=5 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d9159 -> 0x1d9111 startMod32=25 startMod64=25 targetMod32=17 targetMod64=17
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d9236 -> 0x1d91f1 startMod32=22 startMod64=54 targetMod32=17 targetMod64=49
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d9347 -> 0x1d8d6d startMod32=7 startMod64=7 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d9356 -> 0x1d8d6d startMod32=22 startMod64=22 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d93d7 -> 0x1d8d6d startMod32=23 startMod64=23 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d9436 -> 0x1d8d6d startMod32=22 startMod64=54 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d946d -> 0x1d941d startMod32=13 startMod64=45 targetMod32=29 targetMod64=29
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d949a -> 0x1d8d6d startMod32=26 startMod64=26 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d949f -> 0x1d941d startMod32=31 startMod64=31 targetMod32=29 targetMod64=29
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d94af -> 0x1d941d startMod32=15 startMod64=47 targetMod32=29 targetMod64=29
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d94b9 -> 0x1d8d6d startMod32=25 startMod64=57 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b SpatialFill 0x1d94c9 -> 0x1d90fb startMod32=9 startMod64=9 targetMod32=27 targetMod64=59
