@@ -21,7 +21,7 @@
 
 `ICategoryPermission.Evaluate<TPermission,TRelation,TComponent,TReader,TItem,TOutput,TResult>` 把具体匹配结果交给 `ICategoryPermissionOutput<TItem,TOutput>.Matched/Unmatched`。默认实现调用该具体许可的泛型 Matches；库内单向与双方实现按方向判断后直接进入对应结果回调。自定义许可沿其原有算法形成结果。具体结果类型为无状态struct，Matched/Unmatched是static abstract操作；输入以scoped in传递，`TOutput`以scoped ref进入，结果状态继续由原BitmapFilterOutput持有。
 
-末端身份输出把原pair的in参数直接交给具体结果操作。需要向后续筛选转发组件行时，静态 ReadsComponentRows 选择原有Matches和借用行转发，行的有效期继续限定为当前Add。Where/Except由现有选择类型决定匹配或其余行的输出，提前结束继续返回原输出的 bool。
+末端身份输出先通过BitmapRelation绑定两端组件引用，再把原pair的in参数和当前输出借用交给具体许可及结果操作。组件引用绑定与输出借用各在实际消费处形成。需要向后续筛选转发组件行时，静态 ReadsComponentRows 选择原有Matches和借用行转发，行的有效期继续限定为当前Add。Where/Except由现有选择类型决定匹配或其余行的输出，提前结束继续返回原输出的 bool。
 
 `BitmapRelationGenerator` 读取这三个类型符号，生成接受语义实例与具体实现实例的 `Where`、`Except`。返回类型为 `RelationQuery<BitmapFilter<TEnumerable,TRelation,TImplementation,TComponent,TPermission>,(Entity,Entity)>`，完整保留枚举、语义、读取器、组件、操作及输出的具体类型。`BitmapFilter` 保存普通查询描述；临时 `BitmapRelation` 在回调中通过 `TryReadRef<TComponent>()` 取得组件只读引用，再进入具体许可的泛型标量读取操作。
 

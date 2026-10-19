@@ -10,9 +10,11 @@
 
 ## 枚举和组合
 
-对于直接来自 `Within`、`Between`、二元 `Product` 的查询，生成入口返回 `RelationQuery<KeyPairs<…>,(Entity,Entity)>`。`KeyPairs` 在执行回调中收集参与集合当前使用的键，调用 `World.GetByIndex<TComponent,TKey>` 取得已有桶，再通过各参与查询的 `TryGetRow` 选取桶成员。缺少该组件的成员形成单独的临时组：其关系判断为 false，`Except` 保留这些实体参与的行。
+对于直接来自 `Within`、`Between`、二元 `Product` 的查询，生成入口返回 `RelationQuery<KeyPairs<…>,(Entity,Entity)>`。`KeyPairs` 在执行回调中收集参与集合当前使用的键，调用 `World.GetByIndex<TComponent,TKey>` 取得已有桶，再通过各参与查询的 `Contains` 选取桶成员；后续筛选需要组件行时使用 `TryGetRow` 并继续转发该借用行。缺少该组件的成员形成单独的临时组：其关系判断为 false，`Except` 保留这些实体参与的行。
 
 `KeyPairsWithin`、`KeyPairsBetween`、`KeyProduct2` 分别实现对应的身份行规则，具体顺序与重复含义见[关系查询](Relation-Queries.md)。`Between` 的键判断随输出实体顺序交换输入位置；同一对键的两个方向分别求值，实际实体对使用对应方向的结论。`Within` 按完整实体身份选出升序组合；`Product` 保留输入位置与自身组合。
+
+公开枚举入口从本次查询视图中提取具体成员与访问输入，桶循环接收这些输入。`Within` 的单集合读取使用同一成员查询；`Between` 和 `Product` 保留各自两个成员查询与访问范围。`IKeyPairing.TryPair` 以 `scoped in` 接收第一、第二成员查询，身份判断与重叠去重只读取这两个集合。语义参数和具体实现沿 `scoped in` 传入桶循环，保持查询描述中只读字段的调用含义。
 
 对于已经组合过的具体枚举，生成入口返回 `RelationQuery<KeyFilter<…>,(Entity,Entity)>`。临时 `KeyRelation<…>` 从完整 Access 视图读取当前两个键，转发给具体实现。两种入口均通过现有 `IRelationOutput` 输出，复用 `Count`、`Any`、`Enumerate` 与提前结束规则。外层访问查询声明键组件的可选读取，参与查询沿用原有的成员、启用和变更筛选。
 

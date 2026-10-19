@@ -33,7 +33,10 @@ internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, T
                 return true;
             return Output.Add(in pair);
         }
-        return _relation.Evaluate<TOutput, IdentityPermissionOutput<TOutput, TSelection>>(in pair, ref Output);
+        if (!_relation.TryReadComponents(in pair, out var first, out var second))
+            return IdentityPermissionOutput<TOutput, TSelection>.Unmatched(in pair, ref Output);
+        return _relation.Evaluate<(Entity, Entity), TOutput, IdentityPermissionOutput<TOutput, TSelection>>(
+            in pair, in first.Value, in second.Value, ref Output);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -45,8 +48,11 @@ internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, T
                 return true;
             return Output.Add(in pair, in first, in second);
         }
+        if (!BitmapRelation<TRelation, TImplementation, TComponent, TPermission>.TryReadComponents(
+            in first, in second, out var firstValue, out var secondValue))
+            return IdentityPermissionOutput<TOutput, TSelection>.Unmatched(in pair, ref Output);
         return _relation.Evaluate<(Entity, Entity), TOutput, IdentityPermissionOutput<TOutput, TSelection>>(
-            in pair, in first, in second, ref Output);
+            in pair, in firstValue.Value, in secondValue.Value, ref Output);
     }
 }
 

@@ -23,39 +23,47 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
 
     public bool Matches(in (Entity, Entity) pair)
     {
-        return _query.TryGetRow(pair.Item1, out var first) && _query.TryGetRow(pair.Item2, out var second)
-            && Matches(in pair, in first, in second);
+        return TryReadComponents(in pair, out var first, out var second)
+            && TPermission.Matches<TRelation, TComponent, TImplementation>(in _relation, ref _implementation,
+                in first.Value, in second.Value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Matches(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second)
     {
-        if (!first.TryReadRef<TComponent>(out var firstValue) || !second.TryReadRef<TComponent>(out var secondValue))
+        if (!TryReadComponents(in first, in second, out var firstValue, out var secondValue))
             return false;
         return TPermission.Matches<TRelation, TComponent, TImplementation>(in _relation, ref _implementation,
             in firstValue.Value, in secondValue.Value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool Evaluate<TOutput, TResult>(in (Entity, Entity) pair, scoped ref TOutput output)
-        where TOutput : allows ref struct
-        where TResult : struct, ICategoryPermissionOutput<(Entity, Entity), TOutput>
+    internal bool TryReadComponents(in (Entity, Entity) pair, out ComponentReference<TComponent> firstValue,
+        out ComponentReference<TComponent> secondValue)
     {
+        firstValue = default;
+        secondValue = default;
         if (!_query.TryGetRow(pair.Item1, out var first) || !_query.TryGetRow(pair.Item2, out var second))
-            return TResult.Unmatched(in pair, ref output);
-        return Evaluate<(Entity, Entity), TOutput, TResult>(in pair, in first, in second, ref output);
+            return false;
+        return TryReadComponents(in first, in second, out firstValue, out secondValue);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool Evaluate<TItem, TOutput, TResult>(scoped in TItem item, scoped in QueryRow first, scoped in QueryRow second,
+    internal static bool TryReadComponents(scoped in QueryRow first, scoped in QueryRow second,
+        out ComponentReference<TComponent> firstValue, out ComponentReference<TComponent> secondValue)
+    {
+        secondValue = default;
+        return first.TryReadRef(out firstValue) && second.TryReadRef(out secondValue);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool Evaluate<TItem, TOutput, TResult>(scoped in TItem item, in TComponent first, in TComponent second,
         scoped ref TOutput output)
         where TItem : allows ref struct
         where TOutput : allows ref struct
         where TResult : struct, ICategoryPermissionOutput<TItem, TOutput>
     {
-        if (!first.TryReadRef<TComponent>(out var firstValue) || !second.TryReadRef<TComponent>(out var secondValue))
-            return TResult.Unmatched(in item, ref output);
         return TPermission.Evaluate<TPermission, TRelation, TComponent, TImplementation, TItem, TOutput, TResult>(
-            in _relation, ref _implementation, in firstValue.Value, in secondValue.Value, in item, ref output);
+            in _relation, ref _implementation, in first, in second, in item, ref output);
     }
 }

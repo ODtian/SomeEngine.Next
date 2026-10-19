@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Relations;
@@ -12,7 +13,8 @@ public interface IKeyPairing
 
     static virtual bool ReadsFromSingleQuery => false;
 
-    static abstract bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair);
+    static abstract bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+        Entity first, Entity second, out (Entity, Entity) pair);
 }
 
 public readonly struct KeyPairsWithin : IKeyPairing
@@ -24,7 +26,8 @@ public readonly struct KeyPairsWithin : IKeyPairing
     public static bool ReadsFromSingleQuery => true;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
+    public static bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+        Entity first, Entity second, out (Entity, Entity) pair)
     {
         pair = (first, second);
         return EntityOrder.Precedes(first, second);
@@ -38,7 +41,8 @@ public readonly struct KeyProduct2 : IKeyPairing
     public static bool ReordersPairs => false;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
+    public static bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+        Entity first, Entity second, out (Entity, Entity) pair)
     {
         pair = (first, second);
         return true;
@@ -52,11 +56,12 @@ public readonly struct KeyPairsBetween : IKeyPairing
     public static bool ReordersPairs => true;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool TryPair(in RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
+    public static bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+        Entity first, Entity second, out (Entity, Entity) pair)
     {
         int order = EntityOrder.Compare(first, second);
         pair = order < 0 ? (first, second) : (second, first);
-        return order != 0 && (order < 0 || !queries.First.Contains(second) ||
-            !queries.Second.Contains(first));
+        return order != 0 && (order < 0 || !firstMembers.Contains(second) ||
+            !secondMembers.Contains(first));
     }
 }

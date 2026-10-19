@@ -63,6 +63,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | 87559c84 | 纯成员判断形成40B QueryRow；Contains全内联后两侧对子调用选择不同 | Contains复用同一World匹配，输出需要组件行时静态保留TryGetRow；共同bool匹配边界独立并复用一次EntityStore读取 | [optimized-11](evidence/ECS-Relations-2026-10-19/optimized-11/summary.md)、[构建、原生与许可检查](evidence/ECS-Relations-2026-10-19/commands-r11-r12.json) |
 | 89a59155 | 许可两方向直接test/je；pair中转有四次int写入、16B重读和回调this读取 | 无状态static abstract结果操作，原pair以scoped in直达输出；默认私有loop仅接members/predicate/output，共同Contains单次取得Store | [optimized-12](evidence/ECS-Relations-2026-10-19/optimized-12/summary.md)、[实际指令与检查](evidence/ECS-Relations-2026-10-19/commands-r12-r13.json) |
 | d361242b | static结果和原身份直接写输出；两端候选loop各展开两大份World匹配 | TryGetEntityQueryRow与Contains保留共同点匹配边界，内部复用同一record helper，具体许可与结果继续内联 | [optimized-13](evidence/ECS-Relations-2026-10-19/optimized-13/summary.md)、[实际原生与分布读取](evidence/ECS-Relations-2026-10-19/commands-r13-r14.json) |
+| 0f4fdf4b | 行匹配保留同一独立入口；Key caller仍形成216B视图，bitmap输出引用跨组件绑定存活 | 键轻入口向静态桶循环仅传具体成员与访问输入；先绑定组件引用，再向具体许可借用唯一输出 | [optimized-14](evidence/ECS-Relations-2026-10-19/optimized-14/summary.md) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -93,6 +94,8 @@ r12 在15项反馈中确认中/大角色键及小规模dynamic90通过严格判�
 r13 的16项反馈中8项严格通过。原生读取确认了static结果操作与原身份直接进入终端输出；双方方向判断均为Allowed读取、内存test及直接条件分支。共同World行匹配在提取helper后被两侧候选loop各展开两份，包括结构状态、record、archetype字典和逐行筛选。后继为TryGetEntityQueryRow保留独立边界，和Contains复用同一匹配helper。剩余Output借用跨组件绑定的现象由同一原生记录保留，反馈继续按实际边界定位。
 
 r13 单向mask4小场景的高尾集中在连续时段：扩展后段变慢后，紧随的手写帧也连续变慢；其原精度1.3779131621735523判定仍保存。中规模角色64交错的扩展分布整体右移，median61225/59574.5ticks，两侧先后次序均出现持续差值。所核对的五项每侧248样本均记录GC=0、DataWrite=0及恒定一致的输出量，后续优化据此区分具体执行成本和实际波动。
+
+r14 保留共同点匹配边界后，16项反馈中3项严格通过；单向mask1小规模为0.90920840064620356/0.94650281360586308，中规模角色64交错为0.99643525823937729/0.9909627398585259。双方许可mask4大规模为1.0090796568356213/1.0141933825092542。原生键caller仍构造Access/First共48B并清零其余168B，再独立进入大循环；其具体配对规则只读取两个成员集合。后继将公开入口与桶循环分开，Within沿同一First借用，Between/Product保留各自实际读取范围；语义和实现以scoped in继续保持描述的只读调用含义。
 
 ## 执行与复现
 
