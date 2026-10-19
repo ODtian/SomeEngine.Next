@@ -46,6 +46,23 @@
 
 [最终IL与Native完整方法](evidence/ECS-Relations-2026-10-19/commands-packages-code-final.json)保留使用方与实际包DLL的选定IL块，以及冻结原生对象中四个闭合函数的完整输出；四个原生符号均精确匹配一次。IL队列为`60d0895422044ab1ac184826a2c3d6ee`，Native队列为`e29cdab130204f68a7a777dd5fe27522`，均exit0，DLL/obj的实际时间与字节见同一生成元数据文件。
 
+### #243 最终IL与原生四角色
+
+下表地址为最终AotSmoke原生对象托管代码节内偏移，范围包含最后一条指令及该方法自身冷路径。来源为上节冻结的7f8库包及3b使用方。
+
+| 实际闭合函数 | 完整节内范围 | 指令行数 | 实际字段、调用与输出 |
+| --- | --- | ---: | --- |
+| WeightedTotal8.Matches | 0x21030..0x2108e | 32 | 三个引用寄存器及五个栈引用传入八个Number字段；0x2107c取得第八引用，0x21081读取其字段 |
+| ComponentRelation_9&lt;WeightedTotal8,Number&lt;int&gt;×8&gt;.Matches | 0xe0b00..0xe1727 | 854 | 0xe1410..0xe1424放置五个组件引用参数，0xe142d直接调用0x21030；完整身份成员与列绑定同在此方法 |
+| World.ReadEntityQueryRef&lt;Number&lt;int&gt;&gt; | 0x19d760..0x19db52 | 300 | 0x19dab8形成组件地址并由RAX返回，0x19dac6返回；空结果在0x19dad6返回零RAX |
+| SpatialTraversal.Enumerate&lt;DefaultContacts＋BodyBitmap/MutualPermission＋HairCharacterIndex,PairArrayOutput&gt; | 0x1da660..0x1db4f7 | 992 | 0x1db246..0x1db252取得类别数据，0x1db256和0x1db25f执行双方位判断，0x1db317调用具体PairArrayOutput.Add |
+
+最终ComponentRelation八元借用行重载在IL_0003..IL_004e取得八个ComponentReference，IL_005f..IL_0090取得八个只读Value引用，IL_0095/IL_009b经constrained调用具体八元语义。身份重载的第八实体沿IL_00a0/IL_00a5读取Rest.Item1。使用方EighthEntity.Add在IL_001d/IL_0022读取Rest.Item1，IL_0027写出实体，IL_002c/IL_002d返回false，实际保留提前结束。
+
+NumberPointValue的IL_000b调用公开TryReadRef，IL_0017取得只读ComponentReference.Value并读取Number.Value。位图IL同时保留身份/借用行的Matches/Evaluate、两个标量读取、具体静态结果分派和ForwardedMutualPermission的自定义Matches回退。SpatialBitmapFilter.MatchesLeaves在IL_0063/IL_0069调用其具体许可；FillContacts.Execute的IL_000c调用FillPairsParallel，CollisionPairBuffer.Fill在IL_00a2调度具体CountJob，在IL_0215沿前缀依赖调度具体FillJob。对应Execute通过具体ICollisionPartitionEnumerable消费PairCount/PairArrayOutput。
+
+最终登记的17个存储和2个schema写入既有JobStorageTypeMetadata与RelationSchemaCache。NativeAddress为false，其余16个存储为true；ComponentMetadata.CreateOperations记录同一类型分类getter，ComponentInfo读取函数指针，QueryJobAccess.CopyAccesses继续消费该属性并形成既有查询资源访问。完整IL块同时保留写入和这些普通读取路径。
+
 完整刷新入口为：
 
 ```powershell
@@ -141,7 +158,9 @@ ECS 元数据另有一个程序集初始化类；IncreaseNumbers 的 Job 生成�
 
 Relations 库的 `obj/Release/net10.0/generated/.../RelationFamilyGenerator` 中有八个 RelationFamily 源码和一份视图源码：IRelation、ComponentRelation、ComponentWhere、ComponentExcept 各八个，Product 八个，RelationQueryViews 一个，共 41 个固定类型。这些类型已经编入实际 Relations 包。
 
-## IL：只读引用、泛型分派和输出状态
+## #242 初次IL：只读引用、泛型分派和输出状态
+
+本节的342B方法及ReadRef调用对应初次#242源码与当时包产物；#243最终方法和组件借用读取由上节独立列出。
 
 实际工具为 `ilspycmd 9.1.0.7988`，读取对象为包缓存中的 DLL 和使用方 Release DLL。公共队列结果分别为：
 
@@ -168,7 +187,9 @@ Relations 库的 `obj/Release/net10.0/generated/.../RelationFamilyGenerator` 中
 
 Systems 的 QueryJobAccess.CopyAccesses 在 IL_005a 取得 ComponentInfo，IL_006c 调用 get_IsJobAliasFree；ECS getter 的 IL_000b 用 `calli bool()` 调用操作表函数。随后 Systems 的 IL_00c2/IL_00cc 分别调用既有 WorldStorageJobResources.Read/Write。CollisionMaintenance.ScheduleRead 复用这条公共查询资源链。
 
-## NativeAOT：封闭调用、字段读取与位判断
+## #242 初次NativeAOT：封闭调用、字段读取与位判断
+
+本节保留初次#242对象的符号与地址。#243最终3b使用方的四个实际角色地址见上节。
 
 对象为本次 publish 的 `native/SomeEngine.ECS.Relations.AotSmoke.obj`，格式 coff-x86-64。`llvm-objdump --syms` 的公共队列编号为 `70d19f096d564ca09f35f4e1c6719cb2`。从实际符号名选择目标，再用 `-d -r --disassemble-symbols=<符号>` 读取；完整命令由下列结果目录保存。
 

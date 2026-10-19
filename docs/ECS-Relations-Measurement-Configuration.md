@@ -44,7 +44,7 @@
 
 几何消费继续以Empty.WithAccessFrom形成自身访问查询，其取得、读取和释放成本计入原Consume或实际整帧边界。持久Members、两侧各自描述/索引和消费访问查询按各自真实生命周期记录。
 
-同函数控制通过--comparison HandwrittenControl选择，使用独立HandwrittenControlReport。两侧明确命名H1/H2，保存FirstHandwrittenType与SecondHandwrittenType、各自分布/初始化/内存和真实完整结果，Required=false。Verify、Run、32×8分布与计时共用正式测量流程。Submit-Measurements的HandwrittenControlCaseId将指定控制项紧随同输入正式项排入同一次独占准备；控制项生成单独control-summary.md/control-metrics.csv，正式E/H报告保留其字段与严格判断。
+同函数控制通过--comparison HandwrittenControl选择，使用独立HandwrittenControlReport。两侧明确命名H1/H2，保存FirstHandwrittenType与SecondHandwrittenType、各自分布/初始化/内存和真实完整结果，Required=false。Verify、Run、32×8分布与计时共用正式测量流程。Submit-Measurements的HandwrittenControlsOnly开关仅提交HandwrittenControlCaseId列出的控制项，形成独立系列；控制项生成control-summary.md/control-metrics.csv。正式108项E/H沿独立清单保存。
 
 读取声明与原Definition为同一引用的单输入只读查询直接借用原Members句柄执行，描述执行结束后由原持有者继续管理该句柄；实际派生的定义形成并释放自身临时查询。扩展与独立手写Default、Bitmap、Key及对应空间入口采用同一规则。World.ExecuteQuery继续承担读取准入、版本和迭代作用域，输出沿finally回写。
 
@@ -60,7 +60,7 @@ r31及以前系列保留31×8原始配置，每侧248帧、128先/120后；[r30 
 
 JIT在同一Release输出目录以PublishAot=false、SelfContained=false及实际SourceRevisionId构建普通托管入口，采用.NET10默认TieredCompilation/ReadyToRun配置，环境项记录为default；双方在同一进程使用相同配置和上述固定预热/采样。JIT报告独立记录Backend、实际命令、源码、原始样本和阶段，NativeAOT验收使用其独立报告。
 
-测量前先执行第一侧Query与Consume，立即保存其完整Entity身份行和真实contact/depth值，再执行第二侧并逐项核对；这些物化与比较均在Verify阶段完成。持续更新核对覆盖完整八帧周期。原始记录包含 ticks、先后顺序、输出数、接触次数／深度、全线程与当前线程分配、GC、Managed/WorkingSet。median及R-7 p95按原始精度计算，分别以扩展/手写≤1.00判断主场景及表中额外要求的完整帧。融合的遍历、筛选和输出属于同一个Query边界。
+测量前先执行第一侧Query与Consume，立即保存其完整Entity身份行和真实contact/depth值，再执行第二侧并逐项核对；这些物化与比较均在Verify阶段完成。持续更新核对覆盖完整八帧周期。原始记录包含 ticks、先后顺序、输出数、接触次数／深度、全线程与当前线程分配、GC、Managed/WorkingSet。median及R-7 p95按原始精度计算。用户于2026-10-19确定最终每项扩展/手写median与p95均≤1.01，报告以ApprovedRatioLimit=1.01及ApprovedPassed单列这一口径；原生报告既有Passed继续保存≤1.00的严格对照，原始样本保持原值。H1/H2同函数波动在独立中性报告中单列。融合的遍历、筛选和输出属于同一个Query边界。
 
 机器配置版的allocation起始计数位于before-Managed/WorkingSet/CPU观察之后，结束计数紧跟实际frame工作并先于after观察，记录当前及全部线程的实际工作分配。r24及以前系列的FrameAllocatedBytes同时包含before-WorkingSet观察的分配；其原始值和原scope随历史系列保留。elapsed查询/整帧时钟与单帧采样边界继续按原定义执行。
 

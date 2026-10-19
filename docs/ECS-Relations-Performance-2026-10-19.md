@@ -1,24 +1,28 @@
 # ECS 关系查询性能与架构证据（2026-10-19）
 
-本次测量通过真实 World、公开查询、现有键索引、实际二叉 AABB 树、维护依赖、成对输出缓冲与几何消费执行九类工作。完整配置为108个独立场景，主查询与额外完整帧共126项验收指标；每项分别使用原精度 median 比和 p95 比 ≤1.00。固定输入与采样见[配置](ECS-Relations-Measurement-Configuration.md)，逐项功能及包交付见[证据索引](ECS-Relations-Delivery-2026-10-19.md)。
+本次测量通过真实 World、公开查询、现有键索引、实际二叉 AABB 树、维护依赖、成对输出缓冲与几何消费执行九类工作。完整配置为108个独立场景，主查询与额外完整帧共126项验收指标。用户于2026-10-19确定最终每项原精度median比与p95比均≤1.01，并单列H1/H2同函数波动；原生Passed继续保留≤1.00的严格对照。固定输入与采样见[配置](ECS-Relations-Measurement-Configuration.md)，逐项功能及包交付见[证据索引](ECS-Relations-Delivery-2026-10-19.md)。
 
 这些优化对应的公开读取、静态事实、许可与借用回调归属见[接口调整表](ECS-Relations-API-Changes-2026-10-19.md)。
 
 ## 完整矩阵记录
 
-最新完整系列`controlled-r22`对应源码`0ac0159349d41d46fa8197b86a4e1bd148debf4a`的同一NativeAOT产物。108项均完成完整结果核对，126项严格指标中108项通过。[逐项原精度表](evidence/ECS-Relations-2026-10-19/controlled-r22/summary.md)、[原始报告索引](evidence/ECS-Relations-2026-10-19/controlled-r22/index.json)和[队列边界审计](evidence/ECS-Relations-2026-10-19/controlled-r22/queue-boundaries.json)保存实际结果与控制条件。下表来自该次完整系列。
+最新完整系列`formal-native-r32`对应C#源码`3b582fe541d86d7f556b3f9d6854962d292454ef`的同一NativeAOT产物，每侧32×8帧、先后各128帧。108项全部等价，126项中原≤1.00严格通过104项，按用户批准的ApprovedRatioLimit=1.01通过110项。[双口径逐项表](evidence/ECS-Relations-2026-10-19/formal-native-r32/approved-summary.json)、[16项余项完整同列表](evidence/ECS-Relations-2026-10-19/formal-native-r32/approved-unmet.md)、[原始报告索引](evidence/ECS-Relations-2026-10-19/formal-native-r32/index.json)和[队列边界审计](evidence/ECS-Relations-2026-10-19/formal-native-r32/queue-boundaries.json)保存实际结果。以下同一组列分别给出两种判定。
 
-| 场景类 | 主指标通过/数量 | 额外完整帧通过/数量 |
-| --- | --- | --- |
-| finite | 4/18 | — |
-| default | 8/9 | — |
-| character | 11/12 | — |
-| bitmap-space | 17/18 | — |
-| character-space | 5/6 | — |
-| complete | 9/9 | 9/9 |
-| updates | 9/9 | 9/9 |
-| threads | 18/18 | — |
-| consume | 9/9 | — |
+| 场景类 | 主指标≤1.00 | 主指标≤1.01 | 额外完整帧≤1.00 | 额外完整帧≤1.01 |
+| --- | --- | --- | --- | --- |
+| finite | 7/18 | 13/18 | — | — |
+| default | 0/9 | 0/9 | — | — |
+| character | 11/12 | 11/12 | — | — |
+| bitmap-space | 18/18 | 18/18 | — | — |
+| character-space | 6/6 | 6/6 | — | — |
+| complete | 9/9 | 9/9 | 9/9 | 9/9 |
+| updates | 9/9 | 9/9 | 9/9 | 9/9 |
+| threads | 17/18 | 17/18 | — | — |
+| consume | 9/9 | 9/9 | — | — |
+
+本轮108个case与3个分析均exit0。最后case提交07:41:37.2003216Z，准备结束07:41:38.4516225Z，首case开始07:41:38.4523762Z；最后case结束08:02:09.7127512Z，首分析开始08:03:03.7813299Z。case实际进程执行765.978644秒，case间隔465.281731秒。预监听读取manifest为07:41:38.4125360Z–07:41:38.4343887Z，与case重叠数为0；最终分析收据事件08:12:10.6944000Z结束保护窗口。
+
+前序完整`controlled-r22`对应源码`0ac0159349d41d46fa8197b86a4e1bd148debf4a`，108项等价、≤1.00为108/126；其[原精度表](evidence/ECS-Relations-2026-10-19/controlled-r22/summary.md)与[原始报告](evidence/ECS-Relations-2026-10-19/controlled-r22/index.json)保留自身31轮配置。
 
 前序完整`matrix-r15`对应源码`cc08ae37b03e7d9066adbd78207a6e8249a4b1d1`，126项中99项通过；其[原精度表](evidence/ECS-Relations-2026-10-19/matrix-r15/summary.md)与[原始报告](evidence/ECS-Relations-2026-10-19/matrix-r15/index.json)保留。后续受影响子集按各自完整系列保存，结果由其实际源码和原始门槛确定。
 

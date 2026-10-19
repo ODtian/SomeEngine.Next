@@ -38,7 +38,7 @@
 | 规格验收项 | 持久记录 |
 | --- | --- |
 | 九类全部变体×小/中/大、公开输入与等价 | [固定108场景配置](ECS-Relations-Measurement-Configuration.md)、[MeasurementCases](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/MeasurementCases.cs)、[运行器](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/RelationsMeasurements.cs)；逐case原始报告的Equivalence保存完整核对后的数量、消费数组和前16行 |
-| 各case原精度median及p95均≤1.00 | [实际结果与架构优化](ECS-Relations-Performance-2026-10-19.md)；每项Comparison包含原始精度比值与Passed判断 |
+| 各case原精度median及p95均≤1.01，并单列H1/H2同函数波动 | [实际结果与架构优化](ECS-Relations-Performance-2026-10-19.md)；[双口径原精度表](evidence/ECS-Relations-2026-10-19/formal-native-r32/approved-summary.json)保留原生≤1.00的Passed及ApprovedRatioLimit=1.01判断 |
 | 维护+查询、完整帧、真实消费端到端 | 同一[结果报告](ECS-Relations-Performance-2026-10-19.md)中分别列出MaintenanceAndQuery、FrameTotal、PairsAndConsume |
 | 串并行提交至完成、吞吐量与真实内存 | 每份原始报告的ScheduledPairOutput、分布和IndexMemory；[内存统计范围](ECS-Relations-Measurement-Configuration.md)与[统计源码](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/IndexMemory.cs) |
 | 原始波动、全线程分配、设备/提交/命令/队列 | [原始报告格式与读取](evidence/ECS-Relations-2026-10-19/README.md)；逐帧ticks、轮序、IQR/stddev、进程内存和各队列result/stdout/stderr |

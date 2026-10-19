@@ -2,6 +2,7 @@ param(
     [string]$Series = 'initial',
     [string[]]$CaseId = @(),
     [string[]]$HandwrittenControlCaseId = @(),
+    [switch]$HandwrittenControlsOnly,
     [ValidateSet('NativeAOT', 'JIT')][string]$Backend = 'NativeAOT',
     [ValidateSet('measure', 'phases')][string]$Mode = 'measure',
     [ValidateSet('Normal', 'Fixed')][string[]]$Machine = @('Fixed'),
@@ -28,7 +29,7 @@ try {
     $listing = & $prefix[0] @listingArguments
     if ($LASTEXITCODE -ne 0) { throw 'Case listing failed.' }
     $cases = ($listing -join [Environment]::NewLine) | ConvertFrom-Json
-    $selected = $cases | Where-Object { ($CaseId.Count -eq 0 -or $_.Id -in $CaseId) -and ($Mode -ne 'phases' -or $_.ChangesEveryFrame) }
+    $selected = $cases | Where-Object { !$HandwrittenControlsOnly -and ($CaseId.Count -eq 0 -or $_.Id -in $CaseId) -and ($Mode -ne 'phases' -or $_.ChangesEveryFrame) }
     $requests = @(
         foreach ($case in $cases) {
             if ($case -in $selected) { [pscustomobject]@{ Input = $case; Comparison = 'RelationHandwritten' } }
@@ -71,7 +72,7 @@ try {
         SourceCommit = $sourceCommit; SubmissionCommit = (& git rev-parse HEAD).Trim(); Backend = $Backend
         SessionId = $Session; ListingCommand = @($prefix[0]) + $listingArguments
         StartedAtUtc = $submissionStarted; FinishedAtUtc = [DateTime]::UtcNow
-        CaseCount = @($submissions).Count; Machines = @($Machine); Reports = @($reports)
+        CaseCount = @($submissions).Count; Machines = @($Machine); HandwrittenControlsOnly = [bool]$HandwrittenControlsOnly; Reports = @($reports)
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $reportDirectory 'queue-submission.json') -Encoding utf8
 }
 finally { Set-Location -LiteralPath $previousDirectory }
