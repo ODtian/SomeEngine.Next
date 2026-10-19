@@ -27,13 +27,8 @@ public readonly struct FixedCandidatePairs : IQueryRelationEnumerable<(Entity, E
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
-        => Enumerate(_pairs, ref output);
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static bool Enumerate<TOutput>((Entity, Entity)[] pairs, ref TOutput output)
-        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        foreach (var pair in pairs)
+        foreach (var pair in _pairs)
         {
             if (!output.Add(in pair))
                 return false;
