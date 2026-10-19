@@ -1,0 +1,269 @@
+{
+  "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+  "DiagnosticOnly": true,
+  "ProcessId": 82980,
+  "ProcessStartedAtUtc": "2026-10-19T20:19:45.9095677Z",
+  "StartedAtUtc": "2026-10-19T20:19:46.8861737Z",
+  "LoggerName": "NT Kernel Logger",
+  "CounterNames": "InstructionRetired,UnhaltedCoreCycles,BranchMispredictsRetired,LLCMisses",
+  "RawEtl": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\kernel.etl",
+  "MergedEtl": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmc.etl",
+  "NativeExe": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+  "NativeExeUtc": "2026-10-19T19:04:11.8113793Z",
+  "NativeExeBytes": 4974592,
+  "NativeObjUtc": "2026-10-19T19:04:11.0600041Z",
+  "NativeObjBytes": 26199322,
+  "ExistingKernelLogger": false,
+  "LoggerStartSucceeded": true,
+  "TargetProcessId": 29672,
+  "NativeExitCode": 0,
+  "TraceCreated": true,
+  "TraceBytes": 1119354880,
+  "Error": null,
+  "FinishedAtUtc": "2026-10-19T20:21:10.9666857Z",
+  "Commands": [
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "source-list",
+      "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+      "Arguments": [
+        "--mode",
+        "list",
+        "--source",
+        "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c"
+      ],
+      "ProcessId": 90296,
+      "StartedAtUtc": "2026-10-19T20:19:46.9141Z",
+      "FinishedAtUtc": "2026-10-19T20:19:47.1796876Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\source-list.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\source-list.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "loggers-before",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-Loggers",
+        "NT Kernel Logger"
+      ],
+      "ProcessId": 84032,
+      "StartedAtUtc": "2026-10-19T20:19:47.1880559Z",
+      "FinishedAtUtc": "2026-10-19T20:19:49.155399Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\loggers-before.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\loggers-before.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "pmcsources-before",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-PmcSources"
+      ],
+      "ProcessId": 37216,
+      "StartedAtUtc": "2026-10-19T20:19:49.1681541Z",
+      "FinishedAtUtc": "2026-10-19T20:19:49.2859842Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmcsources-before.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmcsources-before.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "pmcsessions-before",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-PmcSessions"
+      ],
+      "ProcessId": 21276,
+      "StartedAtUtc": "2026-10-19T20:19:49.2877203Z",
+      "FinishedAtUtc": "2026-10-19T20:19:49.4059097Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmcsessions-before.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmcsessions-before.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "profile-interval-before",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-ProfInt"
+      ],
+      "ProcessId": 52484,
+      "StartedAtUtc": "2026-10-19T20:19:49.4074088Z",
+      "FinishedAtUtc": "2026-10-19T20:19:49.5197389Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\profile-interval-before.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\profile-interval-before.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "logger-start",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-on",
+        "PROC_THREAD+LOADER+PROFILE+PMC_PROFILE",
+        "-stackwalk",
+        "Profile+PmcInterrupt",
+        "-PmcProfile",
+        "InstructionRetired,UnhaltedCoreCycles,BranchMispredictsRetired,LLCMisses",
+        "-f",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\kernel.etl"
+      ],
+      "ProcessId": 52196,
+      "StartedAtUtc": "2026-10-19T20:19:49.522448Z",
+      "FinishedAtUtc": "2026-10-19T20:19:52.4075109Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\logger-start.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\logger-start.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "pmcsessions-started",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-PmcSessions"
+      ],
+      "ProcessId": 75004,
+      "StartedAtUtc": "2026-10-19T20:19:52.4221421Z",
+      "FinishedAtUtc": "2026-10-19T20:19:52.5861749Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmcsessions-started.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmcsessions-started.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "native",
+      "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+      "Arguments": [
+        "--mode",
+        "measure",
+        "--case",
+        "finite",
+        "--size",
+        "large",
+        "--variant",
+        "mask8-oneway",
+        "--source",
+        "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+        "--backend",
+        "NativeAOT",
+        "--machine",
+        "Fixed",
+        "--comparison",
+        "RelationHandwritten",
+        "--output",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\measurement.json"
+      ],
+      "ProcessId": 29672,
+      "StartedAtUtc": "2026-10-19T20:19:52.5887483Z",
+      "FinishedAtUtc": "2026-10-19T20:20:10.2965706Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\native.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\native.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "loggers-before-stop",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-Loggers",
+        "NT Kernel Logger"
+      ],
+      "ProcessId": 41156,
+      "StartedAtUtc": "2026-10-19T20:20:10.3007232Z",
+      "FinishedAtUtc": "2026-10-19T20:20:12.4434932Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\loggers-before-stop.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\loggers-before-stop.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "logger-stop-merge",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-stop",
+        "NT Kernel Logger",
+        "-d",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmc.etl"
+      ],
+      "ProcessId": 73980,
+      "StartedAtUtc": "2026-10-19T20:20:12.4446195Z",
+      "FinishedAtUtc": "2026-10-19T20:21:08.5267184Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\logger-stop-merge.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\logger-stop-merge.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "pmcsources-after",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-PmcSources"
+      ],
+      "ProcessId": 88400,
+      "StartedAtUtc": "2026-10-19T20:21:08.5277709Z",
+      "FinishedAtUtc": "2026-10-19T20:21:08.6475144Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmcsources-after.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmcsources-after.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "pmcsessions-after",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-PmcSessions"
+      ],
+      "ProcessId": 79068,
+      "StartedAtUtc": "2026-10-19T20:21:08.6483049Z",
+      "FinishedAtUtc": "2026-10-19T20:21:08.7959313Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmcsessions-after.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmcsessions-after.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "profile-interval-after",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-ProfInt"
+      ],
+      "ProcessId": 78476,
+      "StartedAtUtc": "2026-10-19T20:21:08.7969287Z",
+      "FinishedAtUtc": "2026-10-19T20:21:08.9756146Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\profile-interval-after.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\profile-interval-after.stderr.log"
+    },
+    {
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "Stage": "loggers-after",
+      "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+      "Arguments": [
+        "-Loggers",
+        "NT Kernel Logger"
+      ],
+      "ProcessId": 87280,
+      "StartedAtUtc": "2026-10-19T20:21:08.9764767Z",
+      "FinishedAtUtc": "2026-10-19T20:21:10.9569349Z",
+      "TimedOut": false,
+      "ExitCode": 0,
+      "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\loggers-after.stdout.log",
+      "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\loggers-after.stderr.log"
+    }
+  ]
+}

@@ -1,0 +1,466 @@
+{
+  "FrozenNative": "0c267",
+  "EtlPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmc.etl",
+  "TargetPid": 29672,
+  "TraceEventVersion": "3.1.23.0",
+  "SessionStartUtc": "2026-10-19T20:19:49.8277016Z",
+  "SessionEndUtc": "2026-10-19T20:20:22.3083589Z",
+  "ElapsedSeconds": 3.5441791,
+  "ImageBase": "0x7ff7989d0000",
+  "ImageSize": 5079040,
+  "ImageEvents": [
+    {
+      "Event": "ImageLoad",
+      "FileName": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+      "Base": 140701394075648,
+      "Size": 5079040,
+      "Qpc": 9163804293623
+    }
+  ],
+  "FunctionRvaRangesEndExclusive": [
+    {
+      "Name": "Run",
+      "Start": 371488,
+      "End": 375020
+    },
+    {
+      "Name": "G_OneWayWorld",
+      "Start": 2261344,
+      "End": 2262402
+    },
+    {
+      "Name": "H_OneWayLoop",
+      "Start": 1447520,
+      "End": 1447674
+    },
+    {
+      "Name": "Point",
+      "Start": 1956448,
+      "End": 1957500
+    },
+    {
+      "Name": "DictionaryFindValue",
+      "Start": 1594656,
+      "End": 1594950
+    },
+    {
+      "Name": "MatchesRow",
+      "Start": 61120,
+      "End": 61353
+    },
+    {
+      "Name": "Materialize",
+      "Start": 119728,
+      "End": 119882
+    },
+    {
+      "Name": "GetRecord",
+      "Start": 116624,
+      "End": 117090
+    },
+    {
+      "Name": "ResolveChunk",
+      "Start": 119632,
+      "End": 119714
+    },
+    {
+      "Name": "ResolveArch",
+      "Start": 119536,
+      "End": 119618
+    },
+    {
+      "Name": "MatchesExact",
+      "Start": 61376,
+      "End": 61615
+    }
+  ],
+  "IntervalEvents": {
+    "0": [
+      {
+        "Event": "CollectionStart",
+        "Source": 0,
+        "NewInterval": 10000,
+        "OldInterval": 10000,
+        "Qpc": 9163801998926,
+        "RelativeMs": 2566.6038
+      }
+    ],
+    "26": [
+      {
+        "Event": "CollectionStart",
+        "Source": 26,
+        "NewInterval": 65536,
+        "OldInterval": 65536,
+        "Qpc": 9163801998937,
+        "RelativeMs": 2566.6049
+      }
+    ],
+    "25": [
+      {
+        "Event": "CollectionStart",
+        "Source": 25,
+        "NewInterval": 65536,
+        "OldInterval": 65536,
+        "Qpc": 9163801998942,
+        "RelativeMs": 2566.6054
+      }
+    ],
+    "31": [
+      {
+        "Event": "CollectionStart",
+        "Source": 31,
+        "NewInterval": 65536,
+        "OldInterval": 65536,
+        "Qpc": 9163801998947,
+        "RelativeMs": 2566.6059
+      }
+    ],
+    "29": [
+      {
+        "Event": "CollectionStart",
+        "Source": 29,
+        "NewInterval": 65536,
+        "OldInterval": 65536,
+        "Qpc": 9163801998949,
+        "RelativeMs": 2566.6061
+      }
+    ]
+  },
+  "IntervalFallback": "Capture configuration 65536 until an observed interval event applies by QPC",
+  "Quality": {
+    "EventsLost": 0,
+    "TargetPmcSamples": 1067,
+    "TargetStackFragments": 19051,
+    "UnpairedPmcSamples": 10,
+    "SamplesWithoutUserStack": 217,
+    "StackFragmentsWithoutPmc": 17632,
+    "StackKeyReferences": 0,
+    "GroupsWithMultiplePmc": 0,
+    "AdditionalPmcAtSharedQpcTid": 0,
+    "SamplesWithoutSide": 1059,
+    "SamplesWithBothSides": 0
+  },
+  "Sources": [
+    {
+      "Source": 25,
+      "Name": "UnhaltedCoreCycles",
+      "UsedIntervals": {
+        "65536": 406
+      },
+      "Scopes": {
+        "OutsideRun": {
+          "Unassigned": {
+            "Samples": 406,
+            "PairedStackSamples": 404,
+            "UserStackSamples": 325,
+            "KernelStackSamples": 250,
+            "LeafInsideImage": 9,
+            "IntervalFromEventSamples": 406,
+            "EstimatedEvents": 26607616,
+            "Inclusive": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 0,
+              "Point": 0,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 0,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 0
+            },
+            "Self": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 0,
+              "Point": 0,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 0,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 0,
+              "OutsideImage": 397,
+              "OtherImageFunction": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "Source": 26,
+      "Name": "InstructionRetired",
+      "UsedIntervals": {
+        "65536": 518
+      },
+      "Scopes": {
+        "OutsideRun": {
+          "Unassigned": {
+            "Samples": 518,
+            "PairedStackSamples": 518,
+            "UserStackSamples": 423,
+            "KernelStackSamples": 297,
+            "LeafInsideImage": 0,
+            "IntervalFromEventSamples": 518,
+            "EstimatedEvents": 33947648,
+            "Inclusive": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 0,
+              "Point": 0,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 0,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 0
+            },
+            "Self": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 0,
+              "Point": 0,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 0,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 0,
+              "OutsideImage": 518
+            }
+          }
+        }
+      }
+    },
+    {
+      "Source": 31,
+      "Name": "BranchMispredictsRetired",
+      "UsedIntervals": {
+        "65536": 143
+      },
+      "Scopes": {
+        "OutsideRun": {
+          "Unassigned": {
+            "Samples": 130,
+            "PairedStackSamples": 123,
+            "UserStackSamples": 90,
+            "KernelStackSamples": 37,
+            "LeafInsideImage": 87,
+            "IntervalFromEventSamples": 130,
+            "EstimatedEvents": 8519680,
+            "Inclusive": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 0,
+              "Point": 4,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 1,
+              "GetRecord": 1,
+              "ResolveChunk": 0,
+              "ResolveArch": 1,
+              "MatchesExact": 0
+            },
+            "Self": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 0,
+              "Point": 4,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 1,
+              "GetRecord": 1,
+              "ResolveChunk": 0,
+              "ResolveArch": 1,
+              "MatchesExact": 0,
+              "OutsideImage": 43,
+              "OtherImageFunction": 80
+            }
+          },
+          "H": {
+            "Samples": 1,
+            "PairedStackSamples": 0,
+            "UserStackSamples": 0,
+            "KernelStackSamples": 0,
+            "LeafInsideImage": 1,
+            "IntervalFromEventSamples": 1,
+            "EstimatedEvents": 65536,
+            "Inclusive": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 1,
+              "Point": 0,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 0,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 0
+            },
+            "Self": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 1,
+              "Point": 0,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 0,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 0
+            }
+          }
+        },
+        "Run": {
+          "Unassigned": {
+            "Samples": 5,
+            "PairedStackSamples": 5,
+            "UserStackSamples": 5,
+            "KernelStackSamples": 1,
+            "LeafInsideImage": 4,
+            "IntervalFromEventSamples": 5,
+            "EstimatedEvents": 327680,
+            "Inclusive": {
+              "Run": 5,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 0,
+              "Point": 0,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 0,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 0
+            },
+            "Self": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 0,
+              "Point": 0,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 0,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 0,
+              "OutsideImage": 1,
+              "OtherImageFunction": 4
+            }
+          },
+          "G": {
+            "Samples": 5,
+            "PairedStackSamples": 5,
+            "UserStackSamples": 5,
+            "KernelStackSamples": 1,
+            "LeafInsideImage": 4,
+            "IntervalFromEventSamples": 5,
+            "EstimatedEvents": 327680,
+            "Inclusive": {
+              "Run": 5,
+              "G_OneWayWorld": 5,
+              "H_OneWayLoop": 0,
+              "Point": 5,
+              "DictionaryFindValue": 2,
+              "MatchesRow": 1,
+              "Materialize": 1,
+              "GetRecord": 2,
+              "ResolveChunk": 0,
+              "ResolveArch": 1,
+              "MatchesExact": 1
+            },
+            "Self": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 0,
+              "Point": 0,
+              "DictionaryFindValue": 2,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 1,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 1,
+              "OutsideImage": 1
+            }
+          },
+          "H": {
+            "Samples": 2,
+            "PairedStackSamples": 2,
+            "UserStackSamples": 2,
+            "KernelStackSamples": 0,
+            "LeafInsideImage": 2,
+            "IntervalFromEventSamples": 2,
+            "EstimatedEvents": 131072,
+            "Inclusive": {
+              "Run": 2,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 2,
+              "Point": 2,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 0,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 0
+            },
+            "Self": {
+              "Run": 0,
+              "G_OneWayWorld": 0,
+              "H_OneWayLoop": 0,
+              "Point": 2,
+              "DictionaryFindValue": 0,
+              "MatchesRow": 0,
+              "Materialize": 0,
+              "GetRecord": 0,
+              "ResolveChunk": 0,
+              "ResolveArch": 0,
+              "MatchesExact": 0
+            }
+          }
+        }
+      }
+    }
+  ],
+  "RunSampleRatios": [
+    {
+      "Source": 25,
+      "Name": "UnhaltedCoreCycles",
+      "G": 0,
+      "H": 0,
+      "GtoH": null
+    },
+    {
+      "Source": 26,
+      "Name": "InstructionRetired",
+      "G": 0,
+      "H": 0,
+      "GtoH": null
+    },
+    {
+      "Source": 31,
+      "Name": "BranchMispredictsRetired",
+      "G": 5,
+      "H": 2,
+      "GtoH": 2.5
+    }
+  ],
+  "RunRelativeCpiFromSampleCounts": {
+    "CycleSource": 25,
+    "InstructionSource": 26,
+    "G": null,
+    "H": null,
+    "GtoH": null
+  },
+  "ScopeRule": "Run means an original joined stack contains the supplied Run RVA; all other samples are OutsideRun",
+  "SideRule": "G/H supplied function ranges in joined stack or sampled leaf; Both and Unassigned remain separate",
+  "RawSubset": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmc-target-29672.raw.json.gz"
+}

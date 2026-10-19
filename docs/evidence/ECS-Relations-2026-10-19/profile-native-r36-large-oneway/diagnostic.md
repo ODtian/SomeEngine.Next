@@ -71,3 +71,25 @@ S1mut在r36的整体mean比值为1.002478377，余项集中于p95和H先分层�
 - [完整分析及原报告指针](sample-analysis.json)
 - [六组每轮分布与trace摘要](round-query-summary.json)
 - [本次原命令、输出与退出事实](query-analysis-commands.json.gz)
+
+### PMC capture and target stack coverage
+
+The frozen 0c267 Native binary completed one independent large mask8 OneWay diagnostic with process 29672. The kernel collector started and stopped its own session successfully. Capture ba2963d687eb483caef769c19c9aa981 completed with ExitCode 0. Instructions, unhalted core cycles, retired branch misses and LLC misses used the recorded interval 65,536. The product source and benchmark inputs stayed on that binary.
+
+Whole-machine PMC text conversion completed; the following symbol-expanded event dump was interrupted after 715.65625 CPU seconds. Its e5cefa7577b7415aa205cc5d69de6932 receipt retains ExitCode -1 and the precise process, command and stop times. Direct TraceEvent reading then completed in 3.544 seconds; the stack-based revision completed in 8.582 seconds.
+
+| Coverage field | Original PID filter | Target StackWalk association |
+| --- | ---: | ---: |
+| Target PMC records | 1,067 | 1,067 |
+| PMC records paired to target stacks | 1,057 | 1,057 |
+| Matched PMC with a different public PID | 0 | 0 |
+| Target stack fragments | 19,051 | 19,051 |
+| ETW events lost | 0 | 0 |
+| Run cycles G / H | 0 / 0 | 0 / 0 |
+| Run instructions G / H | 0 / 0 | 0 / 0 |
+| Run retired branch miss samples G / H | 5 / 2 | 5 / 2 |
+| Run CPI | null | null |
+
+The second reader retained all 3,651,628 PMC records before joining the target payload stacks by QPC and thread ID. Its matching result refutes the proposed early PID filtering loss. Whole-machine totals were 2,777,857 cycle records, 839,833 instruction records and 33,938 retired branch miss records; LLC miss records totaled zero. Target Run coverage supports the recorded sampling limitation. The five and two branch samples remain raw counts.
+
+The [PMC evidence](pmc/preservation.json) preserves both target subsets, both summaries, both reader sources, capture and interval facts, and all five queue receipts with original stdout and stderr. Each copied target gzip was read completely before the four consumed whole-machine ETL/text files were deleted. [Raw read checks](pmc/raw-read-check.json) record compressed and decompressed sizes; [capture records](pmc/capture-records.json.gz) retain the original script text and per-stage facts; [queue records](pmc/commands.json.gz) retain the successful capture, interrupted conversion, compile warning and successful reader stages.
