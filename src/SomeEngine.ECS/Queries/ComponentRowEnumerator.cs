@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Archetypes;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace SomeEngine.ECS.Queries;
 
@@ -32,11 +33,14 @@ public ref struct ComponentRowEnumerator<TFirst, TSecond>
         if (!ReferenceEquals(previous, _rows.CurrentChunk))
             BindColumns(_rows.CurrentMatch, _rows.CurrentChunk!);
 
-        first = _firstComponents.IsEmpty ? default : new(in _firstComponents[row.RowIndex]);
+        // RowIndex and both nonempty columns come from the same chunk.
+        first = _firstComponents.IsEmpty ? default
+            : new(in Unsafe.Add(ref MemoryMarshal.GetReference(_firstComponents), row.RowIndex));
         // Repeated positions borrow the same component type, which proves this reference cast.
         second = typeof(TFirst) == typeof(TSecond)
             ? new(in Unsafe.As<TFirst, TSecond>(ref Unsafe.AsRef(in first.Value)))
-            : _secondComponents.IsEmpty ? default : new(in _secondComponents[row.RowIndex]);
+            : _secondComponents.IsEmpty ? default
+                : new(in Unsafe.Add(ref MemoryMarshal.GetReference(_secondComponents), row.RowIndex));
         return true;
     }
 

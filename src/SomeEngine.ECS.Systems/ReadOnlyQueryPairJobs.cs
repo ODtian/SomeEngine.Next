@@ -24,7 +24,7 @@ public static class ReadOnlyQueryPairJobs
     }
 
     /// <summary>
-    /// Submits one owner per partition with its external accesses, and joins all work before the
+    /// Submits one work item per partition with its external accesses, and joins all work before the
     /// borrowed queries return. ECS reads remain held by the surrounding callbacks.
     /// </summary>
     public static JobHandle ExecuteParallel<TJob>(scoped QueryCursor first, scoped QueryCursor second, in TJob job, int count,
@@ -44,11 +44,10 @@ public static class ReadOnlyQueryPairJobs
         JobHandle completed = dependency;
         try
         {
-            QueryData firstRead = first.Data;
-            QueryData secondRead = second.Data;
+            var data = new PairJobData<TJob>(first.Data, second.Data, job);
             for (int index = 0; index < count; index++)
             {
-                var adapter = new PairJob<TJob>(index, firstRead, secondRead, job);
+                var adapter = new PairJob<TJob>(index, data);
                 work[submitted] = scheduler.Schedule(adapter,
                     accesses.Slice(index * accessesPerWork, accessesPerWork), dependency);
                 submitted++;
@@ -70,13 +69,23 @@ public static class ReadOnlyQueryPairJobs
         return completed;
     }
 
-    private readonly struct PairJob<TJob>(int index, QueryData first, QueryData second, TJob job) : IJob
+    private sealed class PairJobData<TJob>(QueryData first, QueryData second, TJob job)
         where TJob : struct, IReadOnlyQueryPairJob
     {
-        public void Execute()
+        private readonly QueryData _first = first;
+        private readonly QueryData _second = second;
+        private readonly TJob _job = job;
+
+        public void Execute(int index)
         {
-            TJob local = job;
-            local.Execute(index, new QueryCursor(in first), new QueryCursor(in second));
+            TJob local = _job;
+            local.Execute(index, new QueryCursor(in _first), new QueryCursor(in _second));
         }
+    }
+
+    private readonly struct PairJob<TJob>(int index, PairJobData<TJob> data) : IJob
+        where TJob : struct, IReadOnlyQueryPairJob
+    {
+        public void Execute() => data.Execute(index);
     }
 }
