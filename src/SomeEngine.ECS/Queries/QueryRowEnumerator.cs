@@ -6,7 +6,7 @@ public ref struct QueryRowEnumerator<TFilter>
     where TFilter : IChunkFilter, allows ref struct
 {
     private QueryChunkEnumerator<TFilter> _chunks;
-    private QueryRowCursor _rows;
+    private int _row;
 
     internal QueryRowEnumerator(
         World world,
@@ -22,13 +22,13 @@ public ref struct QueryRowEnumerator<TFilter>
             current,
             filter,
             matchRowFilters: false);
-        _rows = new QueryRowCursor(world, last, current);
+        _row = -1;
     }
 
-    public QueryRow Current => _rows.Current;
+    public QueryRow Current => _chunks.ReadRow(_row);
 
-    internal QueryArchetypeMatch CurrentMatch => _rows.Match;
-    internal Chunk? CurrentChunk => _rows.Chunk;
+    internal QueryArchetypeMatch CurrentMatch => _chunks.CurrentMatch;
+    internal Chunk? CurrentChunk => _chunks.CurrentChunk;
 
     public QueryRowEnumerator<TFilter> GetEnumerator() => this;
 
@@ -36,13 +36,13 @@ public ref struct QueryRowEnumerator<TFilter>
     {
         while (true)
         {
-            if (_rows.MoveNext())
+            if (_chunks.MoveNextRow(ref _row))
                 return true;
 
             if (!_chunks.MoveNext())
                 return false;
 
-            _rows.Reset(_chunks.CurrentMatch, _chunks.CurrentChunk);
+            _row = -1;
         }
     }
 
@@ -97,19 +97,25 @@ internal ref struct QueryRowCursor
         _row = -1;
     }
 
-    internal bool MoveNext()
+    internal bool MoveNext() =>
+        MoveNext(_match!, _chunk, _lastVersion, ref _row);
+
+    internal static bool MoveNext(
+        QueryArchetypeMatch match,
+        Chunk? chunk,
+        uint lastVersion,
+        ref int row)
     {
-        if (_chunk is null)
+        if (chunk is null)
             return false;
 
-        var match = _match!;
-        _row++;
-        while (_row < _chunk.Count)
+        row++;
+        while (row < chunk.Count)
         {
-            if (match.MatchesRow(_chunk, _row, _lastVersion))
+            if (match.MatchesRow(chunk, row, lastVersion))
                 return true;
 
-            _row++;
+            row++;
         }
 
         return false;

@@ -98,6 +98,17 @@ public ref struct QueryChunkEnumerator<TFilter>
 
     internal Chunk CurrentChunk => _currentChunk!;
 
+    internal QueryRow ReadRow(int row) => new(
+        _world,
+        _currentMatch!,
+        _currentChunk!,
+        row,
+        _lastSystemVersion,
+        _currentSystemVersion);
+
+    internal bool MoveNextRow(ref int row) =>
+        QueryRowCursor.MoveNext(_currentMatch!, _currentChunk, _lastSystemVersion, ref row);
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public QueryChunkEnumerator<TFilter> GetEnumerator() => this;
 
