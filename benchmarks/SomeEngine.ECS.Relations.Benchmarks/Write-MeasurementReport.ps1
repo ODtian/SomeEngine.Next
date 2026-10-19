@@ -20,10 +20,11 @@ $lines.Add('')
 $lines.Add('| Case | Boundary | Required | E median ticks | H median ticks | E/H median | E/H p95 | Pass |')
 $lines.Add('| --- | --- | --- | --- | --- | --- | --- | --- |')
 foreach ($submission in $submissions) {
+    $reportId = [string]@($submission.CaseId)[0]
     $report = Get-Content -Raw -LiteralPath $submission.Report | ConvertFrom-Json
     foreach ($comparison in $report.Comparisons) {
         $metric = [pscustomobject]@{
-            CaseId = $submission.CaseId; Class = $report.Input.Class; Boundary = $comparison.Boundary; Required = $comparison.Required
+            CaseId = $reportId; Class = $report.Input.Class; Boundary = $comparison.Boundary; Required = $comparison.Required
             Equal = $report.Equivalence.Equal; Passed = $comparison.Passed; SourceCommit = $submission.SourceCommit
             Backend = $submission.Backend; QueueId = $submission.QueueId; Frequency = $report.Device.StopwatchFrequency
             Machine = $report.Device.Machine.Configuration; MainThreadMask = $report.Device.Machine.MainThreadMask
@@ -47,14 +48,14 @@ foreach ($submission in $submissions) {
     foreach ($side in 'Relation', 'Handwritten') {
         $data = $report."$($side)Memory"
         foreach ($field in $data.PayloadBytes.PSObject.Properties) {
-            $memory.Add([pscustomobject]@{ CaseId = $submission.CaseId; Side = $side; Unit = 'bytes'; Field = $field.Name; Value = $field.Value })
+            $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = $side; Unit = 'bytes'; Field = $field.Name; Value = $field.Value })
         }
         foreach ($field in $data.Counts.PSObject.Properties) {
-            $memory.Add([pscustomobject]@{ CaseId = $submission.CaseId; Side = $side; Unit = 'count'; Field = $field.Name; Value = $field.Value })
+            $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = $side; Unit = 'count'; Field = $field.Name; Value = $field.Value })
         }
     }
     foreach ($sample in $report.ColdSamples) {
-        $cold.Add([pscustomobject]@{ CaseId = $submission.CaseId; SourceCommit = $submission.SourceCommit; Backend = $submission.Backend
+        $cold.Add([pscustomobject]@{ CaseId = $reportId; SourceCommit = $submission.SourceCommit; Backend = $submission.Backend
             Pair = $sample.Pair; SideOrder = $sample.SideOrder; Side = $sample.Side; SetupTicks = $sample.SetupTicks
             IndexBuildTicks = $sample.IndexBuildTicks; FirstQueryTicks = $sample.FirstQueryTicks; FirstConsumeTicks = $sample.FirstConsumeTicks
             TotalTicks = $sample.TotalTicks; OutputPairCount = $sample.OutputPairCount; AllocatedBytes = $sample.AllocatedBytes })
@@ -64,7 +65,7 @@ foreach ($submission in $submissions) {
             $samples = @($report.RawSamples | Where-Object Side -eq $side)
             $machine = $report.Device.Machine
             $processors.Add([pscustomobject]@{
-                CaseId = $submission.CaseId; Side = $side; Configuration = $machine.Configuration
+                CaseId = $reportId; Side = $side; Configuration = $machine.Configuration
                 ProcessMask = $machine.ProcessMask; MainThreadMask = $machine.MainThreadMask
                 PreviousMainThreadMask = $machine.PreviousMainThreadMask; ProcessPriority = $machine.ProcessPriority
                 MainThreadPriority = $machine.MainThreadPriority; ProcessorAfterSetting = $machine.ProcessorAfterSetting

@@ -10,7 +10,7 @@ $preparation = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "artifac
 $submission = Get-Content -Raw -LiteralPath (Join-Path $reports 'queue-submission.json') | ConvertFrom-Json
 $cases = @(Get-Content -Raw -LiteralPath (Join-Path $reports 'submissions.json') | ConvertFrom-Json | ForEach-Object {
     $record = Get-Content -Raw -LiteralPath (Join-Path $_.QueueDirectory 'result.json') | ConvertFrom-Json
-    [pscustomobject]@{ CaseId = $_.CaseId; SourceCommit = $_.SourceCommit; Queue = $record }
+    [pscustomobject]@{ CaseId = [string]@($_.CaseId)[0]; SourceCommit = $_.SourceCommit; Queue = $record }
 })
 $analyses = @($submission.Reports | ForEach-Object {
     Get-Content -Raw -LiteralPath (Join-Path $_.QueueDirectory 'result.json') | ConvertFrom-Json

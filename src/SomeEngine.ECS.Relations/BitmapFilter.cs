@@ -3,7 +3,7 @@ using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.ECS.Relations;
 
-public readonly struct BitmapFilter<TEnumerable, TRelation, TImplementation, TComponent, TPermission, TSelection>
+public struct BitmapFilter<TEnumerable, TRelation, TImplementation, TComponent, TPermission, TSelection>
     : IQueryRelationEnumerable<(Entity, Entity)>
     where TEnumerable : struct, IQueryRelationEnumerable<(Entity, Entity)>
     where TRelation : struct, IRelation<TComponent, TComponent>
@@ -12,7 +12,7 @@ public readonly struct BitmapFilter<TEnumerable, TRelation, TImplementation, TCo
     where TPermission : struct, ICategoryPermission
     where TSelection : struct, IRelationSelection
 {
-    private readonly TEnumerable _enumerable;
+    private TEnumerable _enumerable;
     private readonly TRelation _relation;
     private readonly TImplementation _implementation;
     public BitmapFilter(TEnumerable enumerable, TRelation relation, TImplementation implementation)

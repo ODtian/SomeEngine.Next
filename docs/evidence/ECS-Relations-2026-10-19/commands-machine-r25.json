@@ -1,0 +1,49 @@
+[
+  {
+    "Queue": {
+      "Id": "4552d20671dd452694b29102723bd82e",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-Command",
+        "& 'F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Submit-Measurements.ps1' -CaseId @('default-small-dynamic50','finite-large-mask1-oneway') -Machine @('Normal','Fixed') -QueueScript 'F:\\SomeEngine.Next\\tools\\Invoke-Benchmark.ps1' -Session '01a15090-f5bd-7a12-860a-e214325db5bb' -CollectReports -SourceCommit '90204159caede908528b16d5c7fed48c23570c92' -Series 'machine-r25'"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T12:19:59.073412+08:00",
+      "StartedAtUtc": "2026-10-19T12:20:26.209623+08:00",
+      "FinishedAtUtc": "2026-10-19T12:20:29.8779915+08:00"
+    },
+    "Stdout": "LIST F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe --mode list --source 90204159caede908528b16d5c7fed48c23570c92\r\nQUEUED 20303b8e231947eaa5c94e92f7c9e8b6 default-small-dynamic50-normal\r\nQUEUED 8d0fe61850ff4007848ccccbe1b66d2b default-small-dynamic50-fixed\r\nQUEUED 9f22ada21d424d01b906c736f7cf7e3a finite-large-mask1-oneway-fixed\r\nQUEUED e3d35366781e4b239a5661ff0f1de671 finite-large-mask1-oneway-normal\r\nQUEUED b904e34b9dd74e4cab971358b14024c0 Collect-Measurements.ps1\r\nQUEUED 70a65d5dd4ce4ddd8fb5ee43aa832391 Export-Evidence.ps1\r\nQUEUED 71ef87ad0c8947f6884935100a417ce3 Write-MeasurementReport.ps1\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "3acaee075d4c41aba7e8b8fbf345a80d",
+      "Executable": "dotnet",
+      "Arguments": [
+        "publish",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+        "-c",
+        "Release",
+        "-r",
+        "win-x64",
+        "--no-restore",
+        "-p:SourceRevisionId=90204159caede908528b16d5c7fed48c23570c92",
+        "-o",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T12:16:09.6290494+08:00",
+      "StartedAtUtc": "2026-10-19T12:16:09.7245099+08:00",
+      "FinishedAtUtc": "2026-10-19T12:16:45.3814879+08:00"
+    },
+    "Stdout": "  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Relations -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\n  SomeEngine.Physics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Physics\\bin\\Release\\net10.0\\SomeEngine.Physics.dll\r\n  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.Benchmarks.dll\r\n  Generating native code\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\Registry\\JobStorageTypeMetadata.cs(77): Trim analysis warning IL2070: SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>): 'this' argument does not satisfy 'DynamicallyAccessedMemberTypes.PublicFields', 'DynamicallyAccessedMemberTypes.NonPublicFields' in call to 'System.Type.GetFields(BindingFlags)'. The parameter 'type' of method 'SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>)' does not have matching annotations. The source value must declare at least the same requirements as those declared on the target location it is assigned to. [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\SomeEngine.ECS.Relations.Benchmarks.csproj]\r\n  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\\r\n",
+    "Stderr": ""
+  }
+]

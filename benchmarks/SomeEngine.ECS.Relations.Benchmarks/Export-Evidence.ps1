@@ -13,16 +13,17 @@ if (Test-Path -LiteralPath $submission) {
 }
 $submissions = Get-Content -Raw -LiteralPath (Join-Path $reports 'submissions.json') | ConvertFrom-Json
 $index = foreach ($submission in $submissions) {
+    $reportId = [string]@($submission.CaseId)[0]
     $report = Get-Content -Raw -LiteralPath $submission.Report | ConvertFrom-Json
     $queueResult = Get-Content -Raw -LiteralPath (Join-Path $submission.QueueDirectory 'result.json') | ConvertFrom-Json
-    $reportFile = "$($submission.CaseId).json.gz"
+    $reportFile = "$reportId.json.gz"
     $source = [IO.File]::OpenRead($submission.Report)
     $target = [IO.File]::Create((Join-Path $evidence $reportFile))
     $gzip = [IO.Compression.GZipStream]::new($target, [IO.Compression.CompressionLevel]::SmallestSize)
     try { $source.CopyTo($gzip) }
     finally { $gzip.Dispose(); $target.Dispose(); $source.Dispose() }
     [pscustomobject]@{
-        CaseId = $submission.CaseId
+        CaseId = $reportId
         Report = $reportFile
         SourceCommit = $submission.SourceCommit
         Backend = $submission.Backend

@@ -172,6 +172,8 @@ r24 单默认入口确认metadata24B临时消去，直接从原字段取得World
 
 后续机器配置诊断保持7ac的引擎实现，在同一Native产物内对default-small-dynamic50与finite-large-mask1-oneway分别运行Normal与Fixed。配置、实际处理器范围、优先级与CPU端点由[测量配置](ECS-Relations-Measurement-Configuration.md)定义；四项诊断作为自己的完整系列保存，用来核对机器配置与当前差值。
 
+[machine-r25诊断](evidence/ECS-Relations-2026-10-19/machine-r25/diagnostic.md)保留四项原始结果及控制活动。Fixed有限类别large mask1单向的median/p95为0.9643794829654223/0.9604935553229572，Normal为1.0437229868497686/1.0440907032186741；Fixed默认small dynamic50为1.0212071778140293/0.99780131920847492。Fixed两个输入的全部逐帧CPU端点均为2，Normal有限类别前后端点变化分别为扩展20帧、手写22帧。后续统一使用Fixed及原进程32CPU范围、0/4worker；默认入口继续沿实际描述准备定位。
+
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：
