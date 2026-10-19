@@ -1,0 +1,5 @@
+"CaseId","Side","IndexBuildTicks","Frequency"
+"finite-small-mask1-mutual-control","H1","56","10000000"
+"finite-small-mask1-mutual-control","H2","1","10000000"
+"finite-large-mask8-oneway-control","H1","54","10000000"
+"finite-large-mask8-oneway-control","H2","1","10000000"

@@ -237,6 +237,7 @@ r30的两侧Default World回调实码均为104B栈/24B初始化，均各调一�
 
 后继全部场景采用32轮×8帧，使每侧256帧中先执行与后执行各128帧；16warm、7cold、每帧实际调用、时钟/observer和严格门槛沿当前定义。[测量配置](ECS-Relations-Measurement-Configuration.md)记录该对称分组；r31及此前31轮系列的248帧与128先/120后分布保持原始记录。
 
+[r34聚焦结果](evidence/ECS-Relations-2026-10-19/focused-native-r34/summary.md)保存查询状态进一步收敛后的16项等价与Approved15/16；[r35原始结果](evidence/ECS-Relations-2026-10-19/focused-native-r35/summary.md)保存固定候选引用输出的4/5批准结果。[r36短循环单文件反馈](evidence/ECS-Relations-2026-10-19/focused-native-r36/diagnostic.md)保存Eq5/5、Approved3/5及相同字段的旧/新循环对照；[同源HH2](evidence/ECS-Relations-2026-10-19/diagnostic-native-r36-hh2/diagnostic.md)以H1/H2和Required=false独列。[大规模单向CPU采样](evidence/ECS-Relations-2026-10-19/profile-native-r36-large-oneway/diagnostic.md)保存原0c二进制的真实函数样本、点读取调用栈及11.6MB采集文件。静态指令变化、完整实测差值与CPU样本分别记录。
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：
