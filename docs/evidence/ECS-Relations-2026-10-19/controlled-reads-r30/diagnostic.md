@@ -28,6 +28,8 @@ NativeAOT 对应源码 `f1cdfbb98a76b4e7e1b6a4d0da87b23afa6449b0`。MeasurementD
 
 该控制直接记录同函数两侧的本次分布；正式 E/H 继续按原精度门槛逐项判断。
 
+对同两份 HH raw 的一次[先后位置派生分析](handwritten-order.json)按 SideOrder 分组，保存 H1/H2 各自 First/Second 时的样本数、median/p95 原始 ticks 与微秒。31×8 原配置中，H1/H2 顺序有 128 帧，H2/H1 有 120 帧。分析源与完整输出见[独立 CPU 命令](../commands-handwritten-order-r30.json)，原 HH 样本保持原值。
+
 ## 队列边界
 
 [完整收据](queue-boundaries.json)确认最后 case 提交 `06:38:03.9002586Z`，准备结束 `06:38:05.3836502Z`，首 case 开始 `06:39:50.5563021Z`，末 case 结束 `06:41:30.1582978Z`，首分析开始 `06:41:30.1590612Z`。准备、6 个 case、3 个分析均退出 0；场景进程执行合计 `91.8801543` 秒，场景间隔 `7.7218414` 秒。

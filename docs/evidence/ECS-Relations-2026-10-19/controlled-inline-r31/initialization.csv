@@ -1,0 +1,5 @@
+"CaseId","Side","IndexBuildTicks","Frequency"
+"default-small-dynamic10","Relation","1164","10000000"
+"default-small-dynamic10","Handwritten","3","10000000"
+"default-large-dynamic50","Relation","211","10000000"
+"default-large-dynamic50","Handwritten","2","10000000"

@@ -1,0 +1,3 @@
+"CaseId","DataSharing","UsedBy","SetupTicks","Frequency"
+"default-small-dynamic10","SharedStaticWorkspace","shared","66814","10000000"
+"default-large-dynamic50","SharedStaticWorkspace","shared","128737","10000000"
