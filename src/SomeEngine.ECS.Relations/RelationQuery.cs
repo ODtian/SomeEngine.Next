@@ -6,9 +6,11 @@ namespace SomeEngine.ECS.Relations;
 public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
     where TEnumerable : struct, IQueryRelationEnumerable<TRow>
 {
-    public RelationQuery(TEnumerable enumerable) => Enumerable = enumerable;
+    private readonly TEnumerable _enumerable;
 
-    public TEnumerable Enumerable { get; }
+    public RelationQuery(TEnumerable enumerable) => _enumerable = enumerable;
+
+    public TEnumerable Enumerable => _enumerable;
 
     public bool Enumerate<TOutput>(ref TOutput output)
         where TOutput : struct, IRelationOutput<TRow>, allows ref struct
@@ -93,7 +95,7 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
     {
         World world = Enumerable.World;
         QueryHandle query = world.Query(definition);
-        var execution = new SingleExecution<TOutput>(Enumerable, output);
+        var execution = new SingleExecution<TOutput>(in _enumerable, output);
         try
         {
             if (lastSystemVersion is { } baseline)
@@ -109,13 +111,23 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
         }
     }
 
-    private ref struct SingleExecution<TOutput>(TEnumerable enumerable, TOutput output) : IQueryExecution
+    private ref struct SingleExecution<TOutput> : IQueryExecution
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
-        public TOutput Output = output;
+        private TEnumerable _enumerable;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public SingleExecution(scoped in TEnumerable enumerable, TOutput output)
+        {
+            _enumerable = enumerable;
+            Output = output;
+            Completed = false;
+        }
+
+        public TOutput Output;
         public bool Completed;
 
-        public void Execute(QueryCursor query) => Completed = enumerable.Enumerate(new RelationQueryViews(query), ref Output);
+        public void Execute(QueryCursor query) => Completed = _enumerable.Enumerate(new RelationQueryViews(query), ref Output);
     }
 
     public int Count() => CountRows(null);

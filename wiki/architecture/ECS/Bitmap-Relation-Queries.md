@@ -54,6 +54,8 @@ BitmapCollisionConsumption.CountContacts(bitmap.Pairs, contactCounts);
 
 固定候选来源属于这个业务例子的设计：调用方从参与集合形成有序身份数组，`FixedCandidatePairs` 直接转发其中身份；通用BitmapRelation在实际筛选时交错绑定两端组件。多层固定身份筛选各自在当前读取范围完成绑定，其成本进入完整公共调用。Within、键桶和空间等已经取得组件行的来源继续通过查询专用输出接口复用这些借用行。性能运行器的finite输入从当次成员实体数组形成候选，并在这类采样中保持该集合。
 
+身份绑定通过 `QueryCursor.TryReadRef<T>(Entity, out ComponentReference<T>)` 依次取得第一端组件引用和第二端组件引用，再由具体许可的 Evaluate 驱动原输出。手写固定候选使用相同两次公共点读取，直接执行业务位运算。组件读取和成员匹配的实际成本因此在双方完整调用中对应；已经持有 QueryRow 的来源继续复用行读取入口。
+
 `BitmapRelationTests` 通过真实 World 检查三种实现的单向及双方结果。动力学与头发业务例子组合后，单向许可得到十个实体对，双方许可得到九个实体对；`K–D` 的正向许可成立，反向许可将其从双方结果中筛出。其余九对与字面期望逐行对应。checked World 中的查询同时检查 Count、Any 与 Span 输出提前结束。
 
 ## 空间摘要的位含义

@@ -1,6 +1,7 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
 using System.Runtime.CompilerServices;
@@ -107,5 +108,17 @@ internal ref struct EighthEntity : IRelationOutput<(Entity, Entity, Entity, Enti
     {
         _result[Count++] = row.Item8;
         return false;
+    }
+}
+
+internal struct NumberPointValue(Entity entity) : IQueryExecution
+{
+    private readonly Entity _entity = entity;
+
+    internal int Value;
+
+    public void Execute(QueryCursor query)
+    {
+        Value = query.TryReadRef<Number<int>>(_entity, out var number) ? number.Value.Value : -1;
     }
 }

@@ -61,8 +61,8 @@ public static class HandwrittenBitmapCollision
         {
             foreach (var pair in _candidates)
             {
-                if (!query.TryGetRow(pair.Item1, out var first) || !first.TryReadRef<CollisionLayer>(out var firstLayer) ||
-                    !query.TryGetRow(pair.Item2, out var second) || !second.TryReadRef<CollisionLayer>(out var secondLayer))
+                if (!query.TryReadRef<CollisionLayer>(pair.Item1, out var firstLayer) ||
+                    !query.TryReadRef<CollisionLayer>(pair.Item2, out var secondLayer))
                     continue;
                 if ((firstLayer.Value.AllowedCategories & secondLayer.Value.Categories) == 0)
                     continue;
@@ -94,8 +94,8 @@ public static class HandwrittenBitmapCollision
         {
             foreach (var pair in _candidates)
             {
-                if (!query.TryGetRow(pair.Item1, out var first) || !first.TryReadRef<CollisionLayer>(out var firstLayer) ||
-                    !query.TryGetRow(pair.Item2, out var second) || !second.TryReadRef<CollisionLayer>(out var secondLayer))
+                if (!query.TryReadRef<CollisionLayer>(pair.Item1, out var firstLayer) ||
+                    !query.TryReadRef<CollisionLayer>(pair.Item2, out var secondLayer))
                     continue;
                 if ((firstLayer.Value.AllowedCategories & secondLayer.Value.Categories) == 0 ||
                     (secondLayer.Value.AllowedCategories & firstLayer.Value.Categories) == 0)

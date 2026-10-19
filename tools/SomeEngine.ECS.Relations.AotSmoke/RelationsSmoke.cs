@@ -67,6 +67,9 @@ internal static partial class RelationsSmoke
             pair.Value == (entities[5], entities[7]), "within row binding and output stop");
         Require(within.Count() == 1 && within.Any() &&
             world.Within(numbers).Except(new Total2(4)).Count() == 1, "within where and except terminals");
+        var point = new NumberPointValue(entities[0]);
+        world.ExecuteQuery(numbers, ref point);
+        Require(point.Value == 1, "point component reference");
         world.ReleaseQuery(numbers);
 
         new IncreaseNumbers().Schedule(world).Complete();

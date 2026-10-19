@@ -23,9 +23,11 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
 
     public bool Matches(in (Entity, Entity) pair)
     {
-        return TryReadComponents(in pair, out var first, out var second)
-            && TPermission.Matches<TRelation, TComponent, TImplementation>(in _relation, ref _implementation,
-                in first.Value, in second.Value);
+        if (!_query.TryReadRef<TComponent>(pair.Item1, out var first) ||
+            !_query.TryReadRef<TComponent>(pair.Item2, out var second))
+            return false;
+        return TPermission.Matches<TRelation, TComponent, TImplementation>(in _relation, ref _implementation,
+            in first.Value, in second.Value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -38,13 +40,15 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryReadComponents(in (Entity, Entity) pair, out ComponentReference<TComponent> firstValue,
-        out ComponentReference<TComponent> secondValue)
+    internal bool Evaluate<TOutput, TResult>(in (Entity, Entity) pair, scoped ref TOutput output)
+        where TOutput : allows ref struct
+        where TResult : struct, ICategoryPermissionOutput<(Entity, Entity), TOutput>
     {
-        firstValue = default;
-        secondValue = default;
-        return _query.TryGetRow(pair.Item1, out var first) && first.TryReadRef(out firstValue)
-            && _query.TryGetRow(pair.Item2, out var second) && second.TryReadRef(out secondValue);
+        if (!_query.TryReadRef<TComponent>(pair.Item1, out var first))
+            return TResult.Unmatched(in pair, ref output);
+        if (!_query.TryReadRef<TComponent>(pair.Item2, out var second))
+            return TResult.Unmatched(in pair, ref output);
+        return Evaluate<(Entity, Entity), TOutput, TResult>(in pair, in first.Value, in second.Value, ref output);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

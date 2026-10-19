@@ -79,6 +79,29 @@ public sealed class GenericQueryExecutionTests
     }
 
     [Fact]
+    public void PointReadsBorrowOptionalManagedComponentsFromChangedMembers()
+    {
+        using var world = new World();
+        var changed = world.CreateEntity(new Position());
+        world.Add(changed, new DisplayName { Value = "Iris" });
+        var missing = world.CreateEntity(new Position());
+        var unchanged = world.CreateEntity(new Position());
+        world.Add(unchanged, new DisplayName { Value = "Rose" });
+        var other = world.CreateEntity(new DisplayName { Value = "Other" });
+        var query = world.Query(world.QueryDefinition().Changed<Position>().Build()
+            .WithOptionalRead<DisplayName>());
+        uint baseline = world.AcquireSystemTick();
+        world.Replace(changed, new Position { X = 1 });
+        world.Replace(missing, new Position { X = 2 });
+        Span<int> lengths = stackalloc int[4];
+        var execution = new PointNameLengths([changed, missing, unchanged, other], lengths);
+
+        world.ExecuteQuery(query, baseline, ref execution);
+
+        Assert.Equal([4, -1, -1, -1], lengths.ToArray());
+    }
+
+    [Fact]
     public void ChunkChangeReadsKeepOptionalRowsAndTheirWriteVersions()
     {
         using var world = new World();
@@ -217,6 +240,19 @@ public sealed class GenericQueryExecutionTests
             var rows = query.ReadRows<Position, DisplayName>();
             while (rows.MoveNext(out var row, out var position, out var name))
                 _values[index++] = (int)position.Value.X + (name.HasValue ? name.Value.Value.Length : 0);
+        }
+    }
+
+    private ref struct PointNameLengths(Entity[] entities, Span<int> lengths) : IQueryExecution
+    {
+        private readonly Entity[] _entities = entities;
+        private readonly Span<int> _lengths = lengths;
+
+        public void Execute(QueryCursor query)
+        {
+            for (int index = 0; index < _entities.Length; index++)
+                _lengths[index] = query.TryReadRef<DisplayName>(_entities[index], out var name)
+                    ? name.Value.Value.Length : -1;
         }
     }
 }
