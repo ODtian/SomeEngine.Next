@@ -20,6 +20,11 @@ public static class RelationsMeasurements
             return index < 0 ? fallback : args[index + 1];
         }
         string mode = Option("--mode", "measure");
+        bool handwrittenControl = Option("--comparison") == "HandwrittenControl";
+        string firstName = handwrittenControl ? "H1" : "relation";
+        string secondName = handwrittenControl ? "H2" : "handwritten";
+        string firstOrder = handwrittenControl ? "H1/H2" : "E/H";
+        string secondOrder = handwrittenControl ? "H2/H1" : "H/E";
         string compiledCommit = typeof(RelationsMeasurements).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .Single(value => value.Key == "MeasurementSourceCommit").Value!;
         if (Option("--source") is { Length: > 0 } expectedCommit && expectedCommit != compiledCommit)
@@ -36,22 +41,22 @@ public static class RelationsMeasurements
         if (mode == "first-result")
         {
             bool relation = Option("--side", "relation") == "relation";
-            using var firstData = new MeasurementData(input);
-            using MeasurementSide first = MeasurementSides.Create(firstData, relation);
+            using var initialData = new MeasurementData(input);
+            using MeasurementSide initialSide = MeasurementSides.Create(initialData, relation && !handwrittenControl);
             long queryStarted = Stopwatch.GetTimestamp();
-            first.Query();
+            initialSide.Query();
             long queried = Stopwatch.GetTimestamp();
-            first.Consume();
-            Console.WriteLine($"FIRST_RESULT utc={DateTime.UtcNow:O} side={(relation ? "relation" : "handwritten")} rows={first.Count} mainTicks={Stopwatch.GetTimestamp() - mainStarted} firstQueryTicks={queried - queryStarted} mainUtc={mainUtc:O} machine={machine.Configuration} processMask={machine.ProcessMask} mainThreadMask={machine.MainThreadMask} processPriority={machine.ProcessPriority} processor={machine.ProcessorAfterSetting}");
+            initialSide.Consume();
+            Console.WriteLine($"FIRST_RESULT utc={DateTime.UtcNow:O} side={(relation ? firstName : secondName)} rows={initialSide.Count} mainTicks={Stopwatch.GetTimestamp() - mainStarted} firstQueryTicks={queried - queryStarted} mainUtc={mainUtc:O} machine={machine.Configuration} processMask={machine.ProcessMask} mainThreadMask={machine.MainThreadMask} processPriority={machine.ProcessPriority} processor={machine.ProcessorAfterSetting}");
             return 0;
         }
 
         DateTime started = DateTime.UtcNow;
-        using var extensionData = new MeasurementData(input);
-        using var handwrittenData = input.ChangesEveryFrame ? new MeasurementData(input) : null;
-        using MeasurementSide extension = MeasurementSides.Create(extensionData, true);
-        using MeasurementSide handwritten = MeasurementSides.Create(handwrittenData ?? extensionData, false);
-        EquivalenceData equivalence = Verify(input, extension, handwritten);
+        using var firstData = new MeasurementData(input);
+        using var secondData = input.ChangesEveryFrame ? new MeasurementData(input) : null;
+        using MeasurementSide first = MeasurementSides.Create(firstData, !handwrittenControl);
+        using MeasurementSide second = MeasurementSides.Create(secondData ?? firstData, false);
+        EquivalenceData equivalence = Verify(input, first, second);
         Console.WriteLine($"EQUIVALENT {input.Id}: frames={equivalence.VerifiedFrames}; pairs={equivalence.FinalPairCount}");
         if (mode == "verify")
             return 0;
@@ -65,13 +70,13 @@ public static class RelationsMeasurements
                 long before = Stopwatch.GetTimestamp();
                 using var data = new MeasurementData(input);
                 long initialized = Stopwatch.GetTimestamp();
-                using MeasurementSide side = MeasurementSides.Create(data, relation);
+                using MeasurementSide side = MeasurementSides.Create(data, relation && !handwrittenControl);
                 long query = Stopwatch.GetTimestamp();
                 side.Query();
                 long consume = Stopwatch.GetTimestamp();
                 side.Consume();
                 long end = Stopwatch.GetTimestamp();
-                cold.Add(new(pair, relationFirst ? "E/H" : "H/E", relation ? "relation" : "handwritten",
+                cold.Add(new(pair, relationFirst ? firstOrder : secondOrder, relation ? firstName : secondName,
                     initialized - before, side.IndexBuildTicks, consume - query, end - consume,
                     end - before, side.Count, GC.GetTotalAllocatedBytes(true) - allocated));
             }
@@ -79,8 +84,8 @@ public static class RelationsMeasurements
 
         for (int frame = 0; frame < input.WarmupFrames; frame++)
         {
-            Run(input, extension, frame, input.PrimaryBoundary);
-            Run(input, handwritten, frame, input.PrimaryBoundary);
+            Run(input, first, frame, input.PrimaryBoundary);
+            Run(input, second, frame, input.PrimaryBoundary);
         }
         var raw = new List<FrameSample>();
         string[] sampleBoundaries = mode == "phases" ? ["IndependentStages"] :
@@ -95,37 +100,31 @@ public static class RelationsMeasurements
                 {
                     foreach (bool relation in sideOrder)
                     {
-                        MeasurementSide side = relation ? extension : handwritten;
+                        MeasurementSide side = relation ? first : second;
                         FrameSample sample = Run(input, side, frame, boundary);
-                        raw.Add(sample with { Round = round, SideOrder = relationFirst ? "E/H" : "H/E",
-                            Side = relation ? "relation" : "handwritten" });
+                        raw.Add(sample with { Round = round, SideOrder = relationFirst ? firstOrder : secondOrder,
+                            Side = relation ? firstName : secondName });
                     }
                 }
             }
         }
-        var comparisons = Compare(input, raw);
         var device = new DeviceData(Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER") ?? "",
             Environment.ProcessorCount, RuntimeInformation.OSDescription, Environment.Version.ToString(),
             GCSettings.IsServerGC, Environment.GetEnvironmentVariable("DOTNET_TieredCompilation") ?? "default",
             Environment.GetEnvironmentVariable("DOTNET_ReadyToRun") ?? "default", Stopwatch.Frequency,
             Environment.CommandLine, compiledCommit, Option("--backend", "NativeAOT"), machine);
-        bool? passed = comparisons.Any(value => value.Required)
-            ? comparisons.Where(value => value.Required).All(value => value.Passed) : null;
-        MeasurementWorkspace[] workspaces = handwrittenData is { } separate
-            ? [new("relation", extensionData.SetupTicks, IndexMemory.ReadWorkspace(extensionData, extension.Count)),
-                new("handwritten", separate.SetupTicks, IndexMemory.ReadWorkspace(separate, handwritten.Count))]
-            : [new("shared", extensionData.SetupTicks, IndexMemory.ReadWorkspace(extensionData, extension.Count))];
-        var report = new MeasurementReport(mode, input, device, started, DateTime.UtcNow,
-            handwrittenData is null ? "SharedStaticWorkspace" : "IndependentUpdatingWorkspaces", workspaces,
-            extension.IndexBuildTicks, handwritten.IndexBuildTicks,
-            ["Query: complete public call including query preparation, traversal, filters and real pair writes.",
+        MeasurementWorkspace[] workspaces = secondData is { } separate
+            ? [Workspace(firstName, firstData, first.Count), Workspace(secondName, separate, second.Count)]
+            : [Workspace("shared", firstData, first.Count)];
+        string dataSharing = secondData is null ? "SharedStaticWorkspace" : "IndependentUpdatingWorkspaces";
+        string[] boundaries = ["Query: complete public call including query preparation, traversal, filters and real pair writes.",
              "FrameTotal: actual writes and scheduled maintenance/query/consumption to final completion, or direct query plus consumption.",
              "MaintenanceAndQuery: writes excluded; schedule maintenance and query, complete filled output; consumption follows outside this boundary.",
              "ScheduledPairOutput: outer submit through completed count/prefix/fill; all child scheduling and joins included.",
              "PairsAndConsume: direct public query and same actual geometric consumption.",
              "Independent stages: diagnostic samples complete actual maintenance, query and consumption separately; each submit-to-completion timer follows its completed prerequisites.",
-             "Cold total: World/query/output setup, actual index initialization, first public query and first consumption."],
-            ["PayloadBytes counts actual value-array elements at the target backend's sizeof<T>.",
+             "Cold total: World/query/output setup, actual index initialization, first public query and first consumption."];
+        string[] memoryScope = ["PayloadBytes counts actual value-array elements at the target backend's sizeof<T>.",
              "Live counts root topology; Addressed counts the high-water node address range including reusable entries; Capacity counts backing arrays.",
              "LeafMapKeyValues counts live Entity/int payload; entry capacity is separate; dictionary management and object headers enter actual allocation and process memory.",
              "Partition payload includes node pairs, counts, offsets and nonempty partition indices; access-data arrays are separate.",
@@ -133,46 +132,75 @@ public static class RelationsMeasurements
              "Side memory records each algorithm's own tree, summaries, counters and scheduled output resources; workspace array capacities and existing ECS key buckets are reported with the workspace.",
              "FrameAllocatedBytes includes the whole actual query/consumption frame around the selected primary boundary, across all workers.",
              "Allocation counters start after before-frame memory/processor observations and end before after-frame observations; report objects and observations are outside this range.",
-             "World, Scheduler, query/observer data, object headers and pooled child handles enter measured allocations/Managed/WorkingSet."],
-            equivalence, cold.ToArray(), raw.ToArray(), comparisons, extension.Memory(), handwritten.Memory(), passed);
+             "World, Scheduler, query/observer data, object headers and pooled child handles enter measured allocations/Managed/WorkingSet."];
         string output = Option("--output", Path.Combine("artifacts", "ecs-relations", "measurements", input.Id + ".json"));
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
-        File.WriteAllText(output, JsonSerializer.Serialize(report, MeasurementJson.Default.MeasurementReport));
-        foreach (MetricComparison value in comparisons)
-            Console.WriteLine($"{input.Id} {value.Boundary}: median={value.MedianRatio:R} p95={value.P95Ratio:R} required={value.Required} pass={value.Passed}");
-        Console.WriteLine($"REPORT {Path.GetFullPath(output)}; acceptance={passed}");
+        if (handwrittenControl)
+        {
+            HandwrittenMetricComparison[] comparisons = Compare(input, raw, firstName, secondName,
+                static (name, required, h1, h2, median, p95) =>
+                    new HandwrittenMetricComparison(name, false, h1, h2, median, p95, median <= 1 && p95 <= 1));
+            var report = new HandwrittenControlReport("HandwrittenControl", input, device, started, DateTime.UtcNow,
+                dataSharing, workspaces, first.GetType().Name, second.GetType().Name,
+                first.IndexBuildTicks, second.IndexBuildTicks, boundaries, memoryScope, equivalence,
+                cold.ToArray(), raw.ToArray(), comparisons, first.Memory(), second.Memory(), false);
+            File.WriteAllText(output, JsonSerializer.Serialize(report, MeasurementJson.Default.HandwrittenControlReport));
+            foreach (HandwrittenMetricComparison value in comparisons)
+                Console.WriteLine($"{input.Id} {value.Boundary}: H1/H2 median={value.MedianRatio:R} p95={value.P95Ratio:R} required=false");
+            Console.WriteLine($"CONTROL_REPORT {Path.GetFullPath(output)}; H1={report.FirstHandwrittenType}; H2={report.SecondHandwrittenType}");
+        }
+        else
+        {
+            MetricComparison[] comparisons = Compare(input, raw, firstName, secondName,
+                static (name, required, relation, handwritten, median, p95) =>
+                    new MetricComparison(name, required, relation, handwritten, median, p95, median <= 1 && p95 <= 1));
+            bool? passed = comparisons.Any(value => value.Required)
+                ? comparisons.Where(value => value.Required).All(value => value.Passed) : null;
+            var report = new MeasurementReport(mode, input, device, started, DateTime.UtcNow, dataSharing, workspaces,
+                first.IndexBuildTicks, second.IndexBuildTicks, boundaries, memoryScope, equivalence,
+                cold.ToArray(), raw.ToArray(), comparisons, first.Memory(), second.Memory(), passed);
+            File.WriteAllText(output, JsonSerializer.Serialize(report, MeasurementJson.Default.MeasurementReport));
+            foreach (MetricComparison value in comparisons)
+                Console.WriteLine($"{input.Id} {value.Boundary}: median={value.MedianRatio:R} p95={value.P95Ratio:R} required={value.Required} pass={value.Passed}");
+            Console.WriteLine($"REPORT {Path.GetFullPath(output)}; acceptance={passed}");
+        }
         return 0;
     }
 
-    private static EquivalenceData Verify(MeasurementCase input, MeasurementSide relation, MeasurementSide handwritten)
+    private static MeasurementWorkspace Workspace(string usedBy, MeasurementData data, int count) =>
+        new(usedBy, data.SetupTicks, IndexMemory.ReadWorkspace(data, count),
+            data.World.GetQueryDefinition(data.Members).Terms.ToArray().Select(term =>
+                new MemberQueryTerm(term.ComponentId, term.Kind.ToString(), term.Access.ToString(), term.Filters.ToString())).ToArray());
+
+    private static EquivalenceData Verify(MeasurementCase input, MeasurementSide first, MeasurementSide second)
     {
         int frames = input.ChangesEveryFrame ? 8 : 1;
         (Entity, Entity)[] result = [];
-        int[] contacts = new int[relation.ContactCounts.Length];
-        float[] depths = new float[relation.Depths.Length];
+        int[] contacts = new int[first.ContactCounts.Length];
+        float[] depths = new float[first.Depths.Length];
         for (int frame = 0; frame < frames; frame++)
         {
             if (input.ChangesEveryFrame)
             {
-                relation.Data.WriteFrame(frame);
-                handwritten.Data.WriteFrame(frame);
-                relation.ScheduleMaintenance().Complete();
-                handwritten.ScheduleMaintenance().Complete();
+                first.Data.WriteFrame(frame);
+                second.Data.WriteFrame(frame);
+                first.ScheduleMaintenance().Complete();
+                second.ScheduleMaintenance().Complete();
             }
-            relation.Query();
-            relation.Consume();
-            result = relation.Pairs.ToArray();
-            relation.ContactCounts.CopyTo(contacts);
-            relation.Depths.CopyTo(depths);
-            handwritten.Query();
-            handwritten.Consume();
-            var expected = handwritten.Pairs.ToArray();
+            first.Query();
+            first.Consume();
+            result = first.Pairs.ToArray();
+            first.ContactCounts.CopyTo(contacts);
+            first.Depths.CopyTo(depths);
+            second.Query();
+            second.Consume();
+            var expected = second.Pairs.ToArray();
             Array.Sort(result, PairComparer.Instance);
             Array.Sort(expected, PairComparer.Instance);
             if (!result.AsSpan().SequenceEqual(expected) ||
-                !contacts.AsSpan().SequenceEqual(handwritten.ContactCounts) ||
-                !DepthsEqual(depths, handwritten.Depths))
-                throw new InvalidOperationException($"Public rows or consumption differ for {input.Id}, frame {frame}: relation={result.Length}, handwritten={expected.Length}");
+                !contacts.AsSpan().SequenceEqual(second.ContactCounts) ||
+                !DepthsEqual(depths, second.Depths))
+                throw new InvalidOperationException($"Public rows or consumption differ for {input.Id}, frame {frame}: first={result.Length}, second={expected.Length}");
         }
         return new(true, frames, result.Length, result.Take(16).Select(pair => new PairRow(pair.Item1.Index,
             pair.Item1.Generation, pair.Item2.Index, pair.Item2.Generation)).ToArray(),
@@ -285,9 +313,11 @@ public static class RelationsMeasurements
             processorBefore, processorAfter);
     }
 
-    private static MetricComparison[] Compare(MeasurementCase input, List<FrameSample> samples)
+    private static TComparison[] Compare<TComparison>(MeasurementCase input, List<FrameSample> samples,
+        string firstSide, string secondSide,
+        Func<string, bool, Distribution, Distribution, double, double, TComparison> create)
     {
-        var comparisons = new List<MetricComparison>();
+        var comparisons = new List<TComparison>();
         foreach (string boundary in samples.Select(value => value.Boundary).Distinct())
         {
             FrameSample[] frames = samples.Where(value => value.Boundary == boundary).ToArray();
@@ -308,11 +338,11 @@ public static class RelationsMeasurements
 
         void Add(string name, bool required, FrameSample[] frames, Func<FrameSample, long> ticks)
         {
-            Distribution extension = Statistics(frames.Where(value => value.Side == "relation").ToArray(), ticks);
-            Distribution handwritten = Statistics(frames.Where(value => value.Side == "handwritten").ToArray(), ticks);
-            double median = extension.MedianTicks / handwritten.MedianTicks;
-            double p95 = extension.P95Ticks / handwritten.P95Ticks;
-            comparisons.Add(new(name, required, extension, handwritten, median, p95, median <= 1 && p95 <= 1));
+            Distribution first = Statistics(frames.Where(value => value.Side == firstSide).ToArray(), ticks);
+            Distribution second = Statistics(frames.Where(value => value.Side == secondSide).ToArray(), ticks);
+            double median = first.MedianTicks / second.MedianTicks;
+            double p95 = first.P95Ticks / second.P95Ticks;
+            comparisons.Add(create(name, required, first, second, median, p95));
         }
     }
 

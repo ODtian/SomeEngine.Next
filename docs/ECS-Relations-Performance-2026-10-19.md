@@ -188,6 +188,8 @@ r28当前原生五函数同时确认：Default候选体137条/673B逐条对应�
 
 [controlled-required-r29](evidence/ECS-Relations-2026-10-19/controlled-required-r29/diagnostic.md)对应e17a82f594c8e6c9ed4f4ff35b5e316a67afa314，严格通过10/27（finite8/18、default2/9），27项实际输出与消费均等价。Default caller的Requires调用已收为保存事实的字段分支，栈136→104B、初始化48→24B，24B查询参数副本也收为同址传参，原673B核心继续保留。本轮场景执行合计169.6701125秒、场景间隔1585.6874934000002秒，全部收据及原精度结果随同保存。授权状态读取06:07:41.1781258Z–06:07:41.3298360Z位于实际场景间隔；最终分析的result.json事件在成功或失败时结束监听。
 
+后继准备调整使原持久成员查询在形成时声明该场景实际读取：finite为CollisionLayer，character为Hair，default/bitmap-space为Body，其余空间组合为Body与Hair。双方AddReads复用同一原定义，原Members持续持有同一QueryState与匹配数组；读取声明及匹配数据形成计入共同Setup及独立cold。每份工作区投影实际Terms/Access，具体范围见[测量配置](ECS-Relations-Measurement-Configuration.md)。引擎与手写核心、输入与采样继续沿e17。同一新Native产物先运行四项正式反馈与两项H1/H2同函数诊断，控制报告以中性字段单列Required=false，正式原精度判定独立保存。
+
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：

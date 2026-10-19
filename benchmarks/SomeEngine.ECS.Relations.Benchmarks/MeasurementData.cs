@@ -50,7 +50,15 @@ public sealed class MeasurementData : IDisposable
                     AllowedCategories = (CollisionCategory)body.CollisionCategories.AllowedCategories
                 });
         }
-        Members = World.Query(World.QueryDefinition().All<Body>().None<ExcludedBody>());
+        QueryDefinition members = World.QueryDefinition().All<Body>().None<ExcludedBody>().Build();
+        members = input.Class switch
+        {
+            "finite" => members.WithOptionalRead<CollisionLayer>(),
+            "character" => members.WithOptionalRead<Hair>(),
+            "default" or "bitmap-space" => members.WithOptionalRead<Body>(),
+            _ => members.WithOptionalRead<Body>().WithOptionalRead<Hair>()
+        };
+        Members = World.Query(members);
         int pairCapacity = input.HasSpace ? input.EntityCount * 64 :
             input.Class == "finite" ? input.CandidateCount : input.EntityCount * (input.EntityCount - 1) / 2;
         Output = input.Class == "threads" ? [] : new (Entity, Entity)[pairCapacity];

@@ -30,7 +30,10 @@ public sealed record Distribution(double MedianTicks, double P95Ticks, double Iq
 public sealed record MetricComparison(string Boundary, bool Required, Distribution Relation, Distribution Handwritten,
     double MedianRatio, double P95Ratio, bool Passed);
 
-public sealed record MeasurementWorkspace(string UsedBy, long SetupTicks, IndexMemory Memory);
+public sealed record MemberQueryTerm(int ComponentId, string Kind, string Access, string Filters);
+
+public sealed record MeasurementWorkspace(string UsedBy, long SetupTicks, IndexMemory Memory,
+    MemberQueryTerm[] MemberTerms);
 
 public sealed record MeasurementReport(string ReportKind, MeasurementCase Input, DeviceData Device, DateTime StartedAtUtc,
     DateTime FinishedAtUtc, string DataSharing, MeasurementWorkspace[] Workspaces,
@@ -39,7 +42,19 @@ public sealed record MeasurementReport(string ReportKind, MeasurementCase Input,
     ColdSample[] ColdSamples, FrameSample[] RawSamples, MetricComparison[] Comparisons,
     IndexMemory RelationMemory, IndexMemory HandwrittenMemory, bool? Passed);
 
+public sealed record HandwrittenMetricComparison(string Boundary, bool Required,
+    Distribution FirstHandwritten, Distribution SecondHandwritten, double MedianRatio, double P95Ratio, bool Passed);
+
+public sealed record HandwrittenControlReport(string ReportKind, MeasurementCase Input, DeviceData Device,
+    DateTime StartedAtUtc, DateTime FinishedAtUtc, string DataSharing, MeasurementWorkspace[] Workspaces,
+    string FirstHandwrittenType, string SecondHandwrittenType,
+    long FirstHandwrittenIndexBuildTicks, long SecondHandwrittenIndexBuildTicks,
+    string[] Boundaries, string[] MemoryScope, EquivalenceData Equivalence,
+    ColdSample[] ColdSamples, FrameSample[] RawSamples, HandwrittenMetricComparison[] Comparisons,
+    IndexMemory FirstHandwrittenMemory, IndexMemory SecondHandwrittenMemory, bool Required);
+
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(MeasurementReport))]
+[JsonSerializable(typeof(HandwrittenControlReport))]
 [JsonSerializable(typeof(MeasurementCase[]))]
 internal partial class MeasurementJson : JsonSerializerContext;

@@ -33,6 +33,19 @@
 
 每份新报告的DataSharing明确记录SharedStaticWorkspace或IndependentUpdatingWorkspaces。Workspaces按实际对象逐个保存使用方、一次构造ticks和已知数组payload/capacity；静态共同工作区只列一次，每侧树、摘要、分区、CollisionPairBuffer与SpatialContactTotals在侧内存中各列其实际资源。World内部管理结构及对象头继续由真实分配、Managed与WorkingSet记录。cold的SetupTicks直接包围该次独立MeasurementData构造；IndexBuildTicks直接包围随后的该侧查询/树/摘要/资源构造，两个真实边界分开保存。
 
+从持久读取配置开始，MeasurementData的Members在原All<Body>/None<ExcludedBody>定义上声明该场景实际读取。WithOptionalRead保留成员Kind，已声明的读取由终端AddReads复用；持续持有的Members使双方使用同一份World查询匹配数据。声明、登记与匹配数据形成进入共同工作区SetupTicks和每个独立cold SetupTicks。Workspaces.MemberTerms与member-terms.csv逐项保存真实原成员定义的ComponentId、Kind、Access和Filters。
+
+| 场景类 | 原成员定义追加的读取 | 查询与消费的实际范围 |
+| --- | --- | --- |
+| finite | CollisionLayer | 固定身份候选读取类别组件；消费写真实身份接触计数 |
+| character | Hair | 键桶/角色比较读取Hair；消费写真实身份接触计数 |
+| default、bitmap-space | Body | 运动判断或几何/类别读取Body；空间消费读取Body |
+| character-space、complete、updates、threads、consume | Body、Hair | 几何/运动/类别读取Body，角色筛选读取Hair；空间消费读取Body |
+
+几何消费继续以Empty.WithAccessFrom形成自身访问查询，其取得、读取和释放成本计入原Consume或实际整帧边界。持久Members、两侧各自描述/索引和消费访问查询按各自真实生命周期记录。
+
+同函数控制通过--comparison HandwrittenControl选择，使用独立HandwrittenControlReport。两侧明确命名H1/H2，保存FirstHandwrittenType与SecondHandwrittenType、各自分布/初始化/内存和真实完整结果，Required=false。Verify、Run、31×8分布与计时共用正式测量流程。Submit-Measurements的HandwrittenControlCaseId将指定控制项紧随同输入正式项排入同一次独占准备；控制项生成单独control-summary.md/control-metrics.csv，正式E/H报告保留其字段与严格判断。
+
 输入采用 seed=231243 的固定整数 LCG 产生候选端点，保留候选位置及重复。类别域为8位；类别为一个已声明位，允许掩码为旋转的1/4/8位集合，实际通过率记录输出行数。75%成员具有Hair，其余成员保留普通物体语义。角色数量为 `ceil(N*75%/每角色根数)`，随规模增长；角色身份先于Body按固定顺序创建。
 
 所有 AABB 边长为1。稀疏输入为间隔3的双物体簇；均匀输入为间距0.8的32×32格点层；密集输入为64物体簇，簇间距4，簇内y/z偏移0.03。同角色聚集按连续成员分组；交错按角色数取余。组合场景使用D/S/K=50/30/20、允许mask4位、每角色16根。

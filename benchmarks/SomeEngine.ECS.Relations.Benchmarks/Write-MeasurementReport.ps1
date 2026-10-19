@@ -9,11 +9,14 @@ $evidence = Join-Path (Join-Path $repositoryRoot $Destination) $Series
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
 $submissions = Get-Content -Raw -LiteralPath (Join-Path $reports 'submissions.json') | ConvertFrom-Json
 $metrics = [Collections.Generic.List[object]]::new()
+$controlMetrics = [Collections.Generic.List[object]]::new()
 $memory = [Collections.Generic.List[object]]::new()
 $cold = [Collections.Generic.List[object]]::new()
 $processors = [Collections.Generic.List[object]]::new()
 $workspaces = [Collections.Generic.List[object]]::new()
 $initialization = [Collections.Generic.List[object]]::new()
+$memberTerms = [Collections.Generic.List[object]]::new()
+$formalCases = 0
 $lines = [Collections.Generic.List[string]]::new()
 $lines.Add("# $Series measurements")
 $lines.Add('')
@@ -24,7 +27,29 @@ $lines.Add('| --- | --- | --- | --- | --- | --- | --- | --- |')
 foreach ($submission in $submissions) {
     $reportId = [string]@($submission.CaseId)[0]
     $report = Get-Content -Raw -LiteralPath $submission.Report | ConvertFrom-Json
+    $control = $report.ReportKind -eq 'HandwrittenControl'
+    if (!$control) { $formalCases++ }
     foreach ($comparison in $report.Comparisons) {
+        if ($control) {
+            $h1 = $comparison.FirstHandwritten
+            $h2 = $comparison.SecondHandwritten
+            $controlMetrics.Add([pscustomobject]@{
+                CaseId = $reportId; Boundary = $comparison.Boundary; Required = $comparison.Required
+                Equal = $report.Equivalence.Equal; FirstHandwrittenType = $report.FirstHandwrittenType
+                SecondHandwrittenType = $report.SecondHandwrittenType; SourceCommit = $submission.SourceCommit
+                Backend = $submission.Backend; QueueId = $submission.QueueId; Frequency = $report.Device.StopwatchFrequency
+                FirstHandwrittenMedianTicks = $h1.MedianTicks; SecondHandwrittenMedianTicks = $h2.MedianTicks
+                FirstHandwrittenP95Ticks = $h1.P95Ticks; SecondHandwrittenP95Ticks = $h2.P95Ticks
+                MedianRatio = $comparison.MedianRatio; P95Ratio = $comparison.P95Ratio
+                FirstHandwrittenIqrTicks = $h1.IqrTicks; SecondHandwrittenIqrTicks = $h2.IqrTicks
+                FirstHandwrittenStandardDeviationTicks = $h1.StandardDeviationTicks
+                SecondHandwrittenStandardDeviationTicks = $h2.StandardDeviationTicks
+                FirstHandwrittenPairsPerSecond = $h1.PairsPerSecond; SecondHandwrittenPairsPerSecond = $h2.PairsPerSecond
+                FirstHandwrittenTotalFrameAllocatedBytes = $h1.TotalFrameAllocatedBytes
+                SecondHandwrittenTotalFrameAllocatedBytes = $h2.TotalFrameAllocatedBytes
+            })
+            continue
+        }
         $metric = [pscustomobject]@{
             CaseId = $reportId; Class = $report.Input.Class; Boundary = $comparison.Boundary; Required = $comparison.Required
             Equal = $report.Equivalence.Equal; Passed = $comparison.Passed; SourceCommit = $submission.SourceCommit
@@ -48,17 +73,19 @@ foreach ($submission in $submissions) {
         $p95 = ([double]$metric.P95Ratio).ToString('G17', [Globalization.CultureInfo]::InvariantCulture)
         $lines.Add("| $($metric.CaseId) | $($metric.Boundary) | $($metric.Required) | $($metric.RelationMedianTicks) | $($metric.HandwrittenMedianTicks) | $median | $p95 | $($metric.Passed) |")
     }
-    foreach ($side in 'Relation', 'Handwritten') {
+    $sides = if ($control) { @('FirstHandwritten', 'SecondHandwritten') } else { @('Relation', 'Handwritten') }
+    foreach ($side in $sides) {
+        $sideLabel = if ($side -eq 'FirstHandwritten') { 'H1' } elseif ($side -eq 'SecondHandwritten') { 'H2' } else { $side }
         $initialization.Add([pscustomobject]@{
-            CaseId = $reportId; Side = $side; IndexBuildTicks = $report."$($side)IndexBuildTicks"
+            CaseId = $reportId; Side = $sideLabel; IndexBuildTicks = $report."$($side)IndexBuildTicks"
             Frequency = $report.Device.StopwatchFrequency
         })
         $data = $report."$($side)Memory"
         foreach ($field in $data.PayloadBytes.PSObject.Properties) {
-            $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = $side; Unit = 'bytes'; Field = $field.Name; Value = $field.Value })
+            $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = $sideLabel; Unit = 'bytes'; Field = $field.Name; Value = $field.Value })
         }
         foreach ($field in $data.Counts.PSObject.Properties) {
-            $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = $side; Unit = 'count'; Field = $field.Name; Value = $field.Value })
+            $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = $sideLabel; Unit = 'count'; Field = $field.Name; Value = $field.Value })
         }
     }
     foreach ($workspace in $report.Workspaces) {
@@ -66,6 +93,12 @@ foreach ($submission in $submissions) {
             CaseId = $reportId; DataSharing = $report.DataSharing; UsedBy = $workspace.UsedBy
             SetupTicks = $workspace.SetupTicks; Frequency = $report.Device.StopwatchFrequency
         })
+        foreach ($term in $workspace.MemberTerms) {
+            $memberTerms.Add([pscustomobject]@{
+                CaseId = $reportId; UsedBy = $workspace.UsedBy; ComponentId = $term.ComponentId
+                Kind = $term.Kind; Access = $term.Access; Filters = $term.Filters
+            })
+        }
         foreach ($field in $workspace.Memory.PayloadBytes.PSObject.Properties) {
             $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = "$($workspace.UsedBy)-workspace"; Unit = 'bytes'; Field = $field.Name; Value = $field.Value })
         }
@@ -80,7 +113,8 @@ foreach ($submission in $submissions) {
             TotalTicks = $sample.TotalTicks; OutputPairCount = $sample.OutputPairCount; AllocatedBytes = $sample.AllocatedBytes })
     }
     if ($null -ne $report.Device.Machine) {
-        foreach ($side in 'relation', 'handwritten') {
+        $sampleSides = if ($control) { @('H1', 'H2') } else { @('relation', 'handwritten') }
+        foreach ($side in $sampleSides) {
             $samples = @($report.RawSamples | Where-Object Side -eq $side)
             $machine = $report.Device.Machine
             $processors.Add([pscustomobject]@{
@@ -98,7 +132,7 @@ foreach ($submission in $submissions) {
 $required = @($metrics | Where-Object Required)
 $passed = @($required | Where-Object Passed)
 $lines.Add('')
-$lines.Add("Required metrics: $($passed.Count)/$($required.Count) pass. Case reports: $($submissions.Count).")
+$lines.Add("Required metrics: $($passed.Count)/$($required.Count) pass. Case reports: $formalCases.")
 $lines.Add('')
 $lines.Add('Memory.csv records each actual live/addressed/capacity payload and count separately. Cold.csv preserves seven alternating setup/index/first-query/first-consumption pairs per case. Metrics.csv records both distributions and throughput; raw compressed JSON preserves the individual frame allocation and process-memory readings.')
 $lines | Set-Content -LiteralPath (Join-Path $evidence 'summary.md') -Encoding utf8
@@ -111,6 +145,25 @@ if ($processors.Count -gt 0) {
 if ($workspaces.Count -gt 0) {
     $workspaces | Export-Csv -LiteralPath (Join-Path $evidence 'workspaces.csv') -NoTypeInformation -Encoding utf8
     $initialization | Export-Csv -LiteralPath (Join-Path $evidence 'initialization.csv') -NoTypeInformation -Encoding utf8
+}
+if ($memberTerms.Count -gt 0) {
+    $memberTerms | Export-Csv -LiteralPath (Join-Path $evidence 'member-terms.csv') -NoTypeInformation -Encoding utf8
+}
+if ($controlMetrics.Count -gt 0) {
+    $controlMetrics | Export-Csv -LiteralPath (Join-Path $evidence 'control-metrics.csv') -NoTypeInformation -Encoding utf8
+    $controlLines = [Collections.Generic.List[string]]::new()
+    $controlLines.Add("# $Series handwritten controls")
+    $controlLines.Add('')
+    $controlLines.Add('H1 and H2 use the same handwritten implementation with independent side state and the same actual workspace. Required=false; these ratios are diagnostic data.')
+    $controlLines.Add('')
+    $controlLines.Add('| Case | Boundary | H1 type | H2 type | H1 median ticks | H2 median ticks | H1/H2 median | H1/H2 p95 |')
+    $controlLines.Add('| --- | --- | --- | --- | --- | --- | --- | --- |')
+    foreach ($metric in $controlMetrics) {
+        $median = ([double]$metric.MedianRatio).ToString('G17', [Globalization.CultureInfo]::InvariantCulture)
+        $p95 = ([double]$metric.P95Ratio).ToString('G17', [Globalization.CultureInfo]::InvariantCulture)
+        $controlLines.Add("| $($metric.CaseId) | $($metric.Boundary) | $($metric.FirstHandwrittenType) | $($metric.SecondHandwrittenType) | $($metric.FirstHandwrittenMedianTicks) | $($metric.SecondHandwrittenMedianTicks) | $median | $p95 |")
+    }
+    $controlLines | Set-Content -LiteralPath (Join-Path $evidence 'control-summary.md') -Encoding utf8
 }
 Write-Output "$Series`: cases=$($submissions.Count); required=$($required.Count); passed=$($passed.Count); $evidence"
 foreach ($group in ($required | Group-Object Class)) {

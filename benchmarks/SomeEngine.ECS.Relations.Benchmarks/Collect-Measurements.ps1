@@ -18,7 +18,8 @@ $summary = foreach ($submission in $submissions) {
     $report = Get-Content -Raw -LiteralPath $submission.Report | ConvertFrom-Json
     foreach ($comparison in $report.Comparisons) {
         [pscustomobject]@{ CaseId = $reportId; Boundary = $comparison.Boundary;
-            Required = $comparison.Required; Status = if ($comparison.Passed) { 'pass' } else { 'measured-overhead' };
+            Required = $comparison.Required; Status = if ($report.ReportKind -eq 'HandwrittenControl') { 'diagnostic' }
+                elseif ($comparison.Passed) { 'pass' } else { 'measured-overhead' };
             MedianRatio = $comparison.MedianRatio; P95Ratio = $comparison.P95Ratio;
             SourceCommit = $submission.SourceCommit; Backend = $submission.Backend;
             QueueId = $submission.QueueId; QueueResult = $resultFile; Report = $submission.Report }

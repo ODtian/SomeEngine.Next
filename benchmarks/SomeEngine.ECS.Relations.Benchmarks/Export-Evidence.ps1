@@ -22,7 +22,7 @@ $index = foreach ($submission in $submissions) {
     $gzip = [IO.Compression.GZipStream]::new($target, [IO.Compression.CompressionLevel]::SmallestSize)
     try { $source.CopyTo($gzip) }
     finally { $gzip.Dispose(); $target.Dispose(); $source.Dispose() }
-    [pscustomobject]@{
+    $entry = [ordered]@{
         CaseId = $reportId
         Report = $reportFile
         SourceCommit = $submission.SourceCommit
@@ -33,14 +33,22 @@ $index = foreach ($submission in $submissions) {
         Device = $report.Device
         DataSharing = $report.DataSharing
         Workspaces = $report.Workspaces
-        RelationIndexBuildTicks = $report.RelationIndexBuildTicks
-        HandwrittenIndexBuildTicks = $report.HandwrittenIndexBuildTicks
-        RelationMemory = $report.RelationMemory
-        HandwrittenMemory = $report.HandwrittenMemory
+        ReportKind = $report.ReportKind
         Queue = $queueResult
         Stdout = [IO.File]::ReadAllText((Join-Path $submission.QueueDirectory 'stdout.log'))
         Stderr = [IO.File]::ReadAllText((Join-Path $submission.QueueDirectory 'stderr.log'))
     }
+    if ($report.ReportKind -eq 'HandwrittenControl') {
+        foreach ($field in 'FirstHandwrittenType','SecondHandwrittenType','FirstHandwrittenIndexBuildTicks',
+            'SecondHandwrittenIndexBuildTicks','FirstHandwrittenMemory','SecondHandwrittenMemory','Required') {
+            $entry[$field] = $report.$field
+        }
+    } else {
+        foreach ($field in 'RelationIndexBuildTicks','HandwrittenIndexBuildTicks','RelationMemory','HandwrittenMemory') {
+            $entry[$field] = $report.$field
+        }
+    }
+    [pscustomobject]$entry
 }
 $index | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath (Join-Path $evidence 'index.json') -Encoding utf8
 Write-Host "$Series`: $($index.Count) reports; $evidence"

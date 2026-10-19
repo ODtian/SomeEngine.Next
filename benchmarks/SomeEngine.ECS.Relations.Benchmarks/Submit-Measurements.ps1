@@ -1,6 +1,7 @@
 param(
     [string]$Series = 'initial',
     [string[]]$CaseId = @(),
+    [string[]]$HandwrittenControlCaseId = @(),
     [ValidateSet('NativeAOT', 'JIT')][string]$Backend = 'NativeAOT',
     [ValidateSet('measure', 'phases')][string]$Mode = 'measure',
     [ValidateSet('Normal', 'Fixed')][string[]]$Machine = @('Fixed'),
@@ -28,19 +29,31 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Case listing failed.' }
     $cases = ($listing -join [Environment]::NewLine) | ConvertFrom-Json
     $selected = $cases | Where-Object { ($CaseId.Count -eq 0 -or $_.Id -in $CaseId) -and ($Mode -ne 'phases' -or $_.ChangesEveryFrame) }
+    $requests = @(
+        foreach ($case in $cases) {
+            if ($case -in $selected) { [pscustomobject]@{ Input = $case; Comparison = 'RelationHandwritten' } }
+            if ($case.Id -in $HandwrittenControlCaseId) {
+                [pscustomobject]@{ Input = $case; Comparison = 'HandwrittenControl' }
+            }
+        }
+    )
     $caseIndex = 0
-    $submissions = foreach ($case in $selected) {
+    $submissions = foreach ($request in $requests) {
+        $case = $request.Input
         $machineOrder = @($Machine)
         if ($caseIndex % 2 -eq 1) { [array]::Reverse($machineOrder) }
         $caseIndex++
         foreach ($configuration in $machineOrder) {
             $reportId = if ($Machine.Count -gt 1) { "$($case.Id)-$($configuration.ToLowerInvariant())" } else { $case.Id }
+            if ($request.Comparison -eq 'HandwrittenControl') { $reportId += '-control' }
             $report = Join-Path $reportDirectory "$reportId.json"
             [string[]]$arguments = @('--session', $Session) + $prefix + @('--mode', $Mode, '--case', $case.Class, '--size', $case.Size,
-                '--variant', $case.Variant, '--source', $sourceCommit, '--backend', $Backend, '--machine', $configuration, '--output', $report)
+                '--variant', $case.Variant, '--source', $sourceCommit, '--backend', $Backend, '--machine', $configuration,
+                '--comparison', $request.Comparison, '--output', $report)
             $submitted = & $queueTool @arguments | ConvertFrom-Json
             Write-Host "QUEUED $($submitted.Id) $reportId"
-            [pscustomobject]@{ CaseId = $reportId; InputCaseId = $case.Id; Machine = $configuration; SourceCommit = $sourceCommit; Backend = $Backend;
+            [pscustomobject]@{ CaseId = $reportId; InputCaseId = $case.Id; Comparison = $request.Comparison;
+                Machine = $configuration; SourceCommit = $sourceCommit; Backend = $Backend;
                 Report = $report; QueueId = $submitted.Id; QueueDirectory = $submitted.OutputDirectory }
         }
     }
