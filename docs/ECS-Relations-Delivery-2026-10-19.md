@@ -2,6 +2,8 @@
 
 本页逐项对应 [#231](https://github.com/ODtian/SomeEngine.Next/issues/231) 的功能、分包、NativeAOT 与性能验收。业务 Body/Hair 和 Number 属于可执行例子；固定查询族、借用读取、键/bitmap/空间实现由共享项目交付。固定输入见[测量配置](ECS-Relations-Measurement-Configuration.md)，每份报告的实际 SourceCommit、Backend、完整队列命令和原始输出见[持久证据](evidence/ECS-Relations-2026-10-19/)。
 
+公开接口的原名去向、包归属、主要持有处与Wiki事实入口统一列在[接口调整表](ECS-Relations-API-Changes-2026-10-19.md)。
+
 ## 功能清单
 
 | 规格验收项 | 公开行为检查 | 实现与说明 |

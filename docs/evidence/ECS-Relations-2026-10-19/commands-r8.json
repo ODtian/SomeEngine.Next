@@ -118,5 +118,32 @@
     },
     "Stdout": "  正在确定要还原的项目…\r\n  所有项目均是最新的，无法还原。\r\n  SomeEngine.TestRules -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\TestRules\\bin\\Release\\net10.0\\SomeEngine.TestRules.dll\r\n  Test rules: SomeEngine.Physics.Tests; 0 violations.\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\n  SomeEngine.ECS.Relations -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.dll\r\n  SomeEngine.Physics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Physics\\bin\\Release\\net10.0\\SomeEngine.Physics.dll\r\n  SomeEngine.Physics.Tests -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tests\\SomeEngine.Physics.Tests\\bin\\Release\\net10.0\\SomeEngine.Physics.Tests.dll\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tests\\SomeEngine.Physics.Tests\\bin\\Release\\net10.0\\SomeEngine.Physics.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行\r\nVSTest 版本 18.0.2 (x64)\r\n\r\n正在启动测试执行，请稍候...\r\n总共 1 个测试文件与指定模式相匹配。\r\n\r\n已通过! - 失败:     0，通过:     2，已跳过:     0，总计:     2，持续时间: 955 ms - SomeEngine.Physics.Tests.dll (net10.0)\r\n",
     "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "ae6e18810fb84d62959fb507ffbd8775",
+      "Executable": "dotnet",
+      "Arguments": [
+        "publish",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+        "-c",
+        "Release",
+        "-r",
+        "win-x64",
+        "--no-restore",
+        "-o",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish",
+        "-p:SourceRevisionId=3bf336e185c29628abf108ffc5cb5e317374bf92"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T08:43:08.4266253+08:00",
+      "StartedAtUtc": "2026-10-19T08:43:08.5166135+08:00",
+      "FinishedAtUtc": "2026-10-19T08:43:44.9090783+08:00"
+    },
+    "Stdout": "  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\n  SomeEngine.ECS.Relations -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.dll\r\n  SomeEngine.Physics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Physics\\bin\\Release\\net10.0\\SomeEngine.Physics.dll\r\n  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.Benchmarks.dll\r\n  Generating native code\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\Registry\\JobStorageTypeMetadata.cs(77): Trim analysis warning IL2070: SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>): 'this' argument does not satisfy 'DynamicallyAccessedMemberTypes.PublicFields', 'DynamicallyAccessedMemberTypes.NonPublicFields' in call to 'System.Type.GetFields(BindingFlags)'. The parameter 'type' of method 'SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>)' does not have matching annotations. The source value must declare at least the same requirements as those declared on the target location it is assigned to. [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\SomeEngine.ECS.Relations.Benchmarks.csproj]\r\n  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\\r\n",
+    "Stderr": ""
   }
 ]

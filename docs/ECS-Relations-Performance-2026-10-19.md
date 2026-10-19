@@ -2,6 +2,8 @@
 
 本次测量通过真实 World、公开查询、现有键索引、实际二叉 AABB 树、维护依赖、成对输出缓冲与几何消费执行九类工作。完整配置为108个独立场景，主查询与额外完整帧共126项验收指标；每项分别使用原精度 median 比和 p95 比 ≤1.00。固定输入与采样见[配置](ECS-Relations-Measurement-Configuration.md)，逐项功能及包交付见[证据索引](ECS-Relations-Delivery-2026-10-19.md)。
 
+这些优化对应的公开读取、静态事实、许可与借用回调归属见[接口调整表](ECS-Relations-API-Changes-2026-10-19.md)。
+
 ## 测量边界
 
 | 名称 | 开始 | 完成 | 实际工作 |
@@ -55,16 +57,21 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | 35e71c5a | 默认绑定第二参数在语义短路前定位；两侧原行遍历具有同一成员/版本行为 | ReadRows在块边界绑定可选列，引用按行索引借用；手写默认配对同用公开准备；bitmap缺失早返回后直接许可尾表达式 | [optimized-5](evidence/ECS-Relations-2026-10-19/optimized-5/summary.md)、[完整matrix-r5](evidence/ECS-Relations-2026-10-19/matrix-r5/summary.md) |
 | b68e892d | Native默认循环在排序和输出各读两次Entity；两个方向展开两套Has/Matches；顺序条件先物化三向数值 | 缓存外/内Entity；先选择有向组件引用后共用一次Matches；Precedes表达完整身份bool先后，手写同步采用相同准备 | [optimized-6](evidence/ECS-Relations-2026-10-19/optimized-6/summary.md) |
 | a40d6c75 | 键桶80B枚举复制与32B Current中转；维护逐行重复组件/版本读取；Tree getter多次调用 | MoveNext(out group)、原成员视图复用；chunk版本绑定与静态组合变化读取器；同类型几何/摘要变化共享，Tree局部引用 | [optimized-7](evidence/ECS-Relations-2026-10-19/optimized-7/summary.md)、[构建与红绿](evidence/ECS-Relations-2026-10-19/commands-r7.json)、[实际Native读取](evidence/ECS-Relations-2026-10-19/native-r7.json) |
+| 3bf336e1 | 必有组件仍逐对判断存在性；交换不变规则先排序；整体CategoryBits投影提前读取双方字段 | Requires闭合Required/Optional模式，IsSymmetric先匹配后排序；具体许可按方向读取标量，摘要保持原布局 | [optimized-8](evidence/ECS-Relations-2026-10-19/optimized-8/summary.md)、[行为与发布](evidence/ECS-Relations-2026-10-19/commands-r8.json)、[实际Native读取](evidence/ECS-Relations-2026-10-19/native-r8.json)、[九个独立维护阶段](evidence/ECS-Relations-2026-10-19/phases-r8/summary.md) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
-下一轮结构变化来自同一 NativeAOT 产物的指令定位：键桶枚举把相同成员视图保留成长期局部，挤占输出身份字段寄存器；`KeyGroups.MoveNext` 先写 Current 再由调用方读取。实现改为直接使用原成员视图和 `MoveNext(out group)`。筛选使用静态 `RequiresMatch` 直接选择接受分支，让具体许可的短路表达式进入实际控制流。维护把 Tree 引用保留在 Reconcile/Refit 调用局部，并通过 `ReadRowChanges<T>()` 在 chunk 边界绑定原版本跨度；组合筛选给回调提供具体变化读取器，原 `RowIndices` 继续形成成员集合。手写维护使用相同公共版本读取。
+a40d6c75 的结构变化来自同一 NativeAOT 产物的指令定位：键桶枚举把相同成员视图保留成长期局部，挤占输出身份字段寄存器；`KeyGroups.MoveNext` 先写 Current 再由调用方读取。实现改为直接使用原成员视图和 `MoveNext(out group)`。筛选使用静态 `RequiresMatch` 直接选择接受分支。维护把 Tree 引用保留在 Reconcile/Refit 调用局部，并通过 `ReadRowChanges<T>()` 在 chunk 边界绑定原版本跨度；组合筛选给回调提供具体变化读取器，原 `RowIndices` 继续形成成员集合。手写维护使用相同公共版本读取。
 
 新增公共版本读取的红检查队列为 `98eed6b306cf4c7991fe012c33768823`（公共成员尚待实现时的 CS1061），绿检查 `6212b321edd94f24afbb42b73bb595f5` 通过1项真实 World 行版本检查。关系桶与筛选队列 `2bafedde700a4ac88bb35bcb332a2775` 通过5项；维护及并行消费队列 `61d5cfc267384e9ba435cba3322d9687` 通过4项。这些检查均运行仓库行为规则，结果为0 violations。
 
 r7 的原生证据同时明确了已收敛的部分：键桶直接进入 HashSet.MoveNext 和 GetByIndex，80B枚举复制与32B Current中转均已消去；原来提前形成的身份tuple也已标量化为三个寄存器与一个栈字段，手写使用两个寄存器与两个栈字段。exclude只参与桶级接受选择，inner pair直接执行身份顺序、成员和输出。后续键改动因此集中在仍独立调用且复制24B输入/结果的KeyGroups构造，使用原构造器内联完成准备融合。
 
 r7 稀疏维护在小/中/大的 MaintenanceAndQuery 原精度比值分别为0.9479976090854751/0.913827655310621、0.9288389513108615/0.9190815542019042、0.925881086898036/0.9221554987415026，三个完整帧也通过同一严格判断。默认配对的下一处成本来自排序在Kind匹配之前执行以及两次HasValue；已有查询的Requires事实闭合必有模式，作者显式IsSymmetric事实允许先匹配再排序。有限类别的具体许可改用标量读取，单向按需取得两个字段，双方许可按两个方向短路，CategoryBits/摘要保持原布局。
+
+r8 的 Required+IsSymmetric 默认循环与手写已逐条对应：配对主段均为673字节，内层组件绑定、Kind、身份、排序和输出均为175字节；通用入口额外抽取24B成员查询，frame为912B，手写为880B，行栈位置相差8。实际Where caller先形成216B视图，再复制First查询并读取Requires；手写直接向循环传入24B查询。后续把私有循环输入收敛为QueryCursor members，并按相同组件类型合并AddReads。
+
+r8 同时给出了构造器强内联的实际回退证据：KeyPairs栈由r7的392B升到808B，收集键所用成员视图的四个字段长期占用寄存器，候选和输出新增Index/Generation栈重载。小规模角色16聚集的原精度比值变为1.0904528217711353/1.095232464179428。实现恢复独立的键收集边界，桶级选择和已标量化tuple继续沿原路径。两侧HashSet/List、成员查询、GetByIndex算法和数据持有均相同。
 
 ## 执行与复现
 

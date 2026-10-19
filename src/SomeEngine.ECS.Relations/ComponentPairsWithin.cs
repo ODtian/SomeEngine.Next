@@ -14,31 +14,32 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
     public int QueryCount => 1;
     public static bool ReadsFromSingleQuery => true;
     public QueryHandle GetQuery(int position) => source.GetQuery(position);
-    public QueryDefinition AddReads(QueryDefinition definition, int position) =>
-        definition.WithOptionalRead<TFirst>().WithOptionalRead<TSecond>();
+    public QueryDefinition AddReads(QueryDefinition definition, int position)
+    {
+        QueryDefinition reads = definition.WithOptionalRead<TFirst>();
+        return typeof(TFirst) == typeof(TSecond) ? reads : reads.WithOptionalRead<TSecond>();
+    }
 
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
-        => exclude ? Enumerate<ExceptSelection, TOutput>(queries, ref output)
-            : Enumerate<WhereSelection, TOutput>(queries, ref output);
-
-    private bool Enumerate<TSelection, TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TSelection : struct, IRelationSelection
-        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        bool required = queries.First.Requires<TFirst>() &&
-            (typeof(TFirst) == typeof(TSecond) || queries.First.Requires<TSecond>());
-        return required ? Enumerate<TSelection, RequiredRelationComponents, TOutput>(queries, ref output)
-            : Enumerate<TSelection, OptionalRelationComponents, TOutput>(queries, ref output);
+        QueryCursor members = queries.First;
+        bool required = members.Requires<TFirst>() &&
+            (typeof(TFirst) == typeof(TSecond) || members.Requires<TSecond>());
+        if (exclude)
+            return required ? Enumerate<ExceptSelection, RequiredRelationComponents, TOutput>(members, ref output)
+                : Enumerate<ExceptSelection, OptionalRelationComponents, TOutput>(members, ref output);
+        return required ? Enumerate<WhereSelection, RequiredRelationComponents, TOutput>(members, ref output)
+            : Enumerate<WhereSelection, OptionalRelationComponents, TOutput>(members, ref output);
     }
 
-    private bool Enumerate<TSelection, TPresence, TOutput>(RelationQueryViews queries, ref TOutput output)
+    private bool Enumerate<TSelection, TPresence, TOutput>(QueryCursor members, ref TOutput output)
         where TSelection : struct, IRelationSelection
         where TPresence : struct, IRelationComponentPresence
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         TRelation predicate = relation;
-        var firstRows = queries.First.ReadRows<TFirst, TSecond>();
+        var firstRows = members.ReadRows<TFirst, TSecond>();
         while (firstRows.MoveNext(out var first, out var firstValue, out var secondValue))
         {
             Entity firstEntity = first.Entity;
