@@ -1,0 +1,2162 @@
+[
+  {
+    "CaseId": "finite-small-mask1-oneway",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "small",
+      "Variant": "mask1-oneway",
+      "EntityCount": 128,
+      "CandidateCount": 4096,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 1,
+      "Mutual": false,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-small-mask1-oneway",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 6,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          520
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          520
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-small-mask1-mutual",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "small",
+      "Variant": "mask1-mutual",
+      "EntityCount": 128,
+      "CandidateCount": 4096,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 1,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-small-mask1-mutual",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 6,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          0
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          0
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-small-mask4-oneway",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "small",
+      "Variant": "mask4-oneway",
+      "EntityCount": 128,
+      "CandidateCount": 4096,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 4,
+      "Mutual": false,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-small-mask4-oneway",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 6,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          2048
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          2048
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-small-mask4-mutual",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "small",
+      "Variant": "mask4-mutual",
+      "EntityCount": 128,
+      "CandidateCount": 4096,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-small-mask4-mutual",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 6,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          1008
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          1008
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-small-mask8-oneway",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "small",
+      "Variant": "mask8-oneway",
+      "EntityCount": 128,
+      "CandidateCount": 4096,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 8,
+      "Mutual": false,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-small-mask8-oneway",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 6,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          4096
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          4096
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-small-mask8-mutual",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "small",
+      "Variant": "mask8-mutual",
+      "EntityCount": 128,
+      "CandidateCount": 4096,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 8,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-small-mask8-mutual",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 6,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          4096
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          4096
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "default-small-dynamic10",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "default",
+      "Size": "small",
+      "Variant": "dynamic10",
+      "EntityCount": 128,
+      "CandidateCount": 4096,
+      "Density": "dense",
+      "DynamicPercent": 10,
+      "StaticPercent": 60,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "default-small-dynamic10",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 6,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          1573
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          1573
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "default-small-dynamic50",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "default",
+      "Size": "small",
+      "Variant": "dynamic50",
+      "EntityCount": 128,
+      "CandidateCount": 4096,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "default-small-dynamic50",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 6,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          6112
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          6112
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "default-small-dynamic90",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "default",
+      "Size": "small",
+      "Variant": "dynamic90",
+      "EntityCount": 128,
+      "CandidateCount": 4096,
+      "Density": "dense",
+      "DynamicPercent": 90,
+      "StaticPercent": 5,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "default-small-dynamic90",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 6,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          8062
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          8062
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-middle-mask1-oneway",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "middle",
+      "Variant": "mask1-oneway",
+      "EntityCount": 512,
+      "CandidateCount": 32768,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 1,
+      "Mutual": false,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-middle-mask1-oneway",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 24,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          4160
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          4160
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-middle-mask1-mutual",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "middle",
+      "Variant": "mask1-mutual",
+      "EntityCount": 512,
+      "CandidateCount": 32768,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 1,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-middle-mask1-mutual",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 24,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          0
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          0
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-middle-mask4-oneway",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "middle",
+      "Variant": "mask4-oneway",
+      "EntityCount": 512,
+      "CandidateCount": 32768,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 4,
+      "Mutual": false,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-middle-mask4-oneway",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 24,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          16384
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          16384
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-middle-mask4-mutual",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "middle",
+      "Variant": "mask4-mutual",
+      "EntityCount": 512,
+      "CandidateCount": 32768,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-middle-mask4-mutual",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 24,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          8064
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          8064
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-middle-mask8-oneway",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "middle",
+      "Variant": "mask8-oneway",
+      "EntityCount": 512,
+      "CandidateCount": 32768,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 8,
+      "Mutual": false,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-middle-mask8-oneway",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 24,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          32768
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          32768
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-middle-mask8-mutual",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "middle",
+      "Variant": "mask8-mutual",
+      "EntityCount": 512,
+      "CandidateCount": 32768,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 8,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-middle-mask8-mutual",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 24,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          32768
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          32768
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "default-middle-dynamic10",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "default",
+      "Size": "middle",
+      "Variant": "dynamic10",
+      "EntityCount": 512,
+      "CandidateCount": 32768,
+      "Density": "dense",
+      "DynamicPercent": 10,
+      "StaticPercent": 60,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "default-middle-dynamic10",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 24,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          25246
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          25246
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "default-middle-dynamic50",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "default",
+      "Size": "middle",
+      "Variant": "dynamic50",
+      "EntityCount": 512,
+      "CandidateCount": 32768,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "default-middle-dynamic50",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 24,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          98176
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          98176
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "default-middle-dynamic90",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "default",
+      "Size": "middle",
+      "Variant": "dynamic90",
+      "EntityCount": 512,
+      "CandidateCount": 32768,
+      "Density": "dense",
+      "DynamicPercent": 90,
+      "StaticPercent": 5,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "default-middle-dynamic90",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 24,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          129541
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          129541
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-large-mask1-oneway",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "large",
+      "Variant": "mask1-oneway",
+      "EntityCount": 2048,
+      "CandidateCount": 262144,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 1,
+      "Mutual": false,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-large-mask1-oneway",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 96,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          33280
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          33280
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-large-mask1-mutual",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "large",
+      "Variant": "mask1-mutual",
+      "EntityCount": 2048,
+      "CandidateCount": 262144,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 1,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-large-mask1-mutual",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 96,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          0
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          0
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-large-mask4-oneway",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "large",
+      "Variant": "mask4-oneway",
+      "EntityCount": 2048,
+      "CandidateCount": 262144,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 4,
+      "Mutual": false,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-large-mask4-oneway",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 96,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          131072
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          131072
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-large-mask4-mutual",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "large",
+      "Variant": "mask4-mutual",
+      "EntityCount": 2048,
+      "CandidateCount": 262144,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-large-mask4-mutual",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 96,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          64512
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          64512
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-large-mask8-oneway",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "large",
+      "Variant": "mask8-oneway",
+      "EntityCount": 2048,
+      "CandidateCount": 262144,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 8,
+      "Mutual": false,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-large-mask8-oneway",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 96,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          262144
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          262144
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "finite-large-mask8-mutual",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "finite",
+      "Size": "large",
+      "Variant": "mask8-mutual",
+      "EntityCount": 2048,
+      "CandidateCount": 262144,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 8,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "finite-large-mask8-mutual",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 96,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          262144
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          262144
+        ],
+        "FrameAllocatedBytes": [
+          3288,
+          3496,
+          4032
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "default-large-dynamic10",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "default",
+      "Size": "large",
+      "Variant": "dynamic10",
+      "EntityCount": 2048,
+      "CandidateCount": 262144,
+      "Density": "dense",
+      "DynamicPercent": 10,
+      "StaticPercent": 60,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "default-large-dynamic10",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 96,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          398725
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          398725
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "default-large-dynamic50",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "default",
+      "Size": "large",
+      "Variant": "dynamic50",
+      "EntityCount": 2048,
+      "CandidateCount": 262144,
+      "Density": "dense",
+      "DynamicPercent": 50,
+      "StaticPercent": 30,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "default-large-dynamic50",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 96,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          1572352
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          1572352
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "default-large-dynamic90",
+    "SourceCommit": "204efb6b78a3c383e4637ed22aafe997c1daac37",
+    "Equal": true,
+    "ColdSamples": 14,
+    "Input": {
+      "Class": "default",
+      "Size": "large",
+      "Variant": "dynamic90",
+      "EntityCount": 2048,
+      "CandidateCount": 262144,
+      "Density": "dense",
+      "DynamicPercent": 90,
+      "StaticPercent": 5,
+      "MaskPopulation": 4,
+      "Mutual": true,
+      "HairPerCharacter": 16,
+      "CharacterLayout": "clustered",
+      "WorkerCount": 0,
+      "Parallel": false,
+      "Id": "default-large-dynamic90",
+      "Seed": 231243,
+      "WarmupFrames": 16,
+      "Rounds": 31,
+      "FramesPerRound": 8,
+      "ColdPairs": 7,
+      "IterationsPerFrame": 1,
+      "PartitionCapacity": 16,
+      "CategoryCount": 8,
+      "HairPercent": 75,
+      "CharacterCount": 96,
+      "HasSpace": false,
+      "ChangesEveryFrame": false,
+      "PrimaryBoundary": "Query"
+    },
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          2075422
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "Rounds": 31,
+        "Frames": 8,
+        "SideOrderMismatches": 0,
+        "OutputPairCounts": [
+          2075422
+        ],
+        "FrameAllocatedBytes": [
+          2760,
+          2968,
+          3504
+        ],
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "DataWriteTicks": [
+          0
+        ]
+      }
+    ]
+  }
+]

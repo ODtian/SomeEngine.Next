@@ -6,19 +6,21 @@
 
 ## 完整矩阵记录
 
-`matrix-r15` 对应源码 `cc08ae37b03e7d9066adbd78207a6e8249a4b1d1` 的同一NativeAOT产物，108项均完成完整结果核对，126项严格指标中99项通过。[逐项原精度表](evidence/ECS-Relations-2026-10-19/matrix-r15/summary.md)和[原始报告索引](evidence/ECS-Relations-2026-10-19/matrix-r15/index.json)保存每项的实际判断。该轮继续提供后继优化的完整输入，分布、内存、冷执行和队列输出分别保留在同目录。
+最新完整系列`controlled-r22`对应源码`0ac0159349d41d46fa8197b86a4e1bd148debf4a`的同一NativeAOT产物。108项均完成完整结果核对，126项严格指标中108项通过。[逐项原精度表](evidence/ECS-Relations-2026-10-19/controlled-r22/summary.md)、[原始报告索引](evidence/ECS-Relations-2026-10-19/controlled-r22/index.json)和[队列边界审计](evidence/ECS-Relations-2026-10-19/controlled-r22/queue-boundaries.json)保存实际结果与控制条件。下表来自该次完整系列。
 
 | 场景类 | 主指标通过/数量 | 额外完整帧通过/数量 |
 | --- | --- | --- |
 | finite | 4/18 | — |
-| default | 1/9 | — |
-| character | 9/12 | — |
-| bitmap-space | 18/18 | — |
+| default | 8/9 | — |
+| character | 11/12 | — |
+| bitmap-space | 17/18 | — |
 | character-space | 5/6 | — |
 | complete | 9/9 | 9/9 |
-| updates | 8/9 | 9/9 |
+| updates | 9/9 | 9/9 |
 | threads | 18/18 | — |
 | consume | 9/9 | — |
+
+前序完整`matrix-r15`对应源码`cc08ae37b03e7d9066adbd78207a6e8249a4b1d1`，126项中99项通过；其[原精度表](evidence/ECS-Relations-2026-10-19/matrix-r15/summary.md)与[原始报告](evidence/ECS-Relations-2026-10-19/matrix-r15/index.json)保留。后续受影响子集按各自完整系列保存，结果由其实际源码和原始门槛确定。
 
 ## 测量边界
 
@@ -88,6 +90,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | 81478391 | 许可/首引用/count热段已对应手写，输出准备仍有两段24B，候选loop展开在World作用域 | 薄入口与独立数组core分开；filtered直接形成现有字段；已有读取轻复用与新定义创建分开 | [optimized-20](evidence/ECS-Relations-2026-10-19/optimized-20/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r20-r21.json) |
 | 9f749801 | 独立数组core接受热段30条/101B，手写29条/100B；每候选多一次输出引用探测及提前地址形成 | core以单一局部具体输出执行整个候选循环，finally回写原输出；普通调用、异常和提前结束沿同一回写范围 | [optimized-21](evidence/ECS-Relations-2026-10-19/optimized-21/summary.md)、[实际四函数与7项行为](evidence/ECS-Relations-2026-10-19/commands-r21-r22.json) |
 | 0ac01593 | 单向28/29条、双方31/32条热段已直接对应；默认准备仍有第一份32B metadata值及固定初始化，Where/Except在描述中为bool | BitmapFilter与ComponentPairsWithin以TSelection闭合接受选择；生成Where/Except直接返回对应普通组合值，既有过滤输出与许可继续复用 | [受控完整系列](evidence/ECS-Relations-2026-10-19/controlled-r22/summary.md)、[后继五函数与10项行为](evidence/ECS-Relations-2026-10-19/commands-r22-r23.json) |
+| 204efb6b | 静态选择使默认准备各减16B、两份描述32→24B；第一份metadata临时仍存在，当前默认双方137指令/673B热体完全对应 | RelationQuery以普通struct的单值字段持有声明描述，公共Enumerable继续值返回，实际执行体仍消费值副本并finally回写输出 | [受控27项](evidence/ECS-Relations-2026-10-19/controlled-r23/summary.md)、[当前热体、样本及生命周期检查](evidence/ECS-Relations-2026-10-19/commands-r23-r24.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -158,6 +161,10 @@ r21 的30项反馈中11项通过：finite 3/18、default 6/9、character 2/3。�
 [队列边界审计](evidence/ECS-Relations-2026-10-19/controlled-r22/queue-boundaries.json)确认最后case提交03:28:27.997716Z、独占准备完成03:28:29.2372729Z、首case开始03:28:29.2382396Z；末case完成03:40:42.8891869Z，首分析任务03:40:42.8898856Z开始。测量733.6509473秒，108case及3个分析任务同session、退出码均为0。[完整命令与输出](evidence/ECS-Relations-2026-10-19/commands-controlled-r22.json)保留独占准备的result/stdout/stderr及r22实际候选函数。
 
 r22 单向候选的扩展接受热段为28条/93B，手写为29条/100B；逐候选输出引用探测与提前Output地址形成已收敛，首引用跨第二点读取保存在寄存器，count为单次读取及递增。原具体输出局部56B在进入core时形成一次，并沿正常/finally路径回写；core准备为136B。该事实与首轮受控结果共同记录，后继定位继续按实际剩余路径进行。
+
+[controlled-r23](evidence/ECS-Relations-2026-10-19/controlled-r23/summary.md)保存静态选择组合的首个受控27项反馈，源码204efb6b78a3c383e4637ed22aafe997c1daac37，finite 6/18、default 0/9。默认median比值范围为1.0004498425551056至1.0155228758169934，全部原精度p95与实际判定保留。其[队列审计](evidence/ECS-Relations-2026-10-19/controlled-r23/queue-boundaries.json)确认准备/测量/分析边界，测量163.6807398秒；[样本审计](evidence/ECS-Relations-2026-10-19/controlled-r23/sample-audit.json)确认27项等价、cold14、每侧248帧、31×8轮序一致及GC0/1/2合计0。
+
+r23 位图Where回调以具体选择形成24B查询及24B输出，准备184B、初始化88B。默认准备由232B/120B变为216B/104B，metadata与执行描述各为24B，输出仍一次24B。当前默认Required热体与手写均为137条/673B，所有寄存器、栈位移、立即数、内部分支与共同调用逐项对应，栈均920B。后继以普通描述字段收敛metadata约束调用的第一份24B临时，声明读取和执行值副本各沿其数据范围使用。
 
 ## 执行与复现
 

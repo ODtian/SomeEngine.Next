@@ -3,14 +3,14 @@ using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Relations;
 
-public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
+public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
     where TEnumerable : struct, IQueryRelationEnumerable<TRow>
 {
-    private readonly TEnumerable _enumerable;
+    private TEnumerable _enumerable;
 
     public RelationQuery(TEnumerable enumerable) => _enumerable = enumerable;
 
-    public TEnumerable Enumerable => _enumerable;
+    public readonly TEnumerable Enumerable => _enumerable;
 
     public bool Enumerate<TOutput>(ref TOutput output)
         where TOutput : struct, IRelationOutput<TRow>, allows ref struct
