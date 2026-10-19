@@ -39,7 +39,7 @@
 
 持续更新每帧改变10%位置、2%类别与运动类型、2%角色键、1%成员；固定八帧周期。成员变化按三组执行标签加入／移除、Body加入／移除、销毁／创建。写入前取得系统版本，维护各自读取/接受变更并推进成功基线。
 
-Release NativeAOT 为必验后端，JIT 独立记录。每轮双方各执行8帧，共31轮，顺序E/H、H/E交替；预热16帧、冷初始化7对、每帧实际调用一次。最小场景仍执行真实 World/查询和成组候选，因此批次固定为1。分区容量16，实际分区数随树记录。Scheduler采用Fast，双方参数一致。
+Release NativeAOT 为必验后端，JIT 独立记录。每轮双方各执行8帧，共31轮；每个frame立即依次执行双方，round顺序E/H、H/E交替，因此SideSwitchIntervalFrames=1。预热16帧、冷初始化7对、每帧实际调用一次，FramesPerSample=1。最小场景仍执行真实 World/查询和成组候选。分区容量16，实际分区数随树记录。Scheduler采用Fast，双方参数一致。
 
 JIT在同一Release输出目录以PublishAot=false、SelfContained=false及实际SourceRevisionId构建普通托管入口，采用.NET10默认TieredCompilation/ReadyToRun配置，环境项记录为default；双方在同一进程使用相同配置和上述固定预热/采样。JIT报告独立记录Backend、实际命令、源码、原始样本和阶段，NativeAOT验收使用其独立报告。
 
@@ -52,5 +52,7 @@ JIT在同一Release输出目录以PublishAot=false、SelfContained=false及实�
 原始报告、每次优化前后结果及公共队列 result/stdout/stderr 保留并由最终证据索引链接。实际启动采用新进程独立观察；入口前的元数据初始化计入进程到首结果，Main和首次公共查询分别使用自身真实边界。后续源码优化完成后刷新同一八包feed/cache及实际包NativeAOT消费方。
 
 controlled-fixed-r26及以前系列保留其双方独立World/数组的原始配置；共享工作区系列使用相同输入值、算法、输出工作和31×8采样，另行记录此数据持有调整。该调整将实际只读输入与工作地址对齐，按完整新系列判断每项原精度结果。
+
+controlled-shared-r27保留原先round内E×8/H×8的块顺序。该轮实际连续高尾包括middle mask4双方许可的round17八帧、large mask4单向许可的round27七帧；后继统一按round→frame→双方配对，使相邻的双方实际帧处于同一时间窗口。单帧时钟、observer、样本数、输入和严格阈值沿原范围，原始块顺序报告继续保存自己的判定。新case的Input显式保存SideSwitchIntervalFrames与FramesPerSample。
 
 完整系列的提交准备本身作为公共队列独占任务执行，直接读取同一固定列表，并用显式Session将全部独立case及collect/export/report按FIFO提交后退出。实际测量在准备任务结束后开始；报告计算与读取按预排CPU任务执行。queue-submission.json记录准备起止、源码、session和报告任务，逐case队列记录继续保存实际起止。此执行控制保持上述输入、采样、预热和双侧实现配置。

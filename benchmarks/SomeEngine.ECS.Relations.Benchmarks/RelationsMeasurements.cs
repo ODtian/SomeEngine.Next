@@ -90,11 +90,12 @@ public static class RelationsMeasurements
             for (int round = 0; round < input.Rounds; round++)
             {
                 bool relationFirst = round % 2 == 0;
-                foreach (bool relation in relationFirst ? new[] { true, false } : new[] { false, true })
+                bool[] sideOrder = relationFirst ? [true, false] : [false, true];
+                for (int frame = 0; frame < input.FramesPerRound; frame++)
                 {
-                    MeasurementSide side = relation ? extension : handwritten;
-                    for (int frame = 0; frame < input.FramesPerRound; frame++)
+                    foreach (bool relation in sideOrder)
                     {
+                        MeasurementSide side = relation ? extension : handwritten;
                         FrameSample sample = Run(input, side, frame, boundary);
                         raw.Add(sample with { Round = round, SideOrder = relationFirst ? "E/H" : "H/E",
                             Side = relation ? "relation" : "handwritten" });

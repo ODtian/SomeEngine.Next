@@ -12,6 +12,8 @@ public sealed record MeasurementCase(
     public int FramesPerRound => 8;
     public int ColdPairs => 7;
     public int IterationsPerFrame => 1;
+    public int FramesPerSample => 1;
+    public int SideSwitchIntervalFrames => 1;
     public int PartitionCapacity => 16;
     public int CategoryCount => 8;
     public int HairPercent => 75;

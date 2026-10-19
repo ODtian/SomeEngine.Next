@@ -178,6 +178,10 @@ r24 单默认入口确认metadata24B临时消去，直接从原字段取得World
 
 当前默认双方热体137条/673B逐项对应，成员表、chunk及行顺序相同。此前两份World按固定Relations先创建，实际World和数组地址分别由独立分配形成。后继将静态warm的数据范围收敛为一个MeasurementData，由外层统一持有；双方顺序复用真实输入及pair/contact工作区，各自查询、树、摘要、计数和作业输出资源保留其实际构造。Verify先保存第一侧完整真实结果，再执行第二侧。cold与持续更新继续独立构建，报告按实际工作区逐份列出一次构造和容量。引擎及独立手写算法沿9b版本，采样、阈值和输入值继续按原配置执行。
 
+[controlled-shared-r27](evidence/ECS-Relations-2026-10-19/controlled-shared-r27/diagnostic.md)是共同工作区的首个受控27项，源码1906048b37581a883a665355b29c9c44642760ad，严格通过18项（default6/9、finite12/18）。每份报告的DataSharing、Workspaces与两侧IndexBuildTicks直接对应实际构造，内存payload按主要持有处分别列出。九个剩余项的原始尾部分析保留绝对微秒、GC0、CPU2和round/先后顺序/frame分布；其中两项出现跨多个帧的连续高耗时区间。原始单帧判断与后续控制层实验分列保存。
+
+后继只将采样顺序收敛为round→frame→双方：每个实际帧立即配对E/H，下一round反向。16帧预热、31×8真实帧、单帧完整时钟、observer、算法和严格阈值沿原配置。Input显式记录SideSwitchIntervalFrames=1、FramesPerSample=1；原始8帧块交替及其九项失败继续保存。该控制层调整针对实际连续时间区间，逐帧p95继续由真实单帧值计算。
+
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：
