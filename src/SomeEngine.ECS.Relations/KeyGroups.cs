@@ -14,31 +14,46 @@ internal readonly ref struct KeyGroups<TComponent, TKey>
     private readonly HashSet<TKey> _keys;
     private readonly List<Entity> _missing;
 
-    public KeyGroups(World world, QueryCursor members)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public KeyGroups(World world, scoped in QueryCursor members)
     {
         _world = world;
         _keys = new HashSet<TKey>();
         _missing = new List<Entity>();
+        CollectKeys(in members, _keys, _missing);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void CollectKeys(scoped in QueryCursor members, HashSet<TKey> keys, List<Entity> missing)
+    {
         foreach (var member in members.Rows)
         {
             if (member.Has<TComponent>())
-                _keys.Add(member.ReadRef<TComponent>().GetKey());
+                keys.Add(member.ReadRef<TComponent>().GetKey());
             else
-                _missing.Add(member.Entity);
+                missing.Add(member.Entity);
         }
     }
 
-    public KeyGroups(World world, QueryCursor members, QueryCursor access)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public KeyGroups(World world, scoped in QueryCursor members, scoped in QueryCursor access)
     {
         _world = world;
         _keys = new HashSet<TKey>();
         _missing = new List<Entity>();
+        CollectKeys(in members, in access, _keys, _missing);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void CollectKeys(scoped in QueryCursor members, scoped in QueryCursor access,
+        HashSet<TKey> keys, List<Entity> missing)
+    {
         foreach (var member in members.Rows)
         {
             if (access.TryGetRow(member.Entity, out var row) && row.Has<TComponent>())
-                _keys.Add(row.ReadRef<TComponent>().GetKey());
+                keys.Add(row.ReadRef<TComponent>().GetKey());
             else
-                _missing.Add(member.Entity);
+                missing.Add(member.Entity);
         }
     }
 

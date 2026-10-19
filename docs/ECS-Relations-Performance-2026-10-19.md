@@ -58,6 +58,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | b68e892d | Native默认循环在排序和输出各读两次Entity；两个方向展开两套Has/Matches；顺序条件先物化三向数值 | 缓存外/内Entity；先选择有向组件引用后共用一次Matches；Precedes表达完整身份bool先后，手写同步采用相同准备 | [optimized-6](evidence/ECS-Relations-2026-10-19/optimized-6/summary.md) |
 | a40d6c75 | 键桶80B枚举复制与32B Current中转；维护逐行重复组件/版本读取；Tree getter多次调用 | MoveNext(out group)、原成员视图复用；chunk版本绑定与静态组合变化读取器；同类型几何/摘要变化共享，Tree局部引用 | [optimized-7](evidence/ECS-Relations-2026-10-19/optimized-7/summary.md)、[构建与红绿](evidence/ECS-Relations-2026-10-19/commands-r7.json)、[实际Native读取](evidence/ECS-Relations-2026-10-19/native-r7.json) |
 | 3bf336e1 | 必有组件仍逐对判断存在性；交换不变规则先排序；整体CategoryBits投影提前读取双方字段 | Requires闭合Required/Optional模式，IsSymmetric先匹配后排序；具体许可按方向读取标量，摘要保持原布局 | [optimized-8](evidence/ECS-Relations-2026-10-19/optimized-8/summary.md)、[行为与发布](evidence/ECS-Relations-2026-10-19/commands-r8.json)、[实际Native读取](evidence/ECS-Relations-2026-10-19/native-r8.json)、[九个独立维护阶段](evidence/ECS-Relations-2026-10-19/phases-r8/summary.md) |
+| dcf50ecc | 默认私有循环只使用First成员，但接收完整视图；同组件AddReads执行两次 | 私有循环直接接QueryCursor，入口一次Requires分类，同类型读取静态合并；恢复键收集的独立边界 | [optimized-9](evidence/ECS-Relations-2026-10-19/optimized-9/summary.md)、[构建、检查与caller读取](evidence/ECS-Relations-2026-10-19/commands-r9.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -72,6 +73,8 @@ r7 稀疏维护在小/中/大的 MaintenanceAndQuery 原精度比值分别为0.9
 r8 的 Required+IsSymmetric 默认循环与手写已逐条对应：配对主段均为673字节，内层组件绑定、Kind、身份、排序和输出均为175字节；通用入口额外抽取24B成员查询，frame为912B，手写为880B，行栈位置相差8。实际Where caller先形成216B视图，再复制First查询并读取Requires；手写直接向循环传入24B查询。后续把私有循环输入收敛为QueryCursor members，并按相同组件类型合并AddReads。
 
 r8 同时给出了构造器强内联的实际回退证据：KeyPairs栈由r7的392B升到808B，收集键所用成员视图的四个字段长期占用寄存器，候选和输出新增Index/Generation栈重载。小规模角色16聚集的原精度比值变为1.0904528217711353/1.095232464179428。实现恢复独立的键收集边界，桶级选择和已标量化tuple继续沿原路径。两侧HashSet/List、成员查询、GetByIndex算法和数据持有均相同。
+
+r9 的 SingleExecution caller 把完整216B视图就地形成：Access/First共48B，另外七个查询共168B清零，然后独立调用公开selector。它已收敛r8的整块BulkMove，剩余完整构造由只读CPU队列 `a52f561cbb374a3fb960995e245516ca` 直接确认。下一处实现只内联这个无候选循环的轻selector，让其仅First读取在调用处裁剪；候选循环保持独立。键构造进一步收敛为原三个字段的薄赋值，具体收集helper独立接收scoped in查询借用，成员字段的存活在收集函数结束。
 
 ## 执行与复现
 

@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Relations;
 
@@ -20,6 +21,7 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
         return typeof(TFirst) == typeof(TSecond) ? reads : reads.WithOptionalRead<TSecond>();
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
