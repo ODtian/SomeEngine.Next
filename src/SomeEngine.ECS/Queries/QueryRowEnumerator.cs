@@ -34,28 +34,28 @@ public ref struct QueryRowEnumerator<TFilter>
 
     public bool MoveNext()
     {
-        if (!MoveNext(out QueryRow row))
-            return false;
+        while (true)
+        {
+            if (_rows.MoveNext())
+                return true;
 
-        _rows.Current = row;
-        return true;
+            if (!_chunks.MoveNext())
+                return false;
+
+            _rows.Reset(_chunks.CurrentMatch, _chunks.CurrentChunk);
+        }
     }
 
     public bool MoveNext(out QueryRow row)
     {
-        while (true)
+        if (!MoveNext())
         {
-            if (_rows.MoveNext(out row))
-                return true;
-
-            if (!_chunks.MoveNext())
-            {
-                row = default;
-                return false;
-            }
-
-            _rows.Reset(_chunks.CurrentMatch, _chunks.CurrentChunk);
+            row = default;
+            return false;
         }
+
+        row = Current;
+        return true;
     }
 
 }
@@ -77,10 +77,15 @@ internal ref struct QueryRowCursor
         _match = null;
         _chunk = null;
         _row = -1;
-        Current = default;
     }
 
-    internal QueryRow Current { get; set; }
+    internal readonly QueryRow Current => new(
+        _world,
+        _match!,
+        _chunk!,
+        _row,
+        _lastVersion,
+        _currentVersion);
 
     internal QueryArchetypeMatch Match => _match!;
     internal Chunk? Chunk => _chunk;
@@ -94,42 +99,32 @@ internal ref struct QueryRowCursor
 
     internal bool MoveNext()
     {
-        if (!MoveNext(out QueryRow row))
-            return false;
-
-        Current = row;
-        return true;
-    }
-
-    internal bool MoveNext(out QueryRow row)
-    {
         if (_chunk is null)
-        {
-            row = default;
             return false;
-        }
 
         var match = _match!;
         _row++;
         while (_row < _chunk.Count)
         {
             if (match.MatchesRow(_chunk, _row, _lastVersion))
-            {
-                row = new QueryRow(
-                    _world,
-                    match,
-                    _chunk,
-                    _row,
-                    _lastVersion,
-                    _currentVersion);
                 return true;
-            }
 
             _row++;
         }
 
-        row = default;
         return false;
+    }
+
+    internal bool MoveNext(out QueryRow row)
+    {
+        if (!MoveNext())
+        {
+            row = default;
+            return false;
+        }
+
+        row = Current;
+        return true;
     }
 }
 
