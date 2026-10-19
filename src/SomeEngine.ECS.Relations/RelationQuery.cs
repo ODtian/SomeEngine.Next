@@ -95,7 +95,10 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
     {
         World world = Enumerable.World;
         QueryHandle query = world.Query(definition);
-        var execution = new SingleExecution<TOutput>(in _enumerable, output);
+        SingleExecution<TOutput> execution;
+        execution.Enumerable = _enumerable;
+        execution.Output = output;
+        execution.Completed = false;
         try
         {
             if (lastSystemVersion is { } baseline)
@@ -114,20 +117,11 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
     private ref struct SingleExecution<TOutput> : IQueryExecution
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
-        private TEnumerable _enumerable;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public SingleExecution(scoped in TEnumerable enumerable, TOutput output)
-        {
-            _enumerable = enumerable;
-            Output = output;
-            Completed = false;
-        }
-
+        public TEnumerable Enumerable;
         public TOutput Output;
         public bool Completed;
 
-        public void Execute(QueryCursor query) => Completed = _enumerable.Enumerate(new RelationQueryViews(query), ref Output);
+        public void Execute(QueryCursor query) => Completed = Enumerable.Enumerate(new RelationQueryViews(query), ref Output);
     }
 
     public int Count() => CountRows(null);

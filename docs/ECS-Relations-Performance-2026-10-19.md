@@ -83,6 +83,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | cc08ae37 | 默认Bound在轻分支前清1136B回退状态；固定候选先持两份QueryRow跨第二次点读取 | 轻只读选择与完整回退的数据形成分开；固定身份通用绑定先取得第一组件再进入第二次点读取 | [optimized-15](evidence/ECS-Relations-2026-10-19/optimized-15/summary.md)、[实际原生与IL](evidence/ECS-Relations-2026-10-19/commands-r15.json) |
 | 92d8b230 | Bound回退清零已裁剪；Single仍独立清120B、复制32B描述两次并判断可空版本 | 明确内联现有Single，在轻入口继续合并普通调用的版本与执行准备 | [optimized-16](evidence/ECS-Relations-2026-10-19/optimized-16/summary.md)、[外层原生与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r16-r17.json) |
 | 5bf03d44 | Single已合入公共调用并闭合默认版本；仍有三次32B描述复制，位图每候选形成两份40B行 | Single构造以scoped in直接接收原描述字段并持有一次值副本；类型化公共点读取将成员匹配与单组件引用形成放在同一操作 | [optimized-17](evidence/ECS-Relations-2026-10-19/optimized-17/summary.md)、[实际外层与点读取红绿](evidence/ECS-Relations-2026-10-19/commands-r17-r18.json) |
+| 22fad2a6 | 共同typed point已缩为8B out；每候选仍清16B；scoped in构造另形成64B执行临时 | 内部点读返回单个ComponentReference，公开轻包装形成bool/out；固定数组直接foreach；执行局部直接赋已有字段 | [optimized-18](evidence/ECS-Relations-2026-10-19/optimized-18/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r18-r19.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -131,6 +132,10 @@ r16 原生外层确认Bound的1192B栈和1136B回退清零已裁剪，Single仍�
 r17 的12项反馈中3项通过：默认small dynamic10为0.99429073342116825/0.88786111669682954，large dynamic10为0.99807369137956747/0.99244240602079692，角色large hair64 clustered为0.95837238104866929/0.96186877128710302。其余默认7项与角色2项逐项保留原精度判定。原生Single符号已消入RelationArraySide.Query，默认基线直接调用同一ExecuteQuery；外层栈合计320B降为264B，初始化仍176B，手写对应192B/80B。描述仍经三段32B复制进入执行数据，后继让Single构造以scoped in直接接收原描述字段并持有一次普通值副本，输出保留值字段及finally回写。普通描述的ref借用实验由C#输出回写的CS8352约束收敛到这一值持有方式，实际构造复制继续由原生证据核对。
 
 类型化公共点读取通过真实World红绿检查：Changed成员、托管组件和可选读取给出字面结果4,-1,-1,-1，红队列5b97d35094724620a72e63a1a6a06398、绿队列d1f56e6fe2484602950f347998c941ed。QueryCursor.TryReadRef直接复用原World成员匹配和访问声明，成功只形成8B组件借用。位图身份绑定与手写候选依次执行相同两次公共操作，绑定失败直接进入具体Unmatched，成功由具体许可Evaluate驱动输出；7项位图行为通过队列7b766e27a4a240ecb196ce6d895a475b。
+
+r18 的30个反馈场景均完成等价核对，5项通过严格判断：finite 2/18、default 0/9、character 3/3。三项角色键的原精度比值分别为0.97809878844361609/0.95980235042735063、0.97042172944079652/0.97734208970487202、0.97680443499685976/0.96925287715227315。中规模mask8双方的实际比值为1.2490853752267348/1.2400116983307163，该项原样保留。
+
+r18 的四个完整原生函数确认两侧共同调用同一typed point，成功写8B引用并返回bool。通用每候选清零从96B缩为16B，第一组件引用跨第二次调用存活，许可按方向直接load/test/je；组件读取成功后的旧bool合流也已消去。剩余offset栈存取、count双读及两份引用home初始化与手写逐项记录。默认scoped in构造实际产生64B执行临时，frame与清零各比r17多32B，后继直接初始化执行局部的三个字段。内部点读进一步用既有ComponentReference的HasValue表达存在性，以单值返回替代bool和out-buffer，公开TryReadRef包装继续保留；固定数组来源直接foreach原数组，保留身份复制与输出语义。
 
 ## 执行与复现
 

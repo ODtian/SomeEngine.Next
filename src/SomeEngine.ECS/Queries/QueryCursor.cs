@@ -1,6 +1,7 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Registry;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Queries;
 
@@ -71,8 +72,12 @@ public readonly ref struct QueryCursor
         _world.TryGetEntityQueryRow(_plan, entity, LastSystemVersion, CurrentSystemVersion, out row);
 
     /// <summary>Finds a member and borrows one present readable component within this query's filters.</summary>
-    public bool TryReadRef<T>(Entity entity, out ComponentReference<T> component) where T : struct =>
-        _world.TryReadEntityQueryRef(_plan, entity, LastSystemVersion, out component);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryReadRef<T>(Entity entity, out ComponentReference<T> component) where T : struct
+    {
+        component = _world.ReadEntityQueryRef<T>(_plan, entity, LastSystemVersion);
+        return component.HasValue;
+    }
 
     /// <summary>Checks membership using this query's component, row and version filters.</summary>
     public bool Contains(Entity entity) => _world.ContainsEntityQuery(_plan, entity, LastSystemVersion);
