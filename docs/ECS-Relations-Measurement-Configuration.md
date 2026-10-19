@@ -2,6 +2,8 @@
 
 来源规格：#231，第 12 票 #243。配置在首轮性能测量前固定，实际列表由 `benchmarks/SomeEngine.ECS.Relations.Benchmarks/MeasurementCases.cs` 的 `MeasurementCases.All` 形成；`--mode list` 输出同一份完整 JSON。业务 Body/Hair、运动与类别规则来自 benchmark 的 Relations 夹具，属于本次业务例子。
 
+设备读取：Intel Xeon E5-2698B v3 @ 2.00GHz，16核/32线程；总内存68,552,818,688字节；Windows 11专业工作站版10.0.26200（build26200）。SDK10.0.113、Runtime10.0.13、win-x64。各份正式报告继续保存其实际CPU标识、处理器数、OS、Framework、GC、JIT配置、WorkerCount、计时频率与完整命令。
+
 | 场景类 | 小／中／大 | 每规模变体 | 必须测量的边界 |
 | --- | --- | --- | --- |
 | finite | 128/512/2048，候选4096/32768/262144 | mask位数1/4/8 × 单向／双方 | 公共查询准备、固定候选、位判断、实际输出 |

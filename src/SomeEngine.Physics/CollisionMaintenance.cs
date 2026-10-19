@@ -4,6 +4,7 @@ using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Physics;
 
@@ -32,7 +33,11 @@ public readonly struct SpatialAll : ISpatialFilter<GroupMatch>
     public QueryDefinition AddReads(QueryDefinition definition) => definition;
     public void RebuildSummaries(QueryCursor access) { }
     public void RefitSummary(int node, QueryCursor access) { }
-    public bool HasSummaryChange(QueryChunkView chunk, int row) => false;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
+        where TGeometry : struct
+        where TExecution : struct, ISpatialChangeExecution, allows ref struct =>
+        execution.Execute(default(UnchangedQueryRows));
     public GroupMatch MatchGroups(int firstNode, int secondNode,
         in CollisionNode first, in CollisionNode second, in GroupMatch inherited, out GroupMatch results) =>
         results = GroupMatch.All;
@@ -115,29 +120,31 @@ public sealed class CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGro
 
     private void Reconcile(Entity entity, QueryCursor members, QueryCursor access)
     {
+        CollisionTree tree = Tree;
         if (members.TryGetRow(entity, out _) && access.TryGetRow(entity, out var row) && row.Has<TGeometry>())
         {
             CollisionBounds bounds = Query.Enumerable.Source.ReadBounds(row);
-            if (Tree.TryGetLeaf(entity, out int leaf))
-                Tree.SetBounds(leaf, in bounds);
+            if (tree.TryGetLeaf(entity, out int leaf))
+                tree.SetBounds(leaf, in bounds);
             else
-                leaf = Tree.Insert(entity, in bounds);
+                leaf = tree.Insert(entity, in bounds);
             Refit(leaf, access);
         }
-        else if (Tree.TryGetLeaf(entity, out _))
+        else if (tree.TryGetLeaf(entity, out _))
         {
-            Refit(Tree.Remove(entity), access);
+            Refit(tree.Remove(entity), access);
         }
     }
 
     private void Refit(int node, QueryCursor access)
     {
+        CollisionTree tree = Tree;
         TFilter filter = Query.Enumerable.Filter;
         while (node >= 0)
         {
-            Tree.Refit(node);
+            tree.Refit(node);
             filter.RefitSummary(node, access);
-            node = Tree.Nodes[node].Parent;
+            node = tree.Nodes[node].Parent;
         }
     }
 
@@ -181,14 +188,37 @@ public sealed class CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGro
             {
                 if (!chunk.Has<TGeometry>())
                     continue;
-                bool geometryChanged = chunk.HasChangedSinceLastSystemVersion<TGeometry>();
-                foreach (int row in chunk.RowIndices)
-                {
-                    if (geometryChanged && chunk.RowChangedSinceLastSystemVersion<TGeometry>(row) ||
-                        filter.HasSummaryChange(chunk, row))
-                        maintenance.Reconcile(chunk.GetEntity(row), members, _access);
-                }
+                var execution = new UpdateChangedRows(maintenance, members, _access, chunk, chunk.ReadRowChanges<TGeometry>());
+                filter.ReadChanges<TGeometry, UpdateChangedRows>(chunk, execution);
             }
+        }
+    }
+
+    private readonly ref struct UpdateChangedRows : ISpatialChangeExecution
+    {
+        private readonly CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGroupResults> _maintenance;
+        private readonly QueryCursor _members;
+        private readonly QueryCursor _access;
+        private readonly QueryChunkView _chunk;
+        private readonly QueryRowChanges _geometry;
+
+        public UpdateChangedRows(CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGroupResults> maintenance,
+            QueryCursor members, QueryCursor access, QueryChunkView chunk, QueryRowChanges geometry)
+        {
+            _maintenance = maintenance;
+            _members = members;
+            _access = access;
+            _chunk = chunk;
+            _geometry = geometry;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Execute<TChanges>(TChanges changes)
+            where TChanges : struct, IQueryRowChanges, allows ref struct
+        {
+            foreach (int row in _chunk.RowIndices)
+                if (_geometry.HasChanged(row) || changes.HasChanged(row))
+                    _maintenance.Reconcile(_chunk.GetEntity(row), _members, _access);
         }
     }
 }

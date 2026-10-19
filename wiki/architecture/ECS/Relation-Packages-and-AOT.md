@@ -9,7 +9,7 @@
 | SomeEngine.Diagnostics | — | 统一检查支持 |
 | SomeEngine.Job.Contracts | — | Job 公共数据类型 |
 | SomeEngine.Job | Diagnostics、Job.Contracts | Scheduler、依赖和资源执行 |
-| SomeEngine.ECS | Job.Contracts | World、组件、查询、显式边及类型元数据 |
+| SomeEngine.ECS | Job.Contracts | World、组件、查询、显式边、类型元数据；WithOptionalRead、TryReadRef、ReadRows与ComponentReference |
 | SomeEngine.ECS.Relations | ECS | 固定 1–8 元语义、绑定、筛选与积 |
 | SomeEngine.ECS.Systems | ECS、Job.Contracts、Job | typed/generated Job 访问和查询读取范围 |
 | SomeEngine.Physics | ECS.Relations、ECS.Systems | 空间树、维护、串行和并行输出 |
@@ -18,6 +18,8 @@
 `tools/SomeEngine.ECS.Relations.AotSmoke` 是业务使用方例子，直接 PackageReference ECS、Relations、Systems、Job、Physics 和 SourceGen，传递取得另外两个包。它定义自己的 `Number<int>`、八个参与位置、带 schema 的泛型边、Body/Hair 语义、键实现、bitmap 实现和结果输出。
 
 `Build-Consumer.ps1` 通过公共队列依次构建、打包、恢复、JIT 运行、NativeAOT 发布和原生运行。包版本保存在使用方 csproj，feed/cache 位于仓库的 `artifacts/ecs-relations`，原生产物位于使用方 `bin/Release/net10.0/win-x64/native-publish`。再次刷新同一版本时，脚本先更新八个包，再替换该目录内对应版本的包缓存，随后恢复使用方。
+
+脚本的 `QueueScript` 参数指定公共队列脚本，默认按当前仓库的tools定位。本次实际执行显式传入 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`，与性能测量使用同一公共队列。
 
 ```powershell
 & tools/SomeEngine.ECS.Relations.AotSmoke/Build-Consumer.ps1
@@ -50,7 +52,7 @@ flowchart TD
 
 Relations 库构建生成八组固定族：每组包含 `IRelation`、`ComponentRelation`、`ComponentWhere`、`ComponentExcept` 和 Product 描述，另有一个 `RelationQueryViews`。固定生成类型共 41 个；它们按 arity 与行为参数化。
 
-使用方的普通语义、边、键、bitmap 和空间重载都返回这些库中共享的具体泛型类型。业务组件字段由既有 `QueryRow.ReadRef<T>` 取得，只读引用分别传给语义；身份行、语义描述和输出状态按值传递。第八位置使用 C# 八元 tuple 的 `Item8`，IL 对应 `Rest.Item1`。
+使用方的普通语义、边、键、bitmap 和空间重载都返回这些库中共享的具体泛型类型。组件绑定通过 `QueryRow.TryReadRef<T>` 借用实际只读引用，二元Within通过 `ReadRows<TFirst,TSecond>` 在块边界绑定可选列并沿原成员枚举读取。`ComponentReference<T>` 仅借用原组件引用，HasValue表达可选存在性，Value返回同一 `ref readonly T`；其有效期为World查询回调。身份行、语义描述和输出状态按值传递。第八位置使用 C# 八元 tuple 的 `Item8`，IL 对应 `Rest.Item1`。
 
 程序集初始化类集中保存生成登记。Job 专属描述类型对应用户的 `IJobEntity`。业务组件专属生成类型数量为 0。
 

@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.ECS.Tests;
 
@@ -41,6 +42,26 @@ public sealed class GenericQueryExecutionTests
 
         values.Sort();
         Assert.Equal([2, 5], values.ToArray());
+    }
+
+    [Fact]
+    public void ChunkChangeReadsKeepOptionalRowsAndTheirWriteVersions()
+    {
+        using var world = new World();
+        var changed = world.CreateEntity(new Position());
+        world.Add(changed, new DisplayName { Value = "Iris" });
+        var unchanged = world.CreateEntity(new Position());
+        world.Add(unchanged, new DisplayName { Value = "Rose" });
+        world.CreateEntity(new Position());
+        var query = world.Query(world.QueryDefinition().All<Position>().Build().WithOptionalRead<DisplayName>());
+        uint baseline = world.AcquireSystemTick();
+        world.Replace(changed, new DisplayName { Value = "Lily" });
+        var entities = new List<Entity>();
+        var execution = new ChangedNameRows(entities);
+
+        world.ExecuteQuery(query, baseline, ref execution);
+
+        Assert.Equal([changed], entities);
     }
 
     [Fact]
@@ -100,6 +121,20 @@ public sealed class GenericQueryExecutionTests
     private struct DisplayName : IComponent
     {
         public string Value;
+    }
+
+    private readonly struct ChangedNameRows(List<Entity> entities) : IQueryExecution
+    {
+        public void Execute(QueryCursor query)
+        {
+            foreach (var chunk in query.Chunks)
+            {
+                var changes = chunk.ReadRowChanges<DisplayName>();
+                foreach (int row in chunk.RowIndices)
+                    if (changes.HasChanged(row))
+                        entities.Add(chunk.GetEntity(row));
+            }
+        }
     }
 
     private ref struct NameLengths : IQueryExecution

@@ -24,7 +24,11 @@ public readonly struct SpatialComponentFilter<TRelation, TFirst, TSecond>
 
     public void RefitSummary(int node, QueryCursor access) { }
 
-    public bool HasSummaryChange(QueryChunkView chunk, int row) => false;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
+        where TGeometry : struct
+        where TExecution : struct, ISpatialChangeExecution, allows ref struct =>
+        execution.Execute(default(UnchangedQueryRows));
 
     public GroupMatch MatchGroups(int firstNode, int secondNode,
         in CollisionNode first, in CollisionNode second, in GroupMatch inherited, out GroupMatch results) =>
@@ -65,9 +69,16 @@ public readonly struct SpatialKeyFilter<TRelation, TImplementation, TComponent, 
 
     public void RefitSummary(int node, QueryCursor access) => Summary.Refit(node, access);
 
-    public bool HasSummaryChange(QueryChunkView chunk, int row) =>
-        chunk.Has<TComponent>() && chunk.HasChangedSinceLastSystemVersion<TComponent>() &&
-        chunk.RowChangedSinceLastSystemVersion<TComponent>(row);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
+        where TGeometry : struct
+        where TExecution : struct, ISpatialChangeExecution, allows ref struct
+    {
+        if (typeof(TComponent) == typeof(TGeometry))
+            execution.Execute(default(UnchangedQueryRows));
+        else
+            execution.Execute(chunk.ReadRowChanges<TComponent>());
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public GroupMatch MatchGroups(int firstNode, int secondNode,
@@ -129,8 +140,11 @@ public readonly struct SpatialAnd<TFirst, TSecond, TFirstResults, TSecondResults
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool HasSummaryChange(QueryChunkView chunk, int row) =>
-        First.HasSummaryChange(chunk, row) || Second.HasSummaryChange(chunk, row);
+    public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
+        where TGeometry : struct
+        where TExecution : struct, ISpatialChangeExecution, allows ref struct =>
+        First.ReadChanges<TGeometry, ReadSecondSpatialChanges<TGeometry, TSecond, TSecondResults, TExecution>>(
+            chunk, new(Second, chunk, execution));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public GroupMatch MatchGroups(int firstNode, int secondNode,
@@ -164,7 +178,11 @@ public readonly struct SpatialExcept<TFilter, TGroupResults>(TFilter filter) : I
 
     public void RefitSummary(int node, QueryCursor access) => Filter.RefitSummary(node, access);
 
-    public bool HasSummaryChange(QueryChunkView chunk, int row) => Filter.HasSummaryChange(chunk, row);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
+        where TGeometry : struct
+        where TExecution : struct, ISpatialChangeExecution, allows ref struct =>
+        Filter.ReadChanges<TGeometry, TExecution>(chunk, execution);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public GroupMatch MatchGroups(int firstNode, int secondNode,

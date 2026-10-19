@@ -151,12 +151,11 @@ public sealed class HandwrittenSpatialMaintenance : IDisposable
             {
                 if (!chunk.Has<Body>())
                     continue;
-                bool bodyChanged = chunk.HasChangedSinceLastSystemVersion<Body>();
-                bool hairChanged = chunk.Has<Hair>() && chunk.HasChangedSinceLastSystemVersion<Hair>();
+                var bodyChanges = chunk.ReadRowChanges<Body>();
+                var hairChanges = chunk.ReadRowChanges<Hair>();
                 foreach (int row in chunk.RowIndices)
                 {
-                    if (bodyChanged && chunk.RowChangedSinceLastSystemVersion<Body>(row) ||
-                        hairChanged && chunk.RowChangedSinceLastSystemVersion<Hair>(row))
+                    if (bodyChanges.HasChanged(row) || hairChanges.HasChanged(row))
                         maintenance.Reconcile(chunk.GetEntity(row), members, _access);
                 }
             }

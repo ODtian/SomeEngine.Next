@@ -23,8 +23,10 @@ public interface ISpatialFilter<TGroupResults> where TGroupResults : unmanaged
     /// <summary>Writes one leaf or a branch whose children have already been updated.</summary>
     void RefitSummary(int node, QueryCursor access);
 
-    /// <summary>Reports row writes that affect this filter's cached leaf data.</summary>
-    bool HasSummaryChange(QueryChunkView chunk, int row) => false;
+    /// <summary>Binds summary changes once per chunk; geometry changes are already covered by the caller.</summary>
+    void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
+        where TGeometry : struct
+        where TExecution : struct, ISpatialChangeExecution, allows ref struct;
 
     GroupMatch MatchGroups(int firstNode, int secondNode,
         in CollisionNode first, in CollisionNode second,

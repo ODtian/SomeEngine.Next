@@ -38,9 +38,14 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond>(
                 bool ascending = EntityOrder.Precedes(firstEntity, secondEntity);
                 ComponentReference<TFirst> relationFirst = ascending ? firstValue : startValue;
                 ComponentReference<TSecond> relationSecond = ascending ? lastValue : secondValue;
-                bool matches = relationFirst.HasValue && relationSecond.HasValue &&
-                    predicate.Matches(in relationFirst.Value, in relationSecond.Value);
-                if (!TSelection.Accepts(matches))
+                if (TSelection.RequiresMatch)
+                {
+                    if (!relationFirst.HasValue || !relationSecond.HasValue ||
+                        !predicate.Matches(in relationFirst.Value, in relationSecond.Value))
+                        continue;
+                }
+                else if (relationFirst.HasValue && relationSecond.HasValue &&
+                    predicate.Matches(in relationFirst.Value, in relationSecond.Value))
                     continue;
                 var pair = ascending ? (firstEntity, secondEntity) : (secondEntity, firstEntity);
                 bool continued = TOutput.ReadsComponentRows

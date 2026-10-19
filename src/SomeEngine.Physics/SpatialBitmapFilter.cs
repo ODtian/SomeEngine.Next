@@ -65,9 +65,16 @@ public readonly struct SpatialBitmapFilter<TRelation, TImplementation, TComponen
 
     public void RefitSummary(int node, QueryCursor access) => Summary.Refit(node, access);
 
-    public bool HasSummaryChange(QueryChunkView chunk, int row) =>
-        chunk.Has<TComponent>() && chunk.HasChangedSinceLastSystemVersion<TComponent>() &&
-        chunk.RowChangedSinceLastSystemVersion<TComponent>(row);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
+        where TGeometry : struct
+        where TExecution : struct, ISpatialChangeExecution, allows ref struct
+    {
+        if (typeof(TComponent) == typeof(TGeometry))
+            execution.Execute(default(UnchangedQueryRows));
+        else
+            execution.Execute(chunk.ReadRowChanges<TComponent>());
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public GroupMatch MatchGroups(int firstNode, int secondNode,

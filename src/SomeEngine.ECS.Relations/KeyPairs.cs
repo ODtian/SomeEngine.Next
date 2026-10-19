@@ -42,13 +42,14 @@ public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryCursor second = QueryCount == 1 ? queries.First : queries.Second;
         var firstGroups = TPairing.ReadsFromSingleQuery ? new KeyGroups<TComponent, TKey>(World, queries.First)
             : new KeyGroups<TComponent, TKey>(World, queries.First, queries.Access);
-        var secondGroups = QueryCount == 1 ? firstGroups : new KeyGroups<TComponent, TKey>(World, second, queries.Access);
-        foreach (var firstGroup in firstGroups)
+        var secondGroups = QueryCount == 1 ? firstGroups : new KeyGroups<TComponent, TKey>(World, queries.Second, queries.Access);
+        var firstValues = firstGroups.GetEnumerator();
+        while (firstValues.MoveNext(out var firstGroup))
         {
-            foreach (var secondGroup in secondGroups)
+            var secondValues = secondGroups.GetEnumerator();
+            while (secondValues.MoveNext(out var secondGroup))
             {
                 bool hasKeys = firstGroup.HasKey && secondGroup.HasKey;
                 bool forwardMatch = hasKeys && _implementation.Matches(in _relation, in firstGroup.Key, in secondGroup.Key);
@@ -65,8 +66,13 @@ public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent
                         continue;
                     foreach (Entity secondEntity in secondGroup.Entities)
                     {
-                        if (!TPairing.TryPair(in queries, firstEntity, secondEntity, out var pair) ||
-                            !second.TryGetRow(secondEntity, out var secondRow))
+                        if (!TPairing.TryPair(in queries, firstEntity, secondEntity, out var pair))
+                            continue;
+                        QueryRow secondRow;
+                        bool secondMember = TPairing.QueryCount == 1
+                            ? queries.First.TryGetRow(secondEntity, out secondRow)
+                            : queries.Second.TryGetRow(secondEntity, out secondRow);
+                        if (!secondMember)
                             continue;
                         bool accepted = TPairing.ReordersPairs && pair.Item1 != firstEntity
                             ? reverseAccepted : forwardAccepted;

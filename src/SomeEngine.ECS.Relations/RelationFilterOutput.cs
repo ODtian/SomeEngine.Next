@@ -21,12 +21,28 @@ internal ref struct RelationFilterOutput<TRelation, TOutput, TRow, TSelection> :
     public TOutput Output;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Add(in TRow row) => !TSelection.Accepts(_relation.Matches(in row)) || Output.Add(in row);
+    public bool Add(in TRow row)
+    {
+        if (TSelection.RequiresMatch)
+        {
+            if (!_relation.Matches(in row))
+                return true;
+        }
+        else if (_relation.Matches(in row))
+            return true;
+        return Output.Add(in row);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Add(in TRow row, scoped in QueryRow first, scoped in QueryRow second)
     {
-        return !TSelection.Accepts(_relation.Matches(in row, in first, in second)) || (TOutput.ReadsComponentRows
-            ? Output.Add(in row, in first, in second) : Output.Add(in row));
+        if (TSelection.RequiresMatch)
+        {
+            if (!_relation.Matches(in row, in first, in second))
+                return true;
+        }
+        else if (_relation.Matches(in row, in first, in second))
+            return true;
+        return TOutput.ReadsComponentRows ? Output.Add(in row, in first, in second) : Output.Add(in row);
     }
 }

@@ -77,6 +77,15 @@ public readonly ref struct QueryChunkView
         return _chunk.WriteVersionRows(column)[.._chunk.Count];
     }
 
+    /// <summary>Borrows a changed component's row versions once while retaining the original member rows.</summary>
+    public QueryRowChanges ReadRowChanges<T>() where T : struct
+    {
+        if (!QueryAccessGuards.TryRequireReadAccess<T>(_match, out int column) ||
+            !VersionClock.IsNewer(_chunk.ChangeVersions[column], LastSystemVersion))
+            return default;
+        return new(_chunk.WriteVersionRows(column)[.._chunk.Count], LastSystemVersion);
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool HasChangedSinceLastSystemVersion<T>() where T : struct
     {
