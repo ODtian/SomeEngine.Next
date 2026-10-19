@@ -60,7 +60,7 @@ internal static partial class RelationsSmoke
         Require(!eight.Enumerate(ref output) && output.Count == 1 && result[0] == entities[7], "eighth identity and output stop");
         Require(eight.Count() == 1 && eight.Any(), "eight-position terminals");
 
-        var numbers = world.Query(world.QueryDefinition().All<Number<int>>());
+        var numbers = world.Query(world.QueryDefinition().All<Number<int>>().Read<Number<int>>());
         var within = world.Within(numbers).Where(new Total2(14)).Except(new Total2(15));
         var pair = new FirstNumberPair();
         Require(!within.Enumerate(ref pair) && pair.Count == 1 &&
