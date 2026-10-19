@@ -4,6 +4,7 @@
 
 | 原入口或读取方式 | 当前入口 | 包归属与数据持有 | 事实说明与实现 |
 | --- | --- | --- | --- |
+| TryGetRow仅用于确认成员 | QueryCursor.Contains(Entity) | ECS；复用World相同实体匹配，读取原查询基线，返回成员事实 | [成员与组件读取](../wiki/architecture/ECS/Relation-Queries.md#查询回调中的组件引用)、[QueryCursor](../src/SomeEngine.ECS/Queries/QueryCursor.cs)、[World点匹配](../src/SomeEngine.ECS/World.EntityTableChanges.cs) |
 | QueryRow.Has 后再 ReadRef | QueryRow.TryReadRef&lt;T&gt;(out ComponentReference&lt;T&gt;) | ECS；ComponentReference借用原组件引用，HasValue/Value表达可选读取 | [组件引用](../wiki/architecture/ECS/Relation-Queries.md#查询回调中的组件引用)、[QueryRow](../src/SomeEngine.ECS/Queries/QueryRow.cs)、[ComponentReference](../src/SomeEngine.ECS/Queries/ComponentReference.cs) |
 | QueryCursor.Rows逐行定位组件列 | QueryCursor.ReadRows&lt;TFirst,TSecond&gt; 与 ComponentRowEnumerator.MoveNext | ECS；原行枚举形成成员，短生命周期跨度借用原chunk列 | [组件引用](../wiki/architecture/ECS/Relation-Queries.md#查询回调中的组件引用)、[ComponentRowEnumerator](../src/SomeEngine.ECS/Queries/ComponentRowEnumerator.cs) |
 | 调用方根据查询定义推导必需组件 | QueryCursor.Requires&lt;T&gt; | ECS；读取原QueryState.Definition的All/唯一Any事实 | [必有组件事实](../wiki/architecture/ECS/Relation-Queries.md#查询回调中的组件引用)、[QueryCursor](../src/SomeEngine.ECS/Queries/QueryCursor.cs) |

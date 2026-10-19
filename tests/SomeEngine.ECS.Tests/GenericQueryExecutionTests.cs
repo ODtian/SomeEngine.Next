@@ -60,6 +60,25 @@ public sealed class GenericQueryExecutionTests
     }
 
     [Fact]
+    public void MemberChecksFollowChangedRowsAndOptionalReads()
+    {
+        using var world = new World();
+        var changed = world.CreateEntity(new Position());
+        var unchanged = world.CreateEntity(new Position());
+        var other = world.CreateEntity(new DisplayName { Value = "Iris" });
+        var query = world.Query(world.QueryDefinition().Changed<Position>().Build()
+            .WithOptionalRead<DisplayName>());
+        uint baseline = world.AcquireSystemTick();
+        world.Replace(changed, new Position { X = 1 });
+        var members = new List<Entity>();
+        var execution = new FindMembers([changed, unchanged, other], members);
+
+        world.ExecuteQuery(query, baseline, ref execution);
+
+        Assert.Equal([changed], members);
+    }
+
+    [Fact]
     public void ChunkChangeReadsKeepOptionalRowsAndTheirWriteVersions()
     {
         using var world = new World();
@@ -136,6 +155,16 @@ public sealed class GenericQueryExecutionTests
     private struct DisplayName : IComponent
     {
         public string Value;
+    }
+
+    private readonly struct FindMembers(Entity[] entities, List<Entity> members) : IQueryExecution
+    {
+        public void Execute(QueryCursor query)
+        {
+            foreach (Entity entity in entities)
+                if (query.Contains(entity))
+                    members.Add(entity);
+        }
     }
 
     private readonly struct ChangedNameRows(List<Entity> entities) : IQueryExecution

@@ -92,13 +92,13 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
                         continue;
                     foreach (Entity first in firstEntities)
                     {
-                        if (!members.TryGetRow(first, out _))
+                        if (!members.Contains(first))
                             continue;
                         foreach (Entity second in secondEntities)
                         {
                             bool ascending = first.Index < second.Index ||
                                 first.Index == second.Index && first.Generation < second.Generation;
-                            if (!ascending || !members.TryGetRow(second, out _))
+                            if (!ascending || !members.Contains(second))
                                 continue;
                             var pair = (first, second);
                             if (!Output.Add(in pair))

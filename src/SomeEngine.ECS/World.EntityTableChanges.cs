@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Queries;
@@ -10,18 +11,32 @@ public partial class World
     internal bool TryGetEntityQueryRow(QueryState query, Entity entity, uint last, uint current,
         out QueryRow row)
     {
-        if (_entities.Store.IsAlive(entity))
+        if (TryGetEntityQueryRecord(query, entity, last, out var record, out var match))
         {
-            EntityRecord record = _entities.Store.GetRecordReadOnly(entity);
-            if (record.Archetype is not null && query.TryGetMatch(record.Archetype, out var match) &&
-                match.MatchesChunkFilter(record.Chunk!, last) &&
-                match.MatchesRow(record.Chunk!, record.RowInChunk, last))
-            {
-                row = new QueryRow(this, match, record.Chunk!, record.RowInChunk, last, current);
-                return true;
-            }
+            row = new QueryRow(this, match, record.Chunk!, record.RowInChunk, last, current);
+            return true;
         }
         row = default;
+        return false;
+    }
+
+    internal bool ContainsEntityQuery(QueryState query, Entity entity, uint last) =>
+        TryGetEntityQueryRecord(query, entity, last, out _, out _);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool TryGetEntityQueryRecord(QueryState query, Entity entity, uint last,
+        out EntityRecord record, out QueryArchetypeMatch match)
+    {
+        if (_entities.Store.IsAlive(entity))
+        {
+            record = _entities.Store.GetRecordReadOnly(entity);
+            if (record.Archetype is not null && query.TryGetMatch(record.Archetype, out match) &&
+                match.MatchesChunkFilter(record.Chunk!, last) &&
+                match.MatchesRow(record.Chunk!, record.RowInChunk, last))
+                return true;
+        }
+        record = default;
+        match = null!;
         return false;
     }
 

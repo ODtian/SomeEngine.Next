@@ -27,6 +27,8 @@ internal static partial class RelationsSmoke
         var ordinary = world.Within(bodies).Where(default(DefaultContacts)).Except(default(SameCharacterHair));
         var indexed = world.Within(bodies).Except(default(SameCharacterHair), default(HairCharacterIndex)).Where(default(DefaultContacts));
         Require(ordinary.Count() == 5 && indexed.Count() == 5, "key implementation matches component semantics");
+        Require(world.Within(bodies).Except(default(SameCharacterHair), default(HairCharacterIndex)).Count() == 5,
+            "key membership-only output");
         Require(world.Within(bodies).Where(default(MutualCategories), default(BodyBitmap)).Count() == 6, "bitmap intersection");
 
         var contacts = Collision.Candidates<Body, BodyBoundsReader>(world, bodies,

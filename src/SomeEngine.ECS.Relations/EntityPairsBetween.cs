@@ -39,8 +39,8 @@ public readonly struct EntityPairsBetween : IQueryRelationEnumerable<(Entity, En
                 int order = EntityOrder.Compare(first.Entity, second.Entity);
                 if (order == 0)
                     continue;
-                if (order > 0 && queries.First.TryGetRow(second.Entity, out _) &&
-                    queries.Second.TryGetRow(first.Entity, out _))
+                if (order > 0 && queries.First.Contains(second.Entity) &&
+                    queries.Second.Contains(first.Entity))
                     continue;
                 var pair = order < 0 ? (first.Entity, second.Entity) : (second.Entity, first.Entity);
                 if (!output.Add(in pair))

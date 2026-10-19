@@ -56,7 +56,7 @@ public readonly struct KeyPairsBetween : IKeyPairing
     {
         int order = EntityOrder.Compare(first, second);
         pair = order < 0 ? (first, second) : (second, first);
-        return order != 0 && (order < 0 || !queries.First.TryGetRow(second, out _) ||
-            !queries.Second.TryGetRow(first, out _));
+        return order != 0 && (order < 0 || !queries.First.Contains(second) ||
+            !queries.Second.Contains(first));
     }
 }

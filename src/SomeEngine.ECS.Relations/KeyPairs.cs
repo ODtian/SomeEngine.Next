@@ -62,16 +62,23 @@ public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent
                     continue;
                 foreach (Entity firstEntity in firstGroup.Entities)
                 {
-                    if (!queries.First.TryGetRow(firstEntity, out var firstRow))
+                    QueryRow firstRow = default;
+                    bool firstMember = TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows
+                        ? queries.First.TryGetRow(firstEntity, out firstRow)
+                        : queries.First.Contains(firstEntity);
+                    if (!firstMember)
                         continue;
                     foreach (Entity secondEntity in secondGroup.Entities)
                     {
                         if (!TPairing.TryPair(in queries, firstEntity, secondEntity, out var pair))
                             continue;
-                        QueryRow secondRow;
-                        bool secondMember = TPairing.QueryCount == 1
-                            ? queries.First.TryGetRow(secondEntity, out secondRow)
-                            : queries.Second.TryGetRow(secondEntity, out secondRow);
+                        QueryRow secondRow = default;
+                        bool secondMember;
+                        if (TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows)
+                            secondMember = queries.First.TryGetRow(secondEntity, out secondRow);
+                        else
+                            secondMember = TPairing.QueryCount == 1
+                                ? queries.First.Contains(secondEntity) : queries.Second.Contains(secondEntity);
                         if (!secondMember)
                             continue;
                         bool accepted = TPairing.ReordersPairs && pair.Item1 != firstEntity

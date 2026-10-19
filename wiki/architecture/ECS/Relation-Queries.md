@@ -116,6 +116,8 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 
 ## 查询回调中的组件引用
 
+`QueryCursor.Contains(Entity)` 检查本次查询的成员事实。它和 `TryGetRow` 复用 World 的点匹配流程，应用相同组件集合、共享条件、enabled、chunk 条件、逐行 Changed 与 LastSystemVersion。键桶和 Between 的纯成员确认使用 Contains；需要后续组件引用的链继续取得 QueryRow，并沿借用输出转发。
+
 `QueryRow.TryReadRef<T>(out ComponentReference<T>)` 在一次访问声明查找后借用实际组件引用。`ComponentReference<T>.HasValue` 表达可选组件的存在性，`Value` 返回 `ref readonly T`。`QueryCursor.ReadRows<TFirst,TSecond>()` 沿原有行枚举取得成员，在块边界绑定这两个组件的可选列；`MoveNext(out row,out first,out second)` 同时交付原行及两个引用。读取声明由原查询的 `WithOptionalRead<T>()` 形成，成员、共享条件、enabled 和 Changed 仍使用原查询筛选。引用与枚举器的有效期均为当前 `World.ExecuteQuery` 回调。
 
 `QueryCursor.Requires<T>()` 从本次执行的原 QueryDefinition 读取必有事实：All 声明该组件，或整个 Any 集合只有该组件。二元 Within 在枚举入口读取两位置的事实并闭合 Required/Optional 组件模式，逐对匹配使用这一已有不变量。可选模式保留缺组件关系为 false 和 Except 保留该行的行为。定义继续由原 QueryState 持有。

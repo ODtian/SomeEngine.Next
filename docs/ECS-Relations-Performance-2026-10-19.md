@@ -59,6 +59,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | a40d6c75 | 键桶80B枚举复制与32B Current中转；维护逐行重复组件/版本读取；Tree getter多次调用 | MoveNext(out group)、原成员视图复用；chunk版本绑定与静态组合变化读取器；同类型几何/摘要变化共享，Tree局部引用 | [optimized-7](evidence/ECS-Relations-2026-10-19/optimized-7/summary.md)、[构建与红绿](evidence/ECS-Relations-2026-10-19/commands-r7.json)、[实际Native读取](evidence/ECS-Relations-2026-10-19/native-r7.json) |
 | 3bf336e1 | 必有组件仍逐对判断存在性；交换不变规则先排序；整体CategoryBits投影提前读取双方字段 | Requires闭合Required/Optional模式，IsSymmetric先匹配后排序；具体许可按方向读取标量，摘要保持原布局 | [optimized-8](evidence/ECS-Relations-2026-10-19/optimized-8/summary.md)、[行为与发布](evidence/ECS-Relations-2026-10-19/commands-r8.json)、[实际Native读取](evidence/ECS-Relations-2026-10-19/native-r8.json)、[九个独立维护阶段](evidence/ECS-Relations-2026-10-19/phases-r8/summary.md) |
 | dcf50ecc | 默认私有循环只使用First成员，但接收完整视图；同组件AddReads执行两次 | 私有循环直接接QueryCursor，入口一次Requires分类，同类型读取静态合并；恢复键收集的独立边界 | [optimized-9](evidence/ECS-Relations-2026-10-19/optimized-9/summary.md)、[构建、检查与caller读取](evidence/ECS-Relations-2026-10-19/commands-r9.json) |
+| fc2b9c2d | r9轻selector前仍构造216B视图；键收集与配对共享成员字段的长存活 | 轻selector内联后仅形成First24B，caller栈256B降为88B；薄构造器赋原字段，独立CollectKeys接收查询借用 | [optimized-10](evidence/ECS-Relations-2026-10-19/optimized-10/summary.md)、[构建、原生与成员检查](evidence/ECS-Relations-2026-10-19/commands-r10-r11.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -75,6 +76,10 @@ r8 的 Required+IsSymmetric 默认循环与手写已逐条对应：配对主段�
 r8 同时给出了构造器强内联的实际回退证据：KeyPairs栈由r7的392B升到808B，收集键所用成员视图的四个字段长期占用寄存器，候选和输出新增Index/Generation栈重载。小规模角色16聚集的原精度比值变为1.0904528217711353/1.095232464179428。实现恢复独立的键收集边界，桶级选择和已标量化tuple继续沿原路径。两侧HashSet/List、成员查询、GetByIndex算法和数据持有均相同。
 
 r9 的 SingleExecution caller 把完整216B视图就地形成：Access/First共48B，另外七个查询共168B清零，然后独立调用公开selector。它已收敛r8的整块BulkMove，剩余完整构造由只读CPU队列 `a52f561cbb374a3fb960995e245516ca` 直接确认。下一处实现只内联这个无候选循环的轻selector，让其仅First读取在调用处裁剪；候选循环保持独立。键构造进一步收敛为原三个字段的薄赋值，具体收集helper独立接收scoped in查询借用，成员字段的存活在收集函数结束。
+
+r10 实际指令确认轻selector收敛：caller仅形成First的24B，读取Requires后直接进入Required循环，栈由256B变为88B。Mutual许可按方向懒读并使用内存test；最终bool进入Where仍保留setne/movzbl/test。对应小规模mask4双方许可的median为4740/4885.5ticks、p95为5460.95/5423.95ticks，实际输出1008对。这些原始结果逐项保存实际判定。
+
+键桶中的纯成员检查继续使用同一World点匹配流程：QueryCursor.Contains只取得成员事实，TryGetRow取得后续组件读取所需的行。KeyPairs按输出ReadsComponentRows静态选择，手写键枚举及Between去重同步采用Contains。公开Changed行与optional读取检查先得到缺少Contains的红结果，再通过1项真实World行为；既有角色、组合、ref输出提前结束和Between共5项通过。
 
 ## 执行与复现
 

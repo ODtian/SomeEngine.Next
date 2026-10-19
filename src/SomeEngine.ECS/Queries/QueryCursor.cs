@@ -70,6 +70,9 @@ public readonly ref struct QueryCursor
     public bool TryGetRow(Entity entity, out QueryRow row) =>
         _world.TryGetEntityQueryRow(_plan, entity, LastSystemVersion, CurrentSystemVersion, out row);
 
+    /// <summary>Checks membership using this query's component, row and version filters.</summary>
+    public bool Contains(Entity entity) => _world.ContainsEntityQuery(_plan, entity, LastSystemVersion);
+
     /// <summary>Visits each changed table chunk once, combining known membership changes with read-column versions.</summary>
     public QueryChangedChunkEnumerator ChangedChunks(EntityTableChangeBatch changes)
     {
