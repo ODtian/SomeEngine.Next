@@ -198,6 +198,8 @@ r30的两侧Default World回调实码均为104B栈/24B初始化，均各调一�
 
 原持久成员定义已包含全部只读访问时，后继终端通过引用相等确认同一定义，直接借用原句柄进入World.ExecuteQuery，省去同key的临时Query/Release登记。实际派生定义与可写/多输入路径沿原范围管理自身查询；独立手写Default、Bitmap、Key与空间入口同步采用同一复用规则。原句柄由原持有者最终释放，输出仍通过finally回写。
 
+该范围对应源码`7f8d27eb97fdf34f020d1ab12e42fb3b59f7df82`。[聚焦行为回执](evidence/ECS-Relations-2026-10-19/commands-r32-checks.json)保存关系6项与空间2项的完整命令、输出和退出码：原句柄在提前结束后继续查询、只读版本与显式基线、可选组件位置、键与位图ref输出、单向空间组和完整空间组均通过，两个项目的行为规则检查均为0 violations。
+
 后继全部场景采用32轮×8帧，使每侧256帧中先执行与后执行各128帧；16warm、7cold、每帧实际调用、时钟/observer和严格门槛沿当前定义。[测量配置](ECS-Relations-Measurement-Configuration.md)记录该对称分组；r31及此前31轮系列的248帧与128先/120后分布保持原始记录。
 
 ## 执行与复现

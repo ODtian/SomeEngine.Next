@@ -1,8 +1,62 @@
 # ECS 关系包、生成元数据与 NativeAOT 证据
 
-验证日期：2026-10-19。实现分支：`codex/ecs-relations-242`，基于集成 `093097a0`。单一工作树为 `F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next`，下文的相对目录均位于该树。环境为 SDK 10.0.113、Runtime 10.0.13、Windows win-x64、Visual Studio 2022 VC.Tools。
+验证日期：2026-10-19。最终包刷新位于`codex/ecs-relations-243`：库与八个实际包的源码为`7f8d27eb97fdf34f020d1ab12e42fb3b59f7df82`，使用方源码为`3b582fe541d86d7f556b3f9d6854962d292454ef`。单一工作树为 `F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next`，下文的相对目录均位于该树。环境为 SDK 10.0.113、Runtime 10.0.13、Windows win-x64、Visual Studio 2022 VC.Tools。
 
-## 实际包与重现入口
+## #243 最终实际包刷新
+
+[完整阶段回执](evidence/ECS-Relations-2026-10-19/commands-packages-final.json)保留16个实际执行阶段及生成计数任务的result/stdout/stderr；[生成与包元数据](evidence/ECS-Relations-2026-10-19/package-final-metadata.json)记录两份源码提交、实际包依赖、生成数量与产物时间/字节。六个直接PackageReference恢复到八个`type: package`的SomeEngine依赖，版本均为`0.1.0-relations.231`。全部操作沿下文同一feed/cache/Release/native目录完成。
+
+既有脚本的完整成功流程为14阶段。本次在第12阶段的真实JIT消费中发现Number点读取需要显式读取声明，随后给原成员查询追加`Read<Number<int>>`并提交使用方修正；已生成八个包继续复用，再完成Rebuild/JIT/publish/exe四阶段。使用方实际AssemblyInformationalVersion为`1.0.0+3b582fe541d86d7f556b3f9d6854962d292454ef`，发布命令也显式传入该SourceRevisionId。
+
+| 阶段 | 源码 | 公共队列编号 | 实际结果 |
+| --- | --- | --- | --- |
+| 1 库Release build | 7f8d27eb | `8a28339eb87146f28934d2f8ba851ba3` | exit0，0警告、0错误 |
+| 2 Diagnostics pack | 7f8d27eb | `9a54ee5661ff437480a018355c452fca` | exit0 |
+| 3 Job.Contracts pack | 7f8d27eb | `0034cf399ad842eeb7aafe567dfb5ece` | exit0 |
+| 4 Job pack | 7f8d27eb | `a5c2cbe78ff64c779b4bcd07e95452ca` | exit0 |
+| 5 ECS.SourceGen pack | 7f8d27eb | `1cefbda8cd4c41798c96b52d297d3393` | exit0 |
+| 6 ECS pack | 7f8d27eb | `a34dd35dc12d41879f3a01a331dd535d` | exit0 |
+| 7 ECS.Relations pack | 7f8d27eb | `0346bc2980f641e8a0b26a92388e6f03` | exit0 |
+| 8 ECS.Systems pack | 7f8d27eb | `2bb0fe116cc24daba50d8cd82a559f82` | exit0 |
+| 9 Physics pack | 7f8d27eb | `d7c2a32f5a8541c08da493032d095f88` | exit0 |
+| 10 使用方restore | 7f8d27eb | `e26a9ef4ff9e426a82f2c1d57e2cef0a` | exit0 |
+| 11 使用方Rebuild | 7f8d27eb | `e5d40b58343843a49ac997b30b8ccc50` | exit0，0警告、0错误 |
+| 12 使用方JIT红回执 | 7f8d27eb | `b53f4a6144b246a4abe969343c7ae4e5` | exit-532462766，Number点读取缺少data access声明 |
+| 13 修正后Rebuild | 3b582fe5 | `d625e6340d5d4abf8645e442bf80ced6` | exit0，0警告、0错误 |
+| 14 修正后JIT | 3b582fe5 | `56045e5db9384f1ebb05061f986b777a` | exit0，完整PASS |
+| 15 NativeAOT publish | 3b582fe5 | `f93b12d118514bf9b1cb4eea94c91419` | exit0，保留既有IL2070提示 |
+| 16 原生exe | 3b582fe5 | `539c1c2010d64157a1de083d14361af4` | exit0，完整PASS |
+
+两次成功运行均实际验证1–8元Where、Item8、加权和204、Within的Count/Any/ref输出提前结束、`NumberPointValue`经`QueryCursor.TryReadRef`取得字面值1、生成元数据/普通查询读取、边身份与维护、键/位图组合。空间实际输出为`parallel/serial=5; updated=3; consumed counts=2,2,0,2`。Number的成员与Read声明在同一原句柄中形成，Within实际消费此次单输入只读借用路径。Body/Hair、Number及其规则属于业务例子。
+
+使用方生成计数来自此次重建目录，公共CPU队列为`af2f8f1bba48441f89dab86c95ced5ea`：
+
+| 生成器 | 实际文件数 | Where | Except | 薄入口合计 |
+| --- | ---: | ---: | ---: | ---: |
+| RelationGenerator | 11 | 15 | 15 | 30 |
+| RelationEdgeGenerator | 4 | 4 | 4 | 8 |
+| RelationImplementationGenerator | 1 | 4 | 4 | 8 |
+| BitmapRelationGenerator | 2 | 2 | 2 | 4 |
+| SpatialRelationGenerator | 7 | 14 | 14 | 28 |
+| EcsTypeGenerator | 1 | 0 | 0 | 0 |
+| JobEntityGenerator | 1 | 0 | 0 | 0 |
+| 合计 | 27 | 39 | 39 | 78 |
+
+此次生成17个Job存储登记、2个schema登记。Relations库的9个固定族/视图文件定义41个固定类型。普通IRelationOutput的Span输出继续只实现身份Add；库内查询输出复用借用行，实际组件引用、行版本、许可回调与输出状态沿各自既有主要持有处。
+
+[最终IL与Native完整方法](evidence/ECS-Relations-2026-10-19/commands-packages-code-final.json)保留使用方与实际包DLL的选定IL块，以及冻结原生对象中四个闭合函数的完整输出；四个原生符号均精确匹配一次。IL队列为`60d0895422044ab1ac184826a2c3d6ee`，Native队列为`e29cdab130204f68a7a777dd5fe27522`，均exit0，DLL/obj的实际时间与字节见同一生成元数据文件。
+
+完整刷新入口为：
+
+```powershell
+& tools/SomeEngine.ECS.Relations.AotSmoke/Build-Consumer.ps1 -QueueScript 'F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1'
+```
+
+脚本中的实际build/pack/restore/run/publish全部经公共队列。`QueueScript`默认按仓库tools定位；本次实测显式使用主检出的现有绝对helper。
+
+## #242 初次实际包与重现入口
+
+以下初次证据对应原`codex/ecs-relations-242`、集成基线`093097a0`，保留原阶段与原生成数量。最终刷新采用上节的源码与实际回执。
 
 实际使用方位于 `tools/SomeEngine.ECS.Relations.AotSmoke`。项目使用六个直接 PackageReference；`obj/project.assets.json` 中八个 SomeEngine 依赖均为 `type: package`、版本 `0.1.0-relations.231`。SourceGen 包内 analyzer 位于 `analyzers/dotnet/cs/SomeEngine.ECS.SourceGen.dll`，使用方由该 DLL 生成业务入口与类型登记。
 
