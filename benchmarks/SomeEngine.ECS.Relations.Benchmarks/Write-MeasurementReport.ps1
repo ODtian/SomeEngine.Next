@@ -25,6 +25,8 @@ foreach ($submission in $submissions) {
             CaseId = $submission.CaseId; Class = $report.Input.Class; Boundary = $comparison.Boundary; Required = $comparison.Required
             Equal = $report.Equivalence.Equal; Passed = $comparison.Passed; SourceCommit = $submission.SourceCommit
             Backend = $submission.Backend; QueueId = $submission.QueueId; Frequency = $report.Device.StopwatchFrequency
+            Machine = $report.Device.Machine.Configuration; MainThreadMask = $report.Device.Machine.MainThreadMask
+            ProcessMask = $report.Device.Machine.ProcessMask; ProcessPriority = $report.Device.Machine.ProcessPriority
             RelationMedianTicks = $comparison.Relation.MedianTicks; HandwrittenMedianTicks = $comparison.Handwritten.MedianTicks
             RelationP95Ticks = $comparison.Relation.P95Ticks; HandwrittenP95Ticks = $comparison.Handwritten.P95Ticks
             MedianRatio = $comparison.MedianRatio; P95Ratio = $comparison.P95Ratio

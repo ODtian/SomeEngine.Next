@@ -29,6 +29,8 @@ public static class RelationsMeasurements
             Console.WriteLine(JsonSerializer.Serialize(MeasurementCases.All, MeasurementJson.Default.MeasurementCaseArray));
             return 0;
         }
+        MeasurementProcessorData machine = MeasurementProcessors.Configure(
+            Enum.Parse<MeasurementMachine>(Option("--machine", "Fixed"), true));
         MeasurementCase input = MeasurementCases.All.Single(item => item.Class == Option("--case") &&
             item.Size == Option("--size") && item.Variant == Option("--variant"));
         if (mode == "first-result")
@@ -39,7 +41,7 @@ public static class RelationsMeasurements
             first.Query();
             long queried = Stopwatch.GetTimestamp();
             first.Consume();
-            Console.WriteLine($"FIRST_RESULT utc={DateTime.UtcNow:O} side={(relation ? "relation" : "handwritten")} rows={first.Count} mainTicks={Stopwatch.GetTimestamp() - mainStarted} firstQueryTicks={queried - queryStarted} mainUtc={mainUtc:O}");
+            Console.WriteLine($"FIRST_RESULT utc={DateTime.UtcNow:O} side={(relation ? "relation" : "handwritten")} rows={first.Count} mainTicks={Stopwatch.GetTimestamp() - mainStarted} firstQueryTicks={queried - queryStarted} mainUtc={mainUtc:O} machine={machine.Configuration} processMask={machine.ProcessMask} mainThreadMask={machine.MainThreadMask} processPriority={machine.ProcessPriority} processor={machine.ProcessorAfterSetting}");
             return 0;
         }
 
@@ -100,7 +102,7 @@ public static class RelationsMeasurements
             Environment.ProcessorCount, RuntimeInformation.OSDescription, Environment.Version.ToString(),
             GCSettings.IsServerGC, Environment.GetEnvironmentVariable("DOTNET_TieredCompilation") ?? "default",
             Environment.GetEnvironmentVariable("DOTNET_ReadyToRun") ?? "default", Stopwatch.Frequency,
-            Environment.CommandLine, compiledCommit, Option("--backend", "NativeAOT"));
+            Environment.CommandLine, compiledCommit, Option("--backend", "NativeAOT"), machine);
         bool? passed = comparisons.Any(value => value.Required)
             ? comparisons.Where(value => value.Required).All(value => value.Passed) : null;
         var report = new MeasurementReport(mode, input, device, started, DateTime.UtcNow,
@@ -174,6 +176,7 @@ public static class RelationsMeasurements
         long threadAllocated = GC.GetAllocatedBytesForCurrentThread();
         int gen0 = GC.CollectionCount(0), gen1 = GC.CollectionCount(1), gen2 = GC.CollectionCount(2);
         long managed = GC.GetTotalMemory(false), working = Environment.WorkingSet;
+        uint processorBefore = MeasurementProcessors.GetCurrentProcessorNumber();
         long start = Stopwatch.GetTimestamp();
         long written = start, queried, consumed, queryTicks = 0, consumeTicks = 0;
         long maintenanceTicks = 0, maintenanceBytes = 0, queryBytes = 0, consumeBytes = 0;
@@ -238,6 +241,7 @@ public static class RelationsMeasurements
             consumeTicks = consumed - queried;
         }
         long end = consumed;
+        uint processorAfter = MeasurementProcessors.GetCurrentProcessorNumber();
         long elapsed = boundary switch
         {
             "MaintenanceAndQuery" => queried - written,
@@ -255,7 +259,8 @@ public static class RelationsMeasurements
         return new(0, "", "", frame, boundary, elapsed, queryTicks, consumeTicks, end - start, written - start,
             maintenanceTicks, maintenanceBytes, queryBytes, consumeBytes,
             side.Count, incidences, depths, bytes, threadBytes, GC.CollectionCount(0) - gen0,
-            GC.CollectionCount(1) - gen1, GC.CollectionCount(2) - gen2, managed, GC.GetTotalMemory(false), working, Environment.WorkingSet);
+            GC.CollectionCount(1) - gen1, GC.CollectionCount(2) - gen2, managed, GC.GetTotalMemory(false), working, Environment.WorkingSet,
+            processorBefore, processorAfter);
     }
 
     private static MetricComparison[] Compare(MeasurementCase input, List<FrameSample> samples)

@@ -4,7 +4,10 @@ namespace SomeEngine.ECS.Relations.Benchmarks;
 
 public sealed record DeviceData(string Cpu, int ProcessorCount, string OperatingSystem, string Framework,
     bool ServerGc, string TieredCompilation, string ReadyToRun, long StopwatchFrequency,
-    string Command, string SourceCommit, string Backend);
+    string Command, string SourceCommit, string Backend, MeasurementProcessorData Machine);
+
+public sealed record MeasurementProcessorData(string Configuration, ulong ProcessMask, ulong MainThreadMask,
+    ulong PreviousMainThreadMask, string ProcessPriority, string MainThreadPriority, uint ProcessorAfterSetting);
 
 public sealed record PairRow(int FirstIndex, int FirstGeneration, int SecondIndex, int SecondGeneration);
 public sealed record EquivalenceData(bool Equal, int VerifiedFrames, int FinalPairCount,
@@ -15,7 +18,8 @@ public sealed record FrameSample(int Round, string SideOrder, string Side, int F
     long MaintenanceTicks, long MaintenanceAllocatedBytes, long QueryAllocatedBytes, long ConsumeAllocatedBytes,
     int OutputPairCount, long ContactIncidences, double PenetrationDepthTotal,
     long FrameAllocatedBytes, long FrameCurrentThreadAllocatedBytes, int Gen0, int Gen1, int Gen2,
-    long ManagedBytesBefore, long ManagedBytesAfter, long WorkingSetBefore, long WorkingSetAfter);
+    long ManagedBytesBefore, long ManagedBytesAfter, long WorkingSetBefore, long WorkingSetAfter,
+    uint ProcessorBefore, uint ProcessorAfter);
 
 public sealed record ColdSample(int Pair, string SideOrder, string Side, long SetupTicks, long IndexBuildTicks,
     long FirstQueryTicks, long FirstConsumeTicks, long TotalTicks, int OutputPairCount, long AllocatedBytes);

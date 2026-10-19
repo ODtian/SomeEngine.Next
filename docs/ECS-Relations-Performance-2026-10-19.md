@@ -166,6 +166,12 @@ r22 单向候选的扩展接受热段为28条/93B，手写为29条/100B；逐候
 
 r23 位图Where回调以具体选择形成24B查询及24B输出，准备184B、初始化88B。默认准备由232B/120B变为216B/104B，metadata与执行描述各为24B，输出仍一次24B。当前默认Required热体与手写均为137条/673B，所有寄存器、栈位移、立即数、内部分支与共同调用逐项对应，栈均920B。后继以普通描述字段收敛metadata约束调用的第一份24B临时，声明读取和执行值副本各沿其数据范围使用。
 
+[controlled-r24](evidence/ECS-Relations-2026-10-19/controlled-r24/summary.md)对应7acdf434f01f10277893af75aaee7a97bae9e81f，首个受控27项反馈为finite 5/18、default 1/9。默认small dynamic50为1.0146938775510204/1.0448454292158686，middle dynamic50为1.0112303542106498/1.0010711728942503，large dynamic50为1.0021519326965131/0.99989612269048656。[原始报告与完整命令](evidence/ECS-Relations-2026-10-19/commands-controlled-r24.json)保留该轮全部结果；[队列审计](evidence/ECS-Relations-2026-10-19/controlled-r24/queue-boundaries.json)确认准备、162.7652618秒测量及分析依次完成。
+
+r24 单默认入口确认metadata24B临时消去，直接从原字段取得World与QueryHandle；实际执行描述24B、Output24B各形成一次。准备由216B/104B收敛为184B/80B，正常/finally状态回写继续在同一范围。该数据形成事实与本轮原精度结果并列保留。
+
+后续机器配置诊断保持7ac的引擎实现，在同一Native产物内对default-small-dynamic50与finite-large-mask1-oneway分别运行Normal与Fixed。配置、实际处理器范围、优先级与CPU端点由[测量配置](ECS-Relations-Measurement-Configuration.md)定义；四项诊断作为自己的完整系列保存，用来核对机器配置与当前差值。
+
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：

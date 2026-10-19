@@ -3,6 +3,7 @@ param(
     [string[]]$CaseId = @(),
     [ValidateSet('NativeAOT', 'JIT')][string]$Backend = 'NativeAOT',
     [ValidateSet('measure', 'phases')][string]$Mode = 'measure',
+    [ValidateSet('Normal', 'Fixed')][string[]]$Machine = @('Fixed'),
     [string]$QueueScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../tools/Invoke-Benchmark.ps1')),
     [string]$Session = $env:CODEX_THREAD_ID,
     [switch]$CollectReports,
@@ -27,14 +28,21 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Case listing failed.' }
     $cases = ($listing -join [Environment]::NewLine) | ConvertFrom-Json
     $selected = $cases | Where-Object { ($CaseId.Count -eq 0 -or $_.Id -in $CaseId) -and ($Mode -ne 'phases' -or $_.ChangesEveryFrame) }
+    $caseIndex = 0
     $submissions = foreach ($case in $selected) {
-        $report = Join-Path $reportDirectory "$($case.Id).json"
-        [string[]]$arguments = @('--session', $Session) + $prefix + @('--mode', $Mode, '--case', $case.Class, '--size', $case.Size,
-            '--variant', $case.Variant, '--source', $sourceCommit, '--backend', $Backend, '--output', $report)
-        $submitted = & $queueTool @arguments | ConvertFrom-Json
-        Write-Host "QUEUED $($submitted.Id) $($case.Id)"
-        [pscustomobject]@{ CaseId = $case.Id; SourceCommit = $sourceCommit; Backend = $Backend;
-            Report = $report; QueueId = $submitted.Id; QueueDirectory = $submitted.OutputDirectory }
+        $machineOrder = @($Machine)
+        if ($caseIndex % 2 -eq 1) { [array]::Reverse($machineOrder) }
+        $caseIndex++
+        foreach ($machine in $machineOrder) {
+            $caseId = if ($Machine.Count -gt 1) { "$($case.Id)-$($machine.ToLowerInvariant())" } else { $case.Id }
+            $report = Join-Path $reportDirectory "$caseId.json"
+            [string[]]$arguments = @('--session', $Session) + $prefix + @('--mode', $Mode, '--case', $case.Class, '--size', $case.Size,
+                '--variant', $case.Variant, '--source', $sourceCommit, '--backend', $Backend, '--machine', $machine, '--output', $report)
+            $submitted = & $queueTool @arguments | ConvertFrom-Json
+            Write-Host "QUEUED $($submitted.Id) $caseId"
+            [pscustomobject]@{ CaseId = $caseId; InputCaseId = $case.Id; Machine = $machine; SourceCommit = $sourceCommit; Backend = $Backend;
+                Report = $report; QueueId = $submitted.Id; QueueDirectory = $submitted.OutputDirectory }
+        }
     }
     $submissions | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $reportDirectory 'submissions.json') -Encoding utf8
     $reports = if ($CollectReports) {
@@ -50,7 +58,7 @@ try {
         SourceCommit = $sourceCommit; SubmissionCommit = (& git rev-parse HEAD).Trim(); Backend = $Backend
         SessionId = $Session; ListingCommand = @($prefix[0]) + $listingArguments
         StartedAtUtc = $submissionStarted; FinishedAtUtc = [DateTime]::UtcNow
-        CaseCount = @($submissions).Count; Reports = @($reports)
+        CaseCount = @($submissions).Count; Machines = @($Machine); Reports = @($reports)
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $reportDirectory 'queue-submission.json') -Encoding utf8
 }
 finally { Set-Location -LiteralPath $previousDirectory }

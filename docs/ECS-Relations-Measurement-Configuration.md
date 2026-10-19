@@ -4,6 +4,19 @@
 
 设备读取：Intel Xeon E5-2698B v3 @ 2.00GHz，16核/32线程；总内存68,552,818,688字节；Windows 11专业工作站版10.0.26200（build26200）。SDK10.0.113、Runtime10.0.13、win-x64。各份正式报告继续保存其实际CPU标识、处理器数、OS、Framework、GC、JIT配置、WorkerCount、计时频率与完整命令。
 
+机器配置以运行器的`--machine Normal|Fixed`显式选择，实际字段记录于Device.Machine。两配置的输入、31×8采样、预热和实现相同：
+
+| 配置字段 | Normal | Fixed |
+| --- | --- | --- |
+| 测量主线程mask | 进程允许mask | bit2，逻辑CPU2 |
+| 进程允许mask | 实际进程mask | 实际进程mask |
+| 进程优先级 | Normal | High |
+| Scheduler工作线程 | 场景原定0或4 | 场景原定0或4 |
+
+运行器通过[SetThreadAffinityMask](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadaffinitymask)设置当前测量线程，进程允许范围继续供Scheduler使用；[Process.PriorityClass](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.priorityclass?view=net-10.0)设置该进程的整体优先级。报告保存设置前的主线程mask、应用mask、实际进程mask/优先级及设置后CPU。每帧在计时边界外通过[GetCurrentProcessorNumber](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getcurrentprocessornumber)记录前后CPU；这些端点观察随原始样本保存。
+
+机器配置诊断先用同一Native产物运行default-small-dynamic50和finite-large-mask1-oneway各两种配置，共四项。提交器对第一个输入采用Normal→Fixed，第二个输入采用Fixed→Normal，全部case和报告先在独占准备任务中提交。两种配置各有自己的完整原精度判定；后续统一系列显式记录选定的同一配置。此前系列保留各自实际设备与提交条件。
+
 | 场景类 | 小／中／大 | 每规模变体 | 必须测量的边界 |
 | --- | --- | --- | --- |
 | finite | 128/512/2048，候选4096/32768/262144 | mask位数1/4/8 × 单向／双方 | 公共查询准备、固定候选、位判断、实际输出 |

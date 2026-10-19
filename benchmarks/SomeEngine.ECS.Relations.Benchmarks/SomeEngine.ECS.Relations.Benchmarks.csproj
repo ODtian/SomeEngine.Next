@@ -8,6 +8,7 @@
     <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <OptimizationPreference>Speed</OptimizationPreference>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <AssemblyMetadata Include="MeasurementSourceCommit" Value="$(SourceRevisionId)" />
