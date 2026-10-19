@@ -174,6 +174,10 @@ r24 单默认入口确认metadata24B临时消去，直接从原字段取得World
 
 [machine-r25诊断](evidence/ECS-Relations-2026-10-19/machine-r25/diagnostic.md)保留四项原始结果及控制活动。Fixed有限类别large mask1单向的median/p95为0.9643794829654223/0.9604935553229572，Normal为1.0437229868497686/1.0440907032186741；Fixed默认small dynamic50为1.0212071778140293/0.99780131920847492。Fixed两个输入的全部逐帧CPU端点均为2，Normal有限类别前后端点变化分别为扩展20帧、手写22帧。后续统一使用Fixed及原进程32CPU范围、0/4worker；默认入口继续沿实际描述准备定位。
 
+[controlled-fixed-r26](evidence/ECS-Relations-2026-10-19/controlled-fixed-r26/summary.md)对应9b3f58c90829b058b11ecbe0fb49f7bd1a4a5d9f，固定CPU2的首轮27项通过7项（finite6/18、default1/9）。默认small/middle/large dynamic50分别为1.0310271041369472/0.97523734027895759、1.0296317942723554/1.0243374911868706、1.0303313358861328/1.0566557359095816。Bitmap内部来源metadata24B临时已经消去，实际outer由216B/112B收敛为200B/88B；对应完整原生函数和本轮全部样本继续持久保存。
+
+当前默认双方热体137条/673B逐项对应，成员表、chunk及行顺序相同。此前两份World按固定Relations先创建，实际World和数组地址分别由独立分配形成。后继将静态warm的数据范围收敛为一个MeasurementData，由外层统一持有；双方顺序复用真实输入及pair/contact工作区，各自查询、树、摘要、计数和作业输出资源保留其实际构造。Verify先保存第一侧完整真实结果，再执行第二侧。cold与持续更新继续独立构建，报告按实际工作区逐份列出一次构造和容量。引擎及独立手写算法沿9b版本，采样、阈值和输入值继续按原配置执行。
+
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：

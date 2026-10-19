@@ -25,7 +25,6 @@ public abstract class MeasurementSide : IDisposable
     }
 
     public MeasurementData Data { get; }
-    public long SetupTicks { get; set; }
     public long IndexBuildTicks { get; set; }
     public abstract int Count { get; }
     public abstract ReadOnlySpan<(Entity, Entity)> Pairs { get; }
@@ -59,7 +58,7 @@ public abstract class MeasurementSide : IDisposable
             BitmapCollisionConsumption.CountContacts(Pairs, Data.ContactCounts);
     }
 
-    public virtual IndexMemory Memory() => IndexMemory.Read(Data, Count);
+    public virtual IndexMemory Memory() => IndexMemory.Read(Count);
 
     public virtual void Dispose()
     {
@@ -68,7 +67,6 @@ public abstract class MeasurementSide : IDisposable
             Data.Jobs.ReleaseResourceToken(_outputResource);
             Data.Jobs.ReleaseResourceToken(_contactResource);
         }
-        Data.Dispose();
     }
 
     protected readonly struct QueryJob(MeasurementSide side) : IJob
@@ -108,7 +106,7 @@ public sealed class BitmapRelationArraySide<TEnumerable, TRelation, TImplementat
     where TImplementation : struct, IBitmapRelation<TRelation, Body, TPermission>
     where TPermission : struct, ICategoryPermission
 {
-    public override IndexMemory Memory() => IndexMemory.Read(Data, Count, summary.Tree, summary.NodeCapacity);
+    public override IndexMemory Memory() => IndexMemory.Read(Count, summary.Tree, summary.NodeCapacity);
 }
 
 public sealed class CharacterRelationArraySide<TEnumerable>(MeasurementData data,
@@ -116,7 +114,7 @@ public sealed class CharacterRelationArraySide<TEnumerable>(MeasurementData data
     : RelationArraySide<TEnumerable>(data, query)
     where TEnumerable : struct, IQueryRelationEnumerable<(Entity, Entity)>
 {
-    public override IndexMemory Memory() => IndexMemory.Read(Data, Count, summary.Tree, keyCapacity: summary.NodeCapacity);
+    public override IndexMemory Memory() => IndexMemory.Read(Count, summary.Tree, keyCapacity: summary.NodeCapacity);
 }
 
 public abstract class HandwrittenArraySide(MeasurementData data) : MeasurementSide(data)
@@ -179,7 +177,7 @@ public sealed class HandwrittenOneWaySide(MeasurementData data, CollisionTree tr
         HandwrittenSpatialBitmap.OneWay(Data.World, Data.Members, tree, summary.Nodes, ref output);
         _count = output.Count;
     }
-    public override IndexMemory Memory() => IndexMemory.Read(Data, Count, tree, summary.NodeCapacity);
+    public override IndexMemory Memory() => IndexMemory.Read(Count, tree, summary.NodeCapacity);
 }
 
 public sealed class HandwrittenMutualSide(MeasurementData data, CollisionTree tree,
@@ -195,7 +193,7 @@ public sealed class HandwrittenMutualSide(MeasurementData data, CollisionTree tr
         HandwrittenSpatialBitmap.Mutual(Data.World, Data.Members, tree, summary.Nodes, ref output);
         _count = output.Count;
     }
-    public override IndexMemory Memory() => IndexMemory.Read(Data, Count, tree, summary.NodeCapacity);
+    public override IndexMemory Memory() => IndexMemory.Read(Count, tree, summary.NodeCapacity);
 }
 
 public sealed class HandwrittenCharacterSide(MeasurementData data, CollisionTree tree,
@@ -210,7 +208,7 @@ public sealed class HandwrittenCharacterSide(MeasurementData data, CollisionTree
         HandwrittenSpatialKeys.Except(Data.World, Data.Members, tree, summary.Nodes, ref output);
         _count = output.Count;
     }
-    public override IndexMemory Memory() => IndexMemory.Read(Data, Count, tree, keyCapacity: summary.NodeCapacity);
+    public override IndexMemory Memory() => IndexMemory.Read(Count, tree, keyCapacity: summary.NodeCapacity);
 }
 
 public sealed class MaintainedRelationSide<TFilter, TGroupResults> : MeasurementSide
@@ -292,7 +290,7 @@ public sealed class MaintainedRelationSide<TFilter, TGroupResults> : Measurement
             base.Consume();
     }
 
-    public override IndexMemory Memory() => IndexMemory.Read(Data, Count, _maintenance.Tree,
+    public override IndexMemory Memory() => IndexMemory.Read(Count, _maintenance.Tree,
         _categories.NodeCapacity, _keys.NodeCapacity, _pairs, _maintenance.AccessCount,
         _totals?.ContactCounts.Length ?? 0);
 
@@ -372,7 +370,7 @@ public sealed class MaintainedHandwrittenSide : MeasurementSide
             base.Consume();
     }
 
-    public override IndexMemory Memory() => IndexMemory.Read(Data, Count, _maintenance.Tree,
+    public override IndexMemory Memory() => IndexMemory.Read(Count, _maintenance.Tree,
         _maintenance.Categories.NodeCapacity, _maintenance.Keys.NodeCapacity, _pairs, _maintenance.AccessCount,
         _totals?.ContactCounts.Length ?? 0);
 
@@ -387,13 +385,10 @@ public sealed class MaintainedHandwrittenSide : MeasurementSide
 
 public static class MeasurementSides
 {
-    public static MeasurementSide Create(MeasurementCase input, bool relation)
+    public static MeasurementSide Create(MeasurementData data, bool relation)
     {
-        long started = Stopwatch.GetTimestamp();
-        var data = new MeasurementData(input);
         long created = Stopwatch.GetTimestamp();
         MeasurementSide side = Build(data, relation);
-        side.SetupTicks = created - started;
         side.IndexBuildTicks = Stopwatch.GetTimestamp() - created;
         return side;
     }

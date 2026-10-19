@@ -30,8 +30,12 @@ public sealed record Distribution(double MedianTicks, double P95Ticks, double Iq
 public sealed record MetricComparison(string Boundary, bool Required, Distribution Relation, Distribution Handwritten,
     double MedianRatio, double P95Ratio, bool Passed);
 
+public sealed record MeasurementWorkspace(string UsedBy, long SetupTicks, IndexMemory Memory);
+
 public sealed record MeasurementReport(string ReportKind, MeasurementCase Input, DeviceData Device, DateTime StartedAtUtc,
-    DateTime FinishedAtUtc, string[] Boundaries, string[] MemoryScope, EquivalenceData Equivalence,
+    DateTime FinishedAtUtc, string DataSharing, MeasurementWorkspace[] Workspaces,
+    long RelationIndexBuildTicks, long HandwrittenIndexBuildTicks,
+    string[] Boundaries, string[] MemoryScope, EquivalenceData Equivalence,
     ColdSample[] ColdSamples, FrameSample[] RawSamples, MetricComparison[] Comparisons,
     IndexMemory RelationMemory, IndexMemory HandwrittenMemory, bool? Passed);
 

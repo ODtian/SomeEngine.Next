@@ -12,6 +12,8 @@ $metrics = [Collections.Generic.List[object]]::new()
 $memory = [Collections.Generic.List[object]]::new()
 $cold = [Collections.Generic.List[object]]::new()
 $processors = [Collections.Generic.List[object]]::new()
+$workspaces = [Collections.Generic.List[object]]::new()
+$initialization = [Collections.Generic.List[object]]::new()
 $lines = [Collections.Generic.List[string]]::new()
 $lines.Add("# $Series measurements")
 $lines.Add('')
@@ -29,6 +31,7 @@ foreach ($submission in $submissions) {
             Backend = $submission.Backend; QueueId = $submission.QueueId; Frequency = $report.Device.StopwatchFrequency
             Machine = $report.Device.Machine.Configuration; MainThreadMask = $report.Device.Machine.MainThreadMask
             ProcessMask = $report.Device.Machine.ProcessMask; ProcessPriority = $report.Device.Machine.ProcessPriority
+            DataSharing = $report.DataSharing
             RelationMedianTicks = $comparison.Relation.MedianTicks; HandwrittenMedianTicks = $comparison.Handwritten.MedianTicks
             RelationP95Ticks = $comparison.Relation.P95Ticks; HandwrittenP95Ticks = $comparison.Handwritten.P95Ticks
             MedianRatio = $comparison.MedianRatio; P95Ratio = $comparison.P95Ratio
@@ -46,12 +49,28 @@ foreach ($submission in $submissions) {
         $lines.Add("| $($metric.CaseId) | $($metric.Boundary) | $($metric.Required) | $($metric.RelationMedianTicks) | $($metric.HandwrittenMedianTicks) | $median | $p95 | $($metric.Passed) |")
     }
     foreach ($side in 'Relation', 'Handwritten') {
+        $initialization.Add([pscustomobject]@{
+            CaseId = $reportId; Side = $side; IndexBuildTicks = $report."$($side)IndexBuildTicks"
+            Frequency = $report.Device.StopwatchFrequency
+        })
         $data = $report."$($side)Memory"
         foreach ($field in $data.PayloadBytes.PSObject.Properties) {
             $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = $side; Unit = 'bytes'; Field = $field.Name; Value = $field.Value })
         }
         foreach ($field in $data.Counts.PSObject.Properties) {
             $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = $side; Unit = 'count'; Field = $field.Name; Value = $field.Value })
+        }
+    }
+    foreach ($workspace in $report.Workspaces) {
+        $workspaces.Add([pscustomobject]@{
+            CaseId = $reportId; DataSharing = $report.DataSharing; UsedBy = $workspace.UsedBy
+            SetupTicks = $workspace.SetupTicks; Frequency = $report.Device.StopwatchFrequency
+        })
+        foreach ($field in $workspace.Memory.PayloadBytes.PSObject.Properties) {
+            $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = "$($workspace.UsedBy)-workspace"; Unit = 'bytes'; Field = $field.Name; Value = $field.Value })
+        }
+        foreach ($field in $workspace.Memory.Counts.PSObject.Properties) {
+            $memory.Add([pscustomobject]@{ CaseId = $reportId; Side = "$($workspace.UsedBy)-workspace"; Unit = 'count'; Field = $field.Name; Value = $field.Value })
         }
     }
     foreach ($sample in $report.ColdSamples) {
@@ -88,6 +107,10 @@ $memory | Export-Csv -LiteralPath (Join-Path $evidence 'memory.csv') -NoTypeInfo
 $cold | Export-Csv -LiteralPath (Join-Path $evidence 'cold.csv') -NoTypeInformation -Encoding utf8
 if ($processors.Count -gt 0) {
     $processors | Export-Csv -LiteralPath (Join-Path $evidence 'processors.csv') -NoTypeInformation -Encoding utf8
+}
+if ($workspaces.Count -gt 0) {
+    $workspaces | Export-Csv -LiteralPath (Join-Path $evidence 'workspaces.csv') -NoTypeInformation -Encoding utf8
+    $initialization | Export-Csv -LiteralPath (Join-Path $evidence 'initialization.csv') -NoTypeInformation -Encoding utf8
 }
 Write-Output "$Series`: cases=$($submissions.Count); required=$($required.Count); passed=$($passed.Count); $evidence"
 foreach ($group in ($required | Group-Object Class)) {

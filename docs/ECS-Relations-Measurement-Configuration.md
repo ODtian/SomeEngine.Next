@@ -29,7 +29,9 @@
 | threads | 512/2048/8192 | 三种密度 × 0worker-inline／4worker-parallel | 外层任务提交至全部计数／前缀／填充完成 |
 | consume | 512/2048/8192 | 稀疏／均匀／密集，完整三条件 | 直接公开查询至真实几何消费完成 |
 
-共108个独立场景，每个分别提交公共队列。两侧各持真实 World、相同初始身份序列与组件布局、查询、树、摘要、观察者、Scheduler、输出和接触累计。完整手写查询直接进入 `HandwrittenSpatialCollision.Filtered`，保留其独立节点／证明／叶子循环；手写维护直接展开观察、版本和父链路由。共同具体内核包括 ECS 查询、树基础操作、摘要数组更新、分区、count/prefix/fill、子任务调度及接触消费。
+共108个独立场景，每个分别提交公共队列。静态warm测量由外层范围持有一份真实MeasurementData：World、WorldJobs/Scheduler、成员查询、实体与候选数组、pair/contact工作数组在双方串行执行中复用。双方各自构造具体查询、树、摘要、观察者、计数状态及成对作业输出资源，按原E/H、H/E次序完成完整实际查询与消费。持续更新的双方各持真实MeasurementData，分别执行其构建、变化与维护；每个cold样本同样独立构建。完整手写查询直接进入 `HandwrittenSpatialCollision.Filtered`，保留其独立节点／证明／叶子循环；手写维护直接展开观察、版本和父链路由。共同具体内核包括 ECS 查询、树基础操作、摘要数组更新、分区、count/prefix/fill、子任务调度及接触消费。
+
+每份新报告的DataSharing明确记录SharedStaticWorkspace或IndependentUpdatingWorkspaces。Workspaces按实际对象逐个保存使用方、一次构造ticks和已知数组payload/capacity；静态共同工作区只列一次，每侧树、摘要、分区、CollisionPairBuffer与SpatialContactTotals在侧内存中各列其实际资源。World内部管理结构及对象头继续由真实分配、Managed与WorkingSet记录。cold的SetupTicks直接包围该次独立MeasurementData构造；IndexBuildTicks直接包围随后的该侧查询/树/摘要/资源构造，两个真实边界分开保存。
 
 输入采用 seed=231243 的固定整数 LCG 产生候选端点，保留候选位置及重复。类别域为8位；类别为一个已声明位，允许掩码为旋转的1/4/8位集合，实际通过率记录输出行数。75%成员具有Hair，其余成员保留普通物体语义。角色数量为 `ceil(N*75%/每角色根数)`，随规模增长；角色身份先于Body按固定顺序创建。
 
@@ -41,12 +43,14 @@ Release NativeAOT 为必验后端，JIT 独立记录。每轮双方各执行8帧
 
 JIT在同一Release输出目录以PublishAot=false、SelfContained=false及实际SourceRevisionId构建普通托管入口，采用.NET10默认TieredCompilation/ReadyToRun配置，环境项记录为default；双方在同一进程使用相同配置和上述固定预热/采样。JIT报告独立记录Backend、实际命令、源码、原始样本和阶段，NativeAOT验收使用其独立报告。
 
-测量前逐行核对完整Entity身份和真实消费数组，持续更新覆盖完整八帧周期。原始记录包含 ticks、先后顺序、输出数、接触次数／深度、全线程与当前线程分配、GC、Managed/WorkingSet。median及R-7 p95按原始精度计算，分别以扩展/手写≤1.00判断主场景及表中额外要求的完整帧。融合的遍历、筛选和输出属于同一个Query边界。
+测量前先执行第一侧Query与Consume，立即保存其完整Entity身份行和真实contact/depth值，再执行第二侧并逐项核对；这些物化与比较均在Verify阶段完成。持续更新核对覆盖完整八帧周期。原始记录包含 ticks、先后顺序、输出数、接触次数／深度、全线程与当前线程分配、GC、Managed/WorkingSet。median及R-7 p95按原始精度计算，分别以扩展/手写≤1.00判断主场景及表中额外要求的完整帧。融合的遍历、筛选和输出属于同一个Query边界。
 
 机器配置版的allocation起始计数位于before-Managed/WorkingSet/CPU观察之后，结束计数紧跟实际frame工作并先于after观察，记录当前及全部线程的实际工作分配。r24及以前系列的FrameAllocatedBytes同时包含before-WorkingSet观察的分配；其原始值和原scope随历史系列保留。elapsed查询/整帧时钟及31×8采样边界继续按原定义执行。
 
 内存按实际值数组payload记录Live、Addressed与Capacity；Tree.NodeCount为包含复用地址的范围，存活二叉拓扑由LeafCount形成。叶映射单列有效键值payload及entry容量，分区四数组、访问数组、输出容量、接触累计、维护访问与已有ECS键桶分列。对象头、字典管理、查询／观察者／Scheduler和租用句柄同时进入真实分配与进程内存指标。
 
 原始报告、每次优化前后结果及公共队列 result/stdout/stderr 保留并由最终证据索引链接。实际启动采用新进程独立观察；入口前的元数据初始化计入进程到首结果，Main和首次公共查询分别使用自身真实边界。后续源码优化完成后刷新同一八包feed/cache及实际包NativeAOT消费方。
+
+controlled-fixed-r26及以前系列保留其双方独立World/数组的原始配置；共享工作区系列使用相同输入值、算法、输出工作和31×8采样，另行记录此数据持有调整。该调整将实际只读输入与工作地址对齐，按完整新系列判断每项原精度结果。
 
 完整系列的提交准备本身作为公共队列独占任务执行，直接读取同一固定列表，并用显式Session将全部独立case及collect/export/report按FIFO提交后退出。实际测量在准备任务结束后开始；报告计算与读取按预排CPU任务执行。queue-submission.json记录准备起止、源码、session和报告任务，逐case队列记录继续保存实际起止。此执行控制保持上述输入、采样、预热和双侧实现配置。

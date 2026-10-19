@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Diagnostics;
 using SomeEngine.ECS.Benchmarks.Relations.Bitmap;
 using SomeEngine.ECS.Benchmarks.Relations.Spatial;
 using SomeEngine.ECS.Entities;
@@ -17,6 +18,7 @@ public sealed class MeasurementData : IDisposable
 
     public MeasurementData(MeasurementCase input)
     {
+        long started = Stopwatch.GetTimestamp();
         Input = input;
         Jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = input.WorkerCount, SafetyMode = JobSafetyMode.Fast });
         World = WorldJobs.CreateWorld(input.EntityCount + input.CharacterCount + 32, Jobs);
@@ -55,9 +57,11 @@ public sealed class MeasurementData : IDisposable
         ContactCounts = input.Class == "threads" ? [] : new int[input.EntityCount + input.CharacterCount + 32];
         Depths = new float[ContactCounts.Length];
         Candidates = input.Class == "finite" ? MakeCandidates(input) : [];
+        SetupTicks = Stopwatch.GetTimestamp() - started;
     }
 
     public MeasurementCase Input { get; }
+    public long SetupTicks { get; }
     public Scheduler Jobs { get; }
     public World World { get; }
     public QueryHandle Members { get; }

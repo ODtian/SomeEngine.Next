@@ -8,7 +8,7 @@ namespace SomeEngine.ECS.Relations.Benchmarks;
 
 public sealed record IndexMemory(Dictionary<string, long> PayloadBytes, Dictionary<string, int> Counts)
 {
-    public static IndexMemory Read(MeasurementData data, int outputCount, CollisionTree? tree = null,
+    public static IndexMemory Read(int outputCount, CollisionTree? tree = null,
         int categoryCapacity = 0, int keyCapacity = 0, CollisionPairBuffer? pairs = null,
         int maintenanceAccessCount = 0, int contactCapacity = 0)
     {
@@ -22,10 +22,6 @@ public sealed record IndexMemory(Dictionary<string, long> PayloadBytes, Dictiona
         int p = pairs?.PartitionCount ?? 0;
         int f = pairs?.FilledPartitionCount ?? 0;
         int capacity = pairs?.PartitionCapacity ?? 0;
-        long bucketPayload = 0;
-        if (data.Input.Class == "character")
-            foreach (Entity character in data.Characters)
-                bucketPayload += (long)data.World.GetByIndex<Hair, Entity>(character).Length * Unsafe.SizeOf<Entity>();
         var bytes = new Dictionary<string, long>
         {
             ["TreeLive"] = (long)live * nodeSize,
@@ -38,15 +34,14 @@ public sealed record IndexMemory(Dictionary<string, long> PayloadBytes, Dictiona
             ["KeyAddressed"] = keyCapacity == 0 ? 0 : (long)addresses * keySize,
             ["KeyCapacity"] = (long)keyCapacity * keySize,
             ["LeafMapKeyValues"] = (long)(tree?.LeafMapCount ?? 0) * (Unsafe.SizeOf<Entity>() + sizeof(int)),
-            ["KeyBuckets"] = bucketPayload,
-            ["OutputUsed"] = (long)outputCount * pairSize,
-            ["OutputCapacity"] = (long)(pairs?.PairCapacity ?? data.Output.Length) * pairSize,
+            ["OutputUsed"] = pairs is null ? 0 : (long)outputCount * pairSize,
+            ["OutputCapacity"] = (long)(pairs?.PairCapacity ?? 0) * pairSize,
             ["PartitionUsed"] = pairs is null ? 0 : (long)p * Unsafe.SizeOf<CollisionNodePair>() + (long)(2 * p + 1 + f) * sizeof(int),
             ["PartitionCapacity"] = pairs is null ? 0 : (long)capacity * Unsafe.SizeOf<CollisionNodePair>() + (long)(3 * capacity + 1) * sizeof(int),
             ["AccessDataUsed"] = (long)(p + 2 * f) * accessSize,
             ["AccessDataCapacity"] = (long)(3 * capacity) * accessSize,
             ["MaintenanceAccess"] = (long)maintenanceAccessCount * accessSize,
-            ["ContactTotals"] = (long)(contactCapacity == 0 ? data.ContactCounts.Length : contactCapacity) * (sizeof(int) + sizeof(float))
+            ["ContactTotals"] = (long)contactCapacity * (sizeof(int) + sizeof(float))
         };
         var counts = new Dictionary<string, int>
         {
@@ -60,8 +55,38 @@ public sealed record IndexMemory(Dictionary<string, long> PayloadBytes, Dictiona
             ["FilledPartitionCount"] = f,
             ["PartitionCapacity"] = capacity,
             ["OutputCount"] = outputCount,
-            ["OutputCapacity"] = pairs?.PairCapacity ?? data.Output.Length
+            ["OutputCapacity"] = pairs?.PairCapacity ?? 0
         };
         return new(bytes, counts);
+    }
+
+    public static IndexMemory ReadWorkspace(MeasurementData data, int outputCount)
+    {
+        int entitySize = Unsafe.SizeOf<Entity>();
+        int pairSize = Unsafe.SizeOf<(Entity, Entity)>();
+        long bucketPayload = 0;
+        if (data.Input.Class == "character")
+            foreach (Entity character in data.Characters)
+                bucketPayload += (long)data.World.GetByIndex<Hair, Entity>(character).Length * entitySize;
+        return new(new()
+        {
+            ["ParticipantEntities"] = (long)data.Entities.Length * entitySize,
+            ["CharacterEntities"] = (long)data.Characters.Length * entitySize,
+            ["InitialBodies"] = (long)data.Entities.Length * Unsafe.SizeOf<Body>(),
+            ["CharacterNumbers"] = (long)data.Entities.Length * sizeof(int),
+            ["BodyPresence"] = (long)data.Entities.Length * sizeof(bool),
+            ["Candidates"] = (long)data.Candidates.Length * pairSize,
+            ["KeyBuckets"] = bucketPayload,
+            ["OutputUsed"] = data.Output.Length == 0 ? 0 : (long)outputCount * pairSize,
+            ["OutputCapacity"] = (long)data.Output.Length * pairSize,
+            ["ContactTotals"] = (long)data.ContactCounts.Length * sizeof(int) + (long)data.Depths.Length * sizeof(float)
+        }, new()
+        {
+            ["ParticipantCapacity"] = data.Entities.Length,
+            ["CharacterCapacity"] = data.Characters.Length,
+            ["CandidateCapacity"] = data.Candidates.Length,
+            ["OutputCapacity"] = data.Output.Length,
+            ["ContactCapacity"] = data.ContactCounts.Length
+        });
     }
 }

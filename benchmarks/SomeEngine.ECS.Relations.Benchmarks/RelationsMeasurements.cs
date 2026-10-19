@@ -36,7 +36,8 @@ public static class RelationsMeasurements
         if (mode == "first-result")
         {
             bool relation = Option("--side", "relation") == "relation";
-            using MeasurementSide first = MeasurementSides.Create(input, relation);
+            using var firstData = new MeasurementData(input);
+            using MeasurementSide first = MeasurementSides.Create(firstData, relation);
             long queryStarted = Stopwatch.GetTimestamp();
             first.Query();
             long queried = Stopwatch.GetTimestamp();
@@ -46,8 +47,10 @@ public static class RelationsMeasurements
         }
 
         DateTime started = DateTime.UtcNow;
-        using MeasurementSide extension = MeasurementSides.Create(input, true);
-        using MeasurementSide handwritten = MeasurementSides.Create(input, false);
+        using var extensionData = new MeasurementData(input);
+        using var handwrittenData = input.ChangesEveryFrame ? new MeasurementData(input) : null;
+        using MeasurementSide extension = MeasurementSides.Create(extensionData, true);
+        using MeasurementSide handwritten = MeasurementSides.Create(handwrittenData ?? extensionData, false);
         EquivalenceData equivalence = Verify(input, extension, handwritten);
         Console.WriteLine($"EQUIVALENT {input.Id}: frames={equivalence.VerifiedFrames}; pairs={equivalence.FinalPairCount}");
         if (mode == "verify")
@@ -60,14 +63,16 @@ public static class RelationsMeasurements
             {
                 long allocated = GC.GetTotalAllocatedBytes(true);
                 long before = Stopwatch.GetTimestamp();
-                using MeasurementSide side = MeasurementSides.Create(input, relation);
+                using var data = new MeasurementData(input);
+                long initialized = Stopwatch.GetTimestamp();
+                using MeasurementSide side = MeasurementSides.Create(data, relation);
                 long query = Stopwatch.GetTimestamp();
                 side.Query();
                 long consume = Stopwatch.GetTimestamp();
                 side.Consume();
                 long end = Stopwatch.GetTimestamp();
                 cold.Add(new(pair, relationFirst ? "E/H" : "H/E", relation ? "relation" : "handwritten",
-                    side.SetupTicks, side.IndexBuildTicks, consume - query, end - consume,
+                    initialized - before, side.IndexBuildTicks, consume - query, end - consume,
                     end - before, side.Count, GC.GetTotalAllocatedBytes(true) - allocated));
             }
         }
@@ -105,7 +110,13 @@ public static class RelationsMeasurements
             Environment.CommandLine, compiledCommit, Option("--backend", "NativeAOT"), machine);
         bool? passed = comparisons.Any(value => value.Required)
             ? comparisons.Where(value => value.Required).All(value => value.Passed) : null;
+        MeasurementWorkspace[] workspaces = handwrittenData is { } separate
+            ? [new("relation", extensionData.SetupTicks, IndexMemory.ReadWorkspace(extensionData, extension.Count)),
+                new("handwritten", separate.SetupTicks, IndexMemory.ReadWorkspace(separate, handwritten.Count))]
+            : [new("shared", extensionData.SetupTicks, IndexMemory.ReadWorkspace(extensionData, extension.Count))];
         var report = new MeasurementReport(mode, input, device, started, DateTime.UtcNow,
+            handwrittenData is null ? "SharedStaticWorkspace" : "IndependentUpdatingWorkspaces", workspaces,
+            extension.IndexBuildTicks, handwritten.IndexBuildTicks,
             ["Query: complete public call including query preparation, traversal, filters and real pair writes.",
              "FrameTotal: actual writes and scheduled maintenance/query/consumption to final completion, or direct query plus consumption.",
              "MaintenanceAndQuery: writes excluded; schedule maintenance and query, complete filled output; consumption follows outside this boundary.",
@@ -117,6 +128,8 @@ public static class RelationsMeasurements
              "Live counts root topology; Addressed counts the high-water node address range including reusable entries; Capacity counts backing arrays.",
              "LeafMapKeyValues counts live Entity/int payload; entry capacity is separate; dictionary management and object headers enter actual allocation and process memory.",
              "Partition payload includes node pairs, counts, offsets and nonempty partition indices; access-data arrays are separate.",
+             "Workspaces records each actual World/input/pair/contact workspace once with its construction time; static warm sides reuse the shared workspace sequentially, updating sides and cold runs construct independent workspaces.",
+             "Side memory records each algorithm's own tree, summaries, counters and scheduled output resources; workspace array capacities and existing ECS key buckets are reported with the workspace.",
              "FrameAllocatedBytes includes the whole actual query/consumption frame around the selected primary boundary, across all workers.",
              "Allocation counters start after before-frame memory/processor observations and end before after-frame observations; report objects and observations are outside this range.",
              "World, Scheduler, query/observer data, object headers and pooled child handles enter measured allocations/Managed/WorkingSet."],
@@ -134,6 +147,8 @@ public static class RelationsMeasurements
     {
         int frames = input.ChangesEveryFrame ? 8 : 1;
         (Entity, Entity)[] result = [];
+        int[] contacts = new int[relation.ContactCounts.Length];
+        float[] depths = new float[relation.Depths.Length];
         for (int frame = 0; frame < frames; frame++)
         {
             if (input.ChangesEveryFrame)
@@ -144,21 +159,23 @@ public static class RelationsMeasurements
                 handwritten.ScheduleMaintenance().Complete();
             }
             relation.Query();
-            handwritten.Query();
             relation.Consume();
-            handwritten.Consume();
             result = relation.Pairs.ToArray();
+            relation.ContactCounts.CopyTo(contacts);
+            relation.Depths.CopyTo(depths);
+            handwritten.Query();
+            handwritten.Consume();
             var expected = handwritten.Pairs.ToArray();
             Array.Sort(result, PairComparer.Instance);
             Array.Sort(expected, PairComparer.Instance);
             if (!result.AsSpan().SequenceEqual(expected) ||
-                !relation.ContactCounts.SequenceEqual(handwritten.ContactCounts) ||
-                !DepthsEqual(relation.Depths, handwritten.Depths))
+                !contacts.AsSpan().SequenceEqual(handwritten.ContactCounts) ||
+                !DepthsEqual(depths, handwritten.Depths))
                 throw new InvalidOperationException($"Public rows or consumption differ for {input.Id}, frame {frame}: relation={result.Length}, handwritten={expected.Length}");
         }
         return new(true, frames, result.Length, result.Take(16).Select(pair => new PairRow(pair.Item1.Index,
             pair.Item1.Generation, pair.Item2.Index, pair.Item2.Generation)).ToArray(),
-            relation.ContactCounts.ToArray(), relation.Depths.ToArray());
+            contacts, depths);
     }
 
     private static bool DepthsEqual(ReadOnlySpan<float> first, ReadOnlySpan<float> second)
