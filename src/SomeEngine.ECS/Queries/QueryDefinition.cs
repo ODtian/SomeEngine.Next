@@ -1,6 +1,7 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Registry;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Queries;
 
@@ -75,13 +76,21 @@ public sealed class QueryDefinition
     }
 
     /// <summary>Adds component read access while retaining this query's membership conditions.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public QueryDefinition WithOptionalRead<T>() where T : struct
+    {
+        int componentId = ComponentMetadata<T>.Id;
+        foreach (QueryDataAccess access in _dataAccesses)
+            if (access.ComponentId == componentId && access.Access.CanRead())
+                return this;
+        return AddOptionalRead<T>();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private QueryDefinition AddOptionalRead<T>() where T : struct
     {
         QueryableTypeInfo info = QueryableTypeInfo.For<T>();
         info.Validate(QueryTermKind.Optional, QueryAccess.Read, QueryTermFilter.None);
-        foreach (QueryDataAccess access in _dataAccesses)
-            if (access.ComponentId == info.ComponentId && access.Access.CanRead())
-                return this;
         foreach (QueryTerm term in _terms)
             if (term.ComponentId == info.ComponentId && term.Kind == QueryTermKind.None)
                 return this;

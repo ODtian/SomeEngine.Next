@@ -1,6 +1,7 @@
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Benchmarks.Relations.Bitmap;
 
@@ -23,10 +24,15 @@ public readonly struct FixedCandidatePairs : IQueryRelationEnumerable<(Entity, E
     public QueryHandle GetQuery(int position) => _members;
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+        => Enumerate(_pairs, ref output);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool Enumerate<TOutput>((Entity, Entity)[] pairs, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        (Entity, Entity)[] pairs = _pairs;
         foreach (var pair in pairs)
         {
             if (!output.Add(in pair))

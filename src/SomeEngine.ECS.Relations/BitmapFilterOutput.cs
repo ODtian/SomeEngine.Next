@@ -13,14 +13,8 @@ internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, T
     where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     where TSelection : struct, IRelationSelection
 {
-    private BitmapRelation<TRelation, TImplementation, TComponent, TPermission> _relation;
+    internal BitmapRelation<TRelation, TImplementation, TComponent, TPermission> Relation;
     public TOutput Output;
-
-    public BitmapFilterOutput(BitmapRelation<TRelation, TImplementation, TComponent, TPermission> relation, TOutput output)
-    {
-        _relation = relation;
-        Output = output;
-    }
 
     public static bool ReadsComponentRows => true;
 
@@ -29,11 +23,11 @@ internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, T
     {
         if (TOutput.ReadsComponentRows)
         {
-            if (_relation.Matches(in pair) != TSelection.RequiresMatch)
+            if (Relation.Matches(in pair) != TSelection.RequiresMatch)
                 return true;
             return Output.Add(in pair);
         }
-        return _relation.Evaluate<TOutput, IdentityPermissionOutput<TOutput, TSelection>>(in pair, ref Output);
+        return Relation.Evaluate<TOutput, IdentityPermissionOutput<TOutput, TSelection>>(in pair, ref Output);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -41,14 +35,14 @@ internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, T
     {
         if (TOutput.ReadsComponentRows)
         {
-            if (_relation.Matches(in pair, in first, in second) != TSelection.RequiresMatch)
+            if (Relation.Matches(in pair, in first, in second) != TSelection.RequiresMatch)
                 return true;
             return Output.Add(in pair, in first, in second);
         }
         if (!BitmapRelation<TRelation, TImplementation, TComponent, TPermission>.TryReadComponents(
             in first, in second, out var firstValue, out var secondValue))
             return IdentityPermissionOutput<TOutput, TSelection>.Unmatched(in pair, ref Output);
-        return _relation.Evaluate<(Entity, Entity), TOutput, IdentityPermissionOutput<TOutput, TSelection>>(
+        return Relation.Evaluate<(Entity, Entity), TOutput, IdentityPermissionOutput<TOutput, TSelection>>(
             in pair, in firstValue.Value, in secondValue.Value, ref Output);
     }
 }

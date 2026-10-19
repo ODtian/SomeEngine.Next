@@ -85,6 +85,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | 5bf03d44 | Single已合入公共调用并闭合默认版本；仍有三次32B描述复制，位图每候选形成两份40B行 | Single构造以scoped in直接接收原描述字段并持有一次值副本；类型化公共点读取将成员匹配与单组件引用形成放在同一操作 | [optimized-17](evidence/ECS-Relations-2026-10-19/optimized-17/summary.md)、[实际外层与点读取红绿](evidence/ECS-Relations-2026-10-19/commands-r17-r18.json) |
 | 22fad2a6 | 共同typed point已缩为8B out；每候选仍清16B；scoped in构造另形成64B执行临时 | 内部点读返回单个ComponentReference，公开轻包装形成bool/out；固定数组直接foreach；执行局部直接赋已有字段 | [optimized-18](evidence/ECS-Relations-2026-10-19/optimized-18/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r18-r19.json) |
 | bb799424 | typed point已通过RAX返回；循环首引用/count仍有栈存取，默认仍两段32B描述 | 深point直接借用原QueryCursor输入；轻只读选择直接读取原readonly描述字段 | [optimized-19](evidence/ECS-Relations-2026-10-19/optimized-19/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r19-r20.json) |
+| 81478391 | 许可/首引用/count热段已对应手写，输出准备仍有两段24B，候选loop展开在World作用域 | 薄入口与独立数组core分开；filtered直接形成现有字段；已有读取轻复用与新定义创建分开 | [optimized-20](evidence/ECS-Relations-2026-10-19/optimized-20/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r20-r21.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -141,6 +142,10 @@ r18 的四个完整原生函数确认两侧共同调用同一typed point，成�
 r19 的30项反馈中15项通过：finite 6/18、default 6/9、character 3/3。默认三项剩余p95比为1.0005188644281373、1.0131834303687346、1.0035292589086611，全部按原精度保留判断。小规模mask1单向为1.1486469154803129/1.1834857251575210，中规模mask8双方为0.97966326262765147/0.99850081364069820。
 
 r19 的World点读取直接通过RAX返回8B引用，候选中的第五out-buffer和16B引用home清零均已收敛，数组迭代使用指针递增及dec/jne，原offset栈存取已消去。通用首引用仍跨第二次调用存入栈，手写保存在寄存器；通用同时持有World/查询状态/版本三个字段，后继让深point借用同一原QueryCursor，在该边界读取字段。默认直接局部赋值使frame由296B降为216B，清零由208B降为120B，描述为两段32B、输出为一段24B。六项关系与一项真实World检查均通过，源码及完整原生输出由同一证据文件关联。
+
+r20 的30项反馈中13项通过：finite 3/18、default 7/9、character 3/3。默认small dynamic50的median/p95为0.98155814828754229/1.0267195923929140，small dynamic90为1.0030674846625767/0.96410583166454256，其余七项严格通过。所有输入与原始帧保持同一配置。
+
+r20 单向接受热段的扩展为28条/105B，手写为29条/100B：首组件引用均在callee-saved寄存器中跨第二次point存活，count均为一次load及递增，许可均为load/test/je。通用从查询home取地址，手写保留查询地址；两侧输入与输出读取均按实际指令记录。剩余输出准备在通用World回调中先形成24B临时，再复制24B至filtered.Output，后继直接形成原filtered的Relation/Output字段。固定候选公开入口向独立core仅传原数组与ref具体输出，使World作用域控制状态的寿命留在循环调用侧。默认准备仍为216B栈/120B初始化；WithOptionalRead进一步用既有归一化CanRead事实形成轻复用入口，新定义路径保留原类型验证及构造。
 
 ## 执行与复现
 

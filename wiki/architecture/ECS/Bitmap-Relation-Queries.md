@@ -56,6 +56,8 @@ BitmapCollisionConsumption.CountContacts(bitmap.Pairs, contactCounts);
 
 身份绑定通过 `QueryCursor.TryReadRef<T>(Entity, out ComponentReference<T>)` 依次取得第一端组件引用和第二端组件引用，再由具体许可的 Evaluate 驱动原输出。手写固定候选使用相同两次公共点读取，直接执行业务位运算。组件读取和成员匹配的实际成本因此在双方完整调用中对应；已经持有 QueryRow 的来源继续复用行读取入口。
 
+固定候选例子的薄入口向独立数组循环传入原pairs与当前具体输出，查询作用域的数据留在调用侧；筛选临时值直接形成Relation和Output字段。实际候选和过滤状态各由原数据持有，循环继续按数组顺序读取身份并转发提前结束。
+
 `BitmapRelationTests` 通过真实 World 检查三种实现的单向及双方结果。动力学与头发业务例子组合后，单向许可得到十个实体对，双方许可得到九个实体对；`K–D` 的正向许可成立，反向许可将其从双方结果中筛出。其余九对与字面期望逐行对应。checked World 中的查询同时检查 Count、Any 与 Span 输出提前结束。
 
 ## 空间摘要的位含义
