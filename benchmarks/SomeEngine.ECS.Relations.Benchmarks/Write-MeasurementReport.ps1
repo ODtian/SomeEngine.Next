@@ -190,7 +190,9 @@ if ($controlMetrics.Count -gt 0) {
 }
 Write-Output "$Series`: cases=$($submissions.Count); required=$($required.Count); passed=$($passed.Count); approved=$($approved.Count); approvedRatioLimit=$ApprovedRatioLimit; $evidence"
 foreach ($group in ($required | Group-Object Class)) {
-    Write-Output ("CLASS {0}: {1}/{2}" -f $group.Name, @($group.Group | Where-Object Passed).Count, $group.Count)
+    Write-Output ("CLASS {0}: strict={1}/{3}; approved={2}/{3}; approvedRatioLimit={4:G17}" -f $group.Name,
+        @($group.Group | Where-Object Passed).Count, @($group.Group | Where-Object ApprovedPassed).Count,
+        $group.Count, $ApprovedRatioLimit)
 }
 foreach ($metric in ($required | Where-Object { !$_.Passed })) {
     Write-Output ("OVERHEAD {0} {1} median={2:G17} p95={3:G17}" -f
