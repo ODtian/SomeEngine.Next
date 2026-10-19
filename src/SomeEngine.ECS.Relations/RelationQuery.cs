@@ -38,11 +38,11 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
     private bool EnumerateBoundQuery<TOutput>(ref TOutput output, uint? lastSystemVersion)
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
-        World world = Enumerable.World;
-        int queryCount = Enumerable.QueryCount;
+        World world = _enumerable.World;
+        int queryCount = _enumerable.QueryCount;
         if (queryCount == 1 && TEnumerable.ReadsFromSingleQuery)
         {
-            QueryDefinition definition = Enumerable.AddReads(world.GetQueryDefinition(Enumerable.GetQuery(0)), 0);
+            QueryDefinition definition = _enumerable.AddReads(world.GetQueryDefinition(_enumerable.GetQuery(0)), 0);
             if (!definition.CanWrite)
                 return EnumerateSingle(definition, ref output, lastSystemVersion);
         }
@@ -93,7 +93,7 @@ public readonly struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TR
     private bool EnumerateSingle<TOutput>(QueryDefinition definition, ref TOutput output, uint? lastSystemVersion)
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
-        World world = Enumerable.World;
+        World world = _enumerable.World;
         QueryHandle query = world.Query(definition);
         SingleExecution<TOutput> execution;
         execution.Enumerable = _enumerable;

@@ -75,7 +75,7 @@ public readonly ref struct QueryCursor
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryReadRef<T>(Entity entity, out ComponentReference<T> component) where T : struct
     {
-        component = _world.ReadEntityQueryRef<T>(_plan, entity, LastSystemVersion);
+        component = World.ReadEntityQueryRef<T>(in this, entity);
         return component.HasValue;
     }
 

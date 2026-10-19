@@ -84,6 +84,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | 92d8b230 | Bound回退清零已裁剪；Single仍独立清120B、复制32B描述两次并判断可空版本 | 明确内联现有Single，在轻入口继续合并普通调用的版本与执行准备 | [optimized-16](evidence/ECS-Relations-2026-10-19/optimized-16/summary.md)、[外层原生与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r16-r17.json) |
 | 5bf03d44 | Single已合入公共调用并闭合默认版本；仍有三次32B描述复制，位图每候选形成两份40B行 | Single构造以scoped in直接接收原描述字段并持有一次值副本；类型化公共点读取将成员匹配与单组件引用形成放在同一操作 | [optimized-17](evidence/ECS-Relations-2026-10-19/optimized-17/summary.md)、[实际外层与点读取红绿](evidence/ECS-Relations-2026-10-19/commands-r17-r18.json) |
 | 22fad2a6 | 共同typed point已缩为8B out；每候选仍清16B；scoped in构造另形成64B执行临时 | 内部点读返回单个ComponentReference，公开轻包装形成bool/out；固定数组直接foreach；执行局部直接赋已有字段 | [optimized-18](evidence/ECS-Relations-2026-10-19/optimized-18/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r18-r19.json) |
+| bb799424 | typed point已通过RAX返回；循环首引用/count仍有栈存取，默认仍两段32B描述 | 深point直接借用原QueryCursor输入；轻只读选择直接读取原readonly描述字段 | [optimized-19](evidence/ECS-Relations-2026-10-19/optimized-19/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r19-r20.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -136,6 +137,10 @@ r17 的12项反馈中3项通过：默认small dynamic10为0.99429073342116825/0.
 r18 的30个反馈场景均完成等价核对，5项通过严格判断：finite 2/18、default 0/9、character 3/3。三项角色键的原精度比值分别为0.97809878844361609/0.95980235042735063、0.97042172944079652/0.97734208970487202、0.97680443499685976/0.96925287715227315。中规模mask8双方的实际比值为1.2490853752267348/1.2400116983307163，该项原样保留。
 
 r18 的四个完整原生函数确认两侧共同调用同一typed point，成功写8B引用并返回bool。通用每候选清零从96B缩为16B，第一组件引用跨第二次调用存活，许可按方向直接load/test/je；组件读取成功后的旧bool合流也已消去。剩余offset栈存取、count双读及两份引用home初始化与手写逐项记录。默认scoped in构造实际产生64B执行临时，frame与清零各比r17多32B，后继直接初始化执行局部的三个字段。内部点读进一步用既有ComponentReference的HasValue表达存在性，以单值返回替代bool和out-buffer，公开TryReadRef包装继续保留；固定数组来源直接foreach原数组，保留身份复制与输出语义。
+
+r19 的30项反馈中15项通过：finite 6/18、default 6/9、character 3/3。默认三项剩余p95比为1.0005188644281373、1.0131834303687346、1.0035292589086611，全部按原精度保留判断。小规模mask1单向为1.1486469154803129/1.1834857251575210，中规模mask8双方为0.97966326262765147/0.99850081364069820。
+
+r19 的World点读取直接通过RAX返回8B引用，候选中的第五out-buffer和16B引用home清零均已收敛，数组迭代使用指针递增及dec/jne，原offset栈存取已消去。通用首引用仍跨第二次调用存入栈，手写保存在寄存器；通用同时持有World/查询状态/版本三个字段，后继让深point借用同一原QueryCursor，在该边界读取字段。默认直接局部赋值使frame由296B降为216B，清零由208B降为120B，描述为两段32B、输出为一段24B。六项关系与一项真实World检查均通过，源码及完整原生输出由同一证据文件关联。
 
 ## 执行与复现
 

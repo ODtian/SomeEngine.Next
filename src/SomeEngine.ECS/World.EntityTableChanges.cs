@@ -22,9 +22,9 @@ public partial class World
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    internal ComponentReference<T> ReadEntityQueryRef<T>(QueryState query, Entity entity, uint last) where T : struct
+    internal static ComponentReference<T> ReadEntityQueryRef<T>(scoped in QueryCursor query, Entity entity) where T : struct
     {
-        if (TryGetEntityQueryRecord(query, entity, last, out var record, out var match) &&
+        if (query.Owner.TryGetEntityQueryRecord(query.State, entity, query.LastSystemVersion, out var record, out var match) &&
             QueryAccessGuards.TryRequireReadAccess<T>(match, out int column))
             return new(in record.Chunk!.ComponentRows<T>(column)[record.RowInChunk]);
         return default;
