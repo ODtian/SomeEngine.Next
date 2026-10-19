@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 namespace SomeEngine.ECS.Relations;
 
 internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, TPermission, TOutput, TSelection>
-    : IQueryRelationOutput<(Entity, Entity)>, ICategoryPermissionOutput<TOutput>
+    : IQueryRelationOutput<(Entity, Entity)>
     where TRelation : struct, IRelation<TComponent, TComponent>
     where TImplementation : struct, IBitmapRelation<TRelation, TComponent, TPermission>
     where TComponent : struct
@@ -14,13 +14,11 @@ internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, T
     where TSelection : struct, IRelationSelection
 {
     private BitmapRelation<TRelation, TImplementation, TComponent, TPermission> _relation;
-    private (Entity, Entity) _pair;
     public TOutput Output;
 
     public BitmapFilterOutput(BitmapRelation<TRelation, TImplementation, TComponent, TPermission> relation, TOutput output)
     {
         _relation = relation;
-        _pair = default;
         Output = output;
     }
 
@@ -35,8 +33,7 @@ internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, T
                 return true;
             return Output.Add(in pair);
         }
-        _pair = pair;
-        return _relation.Evaluate(in pair, ref Output, ref this);
+        return _relation.Evaluate<TOutput, IdentityPermissionOutput<TOutput, TSelection>>(in pair, ref Output);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -48,13 +45,21 @@ internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, T
                 return true;
             return Output.Add(in pair, in first, in second);
         }
-        _pair = pair;
-        return _relation.Evaluate(in first, in second, ref Output, ref this);
+        return _relation.Evaluate<(Entity, Entity), TOutput, IdentityPermissionOutput<TOutput, TSelection>>(
+            in pair, in first, in second, ref Output);
     }
+}
+
+internal readonly struct IdentityPermissionOutput<TOutput, TSelection> : ICategoryPermissionOutput<(Entity, Entity), TOutput>
+    where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+    where TSelection : struct, IRelationSelection
+{
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Matched(scoped ref TOutput output) => !TSelection.RequiresMatch || output.Add(in _pair);
+    public static bool Matched(scoped in (Entity, Entity) pair, scoped ref TOutput output) =>
+        !TSelection.RequiresMatch || output.Add(in pair);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Unmatched(scoped ref TOutput output) => TSelection.RequiresMatch || output.Add(in _pair);
+    public static bool Unmatched(scoped in (Entity, Entity) pair, scoped ref TOutput output) =>
+        TSelection.RequiresMatch || output.Add(in pair);
 }

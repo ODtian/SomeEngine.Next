@@ -61,6 +61,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | dcf50ecc | 默认私有循环只使用First成员，但接收完整视图；同组件AddReads执行两次 | 私有循环直接接QueryCursor，入口一次Requires分类，同类型读取静态合并；恢复键收集的独立边界 | [optimized-9](evidence/ECS-Relations-2026-10-19/optimized-9/summary.md)、[构建、检查与caller读取](evidence/ECS-Relations-2026-10-19/commands-r9.json) |
 | fc2b9c2d | r9轻selector前仍构造216B视图；键收集与配对共享成员字段的长存活 | 轻selector内联后仅形成First24B，caller栈256B降为88B；薄构造器赋原字段，独立CollectKeys接收查询借用 | [optimized-10](evidence/ECS-Relations-2026-10-19/optimized-10/summary.md)、[构建、原生与成员检查](evidence/ECS-Relations-2026-10-19/commands-r10-r11.json) |
 | 87559c84 | 纯成员判断形成40B QueryRow；Contains全内联后两侧对子调用选择不同 | Contains复用同一World匹配，输出需要组件行时静态保留TryGetRow；共同bool匹配边界独立并复用一次EntityStore读取 | [optimized-11](evidence/ECS-Relations-2026-10-19/optimized-11/summary.md)、[构建、原生与许可检查](evidence/ECS-Relations-2026-10-19/commands-r11-r12.json) |
+| 89a59155 | 许可两方向直接test/je；pair中转有四次int写入、16B重读和回调this读取 | 无状态static abstract结果操作，原pair以scoped in直达输出；默认私有loop仅接members/predicate/output，共同Contains单次取得Store | [optimized-12](evidence/ECS-Relations-2026-10-19/optimized-12/summary.md)、[实际指令与检查](evidence/ECS-Relations-2026-10-19/commands-r12-r13.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -85,6 +86,8 @@ r10 实际指令确认轻selector收敛：caller仅形成First的24B，读取Req
 r11 的26个反馈场景完整保留。其中默认私有循环和手写的673B主段、175B内层、137条归一化操作、880B栈及三个共享推进/列绑定调用均对应；实例入口额外两条操作使主循环相对起点增加5B。实际默认比值仍有5%–9%差值，后续将私有循环输入改为显式成员与关系值，测量继续观察实际入口和布局的影响。键桶的内联成员判断中，扩展保留IsAlive/TryGetValue调用，手写展开IsAlive并直入FindValue；成员匹配保留独立bool边界，使双方进入同一具体实现。角色键tuple和输出字段继续具有同样紧凑形状。
 
 有限类别的结果消费接口为具体许可增加Evaluate回调，默认实现继续调用该许可自己的Matches。Builtin许可按方向进入Matched/Unmatched，原BitmapFilterOutput单持有当前身份和输出状态，组件链沿原scoped行转发。自定义完整目标类别许可的字面结果与既有六项位图行为共7项通过，检查队列为 `fd00d6ee4a6445ecb374592797908f36`。
+
+r12 在15项反馈中确认中/大角色键及小规模dynamic90通过严格判断。实际原生读取显示许可两个方向已直接test/je；当前pair仍在适配器中写四个int，接受后再读16B写输出。后继把输入改为scoped in，将结果操作改为static abstract无状态类型，原输出仍单持有。7项检查队列 `d153f245229045c1b700c0283f89615b` 通过。r12 的默认static入口准备由5条变为2条，手写为3条；键的四个成员检查均调用同一Contains函数，其中Store引用形成一次并复用。
 
 ## 执行与复现
 

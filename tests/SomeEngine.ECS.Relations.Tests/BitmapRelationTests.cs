@@ -264,8 +264,6 @@ public readonly struct WholeCategoryBitmap : IBitmapRelation<WholeCategoryContac
 
 public readonly struct WholeCategoryPermission : ICategoryPermission
 {
-    public static bool RequiresBothDirections => false;
-
     public static bool Matches(in CategoryBits first, in CategoryBits second) =>
         second.Categories != 0 && (first.AllowedCategories & second.Categories) == second.Categories;
 

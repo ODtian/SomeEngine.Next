@@ -30,6 +30,8 @@ internal static partial class RelationsSmoke
         Require(world.Within(bodies).Except(default(SameCharacterHair), default(HairCharacterIndex)).Count() == 5,
             "key membership-only output");
         Require(world.Within(bodies).Where(default(MutualCategories), default(BodyBitmap)).Count() == 6, "bitmap intersection");
+        Require(world.Within(bodies).Where(default(MutualCategories), default(ForwardedBodyBitmap)).Count() == 6,
+            "custom permission result callback");
 
         var contacts = Collision.Candidates<Body, BodyBoundsReader>(world, bodies,
                 Collision.Build<Body, BodyBoundsReader>(world, bodies, default), default)

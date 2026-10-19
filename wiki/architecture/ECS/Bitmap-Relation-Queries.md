@@ -11,7 +11,7 @@
 | `OneWayPermission` | `(first.AllowedCategories & second.Categories) != 0` | `true` | 正向条件与反向条件均为 true |
 | `MutualPermission` | `(first.AllowedCategories & second.Categories) != 0` | `(second.AllowedCategories & first.Categories) != 0` | 正向条件与反向条件均为 true |
 
-`ICategoryPermission.RequiresBothDirections` 声明操作采用上述一种许可语义；`Matches(in CategoryBits first, in CategoryBits second)` 实现已经形成的位数据判断，泛型 `Matches<TRelation,TComponent,TReader>(in relation,ref reader,in first,in second)` 实现按需读取组件的同一判断。库提供表中的两个具体 struct，MutualPermission 按两个方向短路调用 OneWayPermission，位交集公式由 `CategoryBits.Allows` 持有。实体位置来自最终输出行，因此 `Product` 保留输入角色，`Within` 与 `Between` 使用完整实体身份顺序。
+`Matches(in CategoryBits first, in CategoryBits second)` 实现已经形成的位数据判断，泛型 `Matches<TRelation,TComponent,TReader>(in relation,ref reader,in first,in second)` 实现按需读取组件的同一算法，Evaluate消费对应结果。库提供表中的两个具体struct，MutualPermission按两个方向短路调用OneWayPermission，位交集公式由`CategoryBits.Allows`持有。空间生成器为这两个具体类型关联对应的组证明，其余许可使用Unknown并在叶子调用自身匹配。实体位置来自最终输出行，因此`Product`保留输入角色，`Within`与`Between`使用完整实体身份顺序。
 
 ## 类型化实现
 
@@ -19,9 +19,9 @@
 
 两个标量读取替代原先整体 `Read` 投影。单向许可只读取第一位置的 AllowedCategories 和第二位置的 Categories，双方许可在正向成立后读取反向所需字段。具体读取器以 `ref TReader` 进入静态许可调用，其状态沿原具体实例传递。自定义许可在自己的两个 Matches 入口保持相同算法，空间未知组继续调用其具体许可。
 
-`ICategoryPermission.Evaluate<TPermission,TRelation,TComponent,TReader,TOutput,TResult>` 把具体匹配结果交给 `ICategoryPermissionOutput<TOutput>.Matched/Unmatched`。默认实现调用该具体许可的泛型 Matches；库内单向与双方实现按方向判断后直接进入对应结果回调。自定义许可沿其原有算法形成结果。`TOutput` 以 ref 进入回调，结果状态继续由原 BitmapFilterOutput 持有。
+`ICategoryPermission.Evaluate<TPermission,TRelation,TComponent,TReader,TItem,TOutput,TResult>` 把具体匹配结果交给 `ICategoryPermissionOutput<TItem,TOutput>.Matched/Unmatched`。默认实现调用该具体许可的泛型 Matches；库内单向与双方实现按方向判断后直接进入对应结果回调。自定义许可沿其原有算法形成结果。具体结果类型为无状态struct，Matched/Unmatched是static abstract操作；输入以scoped in传递，`TOutput`以scoped ref进入，结果状态继续由原BitmapFilterOutput持有。
 
-末端身份输出由同一 BitmapFilterOutput 保存当前pair并直接消费许可回调。需要向后续筛选转发组件行时，静态 ReadsComponentRows 选择原有Matches和借用行转发，行的有效期继续限定为当前Add。Where/Except由现有选择类型决定匹配或其余行的输出，提前结束继续返回原输出的 bool。
+末端身份输出把原pair的in参数直接交给具体结果操作。需要向后续筛选转发组件行时，静态 ReadsComponentRows 选择原有Matches和借用行转发，行的有效期继续限定为当前Add。Where/Except由现有选择类型决定匹配或其余行的输出，提前结束继续返回原输出的 bool。
 
 `BitmapRelationGenerator` 读取这三个类型符号，生成接受语义实例与具体实现实例的 `Where`、`Except`。返回类型为 `RelationQuery<BitmapFilter<TEnumerable,TRelation,TImplementation,TComponent,TPermission>,(Entity,Entity)>`，完整保留枚举、语义、读取器、组件、操作及输出的具体类型。`BitmapFilter` 保存普通查询描述；临时 `BitmapRelation` 在回调中通过 `TryReadRef<TComponent>()` 取得组件只读引用，再进入具体许可的泛型标量读取操作。
 

@@ -37,24 +37,25 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool Evaluate<TOutput, TResult>(in (Entity, Entity) pair, scoped ref TOutput output, scoped ref TResult result)
+    internal bool Evaluate<TOutput, TResult>(in (Entity, Entity) pair, scoped ref TOutput output)
         where TOutput : allows ref struct
-        where TResult : struct, ICategoryPermissionOutput<TOutput>, allows ref struct
+        where TResult : struct, ICategoryPermissionOutput<(Entity, Entity), TOutput>
     {
         if (!_query.TryGetRow(pair.Item1, out var first) || !_query.TryGetRow(pair.Item2, out var second))
-            return result.Unmatched(ref output);
-        return Evaluate(in first, in second, ref output, ref result);
+            return TResult.Unmatched(in pair, ref output);
+        return Evaluate<(Entity, Entity), TOutput, TResult>(in pair, in first, in second, ref output);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool Evaluate<TOutput, TResult>(scoped in QueryRow first, scoped in QueryRow second,
-        scoped ref TOutput output, scoped ref TResult result)
+    internal bool Evaluate<TItem, TOutput, TResult>(scoped in TItem item, scoped in QueryRow first, scoped in QueryRow second,
+        scoped ref TOutput output)
+        where TItem : allows ref struct
         where TOutput : allows ref struct
-        where TResult : struct, ICategoryPermissionOutput<TOutput>, allows ref struct
+        where TResult : struct, ICategoryPermissionOutput<TItem, TOutput>
     {
         if (!first.TryReadRef<TComponent>(out var firstValue) || !second.TryReadRef<TComponent>(out var secondValue))
-            return result.Unmatched(ref output);
-        return TPermission.Evaluate<TPermission, TRelation, TComponent, TImplementation, TOutput, TResult>(
-            in _relation, ref _implementation, in firstValue.Value, in secondValue.Value, ref output, ref result);
+            return TResult.Unmatched(in item, ref output);
+        return TPermission.Evaluate<TPermission, TRelation, TComponent, TImplementation, TItem, TOutput, TResult>(
+            in _relation, ref _implementation, in firstValue.Value, in secondValue.Value, in item, ref output);
     }
 }

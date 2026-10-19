@@ -1,9 +1,11 @@
 namespace SomeEngine.ECS.Relations;
 
 /// <summary>Consumes a concrete permission result while preserving the caller's output state.</summary>
-public interface ICategoryPermissionOutput<TOutput> where TOutput : allows ref struct
+public interface ICategoryPermissionOutput<TItem, TOutput>
+    where TItem : allows ref struct
+    where TOutput : allows ref struct
 {
-    bool Matched(scoped ref TOutput output);
+    static abstract bool Matched(scoped in TItem item, scoped ref TOutput output);
 
-    bool Unmatched(scoped ref TOutput output);
+    static abstract bool Unmatched(scoped in TItem item, scoped ref TOutput output);
 }
