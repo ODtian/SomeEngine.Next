@@ -45,6 +45,21 @@ public sealed class GenericQueryExecutionTests
     }
 
     [Fact]
+    public void RequiredComponentsFollowTheExecutingMemberQuery()
+    {
+        using var world = new World();
+        world.CreateEntity(new Position());
+        QueryDefinition definition = world.QueryDefinition().All<Position>().Build().WithOptionalRead<DisplayName>();
+        var query = world.Query(definition);
+        var execution = new RequiredNameComponents();
+
+        world.ExecuteQuery(query, ref execution);
+
+        Assert.True(execution.RequiresPosition);
+        Assert.False(execution.RequiresName);
+    }
+
+    [Fact]
     public void ChunkChangeReadsKeepOptionalRowsAndTheirWriteVersions()
     {
         using var world = new World();
@@ -134,6 +149,18 @@ public sealed class GenericQueryExecutionTests
                     if (changes.HasChanged(row))
                         entities.Add(chunk.GetEntity(row));
             }
+        }
+    }
+
+    private struct RequiredNameComponents : IQueryExecution
+    {
+        public bool RequiresPosition;
+        public bool RequiresName;
+
+        public void Execute(QueryCursor query)
+        {
+            RequiresPosition = query.Requires<Position>();
+            RequiresName = query.Requires<DisplayName>();
         }
     }
 

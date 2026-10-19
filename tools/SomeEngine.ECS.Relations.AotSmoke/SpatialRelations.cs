@@ -31,6 +31,8 @@ public readonly struct BodyBoundsReader : ICollisionBoundsReader<Body>
 
 public readonly struct DefaultContacts : IRelation<Body, Body>
 {
+    public static bool IsSymmetric => true;
+
     public bool Matches(in Body first, in Body second) =>
         first.Motion == MotionKind.Dynamic || second.Motion == MotionKind.Dynamic;
 }
@@ -54,5 +56,7 @@ public readonly struct MutualCategories : IRelation<Body, Body>
 
 public readonly struct BodyBitmap : IBitmapRelation<MutualCategories, Body, MutualPermission>
 {
-    public CategoryBits Read(in MutualCategories relation, in Body component) => component.Categories;
+    public ulong ReadCategories(in MutualCategories relation, in Body component) => component.Categories.Categories;
+
+    public ulong ReadAllowedCategories(in MutualCategories relation, in Body component) => component.Categories.AllowedCategories;
 }

@@ -11,13 +11,15 @@
 | `OneWayPermission` | `(first.AllowedCategories & second.Categories) != 0` | `true` | 正向条件与反向条件均为 true |
 | `MutualPermission` | `(first.AllowedCategories & second.Categories) != 0` | `(second.AllowedCategories & first.Categories) != 0` | 正向条件与反向条件均为 true |
 
-`ICategoryPermission.RequiresBothDirections` 声明操作采用上述一种许可语义；`Matches(in CategoryBits first, in CategoryBits second)` 实现对应判断。库提供表中的两个具体 struct。实体位置来自最终输出行，因此 `Product` 保留输入角色，`Within` 与 `Between` 使用完整实体身份顺序。
+`ICategoryPermission.RequiresBothDirections` 声明操作采用上述一种许可语义；`Matches(in CategoryBits first, in CategoryBits second)` 实现已经形成的位数据判断，泛型 `Matches<TRelation,TComponent,TReader>(in relation,ref reader,in first,in second)` 实现按需读取组件的同一判断。库提供表中的两个具体 struct，MutualPermission 按两个方向短路调用 OneWayPermission，位交集公式由 `CategoryBits.Allows` 持有。实体位置来自最终输出行，因此 `Product` 保留输入角色，`Within` 与 `Between` 使用完整实体身份顺序。
 
 ## 类型化实现
 
-`IBitmapRelation<TRelation,TComponent,TPermission>` 继承 `IRelationImplementation<TRelation>`。`TRelation` 是 `IRelation<TComponent,TComponent>`；具体实现通过 `Read(in relation, in component)` 返回 `CategoryBits`。读取器可把语义实例参数计入投影后的位数据。该关联声明：组件语义与具体位读取、许可操作形成相同判断。
+`IBitmapRelation<TRelation,TComponent,TPermission>` 继承 `IRelationImplementation<TRelation>` 和 `ICategoryBitsReader<TRelation,TComponent>`。`TRelation` 是 `IRelation<TComponent,TComponent>`；具体实现通过 `ReadCategories(in relation,in component)` 与 `ReadAllowedCategories(in relation,in component)` 分别返回两个 `ulong`。读取器可把语义实例参数计入投影后的位数据。该关联声明：组件语义与具体位读取、许可操作形成相同判断。
 
-`BitmapRelationGenerator` 读取这三个类型符号，生成接受语义实例与具体实现实例的 `Where`、`Except`。返回类型为 `RelationQuery<BitmapFilter<TEnumerable,TRelation,TImplementation,TComponent,TPermission>,(Entity,Entity)>`，完整保留枚举、语义、读取器、组件、操作及输出的具体类型。`BitmapFilter` 保存普通查询描述；临时 `BitmapRelation` 在回调中通过 `ReadRef<TComponent>()` 取得组件只读引用，再调用具体读取器与静态许可操作。
+两个标量读取替代原先整体 `Read` 投影。单向许可只读取第一位置的 AllowedCategories 和第二位置的 Categories，双方许可在正向成立后读取反向所需字段。具体读取器以 `ref TReader` 进入静态许可调用，其状态沿原具体实例传递。自定义许可在自己的两个 Matches 入口保持相同算法，空间未知组继续调用其具体许可。
+
+`BitmapRelationGenerator` 读取这三个类型符号，生成接受语义实例与具体实现实例的 `Where`、`Except`。返回类型为 `RelationQuery<BitmapFilter<TEnumerable,TRelation,TImplementation,TComponent,TPermission>,(Entity,Entity)>`，完整保留枚举、语义、读取器、组件、操作及输出的具体类型。`BitmapFilter` 保存普通查询描述；临时 `BitmapRelation` 在回调中通过 `TryReadRef<TComponent>()` 取得组件只读引用，再进入具体许可的泛型标量读取操作。
 
 位筛选补充组件的可选读取，参与集合保持原有成员含义。某个位置缺少该组件时关系判断为 false，`Except` 因而保留该行。计数、存在性、结果输出和提前结束沿用统一关系流程。
 
@@ -50,6 +52,6 @@ BitmapCollisionConsumption.CountContacts(bitmap.Pairs, contactCounts);
 
 ## 空间摘要的位含义
 
-`SomeEngine.Physics` 的具体类别摘要使用同一读取器与语义实例取得位值。节点字段、覆盖数量、正反组证明以及与角色键的组合由 [空间筛选下推](Spatial-Filtering.md) 说明。
+`SomeEngine.Physics` 的具体类别摘要使用同一读取器与语义实例读取两个标量，形成既有 CategoryBits 和相同节点布局。节点字段、覆盖数量、正反组证明以及与角色键的组合由 [空间筛选下推](Spatial-Filtering.md) 说明。
 
 实际编译产物中的直接位运算、受约束具体调用和生成入口见[bitmap 编译证据](../../../docs/ECS-Relations-Bitmap-IL-2026-10-19.md)。

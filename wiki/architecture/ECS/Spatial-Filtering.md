@@ -34,7 +34,7 @@
 
 同角色头发相等关系由此得到同键全覆盖、不同统一键、键缺失和混合组的对应结论。节点摘要只保存从组件派生的键信息，已有 ECS 键桶继续沿其原有生命周期维护。
 
-类别叶子调用同一个 `IBitmapRelation.Read(in relation,in component)` 得到 `CategoryBits`。分支保存 `CategoriesAny`、`CategoriesCommon`、`AllowedAny`、`AllowedCommon`，分别对有组件成员做 OR 和 AND。完整覆盖由 ComponentCount 与节点 MemberCount 比较取得。
+类别叶子通过同一个 `ICategoryBitsReader.ReadCategories(in relation,in component)` 和 `ReadAllowedCategories(in relation,in component)` 得到 `CategoryBits` 的两值。分支保存 `CategoriesAny`、`CategoriesCommon`、`AllowedAny`、`AllowedCommon`，分别对有组件成员做 OR 和 AND。完整覆盖由 ComponentCount 与节点 MemberCount 比较取得。
 
 | 具体组证明 | None 的条件 | All 的条件 | Unknown 的条件 |
 | --- | --- | --- | --- |

@@ -32,8 +32,7 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
     {
         if (!first.TryReadRef<TComponent>(out var firstValue) || !second.TryReadRef<TComponent>(out var secondValue))
             return false;
-        CategoryBits firstBits = _implementation.Read(in _relation, in firstValue.Value);
-        CategoryBits secondBits = _implementation.Read(in _relation, in secondValue.Value);
-        return TPermission.Matches(in firstBits, in secondBits);
+        return TPermission.Matches<TRelation, TComponent, TImplementation>(in _relation, ref _implementation,
+            in firstValue.Value, in secondValue.Value);
     }
 }

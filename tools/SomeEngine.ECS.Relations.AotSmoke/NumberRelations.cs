@@ -29,6 +29,8 @@ public readonly struct Total1(int minimum) : IRelation<Number<int>>
 
 public readonly struct Total2(int minimum) : IRelation<Number<int>, Number<int>>
 {
+    public static bool IsSymmetric => true;
+
     public bool Matches(in Number<int> first, in Number<int> second) => first.Value + second.Value >= minimum;
 }
 

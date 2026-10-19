@@ -43,6 +43,9 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
         string arguments = string.Join(", ", Enumerable.Range(0, arity).Select(i => $"in T{i + 1} {Positions[i]}"));
         text.AppendLine($"public interface IRelation<{components}>")
             .AppendLine("{");
+        if (arity == 2)
+            text.AppendLine("    /// <summary>Declares that exchanging two components of the same type preserves Matches.</summary>")
+                .AppendLine("    static virtual bool IsSymmetric => false;\n");
         text.AppendLine($"    bool Matches({arguments});");
         text.AppendLine("}\n");
     }

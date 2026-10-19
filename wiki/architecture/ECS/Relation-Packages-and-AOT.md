@@ -9,8 +9,8 @@
 | SomeEngine.Diagnostics | — | 统一检查支持 |
 | SomeEngine.Job.Contracts | — | Job 公共数据类型 |
 | SomeEngine.Job | Diagnostics、Job.Contracts | Scheduler、依赖和资源执行 |
-| SomeEngine.ECS | Job.Contracts | World、组件、查询、显式边、类型元数据；WithOptionalRead、TryReadRef、ReadRows与ComponentReference |
-| SomeEngine.ECS.Relations | ECS | 固定 1–8 元语义、绑定、筛选与积 |
+| SomeEngine.ECS | Job.Contracts | World、组件、查询、显式边、类型元数据；WithOptionalRead、TryReadRef、ReadRows、Requires、ComponentReference与chunk行版本读取 |
+| SomeEngine.ECS.Relations | ECS | 固定 1–8 元语义、绑定、筛选与积；二元IsSymmetric事实、具体类别标量读取与许可算法 |
 | SomeEngine.ECS.Systems | ECS、Job.Contracts、Job | typed/generated Job 访问和查询读取范围 |
 | SomeEngine.Physics | ECS.Relations、ECS.Systems | 空间树、维护、串行和并行输出 |
 | SomeEngine.ECS.SourceGen | — | analyzer DLL 与构建时生成入口 |

@@ -32,6 +32,8 @@
 
 二元普通语义另有接收 `EntityPairsWithin` 的生成薄入口，返回共享 `ComponentPairsWithin<TRelation,TFirst,TSecond>`。该枚举缓存外层行的组件引用，内层直接读取已经取得的行；身份换位时组件位置一同换位。Where、Except、计数、存在性与提前结束共用这条具体链。
 
+二元 `IRelation<TFirst,TSecond>.IsSymmetric` 是关系作者提供的静态语义事实，默认值为 false。当两个组件类型相同且作者声明 true，交换两个输入保持 Matches 结果，Within 因此按自然行顺序匹配，再将接受的身份对排列成完整 Entity 升序。默认运动规则的业务例子声明这一事实。其余关系按排序后的身份确定组件位置再调用 Matches。该能力由固定二元接口持有，生成入口继续薄转发。
+
 完整 Body/Hair 业务代码、13 个实体对及对应生成入口见 [二元关系业务例子](Relation-Query-Example.md)。
 
 通过 `IIndexedComponent<TKey>` 与既有键桶提供的可选实现见[键关系查询](Key-Relation-Queries.md)。
@@ -115,6 +117,8 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 ## 查询回调中的组件引用
 
 `QueryRow.TryReadRef<T>(out ComponentReference<T>)` 在一次访问声明查找后借用实际组件引用。`ComponentReference<T>.HasValue` 表达可选组件的存在性，`Value` 返回 `ref readonly T`。`QueryCursor.ReadRows<TFirst,TSecond>()` 沿原有行枚举取得成员，在块边界绑定这两个组件的可选列；`MoveNext(out row,out first,out second)` 同时交付原行及两个引用。读取声明由原查询的 `WithOptionalRead<T>()` 形成，成员、共享条件、enabled 和 Changed 仍使用原查询筛选。引用与枚举器的有效期均为当前 `World.ExecuteQuery` 回调。
+
+`QueryCursor.Requires<T>()` 从本次执行的原 QueryDefinition 读取必有事实：All 声明该组件，或整个 Any 集合只有该组件。二元 Within 在枚举入口读取两位置的事实并闭合 Required/Optional 组件模式，逐对匹配使用这一已有不变量。可选模式保留缺组件关系为 false 和 Except 保留该行的行为。定义继续由原 QueryState 持有。
 
 `Within(...).Where/Except(...)` 的二元组件入口直接使用这些已有行和引用。后续规则通过查询专用的 `IQueryRelationOutput` 和 `IQueryRelation` 转发借用行，公开终端仍通过 `IRelationOutput.Add(in identity)` 接收身份元组。固定候选、键桶和空间来源同样复用已取得的成员行；存储事实及边保持各自参与者来源和访问读取。
 

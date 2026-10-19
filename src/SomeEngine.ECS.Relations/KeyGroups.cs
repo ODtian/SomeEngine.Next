@@ -14,6 +14,7 @@ internal readonly ref struct KeyGroups<TComponent, TKey>
     private readonly HashSet<TKey> _keys;
     private readonly List<Entity> _missing;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public KeyGroups(World world, QueryCursor members)
     {
         _world = world;
@@ -28,6 +29,7 @@ internal readonly ref struct KeyGroups<TComponent, TKey>
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public KeyGroups(World world, QueryCursor members, QueryCursor access)
     {
         _world = world;

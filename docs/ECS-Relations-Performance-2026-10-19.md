@@ -54,12 +54,17 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | 22d9b1d3 | exclude仍处于热布尔数据流；普通组件、bitmap、key可在循环前选择同一接受策略 | 静态WhereSelection/ExceptSelection；过滤层仅持实际数据 | [optimized-4](evidence/ECS-Relations-2026-10-19/optimized-4/summary.md) |
 | 35e71c5a | 默认绑定第二参数在语义短路前定位；两侧原行遍历具有同一成员/版本行为 | ReadRows在块边界绑定可选列，引用按行索引借用；手写默认配对同用公开准备；bitmap缺失早返回后直接许可尾表达式 | [optimized-5](evidence/ECS-Relations-2026-10-19/optimized-5/summary.md)、[完整matrix-r5](evidence/ECS-Relations-2026-10-19/matrix-r5/summary.md) |
 | b68e892d | Native默认循环在排序和输出各读两次Entity；两个方向展开两套Has/Matches；顺序条件先物化三向数值 | 缓存外/内Entity；先选择有向组件引用后共用一次Matches；Precedes表达完整身份bool先后，手写同步采用相同准备 | [optimized-6](evidence/ECS-Relations-2026-10-19/optimized-6/summary.md) |
+| a40d6c75 | 键桶80B枚举复制与32B Current中转；维护逐行重复组件/版本读取；Tree getter多次调用 | MoveNext(out group)、原成员视图复用；chunk版本绑定与静态组合变化读取器；同类型几何/摘要变化共享，Tree局部引用 | [optimized-7](evidence/ECS-Relations-2026-10-19/optimized-7/summary.md)、[构建与红绿](evidence/ECS-Relations-2026-10-19/commands-r7.json)、[实际Native读取](evidence/ECS-Relations-2026-10-19/native-r7.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
 下一轮结构变化来自同一 NativeAOT 产物的指令定位：键桶枚举把相同成员视图保留成长期局部，挤占输出身份字段寄存器；`KeyGroups.MoveNext` 先写 Current 再由调用方读取。实现改为直接使用原成员视图和 `MoveNext(out group)`。筛选使用静态 `RequiresMatch` 直接选择接受分支，让具体许可的短路表达式进入实际控制流。维护把 Tree 引用保留在 Reconcile/Refit 调用局部，并通过 `ReadRowChanges<T>()` 在 chunk 边界绑定原版本跨度；组合筛选给回调提供具体变化读取器，原 `RowIndices` 继续形成成员集合。手写维护使用相同公共版本读取。
 
 新增公共版本读取的红检查队列为 `98eed6b306cf4c7991fe012c33768823`（公共成员尚待实现时的 CS1061），绿检查 `6212b321edd94f24afbb42b73bb595f5` 通过1项真实 World 行版本检查。关系桶与筛选队列 `2bafedde700a4ac88bb35bcb332a2775` 通过5项；维护及并行消费队列 `61d5cfc267384e9ba435cba3322d9687` 通过4项。这些检查均运行仓库行为规则，结果为0 violations。
+
+r7 的原生证据同时明确了已收敛的部分：键桶直接进入 HashSet.MoveNext 和 GetByIndex，80B枚举复制与32B Current中转均已消去；原来提前形成的身份tuple也已标量化为三个寄存器与一个栈字段，手写使用两个寄存器与两个栈字段。exclude只参与桶级接受选择，inner pair直接执行身份顺序、成员和输出。后续键改动因此集中在仍独立调用且复制24B输入/结果的KeyGroups构造，使用原构造器内联完成准备融合。
+
+r7 稀疏维护在小/中/大的 MaintenanceAndQuery 原精度比值分别为0.9479976090854751/0.913827655310621、0.9288389513108615/0.9190815542019042、0.925881086898036/0.9221554987415026，三个完整帧也通过同一严格判断。默认配对的下一处成本来自排序在Kind匹配之前执行以及两次HasValue；已有查询的Requires事实闭合必有模式，作者显式IsSymmetric事实允许先匹配再排序。有限类别的具体许可改用标量读取，单向按需取得两个字段，双方许可按两个方向短路，CategoryBits/摘要保持原布局。
 
 ## 执行与复现
 

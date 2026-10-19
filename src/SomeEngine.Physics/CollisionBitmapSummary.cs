@@ -80,7 +80,9 @@ public sealed class CollisionBitmapSummary<TRelation, TImplementation, TComponen
         {
             if (access.TryGetRow(value.Entity, out var row) && row.Has<TComponent>())
             {
-                CategoryBits bits = _implementation.Read(in _relation, in row.ReadRef<TComponent>());
+                ref readonly TComponent component = ref row.ReadRef<TComponent>();
+                var bits = new CategoryBits(_implementation.ReadCategories(in _relation, in component),
+                    _implementation.ReadAllowedCategories(in _relation, in component));
                 _nodes[node] = new CollisionBitmapData(1, bits.Categories, bits.Categories,
                     bits.AllowedCategories, bits.AllowedCategories);
             }
