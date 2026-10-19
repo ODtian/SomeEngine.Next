@@ -198,68 +198,144 @@ public sealed class CollisionMaintenanceTests
     }
 
     [Theory]
-    [InlineData(QueryTermFilter.Enabled, EnableChangeSource.World)]
-    [InlineData(QueryTermFilter.Disabled, EnableChangeSource.World)]
-    [InlineData(QueryTermFilter.Enabled, EnableChangeSource.Row)]
-    [InlineData(QueryTermFilter.Disabled, EnableChangeSource.Row)]
-    [InlineData(QueryTermFilter.Enabled, EnableChangeSource.Chunk)]
-    [InlineData(QueryTermFilter.Disabled, EnableChangeSource.Chunk)]
-    public void EnableMaskChangesRefreshMaintainedMembers(QueryTermFilter filter, EnableChangeSource source)
+    [InlineData(QueryTermFilter.Enabled)]
+    [InlineData(QueryTermFilter.Disabled)]
+    public void WorldEnableChangesRefreshMaintainedMembers(QueryTermFilter filter)
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        var a = world.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0) });
-        var b = world.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0.2f) });
-        world.Add(a, new CollisionActivity());
-        world.Add(b, new CollisionActivity());
-        bool membersEnabled = filter == QueryTermFilter.Enabled;
-        world.Disable<CollisionActivity>(membersEnabled ? b : a);
-        var definition = world.QueryDefinition().All<Body>();
-        var bodies = world.Query(membersEnabled
-            ? definition.Enabled<CollisionActivity>()
-            : definition.Disabled<CollisionActivity>());
-        var writes = world.Query(world.QueryDefinition().ReadWrite<CollisionActivity>());
-        Action<Entity, bool> setEnabled = source switch
-        {
-            EnableChangeSource.World => (entity, enabled) =>
-            {
-                if (enabled) world.Enable<CollisionActivity>(entity);
-                else world.Disable<CollisionActivity>(entity);
-            },
-            EnableChangeSource.Row => (entity, enabled) => world.ExecuteQuery(writes, query =>
-            {
-                foreach (var row in query.Rows)
-                    if (row.Entity == entity) row.SetComponentEnabled<CollisionActivity>(enabled);
-            }),
-            _ => (entity, enabled) => world.ExecuteQuery(writes, query =>
-            {
-                foreach (var chunk in query.Chunks)
-                    for (int row = 0; row < chunk.Count; row++)
-                        if (chunk.GetEntity(row) == entity) chunk.SetComponentEnabled<CollisionActivity>(row, enabled);
-            }),
-        };
-        var contacts = Collision.Candidates<Body, BodyBoundsReader>(world, bodies,
-            Collision.Build<Body, BodyBoundsReader>(world, bodies, default), default);
-        using var maintenance = contacts.CreateMaintenance(jobs);
+        using var data = new CollisionMemberData(filter);
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
-        maintenance.Schedule().Complete();
-        contacts.Enumerate(ref output);
+        data.Maintenance.Schedule().Complete();
+        data.Contacts.Enumerate(ref output);
         Assert.Empty(pairs);
 
-        setEnabled(b, membersEnabled);
-        maintenance.Schedule().Complete();
+        if (filter == QueryTermFilter.Enabled) data.World.Enable<CollisionActivity>(data.Second);
+        else data.World.Disable<CollisionActivity>(data.Second);
+        data.Maintenance.Schedule().Complete();
         pairs.Clear();
-        contacts.Enumerate(ref output);
-        Assert.Equal([(a, b)], pairs);
+        data.Contacts.Enumerate(ref output);
+        Assert.Equal([(data.First, data.Second)], pairs);
 
-        setEnabled(b, !membersEnabled);
-        maintenance.Schedule().Complete();
+        if (filter == QueryTermFilter.Enabled) data.World.Disable<CollisionActivity>(data.Second);
+        else data.World.Enable<CollisionActivity>(data.Second);
+        data.Maintenance.Schedule().Complete();
         pairs.Clear();
-        contacts.Enumerate(ref output);
+        data.Contacts.Enumerate(ref output);
         Assert.Empty(pairs);
-        world.ReleaseQuery(writes);
-        world.ReleaseQuery(bodies);
+    }
+
+    [Theory]
+    [InlineData(QueryTermFilter.Enabled)]
+    [InlineData(QueryTermFilter.Disabled)]
+    public void RowEnableChangesRefreshMaintainedMembers(QueryTermFilter filter)
+    {
+        using var data = new CollisionMemberData(filter);
+        var pairs = new List<(Entity, Entity)>();
+        var output = new PairList(pairs);
+        data.Maintenance.Schedule().Complete();
+        data.Contacts.Enumerate(ref output);
+        Assert.Empty(pairs);
+
+        data.World.ExecuteQuery(data.Writes, query =>
+        {
+            foreach (var row in query.Rows)
+                if (row.Entity == data.Second)
+                    row.SetComponentEnabled<CollisionActivity>(filter == QueryTermFilter.Enabled);
+        });
+        data.Maintenance.Schedule().Complete();
+        pairs.Clear();
+        data.Contacts.Enumerate(ref output);
+        Assert.Equal([(data.First, data.Second)], pairs);
+
+        data.World.ExecuteQuery(data.Writes, query =>
+        {
+            foreach (var row in query.Rows)
+                if (row.Entity == data.Second)
+                    row.SetComponentEnabled<CollisionActivity>(filter == QueryTermFilter.Disabled);
+        });
+        data.Maintenance.Schedule().Complete();
+        pairs.Clear();
+        data.Contacts.Enumerate(ref output);
+        Assert.Empty(pairs);
+    }
+
+    [Theory]
+    [InlineData(QueryTermFilter.Enabled)]
+    [InlineData(QueryTermFilter.Disabled)]
+    public void ChunkEnableChangesRefreshMaintainedMembers(QueryTermFilter filter)
+    {
+        using var data = new CollisionMemberData(filter);
+        var pairs = new List<(Entity, Entity)>();
+        var output = new PairList(pairs);
+        data.Maintenance.Schedule().Complete();
+        data.Contacts.Enumerate(ref output);
+        Assert.Empty(pairs);
+
+        data.World.ExecuteQuery(data.Writes, query =>
+        {
+            foreach (var chunk in query.Chunks)
+                foreach (int row in chunk.RowIndices)
+                    if (chunk.GetEntity(row) == data.Second)
+                        chunk.SetComponentEnabled<CollisionActivity>(row, filter == QueryTermFilter.Enabled);
+        });
+        data.Maintenance.Schedule().Complete();
+        pairs.Clear();
+        data.Contacts.Enumerate(ref output);
+        Assert.Equal([(data.First, data.Second)], pairs);
+
+        data.World.ExecuteQuery(data.Writes, query =>
+        {
+            foreach (var chunk in query.Chunks)
+                foreach (int row in chunk.RowIndices)
+                    if (chunk.GetEntity(row) == data.Second)
+                        chunk.SetComponentEnabled<CollisionActivity>(row, filter == QueryTermFilter.Disabled);
+        });
+        data.Maintenance.Schedule().Complete();
+        pairs.Clear();
+        data.Contacts.Enumerate(ref output);
+        Assert.Empty(pairs);
+    }
+
+    private sealed class CollisionMemberData : IDisposable
+    {
+        private readonly Scheduler _jobs;
+        private readonly QueryHandle _bodies;
+
+        public CollisionMemberData(QueryTermFilter filter)
+        {
+            _jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+            World = WorldJobs.CreateWorld(scheduler: _jobs);
+            First = World.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0) });
+            Second = World.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0.2f) });
+            World.Add(First, new CollisionActivity());
+            World.Add(Second, new CollisionActivity());
+            bool membersEnabled = filter == QueryTermFilter.Enabled;
+            World.Disable<CollisionActivity>(membersEnabled ? Second : First);
+            var definition = World.QueryDefinition().All<Body>();
+            _bodies = World.Query(membersEnabled
+                ? definition.Enabled<CollisionActivity>()
+                : definition.Disabled<CollisionActivity>());
+            Writes = World.Query(World.QueryDefinition().ReadWrite<CollisionActivity>());
+            Contacts = Collision.Candidates<Body, BodyBoundsReader>(World, _bodies,
+                Collision.Build<Body, BodyBoundsReader>(World, _bodies, default), default);
+            Maintenance = Contacts.CreateMaintenance(_jobs);
+        }
+
+        public World World { get; }
+        public Entity First { get; }
+        public Entity Second { get; }
+        public QueryHandle Writes { get; }
+        public RelationQuery<CollisionCandidates<Body, BodyBoundsReader>, (Entity, Entity)> Contacts { get; }
+        public CollisionMaintenance<Body, BodyBoundsReader, SpatialAll, GroupMatch> Maintenance { get; }
+
+        public void Dispose()
+        {
+            Maintenance.Dispose();
+            World.ReleaseQuery(Writes);
+            World.ReleaseQuery(_bodies);
+            World.Dispose();
+            _jobs.Dispose();
+        }
     }
 
     private readonly struct MoveBodyJob(World world, QueryHandle writes, Entity entity, CollisionBounds bounds,
@@ -301,13 +377,6 @@ public sealed class CollisionMaintenanceTests
             return true;
         }
     }
-}
-
-public enum EnableChangeSource
-{
-    World,
-    Row,
-    Chunk,
 }
 
 public struct CollisionActivity : IEnableableComponent;

@@ -91,12 +91,6 @@ public readonly ref struct QueryRow
         where T : struct, IEnableableComponent
     {
         int componentId = ComponentMetadata<T>.Id;
-        if (!_match.Archetype.HasComponent(componentId))
-        {
-            throw new InvalidOperationException(
-                $"{typeof(T).Name} was not present on the current query row.");
-        }
-
         _world.WriteEnabledId(Entity, componentId, enabled);
     }
 

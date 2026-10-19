@@ -231,12 +231,6 @@ public readonly ref struct QueryChunkView
     {
         RequireRow(row);
         int componentId = ComponentMetadata<T>.Id;
-        if (!_match.Archetype.HasComponent(componentId))
-        {
-            throw new InvalidOperationException(
-                $"{typeof(T).Name} was not present on the current query row.");
-        }
-
         _world.WriteEnabledId(_chunk.Entities[row], componentId, enabled);
     }
 
