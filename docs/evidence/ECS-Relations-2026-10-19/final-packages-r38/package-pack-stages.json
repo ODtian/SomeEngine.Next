@@ -1,0 +1,154 @@
+[
+  {
+    "Stage": "Pack:SomeEngine.Diagnostics",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:00:52.2379401Z",
+    "FinishedAtUtc": "2026-10-19T22:00:54.3125472Z",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "Pack:SomeEngine.Job.Contracts",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.Job.Contracts/SomeEngine.Job.Contracts.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:00:54.3569992Z",
+    "FinishedAtUtc": "2026-10-19T22:00:56.343947Z",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "Pack:SomeEngine.Job",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.Job/SomeEngine.Job.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:00:56.3499812Z",
+    "FinishedAtUtc": "2026-10-19T22:00:58.6449628Z",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.SourceGen",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:00:58.6484851Z",
+    "FinishedAtUtc": "2026-10-19T22:01:00.6553221Z",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.ECS/SomeEngine.ECS.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:01:00.6588781Z",
+    "FinishedAtUtc": "2026-10-19T22:01:03.1050188Z",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.Relations",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.ECS.Relations/SomeEngine.ECS.Relations.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:01:03.1088478Z",
+    "FinishedAtUtc": "2026-10-19T22:01:05.444275Z",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.Systems",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:01:05.4472083Z",
+    "FinishedAtUtc": "2026-10-19T22:01:07.8393952Z",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "Pack:SomeEngine.Physics",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.Physics/SomeEngine.Physics.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:01:07.8427912Z",
+    "FinishedAtUtc": "2026-10-19T22:01:10.2657023Z",
+    "ExitCode": 0
+  }
+]
