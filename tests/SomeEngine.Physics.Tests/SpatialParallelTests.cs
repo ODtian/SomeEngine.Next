@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Benchmarks.Relations.Spatial;
@@ -145,13 +146,16 @@ public sealed class SpatialParallelTests
         try
         {
             Assert.True(gate.Started.Wait(TimeSpan.FromSeconds(10)));
-            var move = new MoveBodyJob(world, writes, b, Box(5));
+            var move = new MoveBodyJob(world, writes, b, Box(5), gate);
             writer = ComponentJobAccess<Body>.ScheduleWrite(world, in move);
             gate.Release.Set();
             filled.Complete();
             writer.Complete();
             Assert.Equal(3, pairs.Count);
             Assert.Equal([(a, b), (a, c), (b, c)], Ordered(pairs.Pairs.ToArray()));
+            SpatialInputEvent[] events = gate.Events.ToArray();
+            Assert.Contains(SpatialInputEvent.ComponentRead, events);
+            Assert.Equal(SpatialInputEvent.WriterEntered, events[^1]);
 
             uint version = world.CurrentTick;
             JobHandle next = SpatialCollisionFrames.SchedulePairsParallel(maintenance, pairs, maintenance.Schedule(writer));
@@ -177,19 +181,21 @@ public sealed class SpatialParallelTests
         world.ReleaseQuery(bodies);
     }
 
-    private readonly struct MoveBodyJob(World world, QueryHandle writes, Entity entity, CollisionBounds bounds) : IJob
+    private readonly struct MoveBodyJob(World world, QueryHandle writes, Entity entity, CollisionBounds bounds,
+        SpatialReadGate gate) : IJob
     {
         public void Execute()
         {
-            var execution = new MoveBounds(entity, bounds);
+            var execution = new MoveBounds(entity, bounds, gate);
             world.ExecuteQuery(writes, ref execution);
         }
     }
 
-    private readonly struct MoveBounds(Entity entity, CollisionBounds bounds) : IQueryExecution
+    private readonly struct MoveBounds(Entity entity, CollisionBounds bounds, SpatialReadGate gate) : IQueryExecution
     {
         public void Execute(scoped QueryCursor query)
         {
+            gate.Events.Enqueue(SpatialInputEvent.WriterEntered);
             foreach (var row in query.Rows)
             {
                 if (row.Entity == entity)
@@ -211,8 +217,16 @@ public readonly struct PausingContacts(SpatialReadGate gate) : IRelation<Body, B
     public bool Matches(in Body first, in Body second)
     {
         gate.PauseOnce();
-        return true;
+        bool overlaps = first.Bounds.Overlaps(in second.Bounds);
+        gate.Events.Enqueue(SpatialInputEvent.ComponentRead);
+        return overlaps;
     }
+}
+
+public enum SpatialInputEvent
+{
+    ComponentRead,
+    WriterEntered,
 }
 
 public sealed class SpatialReadGate : IDisposable
@@ -220,6 +234,7 @@ public sealed class SpatialReadGate : IDisposable
     private int _entered;
     public ManualResetEventSlim Started { get; } = new();
     public ManualResetEventSlim Release { get; } = new();
+    public ConcurrentQueue<SpatialInputEvent> Events { get; } = new();
 
     public void PauseOnce()
     {

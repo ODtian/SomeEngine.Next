@@ -60,7 +60,7 @@ public sealed class GeneratedMetadataTests
     }
 
     [Fact]
-    public void ClosedSchemaKeepsEndpointRolesAndFirstReadValidation()
+    public void ClosedSchemaPreservesUndirectedEndpointRoles()
     {
         using var world = new World();
         var first = world.CreateEntity();
@@ -71,7 +71,22 @@ public sealed class GeneratedMetadataTests
 
         Assert.Equal(second, endpoints.EndpointA);
         Assert.Equal(first, endpoints.EndpointB);
+    }
+
+    [Fact]
+    public void ClosedSchemaEnforcesSelfEdgePolicy()
+    {
+        using var world = new World();
+        var first = world.CreateEntity();
+        var second = world.CreateEntity();
+        world.CreateRelation(second, first, new KnownLink<int>());
+
         Assert.Throws<InvalidOperationException>(() => world.CreateRelation(first, first, new KnownLink<int>()));
+    }
+
+    [Fact]
+    public void InvalidSchemaFailsOnFirstRead()
+    {
         Assert.Throws<InvalidOperationException>(() => RelationSchema.For<KnownInvalidLink>());
     }
 }

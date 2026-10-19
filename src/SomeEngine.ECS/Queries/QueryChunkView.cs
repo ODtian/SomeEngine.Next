@@ -237,8 +237,7 @@ public readonly ref struct QueryChunkView
                 $"{typeof(T).Name} was not present on the current query row.");
         }
 
-        int maskIndex = _match.Archetype.EnableMask(componentId);
-        _chunk.WriteEnabled(maskIndex, row, enabled);
+        _world.WriteEnabledId(_chunk.Entities[row], componentId, enabled);
     }
 
     public DynamicBuffer<T> Buffer<T>(int row)

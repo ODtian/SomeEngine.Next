@@ -69,8 +69,9 @@ public partial class World
         return false;
     }
     /// <summary>
-    /// Observes table membership at its mutation source. The first batch includes existing live
-    /// entities; later batches contain only changed identities, including destroyed generations.
+    /// Observes table membership and enable masks at their mutation sources.
+    /// The first batch includes existing live entities; later batches contain only changed identities,
+    /// including destroyed generations.
     /// Changes in an aborted structural transaction are discarded with that transaction.
     /// </summary>
     public EntityTableChanges ObserveEntityTables()

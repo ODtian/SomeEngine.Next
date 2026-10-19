@@ -97,8 +97,7 @@ public readonly ref struct QueryRow
                 $"{typeof(T).Name} was not present on the current query row.");
         }
 
-        int maskIndex = _match.Archetype.EnableMask(componentId);
-        _chunk.WriteEnabled(maskIndex, _row, enabled);
+        _world.WriteEnabledId(Entity, componentId, enabled);
     }
 
     public bool TryRead<T>(out T value) where T : struct

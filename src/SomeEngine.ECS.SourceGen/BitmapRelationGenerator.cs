@@ -44,9 +44,9 @@ public sealed class BitmapRelationGenerator : IIncrementalGenerator
             string relation = FullName(arguments[0]);
             string component = FullName(arguments[1]);
             string permission = FullName(arguments[2]);
-            string access = IsPublic(type) ? "public" : "internal";
+            string access = RelationTypeSyntax.IsPublic(type) ? "public" : "internal";
             string row = "(global::SomeEngine.ECS.Entities.Entity, global::SomeEngine.ECS.Entities.Entity)";
-            var parameters = TypeParameters(type).ToArray();
+            var parameters = RelationTypeSyntax.TypeParameters(type).ToArray();
             string sourceType = "TEnumerable";
             while (parameters.Any(parameter => parameter.Name == sourceType))
                 sourceType += "Source";
@@ -69,7 +69,7 @@ public sealed class BitmapRelationGenerator : IIncrementalGenerator
                     .Append("        where ").Append(sourceType).Append(" : struct, global::").Append(RelationsNamespace)
                     .Append(".IQueryRelationEnumerable<").Append(row).AppendLine(">");
                 foreach (var parameter in parameters)
-                    AppendConstraints(text, parameter);
+                    RelationTypeSyntax.AppendConstraints(text, parameter);
                 text.Append("        => new(new ").Append(binding).AppendLine("(source.Enumerable, relation, implementation));\n");
             }
             text.AppendLine("}");
@@ -79,24 +79,4 @@ public sealed class BitmapRelationGenerator : IIncrementalGenerator
     }
 
     private static string FullName(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-
-    private static IEnumerable<ITypeParameterSymbol> TypeParameters(INamedTypeSymbol type) =>
-        (type.ContainingType is null ? Enumerable.Empty<ITypeParameterSymbol>() : TypeParameters(type.ContainingType))
-        .Concat(type.TypeParameters);
-
-    private static bool IsPublic(INamedTypeSymbol type) =>
-        type.DeclaredAccessibility == Accessibility.Public && (type.ContainingType is null || IsPublic(type.ContainingType));
-
-    private static void AppendConstraints(StringBuilder text, ITypeParameterSymbol parameter)
-    {
-        var constraints = new List<string>();
-        if (parameter.HasUnmanagedTypeConstraint) constraints.Add("unmanaged");
-        else if (parameter.HasValueTypeConstraint) constraints.Add("struct");
-        else if (parameter.HasReferenceTypeConstraint) constraints.Add("class");
-        else if (parameter.HasNotNullConstraint) constraints.Add("notnull");
-        constraints.AddRange(parameter.ConstraintTypes.Select(FullName));
-        if (parameter.HasConstructorConstraint) constraints.Add("new()");
-        if (constraints.Count > 0)
-            text.Append("        where ").Append(parameter.Name).Append(" : ").AppendLine(string.Join(", ", constraints));
-    }
 }
