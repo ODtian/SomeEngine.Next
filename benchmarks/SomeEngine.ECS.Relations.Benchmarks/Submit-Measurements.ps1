@@ -33,14 +33,14 @@ try {
         $machineOrder = @($Machine)
         if ($caseIndex % 2 -eq 1) { [array]::Reverse($machineOrder) }
         $caseIndex++
-        foreach ($machine in $machineOrder) {
-            $caseId = if ($Machine.Count -gt 1) { "$($case.Id)-$($machine.ToLowerInvariant())" } else { $case.Id }
+        foreach ($configuration in $machineOrder) {
+            $caseId = if ($Machine.Count -gt 1) { "$($case.Id)-$($configuration.ToLowerInvariant())" } else { $case.Id }
             $report = Join-Path $reportDirectory "$caseId.json"
             [string[]]$arguments = @('--session', $Session) + $prefix + @('--mode', $Mode, '--case', $case.Class, '--size', $case.Size,
-                '--variant', $case.Variant, '--source', $sourceCommit, '--backend', $Backend, '--machine', $machine, '--output', $report)
+                '--variant', $case.Variant, '--source', $sourceCommit, '--backend', $Backend, '--machine', $configuration, '--output', $report)
             $submitted = & $queueTool @arguments | ConvertFrom-Json
             Write-Host "QUEUED $($submitted.Id) $caseId"
-            [pscustomobject]@{ CaseId = $caseId; InputCaseId = $case.Id; Machine = $machine; SourceCommit = $sourceCommit; Backend = $Backend;
+            [pscustomobject]@{ CaseId = $caseId; InputCaseId = $case.Id; Machine = $configuration; SourceCommit = $sourceCommit; Backend = $Backend;
                 Report = $report; QueueId = $submitted.Id; QueueDirectory = $submitted.OutputDirectory }
         }
     }
