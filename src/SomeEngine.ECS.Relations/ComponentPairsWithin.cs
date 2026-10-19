@@ -40,6 +40,7 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond, TSelecti
             (typeof(TFirst) == typeof(TSecond) || definition.Requires<TSecond>());
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool Enumerate<TPresence, TOutput>(QueryCursor members, TRelation predicate, ref TOutput output)
         where TPresence : struct, IRelationComponentPresence
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct

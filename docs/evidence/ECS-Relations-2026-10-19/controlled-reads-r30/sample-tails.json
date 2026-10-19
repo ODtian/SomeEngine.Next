@@ -1,0 +1,1236 @@
+[
+  {
+    "CaseId": "default-small-dynamic10",
+    "SourceCommit": "f1cdfbb98a76b4e7e1b6a4d0da87b23afa6449b0",
+    "Boundary": "Query",
+    "MedianRatio": 1.0027522935779816,
+    "P95Ratio": 0.9795973425960274,
+    "Frequency": 10000000,
+    "DataSharing": "SharedStaticWorkspace",
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "MedianMicroseconds": 109.3,
+        "P95Microseconds": 145.23999999999995,
+        "IqrMicroseconds": 9.525,
+        "StandardDeviationMicroseconds": 19.170515468150928,
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "ObservedProcessors": [
+          2
+        ],
+        "ChangedEndpoints": 0,
+        "TailCount": 13,
+        "Frame0TailCount": 0,
+        "TailByRound": [
+          {
+            "Round": 10,
+            "Count": 2
+          },
+          {
+            "Round": 11,
+            "Count": 2
+          },
+          {
+            "Round": 12,
+            "Count": 1
+          },
+          {
+            "Round": 13,
+            "Count": 1
+          },
+          {
+            "Round": 14,
+            "Count": 3
+          },
+          {
+            "Round": 17,
+            "Count": 1
+          },
+          {
+            "Round": 23,
+            "Count": 1
+          },
+          {
+            "Round": 30,
+            "Count": 2
+          }
+        ],
+        "TailBySideOrder": [
+          {
+            "SideOrder": "E/H",
+            "Count": 8
+          },
+          {
+            "SideOrder": "H/E",
+            "Count": 5
+          }
+        ],
+        "TailByFrame": [
+          {
+            "Frame": 1,
+            "Count": 1
+          },
+          {
+            "Frame": 2,
+            "Count": 2
+          },
+          {
+            "Frame": 3,
+            "Count": 2
+          },
+          {
+            "Frame": 4,
+            "Count": 3
+          },
+          {
+            "Frame": 5,
+            "Count": 4
+          },
+          {
+            "Frame": 7,
+            "Count": 1
+          }
+        ],
+        "FrameDistributions": [
+          {
+            "Frame": 0,
+            "Count": 31,
+            "MedianMicroseconds": 109.0,
+            "P95Microseconds": 128.75
+          },
+          {
+            "Frame": 1,
+            "Count": 31,
+            "MedianMicroseconds": 109.2,
+            "P95Microseconds": 141.2
+          },
+          {
+            "Frame": 2,
+            "Count": 31,
+            "MedianMicroseconds": 109.1,
+            "P95Microseconds": 149.65
+          },
+          {
+            "Frame": 3,
+            "Count": 31,
+            "MedianMicroseconds": 110.7,
+            "P95Microseconds": 159.25
+          },
+          {
+            "Frame": 4,
+            "Count": 31,
+            "MedianMicroseconds": 109.2,
+            "P95Microseconds": 168.95
+          },
+          {
+            "Frame": 5,
+            "Count": 31,
+            "MedianMicroseconds": 112.2,
+            "P95Microseconds": 148.1
+          },
+          {
+            "Frame": 6,
+            "Count": 31,
+            "MedianMicroseconds": 109.6,
+            "P95Microseconds": 124.25
+          },
+          {
+            "Frame": 7,
+            "Count": 31,
+            "MedianMicroseconds": 109.2,
+            "P95Microseconds": 135.9
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 109.6,
+            "P95Microseconds": 152.72999999999996
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 109.2,
+            "P95Microseconds": 139.295
+          }
+        ],
+        "TailSamples": [
+          {
+            "Round": 10,
+            "SideOrder": "E/H",
+            "Frame": 4,
+            "ElapsedTicks": 2051,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 10,
+            "SideOrder": "E/H",
+            "Frame": 5,
+            "ElapsedTicks": 1597,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 11,
+            "SideOrder": "H/E",
+            "Frame": 4,
+            "ElapsedTicks": 1830,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 11,
+            "SideOrder": "H/E",
+            "Frame": 5,
+            "ElapsedTicks": 1475,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 12,
+            "SideOrder": "E/H",
+            "Frame": 7,
+            "ElapsedTicks": 1827,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 13,
+            "SideOrder": "H/E",
+            "Frame": 5,
+            "ElapsedTicks": 1458,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 14,
+            "SideOrder": "E/H",
+            "Frame": 2,
+            "ElapsedTicks": 1584,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 14,
+            "SideOrder": "E/H",
+            "Frame": 4,
+            "ElapsedTicks": 1549,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 14,
+            "SideOrder": "E/H",
+            "Frame": 5,
+            "ElapsedTicks": 1487,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 17,
+            "SideOrder": "H/E",
+            "Frame": 2,
+            "ElapsedTicks": 1576,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 23,
+            "SideOrder": "H/E",
+            "Frame": 3,
+            "ElapsedTicks": 3077,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 30,
+            "SideOrder": "E/H",
+            "Frame": 1,
+            "ElapsedTicks": 1987,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 30,
+            "SideOrder": "E/H",
+            "Frame": 3,
+            "ElapsedTicks": 1755,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          }
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "MedianMicroseconds": 109.0,
+        "P95Microseconds": 148.26499999999996,
+        "IqrMicroseconds": 12.175,
+        "StandardDeviationMicroseconds": 25.504396994069136,
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "ObservedProcessors": [
+          2
+        ],
+        "ChangedEndpoints": 0,
+        "TailCount": 13,
+        "Frame0TailCount": 2,
+        "TailByRound": [
+          {
+            "Round": 4,
+            "Count": 1
+          },
+          {
+            "Round": 11,
+            "Count": 1
+          },
+          {
+            "Round": 13,
+            "Count": 2
+          },
+          {
+            "Round": 14,
+            "Count": 3
+          },
+          {
+            "Round": 17,
+            "Count": 2
+          },
+          {
+            "Round": 19,
+            "Count": 1
+          },
+          {
+            "Round": 21,
+            "Count": 1
+          },
+          {
+            "Round": 23,
+            "Count": 1
+          },
+          {
+            "Round": 30,
+            "Count": 1
+          }
+        ],
+        "TailBySideOrder": [
+          {
+            "SideOrder": "E/H",
+            "Count": 5
+          },
+          {
+            "SideOrder": "H/E",
+            "Count": 8
+          }
+        ],
+        "TailByFrame": [
+          {
+            "Frame": 0,
+            "Count": 2
+          },
+          {
+            "Frame": 1,
+            "Count": 1
+          },
+          {
+            "Frame": 3,
+            "Count": 1
+          },
+          {
+            "Frame": 4,
+            "Count": 4
+          },
+          {
+            "Frame": 6,
+            "Count": 3
+          },
+          {
+            "Frame": 7,
+            "Count": 2
+          }
+        ],
+        "FrameDistributions": [
+          {
+            "Frame": 0,
+            "Count": 31,
+            "MedianMicroseconds": 109.0,
+            "P95Microseconds": 153.75
+          },
+          {
+            "Frame": 1,
+            "Count": 31,
+            "MedianMicroseconds": 109.0,
+            "P95Microseconds": 139.15
+          },
+          {
+            "Frame": 2,
+            "Count": 31,
+            "MedianMicroseconds": 108.7,
+            "P95Microseconds": 126.1
+          },
+          {
+            "Frame": 3,
+            "Count": 31,
+            "MedianMicroseconds": 111.9,
+            "P95Microseconds": 126.35
+          },
+          {
+            "Frame": 4,
+            "Count": 31,
+            "MedianMicroseconds": 111.9,
+            "P95Microseconds": 153.25
+          },
+          {
+            "Frame": 5,
+            "Count": 31,
+            "MedianMicroseconds": 110.8,
+            "P95Microseconds": 132.7
+          },
+          {
+            "Frame": 6,
+            "Count": 31,
+            "MedianMicroseconds": 111.5,
+            "P95Microseconds": 156.1
+          },
+          {
+            "Frame": 7,
+            "Count": 31,
+            "MedianMicroseconds": 108.9,
+            "P95Microseconds": 150.65
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 110.75,
+            "P95Microseconds": 144.23999999999998
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 108.9,
+            "P95Microseconds": 152.935
+          }
+        ],
+        "TailSamples": [
+          {
+            "Round": 4,
+            "SideOrder": "E/H",
+            "Frame": 7,
+            "ElapsedTicks": 2704,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 11,
+            "SideOrder": "H/E",
+            "Frame": 4,
+            "ElapsedTicks": 3502,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 13,
+            "SideOrder": "H/E",
+            "Frame": 4,
+            "ElapsedTicks": 1529,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 13,
+            "SideOrder": "H/E",
+            "Frame": 7,
+            "ElapsedTicks": 1548,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 14,
+            "SideOrder": "E/H",
+            "Frame": 0,
+            "ElapsedTicks": 1643,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 14,
+            "SideOrder": "E/H",
+            "Frame": 3,
+            "ElapsedTicks": 2041,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 14,
+            "SideOrder": "E/H",
+            "Frame": 6,
+            "ElapsedTicks": 1568,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 17,
+            "SideOrder": "H/E",
+            "Frame": 1,
+            "ElapsedTicks": 2733,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 17,
+            "SideOrder": "H/E",
+            "Frame": 4,
+            "ElapsedTicks": 1536,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 19,
+            "SideOrder": "H/E",
+            "Frame": 6,
+            "ElapsedTicks": 1554,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 21,
+            "SideOrder": "H/E",
+            "Frame": 6,
+            "ElapsedTicks": 1860,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 23,
+            "SideOrder": "H/E",
+            "Frame": 4,
+            "ElapsedTicks": 1490,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 30,
+            "SideOrder": "E/H",
+            "Frame": 0,
+            "ElapsedTicks": 2444,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "CaseId": "default-large-dynamic50",
+    "SourceCommit": "f1cdfbb98a76b4e7e1b6a4d0da87b23afa6449b0",
+    "Boundary": "Query",
+    "MedianRatio": 1.000444199886875,
+    "P95Ratio": 0.935634202651869,
+    "Frequency": 10000000,
+    "DataSharing": "SharedStaticWorkspace",
+    "Sides": [
+      {
+        "Side": "relation",
+        "Samples": 248,
+        "MedianMicroseconds": 32544.85,
+        "P95Microseconds": 44019.325,
+        "IqrMicroseconds": 5352.275,
+        "StandardDeviationMicroseconds": 4772.932504199553,
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "ObservedProcessors": [
+          2
+        ],
+        "ChangedEndpoints": 0,
+        "TailCount": 13,
+        "Frame0TailCount": 1,
+        "TailByRound": [
+          {
+            "Round": 16,
+            "Count": 1
+          },
+          {
+            "Round": 18,
+            "Count": 2
+          },
+          {
+            "Round": 19,
+            "Count": 1
+          },
+          {
+            "Round": 21,
+            "Count": 1
+          },
+          {
+            "Round": 22,
+            "Count": 1
+          },
+          {
+            "Round": 23,
+            "Count": 1
+          },
+          {
+            "Round": 24,
+            "Count": 2
+          },
+          {
+            "Round": 26,
+            "Count": 1
+          },
+          {
+            "Round": 27,
+            "Count": 3
+          }
+        ],
+        "TailBySideOrder": [
+          {
+            "SideOrder": "E/H",
+            "Count": 7
+          },
+          {
+            "SideOrder": "H/E",
+            "Count": 6
+          }
+        ],
+        "TailByFrame": [
+          {
+            "Frame": 0,
+            "Count": 1
+          },
+          {
+            "Frame": 1,
+            "Count": 3
+          },
+          {
+            "Frame": 2,
+            "Count": 1
+          },
+          {
+            "Frame": 3,
+            "Count": 2
+          },
+          {
+            "Frame": 4,
+            "Count": 3
+          },
+          {
+            "Frame": 7,
+            "Count": 3
+          }
+        ],
+        "FrameDistributions": [
+          {
+            "Frame": 0,
+            "Count": 31,
+            "MedianMicroseconds": 31930.0,
+            "P95Microseconds": 40203.45
+          },
+          {
+            "Frame": 1,
+            "Count": 31,
+            "MedianMicroseconds": 33660.8,
+            "P95Microseconds": 47079.7
+          },
+          {
+            "Frame": 2,
+            "Count": 31,
+            "MedianMicroseconds": 32641.1,
+            "P95Microseconds": 39650.6
+          },
+          {
+            "Frame": 3,
+            "Count": 31,
+            "MedianMicroseconds": 32456.7,
+            "P95Microseconds": 43968.85
+          },
+          {
+            "Frame": 4,
+            "Count": 31,
+            "MedianMicroseconds": 33817.6,
+            "P95Microseconds": 46330.15
+          },
+          {
+            "Frame": 5,
+            "Count": 31,
+            "MedianMicroseconds": 31477.8,
+            "P95Microseconds": 39181.15
+          },
+          {
+            "Frame": 6,
+            "Count": 31,
+            "MedianMicroseconds": 32774.5,
+            "P95Microseconds": 40989.8
+          },
+          {
+            "Frame": 7,
+            "Count": 31,
+            "MedianMicroseconds": 32687.5,
+            "P95Microseconds": 45215.5
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 32314.25,
+            "P95Microseconds": 44019.325
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 32625.0,
+            "P95Microseconds": 43575.735
+          }
+        ],
+        "TailSamples": [
+          {
+            "Round": 16,
+            "SideOrder": "E/H",
+            "Frame": 4,
+            "ElapsedTicks": 568990,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 18,
+            "SideOrder": "E/H",
+            "Frame": 2,
+            "ElapsedTicks": 462332,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 18,
+            "SideOrder": "E/H",
+            "Frame": 4,
+            "ElapsedTicks": 465654,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 19,
+            "SideOrder": "H/E",
+            "Frame": 7,
+            "ElapsedTicks": 462295,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 21,
+            "SideOrder": "H/E",
+            "Frame": 0,
+            "ElapsedTicks": 506005,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 22,
+            "SideOrder": "E/H",
+            "Frame": 1,
+            "ElapsedTicks": 500785,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 23,
+            "SideOrder": "H/E",
+            "Frame": 4,
+            "ElapsedTicks": 460949,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 24,
+            "SideOrder": "E/H",
+            "Frame": 1,
+            "ElapsedTicks": 461811,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 24,
+            "SideOrder": "E/H",
+            "Frame": 3,
+            "ElapsedTicks": 441371,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 26,
+            "SideOrder": "E/H",
+            "Frame": 7,
+            "ElapsedTicks": 501280,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 27,
+            "SideOrder": "H/E",
+            "Frame": 1,
+            "ElapsedTicks": 479783,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 27,
+            "SideOrder": "H/E",
+            "Frame": 3,
+            "ElapsedTicks": 479361,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 27,
+            "SideOrder": "H/E",
+            "Frame": 7,
+            "ElapsedTicks": 442015,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          }
+        ]
+      },
+      {
+        "Side": "handwritten",
+        "Samples": 248,
+        "MedianMicroseconds": 32530.4,
+        "P95Microseconds": 47047.57999999997,
+        "IqrMicroseconds": 6286.375,
+        "StandardDeviationMicroseconds": 5583.095154909419,
+        "Gen0": 0.0,
+        "Gen1": 0.0,
+        "Gen2": 0.0,
+        "ObservedProcessors": [
+          2
+        ],
+        "ChangedEndpoints": 0,
+        "TailCount": 13,
+        "Frame0TailCount": 1,
+        "TailByRound": [
+          {
+            "Round": 3,
+            "Count": 1
+          },
+          {
+            "Round": 7,
+            "Count": 1
+          },
+          {
+            "Round": 10,
+            "Count": 1
+          },
+          {
+            "Round": 14,
+            "Count": 1
+          },
+          {
+            "Round": 18,
+            "Count": 1
+          },
+          {
+            "Round": 21,
+            "Count": 1
+          },
+          {
+            "Round": 23,
+            "Count": 1
+          },
+          {
+            "Round": 25,
+            "Count": 1
+          },
+          {
+            "Round": 26,
+            "Count": 2
+          },
+          {
+            "Round": 27,
+            "Count": 1
+          },
+          {
+            "Round": 28,
+            "Count": 1
+          },
+          {
+            "Round": 30,
+            "Count": 1
+          }
+        ],
+        "TailBySideOrder": [
+          {
+            "SideOrder": "E/H",
+            "Count": 7
+          },
+          {
+            "SideOrder": "H/E",
+            "Count": 6
+          }
+        ],
+        "TailByFrame": [
+          {
+            "Frame": 0,
+            "Count": 1
+          },
+          {
+            "Frame": 1,
+            "Count": 1
+          },
+          {
+            "Frame": 2,
+            "Count": 2
+          },
+          {
+            "Frame": 3,
+            "Count": 2
+          },
+          {
+            "Frame": 4,
+            "Count": 3
+          },
+          {
+            "Frame": 6,
+            "Count": 2
+          },
+          {
+            "Frame": 7,
+            "Count": 2
+          }
+        ],
+        "FrameDistributions": [
+          {
+            "Frame": 0,
+            "Count": 31,
+            "MedianMicroseconds": 31467.5,
+            "P95Microseconds": 38268.55
+          },
+          {
+            "Frame": 1,
+            "Count": 31,
+            "MedianMicroseconds": 34110.7,
+            "P95Microseconds": 43006.3
+          },
+          {
+            "Frame": 2,
+            "Count": 31,
+            "MedianMicroseconds": 32829.5,
+            "P95Microseconds": 46816.85
+          },
+          {
+            "Frame": 3,
+            "Count": 31,
+            "MedianMicroseconds": 34200.0,
+            "P95Microseconds": 46943.45
+          },
+          {
+            "Frame": 4,
+            "Count": 31,
+            "MedianMicroseconds": 32823.9,
+            "P95Microseconds": 51106.0
+          },
+          {
+            "Frame": 5,
+            "Count": 31,
+            "MedianMicroseconds": 32538.8,
+            "P95Microseconds": 41737.5
+          },
+          {
+            "Frame": 6,
+            "Count": 31,
+            "MedianMicroseconds": 31685.2,
+            "P95Microseconds": 45114.55
+          },
+          {
+            "Frame": 7,
+            "Count": 31,
+            "MedianMicroseconds": 32272.7,
+            "P95Microseconds": 47425.05
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 32287.9,
+            "P95Microseconds": 47032.35499999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 32716.85,
+            "P95Microseconds": 46270.30499999999
+          }
+        ],
+        "TailSamples": [
+          {
+            "Round": 3,
+            "SideOrder": "H/E",
+            "Frame": 4,
+            "ElapsedTicks": 500844,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 7,
+            "SideOrder": "H/E",
+            "Frame": 3,
+            "ElapsedTicks": 503796,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 10,
+            "SideOrder": "E/H",
+            "Frame": 7,
+            "ElapsedTicks": 500105,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 14,
+            "SideOrder": "E/H",
+            "Frame": 4,
+            "ElapsedTicks": 521276,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 18,
+            "SideOrder": "E/H",
+            "Frame": 6,
+            "ElapsedTicks": 508344,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 21,
+            "SideOrder": "H/E",
+            "Frame": 1,
+            "ElapsedTicks": 495758,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 23,
+            "SideOrder": "H/E",
+            "Frame": 4,
+            "ElapsedTicks": 554460,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 25,
+            "SideOrder": "H/E",
+            "Frame": 0,
+            "ElapsedTicks": 540163,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 26,
+            "SideOrder": "E/H",
+            "Frame": 2,
+            "ElapsedTicks": 475352,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 26,
+            "SideOrder": "E/H",
+            "Frame": 6,
+            "ElapsedTicks": 489923,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 27,
+            "SideOrder": "H/E",
+            "Frame": 7,
+            "ElapsedTicks": 487081,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 28,
+            "SideOrder": "E/H",
+            "Frame": 2,
+            "ElapsedTicks": 510039,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          },
+          {
+            "Round": 30,
+            "SideOrder": "E/H",
+            "Frame": 3,
+            "ElapsedTicks": 482611,
+            "ProcessorBefore": 2,
+            "ProcessorAfter": 2,
+            "Gen0": 0,
+            "Gen1": 0,
+            "Gen2": 0
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -190,6 +190,10 @@ r28当前原生五函数同时确认：Default候选体137条/673B逐条对应�
 
 后继准备调整使原持久成员查询在形成时声明该场景实际读取：finite为CollisionLayer，character为Hair，default/bitmap-space为Body，其余空间组合为Body与Hair。双方AddReads复用同一原定义，原Members持续持有同一QueryState与匹配数组；读取声明及匹配数据形成计入共同Setup及独立cold。每份工作区投影实际Terms/Access，具体范围见[测量配置](ECS-Relations-Measurement-Configuration.md)。引擎与手写核心、输入与采样继续沿e17。同一新Native产物先运行四项正式反馈与两项H1/H2同函数诊断，控制报告以中性字段单列Required=false，正式原精度判定独立保存。
 
+[controlled-reads-r30](evidence/ECS-Relations-2026-10-19/controlled-reads-r30/diagnostic.md)保存持久读取配置的四项正式反馈与两项中性控制，源码f1cdfbb98a76b4e7e1b6a4d0da87b23afa6449b0。全部实际结果等价，EH/HH逐帧分配均为0；finite两项严格通过，Default-S10/L50的median分别为1.0027522935779816、1.0004441998868749，p95为0.97959734259602738、0.93563420265186903。HH Default-L50同函数median/p95为1.0007473816222079/0.99614245750650265，Required=false。两类原始分布与当前读取持有调整的作用范围分别保存，正式严格门槛沿原值。
+
+r30的两侧Default World回调实码均为104B栈/24B初始化，均各调一次独立热函数；该共有边界与两项实测一并保留。后继只对ComponentPairsWithin私有核心增加AggressiveInlining提示，验证候选循环进入World回调后的实际调用/帧变化；原算法、值参数与手写函数继续沿现状，性能按新产物的两项反馈判断。
+
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：
