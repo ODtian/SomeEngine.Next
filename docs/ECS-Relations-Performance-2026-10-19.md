@@ -86,6 +86,7 @@ MainTicks从Main入口开始；FirstQueryTicks只包围该进程的首次查询�
 | 22fad2a6 | 共同typed point已缩为8B out；每候选仍清16B；scoped in构造另形成64B执行临时 | 内部点读返回单个ComponentReference，公开轻包装形成bool/out；固定数组直接foreach；执行局部直接赋已有字段 | [optimized-18](evidence/ECS-Relations-2026-10-19/optimized-18/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r18-r19.json) |
 | bb799424 | typed point已通过RAX返回；循环首引用/count仍有栈存取，默认仍两段32B描述 | 深point直接借用原QueryCursor输入；轻只读选择直接读取原readonly描述字段 | [optimized-19](evidence/ECS-Relations-2026-10-19/optimized-19/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r19-r20.json) |
 | 81478391 | 许可/首引用/count热段已对应手写，输出准备仍有两段24B，候选loop展开在World作用域 | 薄入口与独立数组core分开；filtered直接形成现有字段；已有读取轻复用与新定义创建分开 | [optimized-20](evidence/ECS-Relations-2026-10-19/optimized-20/summary.md)、[实际四函数与聚焦检查](evidence/ECS-Relations-2026-10-19/commands-r20-r21.json) |
+| 9f749801 | 独立数组core接受热段30条/101B，手写29条/100B；每候选多一次输出引用探测及提前地址形成 | core以单一局部具体输出执行整个候选循环，finally回写原输出；普通调用、异常和提前结束沿同一回写范围 | [optimized-21](evidence/ECS-Relations-2026-10-19/optimized-21/summary.md)、[实际四函数与7项行为](evidence/ECS-Relations-2026-10-19/commands-r21-r22.json) |
 
 每份原始记录包含其实际完整提交。公开行为检查覆盖原成员、异型/可选组件位置、Where/Except、字面结果、ref输出与提前结束；[交付索引](ECS-Relations-Delivery-2026-10-19.md)列出实际文件。最终包、生成物与Native消费链沿[实际包刷新入口](ECS-Relations-Packages-AOT-2026-10-19.md)对应代码。
 
@@ -147,13 +148,18 @@ r20 的30项反馈中13项通过：finite 3/18、default 7/9、character 3/3。�
 
 r20 单向接受热段的扩展为28条/105B，手写为29条/100B：首组件引用均在callee-saved寄存器中跨第二次point存活，count均为一次load及递增，许可均为load/test/je。通用从查询home取地址，手写保留查询地址；两侧输入与输出读取均按实际指令记录。剩余输出准备在通用World回调中先形成24B临时，再复制24B至filtered.Output，后继直接形成原filtered的Relation/Output字段。固定候选公开入口向独立core仅传原数组与ref具体输出，使World作用域控制状态的寿命留在循环调用侧。默认准备仍为216B栈/120B初始化；WithOptionalRead进一步用既有归一化CanRead事实形成轻复用入口，新定义路径保留原类型验证及构造。
 
+r21 的30项反馈中11项通过：finite 3/18、default 6/9、character 2/3。独立core使World作用域状态留在调用侧；caller准备从360B降至280B，新增core为88B，二者峰值368B。filtered.Output从原输出直接复制一次24B。默认WithOptionalRead命中已有读取定义时在轻入口返回原值，创建路径独立；实际描述仍为两段32B、输出一段24B。
+
+原始调度记录补充了测量控制层的实际活动：r20提交30项用时9.1070587秒，其中13项在最后一次提交前开始执行。后续完整系列将Submit-Measurements自身作为公共队列独占准备任务：准备期间直接取得固定场景列表，显式使用同一session依序提交全部case及collect/export/report，然后退出。case在准备任务结束后开始，报告读取与计算沿预排CPU任务完成。每份系列保留queue-submission.json中的准备起止、session、源码和报告任务编号；原有系列保留其实际时间戳与原始判定。
+
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：
 
 ```powershell
-& F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 dotnet publish benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj -c Release -r win-x64 --no-restore '-p:SourceRevisionId=<实际提交>' -o benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish
-& benchmarks/SomeEngine.ECS.Relations.Benchmarks/Submit-Measurements.ps1 -QueueScript F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 -SourceCommit <实际提交> -Series <系列>
+[string[]]$publish = @('dotnet','publish','benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj','-c','Release','-r','win-x64','--no-restore','-p:SourceRevisionId=<实际提交>','-o','benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish')
+& F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 @publish
+& F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 --session <会话> pwsh -NoProfile -File benchmarks/SomeEngine.ECS.Relations.Benchmarks/Submit-Measurements.ps1 -QueueScript F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1 -Session <会话> -CollectReports -SourceCommit <实际提交> -Series <系列>
 ```
 
-MSBuild属性通过实际 `[string[]]` 参数传递；每项场景分别FIFO提交。`-Backend JIT` 使用同一Release托管入口并单独保存后端。`-Mode phases` 只选择持续更新场景并保存真实独立阶段。原生进程首结果由 [Measure-Startup.ps1](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/Measure-Startup.ps1) 按七对交替新进程采样。
+MSBuild属性通过实际 `[string[]]` 参数传递；每项场景分别FIFO提交。JIT在相同Release输出目录以`-p:PublishAot=false -p:SelfContained=false -p:SourceRevisionId=<实际提交>`构建普通托管入口，再以`-Backend JIT`单独提交系列；报告记录.NET10默认TieredCompilation/ReadyToRun及实际环境。`-Mode phases`只选择持续更新场景并保存真实独立阶段。原生进程首结果由[Measure-Startup.ps1](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/Measure-Startup.ps1)按七对交替新进程采样。

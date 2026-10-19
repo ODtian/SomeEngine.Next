@@ -68,3 +68,10 @@ $metrics | Export-Csv -LiteralPath (Join-Path $evidence 'metrics.csv') -NoTypeIn
 $memory | Export-Csv -LiteralPath (Join-Path $evidence 'memory.csv') -NoTypeInformation -Encoding utf8
 $cold | Export-Csv -LiteralPath (Join-Path $evidence 'cold.csv') -NoTypeInformation -Encoding utf8
 Write-Output "$Series`: cases=$($submissions.Count); required=$($required.Count); passed=$($passed.Count); $evidence"
+foreach ($group in ($required | Group-Object { ($_.CaseId -split '-')[0] })) {
+    Write-Output ("CLASS {0}: {1}/{2}" -f $group.Name, @($group.Group | Where-Object Passed).Count, $group.Count)
+}
+foreach ($metric in ($required | Where-Object { !$_.Passed })) {
+    Write-Output ("OVERHEAD {0} {1} median={2:G17} p95={3:G17}" -f
+        $metric.CaseId, $metric.Boundary, $metric.MedianRatio, $metric.P95Ratio)
+}

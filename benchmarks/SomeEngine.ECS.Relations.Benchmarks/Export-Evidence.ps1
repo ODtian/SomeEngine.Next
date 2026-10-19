@@ -7,6 +7,10 @@ $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $reports = Join-Path $repositoryRoot "artifacts/ecs-relations/measurements/$Series"
 $evidence = Join-Path (Join-Path $repositoryRoot $Destination) $Series
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+$submission = Join-Path $reports 'queue-submission.json'
+if (Test-Path -LiteralPath $submission) {
+    Copy-Item -LiteralPath $submission -Destination (Join-Path $evidence 'queue-submission.json') -Force
+}
 $submissions = Get-Content -Raw -LiteralPath (Join-Path $reports 'submissions.json') | ConvertFrom-Json
 $index = foreach ($submission in $submissions) {
     $report = Get-Content -Raw -LiteralPath $submission.Report | ConvertFrom-Json

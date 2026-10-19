@@ -20,3 +20,5 @@ $report.Comparisons
 同一 `.json.gz` 中 RawSamples 的计时与 Comparison 的原精度值直接对应。验收逐项使用扩展 median/手写 median ≤1.00 且扩展 p95/手写 p95 ≤1.00。统计与诊断数据分别保留，实际结果均包含自身后端与提交。
 
 [报告导出脚本](../../../benchmarks/SomeEngine.ECS.Relations.Benchmarks/Export-Evidence.ps1) 保留原始 JSON 字节并压缩；[汇总脚本](../../../benchmarks/SomeEngine.ECS.Relations.Benchmarks/Write-MeasurementReport.ps1) 读取同一数据形成可读表格。实际构建与性能命令通过公共队列执行，完整命令见 index.Queue；[运行器提交脚本](../../../benchmarks/SomeEngine.ECS.Relations.Benchmarks/Submit-Measurements.ps1) 接收 QueueScript 和实际 SourceCommit。
+
+受控完整系列同时保存queue-submission.json，将独占准备的起止、显式session、固定列表命令、实际源码和预排报告任务关联。逐case原始队列时间戳用于核对准备与实际测量的边界；早期反馈系列保留其原有提交方式和实际活动记录。

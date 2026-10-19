@@ -26,10 +26,12 @@
 
 Release NativeAOT 为必验后端，JIT 独立记录。每轮双方各执行8帧，共31轮，顺序E/H、H/E交替；预热16帧、冷初始化7对、每帧实际调用一次。最小场景仍执行真实 World/查询和成组候选，因此批次固定为1。分区容量16，实际分区数随树记录。Scheduler采用Fast，双方参数一致。
 
-JIT采用同一Release托管入口及.NET10默认TieredCompilation/ReadyToRun配置，环境项记录为default；双方在同一进程使用相同配置和上述固定预热/采样。JIT报告独立记录Backend、实际命令、源码、原始样本和阶段，NativeAOT验收使用其独立报告。
+JIT在同一Release输出目录以PublishAot=false、SelfContained=false及实际SourceRevisionId构建普通托管入口，采用.NET10默认TieredCompilation/ReadyToRun配置，环境项记录为default；双方在同一进程使用相同配置和上述固定预热/采样。JIT报告独立记录Backend、实际命令、源码、原始样本和阶段，NativeAOT验收使用其独立报告。
 
 测量前逐行核对完整Entity身份和真实消费数组，持续更新覆盖完整八帧周期。原始记录包含 ticks、先后顺序、输出数、接触次数／深度、全线程与当前线程分配、GC、Managed/WorkingSet。median及R-7 p95按原始精度计算，分别以扩展/手写≤1.00判断主场景及表中额外要求的完整帧。融合的遍历、筛选和输出属于同一个Query边界。
 
 内存按实际值数组payload记录Live、Addressed与Capacity；Tree.NodeCount为包含复用地址的范围，存活二叉拓扑由LeafCount形成。叶映射单列有效键值payload及entry容量，分区四数组、访问数组、输出容量、接触累计、维护访问与已有ECS键桶分列。对象头、字典管理、查询／观察者／Scheduler和租用句柄同时进入真实分配与进程内存指标。
 
 原始报告、每次优化前后结果及公共队列 result/stdout/stderr 保留并由最终证据索引链接。实际启动采用新进程独立观察；入口前的元数据初始化计入进程到首结果，Main和首次公共查询分别使用自身真实边界。后续源码优化完成后刷新同一八包feed/cache及实际包NativeAOT消费方。
+
+完整系列的提交准备本身作为公共队列独占任务执行，直接读取同一固定列表，并用显式Session将全部独立case及collect/export/report按FIFO提交后退出。实际测量在准备任务结束后开始；报告计算与读取按预排CPU任务执行。queue-submission.json记录准备起止、源码、session和报告任务，逐case队列记录继续保存实际起止。此执行控制保持上述输入、采样、预热和双侧实现配置。
