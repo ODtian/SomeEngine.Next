@@ -16,13 +16,16 @@ function Percentile([object[]]$Values, [double]$Fraction) {
 $analyses = foreach ($submission in $submissions) {
     $report = Get-Content -Raw -LiteralPath $submission.Report | ConvertFrom-Json
     foreach ($comparison in @($report.Comparisons | Where-Object { $_.Required -and !$_.Passed })) {
+        $completeFrame = $report.Input.Class -eq 'complete' -and $comparison.Boundary -eq 'FrameTotal'
+        $sourceBoundary = if ($completeFrame) { $report.Input.PrimaryBoundary } else { $comparison.Boundary }
+        $ticksProperty = if ($completeFrame) { 'FrameTicks' } else { 'ElapsedTicks' }
         $sides = foreach ($side in @('relation', 'handwritten')) {
             $distribution = $report.Comparisons | Where-Object Boundary -eq $comparison.Boundary |
                 ForEach-Object { $_.$side }
-            $samples = @($report.RawSamples | Where-Object { $_.Boundary -eq $comparison.Boundary -and $_.Side -eq $side })
-            $tail = @($samples | Where-Object { $_.ElapsedTicks -ge $distribution.P95Ticks })
+            $samples = @($report.RawSamples | Where-Object { $_.Boundary -eq $sourceBoundary -and $_.Side -eq $side })
+            $tail = @($samples | Where-Object { $_.$ticksProperty -ge $distribution.P95Ticks })
             $frames = foreach ($group in @($samples | Group-Object Frame)) {
-                $values = @($group.Group.ElapsedTicks)
+                $values = @($group.Group.$ticksProperty)
                 [pscustomobject]@{
                     Frame = [int]$group.Name; Count = $values.Count
                     MedianMicroseconds = (Percentile $values 0.5) * 1e6 / $report.Device.StopwatchFrequency
@@ -45,7 +48,9 @@ $analyses = foreach ($submission in $submissions) {
                 TailBySideOrder = @($tail | Group-Object SideOrder | ForEach-Object { [pscustomobject]@{ SideOrder = $_.Name; Count = $_.Count } })
                 TailByFrame = @($tail | Group-Object Frame | ForEach-Object { [pscustomobject]@{ Frame = [int]$_.Name; Count = $_.Count } })
                 FrameDistributions = @($frames)
-                TailSamples = @($tail | Select-Object Round, SideOrder, Frame, ElapsedTicks, ProcessorBefore, ProcessorAfter, Gen0, Gen1, Gen2)
+                TailSamples = @($tail | Select-Object Round, SideOrder, Frame,
+                    @{ Name = 'ElapsedTicks'; Expression = { $_.$ticksProperty } },
+                    ProcessorBefore, ProcessorAfter, Gen0, Gen1, Gen2)
             }
         }
         [pscustomobject]@{

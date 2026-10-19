@@ -182,6 +182,8 @@ r24 单默认入口确认metadata24B临时消去，直接从原字段取得World
 
 后继只将采样顺序收敛为round→frame→双方：每个实际帧立即配对E/H，下一round反向。16帧预热、31×8真实帧、单帧完整时钟、observer、算法和严格阈值沿原配置。Input显式记录SideSwitchIntervalFrames=1、FramesPerSample=1；原始8帧块交替及其九项失败继续保存。该控制层调整针对实际连续时间区间，逐帧p95继续由真实单帧值计算。
 
+[controlled-paired-r28](evidence/ECS-Relations-2026-10-19/controlled-paired-r28/diagnostic.md)是逐帧交替的首个受控27项，源码8bd88b1dea3dad7508f822760a83c35836557c9e，严格通过finite6/18、default0/9。默认九项median比值为1.0190481153831121–1.0329585110507948；finite middle/large mask1 mutual的median/p95分别为1.0645942038096436/1.0519977369640303、1.1578234869830621/1.1378207371981459。全部实际等价结果、原始单帧分布和173.6511692秒控制边界在同一系列保存，后续定位继续沿这些具体调用路径进行。
+
 ## 执行与复现
 
 实际公共队列入口为当前主检出已有 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`。提交脚本通过 QueueScript 参数指定该绝对入口，默认按仓库tools定位；每次queue的Executable/Arguments/Directory/SessionId与Submitted/Started/Finished时间均保存在持久index。以下命令使用运行器同一Release/NativeAOT输出，实际SourceCommit由原始报告和提交参数指定：

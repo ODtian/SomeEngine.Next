@@ -1,0 +1,161 @@
+[
+  {
+    "Queue": {
+      "Id": "dfa86108fab64ed1b059b0dbac2e4f2f",
+      "Executable": "dotnet",
+      "Arguments": [
+        "publish",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+        "-c",
+        "Release",
+        "-r",
+        "win-x64",
+        "--no-restore",
+        "-p:SourceRevisionId=8bd88b1dea3dad7508f822760a83c35836557c9e",
+        "-o",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T13:10:07.7377944+08:00",
+      "StartedAtUtc": "2026-10-19T13:10:07.8301922+08:00",
+      "FinishedAtUtc": "2026-10-19T13:10:41.967108+08:00"
+    },
+    "Stdout": "  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\n  SomeEngine.ECS.Relations -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.dll\r\n  SomeEngine.Physics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Physics\\bin\\Release\\net10.0\\SomeEngine.Physics.dll\r\n  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.Benchmarks.dll\r\n  Generating native code\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\Registry\\JobStorageTypeMetadata.cs(77): Trim analysis warning IL2070: SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>): 'this' argument does not satisfy 'DynamicallyAccessedMemberTypes.PublicFields', 'DynamicallyAccessedMemberTypes.NonPublicFields' in call to 'System.Type.GetFields(BindingFlags)'. The parameter 'type' of method 'SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>)' does not have matching annotations. The source value must declare at least the same requirements as those declared on the target location it is assigned to. [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\SomeEngine.ECS.Relations.Benchmarks.csproj]\r\n  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "1bd48b657b5741889bfd8560931bef23",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-Command",
+        "$taskCases = foreach ($taskSize in @('small','middle','large')) {\n    foreach ($taskMask in @(1,4,8)) { foreach ($taskDirection in @('oneway','mutual')) { \"finite-$taskSize-mask$taskMask-$taskDirection\" } }\n    foreach ($taskDynamic in @(10,50,90)) { \"default-$taskSize-dynamic$taskDynamic\" }\n}\n& 'F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Submit-Measurements.ps1' -CaseId $taskCases -Machine Fixed -QueueScript 'F:\\SomeEngine.Next\\tools\\Invoke-Benchmark.ps1' -Session '01a15090-f5bd-7a12-860a-e214325db5bb' -CollectReports -SourceCommit '8bd88b1dea3dad7508f822760a83c35836557c9e' -Series 'controlled-paired-r28'"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T13:13:35.8584772+08:00",
+      "StartedAtUtc": "2026-10-19T13:13:35.9504064+08:00",
+      "FinishedAtUtc": "2026-10-19T13:13:46.7730671+08:00"
+    },
+    "Stdout": "LIST F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe --mode list --source 8bd88b1dea3dad7508f822760a83c35836557c9e\r\nQUEUED 50b6bd306d9a4dc3bf03d45ffb18b06d finite-small-mask1-oneway\r\nQUEUED 15f3defed89043908f7fdeb49a8d384c finite-small-mask1-mutual\r\nQUEUED 2ad4cc29323e4bc091d03fde714a6f01 finite-small-mask4-oneway\r\nQUEUED a650a5a8ca8445fe9a8aeb820680e277 finite-small-mask4-mutual\r\nQUEUED 6ef6cd4b5f0d458dbd0fa294092a95e6 finite-small-mask8-oneway\r\nQUEUED 555365fd9b014b76a202efe369ec090a finite-small-mask8-mutual\r\nQUEUED b3f89f03033b4c8388a5a1437de252a1 default-small-dynamic10\r\nQUEUED c514944fcec9458695bd3917d3ebaa13 default-small-dynamic50\r\nQUEUED 45c2a6b0270c47feb4b4ef88f132dff8 default-small-dynamic90\r\nQUEUED 7bacb8b5ba6b4edabe1e471d200f57be finite-middle-mask1-oneway\r\nQUEUED 3baa83213556491b8ca4163601871f8d finite-middle-mask1-mutual\r\nQUEUED 01ee2a970f1349e389e9ba0b98f9d515 finite-middle-mask4-oneway\r\nQUEUED 9c5acecc9cdc4c7c88aa16c5d3002817 finite-middle-mask4-mutual\r\nQUEUED 317a4ac511f848d79a8a266a7dbec609 finite-middle-mask8-oneway\r\nQUEUED 0a0addff79ee491d8d444c7f6fab47ca finite-middle-mask8-mutual\r\nQUEUED c5cf85cc5f174ddf96da30cb95c501d5 default-middle-dynamic10\r\nQUEUED 6847a1661e6f498e88203ccc7bac8e45 default-middle-dynamic50\r\nQUEUED 122f5e5a9ffd4e79bda5d56254e09e2d default-middle-dynamic90\r\nQUEUED 87db441d75d4482d939fd10aeedc7f54 finite-large-mask1-oneway\r\nQUEUED 90efab37f99448ea95a22e0a1cf57a6f finite-large-mask1-mutual\r\nQUEUED d7aa5826679241db91fbb5cd4c0b6f83 finite-large-mask4-oneway\r\nQUEUED 42322848edf34295a76bbfe8ed4c736e finite-large-mask4-mutual\r\nQUEUED 48e27ca5f4674fe2a698502a14a78dd4 finite-large-mask8-oneway\r\nQUEUED e214b40adffc4fe2996f66afaf82d9ac finite-large-mask8-mutual\r\nQUEUED b0cf0f2a16e74e0bb48e4f645ad393e6 default-large-dynamic10\r\nQUEUED 3c4d1aa136c34412a5b70db5a40fa8e5 default-large-dynamic50\r\nQUEUED d4d6db5924b94df38d542e2b18eaae40 default-large-dynamic90\r\nQUEUED fd82e6ec9c7344d0af8259a683a66c1b Collect-Measurements.ps1\r\nQUEUED ac4476655a284ccb86a7636dcf24af63 Export-Evidence.ps1\r\nQUEUED 82f861ab3109472bb37bb2741ed6ee4a Write-MeasurementReport.ps1\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "fd82e6ec9c7344d0af8259a683a66c1b",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1",
+        "-Series",
+        "controlled-paired-r28"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T13:13:45.7385832+08:00",
+      "StartedAtUtc": "2026-10-19T13:16:40.4260681+08:00",
+      "FinishedAtUtc": "2026-10-19T13:16:42.9509443+08:00"
+    },
+    "Stdout": "\r\nCaseId                     Boundary Required MedianRatio P95Ratio Status            QueueId\r\n------                     -------- -------- ----------- -------- ------            -------\r\nfinite-small-mask1-oneway  Query        True        1.00     1.01 measured-overhead 50b6bd306d9a4dc3bf03d45ffb18b06d\r\nfinite-small-mask1-oneway  Consume     False           1        1 pass              50b6bd306d9a4dc3bf03d45ffb18b06d\r\nfinite-small-mask1-mutual  Query        True        1.00     1.02 measured-overhead 15f3defed89043908f7fdeb49a8d384c\r\nfinite-small-mask1-mutual  Consume     False        1.50        1 measured-overhead 15f3defed89043908f7fdeb49a8d384c\r\nfinite-small-mask4-oneway  Query        True        1.00     1.00 pass              2ad4cc29323e4bc091d03fde714a6f01\r\nfinite-small-mask4-oneway  Consume     False        1.03     1.04 measured-overhead 2ad4cc29323e4bc091d03fde714a6f01\r\nfinite-small-mask4-mutual  Query        True        1.00     1.03 measured-overhead a650a5a8ca8445fe9a8aeb820680e277\r\nfinite-small-mask4-mutual  Consume     False        1.03        1 measured-overhead a650a5a8ca8445fe9a8aeb820680e277\r\nfinite-small-mask8-oneway  Query        True        0.95     0.99 pass              6ef6cd4b5f0d458dbd0fa294092a95e6\r\nfinite-small-mask8-oneway  Consume     False           1        1 pass              6ef6cd4b5f0d458dbd0fa294092a95e6\r\nfinite-small-mask8-mutual  Query        True        1.01     0.99 measured-overhead 555365fd9b014b76a202efe369ec090a\r\nfinite-small-mask8-mutual  Consume     False           1     1.01 measured-overhead 555365fd9b014b76a202efe369ec090a\r\ndefault-small-dynamic10    Query        True        1.03     1.03 measured-overhead b3f89f03033b4c8388a5a1437de252a1\r\ndefault-small-dynamic10    Consume     False        1.04     1.02 measured-overhead b3f89f03033b4c8388a5a1437de252a1\r\ndefault-small-dynamic50    Query        True        1.03     0.98 measured-overhead c514944fcec9458695bd3917d3ebaa13\r\ndefault-small-dynamic50    Consume     False           1     0.99 pass              c514944fcec9458695bd3917d3ebaa13\r\ndefault-small-dynamic90    Query        True        1.03     1.03 measured-overhead 45c2a6b0270c47feb4b4ef88f132dff8\r\ndefault-small-dynamic90    Consume     False           1     1.03 measured-overhead 45c2a6b0270c47feb4b4ef88f132dff8\r\nfinite-middle-mask1-oneway Query        True        1.00     0.99 pass              7bacb8b5ba6b4edabe1e471d200f57be\r\nfinite-middle-mask1-oneway Consume     False           1     1.03 measured-overhead 7bacb8b5ba6b4edabe1e471d200f57be\r\nfinite-middle-mask1-mutual Query        True        1.06     1.05 measured-overhead 3baa83213556491b8ca4163601871f8d\r\nfinite-middle-mask1-mutual Consume     False        1.20     1.12 measured-overhead 3baa83213556491b8ca4163601871f8d\r\nfinite-middle-mask4-oneway Query        True        0.99     1.06 measured-overhead 01ee2a970f1349e389e9ba0b98f9d515\r\nfinite-middle-mask4-oneway Consume     False        1.00     0.99 pass              01ee2a970f1349e389e9ba0b98f9d515\r\nfinite-middle-mask4-mutual Query        True        0.99     0.98 pass              9c5acecc9cdc4c7c88aa16c5d3002817\r\nfinite-middle-mask4-mutual Consume     False        1.01     1.10 measured-overhead 9c5acecc9cdc4c7c88aa16c5d3002817\r\nfinite-middle-mask8-oneway Query        True        0.99     1.00 pass              317a4ac511f848d79a8a266a7dbec609\r\nfinite-middle-mask8-oneway Consume     False        1.00     1.01 measured-overhead 317a4ac511f848d79a8a266a7dbec609\r\nfinite-middle-mask8-mutual Query        True        1.03     1.03 measured-overhead 0a0addff79ee491d8d444c7f6fab47ca\r\nfinite-middle-mask8-mutual Consume     False        1.00     1.05 measured-overhead 0a0addff79ee491d8d444c7f6fab47ca\r\ndefault-middle-dynamic10   Query        True        1.02     1.06 measured-overhead c5cf85cc5f174ddf96da30cb95c501d5\r\ndefault-middle-dynamic10   Consume     False        1.00     1.00 measured-overhead c5cf85cc5f174ddf96da30cb95c501d5\r\ndefault-middle-dynamic50   Query        True        1.03     1.02 measured-overhead 6847a1661e6f498e88203ccc7bac8e45\r\ndefault-middle-dynamic50   Consume     False        1.00     1.00 measured-overhead 6847a1661e6f498e88203ccc7bac8e45\r\ndefault-middle-dynamic90   Query        True        1.03     1.03 measured-overhead 122f5e5a9ffd4e79bda5d56254e09e2d\r\ndefault-middle-dynamic90   Consume     False        0.99     0.99 pass              122f5e5a9ffd4e79bda5d56254e09e2d\r\nfinite-large-mask1-oneway  Query        True        1.03     1.02 measured-overhead 87db441d75d4482d939fd10aeedc7f54\r\nfinite-large-mask1-oneway  Consume     False        1.00     1.08 measured-overhead 87db441d75d4482d939fd10aeedc7f54\r\nfinite-large-mask1-mutual  Query        True        1.16     1.14 measured-overhead 90efab37f99448ea95a22e0a1cf57a6f\r\nfinite-large-mask1-mutual  Consume     False        1.10     1.29 measured-overhead 90efab37f99448ea95a22e0a1cf57a6f\r\nfinite-large-mask4-oneway  Query        True        0.99     1.01 measured-overhead d7aa5826679241db91fbb5cd4c0b6f83\r\nfinite-large-mask4-oneway  Consume     False        0.99     1.00 measured-overhead d7aa5826679241db91fbb5cd4c0b6f83\r\nfinite-large-mask4-mutual  Query        True        1.00     0.99 pass              42322848edf34295a76bbfe8ed4c736e\r\nfinite-large-mask4-mutual  Consume     False        1.02     1.05 measured-overhead 42322848edf34295a76bbfe8ed4c736e\r\nfinite-large-mask8-oneway  Query        True        1.00     1.02 measured-overhead 48e27ca5f4674fe2a698502a14a78dd4\r\nfinite-large-mask8-oneway  Consume     False        1.00     1.02 measured-overhead 48e27ca5f4674fe2a698502a14a78dd4\r\nfinite-large-mask8-mutual  Query        True        1.00     1.02 measured-overhead e214b40adffc4fe2996f66afaf82d9ac\r\nfinite-large-mask8-mutual  Consume     False        1.01     1.07 measured-overhead e214b40adffc4fe2996f66afaf82d9ac\r\ndefault-large-dynamic10    Query        True        1.02     1.08 measured-overhead b0cf0f2a16e74e0bb48e4f645ad393e6\r\ndefault-large-dynamic10    Consume     False        1.00     1.03 measured-overhead b0cf0f2a16e74e0bb48e4f645ad393e6\r\ndefault-large-dynamic50    Query        True        1.03     1.05 measured-overhead 3c4d1aa136c34412a5b70db5a40fa8e5\r\ndefault-large-dynamic50    Consume     False        1.00     1.01 measured-overhead 3c4d1aa136c34412a5b70db5a40fa8e5\r\ndefault-large-dynamic90    Query        True        1.03     1.05 measured-overhead d4d6db5924b94df38d542e2b18eaae40\r\ndefault-large-dynamic90    Consume     False        1.00     1.00 pass              d4d6db5924b94df38d542e2b18eaae40\r\n\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "ac4476655a284ccb86a7636dcf24af63",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1",
+        "-Series",
+        "controlled-paired-r28"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T13:13:46.0278473+08:00",
+      "StartedAtUtc": "2026-10-19T13:16:42.951597+08:00",
+      "FinishedAtUtc": "2026-10-19T13:16:45.9777364+08:00"
+    },
+    "Stdout": "controlled-paired-r28: 27 reports; F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\docs\\evidence\\ECS-Relations-2026-10-19\\controlled-paired-r28\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "82f861ab3109472bb37bb2741ed6ee4a",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1",
+        "-Series",
+        "controlled-paired-r28"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T13:13:46.3145974+08:00",
+      "StartedAtUtc": "2026-10-19T13:16:45.9785983+08:00",
+      "FinishedAtUtc": "2026-10-19T13:16:49.9234178+08:00"
+    },
+    "Stdout": "controlled-paired-r28: cases=27; required=27; passed=6; F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\docs\\evidence\\ECS-Relations-2026-10-19\\controlled-paired-r28\r\nCLASS default: 0/9\r\nCLASS finite: 6/18\r\nOVERHEAD finite-small-mask1-oneway Query median=0.99950775289195171 p95=1.014865989858692\r\nOVERHEAD finite-small-mask1-mutual Query median=0.99755291814511193 p95=1.0189684752305384\r\nOVERHEAD finite-small-mask4-mutual Query median=0.99802371541501977 p95=1.0325817968406119\r\nOVERHEAD finite-small-mask8-mutual Query median=1.005301843595614 p95=0.99139802819535194\r\nOVERHEAD default-small-dynamic10 Query median=1.0272887323943662 p95=1.0292534099066759\r\nOVERHEAD default-small-dynamic50 Query median=1.0329585110507948 p95=0.983515436412146\r\nOVERHEAD default-small-dynamic90 Query median=1.030396306271643 p95=1.0340494399136864\r\nOVERHEAD finite-middle-mask1-mutual Query median=1.0645942038096436 p95=1.0519977369640303\r\nOVERHEAD finite-middle-mask4-oneway Query median=0.98796553234993423 p95=1.0589683391983433\r\nOVERHEAD finite-middle-mask8-mutual Query median=1.0307267795341877 p95=1.0320088380442922\r\nOVERHEAD default-middle-dynamic10 Query median=1.0226224328593996 p95=1.0550435175601005\r\nOVERHEAD default-middle-dynamic50 Query median=1.0285982962717115 p95=1.0165640414431403\r\nOVERHEAD default-middle-dynamic90 Query median=1.0328646129670269 p95=1.0251406521547026\r\nOVERHEAD finite-large-mask1-oneway Query median=1.0336395472212601 p95=1.0238596694831767\r\nOVERHEAD finite-large-mask1-mutual Query median=1.1578234869830621 p95=1.1378207371981459\r\nOVERHEAD finite-large-mask4-oneway Query median=0.99227846381164198 p95=1.0135562196978161\r\nOVERHEAD finite-large-mask8-oneway Query median=1.0008012162051114 p95=1.0185029409910049\r\nOVERHEAD finite-large-mask8-mutual Query median=1.0002354799712232 p95=1.0172693441360978\r\nOVERHEAD default-large-dynamic10 Query median=1.0190481153831121 p95=1.0790591480947558\r\nOVERHEAD default-large-dynamic50 Query median=1.0297884374304864 p95=1.0492299976478161\r\nOVERHEAD default-large-dynamic90 Query median=1.0281500534473544 p95=1.0516697701187403\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "da5e08943d064afd957c9a18c63a250e",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Audit-MeasurementQueue.ps1",
+        "-Series",
+        "controlled-paired-r28",
+        "-PreparationQueueId",
+        "1bd48b657b5741889bfd8560931bef23"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T13:17:45.8952738+08:00",
+      "StartedAtUtc": "2026-10-19T13:17:45.9894388+08:00",
+      "FinishedAtUtc": "2026-10-19T13:17:47.1891469+08:00"
+    },
+    "Stdout": "{\r\n  \"Series\": \"controlled-paired-r28\",\r\n  \"SourceCommit\": \"8bd88b1dea3dad7508f822760a83c35836557c9e\",\r\n  \"Backend\": \"NativeAOT\",\r\n  \"CaseCount\": 27,\r\n  \"SessionIds\": [\r\n    \"01a15090-f5bd-7a12-860a-e214325db5bb\"\r\n  ],\r\n  \"PreparationExitCode\": 0,\r\n  \"CaseExitCodes\": [\r\n    0\r\n  ],\r\n  \"AnalysisExitCodes\": [\r\n    0\r\n  ],\r\n  \"LastCaseSubmittedAtUtc\": \"2026-10-19T13:13:45.4267296+08:00\",\r\n  \"FirstCaseStartedAtUtc\": \"2026-10-19T13:13:46.7740034+08:00\",\r\n  \"PreparationFinishedAtUtc\": \"2026-10-19T13:13:46.7730671+08:00\",\r\n  \"LastCaseFinishedAtUtc\": \"2026-10-19T13:16:40.4251726+08:00\",\r\n  \"FirstAnalysisStartedAtUtc\": \"2026-10-19T13:16:40.4260681+08:00\",\r\n  \"AllCasesSubmittedBeforeExecution\": true,\r\n  \"PreparationFinishedBeforeExecution\": true,\r\n  \"AnalysisStartedAfterExecution\": true,\r\n  \"MeasurementSeconds\": 173.6511692\r\n}\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "30e7e0f1a91d49e7921018c368e6e533",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Analyze-SampleTails.ps1",
+        "-Series",
+        "controlled-paired-r28"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T13:17:46.1980577+08:00",
+      "StartedAtUtc": "2026-10-19T13:17:47.1900121+08:00",
+      "FinishedAtUtc": "2026-10-19T13:17:52.1043578+08:00"
+    },
+    "Stdout": "finite-small-mask1-oneway relation: medianUs=406.10000000000002 p95Us=469.33999999999997 tails=13 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\nfinite-small-mask1-oneway handwritten: medianUs=406.30000000000001 p95Us=462.46499999999997 tails=13 frame0Tails=4 GC=0/0/0 endpointChanges=0\r\nfinite-small-mask1-mutual relation: medianUs=407.64999999999998 p95Us=475.14499999999998 tails=13 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\nfinite-small-mask1-mutual handwritten: medianUs=408.64999999999998 p95Us=466.30000000000001 tails=13 frame0Tails=0 GC=0/0/0 endpointChanges=0\r\nfinite-small-mask4-mutual relation: medianUs=429.25 p95Us=527.82999999999981 tails=13 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\nfinite-small-mask4-mutual handwritten: medianUs=430.10000000000002 p95Us=511.17500000000001 tails=13 frame0Tails=3 GC=0/0/0 endpointChanges=0\r\nfinite-small-mask8-mutual relation: medianUs=417.14999999999998 p95Us=477.14499999999992 tails=13 frame0Tails=3 GC=0/0/0 endpointChanges=0\r\nfinite-small-mask8-mutual handwritten: medianUs=414.94999999999999 p95Us=481.28499999999991 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\ndefault-small-dynamic10 relation: medianUs=116.7 p95Us=143.37499999999994 tails=13 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\ndefault-small-dynamic10 handwritten: medianUs=113.59999999999999 p95Us=139.30000000000001 tails=14 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\ndefault-small-dynamic50 relation: medianUs=133.19999999999999 p95Us=154.82499999999999 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\ndefault-small-dynamic50 handwritten: medianUs=128.94999999999999 p95Us=157.41999999999999 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\ndefault-small-dynamic90 relation: medianUs=133.90000000000001 p95Us=162.93000000000001 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\ndefault-small-dynamic90 handwritten: medianUs=129.94999999999999 p95Us=157.565 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\nfinite-middle-mask1-mutual relation: medianUs=3386.9000000000001 p95Us=3635.2149999999992 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\nfinite-middle-mask1-mutual handwritten: medianUs=3181.4000000000001 p95Us=3455.5349999999994 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\nfinite-middle-mask4-oneway relation: medianUs=3382.3000000000002 p95Us=4131.744999999999 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\nfinite-middle-mask4-oneway handwritten: medianUs=3423.5 p95Us=3901.6699999999992 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\nfinite-middle-mask8-mutual relation: medianUs=3305.8499999999999 p95Us=3549.7750000000001 tails=13 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\nfinite-middle-mask8-mutual handwritten: medianUs=3207.3000000000002 p95Us=3439.6749999999993 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\ndefault-middle-dynamic10 relation: medianUs=1618.3 p95Us=1809.2149999999992 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\ndefault-middle-dynamic10 handwritten: medianUs=1582.5 p95Us=1714.825 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\ndefault-middle-dynamic50 relation: medianUs=1859.5 p95Us=2000.105 tails=13 frame0Tails=3 GC=0/0/0 endpointChanges=0\r\ndefault-middle-dynamic50 handwritten: medianUs=1807.8 p95Us=1967.5149999999996 tails=13 frame0Tails=0 GC=0/0/0 endpointChanges=0\r\ndefault-middle-dynamic90 relation: medianUs=1906.0999999999999 p95Us=2088.1499999999996 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\ndefault-middle-dynamic90 handwritten: medianUs=1845.45 p95Us=2036.9399999999996 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\nfinite-large-mask1-oneway relation: medianUs=28202.700000000001 p95Us=31054.360000000001 tails=13 frame0Tails=0 GC=0/0/0 endpointChanges=0\r\nfinite-large-mask1-oneway handwritten: medianUs=27284.849999999999 p95Us=30330.68 tails=13 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\nfinite-large-mask1-mutual relation: medianUs=32585.900000000001 p95Us=37057.364999999991 tails=13 frame0Tails=0 GC=0/0/0 endpointChanges=0\r\nfinite-large-mask1-mutual handwritten: medianUs=28144.099999999999 p95Us=32568.719999999994 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\nfinite-large-mask4-oneway relation: medianUs=28843.599999999999 p95Us=32482.469999999994 tails=13 frame0Tails=4 GC=0/0/0 endpointChanges=0\r\nfinite-large-mask4-oneway handwritten: medianUs=29068.049999999999 p95Us=32048.019999999993 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\nfinite-large-mask8-oneway relation: medianUs=26793.25 p95Us=28992.444999999992 tails=13 frame0Tails=2 GC=0/0/0 endpointChanges=0\r\nfinite-large-mask8-oneway handwritten: medianUs=26771.799999999999 p95Us=28465.744999999999 tails=13 frame0Tails=4 GC=0/0/0 endpointChanges=0\r\nfinite-large-mask8-mutual relation: medianUs=26972.549999999999 p95Us=30942.184999999994 tails=13 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\nfinite-large-mask8-mutual handwritten: medianUs=26966.200000000001 p95Us=30416.904999999999 tails=13 frame0Tails=0 GC=0/0/0 endpointChanges=0\r\ndefault-large-dynamic10 relation: medianUs=27375.25 p95Us=36093.729999999981 tails=13 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\ndefault-large-dynamic10 handwritten: medianUs=26863.549999999999 p95Us=33449.259999999995 tails=13 frame0Tails=4 GC=0/0/0 endpointChanges=0\r\ndefault-large-dynamic50 relation: medianUs=29859.900000000001 p95Us=38807.764999999985 tails=13 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\ndefault-large-dynamic50 handwritten: medianUs=28996.150000000001 p95Us=36986.89999999998 tails=13 frame0Tails=0 GC=0/0/0 endpointChanges=0\r\ndefault-large-dynamic90 relation: medianUs=30778.700000000001 p95Us=37880.125 tails=13 frame0Tails=0 GC=0/0/0 endpointChanges=0\r\ndefault-large-dynamic90 handwritten: medianUs=29936 p95Us=36019.029999999984 tails=13 frame0Tails=1 GC=0/0/0 endpointChanges=0\r\nTAILS F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\docs\\evidence\\ECS-Relations-2026-10-19\\controlled-paired-r28\\sample-tails.json\r\n",
+    "Stderr": ""
+  }
+]
