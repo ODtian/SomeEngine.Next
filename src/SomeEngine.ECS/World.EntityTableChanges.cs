@@ -8,6 +8,7 @@ namespace SomeEngine.ECS;
 
 public partial class World
 {
+    [MethodImpl(MethodImplOptions.NoInlining)]
     internal bool TryGetEntityQueryRow(QueryState query, Entity entity, uint last, uint current,
         out QueryRow row)
     {
