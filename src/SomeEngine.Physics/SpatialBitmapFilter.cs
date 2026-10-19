@@ -61,9 +61,9 @@ public readonly struct SpatialBitmapFilter<TRelation, TImplementation, TComponen
 
     public QueryDefinition AddReads(QueryDefinition definition) => definition.WithOptionalRead<TComponent>();
 
-    public void RebuildSummaries(QueryCursor access) => Summary.Rebuild(access);
+    public void RebuildSummaries(scoped QueryCursor access) => Summary.Rebuild(access);
 
-    public void RefitSummary(int node, QueryCursor access) => Summary.Refit(node, access);
+    public void RefitSummary(int node, scoped QueryCursor access) => Summary.Refit(node, access);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)

@@ -18,10 +18,10 @@ public interface ISpatialFilter<TGroupResults> where TGroupResults : unmanaged
     QueryDefinition AddReads(QueryDefinition definition);
 
     /// <summary>Writes attached arrays during initial build or an explicit rebuild.</summary>
-    void RebuildSummaries(QueryCursor access);
+    void RebuildSummaries(scoped QueryCursor access);
 
     /// <summary>Writes one leaf or a branch whose children have already been updated.</summary>
-    void RefitSummary(int node, QueryCursor access);
+    void RefitSummary(int node, scoped QueryCursor access);
 
     /// <summary>Binds summary changes once per chunk; geometry changes are already covered by the caller.</summary>
     void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)

@@ -33,19 +33,14 @@ public struct BitmapFilter<TEnumerable, TRelation, TImplementation, TComponent, 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>
         _enumerable.AddReads(definition, position).WithOptionalRead<TComponent>();
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        BitmapFilterOutput<TRelation, TImplementation, TComponent, TPermission, TOutput, TSelection> filtered;
-        filtered.Relation = new(queries.Access, _relation, _implementation);
-        filtered.Output = output;
-        try
+        var filtered = new BitmapFilterOutput<TRelation, TImplementation, TComponent, TPermission, TOutput, TSelection>
         {
-            return _enumerable.Enumerate(queries, ref filtered);
-        }
-        finally
-        {
-            output = filtered.Output;
-        }
+            Relation = new(queries.Access, _relation, _implementation),
+            Output = new(ref output)
+        };
+        return _enumerable.Enumerate(queries, ref filtered);
     }
 }

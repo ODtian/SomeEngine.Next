@@ -25,7 +25,7 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond, TSelecti
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         QueryCursor members = queries.First;
@@ -40,7 +40,7 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond, TSelecti
             (typeof(TFirst) == typeof(TSecond) || definition.Requires<TSecond>());
     }
 
-    private static bool Enumerate<TPresence, TOutput>(QueryCursor members, TRelation predicate, ref TOutput output)
+    private static bool Enumerate<TPresence, TOutput>(scoped QueryCursor members, TRelation predicate, ref TOutput output)
         where TPresence : struct, IRelationComponentPresence
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
@@ -79,7 +79,7 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond, TSelecti
                 }
                 var pair = ascending ? (firstEntity, secondEntity) : (secondEntity, firstEntity);
                 bool continued = TOutput.ReadsComponentRows
-                    ? ascending ? output.Add(in pair, in first, in second) : output.Add(in pair, in second, in first)
+                    ? ascending ? output.Add(in pair, first, second) : output.Add(in pair, second, first)
                     : output.Add(in pair);
                 if (!continued)
                     return false;

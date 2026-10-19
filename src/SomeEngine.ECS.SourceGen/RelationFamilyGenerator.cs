@@ -80,8 +80,8 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
             if (i > 0) text.Append(" ||\n            ");
             text.Append($"!_query.TryGetRow({entity}, out var {Positions[i]})");
         }
-        string rowArguments = string.Join(", ", Positions.Take(arity).Select(name => $"in {name}"));
-        string rowParameters = string.Join(", ", Positions.Take(arity).Select(name => $"scoped in QueryRow {name}"));
+        string rowArguments = string.Join(", ", Positions.Take(arity));
+        string rowParameters = string.Join(", ", Positions.Take(arity).Select(name => $"scoped QueryRow {name}"));
         string arguments = string.Join(", ", Enumerable.Range(0, arity).Select(i =>
             $"in {Positions[i]}Component.Value"));
         text.AppendLine(")")
@@ -103,10 +103,10 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
             .AppendLine("    }");
         if (arity == 2)
             text.AppendLine("    [MethodImpl(MethodImplOptions.AggressiveInlining)]")
-                .AppendLine($"    public bool Matches(in {row} pair, scoped in QueryRow first, scoped in QueryRow second) =>")
-                .AppendLine("        Matches(in first, in second);");
+                .AppendLine($"    public bool Matches(in {row} pair, scoped QueryRow first, scoped QueryRow second) =>")
+                .AppendLine("        Matches(first, second);");
         else
-            text.AppendLine($"    public bool Matches(in {row} value, scoped in QueryRow firstRow, scoped in QueryRow secondRow) => Matches(in value);");
+            text.AppendLine($"    public bool Matches(in {row} value, scoped QueryRow firstRow, scoped QueryRow secondRow) => Matches(in value);");
         text.AppendLine("}\n");
     }
 
@@ -138,19 +138,12 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
                 .AppendLine($"            definition = definition.WithOptionalRead<T{i + 1}>();");
         text.AppendLine("        return definition;")
             .AppendLine("    }\n")
-            .AppendLine("    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)")
+            .AppendLine("    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)")
             .AppendLine($"        where TOutput : struct, IQueryRelationOutput<{row}>, allows ref struct")
             .AppendLine("    {");
         text.AppendLine($"        var relation = new {binding}(queries.Access, _relation);");
-        text.AppendLine($"        var filtered = new RelationFilterOutput<{predicate}, TOutput, {row}, {operation}Selection>(relation, output);")
-            .AppendLine("        try")
-            .AppendLine("        {")
-            .AppendLine("            return _enumerable.Enumerate(queries, ref filtered);")
-            .AppendLine("        }")
-            .AppendLine("        finally")
-            .AppendLine("        {")
-            .AppendLine("            output = filtered.Output;")
-            .AppendLine("        }")
+        text.AppendLine($"        var filtered = new RelationFilterOutput<{predicate}, TOutput, {row}, {operation}Selection>(relation, new(ref output));")
+            .AppendLine("        return _enumerable.Enumerate(queries, ref filtered);")
             .AppendLine("    }")
             .AppendLine("}\n");
     }
@@ -193,7 +186,7 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
                 .AppendLine("    };\n");
         }
         text.AppendLine("    public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;\n")
-            .AppendLine("    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)")
+            .AppendLine("    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)")
             .AppendLine($"        where TOutput : struct, IQueryRelationOutput<{row}>, allows ref struct")
             .AppendLine("    {");
         for (int i = 0; i < arity; i++)

@@ -12,7 +12,7 @@ namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
 public static partial class HandwrittenSpatialCollision
 {
-    public static bool EnumeratePartition<TOutput>(CollisionNodePair partition, RelationQueryViews queries,
+    public static bool EnumeratePartition<TOutput>(CollisionNodePair partition, scoped RelationQueryViews queries,
         CollisionTree tree, CollisionKeySummary<Hair, Entity> keys, CategorySummary categories, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
@@ -68,7 +68,7 @@ public static partial class HandwrittenSpatialCollision
 
     private struct FilteredSummaryBuild(CollisionKeySummary<Hair, Entity> keys, CategorySummary categories) : IQueryExecution
     {
-        public void Execute(QueryCursor access)
+        public void Execute(scoped QueryCursor access)
         {
             keys.Rebuild(access);
             categories.Rebuild(access);
@@ -101,9 +101,9 @@ public static partial class HandwrittenSpatialCollision
         public TOutput Output;
         public bool Completed;
 
-        public void Execute(QueryCursor members) => Completed = Traverse(members);
+        public void Execute(scoped QueryCursor members) => Completed = Traverse(members);
 
-        private bool Traverse(QueryCursor members)
+        private bool Traverse(scoped QueryCursor members)
         {
             if (_tree.Root < 0)
                 return true;

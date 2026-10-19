@@ -10,14 +10,14 @@
 
 ## 一次读取中的阶段
 
-`RelationQuery` 先进入 Access，再进入原参与集合。该范围持续覆盖以下全部阶段：
+`PairFill` 转发具体空间来源的查询和读取声明，由 `RelationQuery` 进入对应范围。单集合只读来源以一次查询回调同时提供 Access 和 First；通用路径先进入 Access，再进入原参与集合，具体句柄生命周期见[关系查询](Relation-Queries.md#语义关系查询)。两类范围均持续覆盖以下全部阶段：
 
 1. 为每个分区执行具体计数输出，保存实际结果数量。
 2. 前缀作业建立连续 offsets，保存真实总数，并按需要扩展实体对数组。
 3. 为每个有输出的分区取得其 offsets 区间，重新执行相同来源和筛选，写入对应实体对范围。
-4. 等待全部填充作业完成，再退出原成员及 Access 回调。
+4. 等待全部填充作业完成，再退出本次查询读取回调。
 
-`ReadOnlyQueryPairJobs` 是 Systems 提供的共同借用接点。`IReadOnlyQueryPairJob.Execute(index,first,second)` 在实际子任务中取得两个 QueryCursor。helper 的内部读取描述保存当前 World、QueryState 和 Last/CurrentSystemVersion；调用方仍在两个外层查询回调中持有原组件和 topology 读取。helper 在 finally 中合并并 Complete 已成功提交的全部工作，随后归还工作句柄数组。对外返回的是已完成的阶段 handle，前缀和填充继续通过该 handle 衔接。
+`ReadOnlyQueryPairJobs` 是 Systems 提供的共同借用接点。`IReadOnlyQueryPairJob.Execute(index,first,second)` 以 `scoped QueryCursor` 在实际子任务中借用两份查询数据。每个任务的普通 `QueryData` 保存当前 World、QueryState 和 Last/CurrentSystemVersion，子任务就地借用这份描述；调用方在外层查询回调中持有原组件和 topology 读取。helper 在 finally 中合并并 Complete 已成功提交的全部工作，随后归还工作句柄数组。对外返回的是已完成的阶段 handle，前缀和填充继续通过该 handle 衔接。
 
 因此每个分区访问原有组件存储，计数和填充共用同一有效输入。第三方具体来源及手写遍历也通过该接口进入相同读取和任务生命周期。
 
@@ -32,7 +32,7 @@
 | 填充 | 外层借用的组件、成员及树，offset token 的 `[partition,2]` | pair token 的 `[offset,count]` |
 | 接触消费 | 组件读取及 pair token | 业务接触累计数据 token |
 
-每个计数或填充分区是独立 Scheduler job，填充 owner 取得自己的实际输出范围。Count/Pairs 只公开当前总数对应的输出。后续作业声明 `buffer.ReadAccess` 并显式依赖填充结果；下一帧组件写入依赖上一帧消费完成。
+每个计数或填充分区是独立 Scheduler job，每个填充作业取得自己的实际输出范围。Count/Pairs 只公开当前总数对应的输出。后续作业声明 `buffer.ReadAccess` 并显式依赖填充结果；下一帧组件写入依赖上一帧消费完成。
 
 ## 实际业务调用与手写对照
 

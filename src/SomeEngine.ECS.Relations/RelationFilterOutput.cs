@@ -12,13 +12,13 @@ internal ref struct RelationFilterOutput<TRelation, TOutput, TRow, TSelection> :
 
     private TRelation _relation;
 
-    public RelationFilterOutput(TRelation relation, TOutput output)
+    public RelationFilterOutput(TRelation relation, RelationOutputReference<TOutput> output)
     {
         _relation = relation;
-        Output = output;
+        _output = output;
     }
 
-    public TOutput Output;
+    private readonly RelationOutputReference<TOutput> _output;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Add(in TRow row)
@@ -30,19 +30,19 @@ internal ref struct RelationFilterOutput<TRelation, TOutput, TRow, TSelection> :
         }
         else if (_relation.Matches(in row))
             return true;
-        return Output.Add(in row);
+        return _output.Value.Add(in row);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Add(in TRow row, scoped in QueryRow first, scoped in QueryRow second)
+    public bool Add(in TRow row, scoped QueryRow first, scoped QueryRow second)
     {
         if (TSelection.RequiresMatch)
         {
-            if (!_relation.Matches(in row, in first, in second))
+            if (!_relation.Matches(in row, first, second))
                 return true;
         }
-        else if (_relation.Matches(in row, in first, in second))
+        else if (_relation.Matches(in row, first, second))
             return true;
-        return TOutput.ReadsComponentRows ? Output.Add(in row, in first, in second) : Output.Add(in row);
+        return TOutput.ReadsComponentRows ? _output.Value.Add(in row, first, second) : _output.Value.Add(in row);
     }
 }

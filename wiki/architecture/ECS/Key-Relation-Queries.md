@@ -30,6 +30,6 @@
 
 ## 手写对照
 
-`benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenKeyPairs.cs` 是后续成对 benchmark 使用的手写键配对夹具，提供 `HandwrittenKeyPairs<TComponent,TKey>.Where` 与 `Except`。其数据输入是同一 World、参与 QueryHandle、组件键与 `GetByIndex` 桶；其执行直接展开键分组、键相等、桶遍历、完整实体身份去重和输出循环。访问查询和参与查询在每次执行期间获取与释放，输出保持同一种泛型接口及提前结束含义。
+`benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenKeyPairs.cs` 是成对 benchmark 使用的手写键配对夹具，提供 `HandwrittenKeyPairs<TComponent,TKey>.Where` 与 `Except`。其数据输入是同一 World、参与 QueryHandle、组件键与 `GetByIndex` 桶；其执行直接展开键分组、键相等、桶遍历、完整实体身份去重和输出循环。入口从原成员定义增加键组件的可选读取：只读定义相同时借用原成员句柄，实际派生或带写访问的定义在本次终端中取得查询并在结束时释放。两条路径均经 `World.ExecuteQuery` 进入访问范围，输出状态沿 finally 回写，泛型输出接口及提前结束含义相同。
 
 行为检查直接链接该夹具源码，并用独立的五个期望身份行核对手写与关系实现的排除结果。完整 benchmark 在固定输入、相同更新和采样配置下，分别记录两侧初始化、索引维护、分组、输出与端到端成本。

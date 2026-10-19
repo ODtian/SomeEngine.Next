@@ -31,8 +31,8 @@ public static class CollisionMaintenanceQueries
 public readonly struct SpatialAll : ISpatialFilter<GroupMatch>
 {
     public QueryDefinition AddReads(QueryDefinition definition) => definition;
-    public void RebuildSummaries(QueryCursor access) { }
-    public void RefitSummary(int node, QueryCursor access) { }
+    public void RebuildSummaries(scoped QueryCursor access) { }
+    public void RefitSummary(int node, scoped QueryCursor access) { }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
         where TGeometry : struct
@@ -118,7 +118,7 @@ public sealed class CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGro
         LastSystemVersion = execution.CurrentSystemVersion;
     }
 
-    private void Reconcile(Entity entity, QueryCursor members, QueryCursor access)
+    private void Reconcile(Entity entity, scoped QueryCursor members, scoped QueryCursor access)
     {
         CollisionTree tree = Tree;
         if (members.TryGetRow(entity, out _) && access.TryGetRow(entity, out var row) && row.Has<TGeometry>())
@@ -136,7 +136,7 @@ public sealed class CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGro
         }
     }
 
-    private void Refit(int node, QueryCursor access)
+    private void Refit(int node, scoped QueryCursor access)
     {
         CollisionTree tree = Tree;
         TFilter filter = Query.Enumerable.Filter;
@@ -166,7 +166,7 @@ public sealed class CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGro
     {
         public uint CurrentSystemVersion;
 
-        public void Execute(QueryCursor access)
+        public void Execute(scoped QueryCursor access)
         {
             var execution = new MemberExecution(maintenance, changes, access);
             maintenance.Query.Enumerable.World.ExecuteQuery(maintenance._members, maintenance.LastSystemVersion, ref execution);
@@ -179,7 +179,7 @@ public sealed class CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGro
     {
         private readonly QueryCursor _access = access;
 
-        public void Execute(QueryCursor members)
+        public void Execute(scoped QueryCursor members)
         {
             TFilter filter = maintenance.Query.Enumerable.Filter;
             foreach (Entity entity in changes.Entities)

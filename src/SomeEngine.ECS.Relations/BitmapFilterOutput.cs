@@ -14,7 +14,7 @@ internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, T
     where TSelection : struct, IRelationSelection
 {
     internal BitmapRelation<TRelation, TImplementation, TComponent, TPermission> Relation;
-    public TOutput Output;
+    internal RelationOutputReference<TOutput> Output;
 
     public static bool ReadsComponentRows => true;
 
@@ -25,25 +25,25 @@ internal ref struct BitmapFilterOutput<TRelation, TImplementation, TComponent, T
         {
             if (Relation.Matches(in pair) != TSelection.RequiresMatch)
                 return true;
-            return Output.Add(in pair);
+            return Output.Value.Add(in pair);
         }
-        return Relation.Evaluate<TOutput, IdentityPermissionOutput<TOutput, TSelection>>(in pair, ref Output);
+        return Relation.Evaluate<TOutput, IdentityPermissionOutput<TOutput, TSelection>>(in pair, ref Output.Value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Add(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second)
+    public bool Add(in (Entity, Entity) pair, scoped QueryRow first, scoped QueryRow second)
     {
         if (TOutput.ReadsComponentRows)
         {
-            if (Relation.Matches(in pair, in first, in second) != TSelection.RequiresMatch)
+            if (Relation.Matches(in pair, first, second) != TSelection.RequiresMatch)
                 return true;
-            return Output.Add(in pair, in first, in second);
+            return Output.Value.Add(in pair, first, second);
         }
         if (!BitmapRelation<TRelation, TImplementation, TComponent, TPermission>.TryReadComponents(
             in first, in second, out var firstValue, out var secondValue))
-            return IdentityPermissionOutput<TOutput, TSelection>.Unmatched(in pair, ref Output);
+            return IdentityPermissionOutput<TOutput, TSelection>.Unmatched(in pair, ref Output.Value);
         return Relation.Evaluate<(Entity, Entity), TOutput, IdentityPermissionOutput<TOutput, TSelection>>(
-            in pair, in firstValue.Value, in secondValue.Value, ref Output);
+            in pair, in firstValue.Value, in secondValue.Value, ref Output.Value);
     }
 }
 

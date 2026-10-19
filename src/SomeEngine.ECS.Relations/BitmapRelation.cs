@@ -31,7 +31,7 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Matches(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second)
+    public bool Matches(in (Entity, Entity) pair, scoped QueryRow first, scoped QueryRow second)
     {
         if (!TryReadComponents(in first, in second, out var firstValue, out var secondValue))
             return false;

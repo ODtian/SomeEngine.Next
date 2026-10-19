@@ -36,25 +36,18 @@ public readonly struct KeyFilter<TEnumerable, TRelation, TImplementation, TCompo
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>
         _enumerable.AddReads(definition, position).WithOptionalRead<TComponent>();
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
         => _exclude ? Enumerate<ExceptSelection, TOutput>(queries, ref output)
             : Enumerate<WhereSelection, TOutput>(queries, ref output);
 
-    private bool Enumerate<TSelection, TOutput>(RelationQueryViews queries, ref TOutput output)
+    private bool Enumerate<TSelection, TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TSelection : struct, IRelationSelection
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         var relation = new KeyRelation<TRelation, TImplementation, TComponent, TKey>(queries.Access, _relation, _implementation);
-        var filtered = new RelationFilterOutput<KeyRelation<TRelation, TImplementation, TComponent, TKey>, TOutput, (Entity, Entity), TSelection>(relation, output);
-        try
-        {
-            return _enumerable.Enumerate(queries, ref filtered);
-        }
-        finally
-        {
-            output = filtered.Output;
-        }
+        var filtered = new RelationFilterOutput<KeyRelation<TRelation, TImplementation, TComponent, TKey>, TOutput, (Entity, Entity), TSelection>(relation, new(ref output));
+        return _enumerable.Enumerate(queries, ref filtered);
     }
 }
 
@@ -78,10 +71,10 @@ public ref struct KeyRelation<TRelation, TImplementation, TComponent, TKey> : IQ
     public bool Matches(in (Entity, Entity) pair)
     {
         return _query.TryGetRow(pair.Item1, out var first) && _query.TryGetRow(pair.Item2, out var second)
-            && Matches(in pair, in first, in second);
+            && Matches(in pair, first, second);
     }
 
-    public bool Matches(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second)
+    public bool Matches(in (Entity, Entity) pair, scoped QueryRow first, scoped QueryRow second)
     {
         bool matches = false;
         if (first.TryReadRef<TComponent>(out var firstValue) && second.TryReadRef<TComponent>(out var secondValue))

@@ -326,7 +326,7 @@ public sealed class JobStorageAliasSafetyTests : JobTest
                 _query,
                 lastSystemVersion: 0,
                 ref state,
-                static (QueryCursor cursor, ref DynamicSharedFilterState state) =>
+                static (scoped QueryCursor cursor, ref DynamicSharedFilterState state) =>
                 {
                     if (state.Path == SharedFilterPath.Rows)
                     {
@@ -372,7 +372,7 @@ public sealed class JobStorageAliasSafetyTests : JobTest
                 _query,
                 lastSystemVersion: 0,
                 ref state,
-                static (QueryCursor cursor, ref SafeDynamicSharedFilterState state) =>
+                static (scoped QueryCursor cursor, ref SafeDynamicSharedFilterState state) =>
                 {
                     if (state.Path == SharedFilterPath.Rows)
                     {

@@ -41,7 +41,7 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
         context.World.ExecuteQuery(
             _viewQuery,
             ref collector,
-            static (QueryCursor cursor, ref ViewCollector collector) => collector.Collect(cursor));
+            static (scoped QueryCursor cursor, ref ViewCollector collector) => collector.Collect(cursor));
         if (_collector.Count == 0 || _collector.Count > _views.Length)
         {
             throw new InvalidOperationException(
@@ -72,7 +72,7 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
 
         internal int Count => _values.Count;
 
-        internal void Collect(QueryCursor cursor)
+        internal void Collect(scoped QueryCursor cursor)
         {
             foreach (QueryRow row in cursor.Rows)
             {

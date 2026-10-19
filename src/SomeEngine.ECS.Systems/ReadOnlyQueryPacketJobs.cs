@@ -366,7 +366,7 @@ public static class ReadOnlyQueryPacketJobs
     private const int InitialPacketCapacity = 16;
 
     public static int ExecuteParallel<TJob>(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         in TJob job,
         int rowsPerPacket = 0,
         JobScheduleOptions options = default)
@@ -384,7 +384,7 @@ public static class ReadOnlyQueryPacketJobs
     /// only output or other external resources touched by <typeparamref name="TJob"/>.
     /// </summary>
     public static int ExecuteParallel<TJob>(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         in TJob job,
         ReadOnlySpan<JobResourceAccess> externalAccesses,
         int rowsPerPacket = 0,
@@ -402,7 +402,7 @@ public static class ReadOnlyQueryPacketJobs
     /// borrows the cursor's chunks and therefore cannot outlive the current query callback.
     /// </summary>
     public static ReadOnlyQueryPacketPlan CreatePlan(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         int rowsPerPacket = 0)
     {
         if (rowsPerPacket < 0)
@@ -466,7 +466,7 @@ public static class ReadOnlyQueryPacketJobs
     /// may be played back only after that snapshot callback returns.
     /// </summary>
     public static JobCommandBuffer RecordParallel<TJob>(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         in TJob job,
         ReadOnlySpan<JobResourceAccess> externalAccesses,
         int rowsPerPacket = 0,
@@ -519,7 +519,7 @@ public static class ReadOnlyQueryPacketJobs
     }
 
     private static void BuildPackets(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         int rowsPerPacket,
         ref ReadOnlyPacketRange[]? packets,
         ref int packetCount,

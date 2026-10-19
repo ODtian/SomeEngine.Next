@@ -19,6 +19,6 @@ public interface IQueryRelationEnumerable<TRow>
     /// <summary>Forms the access definition declared by this description at this position.</summary>
     QueryDefinition AddReads(QueryDefinition definition, int position);
 
-    bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+    bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct;
 }

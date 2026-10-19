@@ -34,7 +34,7 @@ public static class HandwrittenDefaultPairs
         public TOutput Output = output;
         public bool Completed;
 
-        public void Execute(QueryCursor members)
+        public void Execute(scoped QueryCursor members)
         {
             var firstRows = members.ReadRows<Body, Body>();
             while (firstRows.MoveNext(out var first, out var firstBody, out _))

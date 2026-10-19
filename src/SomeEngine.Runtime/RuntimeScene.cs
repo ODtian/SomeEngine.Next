@@ -260,7 +260,7 @@ internal sealed class RuntimeScene : IDisposable
         var entities = new List<Entity>();
         try
         {
-            world.ExecuteQuery(query, ref entities, static (QueryCursor rows, ref List<Entity> values) =>
+            world.ExecuteQuery(query, ref entities, static (scoped QueryCursor rows, ref List<Entity> values) =>
             {
                 foreach (var row in rows.Rows) values.Add(row.Entity);
             });
@@ -374,7 +374,7 @@ internal sealed class RuntimeScene : IDisposable
         // avoids a second entity index and lets each chunk publish its writes once.
         var state = (Seconds: seconds, Count: 0);
         _world.ExecuteQuery(_motionQuery, ref state,
-            static (QueryCursor query, ref (float Seconds, int Count) motionState) =>
+            static (scoped QueryCursor query, ref (float Seconds, int Count) motionState) =>
             {
                 foreach (QueryChunkView chunk in query.Chunks)
                 {

@@ -60,13 +60,13 @@ try {
     }
     $submissions | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $reportDirectory 'submissions.json') -Encoding utf8
     $reports = if ($CollectReports) {
-        foreach ($script in @('Collect-Measurements.ps1', 'Export-Evidence.ps1', 'Write-MeasurementReport.ps1')) {
-            [string[]]$arguments = @('--session', $Session, '--cpu', 'pwsh', '-NoProfile', '-File',
-                (Join-Path $PSScriptRoot $script), '-Series', $Series)
-            $submitted = & $queueTool @arguments | ConvertFrom-Json
-            Write-Host "QUEUED $($submitted.Id) $script"
-            [pscustomobject]@{ Script = $script; QueueId = $submitted.Id; QueueDirectory = $submitted.OutputDirectory }
-        }
+        $script = 'Complete-Measurements.ps1'
+        [string[]]$arguments = @('--session', $Session, '--cpu', 'pwsh', '-NoProfile', '-File',
+            (Join-Path $PSScriptRoot $script), '-Series', $Series)
+        $submitted = & $queueTool @arguments | ConvertFrom-Json
+        Write-Host "QUEUED $($submitted.Id) $script"
+        [pscustomobject]@{ Script = $script; QueueId = $submitted.Id; QueueDirectory = $submitted.OutputDirectory
+            StageFacts = (Join-Path $reportDirectory 'postprocess-stages.json') }
     } else { @() }
     [pscustomobject]@{
         SourceCommit = $sourceCommit; SubmissionCommit = (& git rev-parse HEAD).Trim(); Backend = $Backend

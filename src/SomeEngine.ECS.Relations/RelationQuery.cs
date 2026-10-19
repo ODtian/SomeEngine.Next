@@ -23,15 +23,8 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
     private bool EnumerateQuery<TOutput>(ref TOutput output, uint? lastSystemVersion)
         where TOutput : struct, IRelationOutput<TRow>, allows ref struct
     {
-        var identities = new QueryIdentityOutput<TOutput, TRow>(output);
-        try
-        {
-            return EnumerateBoundQuery(ref identities, lastSystemVersion);
-        }
-        finally
-        {
-            output = identities.Output;
-        }
+        var identities = new QueryIdentityOutput<TOutput, TRow>(ref output);
+        return EnumerateBoundQuery(ref identities, lastSystemVersion);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -59,7 +52,7 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
         RelationQueryHandles queries = default;
         int acquired = 0;
         var execution = new RelationExecution<TOutput>(Enumerable, queries, queryCount,
-            -1, default, lastSystemVersion, output);
+            -1, default, lastSystemVersion, new(ref output));
         try
         {
             QueryDefinition access = QueryDefinition.Empty;
@@ -77,7 +70,7 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
             QueryHandle query = world.Query(access);
             queries[acquired++] = query;
             execution = new RelationExecution<TOutput>(Enumerable, queries, queryCount,
-                -1, default, lastSystemVersion, output);
+                -1, default, lastSystemVersion, new(ref output));
             if (lastSystemVersion is { } baseline)
                 world.ExecuteQuery(query, baseline, ref execution);
             else
@@ -86,7 +79,6 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
         }
         finally
         {
-            output = execution.Output;
             for (int index = acquired - 1; index >= 0; index--)
                 world.ReleaseQuery(queries[index]);
         }
@@ -98,10 +90,12 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
         QueryHandle query = temporaryQuery ? world.Query(definition) : members;
-        SingleExecution<TOutput> execution;
-        execution.Enumerable = _enumerable;
-        execution.Output = output;
-        execution.Completed = false;
+        var execution = new SingleExecution<TOutput>
+        {
+            Enumerable = _enumerable,
+            Output = new(ref output),
+            Completed = false
+        };
         try
         {
             if (lastSystemVersion is { } baseline)
@@ -112,7 +106,6 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
         }
         finally
         {
-            output = execution.Output;
             if (temporaryQuery)
                 world.ReleaseQuery(query);
         }
@@ -122,10 +115,10 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
         public TEnumerable Enumerable;
-        public TOutput Output;
+        public RelationOutputReference<TOutput> Output;
         public bool Completed;
 
-        public void Execute(QueryCursor query) => Completed = Enumerable.Enumerate(new RelationQueryViews(query), ref Output);
+        public void Execute(scoped QueryCursor query) => Completed = Enumerable.Enumerate(new RelationQueryViews(query), ref Output.Value);
     }
 
     public int Count() => CountRows(null);
@@ -161,7 +154,7 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
         private readonly uint? _lastSystemVersion;
 
         public RelationExecution(TEnumerable enumerable, RelationQueryHandles queries,
-            int queryCount, int position, RelationQueryViews views, uint? lastSystemVersion, TOutput output)
+            int queryCount, int position, RelationQueryViews views, uint? lastSystemVersion, RelationOutputReference<TOutput> output)
         {
             _enumerable = enumerable;
             _queries = queries;
@@ -175,9 +168,9 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
 
         public bool Completed { get; private set; }
 
-        public TOutput Output;
+        public RelationOutputReference<TOutput> Output;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             RelationQueryViews views = _position < 0
                 ? new RelationQueryViews(query, default, default)
@@ -185,24 +178,17 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
             int nextPosition = _position + 1;
             if (nextPosition == _queryCount)
             {
-                Completed = _enumerable.Enumerate(views, ref Output);
+                Completed = _enumerable.Enumerate(views, ref Output.Value);
                 return;
             }
 
             var execution = new RelationExecution<TOutput>(_enumerable, _queries, _queryCount,
                 nextPosition, views, _lastSystemVersion, Output);
-            try
-            {
-                if (_lastSystemVersion is { } baseline)
-                    _enumerable.World.ExecuteQuery(_queries[nextPosition], baseline, ref execution);
-                else
-                    _enumerable.World.ExecuteQuery(_queries[nextPosition], ref execution);
-                Completed = execution.Completed;
-            }
-            finally
-            {
-                Output = execution.Output;
-            }
+            if (_lastSystemVersion is { } baseline)
+                _enumerable.World.ExecuteQuery(_queries[nextPosition], baseline, ref execution);
+            else
+                _enumerable.World.ExecuteQuery(_queries[nextPosition], ref execution);
+            Completed = execution.Completed;
         }
     }
 }

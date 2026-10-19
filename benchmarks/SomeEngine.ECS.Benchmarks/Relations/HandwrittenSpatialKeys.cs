@@ -38,9 +38,9 @@ public static class HandwrittenSpatialKeys
         public TOutput Output = output;
         public bool Completed;
 
-        public void Execute(QueryCursor members) => Completed = Traverse(members);
+        public void Execute(scoped QueryCursor members) => Completed = Traverse(members);
 
-        private bool Traverse(QueryCursor members)
+        private bool Traverse(scoped QueryCursor members)
         {
             if (tree.Root < 0)
                 return true;

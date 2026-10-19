@@ -38,12 +38,12 @@ public static class HandwrittenSpatialBitmap
         public TOutput Output = output;
         public bool Completed;
 
-        public void Execute(QueryCursor members)
+        public void Execute(scoped QueryCursor members)
         {
             Completed = Traverse(members);
         }
 
-        private bool Traverse(QueryCursor members)
+        private bool Traverse(scoped QueryCursor members)
         {
             if (tree.Root < 0)
                 return true;
@@ -152,12 +152,12 @@ public static class HandwrittenSpatialBitmap
         public TOutput Output = output;
         public bool Completed;
 
-        public void Execute(QueryCursor members)
+        public void Execute(scoped QueryCursor members)
         {
             Completed = Traverse(members);
         }
 
-        private bool Traverse(QueryCursor members)
+        private bool Traverse(scoped QueryCursor members)
         {
             if (tree.Root < 0)
                 return true;

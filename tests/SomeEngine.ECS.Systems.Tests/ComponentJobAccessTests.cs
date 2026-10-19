@@ -787,7 +787,7 @@ public sealed class ComponentJobAccessTests
             _world.ExecuteQuery(
                 _query,
                 ref count,
-                static (QueryCursor cursor, ref int result) =>
+                static (scoped QueryCursor cursor, ref int result) =>
                 {
                     foreach (QueryChunkView chunk in cursor.Chunks)
                         result += chunk.Read<T>().Length;
@@ -816,7 +816,7 @@ public sealed class ComponentJobAccessTests
             _world.ExecuteQuery(
                 _query,
                 ref value,
-                static (QueryCursor cursor, ref T replacement) =>
+                static (scoped QueryCursor cursor, ref T replacement) =>
                 {
                     foreach (QueryChunkView chunk in cursor.Chunks)
                         chunk.Write<T>().Fill(replacement);

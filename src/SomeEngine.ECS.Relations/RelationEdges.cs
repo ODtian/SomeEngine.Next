@@ -33,7 +33,7 @@ public readonly struct OutgoingRelationEdges<T>(World world, Entity source) : IQ
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<RelationEdge<T>>, allows ref struct
     {
         foreach (var entry in world.GetOutgoingRelations<T>(source).Entries)
@@ -57,7 +57,7 @@ public readonly struct IncomingRelationEdges<T>(World world, Entity target) : IQ
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<RelationEdge<T>>, allows ref struct
     {
         foreach (var entry in world.GetIncomingRelations<T>(target).Entries)
@@ -81,7 +81,7 @@ public readonly struct RelationEdgesBetween<T>(World world, Entity first, Entity
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<RelationEdge<T>>, allows ref struct
     {
         foreach (var edge in world.GetRelationEdgesBetween<T>(first, second))
@@ -104,7 +104,7 @@ public readonly struct IncidentRelationEdges<T>(World world, Entity endpoint) : 
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<RelationEdge<T>>, allows ref struct
     {
         foreach (var entry in world.GetIncidentRelations<T>(endpoint).Entries)
@@ -128,7 +128,7 @@ public readonly struct SingleRelationEdge<T>(World world, RelationEdge<T> edge) 
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<RelationEdge<T>>, allows ref struct =>
         !queries.Access.TryGetRow(edge.Entity, out _) || output.Add(in edge);
 }

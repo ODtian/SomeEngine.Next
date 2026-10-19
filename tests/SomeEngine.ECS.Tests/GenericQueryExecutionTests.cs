@@ -170,7 +170,7 @@ public sealed class GenericQueryExecutionTests
     {
         public int Count;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             foreach (var row in query.Rows)
                 Count++;
@@ -181,7 +181,7 @@ public sealed class GenericQueryExecutionTests
     {
         public int Total;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             foreach (var row in query.Rows)
                 Total += row.ReadRef<DisplayName>().Value.Length;
@@ -195,7 +195,7 @@ public sealed class GenericQueryExecutionTests
 
     private readonly struct FindMembers(Entity[] entities, List<Entity> members) : IQueryExecution
     {
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             foreach (Entity entity in entities)
                 if (query.Contains(entity))
@@ -205,7 +205,7 @@ public sealed class GenericQueryExecutionTests
 
     private readonly struct ChangedNameRows(List<Entity> entities) : IQueryExecution
     {
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             foreach (var chunk in query.Chunks)
             {
@@ -222,7 +222,7 @@ public sealed class GenericQueryExecutionTests
         public bool RequiresPosition;
         public bool RequiresName;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             RequiresPosition = query.Requires<Position>();
             RequiresName = query.Requires<DisplayName>();
@@ -235,7 +235,7 @@ public sealed class GenericQueryExecutionTests
 
         public NameLengths(Span<int> lengths) => _lengths = lengths;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             int index = 0;
             foreach (var row in query.Rows)
@@ -247,7 +247,7 @@ public sealed class GenericQueryExecutionTests
     {
         private readonly Span<int> _values = values;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             int index = 0;
             var rows = query.ReadRows<Position, DisplayName>();
@@ -261,7 +261,7 @@ public sealed class GenericQueryExecutionTests
         private readonly Entity[] _entities = entities;
         private readonly Span<int> _lengths = lengths;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             for (int index = 0; index < _entities.Length; index++)
                 _lengths[index] = query.TryReadRef<DisplayName>(_entities[index], out var name)

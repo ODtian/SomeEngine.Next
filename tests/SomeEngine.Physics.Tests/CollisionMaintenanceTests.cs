@@ -211,7 +211,7 @@ public sealed class CollisionMaintenanceTests
 
     private readonly struct MoveExecution(Entity entity, CollisionBounds bounds) : IQueryExecution
     {
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             foreach (var row in query.Rows)
             {

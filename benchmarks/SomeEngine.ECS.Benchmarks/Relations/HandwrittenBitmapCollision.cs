@@ -65,7 +65,7 @@ public static class HandwrittenBitmapCollision
         public TOutput Output;
         public bool Completed;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             foreach (var pair in _candidates)
             {
@@ -98,7 +98,7 @@ public static class HandwrittenBitmapCollision
         public TOutput Output;
         public bool Completed;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             foreach (var pair in _candidates)
             {

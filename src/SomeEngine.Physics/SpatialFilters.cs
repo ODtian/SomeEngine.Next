@@ -20,9 +20,9 @@ public readonly struct SpatialComponentFilter<TRelation, TFirst, TSecond>
     public QueryDefinition AddReads(QueryDefinition definition) =>
         definition.WithOptionalRead<TFirst>().WithOptionalRead<TSecond>();
 
-    public void RebuildSummaries(QueryCursor access) { }
+    public void RebuildSummaries(scoped QueryCursor access) { }
 
-    public void RefitSummary(int node, QueryCursor access) { }
+    public void RefitSummary(int node, scoped QueryCursor access) { }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
@@ -41,7 +41,7 @@ public readonly struct SpatialComponentFilter<TRelation, TFirst, TSecond>
         if (results != GroupMatch.Unknown)
             return results == GroupMatch.All;
         var bound = new ComponentRelation<TRelation, TFirst, TSecond>(default, _relation);
-        return bound.Matches(in first, in second);
+        return bound.Matches(first, second);
     }
 }
 
@@ -65,9 +65,9 @@ public readonly struct SpatialKeyFilter<TRelation, TImplementation, TComponent, 
 
     public QueryDefinition AddReads(QueryDefinition definition) => definition.WithOptionalRead<TComponent>();
 
-    public void RebuildSummaries(QueryCursor access) => Summary.Rebuild(access);
+    public void RebuildSummaries(scoped QueryCursor access) => Summary.Rebuild(access);
 
-    public void RefitSummary(int node, QueryCursor access) => Summary.Refit(node, access);
+    public void RefitSummary(int node, scoped QueryCursor access) => Summary.Refit(node, access);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
@@ -127,13 +127,13 @@ public readonly struct SpatialAnd<TFirst, TSecond, TFirstResults, TSecondResults
 
     public QueryDefinition AddReads(QueryDefinition definition) => Second.AddReads(First.AddReads(definition));
 
-    public void RebuildSummaries(QueryCursor access)
+    public void RebuildSummaries(scoped QueryCursor access)
     {
         First.RebuildSummaries(access);
         Second.RebuildSummaries(access);
     }
 
-    public void RefitSummary(int node, QueryCursor access)
+    public void RefitSummary(int node, scoped QueryCursor access)
     {
         First.RefitSummary(node, access);
         Second.RefitSummary(node, access);
@@ -174,9 +174,9 @@ public readonly struct SpatialExcept<TFilter, TGroupResults>(TFilter filter) : I
 
     public QueryDefinition AddReads(QueryDefinition definition) => Filter.AddReads(definition);
 
-    public void RebuildSummaries(QueryCursor access) => Filter.RebuildSummaries(access);
+    public void RebuildSummaries(scoped QueryCursor access) => Filter.RebuildSummaries(access);
 
-    public void RefitSummary(int node, QueryCursor access) => Filter.RefitSummary(node, access);
+    public void RefitSummary(int node, scoped QueryCursor access) => Filter.RefitSummary(node, access);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)

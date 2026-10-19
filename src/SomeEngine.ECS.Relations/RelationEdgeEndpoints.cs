@@ -12,7 +12,7 @@ internal static class RelationEdgeEndpoints<T>
             ? definition.WithOptionalRead<DirectedRelationEndpoints<T>>()
             : definition.WithOptionalRead<UndirectedRelationEndpoints<T>>();
 
-    internal static (Entity, Entity) Read(QueryCursor query, in RelationEdge<T> edge)
+    internal static (Entity, Entity) Read(scoped QueryCursor query, in RelationEdge<T> edge)
     {
         query.TryGetRow(edge.Entity, out var row);
         if (RelationSchema.For<T>().Direction == RelationDirection.Directed)
@@ -36,20 +36,20 @@ internal ref struct EdgeRelationFilterOutput<TPayload, TRelation, TOutput> : IQu
     private readonly QueryCursor _query;
     private TRelation _relation;
 
-    internal EdgeRelationFilterOutput(QueryCursor query, TRelation relation, TOutput output)
+    internal EdgeRelationFilterOutput(QueryCursor query, TRelation relation, RelationOutputReference<TOutput> output)
     {
         _query = query;
         _relation = relation;
-        Output = output;
+        _output = output;
     }
 
-    internal TOutput Output;
+    private readonly RelationOutputReference<TOutput> _output;
 
     public bool Add(in RelationEdge<TPayload> edge)
     {
         var pair = RelationEdgeEndpoints<TPayload>.Read(_query, in edge);
-        return !_relation.Matches(in pair) || Output.Add(in edge);
+        return !_relation.Matches(in pair) || _output.Value.Add(in edge);
     }
 
-    public bool Add(in RelationEdge<TPayload> edge, scoped in QueryRow first, scoped in QueryRow second) => Add(in edge);
+    public bool Add(in RelationEdge<TPayload> edge, scoped QueryRow first, scoped QueryRow second) => Add(in edge);
 }

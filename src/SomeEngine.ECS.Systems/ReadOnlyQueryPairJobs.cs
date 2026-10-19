@@ -7,13 +7,13 @@ namespace SomeEngine.ECS.Systems;
 /// <summary>Reads two callback-scoped queries while executing one output partition.</summary>
 public interface IReadOnlyQueryPairJob
 {
-    void Execute(int index, QueryCursor first, QueryCursor second);
+    void Execute(int index, scoped QueryCursor first, scoped QueryCursor second);
 }
 
 public static class ReadOnlyQueryPairJobs
 {
     /// <summary>Runs partitions inside the two surrounding query callbacks.</summary>
-    public static void ExecuteInline<TJob>(QueryCursor first, QueryCursor second, in TJob job, int count)
+    public static void ExecuteInline<TJob>(scoped QueryCursor first, scoped QueryCursor second, in TJob job, int count)
         where TJob : struct, IReadOnlyQueryPairJob
     {
         for (int index = 0; index < count; index++)
@@ -27,7 +27,7 @@ public static class ReadOnlyQueryPairJobs
     /// Submits one owner per partition with its external accesses, and joins all work before the
     /// borrowed queries return. ECS reads remain held by the surrounding callbacks.
     /// </summary>
-    public static JobHandle ExecuteParallel<TJob>(QueryCursor first, QueryCursor second, in TJob job, int count,
+    public static JobHandle ExecuteParallel<TJob>(scoped QueryCursor first, scoped QueryCursor second, in TJob job, int count,
         ReadOnlySpan<JobResourceAccess> accesses, int accessesPerWork, JobHandle dependency = default)
         where TJob : struct, IReadOnlyQueryPairJob
     {
@@ -44,8 +44,8 @@ public static class ReadOnlyQueryPairJobs
         JobHandle completed = dependency;
         try
         {
-            var firstRead = new QueryRead(first);
-            var secondRead = new QueryRead(second);
+            QueryData firstRead = first.Data;
+            QueryData secondRead = second.Data;
             for (int index = 0; index < count; index++)
             {
                 var adapter = new PairJob<TJob>(index, firstRead, secondRead, job);
@@ -70,23 +70,13 @@ public static class ReadOnlyQueryPairJobs
         return completed;
     }
 
-    private readonly struct QueryRead(QueryCursor query)
-    {
-        private readonly World _world = query.Owner;
-        private readonly QueryState _state = query.State;
-        private readonly uint _last = query.LastSystemVersion;
-        private readonly uint _current = query.CurrentSystemVersion;
-
-        internal QueryCursor Borrow() => new(_world, _state, _last, _current);
-    }
-
-    private readonly struct PairJob<TJob>(int index, QueryRead first, QueryRead second, TJob job) : IJob
+    private readonly struct PairJob<TJob>(int index, QueryData first, QueryData second, TJob job) : IJob
         where TJob : struct, IReadOnlyQueryPairJob
     {
         public void Execute()
         {
             TJob local = job;
-            local.Execute(index, first.Borrow(), second.Borrow());
+            local.Execute(index, new QueryCursor(in first), new QueryCursor(in second));
         }
     }
 }

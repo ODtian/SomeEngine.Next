@@ -49,7 +49,7 @@ public sealed partial class CollisionTree
     }
 
     /// <summary>Builds from the participating members under their encompassing read scope.</summary>
-    public void Rebuild<TComponent, TBoundsReader>(QueryCursor members, QueryCursor access,
+    public void Rebuild<TComponent, TBoundsReader>(scoped QueryCursor members, scoped QueryCursor access,
         TBoundsReader boundsReader)
         where TComponent : struct
         where TBoundsReader : struct, ICollisionBoundsReader<TComponent>
@@ -133,7 +133,7 @@ public sealed partial class CollisionTree
         where TComponent : struct
         where TBoundsReader : struct, ICollisionBoundsReader<TComponent>
     {
-        public void Execute(QueryCursor query) =>
+        public void Execute(scoped QueryCursor query) =>
             tree.Rebuild<TComponent, TBoundsReader>(query, query, boundsReader);
     }
 }

@@ -513,7 +513,7 @@ public static class JobEntityRuntime
                 _lastSystemVersion,
                 currentSystemVersion: 0,
                 ref state,
-                static (QueryCursor cursor, ref SerialState<TJob, TAdapter> state) =>
+                static (scoped QueryCursor cursor, ref SerialState<TJob, TAdapter> state) =>
                     ExecuteCursor(cursor, ref state));
         }
     }
@@ -798,7 +798,7 @@ public static class JobEntityRuntime
     }
 
     private static void ExecuteCursor<TJob, TAdapter>(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         ref SerialState<TJob, TAdapter> state)
         where TJob : unmanaged, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>

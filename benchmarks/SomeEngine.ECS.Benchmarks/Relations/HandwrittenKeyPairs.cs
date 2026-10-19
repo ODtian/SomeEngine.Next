@@ -56,7 +56,7 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
         public TOutput Output;
         public bool Completed { get; private set; }
 
-        public void Execute(QueryCursor members)
+        public void Execute(scoped QueryCursor members)
         {
             var keys = new HashSet<TKey>();
             var missing = new List<Entity>();

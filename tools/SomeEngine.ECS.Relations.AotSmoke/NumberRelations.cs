@@ -117,7 +117,7 @@ internal struct NumberPointValue(Entity entity) : IQueryExecution
 
     internal int Value;
 
-    public void Execute(QueryCursor query)
+    public void Execute(scoped QueryCursor query)
     {
         Value = query.TryReadRef<Number<int>>(_entity, out var number) ? number.Value.Value : -1;
     }

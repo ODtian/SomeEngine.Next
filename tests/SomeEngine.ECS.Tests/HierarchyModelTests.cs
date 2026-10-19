@@ -203,7 +203,7 @@ public class HierarchyModelTests
         Entity[] QueryEntities(QueryHandle query, uint? lastVersion = null)
         {
             var entities = new List<Entity>();
-            void Capture(QueryCursor cursor)
+            void Capture(scoped QueryCursor cursor)
             {
                 foreach (var row in cursor.Rows)
                     entities.Add(row.Entity);

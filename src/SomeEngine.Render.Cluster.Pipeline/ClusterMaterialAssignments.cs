@@ -293,9 +293,9 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
         var update = new AssignmentChanges(_assignments.Current, context.World);
         foreach (Entity entity in membership.Entities) update.CollectMembership(context.World, entity);
         context.World.ExecuteQuery(_query, context.LastSystemVersion, ref update,
-            static (QueryCursor query, ref AssignmentChanges changes) => changes.Collect(query));
+            static (scoped QueryCursor query, ref AssignmentChanges changes) => changes.Collect(query));
         context.World.ExecuteQuery(_materialQuery, context.LastSystemVersion, ref update,
-            static (QueryCursor query, ref AssignmentChanges changes) => changes.CollectMaterials(query));
+            static (scoped QueryCursor query, ref AssignmentChanges changes) => changes.CollectMaterials(query));
         _assignments.Publish(update.Complete());
         _tableChanges.Accept(membership);
     }
@@ -336,7 +336,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
 
         private readonly record struct MaterialBindings(
             ClusterMaterialAssignmentSet.Update Update, Entity Entity, string Encoding);
-        internal void CollectMaterials(QueryCursor query)
+        internal void CollectMaterials(scoped QueryCursor query)
         {
             foreach (QueryChunkView chunk in query.Chunks)
             {
@@ -345,7 +345,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
                     _update.SetValue(values[row].Material);
             }
         }
-        internal void Collect(QueryCursor query)
+        internal void Collect(scoped QueryCursor query)
         {
             foreach (QueryChunkView chunk in query.Chunks)
             {

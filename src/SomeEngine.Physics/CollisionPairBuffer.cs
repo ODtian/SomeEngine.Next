@@ -47,7 +47,7 @@ public static class CollisionPairQueries
         public QueryHandle GetQuery(int position) => source.GetQuery(position);
         public QueryDefinition AddReads(QueryDefinition definition, int position) => source.AddReads(definition, position);
 
-        public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
+        public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
             where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
         {
             pairs.Fill(source, queries, parallel);
@@ -64,7 +64,7 @@ public static class CollisionPairQueries
             return true;
         }
 
-        public bool Add(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second) => Add(in pair);
+        public bool Add(in (Entity, Entity) pair, scoped QueryRow first, scoped QueryRow second) => Add(in pair);
     }
 }
 
@@ -108,7 +108,7 @@ public sealed class CollisionPairBuffer : IDisposable
     public JobResourceAccess FillAccess => JobResourceAccess.Write(_queryResource);
     public JobResourceAccess ReadAccess => JobResourceAccess.Read(_pairResource);
 
-    internal void Fill<TEnumerable>(TEnumerable source, RelationQueryViews queries, bool parallel)
+    internal void Fill<TEnumerable>(TEnumerable source, scoped RelationQueryViews queries, bool parallel)
         where TEnumerable : struct, ICollisionPartitionEnumerable
     {
         source.Prepare(queries);
@@ -159,7 +159,7 @@ public sealed class CollisionPairBuffer : IDisposable
     private readonly struct CountJob<TEnumerable>(TEnumerable source, CollisionPairBuffer buffer) : IReadOnlyQueryPairJob
         where TEnumerable : struct, ICollisionPartitionEnumerable
     {
-        public void Execute(int index, QueryCursor access, QueryCursor members)
+        public void Execute(int index, scoped QueryCursor access, scoped QueryCursor members)
         {
             var output = new CollisionPairQueries.PairCount();
             source.Enumerate(buffer._partitions[index], new RelationQueryViews(access, members, default), ref output);
@@ -183,7 +183,7 @@ public sealed class CollisionPairBuffer : IDisposable
     private readonly struct FillJob<TEnumerable>(TEnumerable source, CollisionPairBuffer buffer) : IReadOnlyQueryPairJob
         where TEnumerable : struct, ICollisionPartitionEnumerable
     {
-        public void Execute(int index, QueryCursor access, QueryCursor members)
+        public void Execute(int index, scoped QueryCursor access, scoped QueryCursor members)
         {
             int partition = buffer._fillPartitions[index];
             int start = buffer._offsets[partition];
@@ -204,7 +204,7 @@ public sealed class CollisionPairBuffer : IDisposable
             return true;
         }
 
-        public bool Add(in (Entity, Entity) pair, scoped in QueryRow first, scoped in QueryRow second) => Add(in pair);
+        public bool Add(in (Entity, Entity) pair, scoped QueryRow first, scoped QueryRow second) => Add(in pair);
     }
 
     public void Dispose()

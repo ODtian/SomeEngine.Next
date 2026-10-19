@@ -2,6 +2,7 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.Physics;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
@@ -18,7 +19,7 @@ public static partial class HandwrittenSpatialCollision
         {
             QueryHandle access = world.Query(QueryDefinition.Empty.WithAccessFrom(definition)
                 .WithOptionalRead<Body>().WithOptionalRead<Hair>());
-            var execution = new AccessExecution<TOutput>(world, members, tree, output);
+            var execution = new AccessExecution<TOutput>(world, members, tree, new(ref output));
             try
             {
                 world.ExecuteQuery(access, ref execution);
@@ -26,7 +27,6 @@ public static partial class HandwrittenSpatialCollision
             }
             finally
             {
-                output = execution.Output;
                 world.ReleaseQuery(access);
             }
         }
@@ -37,25 +37,25 @@ public static partial class HandwrittenSpatialCollision
         }
     }
 
-    private ref struct AccessExecution<TOutput>(World world, QueryHandle members, CollisionTree tree, TOutput output)
+    private readonly ref struct OutputReference<TOutput>(ref TOutput output)
+        where TOutput : allows ref struct
+    {
+        private readonly ref byte _value = ref Unsafe.As<TOutput, byte>(ref output);
+        internal ref TOutput Value => ref Unsafe.As<byte, TOutput>(ref _value);
+    }
+
+    private ref struct AccessExecution<TOutput>(World world, QueryHandle members, CollisionTree tree, OutputReference<TOutput> output)
         : IQueryExecution
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        public TOutput Output = output;
+        private readonly OutputReference<TOutput> _output = output;
         public bool Completed;
 
-        public void Execute(QueryCursor access)
+        public void Execute(scoped QueryCursor access)
         {
-            var execution = new PairExecution<TOutput>(tree, access, Output);
-            try
-            {
-                world.ExecuteQuery(members, ref execution);
-                Completed = execution.Completed;
-            }
-            finally
-            {
-                Output = execution.Output;
-            }
+            var execution = new PairExecution<TOutput>(tree, access, _output);
+            world.ExecuteQuery(members, ref execution);
+            Completed = execution.Completed;
         }
     }
 
@@ -65,23 +65,23 @@ public static partial class HandwrittenSpatialCollision
         private readonly CollisionTree _tree;
         private readonly QueryCursor _access;
 
-        public PairExecution(CollisionTree tree, QueryCursor access, TOutput output)
+        public PairExecution(CollisionTree tree, QueryCursor access, OutputReference<TOutput> output)
         {
             _tree = tree;
             _access = access;
-            Output = output;
+            _output = output;
             Completed = false;
         }
 
-        public TOutput Output;
+        private readonly OutputReference<TOutput> _output;
         public bool Completed;
 
-        public void Execute(QueryCursor members)
+        public void Execute(scoped QueryCursor members)
         {
             Completed = Traverse(members);
         }
 
-        private bool Traverse(QueryCursor members)
+        private bool Traverse(scoped QueryCursor members)
         {
             if (_tree.Root < 0)
                 return true;
@@ -120,7 +120,7 @@ public static partial class HandwrittenSpatialCollision
                     if (firstRow.Has<Hair>() && secondRow.Has<Hair>() &&
                         firstRow.ReadRef<Hair>().Character == secondRow.ReadRef<Hair>().Character)
                         continue;
-                    if (!Output.Add(in entities))
+                    if (!_output.Value.Add(in entities))
                         return false;
                 }
                 else if (second.IsLeaf || !first.IsLeaf && first.Height >= second.Height)

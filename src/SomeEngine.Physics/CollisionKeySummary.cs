@@ -39,14 +39,14 @@ public sealed class CollisionKeySummary<TComponent, TKey>
         get => ref _nodes[node];
     }
 
-    public void Rebuild(QueryCursor access)
+    public void Rebuild(scoped QueryCursor access)
     {
         Resize();
         if (Tree.Root >= 0)
             Fill(Tree.Root, access);
     }
 
-    private void Fill(int node, QueryCursor access)
+    private void Fill(int node, scoped QueryCursor access)
     {
         ref readonly CollisionNode value = ref Tree.Nodes[node];
         if (!value.IsLeaf)
@@ -57,7 +57,7 @@ public sealed class CollisionKeySummary<TComponent, TKey>
         Refit(node, access);
     }
 
-    public void Refit(int node, QueryCursor access)
+    public void Refit(int node, scoped QueryCursor access)
     {
         Resize();
         ref readonly CollisionNode value = ref Tree.Nodes[node];

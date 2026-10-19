@@ -11,9 +11,9 @@ public interface ICollisionPartitionEnumerable : IQueryRelationEnumerable<(Entit
 {
     CollisionTree Tree { get; }
 
-    void Prepare(RelationQueryViews queries);
+    void Prepare(scoped RelationQueryViews queries);
 
-    bool Enumerate<TOutput>(CollisionNodePair partition, RelationQueryViews queries, ref TOutput output)
+    bool Enumerate<TOutput>(CollisionNodePair partition, scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct;
 }
 
