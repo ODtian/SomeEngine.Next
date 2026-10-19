@@ -164,6 +164,20 @@
             "P95Microseconds": 452.6
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 406.15,
+            "P95Microseconds": 475.5799999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 405.95,
+            "P95Microseconds": 462.3349999999999
+          }
+        ],
         "TailSamples": [
           {
             "Round": 4,
@@ -452,6 +466,20 @@
             "Count": 31,
             "MedianMicroseconds": 406.2,
             "P95Microseconds": 449.4
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 406.2,
+            "P95Microseconds": 461.275
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 406.65,
+            "P95Microseconds": 462.655
           }
         ],
         "TailSamples": [
@@ -771,6 +799,20 @@
             "P95Microseconds": 476.3
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 407.1,
+            "P95Microseconds": 464.9
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 407.85,
+            "P95Microseconds": 475.61
+          }
+        ],
         "TailSamples": [
           {
             "Round": 1,
@@ -1059,6 +1101,20 @@
             "Count": 31,
             "MedianMicroseconds": 408.8,
             "P95Microseconds": 458.45
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 407.9,
+            "P95Microseconds": 456.955
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 409.95,
+            "P95Microseconds": 477.765
           }
         ],
         "TailSamples": [
@@ -1358,6 +1414,20 @@
             "P95Microseconds": 647.25
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 428.6,
+            "P95Microseconds": 496.8949999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 429.5,
+            "P95Microseconds": 713.44
+          }
+        ],
         "TailSamples": [
           {
             "Round": 2,
@@ -1638,6 +1708,20 @@
             "Count": 31,
             "MedianMicroseconds": 430.3,
             "P95Microseconds": 605.25
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 429.9,
+            "P95Microseconds": 485.1699999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 430.2,
+            "P95Microseconds": 598.0799999999998
           }
         ],
         "TailSamples": [
@@ -1945,6 +2029,20 @@
             "P95Microseconds": 473.95
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 415.6,
+            "P95Microseconds": 491.4549999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 420.55,
+            "P95Microseconds": 470.16
+          }
+        ],
         "TailSamples": [
           {
             "Round": 0,
@@ -2243,6 +2341,20 @@
             "P95Microseconds": 503.15
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 413.3,
+            "P95Microseconds": 470.73
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 419.7,
+            "P95Microseconds": 481.65
+          }
+        ],
         "TailSamples": [
           {
             "Round": 0,
@@ -2538,6 +2650,20 @@
             "Count": 31,
             "MedianMicroseconds": 116.2,
             "P95Microseconds": 147.55
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 116.3,
+            "P95Microseconds": 137.595
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 121.65,
+            "P95Microseconds": 148.98999999999998
           }
         ],
         "TailSamples": [
@@ -2840,6 +2966,20 @@
             "Count": 31,
             "MedianMicroseconds": 111.7,
             "P95Microseconds": 134.85
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 113.35,
+            "P95Microseconds": 135.86
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 114.15,
+            "P95Microseconds": 146.13
           }
         ],
         "TailSamples": [
@@ -3166,6 +3306,20 @@
             "P95Microseconds": 153.45
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 135.45,
+            "P95Microseconds": 156.425
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 130.95,
+            "P95Microseconds": 152.74
+          }
+        ],
         "TailSamples": [
           {
             "Round": 1,
@@ -3450,6 +3604,20 @@
             "Count": 31,
             "MedianMicroseconds": 133.0,
             "P95Microseconds": 150.3
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 129.15,
+            "P95Microseconds": 155.26
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 127.7,
+            "P95Microseconds": 158.24999999999997
           }
         ],
         "TailSamples": [
@@ -3757,6 +3925,20 @@
             "P95Microseconds": 184.55
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 131.95,
+            "P95Microseconds": 158.96499999999997
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 134.45,
+            "P95Microseconds": 169.8
+          }
+        ],
         "TailSamples": [
           {
             "Round": 1,
@@ -4061,6 +4243,20 @@
             "Count": 31,
             "MedianMicroseconds": 137.7,
             "P95Microseconds": 154.9
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 127.8,
+            "P95Microseconds": 156.42
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 137.05,
+            "P95Microseconds": 158.315
           }
         ],
         "TailSamples": [
@@ -4380,6 +4576,20 @@
             "P95Microseconds": 3634.55
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 3385.15,
+            "P95Microseconds": 3638.664999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 3392.25,
+            "P95Microseconds": 3627.355
+          }
+        ],
         "TailSamples": [
           {
             "Round": 3,
@@ -4672,6 +4882,20 @@
             "Count": 31,
             "MedianMicroseconds": 3153.4,
             "P95Microseconds": 3409.7
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 3181.4,
+            "P95Microseconds": 3495.204999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 3181.85,
+            "P95Microseconds": 3427.485
           }
         ],
         "TailSamples": [
@@ -4967,6 +5191,20 @@
             "P95Microseconds": 3725.85
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 3372.3,
+            "P95Microseconds": 4231.254999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 3391.4,
+            "P95Microseconds": 3770.665
+          }
+        ],
         "TailSamples": [
           {
             "Round": 0,
@@ -5251,6 +5489,20 @@
             "Count": 31,
             "MedianMicroseconds": 3469.3,
             "P95Microseconds": 3763.7
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 3406.5,
+            "P95Microseconds": 4137.8899999999985
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 3436.45,
+            "P95Microseconds": 3714.8
           }
         ],
         "TailSamples": [
@@ -5558,6 +5810,20 @@
             "P95Microseconds": 3600.25
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 3310.6,
+            "P95Microseconds": 3556.08
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 3303.6,
+            "P95Microseconds": 3517.265
+          }
+        ],
         "TailSamples": [
           {
             "Round": 1,
@@ -5858,6 +6124,20 @@
             "Count": 31,
             "MedianMicroseconds": 3216.3,
             "P95Microseconds": 3615.65
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 3211.3,
+            "P95Microseconds": 3471.575
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 3201.8,
+            "P95Microseconds": 3403.835
           }
         ],
         "TailSamples": [
@@ -6165,6 +6445,20 @@
             "P95Microseconds": 1911.15
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 1617.85,
+            "P95Microseconds": 1790.445
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 1621.45,
+            "P95Microseconds": 1820.985
+          }
+        ],
         "TailSamples": [
           {
             "Round": 8,
@@ -6453,6 +6747,20 @@
             "Count": 31,
             "MedianMicroseconds": 1594.8,
             "P95Microseconds": 1655.3
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 1582.0,
+            "P95Microseconds": 1726.775
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 1584.45,
+            "P95Microseconds": 1699.0599999999997
           }
         ],
         "TailSamples": [
@@ -6768,6 +7076,20 @@
             "P95Microseconds": 1984.9
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 1865.5,
+            "P95Microseconds": 1998.475
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 1857.45,
+            "P95Microseconds": 2002.355
+          }
+        ],
         "TailSamples": [
           {
             "Round": 2,
@@ -7056,6 +7378,20 @@
             "Count": 31,
             "MedianMicroseconds": 1782.3,
             "P95Microseconds": 2006.75
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 1811.35,
+            "P95Microseconds": 1951.92
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 1798.1,
+            "P95Microseconds": 1980.475
           }
         ],
         "TailSamples": [
@@ -7353,6 +7689,20 @@
             "Count": 31,
             "MedianMicroseconds": 1923.2,
             "P95Microseconds": 2016.6
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 1920.45,
+            "P95Microseconds": 2242.3699999999994
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 1880.15,
+            "P95Microseconds": 2040.83
           }
         ],
         "TailSamples": [
@@ -7661,6 +8011,20 @@
             "P95Microseconds": 2022.05
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 1860.2,
+            "P95Microseconds": 2122.189999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 1832.35,
+            "P95Microseconds": 2017.525
+          }
+        ],
         "TailSamples": [
           {
             "Round": 0,
@@ -7940,6 +8304,20 @@
             "Count": 31,
             "MedianMicroseconds": 27941.5,
             "P95Microseconds": 30438.4
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 28215.7,
+            "P95Microseconds": 31317.7
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 28187.05,
+            "P95Microseconds": 30596.135
           }
         ],
         "TailSamples": [
@@ -8222,6 +8600,20 @@
             "Count": 31,
             "MedianMicroseconds": 27029.4,
             "P95Microseconds": 29209.8
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 27321.05,
+            "P95Microseconds": 30230.86
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 27189.05,
+            "P95Microseconds": 30260.53
           }
         ],
         "TailSamples": [
@@ -8513,6 +8905,20 @@
             "P95Microseconds": 34790.8
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 32515.15,
+            "P95Microseconds": 37098.88999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 32717.25,
+            "P95Microseconds": 37021.305
+          }
+        ],
         "TailSamples": [
           {
             "Round": 10,
@@ -8789,6 +9195,20 @@
             "Count": 31,
             "MedianMicroseconds": 28061.2,
             "P95Microseconds": 31293.4
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 28071.25,
+            "P95Microseconds": 32777.38999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 28386.4,
+            "P95Microseconds": 32149.75
           }
         ],
         "TailSamples": [
@@ -9076,6 +9496,20 @@
             "P95Microseconds": 31290.55
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 28880.7,
+            "P95Microseconds": 31459.14
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 28842.95,
+            "P95Microseconds": 34257.01
+          }
+        ],
         "TailSamples": [
           {
             "Round": 3,
@@ -9352,6 +9786,20 @@
             "Count": 31,
             "MedianMicroseconds": 28982.3,
             "P95Microseconds": 31867.0
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 29187.95,
+            "P95Microseconds": 32048.02
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 28980.05,
+            "P95Microseconds": 31939.01
           }
         ],
         "TailSamples": [
@@ -9651,6 +10099,20 @@
             "P95Microseconds": 28660.5
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 26779.45,
+            "P95Microseconds": 28742.235
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 26804.1,
+            "P95Microseconds": 29811.835
+          }
+        ],
         "TailSamples": [
           {
             "Round": 7,
@@ -9927,6 +10389,20 @@
             "Count": 31,
             "MedianMicroseconds": 26679.7,
             "P95Microseconds": 27665.65
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 26809.15,
+            "P95Microseconds": 28434.139999999992
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 26730.4,
+            "P95Microseconds": 28442.665
           }
         ],
         "TailSamples": [
@@ -10222,6 +10698,20 @@
             "P95Microseconds": 30862.25
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 26941.7,
+            "P95Microseconds": 30379.325
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 26990.15,
+            "P95Microseconds": 31089.54
+          }
+        ],
         "TailSamples": [
           {
             "Round": 2,
@@ -10498,6 +10988,20 @@
             "Count": 31,
             "MedianMicroseconds": 26887.7,
             "P95Microseconds": 30111.65
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 26881.2,
+            "P95Microseconds": 30416.905
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 27037.25,
+            "P95Microseconds": 30210.045
           }
         ],
         "TailSamples": [
@@ -10789,6 +11293,20 @@
             "P95Microseconds": 33983.8
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 27637.75,
+            "P95Microseconds": 37683.66999999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 27193.65,
+            "P95Microseconds": 32805.25
+          }
+        ],
         "TailSamples": [
           {
             "Round": 14,
@@ -11069,6 +11587,20 @@
             "Count": 31,
             "MedianMicroseconds": 27018.7,
             "P95Microseconds": 29300.05
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 27183.1,
+            "P95Microseconds": 35355.47499999999
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 26592.2,
+            "P95Microseconds": 31648.194999999992
           }
         ],
         "TailSamples": [
@@ -11356,6 +11888,20 @@
             "P95Microseconds": 34521.4
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 29821.7,
+            "P95Microseconds": 35154.274999999994
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 30025.75,
+            "P95Microseconds": 39583.74
+          }
+        ],
         "TailSamples": [
           {
             "Round": 2,
@@ -11632,6 +12178,20 @@
             "Count": 31,
             "MedianMicroseconds": 29258.2,
             "P95Microseconds": 39177.55
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 28852.25,
+            "P95Microseconds": 35414.725
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 29244.45,
+            "P95Microseconds": 37606.93999999999
           }
         ],
         "TailSamples": [
@@ -11927,6 +12487,20 @@
             "P95Microseconds": 34561.85
           }
         ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 30714.45,
+            "P95Microseconds": 37963.62999999998
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 30854.1,
+            "P95Microseconds": 37827.025
+          }
+        ],
         "TailSamples": [
           {
             "Round": 0,
@@ -12207,6 +12781,20 @@
             "Count": 31,
             "MedianMicroseconds": 29523.7,
             "P95Microseconds": 32162.4
+          }
+        ],
+        "SideOrderDistributions": [
+          {
+            "SideOrder": "E/H",
+            "Samples": 128,
+            "MedianMicroseconds": 29837.55,
+            "P95Microseconds": 35239.369999999995
+          },
+          {
+            "SideOrder": "H/E",
+            "Samples": 120,
+            "MedianMicroseconds": 30088.6,
+            "P95Microseconds": 36948.835
           }
         ],
         "TailSamples": [

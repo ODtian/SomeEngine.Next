@@ -48,6 +48,14 @@ $analyses = foreach ($submission in $submissions) {
                 TailBySideOrder = @($tail | Group-Object SideOrder | ForEach-Object { [pscustomobject]@{ SideOrder = $_.Name; Count = $_.Count } })
                 TailByFrame = @($tail | Group-Object Frame | ForEach-Object { [pscustomobject]@{ Frame = [int]$_.Name; Count = $_.Count } })
                 FrameDistributions = @($frames)
+                SideOrderDistributions = @($samples | Group-Object SideOrder | ForEach-Object {
+                    $values = @($_.Group.$ticksProperty)
+                    [pscustomobject]@{
+                        SideOrder = $_.Name; Samples = $values.Count
+                        MedianMicroseconds = (Percentile $values 0.5) * 1e6 / $report.Device.StopwatchFrequency
+                        P95Microseconds = (Percentile $values 0.95) * 1e6 / $report.Device.StopwatchFrequency
+                    }
+                })
                 TailSamples = @($tail | Select-Object Round, SideOrder, Frame,
                     @{ Name = 'ElapsedTicks'; Expression = { $_.$ticksProperty } },
                     ProcessorBefore, ProcessorAfter, Gen0, Gen1, Gen2)

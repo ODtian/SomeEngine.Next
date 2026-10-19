@@ -12,6 +12,8 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond, TSelecti
     where TSecond : struct
     where TSelection : struct, IRelationSelection
 {
+    private readonly bool _componentsRequired = ReadComponentRequirements(source);
+
     public World World => source.World;
     public int QueryCount => 1;
     public static bool ReadsFromSingleQuery => true;
@@ -27,10 +29,15 @@ public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond, TSelecti
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         QueryCursor members = queries.First;
-        bool required = members.Requires<TFirst>() &&
-            (typeof(TFirst) == typeof(TSecond) || members.Requires<TSecond>());
-        return required ? Enumerate<RequiredRelationComponents, TOutput>(members, relation, ref output)
+        return _componentsRequired ? Enumerate<RequiredRelationComponents, TOutput>(members, relation, ref output)
             : Enumerate<OptionalRelationComponents, TOutput>(members, relation, ref output);
+    }
+
+    private static bool ReadComponentRequirements(EntityPairsWithin source)
+    {
+        QueryDefinition definition = source.World.GetQueryDefinition(source.GetQuery(0));
+        return definition.Requires<TFirst>() &&
+            (typeof(TFirst) == typeof(TSecond) || definition.Requires<TSecond>());
     }
 
     private static bool Enumerate<TPresence, TOutput>(QueryCursor members, TRelation predicate, ref TOutput output)

@@ -46,23 +46,7 @@ public readonly ref struct QueryCursor
     public uint CurrentSystemVersion { get; }
 
     /// <summary>Reports whether every member requires this component through All or the sole Any term.</summary>
-    public bool Requires<T>() where T : struct
-    {
-        int componentId = ComponentMetadata<T>.Id;
-        int anyCount = 0;
-        bool matchingAny = false;
-        foreach (QueryTerm term in _plan.Definition.Terms)
-        {
-            if (term.Kind == QueryTermKind.All && term.ComponentId == componentId)
-                return true;
-            if (term.Kind == QueryTermKind.Any)
-            {
-                anyCount++;
-                matchingAny |= term.ComponentId == componentId;
-            }
-        }
-        return matchingAny && anyCount == 1;
-    }
+    public bool Requires<T>() where T : struct => _plan.Definition.Requires<T>();
 
     internal World Owner => _world;
     internal QueryState State => _plan;

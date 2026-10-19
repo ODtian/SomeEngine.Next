@@ -55,8 +55,19 @@ public sealed class GenericQueryExecutionTests
 
         world.ExecuteQuery(query, ref execution);
 
+        Assert.True(definition.Requires<Position>());
+        Assert.False(definition.Requires<DisplayName>());
         Assert.True(execution.RequiresPosition);
         Assert.False(execution.RequiresName);
+
+        QueryDefinition any = world.QueryDefinition().Any<Position>().Build().WithOptionalRead<DisplayName>();
+        var anyExecution = new RequiredNameComponents();
+        world.ExecuteQuery(world.Query(any), ref anyExecution);
+
+        Assert.True(any.Requires<Position>());
+        Assert.False(any.Requires<DisplayName>());
+        Assert.True(anyExecution.RequiresPosition);
+        Assert.False(anyExecution.RequiresName);
     }
 
     [Fact]
@@ -136,6 +147,8 @@ public sealed class GenericQueryExecutionTests
 
         world.ExecuteQuery(query, ref execution);
 
+        Assert.False(definition.Requires<Position>());
+        Assert.False(definition.Requires<Velocity>());
         Assert.Equal(2, execution.Count);
     }
 

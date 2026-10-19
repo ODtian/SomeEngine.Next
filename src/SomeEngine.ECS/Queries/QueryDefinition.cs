@@ -54,6 +54,25 @@ public sealed class QueryDefinition
 
     public QueryKey Key { get; }
 
+    /// <summary>Reports whether All or the sole Any term requires this component for every member.</summary>
+    public bool Requires<T>() where T : struct
+    {
+        int componentId = ComponentMetadata<T>.Id;
+        int anyCount = 0;
+        bool matchingAny = false;
+        foreach (QueryTerm term in _terms)
+        {
+            if (term.Kind == QueryTermKind.All && term.ComponentId == componentId)
+                return true;
+            if (term.Kind == QueryTermKind.Any)
+            {
+                anyCount++;
+                matchingAny |= term.ComponentId == componentId;
+            }
+        }
+        return matchingAny && anyCount == 1;
+    }
+
     /// <summary>Creates the optional storage-access union of both definitions.</summary>
     public QueryDefinition WithAccessFrom(QueryDefinition definition)
     {

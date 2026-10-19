@@ -128,7 +128,7 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 
 `QueryRow.TryReadRef<T>(out ComponentReference<T>)` 在一次访问声明查找后借用实际组件引用。`ComponentReference<T>.HasValue` 表达可选组件的存在性，`Value` 返回 `ref readonly T`。`QueryCursor.ReadRows<TFirst,TSecond>()` 沿原有行枚举取得成员，在块边界绑定这两个组件的可选列；`MoveNext(out row,out first,out second)` 同时交付原行及两个引用。读取声明由原查询的 `WithOptionalRead<T>()` 形成，成员、共享条件、enabled 和 Changed 仍使用原查询筛选。引用与枚举器的有效期均为当前 `World.ExecuteQuery` 回调。
 
-`QueryCursor.Requires<T>()` 从本次执行的原 QueryDefinition 读取必有事实：All 声明该组件，或整个 Any 集合只有该组件。二元 Within 在枚举入口读取两位置的事实并闭合 Required/Optional 组件模式，逐对匹配使用这一已有不变量。可选模式保留缺组件关系为 false 和 Except 保留该行的行为。定义继续由原 QueryState 持有。
+`QueryDefinition.Requires<T>()` 根据 All 或唯一 Any 声明提供必有组件事实，`QueryCursor.Requires<T>()` 委托当前执行的原定义读取同一事实。二元 Within 在普通描述构造时从固定成员定义取得两位置的必需性，并保存一个 `_componentsRequired` 布尔值；枚举直接选择原有 Required/Optional 组件模式。WithOptionalRead 保留成员 Kind，因此读取声明继续沿同一必有事实。可选模式保留缺组件关系为 false 和 Except 保留该行的行为。定义继续由原查询状态持有，描述持有其固定位置对应的派生事实。
 
 `Within(...).Where/Except(...)` 的二元组件入口直接使用这些已有行和引用。后续规则通过查询专用的 `IQueryRelationOutput` 和 `IQueryRelation` 转发借用行，公开终端仍通过 `IRelationOutput.Add(in identity)` 接收身份元组。固定候选、键桶和空间来源同样复用已取得的成员行；存储事实及边保持各自参与者来源和访问读取。
 
