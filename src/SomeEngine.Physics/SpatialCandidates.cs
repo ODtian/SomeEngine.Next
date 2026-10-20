@@ -22,14 +22,13 @@ public readonly struct SpatialCandidates<TGeometry, TBoundsReader, TFilter, TGro
     where TFilter : struct, ISpatialFilter<TGroupResults>
     where TGroupResults : unmanaged
 {
-    public SpatialCandidates(CollisionCandidates<TGeometry, TBoundsReader> source, TFilter filter)
-    {
-        Source = source;
-        Filter = filter;
-    }
+    private readonly SpatialQueryData _data;
 
-    public CollisionCandidates<TGeometry, TBoundsReader> Source { get; }
-    public TFilter Filter { get; }
+    public SpatialCandidates(CollisionCandidates<TGeometry, TBoundsReader> source, TFilter filter) =>
+        _data = new(source, filter);
+
+    public CollisionCandidates<TGeometry, TBoundsReader> Source => _data.Source;
+    public TFilter Filter => _data.Filter;
     public CollisionTree Tree => Source.Tree;
     public World World => Source.World;
     public int QueryCount => 1;
@@ -80,6 +79,12 @@ public readonly struct SpatialCandidates<TGeometry, TBoundsReader, TFilter, TGro
     private struct SummaryExecution(TFilter filter) : IQueryExecution
     {
         public void Execute(scoped QueryCursor access) => filter.RebuildSummaries(access);
+    }
+
+    private sealed class SpatialQueryData(CollisionCandidates<TGeometry, TBoundsReader> source, TFilter filter)
+    {
+        internal CollisionCandidates<TGeometry, TBoundsReader> Source { get; } = source;
+        internal TFilter Filter { get; } = filter;
     }
 }
 
