@@ -1,0 +1,249 @@
+{
+  "Summary": {
+    "Series": "focused-native-r42",
+    "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+    "CaseCount": 2,
+    "PreparationExitCode": 0,
+    "CaseExitCodes": [
+      0
+    ],
+    "AnalysisExitCodes": [
+      0
+    ],
+    "LastCaseSubmittedAtUtc": "2026-10-20T00:10:29.2276122Z",
+    "PreparationFinishedAtUtc": "2026-10-20T08:10:29.5166856+08:00",
+    "FirstCaseStartedAtUtc": "2026-10-20T08:14:45.7548996+08:00",
+    "LastCaseFinishedAtUtc": "2026-10-20T08:14:49.669574+08:00",
+    "FirstAnalysisStartedAtUtc": "2026-10-20T08:16:56.4563539+08:00",
+    "AllCasesSubmittedBeforeExecution": true,
+    "PreparationFinishedBeforeExecution": true,
+    "AnalysisStartedAfterExecution": true,
+    "QuietPassed": true,
+    "CaseExecutionSeconds": 1.0055074,
+    "BetweenCasesSeconds": 2.909167,
+    "AnalysisExecutionSeconds": 5.4138054,
+    "SubmissionToAnalysisFinishedSeconds": 643.3699613
+  },
+  "Preparation": {
+    "Id": "ce5e67425e8c4210b26be676818ac1cd",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\focused-native-r42\\master.ps1"
+    ],
+    "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+    "ExitCode": 0,
+    "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+    "Kind": "Exclusive",
+    "SubmittedAtUtc": "2026-10-20T08:06:18.500198+08:00",
+    "StartedAtUtc": "2026-10-20T08:10:26.7618595+08:00",
+    "FinishedAtUtc": "2026-10-20T08:10:29.5166856+08:00"
+  },
+  "BatchPreparation": {
+    "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+    "PublishQueueId": "734696c3200a437bb1f61a2b09f541b9",
+    "StartedAtUtc": "2026-10-20T00:10:27.8854606Z",
+    "LastCaseSubmittedAtUtc": "2026-10-20T00:10:29.2276122Z",
+    "InitialObservationEndedAtUtc": "2026-10-20T00:10:29.2964676Z",
+    "WatcherInitialObservationEndedAtUtc": "2026-10-20T00:10:29.2640044Z",
+    "NativeReaderRelease": {
+      "ReaderQueueId": "16edbce2c6204e5280e7021ed442d137",
+      "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+      "ReadStartedAtUtc": "2026-10-20T00:07:49.1386367Z",
+      "ReadFinishedAtUtc": "2026-10-20T00:07:49.2261149Z",
+      "ReleasedAtUtc": "2026-10-20T00:07:49.2261149Z"
+    },
+    "RootHostRelease": {
+      "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+      "RootHostReadEndedAtUtc": "2026-10-20T00:02:00Z",
+      "StandardsReadEndedAtUtc": "2026-10-20T00:02:28Z",
+      "RecordedAtUtc": "2026-10-20T00:10:27.8462863Z"
+    },
+    "PreparationEndAtUtc": "2026-10-20T00:10:29.2964676Z",
+    "CaseCount": 2,
+    "ReaderQueueId": "16edbce2c6204e5280e7021ed442d137",
+    "FinalQueueId": "67b18587028044d69c1f423e0d271914"
+  },
+  "Cases": [
+    {
+      "CaseId": "threads-small-sparse-parallel",
+      "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+      "Queue": {
+        "Id": "53a70d2c49954185a12387a6e32f3f97",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "threads",
+          "--size",
+          "small",
+          "--variant",
+          "sparse-parallel",
+          "--source",
+          "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r42\\threads-small-sparse-parallel.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T08:10:28.3370296+08:00",
+        "StartedAtUtc": "2026-10-20T08:14:45.7548996+08:00",
+        "FinishedAtUtc": "2026-10-20T08:14:46.2588103+08:00"
+      }
+    },
+    {
+      "CaseId": "threads-small-uniform-parallel",
+      "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+      "Queue": {
+        "Id": "c1d465cdff234907a06d766b0b7fd561",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "threads",
+          "--size",
+          "small",
+          "--variant",
+          "uniform-parallel",
+          "--source",
+          "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r42\\threads-small-uniform-parallel.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T08:10:28.6439486+08:00",
+        "StartedAtUtc": "2026-10-20T08:14:49.1679773+08:00",
+        "FinishedAtUtc": "2026-10-20T08:14:49.669574+08:00"
+      }
+    }
+  ],
+  "Analyses": [
+    {
+      "Id": "67b18587028044d69c1f423e0d271914",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Complete-Measurements.ps1",
+        "-Series",
+        "focused-native-r42"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-20T08:10:28.9615613+08:00",
+      "StartedAtUtc": "2026-10-20T08:16:56.4563539+08:00",
+      "FinishedAtUtc": "2026-10-20T08:17:01.8701593+08:00"
+    }
+  ],
+  "PostprocessStages": [
+    {
+      "Script": "Collect-Measurements.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1",
+        "-Series",
+        "focused-native-r42"
+      ],
+      "StartedAtUtc": "2026-10-20T00:16:57.3854828Z",
+      "FinishedAtUtc": "2026-10-20T00:16:58.8837569Z",
+      "ExitCode": 0
+    },
+    {
+      "Script": "Export-Evidence.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1",
+        "-Series",
+        "focused-native-r42"
+      ],
+      "StartedAtUtc": "2026-10-20T00:16:58.9767959Z",
+      "FinishedAtUtc": "2026-10-20T00:17:00.235457Z",
+      "ExitCode": 0
+    },
+    {
+      "Script": "Write-MeasurementReport.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1",
+        "-Series",
+        "focused-native-r42"
+      ],
+      "StartedAtUtc": "2026-10-20T00:17:00.241411Z",
+      "FinishedAtUtc": "2026-10-20T00:17:01.6660704Z",
+      "ExitCode": 0
+    }
+  ],
+  "BetweenCases": [
+    {
+      "BeforeCaseId": "threads-small-sparse-parallel",
+      "AfterCaseId": "threads-small-uniform-parallel",
+      "Seconds": 2.909167
+    }
+  ],
+  "WatcherReady": {
+    "ProcessId": 49844,
+    "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+    "InitialObservationStartedAtUtc": "2026-10-20T00:10:29.24626Z",
+    "InitialObservationEndedAtUtc": "2026-10-20T00:10:29.2640044Z",
+    "CaseQueueIds": [
+      "53a70d2c49954185a12387a6e32f3f97",
+      "c1d465cdff234907a06d766b0b7fd561"
+    ],
+    "AnalysisQueueIds": [
+      "67b18587028044d69c1f423e0d271914"
+    ],
+    "FinalQueueId": "67b18587028044d69c1f423e0d271914",
+    "FinalReceipt": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\67b18587028044d69c1f423e0d271914\\result.json"
+  },
+  "ControlObservation": {
+    "ProcessStartedAtUtc": "2026-10-20T00:13:02Z",
+    "ObservationStartedAtUtc": "2026-10-20T00:13:02Z",
+    "ObservationEndedAtUtc": "2026-10-20T00:13:21Z",
+    "Kind": "Root queue control metadata",
+    "Detail": "External Bistro python64744 started00:10:29.519790Z and remained running00:13:20.2195364Z; both selected cases were queued."
+  },
+  "ControlObservationOverlaps": [
+    null
+  ],
+  "RootHostRelease": {
+    "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+    "RootHostReadEndedAtUtc": "2026-10-20T00:02:00Z",
+    "StandardsReadEndedAtUtc": "2026-10-20T00:02:28Z",
+    "RecordedAtUtc": "2026-10-20T00:10:27.8462863Z"
+  },
+  "NativeReaderRelease": {
+    "ReaderQueueId": "16edbce2c6204e5280e7021ed442d137",
+    "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+    "ReadStartedAtUtc": "2026-10-20T00:07:49.1386367Z",
+    "ReadFinishedAtUtc": "2026-10-20T00:07:49.2261149Z",
+    "ReleasedAtUtc": "2026-10-20T00:07:49.2261149Z"
+  }
+}

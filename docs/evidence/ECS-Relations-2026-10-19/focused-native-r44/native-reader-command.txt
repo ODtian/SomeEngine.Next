@@ -1,0 +1,101 @@
+param([Parameter(Mandatory=$true)][string]$ReaderQueueId)
+$ErrorActionPreference='Stop'
+Set-Location 'F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next'
+$started=[DateTime]::UtcNow
+$producerResult=Get-Content -LiteralPath 'artifacts/benchmark-queue/5e4a42759df440bf92d9f5601e4254d6/result.json' -Raw | ConvertFrom-Json
+if($producerResult.ExitCode -ne 0){'STOP producer result';exit 2}
+$sourceRecordPath='artifacts/relations-measurements/focused-native-r44/source.json'
+$sourceRecord=Get-Content -LiteralPath $sourceRecordPath -Raw | ConvertFrom-Json
+foreach($stage in @('BehaviorExitCode','PushExitCode','PublishExitCode','SourceCheckExitCode')) {
+ if($sourceRecord.$stage -ne 0){'STOP completed stage '+$stage+'='+$sourceRecord.$stage;exit 2}
+}
+$source=[string]$sourceRecord.SourceCommit
+if([string]::IsNullOrWhiteSpace($source)){'STOP source record';exit 2}
+$evidence='docs/evidence/ECS-Relations-2026-10-19/focused-native-r44'
+[void](New-Item -ItemType Directory -Path $evidence -Force)
+$exe=[string]$sourceRecord.Executable.Path
+$listing=@(& $exe --mode list --source $source)
+$sourceExit=$LASTEXITCODE
+if($sourceExit -ne 0){'STOP compiled source';exit $sourceExit}
+$listing | Set-Content -LiteralPath (Join-Path $evidence 'native-source-list.json') -Encoding utf8
+$sourceRecord | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $evidence 'native-source-record.json') -Encoding utf8
+$sourceRecord | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $evidence 'native-producer-stages.json') -Encoding utf8
+$producerResult | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $evidence 'native-producer-result.json') -Encoding utf8
+$obj=[string]$sourceRecord.Object.Path
+$before=Get-Item -LiteralPath $obj
+$beforeTime=$before.LastWriteTimeUtc.ToString('O');$beforeLength=$before.Length
+'SOURCE '+$source+' OBJECT UTC='+$beforeTime+' Length='+$beforeLength
+$llvm='C:\Program Files\LLVM\bin\llvm-objdump.exe'
+$names=@(& $llvm -t $obj | ForEach-Object {if($_ -match '\(sec\s+2\).* 0x[0-9a-f]+ (.+)$'){$Matches[1]}})
+if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+$dataPrefix='SomeEngine_ECS_Systems_SomeEngine_ECS_Systems_ReadOnlyQueryPairJobs_PairJobData_1<'
+$pairData=@($names | Where-Object {$_.StartsWith($dataPrefix) -and $_.Contains('CollisionPairBuffer_CountJob_1<') -and $_.Contains('DefaultContacts') -and $_.Contains('MutualCategories') -and $_.Contains('HairCharacterIndex') -and $_.EndsWith('__Execute')})
+'CANDIDATE PartitionData count='+$pairData.Count
+$pairData | Set-Content -LiteralPath (Join-Path $evidence 'native-symbol-discovery.txt') -Encoding utf8
+if($pairData.Count -ne 1){'STOP selection';exit 2}
+$roles=@([pscustomobject]@{Role='PartitionData';Name=$pairData[0]})
+$hits=@($names | Where-Object {$_ -ceq $roles[0].Name})
+'TARGET PartitionData count='+$hits.Count
+if($hits.Count -ne 1){exit 2}
+$roles | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'native-symbols.json') -Encoding utf8
+$dataDump=@(& $llvm -d -r --no-show-raw-insn ('--disassemble-symbols='+$roles[0].Name) $obj)
+if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+$dataDump | Set-Content -LiteralPath (Join-Path $evidence 'native-PartitionData.raw.asm') -Encoding utf8
+@($dataDump | ForEach-Object {$_ -replace '\s+#.*$','' -replace ' <.*$',' <symbol>'}) | Set-Content -LiteralPath (Join-Path $evidence 'native-PartitionData.asm') -Encoding utf8
+$traversalCalls=@(foreach($line in $dataDump){
+ if($line -match '^\s*([0-9a-f]+):\s+callq\s+0x([0-9a-f]+)\s+<(.+)>') {
+  $callSite=$Matches[1];$targetAddress=$Matches[2];$targetName=$Matches[3]
+  if($targetName.StartsWith('SomeEngine_Physics_SomeEngine_Physics_SpatialTraversal__Enumerate_0<') -and $targetName.Contains('CollisionPairQueries_PairCount')) {
+   [pscustomobject]@{DataCallSite=$callSite;TargetAddress=$targetAddress;Name=$targetName}
+  }
+ }
+})
+'TARGET CountTraversal from data call count='+$traversalCalls.Count
+$traversalCalls | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'native-count-call-target.json') -Encoding utf8
+if($traversalCalls.Count -ne 1){'STOP count call target';exit 2}
+$target=$traversalCalls[0]
+$hits=@($names | Where-Object {$_ -ceq $target.Name})
+'TARGET CountTraversal symbol count='+$hits.Count
+if($hits.Count -ne 1){'STOP count traversal symbol';exit 2}
+$roles+=@([pscustomobject]@{Role='CountTraversal';Name=$target.Name})
+$roles | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'native-symbols.json') -Encoding utf8
+$traversalDump=@(& $llvm -d -r --no-show-raw-insn ('--disassemble-symbols='+$target.Name) $obj)
+if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+$traversalDump | Set-Content -LiteralPath (Join-Path $evidence 'native-CountTraversal.raw.asm') -Encoding utf8
+@($traversalDump | ForEach-Object {$_ -replace '\s+#.*$','' -replace ' <.*$',' <symbol>'}) | Set-Content -LiteralPath (Join-Path $evidence 'native-CountTraversal.asm') -Encoding utf8
+$dump=@($dataDump)+@($traversalDump)
+$dump | Set-Content -LiteralPath (Join-Path $evidence 'native-functions.raw.asm') -Encoding utf8
+$sourceFiles=@('src/SomeEngine.Physics/SpatialFilters.cs','src/SomeEngine.Physics/SpatialCandidates.cs')
+foreach($file in $sourceFiles){
+ $current=@(& git show ($source+':'+$file))
+ if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+ $current | Set-Content -LiteralPath (Join-Path $evidence (([IO.Path]::GetFileNameWithoutExtension($file))+'-r44-source.txt')) -Encoding utf8
+}
+$previous=@(& git show '73f7e089990e65cf4fc5517593e31aaeee03298a:src/SomeEngine.Physics/SpatialFilters.cs')
+if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+$previous | Set-Content -LiteralPath (Join-Path $evidence 'SpatialFilters-r43-source.txt') -Encoding utf8
+$templateReceipt=Get-Content -LiteralPath 'artifacts/benchmark-queue/1b0235ae0a3e483c9c78eae2e8b7fb49/result.json' -Raw|ConvertFrom-Json
+$template=[string]$templateReceipt.Arguments[-1]
+$functionStart=$template.IndexOf('function ReadFunctions(');$setsStart=$template.IndexOf('$sets=');$statsStart=$template.IndexOf('foreach($set in $sets)');$afterStart=$template.IndexOf('$after=')
+$roleLine='$role=if($name.Contains(''HandwrittenDefaultPairs'')) {''Hand''} else {''Required''}'
+$newRoleLine='$role=($roles | Where-Object {$_.Name -ceq $name}).Role'
+$functionCode=$template.Substring($functionStart,$setsStart-$functionStart).Replace($roleLine,$newRoleLine)
+$setsCode='$sets=@([pscustomobject]@{Version=$source;Functions=@(ReadFunctions $dump)})'
+$statsCode=$template.Substring($statsStart,$afterStart-$statsStart)
+$stats=@(& ([ScriptBlock]::Create($functionCode+[Environment]::NewLine+$setsCode+[Environment]::NewLine+$statsCode)))
+$stats|Set-Content -LiteralPath (Join-Path $evidence 'native-function-statistics.log') -Encoding utf8
+$statistics=@($stats|Where-Object{$_ -match '^\{"Version"'}|ForEach-Object{$_|ConvertFrom-Json})
+$statistics|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $evidence 'native-function-statistics.json') -Encoding utf8
+
+$after=Get-Item -LiteralPath $obj
+$facts=[ordered]@{SourceCommit=$source;ReaderQueueId=$readerQueueId;ProducerQueueId='5e4a42759df440bf92d9f5601e4254d6';ReaderCompletion='Master result records complete experiment';CompletedStages=[ordered]@{Behavior=$sourceRecord.BehaviorExitCode;Push=$sourceRecord.PushExitCode;Publish=$sourceRecord.PublishExitCode;SourceCheck=$sourceRecord.SourceCheckExitCode};ReferenceReader='15e3f6f0e9904c3dbf3e5d958197d7aa';Object=$before.FullName;ObjectBeforeUtc=$beforeTime;ObjectBeforeLength=$beforeLength;ObjectAfterUtc=$after.LastWriteTimeUtc.ToString('O');ObjectAfterLength=$after.Length;StartedAtUtc=$started.ToString('O');FinishedAtUtc=[DateTime]::UtcNow.ToString('O');SourceExitCode=$sourceExit;DisassemblyCommand=@($llvm,'-d','-r','--no-show-raw-insn',('--disassemble-symbols='+$roles[0].Name),$obj);TraversalDisassemblyCommand=@($llvm,'-d','-r','--no-show-raw-insn',('--disassemble-symbols='+$target.Name),$obj);Targets=$roles}
+$facts | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $evidence 'native-reader-facts.json') -Encoding utf8
+foreach($stat in $statistics){'FUNCTION '+($stat | ConvertTo-Json -Compress)}
+'EVIDENCE '+(Join-Path (Get-Location) $evidence)
+'OBJECT AFTER UTC='+$after.LastWriteTimeUtc.ToString('O')+' Length='+$after.Length
+'AUDIT END UTC='+[DateTime]::UtcNow.ToString('O')
+
+
+$released=[DateTime]::UtcNow.ToString('O')
+[ordered]@{ReaderQueueId=$ReaderQueueId;SourceCommit=$source;NativeReaderStartedAtUtc=$started.ToString('O');NativeReaderFinishedAtUtc=$released;NativeReaderExitCode=0;ReleasedAtUtc=$released;ReleaseBasis='Both selected full functions and reader facts are saved.'} | ConvertTo-Json | Set-Content -LiteralPath 'artifacts/relations-measurements/focused-native-r44/native-reader-released.json' -Encoding utf8
+'READER RELEASE UTC='+$released

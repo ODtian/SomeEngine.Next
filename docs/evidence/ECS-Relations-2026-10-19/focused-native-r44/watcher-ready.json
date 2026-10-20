@@ -1,0 +1,15 @@
+{
+  "ProcessId": 45888,
+  "SourceCommit": "bf4348ce600cd423090d1c1430596fc60ea97a2e",
+  "InitialObservationStartedAtUtc": "2026-10-20T00:46:40.7876952Z",
+  "InitialObservationEndedAtUtc": "2026-10-20T00:46:40.8033259Z",
+  "CaseQueueIds": [
+    "9eb3e4e1d26c44b2867f6f94b9be652b",
+    "df85d37004b2444b9779b2f0d3352445"
+  ],
+  "AnalysisQueueIds": [
+    "914c2db70ab949bb81a2b11790accd11"
+  ],
+  "FinalQueueId": "914c2db70ab949bb81a2b11790accd11",
+  "FinalReceipt": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\914c2db70ab949bb81a2b11790accd11\\result.json"
+}

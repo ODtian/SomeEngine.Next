@@ -1,0 +1,53 @@
+{
+  "StartedAtUtc": "2026-10-20T01:04:29.7911619Z",
+  "FinishedAtUtc": "2026-10-20T01:04:30.5172462Z",
+  "Children": [
+    {
+      "ProcessId": 90944,
+      "Name": "conhost.exe",
+      "StartedAtUtc": "2026-10-19T08:23:27.762154Z",
+      "ElapsedSeconds": 60062.662095,
+      "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+    },
+    {
+      "ProcessId": 79380,
+      "Name": "python.exe",
+      "StartedAtUtc": "2026-10-20T01:00:59.29837Z",
+      "ElapsedSeconds": 211.1459271,
+      "Command": "\"C:/Users/boqi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe\" -B F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/compare_frames.py --scene bistro --scene-cache F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/bistro.npz --scene-layout F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/loads/bistro-sparse-motion.json"
+    }
+  ],
+  "Receipts": [
+    {
+      "Id": "45457c0a0ea343458c8de1c83d1ba0f8",
+      "DirectoryExists": true,
+      "Result": {
+        "Id": "45457c0a0ea343458c8de1c83d1ba0f8",
+        "Executable": "pwsh",
+        "Arguments": [
+          "-NoProfile",
+          "-File",
+          "F:/.codex/worktrees/ecs-relations-worker-3/SomeEngine.Next/artifacts/relations-measurements/focused-native-r45/producer.ps1"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T08:53:02.3017844+08:00",
+        "StartedAtUtc": "2026-10-20T08:59:35.8719394+08:00",
+        "FinishedAtUtc": "2026-10-20T09:00:59.2955702+08:00"
+      },
+      "StdoutTail": [
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\Registry\\JobStorageTypeMetadata.cs(77): Trim analysis warning IL2070: SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>): 'this' argument does not satisfy 'DynamicallyAccessedMemberTypes.PublicFields', 'DynamicallyAccessedMemberTypes.NonPublicFields' in call to 'System.Type.GetFields(BindingFlags)'. The parameter 'type' of method 'SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>)' does not have matching annotations. The source value must declare at least the same requirements as those declared on the target location it is assigned to. [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\SomeEngine.ECS.Relations.Benchmarks.csproj]",
+        "  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\",
+        "SOURCE_NATIVE {\"SourceCommit\":\"c0effa290eee225c296f779a85b9d79109d789a5\",\"ChangedFiles\":[\"src/SomeEngine.Physics/CollisionPartitions.cs\"],\"BehaviorStartedAtUtc\":\"2026-10-20T00:59:37.0047257Z\",\"BehaviorFinishedAtUtc\":\"2026-10-20T01:00:10.3439367Z\",\"BehaviorExitCode\":0,\"PushExitCode\":0,\"PublishArguments\":[\"publish\",\"benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj\",\"-c\",\"Release\",\"-r\",\"win-x64\",\"-p:PublishAot=true\",\"-p:SelfContained=true\",\"-p:SourceRevisionId=c0effa290eee225c296f779a85b9d79109d789a5\",\"-o\",\"benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish\"],\"PublishStartedAtUtc\":\"2026-10-20T01:00:17.2784491Z\",\"PublishFinishedAtUtc\":\"2026-10-20T01:00:59.0737718Z\",\"PublishExitCode\":0,\"SourceCheckExitCode\":0,\"Object\":{\"Path\":\"F:\\\\.codex\\\\worktrees\\\\ecs-relations-worker-3\\\\SomeEngine.Next\\\\benchmarks\\\\SomeEngine.ECS.Relations.Benchmarks\\\\obj\\\\Release\\\\net10.0\\\\win-x64\\\\native\\\\SomeEngine.ECS.Relations.Benchmarks.obj\",\"LastWriteTimeUtc\":\"2026-10-20T01:00:57.8540395Z\",\"Length\":26077547},\"Executable\":{\"Path\":\"F:\\\\.codex\\\\worktrees\\\\ecs-relations-worker-3\\\\SomeEngine.Next\\\\benchmarks\\\\SomeEngine.ECS.Relations.Benchmarks\\\\bin\\\\Release\\\\net10.0\\\\win-x64\\\\native-publish\\\\SomeEngine.ECS.Relations.Benchmarks.exe\",\"LastWriteTimeUtc\":\"2026-10-20T01:00:58.5835185Z\",\"Length\":4932096}}"
+      ]
+    },
+    {
+      "Id": "9f5c43b1a369427f9d1b9619a17d0508",
+      "DirectoryExists": false,
+      "Result": null,
+      "StdoutTail": null
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+  "PublishQueueId": "45457c0a0ea343458c8de1c83d1ba0f8",
+  "StartedAtUtc": "2026-10-20T01:10:25.6802441Z",
+  "LastCaseSubmittedAtUtc": "2026-10-20T01:10:27.0429254Z",
+  "InitialObservationEndedAtUtc": "2026-10-20T01:10:27.7989502Z",
+  "WatcherInitialObservationEndedAtUtc": "2026-10-20T01:10:27.7756829Z",
+  "RootHostRelease": {
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "RootHostReadEndedAtUtc": "2026-10-20T00:53:06.2645976Z",
+    "RecordedAtUtc": "2026-10-20T01:10:25.6478471Z"
+  },
+  "PreparationEndAtUtc": "2026-10-20T01:10:27.7989502Z",
+  "CaseCount": 2,
+  "NativeSourceCheckExitCode": 0,
+  "FinalQueueId": "9f98fc9d4e9b4f7eb48ae39a4c76ed0a"
+}

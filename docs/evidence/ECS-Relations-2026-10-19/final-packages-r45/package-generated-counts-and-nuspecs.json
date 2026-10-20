@@ -1,0 +1,87 @@
+{
+  "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+  "DirectPackageReferences": 6,
+  "DirectPackages": [
+    "SomeEngine.ECS",
+    "SomeEngine.ECS.Relations",
+    "SomeEngine.ECS.Systems",
+    "SomeEngine.Job",
+    "SomeEngine.Physics",
+    "SomeEngine.ECS.SourceGen"
+  ],
+  "ConsumerGeneratedFiles": 27,
+  "ConsumerThinWhereExceptMethods": 78,
+  "LibraryGeneratedFamilyFiles": 9,
+  "LibraryGeneratedFamilyTypes": 41,
+  "Packages": [
+    {
+      "File": "SomeEngine.Diagnostics.0.1.0-relations.231.nupkg",
+      "Id": "SomeEngine.Diagnostics",
+      "Version": "0.1.0-relations.231",
+      "RepositoryCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "LastWriteTimeUtc": "2026-10-20T01:23:07.4189496Z",
+      "Length": 15304
+    },
+    {
+      "File": "SomeEngine.ECS.0.1.0-relations.231.nupkg",
+      "Id": "SomeEngine.ECS",
+      "Version": "0.1.0-relations.231",
+      "RepositoryCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "LastWriteTimeUtc": "2026-10-20T01:23:16.2005761Z",
+      "Length": 205858
+    },
+    {
+      "File": "SomeEngine.ECS.Relations.0.1.0-relations.231.nupkg",
+      "Id": "SomeEngine.ECS.Relations",
+      "Version": "0.1.0-relations.231",
+      "RepositoryCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "LastWriteTimeUtc": "2026-10-20T01:23:18.5441783Z",
+      "Length": 32648
+    },
+    {
+      "File": "SomeEngine.ECS.SourceGen.0.1.0-relations.231.nupkg",
+      "Id": "SomeEngine.ECS.SourceGen",
+      "Version": "0.1.0-relations.231",
+      "RepositoryCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "LastWriteTimeUtc": "2026-10-20T01:23:13.722141Z",
+      "Length": 41315
+    },
+    {
+      "File": "SomeEngine.ECS.Systems.0.1.0-relations.231.nupkg",
+      "Id": "SomeEngine.ECS.Systems",
+      "Version": "0.1.0-relations.231",
+      "RepositoryCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "LastWriteTimeUtc": "2026-10-20T01:23:20.9508196Z",
+      "Length": 58731
+    },
+    {
+      "File": "SomeEngine.Job.0.1.0-relations.231.nupkg",
+      "Id": "SomeEngine.Job",
+      "Version": "0.1.0-relations.231",
+      "RepositoryCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "LastWriteTimeUtc": "2026-10-20T01:23:11.8071921Z",
+      "Length": 58672
+    },
+    {
+      "File": "SomeEngine.Job.Contracts.0.1.0-relations.231.nupkg",
+      "Id": "SomeEngine.Job.Contracts",
+      "Version": "0.1.0-relations.231",
+      "RepositoryCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "LastWriteTimeUtc": "2026-10-20T01:23:09.4286173Z",
+      "Length": 3774
+    },
+    {
+      "File": "SomeEngine.Physics.0.1.0-relations.231.nupkg",
+      "Id": "SomeEngine.Physics",
+      "Version": "0.1.0-relations.231",
+      "RepositoryCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "LastWriteTimeUtc": "2026-10-20T01:23:23.430755Z",
+      "Length": 24811
+    }
+  ],
+  "ReadStartedAtUtc": "2026-10-20T01:34:18.816041Z",
+  "ReadFinishedAtUtc": "2026-10-20T01:34:19.3422758Z",
+  "LibraryTypeDeclarations": 49,
+  "ExistingRelationQueriesPartialDeclarations": 8,
+  "LibraryTypeCountScope": "41 fixed interfaces/binders/filters/products/views; 8 partial declarations extend the existing RelationQueries type."
+}

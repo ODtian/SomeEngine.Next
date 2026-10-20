@@ -1,0 +1,20 @@
+[
+  {
+    "Id": "0943bc78afa94cbd816e22a2a2350079",
+    "ExitCode": null,
+    "Completion": "The parent task result follows this reader.",
+    "CompletedStages": 5,
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "QueueDirectory": "artifacts/benchmark-queue/0943bc78afa94cbd816e22a2a2350079"
+  },
+  "PRODUCER b29fc3fd3ed94505adb27bead7eed42c ExitCode=0",
+  {
+    "Id": "b29fc3fd3ed94505adb27bead7eed42c",
+    "ExitCode": 0,
+    "StartedAtUtc": "2026-10-20T09:22:48.9688892+08:00",
+    "FinishedAtUtc": "2026-10-20T09:23:23.5961484+08:00",
+    "CompletedStages": 9,
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "QueueDirectory": "artifacts/benchmark-queue/b29fc3fd3ed94505adb27bead7eed42c"
+  }
+]

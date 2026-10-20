@@ -4,6 +4,21 @@
 
 公开接口的原名去向、包归属、主要持有处与Wiki事实入口统一列在[接口调整表](ECS-Relations-API-Changes-2026-10-19.md)。
 
+最终 C# 源码为 `c0effa290eee225c296f779a85b9d79109d789a5`。本轮 r45 的稀疏和均匀并行反馈均等价，median/p95均满足≤1.01；按每个case最近一次实际完成记录汇总，108/108场景等价，126/126必验指标达到批准条件，原≤1.00严格通过114/126。[实际两项与完整来源](ECS-Relations-Performance-2026-10-19.md#几何空工作在分区形成处剔除r45)保留各自源码、原始报告、绝对ticks和队列边界。启用状态三入口成员维护、生成器签名公共规则和行为检查拆分已完成，[双轴审阅记录](evidence/ECS-Relations-2026-10-19/code-review-final.md)关联实际增量检查与分区压缩复核。
+
+| 最新记录来源 | 场景数 | 必验指标数 | 对应实测 |
+| --- | ---: | ---: | --- |
+| `51c8ce75` · r38 | 93 | 110 | 完整108场景矩阵中的相应记录 |
+| `393a9fbf` · r39 | 9 | 10 | 输出与前缀更新后的定向反馈 |
+| `5b6c96e8` · r41 | 4 | 4 | 关联场景与大规模配对回归 |
+| `c0effa29` · r45 | 2 | 2 | 最终共享分区实现的稀疏及均匀并行反馈 |
+
+[逐case映射](evidence/ECS-Relations-2026-10-19/focused-native-r45/latest-case-coverage.json)依实际FinishedAtUtc取最新完整记录，[汇总](evidence/ECS-Relations-2026-10-19/focused-native-r45/latest-case-coverage-summary.json)与[CSV](evidence/ECS-Relations-2026-10-19/focused-native-r45/latest-case-coverage.csv)保存同一来源关系。H1/H2同函数对照见[独立记录](evidence/ECS-Relations-2026-10-19/final-hh-r38/control-summary.md)。
+
+完整矩阵基线为 C# 源码 `51c8ce75949cf16d7190e14028c655f526d5697b` 的 r38：108个NativeAOT场景全部等价，126条必验记录中114条满足原精度median、p95均≤1.01。当次12条余项及各侧绝对耗时保留在[历史逐项表](evidence/ECS-Relations-2026-10-19/final-native-r38/approved-summary.json)。最终c0源码的14个包生产阶段全0、使用方JIT/NativeAOT实际运行和IL/四原生路径读取已完成，见[实际包证据](ECS-Relations-Packages-AOT-2026-10-19.md#243-最终实际包刷新)。
+
+后续源码`393a9fbf009aa2e8269636fdf532551271a85bc5`的r39覆盖12条原余项和两个关联场景：14项全部等价，15条必验指标按≤1.01通过12条。9项相关行为检查通过；Default、Key、Mutual的逐结果输出地址读取已由实际原生指令确认消去。三条本轮余项及绝对ticks见[性能反馈](ECS-Relations-Performance-2026-10-19.md#输出与并行前缀改动反馈r39)。
+
 ## 功能清单
 
 | 规格验收项 | 公开行为检查 | 实现与说明 |
@@ -17,10 +32,11 @@
 | 同角色排除、异角色及普通Body参与 | [CollisionRelationExampleTests](../tests/SomeEngine.ECS.Relations.Tests/CollisionRelationExampleTests.cs).BodyAndHairRulesReturnTheThirteenExamplePairs 字面13对；[KeyRelationTests](../tests/SomeEngine.ECS.Relations.Tests/KeyRelationTests.cs).KeyExceptKeepsOrdinaryBodiesInComposedRules；[SpatialFilterTests](../tests/SomeEngine.Physics.Tests/SpatialFilterTests.cs).MissingHairAndMixedKeysRetainOrdinaryBodyContacts | [Body/Hair/SameCharacterHair 业务例子](../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialCollisionExample.cs) |
 | 键、bitmap、空间优化与同语义基线 | [KeyRelationTests](../tests/SomeEngine.ECS.Relations.Tests/KeyRelationTests.cs).HandwrittenKeyBucketsReturnTheTypedImplementationRows；[BitmapRelationTests](../tests/SomeEngine.ECS.Relations.Tests/BitmapRelationTests.cs) 的单向/双方固定候选及接触计数；[SpatialFilterTests](../tests/SomeEngine.Physics.Tests/SpatialFilterTests.cs).FullSpatialRulesAndHandwrittenGroupsReturnTheFourContactPairs | [KeyPairs](../src/SomeEngine.ECS.Relations/KeyPairs.cs)、[BitmapFilter](../src/SomeEngine.ECS.Relations/BitmapFilter.cs)、[按方向标量读取与具体许可](../wiki/architecture/ECS/Bitmap-Relation-Queries.md)、[SpatialCandidates](../src/SomeEngine.Physics/SpatialCandidates.cs)；[独立手写夹具目录](../benchmarks/SomeEngine.ECS.Benchmarks/Relations/) |
 | 插入、组件/位置/键变化、销毁、维护依赖 | [KeyRelationTests](../tests/SomeEngine.ECS.Relations.Tests/KeyRelationTests.cs).KeyPairsFollowReferenceWritesComponentChangesAndEntityDestruction；[GenericQueryExecutionTests](../tests/SomeEngine.ECS.Tests/GenericQueryExecutionTests.cs).ChunkChangeReadsKeepOptionalRowsAndTheirWriteVersions；[CollisionMaintenanceTests](../tests/SomeEngine.Physics.Tests/CollisionMaintenanceTests.cs)；[SpatialParallelTests](../tests/SomeEngine.Physics.Tests/SpatialParallelTests.cs).MaintainedParallelAndHandwrittenFramesConsumeEveryChangedContactPair | [QueryRowChanges](../src/SomeEngine.ECS/Queries/QueryRowChanges.cs)、[CollisionMaintenance](../src/SomeEngine.Physics/CollisionMaintenance.cs)、[具体组合版本读取](../src/SomeEngine.Physics/SpatialChanges.cs)；[维护接口与版本](../wiki/architecture/ECS/Spatial-Maintenance.md) |
+| Enabled/Disabled成员进入与离开维护树 | [CollisionMaintenanceTests](../tests/SomeEngine.Physics.Tests/CollisionMaintenanceTests.cs) 的 WorldEnableChangesRefreshMaintainedMembers、RowEnableChangesRefreshMaintainedMembers、ChunkEnableChangesRefreshMaintainedMembers；每项使用Enabled/Disabled两行，核对空→字面(A,B)→空 | [统一启用写入](../src/SomeEngine.ECS/Owners.Components.cs)、[实体身份批次](../src/SomeEngine.ECS/Entities/EntityStore.Changes.cs)；[成员变化维护](../wiki/architecture/ECS/Spatial-Maintenance.md#数据与更新顺序) |
 | 节点All/None/Unknown及逐条件结论 | [SpatialFilterTests](../tests/SomeEngine.Physics.Tests/SpatialFilterTests.cs) 的统一键、异键、缺Hair/混合键、单向位置、全规则与Except字面结果 | [空间下推检查与编译证据](ECS-Relations-Spatial-Checks-2026-10-19.md)；[摘要与筛选说明](../wiki/architecture/ECS/Spatial-Filtering.md) |
 | 显式边身份、多重边、方向、局部顺序、多元事实 | [EdgeRelationTests](../tests/SomeEngine.ECS.Relations.Tests/EdgeRelationTests.cs) 五项；[StoredRelationFactTests](../tests/SomeEngine.ECS.Relations.Tests/StoredRelationFactTests.cs) | [RelationEdges](../src/SomeEngine.ECS.Relations/RelationEdges.cs)、[RelationEdgeEndpoints](../src/SomeEngine.ECS.Relations/RelationEdgeEndpoints.cs)、[DistinctEdgeEndpoints](../src/SomeEngine.ECS.Relations/DistinctEdgeEndpoints.cs)；[已有边与业务事实](../wiki/architecture/ECS/Relation-Queries.md#已存储关系边) |
 | 串并行实体对、输出区间与数量 | [SpatialParallelTests](../tests/SomeEngine.Physics.Tests/SpatialParallelTests.cs).PartitionedCountAndFillReturnTheFourSerialContactPairs、MaintainedParallelAndHandwrittenFramesConsumeEveryChangedContactPair、CountAndFillKeepTheirComponentInputUntilEveryPartitionCompletes | [CollisionPairBuffer](../src/SomeEngine.Physics/CollisionPairBuffer.cs)、[分区调度与消费](../wiki/architecture/ECS/Spatial-Parallel-Queries.md) |
-| 查询生命周期、资源读取及异常清理 | [GenericQueryExecutionTests](../tests/SomeEngine.ECS.Tests/GenericQueryExecutionTests.cs).ReadRefAccessFailureReleasesTheQueryScope；[UnaryRelationTests](../tests/SomeEngine.ECS.Relations.Tests/UnaryRelationTests.cs).ChainedComponentRulesShareTheDeclaredWorldJobsScope；[SpatialParallelTests](../tests/SomeEngine.Physics.Tests/SpatialParallelTests.cs) 的输入保持检查；[#242包及Job回归记录](ECS-Relations-Packages-AOT-2026-10-19.md) | [RelationQuery](../src/SomeEngine.ECS.Relations/RelationQuery.cs) 的作用域与输出回写；[并行查询借用](../src/SomeEngine.ECS.Systems/ReadOnlyQueryPairJobs.cs) |
+| 查询生命周期、资源读取及异常清理 | [GenericQueryExecutionTests](../tests/SomeEngine.ECS.Tests/GenericQueryExecutionTests.cs).ReadRefAccessFailureReleasesTheQueryScope；[UnaryRelationTests](../tests/SomeEngine.ECS.Relations.Tests/UnaryRelationTests.cs).ChainedComponentRulesShareTheDeclaredWorldJobsScope；[SpatialParallelTests](../tests/SomeEngine.Physics.Tests/SpatialParallelTests.cs) 的输入保持检查；[#242包及Job回归记录](ECS-Relations-Packages-AOT-2026-10-19.md) | [RelationQuery](../src/SomeEngine.ECS.Relations/RelationQuery.cs) 的查询作用域、活动输出终端和最外层finally回写；[并行查询借用](../src/SomeEngine.ECS.Systems/ReadOnlyQueryPairJobs.cs) |
 
 ## 分包与NativeAOT清单
 
@@ -31,14 +47,14 @@
 | NativeAOT完整链及串并行消费 | [SpatialFrames](../tools/SomeEngine.ECS.Relations.AotSmoke/SpatialFrames.cs) 首轮5对→更新3对，接触累计2,2,0,2；[最终原生运行与发布](ECS-Relations-Packages-AOT-2026-10-19.md#243-最终实际包刷新) | 同一使用方NativeAOT输出与相同业务数据 |
 | 固定族、薄入口及业务类型归属 | [实际27生成文件/78薄入口/41固定类型](ECS-Relations-Packages-AOT-2026-10-19.md#243-最终实际包刷新) | [RelationFamilyGenerator](../src/SomeEngine.ECS.SourceGen/RelationFamilyGenerator.cs)、[RelationGenerator](../src/SomeEngine.ECS.SourceGen/RelationGenerator.cs)、[RelationImplementationGenerator](../src/SomeEngine.ECS.SourceGen/RelationImplementationGenerator.cs) |
 | 引用读取、具体泛型和直接位指令 | [bitmap IL](ECS-Relations-Bitmap-IL-2026-10-19.md)、[空间编译证据](ECS-Relations-Spatial-Checks-2026-10-19.md)、[最终使用方IL/原生读取](ECS-Relations-Packages-AOT-2026-10-19.md) | [ComponentReference](../src/SomeEngine.ECS/Queries/ComponentReference.cs) 与固定ComponentRelation，闭合语义/许可调用、Item8、原生testq |
-| schema与Job存储元数据生成并实际读取 | [GeneratedMetadataTests](../tests/SomeEngine.ECS.Relations.Tests/GeneratedMetadataTests.cs) 三项；[最终17存储/2schema登记及读取](ECS-Relations-Packages-AOT-2026-10-19.md#243-最终实际包刷新) | [EcsTypeGenerator](../src/SomeEngine.ECS.SourceGen/EcsTypeGenerator.cs)；同一类型级存储分类与schema持有处 |
+| schema与Job存储元数据生成并实际读取 | [GeneratedMetadataTests](../tests/SomeEngine.ECS.Relations.Tests/GeneratedMetadataTests.cs) 五项；[最终17存储/2schema登记及读取](ECS-Relations-Packages-AOT-2026-10-19.md#243-最终实际包刷新) | [EcsTypeGenerator](../src/SomeEngine.ECS.SourceGen/EcsTypeGenerator.cs)；同一类型级存储分类与schema持有处 |
 
 ## 性能证据清单
 
 | 规格验收项 | 持久记录 |
 | --- | --- |
 | 九类全部变体×小/中/大、公开输入与等价 | [固定108场景配置](ECS-Relations-Measurement-Configuration.md)、[MeasurementCases](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/MeasurementCases.cs)、[运行器](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/RelationsMeasurements.cs)；逐case原始报告的Equivalence保存完整核对后的数量、消费数组和前16行 |
-| 各case原精度median及p95均≤1.01，并单列H1/H2同函数波动 | [实际结果与架构优化](ECS-Relations-Performance-2026-10-19.md)；[双口径原精度表](evidence/ECS-Relations-2026-10-19/formal-native-r32/approved-summary.json)保留原生≤1.00的Passed及ApprovedRatioLimit=1.01判断 |
+| 各case原精度median及p95均≤1.01，并单列H1/H2同函数波动 | [实际结果与架构优化](ECS-Relations-Performance-2026-10-19.md)；[r38双口径原精度表](evidence/ECS-Relations-2026-10-19/final-native-r38/approved-summary.json)保留原生≤1.00的Passed及ApprovedRatioLimit=1.01判断；[同函数对照](evidence/ECS-Relations-2026-10-19/final-hh-r38/control-summary.md)独立列示 |
 | 维护+查询、完整帧、真实消费端到端 | 同一[结果报告](ECS-Relations-Performance-2026-10-19.md)中分别列出MaintenanceAndQuery、FrameTotal、PairsAndConsume |
 | 串并行提交至完成、吞吐量与真实内存 | 每份原始报告的ScheduledPairOutput、分布和IndexMemory；[内存统计范围](ECS-Relations-Measurement-Configuration.md)与[统计源码](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/IndexMemory.cs) |
 | 原始波动、全线程分配、设备/提交/命令/队列 | [原始报告格式与读取](evidence/ECS-Relations-2026-10-19/README.md)；逐帧ticks、轮序、IQR/stddev、进程内存和各队列result/stdout/stderr |

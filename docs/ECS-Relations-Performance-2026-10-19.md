@@ -4,9 +4,142 @@
 
 这些优化对应的公开读取、静态事实、许可与借用回调归属见[接口调整表](ECS-Relations-API-Changes-2026-10-19.md)。
 
-## 完整矩阵记录
+## 几何空工作在分区形成处剔除（r45）
 
-最新完整系列`formal-native-r32`对应C#源码`3b582fe541d86d7f556b3f9d6854962d292454ef`的同一NativeAOT产物，每侧32×8帧、先后各128帧。108项全部等价，126项中原≤1.00严格通过104项，按用户批准的ApprovedRatioLimit=1.01通过110项。[双口径逐项表](evidence/ECS-Relations-2026-10-19/formal-native-r32/approved-summary.json)、[16项余项完整同列表](evidence/ECS-Relations-2026-10-19/formal-native-r32/approved-unmet.md)、[原始报告索引](evidence/ECS-Relations-2026-10-19/formal-native-r32/index.json)和[队列边界审计](evidence/ECS-Relations-2026-10-19/formal-native-r32/queue-boundaries.json)保存实际结果。以下同一组列分别给出两种判定。
+源码 `c0effa290eee225c296f779a85b9d79109d789a5` 只修改 CollisionTree.CreatePartitions：原拆分和选择次序保持，返回前按原顺序压缩单叶自配对与包围盒分离的节点对。原有空间遍历在入口直接剔除同样的节点对；前移后只为需要继续遍历的分区提交计数任务。关系与手写来源都使用同一方法，数据、节点布局、有效分区遍历区域与实体对输出保持对齐。
+
+`PartitionedCountAndFillReturnTheFourSerialContactPairs` 单项通过，实际 NativeAOT publish、源命令确认和push均exit0。生产任务于00:59:35.8719394Z–01:00:59.2955702Z执行83.4236308秒；Native对象26,077,547B、UTC01:00:57.8540395Z。该增量的两个审阅轴均确认此最小回归范围，见[审阅记录](evidence/ECS-Relations-2026-10-19/code-review-final.md)。
+
+两项同源反馈均等价，原严格及批准口径均通过2/2；[原精度表](evidence/ECS-Relations-2026-10-19/focused-native-r45/approved-summary.json)保留实际双侧数据。
+
+| 场景 | 边界 | 关系median ticks | 手写median ticks | median比 | 关系p95 ticks | 手写p95 ticks | p95比 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| threads-small-sparse-parallel | ScheduledPairOutput | 555 | 742.5 | 0.7474747474747475 | 883.25 | 1225 | 0.7210204081632653 |
+| threads-small-uniform-parallel | ScheduledPairOutput | 1735 | 2176 | 0.7973345588235294 | 2637.75 | 3307 | 0.7976262473540974 |
+
+按case最近实际完成时间形成的[完整来源索引](evidence/ECS-Relations-2026-10-19/focused-native-r45/latest-case-coverage.json)汇总为108/108等价、严格114/126、批准126/126。来源为r38的93场景/110指标、r39的9/10、r41的4/4和本轮r45的2/2；[来源汇总](evidence/ECS-Relations-2026-10-19/focused-native-r45/latest-case-coverage-summary.json)和[CSV](evidence/ECS-Relations-2026-10-19/focused-native-r45/latest-case-coverage.csv)逐项记录实际源码与原始报告。
+
+本轮稀疏场景实际01:14:48.0808897Z–01:14:48.4324801Z、均匀场景01:22:06.7870844Z–01:22:07.2615292Z，执行累计0.8260352秒。测量准备任务实际执行3.4368573秒，源生产任务实际执行83.4236308秒。各控制与文档观察均在相应场景执行窗口之外；[队列边界](evidence/ECS-Relations-2026-10-19/focused-native-r45/queue-boundaries.json)同时保存外部场景轮转与实际quiet判断。
+
+## 普通组件组结论直接表达（r44）
+
+源码 `bf4348ce600cd423090d1c1430596fc60ea97a2e` 将普通 SpatialComponentFilter 的组结论直接设为 Unknown，对应此类型只在叶子调用组件语义的职责；键和bitmap摘要保持各自的三态事实。真实Native的CountTraversal确认子节点组件状态直接写常量0，内层组合的组件动态继承判断消去；完整函数968条指令、3732B、栈440B，见[r44原生记录](evidence/ECS-Relations-2026-10-19/focused-native-r44/)。
+
+该轮两项等价、批准通过1/2。稀疏并行median为715/705.5 ticks、比值1.0134656272147413，p95为1025.5/1086.25 ticks、比值0.9440736478711163；均匀并行median为1894.5/2195.5 ticks、比值0.8629013892051924，p95为2501.5/3409.25 ticks、比值0.7337390921756984。[原精度数据](evidence/ECS-Relations-2026-10-19/focused-native-r44/approved-summary.json)保留该轮实际结果。
+
+## 空间描述集中持有（r43）
+
+源码 `73f7e089990e65cf4fc5517593e31aaeee03298a` 将空间来源与具体筛选描述集中到一个私有 SpatialQueryData 中，外层 SpatialCandidates 只保存一个引用。公开 Source、Filter 继续按值返回；构造和组合时形成描述数据，setup/cold 沿原范围计入这次分配。各层调度传递该引用，实际枚举仍使用具体泛型。输入保持1项、实际 NativeAOT 发布及源码命令确认均 exit0。新描述的持有和默认相等行为见[接口调整表](ECS-Relations-API-Changes-2026-10-19.md)。
+
+同一计数 Data.Execute 的实际 Native 读取确认：指令66→59、代码274→264B、栈248→184B、初始化144→112B；每个分区的 TJob 本地值缩至16B。Filter按值getter对应的32B副本继续保留，来源于公开值语义。完整函数、统计和原始生产回执保存在[r43原生目录](evidence/ECS-Relations-2026-10-19/focused-native-r43/)。
+
+| 场景 | 边界 | 关系median ticks | 手写median ticks | median比 | 关系p95 ticks | 手写p95 ticks | p95比 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| threads-small-sparse-parallel | ScheduledPairOutput | 741 | 729 | 1.0164609053497942 | 1161.5 | 1100.5 | 1.0554293502953203 |
+| threads-small-uniform-parallel | ScheduledPairOutput | 2189 | 2352 | 0.9306972789115646 | 3338.75 | 3980.25 | 0.8388292192701463 |
+
+两项均等价、批准通过1/2；[按case最后实际完成记录汇总](evidence/ECS-Relations-2026-10-19/focused-native-r43/latest-case-coverage.json)为108/108等价、严格113/126、批准125/126，稀疏并行为本轮余项。该轮场景实际执行0.8734899秒、报告5.1793279秒、整轮294.3263704秒。Master在嵌入读者成功后等待外部释放记录，实际于00:26:57.6464040Z补齐；[执行边界](evidence/ECS-Relations-2026-10-19/focused-native-r43/queue-boundaries.json)中的ControlReleaseCorrection记录这次控制等待。后继读者在保存证据时直接写入释放记录。
+
+## 分区内来源直接执行（r42）
+
+源码 `d224fbff18b9ec94cefb85edaf37db8bad6cf173` 将内部 CountJob、FillJob 改为普通结构体，使各分区本地任务中的来源直接执行。PairJobData 继续只读保存原始任务，执行处继续形成各分区自己的 TJob 值。00:05:45.7066630Z–00:06:18.8569592Z 的输入保持行为检查通过；实际 NativeAOT 发布及源码命令检查均 exit0。
+
+CPU读者 `16edbce2c6204e5280e7021ed442d137` 于00:07:45.7100462Z–00:07:49.1340376Z执行，exit0；读取的对象为26,042,005B，UTC00:07:06.7085146Z。[单个完整原生函数](evidence/ECS-Relations-2026-10-19/focused-native-r42/native-PartitionData.asm)及[实际统计](evidence/ECS-Relations-2026-10-19/focused-native-r42/native-function-statistics.json)确认以下同函数变化。
+
+| 关系侧计数 Data.Execute | r41 | r42 |
+| --- | ---: | ---: |
+| 指令数 | 75 | 66 |
+| 代码字节 | 343 | 274 |
+| 栈字节 | 312 | 248 |
+| 初始化字节 | 208 | 144 |
+| 分区任务本地副本字节 | 72 | 72 |
+| 随后来源副本字节 | 64 | 0 |
+
+两项反馈范围为 threads-small-sparse-parallel 和具有实际填充输出的 threads-small-uniform-parallel，沿相同配置测量提交到完成边界。
+
+实际两项均等价，必验边界通过一项，见[原精度表](evidence/ECS-Relations-2026-10-19/focused-native-r42/approved-summary.json)。
+
+| 场景 | 边界 | 关系median ticks | 手写median ticks | median比 | 关系p95 ticks | 手写p95 ticks | p95比 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| threads-small-sparse-parallel | ScheduledPairOutput | 703 | 681 | 1.0323054331864905 | 1039.75 | 1159.75 | 0.8965294244449235 |
+| threads-small-uniform-parallel | ScheduledPairOutput | 2075.5 | 2251.5 | 0.9218298911836553 | 2782.25 | 3724.5 | 0.7470130218821318 |
+
+## 分区数据共享、候选借用和列读取（r41）
+
+源码 `5b6c96e8ed4f78e4c2a617c345e49623a19d5c91` 的分区批次共享 PairJobData，各任务携带数据引用和分区编号，执行处保留各自的 TJob 值；固定双向候选以 ref readonly 借用身份行；组件列在行枚举形成有效行号后直接取得引用。后者同时用于关系与手写的公开 ReadRows 路径。[六条实际原生函数](evidence/ECS-Relations-2026-10-19/focused-native-r41/native-functions.raw.asm)及[核对片段](evidence/ECS-Relations-2026-10-19/focused-native-r41/native-confirmation-excerpts.txt)保存对应指令。
+
+本轮六场景全部等价，六条必验指标通过五条，详见[原精度表](evidence/ECS-Relations-2026-10-19/focused-native-r41/approved-summary.json)。前轮大规模 Default 和双向候选的两条余项达标，小规模稀疏并行保留其实际差值。
+
+| 场景 | 边界 | 关系median ticks | 手写median ticks | median比 | 关系p95 ticks | 手写p95 ticks | p95比 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| threads-small-sparse-parallel | ScheduledPairOutput | 716.5 | 708 | 1.012005649717514 | 1157.5 | 1101.5 | 1.0508397639582387 |
+| threads-small-uniform-parallel | ScheduledPairOutput | 1990.5 | 2221.5 | 0.8960162052667117 | 2608.25 | 3268.25 | 0.798057064178077 |
+| finite-large-mask8-mutual | Query | 268195.5 | 269146.5 | 0.9964666083341228 | 288072.75 | 290092 | 0.993039277194821 |
+| finite-small-mask1-mutual | Query | 3898.5 | 3989.5 | 0.9771901240756987 | 4476.75 | 4635.75 | 0.9657013428247856 |
+| default-large-dynamic90 | Query | 266999.5 | 288378.5 | 0.9258647922782038 | 278045.5 | 299389.5 | 0.9287082546315084 |
+| default-large-dynamic50 | Query | 254856.5 | 275595.5 | 0.9247484084464369 | 273603.25 | 295006.5 | 0.9274482087682814 |
+
+同一源码同时修复启用状态变化的成员维护：World、QueryRow、QueryChunkView 统一记录实际变化，既有实体变更观察推动树成员更新。审阅修复批次16项相关检查、最终源7项增量检查均通过，见[双轴审阅](evidence/ECS-Relations-2026-10-19/code-review-final.md)。
+
+## 输出与并行前缀改动反馈（r39）
+
+源码 `393a9fbf009aa2e8269636fdf532551271a85bc5` 将公开枚举输出保存在唯一终端值中，筛选层继续借用该终端，外层finally统一回写；并行配对在count任务全部完成后，由父执行直接累计前缀。父执行写入输出资源，子fill声明各自私有写区间。[六条完整原生路径](evidence/ECS-Relations-2026-10-19/focused-native-r39/native-six-functions.raw.asm)与[对应片段](evidence/ECS-Relations-2026-10-19/focused-native-r39/native-output-value-excerpts.txt)确认Default、Key、Mutual逐结果输出地址读取已消去。相关6项Relations、3项Physics行为检查全部通过。
+
+本轮覆盖r38的12条余项及finite-large-mask8-mutual、default-large-dynamic50两个关联场景。14个场景全部等价；15条必验指标中≤1.00通过9条、≤1.01通过12条。[原精度表](evidence/ECS-Relations-2026-10-19/focused-native-r39/approved-summary.json)、[原始索引](evidence/ECS-Relations-2026-10-19/focused-native-r39/index.json)保留本轮全部结果。以下三条为本轮余项，双方各256帧。
+
+| 场景 | 边界 | 关系median ticks | 手写median ticks | median比 | 关系p95 ticks | 手写p95 ticks | p95比 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| threads-small-sparse-parallel | ScheduledPairOutput | 790.5 | 749 | 1.055407209612817 | 1343.75 | 1260.75 | 1.065833829069998 |
+| finite-large-mask8-mutual | Query | 268618.5 | 271380.5 | 0.98982240802121 | 291954 | 288920.5 | 1.0104994280433546 |
+| default-large-dynamic90 | Query | 261471.5 | 257452 | 1.0156126190513184 | 272111.5 | 268253 | 1.0143838093143414 |
+
+实际NativeAOT恢复及发布任务为`6e2ce65a563b48c98da5ebbe9976a6c9`，六角色CPU读者为`c0b4357d7bd14e01b9a3e96f942f8bf2`。原`78b`沿普通JIT恢复结果执行publish，命令exit0后形成托管产物，exe检查使总任务exit1；接续6e2显式恢复AOT依赖后生成实际原生对象与exe。原78b及其后置011门控回执另行保留。14场景的Master准备结束于23:11:26.0482858Z，末场景回执观察于23:12:23.5476774Z，单CPU三段分析于23:12:31.2873494Z完成。
+
+[本轮队列事实](evidence/ECS-Relations-2026-10-19/focused-native-r39/queue-boundaries.json)记录场景实际执行57.4884483秒、场景间隔0.0095493秒、三段分析7.7394402秒；提交至报告完成72.149083秒，QuietPassed=true。[逐边界GC](evidence/ECS-Relations-2026-10-19/focused-native-r39/gc-by-boundary.json)中30个侧/边界组合各256帧，Gen0/1/2均为0。
+
+## 最近完整矩阵（r38）
+
+源码 `51c8ce75949cf16d7190e14028c655f526d5697b` 的139个场景任务与5个分析任务均exit0。NativeAOT的108个场景全部结果等价；126条必验记录中，原≤1.00严格通过103条，按用户批准的≤1.01通过114条。[原始索引](evidence/ECS-Relations-2026-10-19/final-native-r38/index.json)、[完整原精度表](evidence/ECS-Relations-2026-10-19/final-native-r38/approved-summary.json)与[12条余项](evidence/ECS-Relations-2026-10-19/final-native-r38/approved-unmet.md)保存各自实际输入、边界、分配、GC和绝对ticks。12条余项的两侧各256帧中Gen0/1/2均为0。
+
+| 场景类 | 必验记录 | ≤1.00严格通过 | ≤1.01批准通过 |
+| --- | ---: | ---: | ---: |
+| finite | 18 | 9 | 15 |
+| default | 9 | 2 | 4 |
+| character | 12 | 8 | 10 |
+| bitmap-space | 18 | 17 | 18 |
+| character-space | 6 | 6 | 6 |
+| complete | 18 | 18 | 18 |
+| updates | 18 | 17 | 17 |
+| threads | 18 | 17 | 17 |
+| consume | 9 | 9 | 9 |
+
+同源JIT独立记录9个场景，9项等价，11条必验记录按≤1.01通过9条；实际数值见[JIT表](evidence/ECS-Relations-2026-10-19/final-jit-r38/approved-summary.json)。[九项更新分阶段](evidence/ECS-Relations-2026-10-19/final-phases-r38/index.json)与[九项新进程启动](evidence/ECS-Relations-2026-10-19/final-startup-r38/)沿自己的计时边界保存。
+
+从Master提交到最后分析完成为2218.687801秒。各部分采用实际任务回执统计：
+
+| 环节 | 任务数 | 实际秒数 |
+| --- | ---: | ---: |
+| 独占准备 | 1 | 170.0310502 |
+| 场景执行 | 139 | 899.6199581 |
+| 分析执行 | 5 | 47.3681585 |
+| 其余任务与调度间隔 | — | 1101.6686342 |
+
+完整事实见[执行时间表](evidence/ECS-Relations-2026-10-19/final-validation-r38/execution-summary.json)。Native108单系列执行769.5431486秒，场景间隔720.1267171秒，首场景22:15:58.3390174Z、末场景22:40:48.0088831Z。[队列边界](evidence/ECS-Relations-2026-10-19/final-native-r38/queue-boundaries.json)保存统一预提交、准备完成及观察区间；五系列QuietPassed均为true。
+
+## 同源同函数对照（r38）
+
+同一51c产物的H1/H2均执行相同手写函数，实际侧状态独立、工作区顺序共享，Required=false。[中性汇总](evidence/ECS-Relations-2026-10-19/final-hh-r38/control-summary.md)与[原始索引](evidence/ECS-Relations-2026-10-19/final-hh-r38/index.json)保留Query和Consume的各自分布。
+
+| 场景 | 边界 | H1 median ticks | H2 median ticks | median H1/H2 | p95 H1/H2 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| finite-small-mask1-mutual-control | Query | 3978.5 | 3977.5 | 1.0002514142049026 | 0.99437733118076044 |
+| default-small-dynamic10-control | Query | 998 | 998 | 1 | 0.97347198641765709 |
+| finite-large-mask8-mutual-control | Query | 264241 | 264105 | 1.0005149467068022 | 0.99354239542077416 |
+| default-large-dynamic50-control | Query | 254937 | 254274 | 1.0026074234880484 | 1.0045233144067844 |
+
+## 历史完整矩阵（r32）
+
+历史完整系列`formal-native-r32`对应C#源码`3b582fe541d86d7f556b3f9d6854962d292454ef`的同一NativeAOT产物，每侧32×8帧、先后各128帧。108项全部等价，126项中原≤1.00严格通过104项，按用户批准的ApprovedRatioLimit=1.01通过110项。[双口径逐项表](evidence/ECS-Relations-2026-10-19/formal-native-r32/approved-summary.json)、[16项余项完整同列表](evidence/ECS-Relations-2026-10-19/formal-native-r32/approved-unmet.md)、[原始报告索引](evidence/ECS-Relations-2026-10-19/formal-native-r32/index.json)和[队列边界审计](evidence/ECS-Relations-2026-10-19/formal-native-r32/queue-boundaries.json)保存实际结果。以下同一组列分别给出两种判定。
 
 | 场景类 | 主指标≤1.00 | 主指标≤1.01 | 额外完整帧≤1.00 | 额外完整帧≤1.01 |
 | --- | --- | --- | --- | --- |
@@ -26,7 +159,7 @@
 
 前序完整`matrix-r15`对应源码`cc08ae37b03e7d9066adbd78207a6e8249a4b1d1`，126项中99项通过；其[原精度表](evidence/ECS-Relations-2026-10-19/matrix-r15/summary.md)与[原始报告](evidence/ECS-Relations-2026-10-19/matrix-r15/index.json)保留。后续受影响子集按各自完整系列保存，结果由其实际源码和原始门槛确定。
 
-## 同函数波动
+## 历史同函数对照（r32）
 
 独立系列`handwritten-native-r32`使用同一C#源码`3b582fe541d86d7f556b3f9d6854962d292454ef`与同一NativeAOT产物。H1和H2分别持有自己的侧状态，顺序复用相同真实工作区，并执行同一个独立手写类型。每侧32×8帧，先运行与后运行各128帧，16次预热与7对冷构建沿正式配置执行。两项实际结果等价，Required=false；[原始报告](evidence/ECS-Relations-2026-10-19/handwritten-native-r32/index.json)、[中性汇总](evidence/ECS-Relations-2026-10-19/handwritten-native-r32/control-summary.md)与[逐顺序分布](evidence/ECS-Relations-2026-10-19/handwritten-native-r32/handwritten-order.json)保存独立诊断。
 

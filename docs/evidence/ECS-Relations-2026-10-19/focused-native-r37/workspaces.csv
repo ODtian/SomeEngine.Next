@@ -1,0 +1,6 @@
+"CaseId","DataSharing","UsedBy","SetupTicks","Frequency"
+"finite-small-mask1-mutual","SharedStaticWorkspace","shared","50905","10000000"
+"finite-small-mask8-oneway","SharedStaticWorkspace","shared","46390","10000000"
+"finite-middle-mask8-oneway","SharedStaticWorkspace","shared","74569","10000000"
+"finite-large-mask8-oneway","SharedStaticWorkspace","shared","217482","10000000"
+"finite-large-mask8-mutual","SharedStaticWorkspace","shared","221790","10000000"

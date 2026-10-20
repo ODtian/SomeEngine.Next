@@ -1,0 +1,302 @@
+[
+  {
+    "CaseId": "finite-small-mask1-oneway",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "finite-small-mask1-oneway",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "finite-small-mask1-mutual",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "finite-small-mask1-mutual",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "finite-small-mask8-mutual",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "finite-small-mask8-mutual",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-small-dynamic50",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-small-dynamic50",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-small-dynamic90",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-small-dynamic90",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "character-small-hair16-clustered",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "character-small-hair16-clustered",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "character-small-hair16-interleaved",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "character-small-hair16-interleaved",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "updates-small-sparse",
+    "Boundary": "MaintenanceAndQuery",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "updates-small-sparse",
+    "Boundary": "MaintenanceAndQuery",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "updates-small-sparse",
+    "Boundary": "FrameTotal",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "updates-small-sparse",
+    "Boundary": "FrameTotal",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "threads-small-sparse-parallel",
+    "Boundary": "ScheduledPairOutput",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "threads-small-sparse-parallel",
+    "Boundary": "ScheduledPairOutput",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-middle-dynamic10",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-middle-dynamic10",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-middle-dynamic50",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-middle-dynamic50",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "finite-large-mask8-mutual",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "finite-large-mask8-mutual",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-large-dynamic50",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-large-dynamic50",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-large-dynamic90",
+    "Boundary": "Query",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "default-large-dynamic90",
+    "Boundary": "Query",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  }
+]

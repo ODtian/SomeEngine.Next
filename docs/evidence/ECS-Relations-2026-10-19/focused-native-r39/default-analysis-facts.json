@@ -1,0 +1,11 @@
+{
+  "SourceCommit": "393a9fbf009aa2e8269636fdf532551271a85bc5",
+  "NativeReader": "c0b4357d7bd14e01b9a3e96f942f8bf2",
+  "AnalysisStartedAtUtc": "2026-10-19T23:21:58.1641361Z",
+  "AnalysisFinishedAtUtc": "2026-10-19T23:21:59.0484983Z",
+  "Normalization": "Only instruction addresses are removed; internal branch targets use corresponding instruction index. Registers, stack offsets, immediates and external call/branch addresses remain.",
+  "GenericHotInstructions": 137,
+  "HandHotInstructions": 137,
+  "OperationDifferences": 10,
+  "EncodedBranchDifferences": 0
+}

@@ -1,0 +1,2566 @@
+[
+  {
+    "Role": "DefaultGeneric",
+    "Start": "0x1d171a",
+    "EndExclusive": "0x1d19a0",
+    "Instructions": 137,
+    "Bytes": 646,
+    "StartMod32": 26,
+    "StartMod64": 26,
+    "Code": [
+      {
+        "Address": 1906458,
+        "Operation": "movq",
+        "Operands": "0x140(%rsp), %rsi",
+        "Text": "  1d171a:      \tmovq\t0x140(%rsp), %rsi"
+      },
+      {
+        "Address": 1906466,
+        "Operation": "leaq",
+        "Operands": "0x120(%rsp), %r9",
+        "Text": "  1d1722:      \tleaq\t0x120(%rsp), %r9"
+      },
+      {
+        "Address": 1906474,
+        "Operation": "movq",
+        "Operands": "0x138(%rsp), %rcx",
+        "Text": "  1d172a:      \tmovq\t0x138(%rsp), %rcx"
+      },
+      {
+        "Address": 1906482,
+        "Operation": "movq",
+        "Operands": "0x140(%rsp), %rdx",
+        "Text": "  1d1732:      \tmovq\t0x140(%rsp), %rdx"
+      },
+      {
+        "Address": 1906490,
+        "Operation": "movl",
+        "Operands": "0x148(%rsp), %r8d",
+        "Text": "  1d173a:      \tmovl\t0x148(%rsp), %r8d"
+      },
+      {
+        "Address": 1906498,
+        "Operation": "callq",
+        "Operands": "0xd7e0",
+        "Text": "  1d1742:      \tcallq\t0xd7e0 <symbol>"
+      },
+      {
+        "Address": 1906503,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  1d1747:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1906505,
+        "Operation": "jne",
+        "Operands": "0x1d1794",
+        "Text": "  1d1749:      \tjne\t0x1d1794 <symbol>"
+      },
+      {
+        "Address": 1906507,
+        "Operation": "leaq",
+        "Operands": "0x128(%rsp), %rcx",
+        "Text": "  1d174b:      \tleaq\t0x128(%rsp), %rcx"
+      },
+      {
+        "Address": 1906515,
+        "Operation": "callq",
+        "Operands": "0x154ae0",
+        "Text": "  1d1753:      \tcallq\t0x154ae0 <symbol>"
+      },
+      {
+        "Address": 1906520,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  1d1758:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1906522,
+        "Operation": "je",
+        "Operands": "0x1d19a0",
+        "Text": "  1d175a:      \tje\t0x1d19a0 <symbol>"
+      },
+      {
+        "Address": 1906528,
+        "Operation": "movl",
+        "Operands": "$0xffffffff, 0x120(%rsp)",
+        "Text": "  1d1760:      \tmovl\t$0xffffffff, 0x120(%rsp)"
+      },
+      {
+        "Address": 1906539,
+        "Operation": "leaq",
+        "Operands": "0x120(%rsp), %r9",
+        "Text": "  1d176b:      \tleaq\t0x120(%rsp), %r9"
+      },
+      {
+        "Address": 1906547,
+        "Operation": "movq",
+        "Operands": "0x138(%rsp), %rcx",
+        "Text": "  1d1773:      \tmovq\t0x138(%rsp), %rcx"
+      },
+      {
+        "Address": 1906555,
+        "Operation": "movq",
+        "Operands": "0x140(%rsp), %rdx",
+        "Text": "  1d177b:      \tmovq\t0x140(%rsp), %rdx"
+      },
+      {
+        "Address": 1906563,
+        "Operation": "movl",
+        "Operands": "0x148(%rsp), %r8d",
+        "Text": "  1d1783:      \tmovl\t0x148(%rsp), %r8d"
+      },
+      {
+        "Address": 1906571,
+        "Operation": "callq",
+        "Operands": "0xd7e0",
+        "Text": "  1d178b:      \tcallq\t0xd7e0 <symbol>"
+      },
+      {
+        "Address": 1906576,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  1d1790:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1906578,
+        "Operation": "je",
+        "Operands": "0x1d174b",
+        "Text": "  1d1792:      \tje\t0x1d174b <symbol>"
+      },
+      {
+        "Address": 1906580,
+        "Operation": "movl",
+        "Operands": "0x120(%rsp), %edi",
+        "Text": "  1d1794:      \tmovl\t0x120(%rsp), %edi"
+      },
+      {
+        "Address": 1906587,
+        "Operation": "movq",
+        "Operands": "0x140(%rsp), %rbp",
+        "Text": "  1d179b:      \tmovq\t0x140(%rsp), %rbp"
+      },
+      {
+        "Address": 1906595,
+        "Operation": "cmpq",
+        "Operands": "0x140(%rsp), %rsi",
+        "Text": "  1d17a3:      \tcmpq\t0x140(%rsp), %rsi"
+      },
+      {
+        "Address": 1906603,
+        "Operation": "je",
+        "Operands": "0x1d17ca",
+        "Text": "  1d17ab:      \tje\t0x1d17ca <symbol>"
+      },
+      {
+        "Address": 1906605,
+        "Operation": "leaq",
+        "Operands": "0x120(%rsp), %rcx",
+        "Text": "  1d17ad:      \tleaq\t0x120(%rsp), %rcx"
+      },
+      {
+        "Address": 1906613,
+        "Operation": "movq",
+        "Operands": "0x138(%rsp), %rdx",
+        "Text": "  1d17b5:      \tmovq\t0x138(%rsp), %rdx"
+      },
+      {
+        "Address": 1906621,
+        "Operation": "movq",
+        "Operands": "0x140(%rsp), %r8",
+        "Text": "  1d17bd:      \tmovq\t0x140(%rsp), %r8"
+      },
+      {
+        "Address": 1906629,
+        "Operation": "callq",
+        "Operands": "0x161240",
+        "Text": "  1d17c5:      \tcallq\t0x161240 <symbol>"
+      },
+      {
+        "Address": 1906634,
+        "Operation": "cmpl",
+        "Operands": "$0x0, 0x168(%rsp)",
+        "Text": "  1d17ca:      \tcmpl\t$0x0, 0x168(%rsp)"
+      },
+      {
+        "Address": 1906642,
+        "Operation": "jne",
+        "Operands": "0x1d17d8",
+        "Text": "  1d17d2:      \tjne\t0x1d17d8 <symbol>"
+      },
+      {
+        "Address": 1906644,
+        "Operation": "xorl",
+        "Operands": "%esi, %esi",
+        "Text": "  1d17d4:      \txorl\t%esi, %esi"
+      },
+      {
+        "Address": 1906646,
+        "Operation": "jmp",
+        "Operands": "0x1d17f3",
+        "Text": "  1d17d6:      \tjmp\t0x1d17f3 <symbol>"
+      },
+      {
+        "Address": 1906648,
+        "Operation": "cmpl",
+        "Operands": "0x168(%rsp), %edi",
+        "Text": "  1d17d8:      \tcmpl\t0x168(%rsp), %edi"
+      },
+      {
+        "Address": 1906655,
+        "Operation": "jae",
+        "Operands": "0x1d19b7",
+        "Text": "  1d17df:      \tjae\t0x1d19b7 <symbol>"
+      },
+      {
+        "Address": 1906661,
+        "Operation": "movl",
+        "Operands": "%edi, %ecx",
+        "Text": "  1d17e5:      \tmovl\t%edi, %ecx"
+      },
+      {
+        "Address": 1906663,
+        "Operation": "imulq",
+        "Operands": "$0x30, %rcx, %rsi",
+        "Text": "  1d17e7:      \timulq\t$0x30, %rcx, %rsi"
+      },
+      {
+        "Address": 1906667,
+        "Operation": "addq",
+        "Operands": "0x160(%rsp), %rsi",
+        "Text": "  1d17eb:      \taddq\t0x160(%rsp), %rsi"
+      },
+      {
+        "Address": 1906675,
+        "Operation": "movq",
+        "Operands": "0x8(%rbp), %rcx",
+        "Text": "  1d17f3:      \tmovq\t0x8(%rbp), %rcx"
+      },
+      {
+        "Address": 1906679,
+        "Operation": "movq",
+        "Operands": "0x8(%rcx), %rcx",
+        "Text": "  1d17f7:      \tmovq\t0x8(%rcx), %rcx"
+      },
+      {
+        "Address": 1906683,
+        "Operation": "testq",
+        "Operands": "%rcx, %rcx",
+        "Text": "  1d17fb:      \ttestq\t%rcx, %rcx"
+      },
+      {
+        "Address": 1906686,
+        "Operation": "je",
+        "Operands": "0x1d1809",
+        "Text": "  1d17fe:      \tje\t0x1d1809 <symbol>"
+      },
+      {
+        "Address": 1906688,
+        "Operation": "leaq",
+        "Operands": "0x10(%rcx), %rdx",
+        "Text": "  1d1800:      \tleaq\t0x10(%rcx), %rdx"
+      },
+      {
+        "Address": 1906692,
+        "Operation": "movl",
+        "Operands": "0x8(%rcx), %ecx",
+        "Text": "  1d1804:      \tmovl\t0x8(%rcx), %ecx"
+      },
+      {
+        "Address": 1906695,
+        "Operation": "jmp",
+        "Operands": "0x1d180d",
+        "Text": "  1d1807:      \tjmp\t0x1d180d <symbol>"
+      },
+      {
+        "Address": 1906697,
+        "Operation": "xorl",
+        "Operands": "%edx, %edx",
+        "Text": "  1d1809:      \txorl\t%edx, %edx"
+      },
+      {
+        "Address": 1906699,
+        "Operation": "xorl",
+        "Operands": "%ecx, %ecx",
+        "Text": "  1d180b:      \txorl\t%ecx, %ecx"
+      },
+      {
+        "Address": 1906701,
+        "Operation": "cmpl",
+        "Operands": "%ecx, %edi",
+        "Text": "  1d180d:      \tcmpl\t%ecx, %edi"
+      },
+      {
+        "Address": 1906703,
+        "Operation": "jae",
+        "Operands": "0x1d19b7",
+        "Text": "  1d180f:      \tjae\t0x1d19b7 <symbol>"
+      },
+      {
+        "Address": 1906709,
+        "Operation": "movl",
+        "Operands": "%edi, %ecx",
+        "Text": "  1d1815:      \tmovl\t%edi, %ecx"
+      },
+      {
+        "Address": 1906711,
+        "Operation": "leaq",
+        "Operands": "(%rdx,%rcx,8), %rcx",
+        "Text": "  1d1817:      \tleaq\t(%rdx,%rcx,8), %rcx"
+      },
+      {
+        "Address": 1906715,
+        "Operation": "movl",
+        "Operands": "(%rcx), %edi",
+        "Text": "  1d181b:      \tmovl\t(%rcx), %edi"
+      },
+      {
+        "Address": 1906717,
+        "Operation": "movl",
+        "Operands": "0x4(%rcx), %ebp",
+        "Text": "  1d181d:      \tmovl\t0x4(%rcx), %ebp"
+      },
+      {
+        "Address": 1906720,
+        "Operation": "leaq",
+        "Operands": "0xc0(%rsp), %rcx",
+        "Text": "  1d1820:      \tleaq\t0xc0(%rsp), %rcx"
+      },
+      {
+        "Address": 1906728,
+        "Operation": "leaq",
+        "Operands": "0x120(%rsp), %rdx",
+        "Text": "  1d1828:      \tleaq\t0x120(%rsp), %rdx"
+      },
+      {
+        "Address": 1906736,
+        "Operation": "movl",
+        "Operands": "$0x60, %r8d",
+        "Text": "  1d1830:      \tmovl\t$0x60, %r8d"
+      },
+      {
+        "Address": 1906742,
+        "Operation": "callq",
+        "Operands": "0x87e30",
+        "Text": "  1d1836:      \tcallq\t0x87e30 <symbol>"
+      },
+      {
+        "Address": 1906747,
+        "Operation": "jmp",
+        "Operands": "0x1d18db",
+        "Text": "  1d183b:      \tjmp\t0x1d18db <symbol>"
+      },
+      {
+        "Address": 1906752,
+        "Operation": "cmpl",
+        "Operands": "0x108(%rsp), %r15d",
+        "Text": "  1d1840:      \tcmpl\t0x108(%rsp), %r15d"
+      },
+      {
+        "Address": 1906760,
+        "Operation": "jae",
+        "Operands": "0x1d19b7",
+        "Text": "  1d1848:      \tjae\t0x1d19b7 <symbol>"
+      },
+      {
+        "Address": 1906766,
+        "Operation": "movl",
+        "Operands": "%r15d, %eax",
+        "Text": "  1d184e:      \tmovl\t%r15d, %eax"
+      },
+      {
+        "Address": 1906769,
+        "Operation": "imulq",
+        "Operands": "$0x30, %rax, %rax",
+        "Text": "  1d1851:      \timulq\t$0x30, %rax, %rax"
+      },
+      {
+        "Address": 1906773,
+        "Operation": "addq",
+        "Operands": "0x100(%rsp), %rax",
+        "Text": "  1d1855:      \taddq\t0x100(%rsp), %rax"
+      },
+      {
+        "Address": 1906781,
+        "Operation": "cmpl",
+        "Operands": "$0x0, (%rsi)",
+        "Text": "  1d185d:      \tcmpl\t$0x0, (%rsi)"
+      },
+      {
+        "Address": 1906784,
+        "Operation": "je",
+        "Operands": "0x1d1867",
+        "Text": "  1d1860:      \tje\t0x1d1867 <symbol>"
+      },
+      {
+        "Address": 1906786,
+        "Operation": "cmpl",
+        "Operands": "$0x0, (%rax)",
+        "Text": "  1d1862:      \tcmpl\t$0x0, (%rax)"
+      },
+      {
+        "Address": 1906789,
+        "Operation": "jne",
+        "Operands": "0x1d18db",
+        "Text": "  1d1865:      \tjne\t0x1d18db <symbol>"
+      },
+      {
+        "Address": 1906791,
+        "Operation": "movq",
+        "Operands": "0x8(%r13), %rax",
+        "Text": "  1d1867:      \tmovq\t0x8(%r13), %rax"
+      },
+      {
+        "Address": 1906795,
+        "Operation": "movq",
+        "Operands": "0x8(%rax), %rax",
+        "Text": "  1d186b:      \tmovq\t0x8(%rax), %rax"
+      },
+      {
+        "Address": 1906799,
+        "Operation": "testq",
+        "Operands": "%rax, %rax",
+        "Text": "  1d186f:      \ttestq\t%rax, %rax"
+      },
+      {
+        "Address": 1906802,
+        "Operation": "je",
+        "Operands": "0x1d187d",
+        "Text": "  1d1872:      \tje\t0x1d187d <symbol>"
+      },
+      {
+        "Address": 1906804,
+        "Operation": "leaq",
+        "Operands": "0x10(%rax), %rcx",
+        "Text": "  1d1874:      \tleaq\t0x10(%rax), %rcx"
+      },
+      {
+        "Address": 1906808,
+        "Operation": "movl",
+        "Operands": "0x8(%rax), %eax",
+        "Text": "  1d1878:      \tmovl\t0x8(%rax), %eax"
+      },
+      {
+        "Address": 1906811,
+        "Operation": "jmp",
+        "Operands": "0x1d1881",
+        "Text": "  1d187b:      \tjmp\t0x1d1881 <symbol>"
+      },
+      {
+        "Address": 1906813,
+        "Operation": "xorl",
+        "Operands": "%ecx, %ecx",
+        "Text": "  1d187d:      \txorl\t%ecx, %ecx"
+      },
+      {
+        "Address": 1906815,
+        "Operation": "xorl",
+        "Operands": "%eax, %eax",
+        "Text": "  1d187f:      \txorl\t%eax, %eax"
+      },
+      {
+        "Address": 1906817,
+        "Operation": "cmpl",
+        "Operands": "%eax, %r15d",
+        "Text": "  1d1881:      \tcmpl\t%eax, %r15d"
+      },
+      {
+        "Address": 1906820,
+        "Operation": "jae",
+        "Operands": "0x1d19b7",
+        "Text": "  1d1884:      \tjae\t0x1d19b7 <symbol>"
+      },
+      {
+        "Address": 1906826,
+        "Operation": "movl",
+        "Operands": "%r15d, %eax",
+        "Text": "  1d188a:      \tmovl\t%r15d, %eax"
+      },
+      {
+        "Address": 1906829,
+        "Operation": "leaq",
+        "Operands": "(%rcx,%rax,8), %rax",
+        "Text": "  1d188d:      \tleaq\t(%rcx,%rax,8), %rax"
+      },
+      {
+        "Address": 1906833,
+        "Operation": "movl",
+        "Operands": "(%rax), %ecx",
+        "Text": "  1d1891:      \tmovl\t(%rax), %ecx"
+      },
+      {
+        "Address": 1906835,
+        "Operation": "movl",
+        "Operands": "0x4(%rax), %eax",
+        "Text": "  1d1893:      \tmovl\t0x4(%rax), %eax"
+      },
+      {
+        "Address": 1906838,
+        "Operation": "cmpl",
+        "Operands": "%ecx, %edi",
+        "Text": "  1d1896:      \tcmpl\t%ecx, %edi"
+      },
+      {
+        "Address": 1906840,
+        "Operation": "jl",
+        "Operands": "0x1d18aa",
+        "Text": "  1d1898:      \tjl\t0x1d18aa <symbol>"
+      },
+      {
+        "Address": 1906842,
+        "Operation": "cmpl",
+        "Operands": "%ecx, %edi",
+        "Text": "  1d189a:      \tcmpl\t%ecx, %edi"
+      },
+      {
+        "Address": 1906844,
+        "Operation": "jne",
+        "Operands": "0x1d1992",
+        "Text": "  1d189c:      \tjne\t0x1d1992 <symbol>"
+      },
+      {
+        "Address": 1906850,
+        "Operation": "cmpl",
+        "Operands": "%eax, %ebp",
+        "Text": "  1d18a2:      \tcmpl\t%eax, %ebp"
+      },
+      {
+        "Address": 1906852,
+        "Operation": "jge",
+        "Operands": "0x1d1992",
+        "Text": "  1d18a4:      \tjge\t0x1d1992 <symbol>"
+      },
+      {
+        "Address": 1906858,
+        "Operation": "movl",
+        "Operands": "%edi, %edx",
+        "Text": "  1d18aa:      \tmovl\t%edi, %edx"
+      },
+      {
+        "Address": 1906860,
+        "Operation": "movl",
+        "Operands": "%ebp, %r8d",
+        "Text": "  1d18ac:      \tmovl\t%ebp, %r8d"
+      },
+      {
+        "Address": 1906863,
+        "Operation": "movl",
+        "Operands": "0x10(%rbx), %r10d",
+        "Text": "  1d18af:      \tmovl\t0x10(%rbx), %r10d"
+      },
+      {
+        "Address": 1906867,
+        "Operation": "leal",
+        "Operands": "0x1(%r10), %r9d",
+        "Text": "  1d18b3:      \tleal\t0x1(%r10), %r9d"
+      },
+      {
+        "Address": 1906871,
+        "Operation": "movl",
+        "Operands": "%r9d, 0x10(%rbx)",
+        "Text": "  1d18b7:      \tmovl\t%r9d, 0x10(%rbx)"
+      },
+      {
+        "Address": 1906875,
+        "Operation": "cmpl",
+        "Operands": "0x8(%rbx), %r10d",
+        "Text": "  1d18bb:      \tcmpl\t0x8(%rbx), %r10d"
+      },
+      {
+        "Address": 1906879,
+        "Operation": "jae",
+        "Operands": "0x1d19b7",
+        "Text": "  1d18bf:      \tjae\t0x1d19b7 <symbol>"
+      },
+      {
+        "Address": 1906885,
+        "Operation": "shlq",
+        "Operands": "$0x4, %r10",
+        "Text": "  1d18c5:      \tshlq\t$0x4, %r10"
+      },
+      {
+        "Address": 1906889,
+        "Operation": "addq",
+        "Operands": "(%rbx), %r10",
+        "Text": "  1d18c9:      \taddq\t(%rbx), %r10"
+      },
+      {
+        "Address": 1906892,
+        "Operation": "movl",
+        "Operands": "%edx, (%r10)",
+        "Text": "  1d18cc:      \tmovl\t%edx, (%r10)"
+      },
+      {
+        "Address": 1906895,
+        "Operation": "movl",
+        "Operands": "%r8d, 0x4(%r10)",
+        "Text": "  1d18cf:      \tmovl\t%r8d, 0x4(%r10)"
+      },
+      {
+        "Address": 1906899,
+        "Operation": "movl",
+        "Operands": "%ecx, 0x8(%r10)",
+        "Text": "  1d18d3:      \tmovl\t%ecx, 0x8(%r10)"
+      },
+      {
+        "Address": 1906903,
+        "Operation": "movl",
+        "Operands": "%eax, 0xc(%r10)",
+        "Text": "  1d18d7:      \tmovl\t%eax, 0xc(%r10)"
+      },
+      {
+        "Address": 1906907,
+        "Operation": "movq",
+        "Operands": "0xe0(%rsp), %rdx",
+        "Text": "  1d18db:      \tmovq\t0xe0(%rsp), %rdx"
+      },
+      {
+        "Address": 1906915,
+        "Operation": "movq",
+        "Operands": "%rdx, %r14",
+        "Text": "  1d18e3:      \tmovq\t%rdx, %r14"
+      },
+      {
+        "Address": 1906918,
+        "Operation": "leaq",
+        "Operands": "0xc0(%rsp), %r9",
+        "Text": "  1d18e6:      \tleaq\t0xc0(%rsp), %r9"
+      },
+      {
+        "Address": 1906926,
+        "Operation": "movq",
+        "Operands": "0xd8(%rsp), %rcx",
+        "Text": "  1d18ee:      \tmovq\t0xd8(%rsp), %rcx"
+      },
+      {
+        "Address": 1906934,
+        "Operation": "movl",
+        "Operands": "0xe8(%rsp), %r8d",
+        "Text": "  1d18f6:      \tmovl\t0xe8(%rsp), %r8d"
+      },
+      {
+        "Address": 1906942,
+        "Operation": "callq",
+        "Operands": "0xd7e0",
+        "Text": "  1d18fe:      \tcallq\t0xd7e0 <symbol>"
+      },
+      {
+        "Address": 1906947,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  1d1903:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1906949,
+        "Operation": "jne",
+        "Operands": "0x1d1950",
+        "Text": "  1d1905:      \tjne\t0x1d1950 <symbol>"
+      },
+      {
+        "Address": 1906951,
+        "Operation": "leaq",
+        "Operands": "0xc8(%rsp), %rcx",
+        "Text": "  1d1907:      \tleaq\t0xc8(%rsp), %rcx"
+      },
+      {
+        "Address": 1906959,
+        "Operation": "callq",
+        "Operands": "0x154ae0",
+        "Text": "  1d190f:      \tcallq\t0x154ae0 <symbol>"
+      },
+      {
+        "Address": 1906964,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  1d1914:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1906966,
+        "Operation": "je",
+        "Operands": "0x1d171a",
+        "Text": "  1d1916:      \tje\t0x1d171a <symbol>"
+      },
+      {
+        "Address": 1906972,
+        "Operation": "movl",
+        "Operands": "$0xffffffff, 0xc0(%rsp)",
+        "Text": "  1d191c:      \tmovl\t$0xffffffff, 0xc0(%rsp)"
+      },
+      {
+        "Address": 1906983,
+        "Operation": "leaq",
+        "Operands": "0xc0(%rsp), %r9",
+        "Text": "  1d1927:      \tleaq\t0xc0(%rsp), %r9"
+      },
+      {
+        "Address": 1906991,
+        "Operation": "movq",
+        "Operands": "0xd8(%rsp), %rcx",
+        "Text": "  1d192f:      \tmovq\t0xd8(%rsp), %rcx"
+      },
+      {
+        "Address": 1906999,
+        "Operation": "movq",
+        "Operands": "0xe0(%rsp), %rdx",
+        "Text": "  1d1937:      \tmovq\t0xe0(%rsp), %rdx"
+      },
+      {
+        "Address": 1907007,
+        "Operation": "movl",
+        "Operands": "0xe8(%rsp), %r8d",
+        "Text": "  1d193f:      \tmovl\t0xe8(%rsp), %r8d"
+      },
+      {
+        "Address": 1907015,
+        "Operation": "callq",
+        "Operands": "0xd7e0",
+        "Text": "  1d1947:      \tcallq\t0xd7e0 <symbol>"
+      },
+      {
+        "Address": 1907020,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  1d194c:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1907022,
+        "Operation": "je",
+        "Operands": "0x1d1907",
+        "Text": "  1d194e:      \tje\t0x1d1907 <symbol>"
+      },
+      {
+        "Address": 1907024,
+        "Operation": "movl",
+        "Operands": "0xc0(%rsp), %r15d",
+        "Text": "  1d1950:      \tmovl\t0xc0(%rsp), %r15d"
+      },
+      {
+        "Address": 1907032,
+        "Operation": "movq",
+        "Operands": "0xe0(%rsp), %r8",
+        "Text": "  1d1958:      \tmovq\t0xe0(%rsp), %r8"
+      },
+      {
+        "Address": 1907040,
+        "Operation": "movq",
+        "Operands": "%r8, %r13",
+        "Text": "  1d1960:      \tmovq\t%r8, %r13"
+      },
+      {
+        "Address": 1907043,
+        "Operation": "cmpq",
+        "Operands": "%r8, %r14",
+        "Text": "  1d1963:      \tcmpq\t%r8, %r14"
+      },
+      {
+        "Address": 1907046,
+        "Operation": "je",
+        "Operands": "0x1d197d",
+        "Text": "  1d1966:      \tje\t0x1d197d <symbol>"
+      },
+      {
+        "Address": 1907048,
+        "Operation": "leaq",
+        "Operands": "0xc0(%rsp), %rcx",
+        "Text": "  1d1968:      \tleaq\t0xc0(%rsp), %rcx"
+      },
+      {
+        "Address": 1907056,
+        "Operation": "movq",
+        "Operands": "0xd8(%rsp), %rdx",
+        "Text": "  1d1970:      \tmovq\t0xd8(%rsp), %rdx"
+      },
+      {
+        "Address": 1907064,
+        "Operation": "callq",
+        "Operands": "0x161240",
+        "Text": "  1d1978:      \tcallq\t0x161240 <symbol>"
+      },
+      {
+        "Address": 1907069,
+        "Operation": "cmpl",
+        "Operands": "$0x0, 0x108(%rsp)",
+        "Text": "  1d197d:      \tcmpl\t$0x0, 0x108(%rsp)"
+      },
+      {
+        "Address": 1907077,
+        "Operation": "jne",
+        "Operands": "0x1d1840",
+        "Text": "  1d1985:      \tjne\t0x1d1840 <symbol>"
+      },
+      {
+        "Address": 1907083,
+        "Operation": "xorl",
+        "Operands": "%eax, %eax",
+        "Text": "  1d198b:      \txorl\t%eax, %eax"
+      },
+      {
+        "Address": 1907085,
+        "Operation": "jmp",
+        "Operands": "0x1d185d",
+        "Text": "  1d198d:      \tjmp\t0x1d185d <symbol>"
+      },
+      {
+        "Address": 1907090,
+        "Operation": "movl",
+        "Operands": "%ecx, %edx",
+        "Text": "  1d1992:      \tmovl\t%ecx, %edx"
+      },
+      {
+        "Address": 1907092,
+        "Operation": "movl",
+        "Operands": "%eax, %r8d",
+        "Text": "  1d1994:      \tmovl\t%eax, %r8d"
+      },
+      {
+        "Address": 1907095,
+        "Operation": "movl",
+        "Operands": "%edi, %ecx",
+        "Text": "  1d1997:      \tmovl\t%edi, %ecx"
+      },
+      {
+        "Address": 1907097,
+        "Operation": "movl",
+        "Operands": "%ebp, %eax",
+        "Text": "  1d1999:      \tmovl\t%ebp, %eax"
+      },
+      {
+        "Address": 1907099,
+        "Operation": "jmp",
+        "Operands": "0x1d18af",
+        "Text": "  1d199b:      \tjmp\t0x1d18af <symbol>"
+      }
+    ],
+    "Normalized": [
+      "movq 0x140(%rsp), %rsi",
+      "leaq 0x120(%rsp), %r9",
+      "movq 0x138(%rsp), %rcx",
+      "movq 0x140(%rsp), %rdx",
+      "movl 0x148(%rsp), %r8d",
+      "callq 0xd7e0",
+      "testl %eax, %eax",
+      "jne instruction@20",
+      "leaq 0x128(%rsp), %rcx",
+      "callq 0x154ae0",
+      "testl %eax, %eax",
+      "je external@0x1d19a0",
+      "movl $0xffffffff, 0x120(%rsp)",
+      "leaq 0x120(%rsp), %r9",
+      "movq 0x138(%rsp), %rcx",
+      "movq 0x140(%rsp), %rdx",
+      "movl 0x148(%rsp), %r8d",
+      "callq 0xd7e0",
+      "testl %eax, %eax",
+      "je instruction@8",
+      "movl 0x120(%rsp), %edi",
+      "movq 0x140(%rsp), %rbp",
+      "cmpq 0x140(%rsp), %rsi",
+      "je instruction@28",
+      "leaq 0x120(%rsp), %rcx",
+      "movq 0x138(%rsp), %rdx",
+      "movq 0x140(%rsp), %r8",
+      "callq 0x161240",
+      "cmpl $0x0, 0x168(%rsp)",
+      "jne instruction@32",
+      "xorl %esi, %esi",
+      "jmp instruction@37",
+      "cmpl 0x168(%rsp), %edi",
+      "jae external@0x1d19b7",
+      "movl %edi, %ecx",
+      "imulq $0x30, %rcx, %rsi",
+      "addq 0x160(%rsp), %rsi",
+      "movq 0x8(%rbp), %rcx",
+      "movq 0x8(%rcx), %rcx",
+      "testq %rcx, %rcx",
+      "je instruction@44",
+      "leaq 0x10(%rcx), %rdx",
+      "movl 0x8(%rcx), %ecx",
+      "jmp instruction@46",
+      "xorl %edx, %edx",
+      "xorl %ecx, %ecx",
+      "cmpl %ecx, %edi",
+      "jae external@0x1d19b7",
+      "movl %edi, %ecx",
+      "leaq (%rdx,%rcx,8), %rcx",
+      "movl (%rcx), %edi",
+      "movl 0x4(%rcx), %ebp",
+      "leaq 0xc0(%rsp), %rcx",
+      "leaq 0x120(%rsp), %rdx",
+      "movl $0x60, %r8d",
+      "callq 0x87e30",
+      "jmp instruction@100",
+      "cmpl 0x108(%rsp), %r15d",
+      "jae external@0x1d19b7",
+      "movl %r15d, %eax",
+      "imulq $0x30, %rax, %rax",
+      "addq 0x100(%rsp), %rax",
+      "cmpl $0x0, (%rsi)",
+      "je instruction@66",
+      "cmpl $0x0, (%rax)",
+      "jne instruction@100",
+      "movq 0x8(%r13), %rax",
+      "movq 0x8(%rax), %rax",
+      "testq %rax, %rax",
+      "je instruction@73",
+      "leaq 0x10(%rax), %rcx",
+      "movl 0x8(%rax), %eax",
+      "jmp instruction@75",
+      "xorl %ecx, %ecx",
+      "xorl %eax, %eax",
+      "cmpl %eax, %r15d",
+      "jae external@0x1d19b7",
+      "movl %r15d, %eax",
+      "leaq (%rcx,%rax,8), %rax",
+      "movl (%rax), %ecx",
+      "movl 0x4(%rax), %eax",
+      "cmpl %ecx, %edi",
+      "jl instruction@87",
+      "cmpl %ecx, %edi",
+      "jne instruction@132",
+      "cmpl %eax, %ebp",
+      "jge instruction@132",
+      "movl %edi, %edx",
+      "movl %ebp, %r8d",
+      "movl 0x10(%rbx), %r10d",
+      "leal 0x1(%r10), %r9d",
+      "movl %r9d, 0x10(%rbx)",
+      "cmpl 0x8(%rbx), %r10d",
+      "jae external@0x1d19b7",
+      "shlq $0x4, %r10",
+      "addq (%rbx), %r10",
+      "movl %edx, (%r10)",
+      "movl %r8d, 0x4(%r10)",
+      "movl %ecx, 0x8(%r10)",
+      "movl %eax, 0xc(%r10)",
+      "movq 0xe0(%rsp), %rdx",
+      "movq %rdx, %r14",
+      "leaq 0xc0(%rsp), %r9",
+      "movq 0xd8(%rsp), %rcx",
+      "movl 0xe8(%rsp), %r8d",
+      "callq 0xd7e0",
+      "testl %eax, %eax",
+      "jne instruction@120",
+      "leaq 0xc8(%rsp), %rcx",
+      "callq 0x154ae0",
+      "testl %eax, %eax",
+      "je instruction@0",
+      "movl $0xffffffff, 0xc0(%rsp)",
+      "leaq 0xc0(%rsp), %r9",
+      "movq 0xd8(%rsp), %rcx",
+      "movq 0xe0(%rsp), %rdx",
+      "movl 0xe8(%rsp), %r8d",
+      "callq 0xd7e0",
+      "testl %eax, %eax",
+      "je instruction@108",
+      "movl 0xc0(%rsp), %r15d",
+      "movq 0xe0(%rsp), %r8",
+      "movq %r8, %r13",
+      "cmpq %r8, %r14",
+      "je instruction@128",
+      "leaq 0xc0(%rsp), %rcx",
+      "movq 0xd8(%rsp), %rdx",
+      "callq 0x161240",
+      "cmpl $0x0, 0x108(%rsp)",
+      "jne instruction@57",
+      "xorl %eax, %eax",
+      "jmp instruction@62",
+      "movl %ecx, %edx",
+      "movl %eax, %r8d",
+      "movl %edi, %ecx",
+      "movl %ebp, %eax",
+      "jmp instruction@89"
+    ],
+    "Branches": [
+      {
+        "Instruction": 7,
+        "Address": "0x1d1749",
+        "Operation": "jne",
+        "Target": "0x1d1794",
+        "Bytes": 2,
+        "Mod32": 9,
+        "Mod64": 9,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 11,
+        "Address": "0x1d175a",
+        "Operation": "je",
+        "Target": "0x1d19a0",
+        "Bytes": 6,
+        "Mod32": 26,
+        "Mod64": 26,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 19,
+        "Address": "0x1d1792",
+        "Operation": "je",
+        "Target": "0x1d174b",
+        "Bytes": 2,
+        "Mod32": 18,
+        "Mod64": 18,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 23,
+        "Address": "0x1d17ab",
+        "Operation": "je",
+        "Target": "0x1d17ca",
+        "Bytes": 2,
+        "Mod32": 11,
+        "Mod64": 43,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 29,
+        "Address": "0x1d17d2",
+        "Operation": "jne",
+        "Target": "0x1d17d8",
+        "Bytes": 2,
+        "Mod32": 18,
+        "Mod64": 18,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 31,
+        "Address": "0x1d17d6",
+        "Operation": "jmp",
+        "Target": "0x1d17f3",
+        "Bytes": 2,
+        "Mod32": 22,
+        "Mod64": 22,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 33,
+        "Address": "0x1d17df",
+        "Operation": "jae",
+        "Target": "0x1d19b7",
+        "Bytes": 6,
+        "Mod32": 31,
+        "Mod64": 31,
+        "Crosses32": true,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 40,
+        "Address": "0x1d17fe",
+        "Operation": "je",
+        "Target": "0x1d1809",
+        "Bytes": 2,
+        "Mod32": 30,
+        "Mod64": 62,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 43,
+        "Address": "0x1d1807",
+        "Operation": "jmp",
+        "Target": "0x1d180d",
+        "Bytes": 2,
+        "Mod32": 7,
+        "Mod64": 7,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 47,
+        "Address": "0x1d180f",
+        "Operation": "jae",
+        "Target": "0x1d19b7",
+        "Bytes": 6,
+        "Mod32": 15,
+        "Mod64": 15,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 56,
+        "Address": "0x1d183b",
+        "Operation": "jmp",
+        "Target": "0x1d18db",
+        "Bytes": 5,
+        "Mod32": 27,
+        "Mod64": 59,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 58,
+        "Address": "0x1d1848",
+        "Operation": "jae",
+        "Target": "0x1d19b7",
+        "Bytes": 6,
+        "Mod32": 8,
+        "Mod64": 8,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 63,
+        "Address": "0x1d1860",
+        "Operation": "je",
+        "Target": "0x1d1867",
+        "Bytes": 2,
+        "Mod32": 0,
+        "Mod64": 32,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 65,
+        "Address": "0x1d1865",
+        "Operation": "jne",
+        "Target": "0x1d18db",
+        "Bytes": 2,
+        "Mod32": 5,
+        "Mod64": 37,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 69,
+        "Address": "0x1d1872",
+        "Operation": "je",
+        "Target": "0x1d187d",
+        "Bytes": 2,
+        "Mod32": 18,
+        "Mod64": 50,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 72,
+        "Address": "0x1d187b",
+        "Operation": "jmp",
+        "Target": "0x1d1881",
+        "Bytes": 2,
+        "Mod32": 27,
+        "Mod64": 59,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 76,
+        "Address": "0x1d1884",
+        "Operation": "jae",
+        "Target": "0x1d19b7",
+        "Bytes": 6,
+        "Mod32": 4,
+        "Mod64": 4,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 82,
+        "Address": "0x1d1898",
+        "Operation": "jl",
+        "Target": "0x1d18aa",
+        "Bytes": 2,
+        "Mod32": 24,
+        "Mod64": 24,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 84,
+        "Address": "0x1d189c",
+        "Operation": "jne",
+        "Target": "0x1d1992",
+        "Bytes": 6,
+        "Mod32": 28,
+        "Mod64": 28,
+        "Crosses32": true,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 86,
+        "Address": "0x1d18a4",
+        "Operation": "jge",
+        "Target": "0x1d1992",
+        "Bytes": 6,
+        "Mod32": 4,
+        "Mod64": 36,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 93,
+        "Address": "0x1d18bf",
+        "Operation": "jae",
+        "Target": "0x1d19b7",
+        "Bytes": 6,
+        "Mod32": 31,
+        "Mod64": 63,
+        "Crosses32": true,
+        "Crosses64": true
+      },
+      {
+        "Instruction": 107,
+        "Address": "0x1d1905",
+        "Operation": "jne",
+        "Target": "0x1d1950",
+        "Bytes": 2,
+        "Mod32": 5,
+        "Mod64": 5,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 111,
+        "Address": "0x1d1916",
+        "Operation": "je",
+        "Target": "0x1d171a",
+        "Bytes": 6,
+        "Mod32": 22,
+        "Mod64": 22,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 119,
+        "Address": "0x1d194e",
+        "Operation": "je",
+        "Target": "0x1d1907",
+        "Bytes": 2,
+        "Mod32": 14,
+        "Mod64": 14,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 124,
+        "Address": "0x1d1966",
+        "Operation": "je",
+        "Target": "0x1d197d",
+        "Bytes": 2,
+        "Mod32": 6,
+        "Mod64": 38,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 129,
+        "Address": "0x1d1985",
+        "Operation": "jne",
+        "Target": "0x1d1840",
+        "Bytes": 6,
+        "Mod32": 5,
+        "Mod64": 5,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 131,
+        "Address": "0x1d198d",
+        "Operation": "jmp",
+        "Target": "0x1d185d",
+        "Bytes": 5,
+        "Mod32": 13,
+        "Mod64": 13,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 136,
+        "Address": "0x1d199b",
+        "Operation": "jmp",
+        "Target": "0x1d18af",
+        "Bytes": 5,
+        "Mod32": 27,
+        "Mod64": 27,
+        "Crosses32": false,
+        "Crosses64": false
+      }
+    ]
+  },
+  {
+    "Role": "DefaultHand",
+    "Start": "0x15e33a",
+    "EndExclusive": "0x15e5bb",
+    "Instructions": 137,
+    "Bytes": 641,
+    "StartMod32": 26,
+    "StartMod64": 58,
+    "Code": [
+      {
+        "Address": 1434426,
+        "Operation": "movq",
+        "Operands": "0x140(%rsp), %rdx",
+        "Text": "  15e33a:      \tmovq\t0x140(%rsp), %rdx"
+      },
+      {
+        "Address": 1434434,
+        "Operation": "movq",
+        "Operands": "%rdx, %rsi",
+        "Text": "  15e342:      \tmovq\t%rdx, %rsi"
+      },
+      {
+        "Address": 1434437,
+        "Operation": "leaq",
+        "Operands": "0x120(%rsp), %r9",
+        "Text": "  15e345:      \tleaq\t0x120(%rsp), %r9"
+      },
+      {
+        "Address": 1434445,
+        "Operation": "movq",
+        "Operands": "0x138(%rsp), %rcx",
+        "Text": "  15e34d:      \tmovq\t0x138(%rsp), %rcx"
+      },
+      {
+        "Address": 1434453,
+        "Operation": "movl",
+        "Operands": "0x148(%rsp), %r8d",
+        "Text": "  15e355:      \tmovl\t0x148(%rsp), %r8d"
+      },
+      {
+        "Address": 1434461,
+        "Operation": "callq",
+        "Operands": "0xd7e0",
+        "Text": "  15e35d:      \tcallq\t0xd7e0 <symbol>"
+      },
+      {
+        "Address": 1434466,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  15e362:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1434468,
+        "Operation": "jne",
+        "Operands": "0x15e3af",
+        "Text": "  15e364:      \tjne\t0x15e3af <symbol>"
+      },
+      {
+        "Address": 1434470,
+        "Operation": "leaq",
+        "Operands": "0x128(%rsp), %rcx",
+        "Text": "  15e366:      \tleaq\t0x128(%rsp), %rcx"
+      },
+      {
+        "Address": 1434478,
+        "Operation": "callq",
+        "Operands": "0x154ae0",
+        "Text": "  15e36e:      \tcallq\t0x154ae0 <symbol>"
+      },
+      {
+        "Address": 1434483,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  15e373:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1434485,
+        "Operation": "je",
+        "Operands": "0x15e5bb",
+        "Text": "  15e375:      \tje\t0x15e5bb <symbol>"
+      },
+      {
+        "Address": 1434491,
+        "Operation": "movl",
+        "Operands": "$0xffffffff, 0x120(%rsp)",
+        "Text": "  15e37b:      \tmovl\t$0xffffffff, 0x120(%rsp)"
+      },
+      {
+        "Address": 1434502,
+        "Operation": "leaq",
+        "Operands": "0x120(%rsp), %r9",
+        "Text": "  15e386:      \tleaq\t0x120(%rsp), %r9"
+      },
+      {
+        "Address": 1434510,
+        "Operation": "movq",
+        "Operands": "0x138(%rsp), %rcx",
+        "Text": "  15e38e:      \tmovq\t0x138(%rsp), %rcx"
+      },
+      {
+        "Address": 1434518,
+        "Operation": "movq",
+        "Operands": "0x140(%rsp), %rdx",
+        "Text": "  15e396:      \tmovq\t0x140(%rsp), %rdx"
+      },
+      {
+        "Address": 1434526,
+        "Operation": "movl",
+        "Operands": "0x148(%rsp), %r8d",
+        "Text": "  15e39e:      \tmovl\t0x148(%rsp), %r8d"
+      },
+      {
+        "Address": 1434534,
+        "Operation": "callq",
+        "Operands": "0xd7e0",
+        "Text": "  15e3a6:      \tcallq\t0xd7e0 <symbol>"
+      },
+      {
+        "Address": 1434539,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  15e3ab:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1434541,
+        "Operation": "je",
+        "Operands": "0x15e366",
+        "Text": "  15e3ad:      \tje\t0x15e366 <symbol>"
+      },
+      {
+        "Address": 1434543,
+        "Operation": "movl",
+        "Operands": "0x120(%rsp), %edi",
+        "Text": "  15e3af:      \tmovl\t0x120(%rsp), %edi"
+      },
+      {
+        "Address": 1434550,
+        "Operation": "movq",
+        "Operands": "0x140(%rsp), %rbp",
+        "Text": "  15e3b6:      \tmovq\t0x140(%rsp), %rbp"
+      },
+      {
+        "Address": 1434558,
+        "Operation": "cmpq",
+        "Operands": "0x140(%rsp), %rsi",
+        "Text": "  15e3be:      \tcmpq\t0x140(%rsp), %rsi"
+      },
+      {
+        "Address": 1434566,
+        "Operation": "je",
+        "Operands": "0x15e3e5",
+        "Text": "  15e3c6:      \tje\t0x15e3e5 <symbol>"
+      },
+      {
+        "Address": 1434568,
+        "Operation": "leaq",
+        "Operands": "0x120(%rsp), %rcx",
+        "Text": "  15e3c8:      \tleaq\t0x120(%rsp), %rcx"
+      },
+      {
+        "Address": 1434576,
+        "Operation": "movq",
+        "Operands": "0x138(%rsp), %rdx",
+        "Text": "  15e3d0:      \tmovq\t0x138(%rsp), %rdx"
+      },
+      {
+        "Address": 1434584,
+        "Operation": "movq",
+        "Operands": "0x140(%rsp), %r8",
+        "Text": "  15e3d8:      \tmovq\t0x140(%rsp), %r8"
+      },
+      {
+        "Address": 1434592,
+        "Operation": "callq",
+        "Operands": "0x161240",
+        "Text": "  15e3e0:      \tcallq\t0x161240 <symbol>"
+      },
+      {
+        "Address": 1434597,
+        "Operation": "cmpl",
+        "Operands": "$0x0, 0x168(%rsp)",
+        "Text": "  15e3e5:      \tcmpl\t$0x0, 0x168(%rsp)"
+      },
+      {
+        "Address": 1434605,
+        "Operation": "jne",
+        "Operands": "0x15e3f3",
+        "Text": "  15e3ed:      \tjne\t0x15e3f3 <symbol>"
+      },
+      {
+        "Address": 1434607,
+        "Operation": "xorl",
+        "Operands": "%esi, %esi",
+        "Text": "  15e3ef:      \txorl\t%esi, %esi"
+      },
+      {
+        "Address": 1434609,
+        "Operation": "jmp",
+        "Operands": "0x15e40e",
+        "Text": "  15e3f1:      \tjmp\t0x15e40e <symbol>"
+      },
+      {
+        "Address": 1434611,
+        "Operation": "cmpl",
+        "Operands": "0x168(%rsp), %edi",
+        "Text": "  15e3f3:      \tcmpl\t0x168(%rsp), %edi"
+      },
+      {
+        "Address": 1434618,
+        "Operation": "jae",
+        "Operands": "0x15e5d1",
+        "Text": "  15e3fa:      \tjae\t0x15e5d1 <symbol>"
+      },
+      {
+        "Address": 1434624,
+        "Operation": "movl",
+        "Operands": "%edi, %ecx",
+        "Text": "  15e400:      \tmovl\t%edi, %ecx"
+      },
+      {
+        "Address": 1434626,
+        "Operation": "imulq",
+        "Operands": "$0x30, %rcx, %rsi",
+        "Text": "  15e402:      \timulq\t$0x30, %rcx, %rsi"
+      },
+      {
+        "Address": 1434630,
+        "Operation": "addq",
+        "Operands": "0x160(%rsp), %rsi",
+        "Text": "  15e406:      \taddq\t0x160(%rsp), %rsi"
+      },
+      {
+        "Address": 1434638,
+        "Operation": "movq",
+        "Operands": "0x8(%rbp), %rcx",
+        "Text": "  15e40e:      \tmovq\t0x8(%rbp), %rcx"
+      },
+      {
+        "Address": 1434642,
+        "Operation": "movq",
+        "Operands": "0x8(%rcx), %rcx",
+        "Text": "  15e412:      \tmovq\t0x8(%rcx), %rcx"
+      },
+      {
+        "Address": 1434646,
+        "Operation": "testq",
+        "Operands": "%rcx, %rcx",
+        "Text": "  15e416:      \ttestq\t%rcx, %rcx"
+      },
+      {
+        "Address": 1434649,
+        "Operation": "je",
+        "Operands": "0x15e424",
+        "Text": "  15e419:      \tje\t0x15e424 <symbol>"
+      },
+      {
+        "Address": 1434651,
+        "Operation": "leaq",
+        "Operands": "0x10(%rcx), %rdx",
+        "Text": "  15e41b:      \tleaq\t0x10(%rcx), %rdx"
+      },
+      {
+        "Address": 1434655,
+        "Operation": "movl",
+        "Operands": "0x8(%rcx), %ecx",
+        "Text": "  15e41f:      \tmovl\t0x8(%rcx), %ecx"
+      },
+      {
+        "Address": 1434658,
+        "Operation": "jmp",
+        "Operands": "0x15e428",
+        "Text": "  15e422:      \tjmp\t0x15e428 <symbol>"
+      },
+      {
+        "Address": 1434660,
+        "Operation": "xorl",
+        "Operands": "%edx, %edx",
+        "Text": "  15e424:      \txorl\t%edx, %edx"
+      },
+      {
+        "Address": 1434662,
+        "Operation": "xorl",
+        "Operands": "%ecx, %ecx",
+        "Text": "  15e426:      \txorl\t%ecx, %ecx"
+      },
+      {
+        "Address": 1434664,
+        "Operation": "cmpl",
+        "Operands": "%ecx, %edi",
+        "Text": "  15e428:      \tcmpl\t%ecx, %edi"
+      },
+      {
+        "Address": 1434666,
+        "Operation": "jae",
+        "Operands": "0x15e5d1",
+        "Text": "  15e42a:      \tjae\t0x15e5d1 <symbol>"
+      },
+      {
+        "Address": 1434672,
+        "Operation": "movl",
+        "Operands": "%edi, %ecx",
+        "Text": "  15e430:      \tmovl\t%edi, %ecx"
+      },
+      {
+        "Address": 1434674,
+        "Operation": "leaq",
+        "Operands": "(%rdx,%rcx,8), %rcx",
+        "Text": "  15e432:      \tleaq\t(%rdx,%rcx,8), %rcx"
+      },
+      {
+        "Address": 1434678,
+        "Operation": "movl",
+        "Operands": "(%rcx), %edi",
+        "Text": "  15e436:      \tmovl\t(%rcx), %edi"
+      },
+      {
+        "Address": 1434680,
+        "Operation": "movl",
+        "Operands": "0x4(%rcx), %ebp",
+        "Text": "  15e438:      \tmovl\t0x4(%rcx), %ebp"
+      },
+      {
+        "Address": 1434683,
+        "Operation": "leaq",
+        "Operands": "0xc0(%rsp), %rcx",
+        "Text": "  15e43b:      \tleaq\t0xc0(%rsp), %rcx"
+      },
+      {
+        "Address": 1434691,
+        "Operation": "leaq",
+        "Operands": "0x120(%rsp), %rdx",
+        "Text": "  15e443:      \tleaq\t0x120(%rsp), %rdx"
+      },
+      {
+        "Address": 1434699,
+        "Operation": "movl",
+        "Operands": "$0x60, %r8d",
+        "Text": "  15e44b:      \tmovl\t$0x60, %r8d"
+      },
+      {
+        "Address": 1434705,
+        "Operation": "callq",
+        "Operands": "0x87e30",
+        "Text": "  15e451:      \tcallq\t0x87e30 <symbol>"
+      },
+      {
+        "Address": 1434710,
+        "Operation": "jmp",
+        "Operands": "0x15e4f6",
+        "Text": "  15e456:      \tjmp\t0x15e4f6 <symbol>"
+      },
+      {
+        "Address": 1434715,
+        "Operation": "cmpl",
+        "Operands": "0x108(%rsp), %r15d",
+        "Text": "  15e45b:      \tcmpl\t0x108(%rsp), %r15d"
+      },
+      {
+        "Address": 1434723,
+        "Operation": "jae",
+        "Operands": "0x15e5d1",
+        "Text": "  15e463:      \tjae\t0x15e5d1 <symbol>"
+      },
+      {
+        "Address": 1434729,
+        "Operation": "movl",
+        "Operands": "%r15d, %eax",
+        "Text": "  15e469:      \tmovl\t%r15d, %eax"
+      },
+      {
+        "Address": 1434732,
+        "Operation": "imulq",
+        "Operands": "$0x30, %rax, %rax",
+        "Text": "  15e46c:      \timulq\t$0x30, %rax, %rax"
+      },
+      {
+        "Address": 1434736,
+        "Operation": "addq",
+        "Operands": "0x100(%rsp), %rax",
+        "Text": "  15e470:      \taddq\t0x100(%rsp), %rax"
+      },
+      {
+        "Address": 1434744,
+        "Operation": "cmpl",
+        "Operands": "$0x0, (%rsi)",
+        "Text": "  15e478:      \tcmpl\t$0x0, (%rsi)"
+      },
+      {
+        "Address": 1434747,
+        "Operation": "je",
+        "Operands": "0x15e482",
+        "Text": "  15e47b:      \tje\t0x15e482 <symbol>"
+      },
+      {
+        "Address": 1434749,
+        "Operation": "cmpl",
+        "Operands": "$0x0, (%rax)",
+        "Text": "  15e47d:      \tcmpl\t$0x0, (%rax)"
+      },
+      {
+        "Address": 1434752,
+        "Operation": "jne",
+        "Operands": "0x15e4f6",
+        "Text": "  15e480:      \tjne\t0x15e4f6 <symbol>"
+      },
+      {
+        "Address": 1434754,
+        "Operation": "movq",
+        "Operands": "0x8(%r13), %rax",
+        "Text": "  15e482:      \tmovq\t0x8(%r13), %rax"
+      },
+      {
+        "Address": 1434758,
+        "Operation": "movq",
+        "Operands": "0x8(%rax), %rax",
+        "Text": "  15e486:      \tmovq\t0x8(%rax), %rax"
+      },
+      {
+        "Address": 1434762,
+        "Operation": "testq",
+        "Operands": "%rax, %rax",
+        "Text": "  15e48a:      \ttestq\t%rax, %rax"
+      },
+      {
+        "Address": 1434765,
+        "Operation": "je",
+        "Operands": "0x15e498",
+        "Text": "  15e48d:      \tje\t0x15e498 <symbol>"
+      },
+      {
+        "Address": 1434767,
+        "Operation": "leaq",
+        "Operands": "0x10(%rax), %rcx",
+        "Text": "  15e48f:      \tleaq\t0x10(%rax), %rcx"
+      },
+      {
+        "Address": 1434771,
+        "Operation": "movl",
+        "Operands": "0x8(%rax), %eax",
+        "Text": "  15e493:      \tmovl\t0x8(%rax), %eax"
+      },
+      {
+        "Address": 1434774,
+        "Operation": "jmp",
+        "Operands": "0x15e49c",
+        "Text": "  15e496:      \tjmp\t0x15e49c <symbol>"
+      },
+      {
+        "Address": 1434776,
+        "Operation": "xorl",
+        "Operands": "%ecx, %ecx",
+        "Text": "  15e498:      \txorl\t%ecx, %ecx"
+      },
+      {
+        "Address": 1434778,
+        "Operation": "xorl",
+        "Operands": "%eax, %eax",
+        "Text": "  15e49a:      \txorl\t%eax, %eax"
+      },
+      {
+        "Address": 1434780,
+        "Operation": "cmpl",
+        "Operands": "%eax, %r15d",
+        "Text": "  15e49c:      \tcmpl\t%eax, %r15d"
+      },
+      {
+        "Address": 1434783,
+        "Operation": "jae",
+        "Operands": "0x15e5d1",
+        "Text": "  15e49f:      \tjae\t0x15e5d1 <symbol>"
+      },
+      {
+        "Address": 1434789,
+        "Operation": "movl",
+        "Operands": "%r15d, %eax",
+        "Text": "  15e4a5:      \tmovl\t%r15d, %eax"
+      },
+      {
+        "Address": 1434792,
+        "Operation": "leaq",
+        "Operands": "(%rcx,%rax,8), %rax",
+        "Text": "  15e4a8:      \tleaq\t(%rcx,%rax,8), %rax"
+      },
+      {
+        "Address": 1434796,
+        "Operation": "movl",
+        "Operands": "(%rax), %ecx",
+        "Text": "  15e4ac:      \tmovl\t(%rax), %ecx"
+      },
+      {
+        "Address": 1434798,
+        "Operation": "movl",
+        "Operands": "0x4(%rax), %eax",
+        "Text": "  15e4ae:      \tmovl\t0x4(%rax), %eax"
+      },
+      {
+        "Address": 1434801,
+        "Operation": "cmpl",
+        "Operands": "%ecx, %edi",
+        "Text": "  15e4b1:      \tcmpl\t%ecx, %edi"
+      },
+      {
+        "Address": 1434803,
+        "Operation": "jl",
+        "Operands": "0x15e4c5",
+        "Text": "  15e4b3:      \tjl\t0x15e4c5 <symbol>"
+      },
+      {
+        "Address": 1434805,
+        "Operation": "cmpl",
+        "Operands": "%ecx, %edi",
+        "Text": "  15e4b5:      \tcmpl\t%ecx, %edi"
+      },
+      {
+        "Address": 1434807,
+        "Operation": "jne",
+        "Operands": "0x15e5ad",
+        "Text": "  15e4b7:      \tjne\t0x15e5ad <symbol>"
+      },
+      {
+        "Address": 1434813,
+        "Operation": "cmpl",
+        "Operands": "%eax, %ebp",
+        "Text": "  15e4bd:      \tcmpl\t%eax, %ebp"
+      },
+      {
+        "Address": 1434815,
+        "Operation": "jge",
+        "Operands": "0x15e5ad",
+        "Text": "  15e4bf:      \tjge\t0x15e5ad <symbol>"
+      },
+      {
+        "Address": 1434821,
+        "Operation": "movl",
+        "Operands": "%edi, %edx",
+        "Text": "  15e4c5:      \tmovl\t%edi, %edx"
+      },
+      {
+        "Address": 1434823,
+        "Operation": "movl",
+        "Operands": "%ebp, %r8d",
+        "Text": "  15e4c7:      \tmovl\t%ebp, %r8d"
+      },
+      {
+        "Address": 1434826,
+        "Operation": "movl",
+        "Operands": "0x10(%rbx), %r10d",
+        "Text": "  15e4ca:      \tmovl\t0x10(%rbx), %r10d"
+      },
+      {
+        "Address": 1434830,
+        "Operation": "leal",
+        "Operands": "0x1(%r10), %r9d",
+        "Text": "  15e4ce:      \tleal\t0x1(%r10), %r9d"
+      },
+      {
+        "Address": 1434834,
+        "Operation": "movl",
+        "Operands": "%r9d, 0x10(%rbx)",
+        "Text": "  15e4d2:      \tmovl\t%r9d, 0x10(%rbx)"
+      },
+      {
+        "Address": 1434838,
+        "Operation": "cmpl",
+        "Operands": "0x8(%rbx), %r10d",
+        "Text": "  15e4d6:      \tcmpl\t0x8(%rbx), %r10d"
+      },
+      {
+        "Address": 1434842,
+        "Operation": "jae",
+        "Operands": "0x15e5d1",
+        "Text": "  15e4da:      \tjae\t0x15e5d1 <symbol>"
+      },
+      {
+        "Address": 1434848,
+        "Operation": "shlq",
+        "Operands": "$0x4, %r10",
+        "Text": "  15e4e0:      \tshlq\t$0x4, %r10"
+      },
+      {
+        "Address": 1434852,
+        "Operation": "addq",
+        "Operands": "(%rbx), %r10",
+        "Text": "  15e4e4:      \taddq\t(%rbx), %r10"
+      },
+      {
+        "Address": 1434855,
+        "Operation": "movl",
+        "Operands": "%edx, (%r10)",
+        "Text": "  15e4e7:      \tmovl\t%edx, (%r10)"
+      },
+      {
+        "Address": 1434858,
+        "Operation": "movl",
+        "Operands": "%r8d, 0x4(%r10)",
+        "Text": "  15e4ea:      \tmovl\t%r8d, 0x4(%r10)"
+      },
+      {
+        "Address": 1434862,
+        "Operation": "movl",
+        "Operands": "%ecx, 0x8(%r10)",
+        "Text": "  15e4ee:      \tmovl\t%ecx, 0x8(%r10)"
+      },
+      {
+        "Address": 1434866,
+        "Operation": "movl",
+        "Operands": "%eax, 0xc(%r10)",
+        "Text": "  15e4f2:      \tmovl\t%eax, 0xc(%r10)"
+      },
+      {
+        "Address": 1434870,
+        "Operation": "movq",
+        "Operands": "0xe0(%rsp), %rdx",
+        "Text": "  15e4f6:      \tmovq\t0xe0(%rsp), %rdx"
+      },
+      {
+        "Address": 1434878,
+        "Operation": "movq",
+        "Operands": "%rdx, %r14",
+        "Text": "  15e4fe:      \tmovq\t%rdx, %r14"
+      },
+      {
+        "Address": 1434881,
+        "Operation": "leaq",
+        "Operands": "0xc0(%rsp), %r9",
+        "Text": "  15e501:      \tleaq\t0xc0(%rsp), %r9"
+      },
+      {
+        "Address": 1434889,
+        "Operation": "movq",
+        "Operands": "0xd8(%rsp), %rcx",
+        "Text": "  15e509:      \tmovq\t0xd8(%rsp), %rcx"
+      },
+      {
+        "Address": 1434897,
+        "Operation": "movl",
+        "Operands": "0xe8(%rsp), %r8d",
+        "Text": "  15e511:      \tmovl\t0xe8(%rsp), %r8d"
+      },
+      {
+        "Address": 1434905,
+        "Operation": "callq",
+        "Operands": "0xd7e0",
+        "Text": "  15e519:      \tcallq\t0xd7e0 <symbol>"
+      },
+      {
+        "Address": 1434910,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  15e51e:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1434912,
+        "Operation": "jne",
+        "Operands": "0x15e56b",
+        "Text": "  15e520:      \tjne\t0x15e56b <symbol>"
+      },
+      {
+        "Address": 1434914,
+        "Operation": "leaq",
+        "Operands": "0xc8(%rsp), %rcx",
+        "Text": "  15e522:      \tleaq\t0xc8(%rsp), %rcx"
+      },
+      {
+        "Address": 1434922,
+        "Operation": "callq",
+        "Operands": "0x154ae0",
+        "Text": "  15e52a:      \tcallq\t0x154ae0 <symbol>"
+      },
+      {
+        "Address": 1434927,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  15e52f:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1434929,
+        "Operation": "je",
+        "Operands": "0x15e33a",
+        "Text": "  15e531:      \tje\t0x15e33a <symbol>"
+      },
+      {
+        "Address": 1434935,
+        "Operation": "movl",
+        "Operands": "$0xffffffff, 0xc0(%rsp)",
+        "Text": "  15e537:      \tmovl\t$0xffffffff, 0xc0(%rsp)"
+      },
+      {
+        "Address": 1434946,
+        "Operation": "leaq",
+        "Operands": "0xc0(%rsp), %r9",
+        "Text": "  15e542:      \tleaq\t0xc0(%rsp), %r9"
+      },
+      {
+        "Address": 1434954,
+        "Operation": "movq",
+        "Operands": "0xd8(%rsp), %rcx",
+        "Text": "  15e54a:      \tmovq\t0xd8(%rsp), %rcx"
+      },
+      {
+        "Address": 1434962,
+        "Operation": "movq",
+        "Operands": "0xe0(%rsp), %rdx",
+        "Text": "  15e552:      \tmovq\t0xe0(%rsp), %rdx"
+      },
+      {
+        "Address": 1434970,
+        "Operation": "movl",
+        "Operands": "0xe8(%rsp), %r8d",
+        "Text": "  15e55a:      \tmovl\t0xe8(%rsp), %r8d"
+      },
+      {
+        "Address": 1434978,
+        "Operation": "callq",
+        "Operands": "0xd7e0",
+        "Text": "  15e562:      \tcallq\t0xd7e0 <symbol>"
+      },
+      {
+        "Address": 1434983,
+        "Operation": "testl",
+        "Operands": "%eax, %eax",
+        "Text": "  15e567:      \ttestl\t%eax, %eax"
+      },
+      {
+        "Address": 1434985,
+        "Operation": "je",
+        "Operands": "0x15e522",
+        "Text": "  15e569:      \tje\t0x15e522 <symbol>"
+      },
+      {
+        "Address": 1434987,
+        "Operation": "movl",
+        "Operands": "0xc0(%rsp), %r15d",
+        "Text": "  15e56b:      \tmovl\t0xc0(%rsp), %r15d"
+      },
+      {
+        "Address": 1434995,
+        "Operation": "movq",
+        "Operands": "0xe0(%rsp), %r8",
+        "Text": "  15e573:      \tmovq\t0xe0(%rsp), %r8"
+      },
+      {
+        "Address": 1435003,
+        "Operation": "movq",
+        "Operands": "%r8, %r13",
+        "Text": "  15e57b:      \tmovq\t%r8, %r13"
+      },
+      {
+        "Address": 1435006,
+        "Operation": "cmpq",
+        "Operands": "%r8, %r14",
+        "Text": "  15e57e:      \tcmpq\t%r8, %r14"
+      },
+      {
+        "Address": 1435009,
+        "Operation": "je",
+        "Operands": "0x15e598",
+        "Text": "  15e581:      \tje\t0x15e598 <symbol>"
+      },
+      {
+        "Address": 1435011,
+        "Operation": "leaq",
+        "Operands": "0xc0(%rsp), %rcx",
+        "Text": "  15e583:      \tleaq\t0xc0(%rsp), %rcx"
+      },
+      {
+        "Address": 1435019,
+        "Operation": "movq",
+        "Operands": "0xd8(%rsp), %rdx",
+        "Text": "  15e58b:      \tmovq\t0xd8(%rsp), %rdx"
+      },
+      {
+        "Address": 1435027,
+        "Operation": "callq",
+        "Operands": "0x161240",
+        "Text": "  15e593:      \tcallq\t0x161240 <symbol>"
+      },
+      {
+        "Address": 1435032,
+        "Operation": "cmpl",
+        "Operands": "$0x0, 0x108(%rsp)",
+        "Text": "  15e598:      \tcmpl\t$0x0, 0x108(%rsp)"
+      },
+      {
+        "Address": 1435040,
+        "Operation": "jne",
+        "Operands": "0x15e45b",
+        "Text": "  15e5a0:      \tjne\t0x15e45b <symbol>"
+      },
+      {
+        "Address": 1435046,
+        "Operation": "xorl",
+        "Operands": "%eax, %eax",
+        "Text": "  15e5a6:      \txorl\t%eax, %eax"
+      },
+      {
+        "Address": 1435048,
+        "Operation": "jmp",
+        "Operands": "0x15e478",
+        "Text": "  15e5a8:      \tjmp\t0x15e478 <symbol>"
+      },
+      {
+        "Address": 1435053,
+        "Operation": "movl",
+        "Operands": "%ecx, %edx",
+        "Text": "  15e5ad:      \tmovl\t%ecx, %edx"
+      },
+      {
+        "Address": 1435055,
+        "Operation": "movl",
+        "Operands": "%eax, %r8d",
+        "Text": "  15e5af:      \tmovl\t%eax, %r8d"
+      },
+      {
+        "Address": 1435058,
+        "Operation": "movl",
+        "Operands": "%edi, %ecx",
+        "Text": "  15e5b2:      \tmovl\t%edi, %ecx"
+      },
+      {
+        "Address": 1435060,
+        "Operation": "movl",
+        "Operands": "%ebp, %eax",
+        "Text": "  15e5b4:      \tmovl\t%ebp, %eax"
+      },
+      {
+        "Address": 1435062,
+        "Operation": "jmp",
+        "Operands": "0x15e4ca",
+        "Text": "  15e5b6:      \tjmp\t0x15e4ca <symbol>"
+      }
+    ],
+    "Normalized": [
+      "movq 0x140(%rsp), %rdx",
+      "movq %rdx, %rsi",
+      "leaq 0x120(%rsp), %r9",
+      "movq 0x138(%rsp), %rcx",
+      "movl 0x148(%rsp), %r8d",
+      "callq 0xd7e0",
+      "testl %eax, %eax",
+      "jne instruction@20",
+      "leaq 0x128(%rsp), %rcx",
+      "callq 0x154ae0",
+      "testl %eax, %eax",
+      "je external@0x15e5bb",
+      "movl $0xffffffff, 0x120(%rsp)",
+      "leaq 0x120(%rsp), %r9",
+      "movq 0x138(%rsp), %rcx",
+      "movq 0x140(%rsp), %rdx",
+      "movl 0x148(%rsp), %r8d",
+      "callq 0xd7e0",
+      "testl %eax, %eax",
+      "je instruction@8",
+      "movl 0x120(%rsp), %edi",
+      "movq 0x140(%rsp), %rbp",
+      "cmpq 0x140(%rsp), %rsi",
+      "je instruction@28",
+      "leaq 0x120(%rsp), %rcx",
+      "movq 0x138(%rsp), %rdx",
+      "movq 0x140(%rsp), %r8",
+      "callq 0x161240",
+      "cmpl $0x0, 0x168(%rsp)",
+      "jne instruction@32",
+      "xorl %esi, %esi",
+      "jmp instruction@37",
+      "cmpl 0x168(%rsp), %edi",
+      "jae external@0x15e5d1",
+      "movl %edi, %ecx",
+      "imulq $0x30, %rcx, %rsi",
+      "addq 0x160(%rsp), %rsi",
+      "movq 0x8(%rbp), %rcx",
+      "movq 0x8(%rcx), %rcx",
+      "testq %rcx, %rcx",
+      "je instruction@44",
+      "leaq 0x10(%rcx), %rdx",
+      "movl 0x8(%rcx), %ecx",
+      "jmp instruction@46",
+      "xorl %edx, %edx",
+      "xorl %ecx, %ecx",
+      "cmpl %ecx, %edi",
+      "jae external@0x15e5d1",
+      "movl %edi, %ecx",
+      "leaq (%rdx,%rcx,8), %rcx",
+      "movl (%rcx), %edi",
+      "movl 0x4(%rcx), %ebp",
+      "leaq 0xc0(%rsp), %rcx",
+      "leaq 0x120(%rsp), %rdx",
+      "movl $0x60, %r8d",
+      "callq 0x87e30",
+      "jmp instruction@100",
+      "cmpl 0x108(%rsp), %r15d",
+      "jae external@0x15e5d1",
+      "movl %r15d, %eax",
+      "imulq $0x30, %rax, %rax",
+      "addq 0x100(%rsp), %rax",
+      "cmpl $0x0, (%rsi)",
+      "je instruction@66",
+      "cmpl $0x0, (%rax)",
+      "jne instruction@100",
+      "movq 0x8(%r13), %rax",
+      "movq 0x8(%rax), %rax",
+      "testq %rax, %rax",
+      "je instruction@73",
+      "leaq 0x10(%rax), %rcx",
+      "movl 0x8(%rax), %eax",
+      "jmp instruction@75",
+      "xorl %ecx, %ecx",
+      "xorl %eax, %eax",
+      "cmpl %eax, %r15d",
+      "jae external@0x15e5d1",
+      "movl %r15d, %eax",
+      "leaq (%rcx,%rax,8), %rax",
+      "movl (%rax), %ecx",
+      "movl 0x4(%rax), %eax",
+      "cmpl %ecx, %edi",
+      "jl instruction@87",
+      "cmpl %ecx, %edi",
+      "jne instruction@132",
+      "cmpl %eax, %ebp",
+      "jge instruction@132",
+      "movl %edi, %edx",
+      "movl %ebp, %r8d",
+      "movl 0x10(%rbx), %r10d",
+      "leal 0x1(%r10), %r9d",
+      "movl %r9d, 0x10(%rbx)",
+      "cmpl 0x8(%rbx), %r10d",
+      "jae external@0x15e5d1",
+      "shlq $0x4, %r10",
+      "addq (%rbx), %r10",
+      "movl %edx, (%r10)",
+      "movl %r8d, 0x4(%r10)",
+      "movl %ecx, 0x8(%r10)",
+      "movl %eax, 0xc(%r10)",
+      "movq 0xe0(%rsp), %rdx",
+      "movq %rdx, %r14",
+      "leaq 0xc0(%rsp), %r9",
+      "movq 0xd8(%rsp), %rcx",
+      "movl 0xe8(%rsp), %r8d",
+      "callq 0xd7e0",
+      "testl %eax, %eax",
+      "jne instruction@120",
+      "leaq 0xc8(%rsp), %rcx",
+      "callq 0x154ae0",
+      "testl %eax, %eax",
+      "je instruction@0",
+      "movl $0xffffffff, 0xc0(%rsp)",
+      "leaq 0xc0(%rsp), %r9",
+      "movq 0xd8(%rsp), %rcx",
+      "movq 0xe0(%rsp), %rdx",
+      "movl 0xe8(%rsp), %r8d",
+      "callq 0xd7e0",
+      "testl %eax, %eax",
+      "je instruction@108",
+      "movl 0xc0(%rsp), %r15d",
+      "movq 0xe0(%rsp), %r8",
+      "movq %r8, %r13",
+      "cmpq %r8, %r14",
+      "je instruction@128",
+      "leaq 0xc0(%rsp), %rcx",
+      "movq 0xd8(%rsp), %rdx",
+      "callq 0x161240",
+      "cmpl $0x0, 0x108(%rsp)",
+      "jne instruction@57",
+      "xorl %eax, %eax",
+      "jmp instruction@62",
+      "movl %ecx, %edx",
+      "movl %eax, %r8d",
+      "movl %edi, %ecx",
+      "movl %ebp, %eax",
+      "jmp instruction@89"
+    ],
+    "Branches": [
+      {
+        "Instruction": 7,
+        "Address": "0x15e364",
+        "Operation": "jne",
+        "Target": "0x15e3af",
+        "Bytes": 2,
+        "Mod32": 4,
+        "Mod64": 36,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 11,
+        "Address": "0x15e375",
+        "Operation": "je",
+        "Target": "0x15e5bb",
+        "Bytes": 6,
+        "Mod32": 21,
+        "Mod64": 53,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 19,
+        "Address": "0x15e3ad",
+        "Operation": "je",
+        "Target": "0x15e366",
+        "Bytes": 2,
+        "Mod32": 13,
+        "Mod64": 45,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 23,
+        "Address": "0x15e3c6",
+        "Operation": "je",
+        "Target": "0x15e3e5",
+        "Bytes": 2,
+        "Mod32": 6,
+        "Mod64": 6,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 29,
+        "Address": "0x15e3ed",
+        "Operation": "jne",
+        "Target": "0x15e3f3",
+        "Bytes": 2,
+        "Mod32": 13,
+        "Mod64": 45,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 31,
+        "Address": "0x15e3f1",
+        "Operation": "jmp",
+        "Target": "0x15e40e",
+        "Bytes": 2,
+        "Mod32": 17,
+        "Mod64": 49,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 33,
+        "Address": "0x15e3fa",
+        "Operation": "jae",
+        "Target": "0x15e5d1",
+        "Bytes": 6,
+        "Mod32": 26,
+        "Mod64": 58,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 40,
+        "Address": "0x15e419",
+        "Operation": "je",
+        "Target": "0x15e424",
+        "Bytes": 2,
+        "Mod32": 25,
+        "Mod64": 25,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 43,
+        "Address": "0x15e422",
+        "Operation": "jmp",
+        "Target": "0x15e428",
+        "Bytes": 2,
+        "Mod32": 2,
+        "Mod64": 34,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 47,
+        "Address": "0x15e42a",
+        "Operation": "jae",
+        "Target": "0x15e5d1",
+        "Bytes": 6,
+        "Mod32": 10,
+        "Mod64": 42,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 56,
+        "Address": "0x15e456",
+        "Operation": "jmp",
+        "Target": "0x15e4f6",
+        "Bytes": 5,
+        "Mod32": 22,
+        "Mod64": 22,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 58,
+        "Address": "0x15e463",
+        "Operation": "jae",
+        "Target": "0x15e5d1",
+        "Bytes": 6,
+        "Mod32": 3,
+        "Mod64": 35,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 63,
+        "Address": "0x15e47b",
+        "Operation": "je",
+        "Target": "0x15e482",
+        "Bytes": 2,
+        "Mod32": 27,
+        "Mod64": 59,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 65,
+        "Address": "0x15e480",
+        "Operation": "jne",
+        "Target": "0x15e4f6",
+        "Bytes": 2,
+        "Mod32": 0,
+        "Mod64": 0,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 69,
+        "Address": "0x15e48d",
+        "Operation": "je",
+        "Target": "0x15e498",
+        "Bytes": 2,
+        "Mod32": 13,
+        "Mod64": 13,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 72,
+        "Address": "0x15e496",
+        "Operation": "jmp",
+        "Target": "0x15e49c",
+        "Bytes": 2,
+        "Mod32": 22,
+        "Mod64": 22,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 76,
+        "Address": "0x15e49f",
+        "Operation": "jae",
+        "Target": "0x15e5d1",
+        "Bytes": 6,
+        "Mod32": 31,
+        "Mod64": 31,
+        "Crosses32": true,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 82,
+        "Address": "0x15e4b3",
+        "Operation": "jl",
+        "Target": "0x15e4c5",
+        "Bytes": 2,
+        "Mod32": 19,
+        "Mod64": 51,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 84,
+        "Address": "0x15e4b7",
+        "Operation": "jne",
+        "Target": "0x15e5ad",
+        "Bytes": 6,
+        "Mod32": 23,
+        "Mod64": 55,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 86,
+        "Address": "0x15e4bf",
+        "Operation": "jge",
+        "Target": "0x15e5ad",
+        "Bytes": 6,
+        "Mod32": 31,
+        "Mod64": 63,
+        "Crosses32": true,
+        "Crosses64": true
+      },
+      {
+        "Instruction": 93,
+        "Address": "0x15e4da",
+        "Operation": "jae",
+        "Target": "0x15e5d1",
+        "Bytes": 6,
+        "Mod32": 26,
+        "Mod64": 26,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 107,
+        "Address": "0x15e520",
+        "Operation": "jne",
+        "Target": "0x15e56b",
+        "Bytes": 2,
+        "Mod32": 0,
+        "Mod64": 32,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 111,
+        "Address": "0x15e531",
+        "Operation": "je",
+        "Target": "0x15e33a",
+        "Bytes": 6,
+        "Mod32": 17,
+        "Mod64": 49,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 119,
+        "Address": "0x15e569",
+        "Operation": "je",
+        "Target": "0x15e522",
+        "Bytes": 2,
+        "Mod32": 9,
+        "Mod64": 41,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 124,
+        "Address": "0x15e581",
+        "Operation": "je",
+        "Target": "0x15e598",
+        "Bytes": 2,
+        "Mod32": 1,
+        "Mod64": 1,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 129,
+        "Address": "0x15e5a0",
+        "Operation": "jne",
+        "Target": "0x15e45b",
+        "Bytes": 6,
+        "Mod32": 0,
+        "Mod64": 32,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 131,
+        "Address": "0x15e5a8",
+        "Operation": "jmp",
+        "Target": "0x15e478",
+        "Bytes": 5,
+        "Mod32": 8,
+        "Mod64": 40,
+        "Crosses32": false,
+        "Crosses64": false
+      },
+      {
+        "Instruction": 136,
+        "Address": "0x15e5b6",
+        "Operation": "jmp",
+        "Target": "0x15e4ca",
+        "Bytes": 5,
+        "Mod32": 22,
+        "Mod64": 54,
+        "Crosses32": false,
+        "Crosses64": false
+      }
+    ]
+  }
+]

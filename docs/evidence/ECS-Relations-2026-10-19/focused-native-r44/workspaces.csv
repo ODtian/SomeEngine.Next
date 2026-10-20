@@ -1,0 +1,3 @@
+"CaseId","DataSharing","UsedBy","SetupTicks","Frequency"
+"threads-small-sparse-parallel","SharedStaticWorkspace","shared","146375","10000000"
+"threads-small-uniform-parallel","SharedStaticWorkspace","shared","67464","10000000"

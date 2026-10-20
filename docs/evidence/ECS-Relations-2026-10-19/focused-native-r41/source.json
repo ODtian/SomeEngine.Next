@@ -1,0 +1,72 @@
+{
+  "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+  "ChangedFiles": [
+    "src/SomeEngine.ECS/Queries/QueryRow.cs",
+    "src/SomeEngine.ECS/Queries/QueryChunkView.cs",
+    "tests/SomeEngine.Physics.Tests/CollisionMaintenanceTests.cs"
+  ],
+  "EarlierBehaviorQueueId": "81722effa0b94a66a23069a90e9b13ce",
+  "EarlierNativeQueueId": "f43d401d6603400785fd0fbc42d23ec9",
+  "BehaviorStages": [
+    {
+      "Name": "chunk-enabled-writes",
+      "Executable": "dotnet",
+      "Arguments": [
+        "test",
+        "tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "--filter",
+        "FullyQualifiedName~QueryCursor_ChunkRowIndices_FilterRowsWithoutQueryRow"
+      ],
+      "StartedAtUtc": "2026-10-19T23:42:31.0654081Z",
+      "FinishedAtUtc": "2026-10-19T23:43:00.1881316Z",
+      "ExitCode": 0
+    },
+    {
+      "Name": "world-row-chunk-enabled-members",
+      "Executable": "dotnet",
+      "Arguments": [
+        "test",
+        "tests/SomeEngine.Physics.Tests/SomeEngine.Physics.Tests.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "--filter",
+        "FullyQualifiedName~EnableChangesRefreshMaintainedMembers"
+      ],
+      "StartedAtUtc": "2026-10-19T23:43:00.2242115Z",
+      "FinishedAtUtc": "2026-10-19T23:43:23.2752330Z",
+      "ExitCode": 0
+    }
+  ],
+  "PushExitCode": 0,
+  "PublishArguments": [
+    "publish",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+    "-c",
+    "Release",
+    "-r",
+    "win-x64",
+    "-p:PublishAot=true",
+    "-p:SelfContained=true",
+    "-p:SourceRevisionId=5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+    "-o",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish"
+  ],
+  "PublishStartedAtUtc": "2026-10-19T23:43:30.2710105Z",
+  "PublishFinishedAtUtc": "2026-10-19T23:44:07.7599713Z",
+  "PublishExitCode": 0,
+  "SourceCheckExitCode": 0,
+  "Object": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.Benchmarks.obj",
+    "LastWriteTimeUtc": "2026-10-19T23:44:06.4526217Z",
+    "Length": 26042222
+  },
+  "Executable": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+    "LastWriteTimeUtc": "2026-10-19T23:44:07.1956899Z",
+    "Length": 4939264
+  }
+}
