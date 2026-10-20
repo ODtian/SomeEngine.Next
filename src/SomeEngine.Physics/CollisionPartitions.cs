@@ -19,7 +19,7 @@ public interface ICollisionPartitionEnumerable : IQueryRelationEnumerable<(Entit
 
 public sealed partial class CollisionTree
 {
-    /// <summary>Splits node pairs into disjoint work, choosing the largest remaining pair space.</summary>
+    /// <summary>Splits pair space by size, omitting diagonal leaves and disjoint bounds from the resulting work.</summary>
     public int CreatePartitions(Span<CollisionNodePair> partitions)
     {
         if (Root < 0)
@@ -68,6 +68,16 @@ public sealed partial class CollisionTree
                 partitions[count++] = new(next.First, right.SecondChild);
             }
         }
-        return count;
+        int overlapCount = 0;
+        foreach (CollisionNodePair pair in partitions[..count])
+        {
+            ref readonly CollisionNode first = ref _nodes[pair.First];
+            ref readonly CollisionNode second = ref _nodes[pair.Second];
+            if (pair.First == pair.Second && first.IsLeaf ||
+                pair.First != pair.Second && !first.Bounds.Overlaps(in second.Bounds))
+                continue;
+            partitions[overlapCount++] = pair;
+        }
+        return overlapCount;
     }
 }
