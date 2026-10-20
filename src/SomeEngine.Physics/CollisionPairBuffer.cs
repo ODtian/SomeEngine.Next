@@ -145,7 +145,7 @@ public sealed class CollisionPairBuffer : IDisposable
             ReadOnlyQueryPairJobs.ExecuteInline(queries.Access, queries.First, in fillJob, fillCount);
     }
 
-    private readonly struct CountJob<TEnumerable>(TEnumerable source, CollisionPairBuffer buffer) : IReadOnlyQueryPairJob
+    private struct CountJob<TEnumerable>(TEnumerable source, CollisionPairBuffer buffer) : IReadOnlyQueryPairJob
         where TEnumerable : struct, ICollisionPartitionEnumerable
     {
         public void Execute(int index, scoped QueryCursor access, scoped QueryCursor members)
@@ -166,7 +166,7 @@ public sealed class CollisionPairBuffer : IDisposable
             Array.Resize(ref _pairs, Math.Max(Count, _pairs.Length * 2));
     }
 
-    private readonly struct FillJob<TEnumerable>(TEnumerable source, CollisionPairBuffer buffer) : IReadOnlyQueryPairJob
+    private struct FillJob<TEnumerable>(TEnumerable source, CollisionPairBuffer buffer) : IReadOnlyQueryPairJob
         where TEnumerable : struct, ICollisionPartitionEnumerable
     {
         public void Execute(int index, scoped QueryCursor access, scoped QueryCursor members)
