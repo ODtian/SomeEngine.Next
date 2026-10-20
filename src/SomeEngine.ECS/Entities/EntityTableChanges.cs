@@ -3,7 +3,7 @@ using System.Collections.Immutable;
 namespace SomeEngine.ECS.Entities;
 
 /// <summary>
-/// Observes entity creation, destruction and table membership changes. Component values and
+/// Observes entity creation, destruction, table membership and enable-mask changes. Component values and
 /// sparse values retain their own change tracking. Read batches remain available until accepted.
 /// </summary>
 public sealed class EntityTableChanges : IDisposable
@@ -28,7 +28,7 @@ public sealed class EntityTableChanges : IDisposable
     internal World RequireWorld() => _world ?? throw new ObjectDisposedException(nameof(EntityTableChanges));
 }
 
-/// <summary>Entity identities whose table membership may differ from the last accepted batch.</summary>
+/// <summary>Entity identities whose table membership or enable masks may differ from the last accepted batch.</summary>
 public sealed class EntityTableChangeBatch
 {
     internal EntityTableChangeBatch(EntityTableChanges changes, ImmutableDictionary<Entity, long> versions)

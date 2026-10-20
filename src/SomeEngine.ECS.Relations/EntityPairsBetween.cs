@@ -29,8 +29,8 @@ public readonly struct EntityPairsBetween : IQueryRelationEnumerable<(Entity, En
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         foreach (var first in queries.First.Rows)
         {
@@ -39,8 +39,8 @@ public readonly struct EntityPairsBetween : IQueryRelationEnumerable<(Entity, En
                 int order = EntityOrder.Compare(first.Entity, second.Entity);
                 if (order == 0)
                     continue;
-                if (order > 0 && queries.First.TryGetRow(second.Entity, out _) &&
-                    queries.Second.TryGetRow(first.Entity, out _))
+                if (order > 0 && queries.First.Contains(second.Entity) &&
+                    queries.Second.Contains(first.Entity))
                     continue;
                 var pair = order < 0 ? (first.Entity, second.Entity) : (second.Entity, first.Entity);
                 if (!output.Add(in pair))

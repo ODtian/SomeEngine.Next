@@ -1,0 +1,5 @@
+"CaseId","Side","IndexBuildTicks","Frequency"
+"threads-small-sparse-parallel","Relation","40812","10000000"
+"threads-small-sparse-parallel","Handwritten","21132","10000000"
+"threads-small-uniform-parallel","Relation","26434","10000000"
+"threads-small-uniform-parallel","Handwritten","21686","10000000"

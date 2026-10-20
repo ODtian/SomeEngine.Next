@@ -15,10 +15,32 @@ internal static class QueryAccessGuards
     {
         int componentId = ComponentMetadata<T>.Id;
         if (!match.TryGetAccess(componentId, out var access))
+            throw UndeclaredAccess<T>();
+
+        return RequireAccess<T>(in access, read, write);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static bool TryRequireReadAccess<T>(QueryArchetypeMatch match, out int column) where T : struct
+    {
+        int componentId = ComponentMetadata<T>.Id;
+        if (match.TryGetAccess(componentId, out var access))
         {
-            throw new InvalidOperationException(
-                $"{typeof(T).Name} was not declared as a data access term in this query.");
+            column = RequireAccess<T>(in access, read: true, write: false);
+            return true;
         }
+        if (match.Archetype.HasComponent(componentId))
+            throw UndeclaredAccess<T>();
+        column = 0;
+        return false;
+    }
+
+    private static InvalidOperationException UndeclaredAccess<T>() => new(
+        $"{typeof(T).Name} was not declared as a data access term in this query.");
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int RequireAccess<T>(in QueryColumnAccess access, bool read, bool write) where T : struct
+    {
 
         if (read && !access.Access.CanRead())
             throw new InvalidOperationException($"{typeof(T).Name} was not declared for query read access.");

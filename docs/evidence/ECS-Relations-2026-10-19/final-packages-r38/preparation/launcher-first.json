@@ -1,0 +1,10 @@
+{
+  "ProcessId": 61552,
+  "ProcessStartedAtUtc": "2026-10-19T21:43:16.9865091Z",
+  "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+  "PreparationQueueId": "ca72266a32804c9db0a85509ae8842f5",
+  "ProducerStartedAtUtc": null,
+  "ProducerFinishedAtUtc": null,
+  "ProducerExitCode": null,
+  "StageFacts": "artifacts/ecs-relations/package-stages-51c8ce75949cf16d7190e14028c655f526d5697b.json"
+}

@@ -1,6 +1,7 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
 using System.Runtime.CompilerServices;
@@ -29,6 +30,8 @@ public readonly struct Total1(int minimum) : IRelation<Number<int>>
 
 public readonly struct Total2(int minimum) : IRelation<Number<int>, Number<int>>
 {
+    public static bool IsSymmetric => true;
+
     public bool Matches(in Number<int> first, in Number<int> second) => first.Value + second.Value >= minimum;
 }
 
@@ -105,5 +108,17 @@ internal ref struct EighthEntity : IRelationOutput<(Entity, Entity, Entity, Enti
     {
         _result[Count++] = row.Item8;
         return false;
+    }
+}
+
+internal struct NumberPointValue(Entity entity) : IQueryExecution
+{
+    private readonly Entity _entity = entity;
+
+    internal int Value;
+
+    public void Execute(scoped QueryCursor query)
+    {
+        Value = query.TryReadRef<Number<int>>(_entity, out var number) ? number.Value.Value : -1;
     }
 }

@@ -1,0 +1,106 @@
+{
+  "LibrarySourceCommit": "7f8d27eb97fdf34f020d1ab12e42fb3b59f7df82",
+  "ConsumerSourceCommit": "3b582fe541d86d7f556b3f9d6854962d292454ef",
+  "Artifacts": [
+    {
+      "Path": "tools/SomeEngine.ECS.Relations.AotSmoke/bin/Release/net10.0/win-x64/SomeEngine.ECS.Relations.AotSmoke.dll",
+      "Length": 69120,
+      "LastWriteTimeUtc": "2026-10-19T07:28:33.6956155Z"
+    },
+    {
+      "Path": "tools/SomeEngine.ECS.Relations.AotSmoke/obj/Release/net10.0/win-x64/native/SomeEngine.ECS.Relations.AotSmoke.obj",
+      "Length": 25103283,
+      "LastWriteTimeUtc": "2026-10-19T07:32:05.5377314Z"
+    },
+    {
+      "Path": "tools/SomeEngine.ECS.Relations.AotSmoke/bin/Release/net10.0/win-x64/native-publish/SomeEngine.ECS.Relations.AotSmoke.exe",
+      "Length": 4034048,
+      "LastWriteTimeUtc": "2026-10-19T07:32:06.2574091Z"
+    }
+  ],
+  "DirectPackageReferences": 6,
+  "Packages": [
+    {
+      "Package": "SomeEngine.Diagnostics/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Package": "SomeEngine.ECS/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Package": "SomeEngine.ECS.Relations/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Package": "SomeEngine.ECS.SourceGen/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Package": "SomeEngine.ECS.Systems/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Package": "SomeEngine.Job/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Package": "SomeEngine.Job.Contracts/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Package": "SomeEngine.Physics/0.1.0-relations.231",
+      "Type": "package"
+    }
+  ],
+  "GeneratedFiles": 27,
+  "Generators": [
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.BitmapRelationGenerator",
+      "Files": 2,
+      "Where": 2,
+      "Except": 2
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.EcsTypeGenerator",
+      "Files": 1,
+      "Where": 0,
+      "Except": 0
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.JobEntityGenerator",
+      "Files": 1,
+      "Where": 0,
+      "Except": 0
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.RelationEdgeGenerator",
+      "Files": 4,
+      "Where": 4,
+      "Except": 4
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.RelationGenerator",
+      "Files": 11,
+      "Where": 15,
+      "Except": 15
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.RelationImplementationGenerator",
+      "Files": 1,
+      "Where": 4,
+      "Except": 4
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.SpatialRelationGenerator",
+      "Files": 7,
+      "Where": 14,
+      "Except": 14
+    }
+  ],
+  "ThinWhereExcept": 78,
+  "JobStorageRegistrations": 17,
+  "RelationSchemaRegistrations": 2,
+  "LibraryFamilyFiles": 9,
+  "LibraryFamilyTypes": 41
+}

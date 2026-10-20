@@ -1,0 +1,32 @@
+{
+  "Series": "final-startup-r38",
+  "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+  "Backend": "NativeAOT",
+  "CaseCount": 9,
+  "SessionIds": [
+    "01a15090-f5bd-7a12-860a-e214325db5bb"
+  ],
+  "PreparationExitCode": 0,
+  "CaseExitCodes": [
+    0
+  ],
+  "AnalysisExitCodes": [
+    0
+  ],
+  "LastCaseSubmittedAtUtc": "2026-10-19T22:13:05.6136967Z",
+  "FirstCaseStartedAtUtc": "2026-10-19T22:47:41.0011544Z",
+  "PreparationFinishedAtUtc": "2026-10-19T22:15:08.8996274Z",
+  "LastCaseFinishedAtUtc": "2026-10-19T22:49:15.8119075Z",
+  "FirstAnalysisStartedAtUtc": "2026-10-19T22:49:15.8126159Z",
+  "AllCasesSubmittedBeforeExecution": true,
+  "PreparationFinishedBeforeExecution": true,
+  "AnalysisStartedAfterExecution": true,
+  "MeasurementSeconds": 94.8107531,
+  "CaseExecutionSeconds": 25.8281892,
+  "BetweenCasesSeconds": 68.9825639,
+  "LongestBetweenCasesSeconds": 68.9770999,
+  "PreparationWaitingSeconds": 0.0944706,
+  "AnalysisExecutionSeconds": 1.6492917,
+  "SubmissionToAnalysisFinishedSeconds": 2174.3457417,
+  "QuietPassed": true
+}

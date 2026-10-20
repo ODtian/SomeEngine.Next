@@ -1,0 +1,36 @@
+{
+  "SourceCommit": "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+  "SubmissionCommit": "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+  "Backend": "NativeAOT",
+  "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+  "ListingCommand": [
+    "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+    "--mode",
+    "list",
+    "--source",
+    "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77"
+  ],
+  "StartedAtUtc": "2026-10-19T06:57:40.5978545Z",
+  "FinishedAtUtc": "2026-10-19T06:57:42.4941711Z",
+  "CaseCount": 2,
+  "Machines": [
+    "Fixed"
+  ],
+  "Reports": [
+    {
+      "Script": "Collect-Measurements.ps1",
+      "QueueId": "a987fe86ad8d45d184c1b5b6039f1a1a",
+      "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\a987fe86ad8d45d184c1b5b6039f1a1a"
+    },
+    {
+      "Script": "Export-Evidence.ps1",
+      "QueueId": "45e9d251259f4e01ba576cb63358acd4",
+      "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\45e9d251259f4e01ba576cb63358acd4"
+    },
+    {
+      "Script": "Write-MeasurementReport.ps1",
+      "QueueId": "6402da0fc5e34aba9a4f49d4d4f0068e",
+      "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\6402da0fc5e34aba9a4f49d4d4f0068e"
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "StartedAtUtc": "2026-10-20T01:22:25.1244316Z",
+  "FinishedAtUtc": "2026-10-20T01:22:25.3245678Z",
+  "ApprovedSummary": {
+    "Series": "focused-native-r45",
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "ApprovedRatioLimit": 1.01,
+    "StrictRatioLimit": 1.0,
+    "Cases": 2,
+    "Equal": 2,
+    "Required": 2,
+    "StrictPassed": 2,
+    "ApprovedPassed": 2,
+    "ApprovedUnmet": 0
+  },
+  "Cases": [
+    {
+      "CaseId": "threads-small-sparse-parallel",
+      "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "Equal": true,
+      "Queue": {
+        "Id": "d00b365df16145519b6be626374ae9b5",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "threads",
+          "--size",
+          "small",
+          "--variant",
+          "sparse-parallel",
+          "--source",
+          "c0effa290eee225c296f779a85b9d79109d789a5",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\threads-small-sparse-parallel.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T09:10:26.0774062+08:00",
+        "StartedAtUtc": "2026-10-20T09:14:48.0808897+08:00",
+        "FinishedAtUtc": "2026-10-20T09:14:48.4324801+08:00"
+      },
+      "Comparisons": [
+        {
+          "Boundary": "ScheduledPairOutput",
+          "Required": true,
+          "RelationMedianTicks": 555,
+          "HandwrittenMedianTicks": 742.5,
+          "MedianRatio": 0.7474747474747475,
+          "RelationP95Ticks": 883.25,
+          "HandwrittenP95Ticks": 1225,
+          "P95Ratio": 0.7210204081632653,
+          "Passed": true
+        },
+        {
+          "Boundary": "Consume",
+          "Required": false,
+          "RelationMedianTicks": 457,
+          "HandwrittenMedianTicks": 467.5,
+          "MedianRatio": 0.9775401069518717,
+          "RelationP95Ticks": 603.75,
+          "HandwrittenP95Ticks": 606.75,
+          "P95Ratio": 0.9950556242274413,
+          "Passed": true
+        }
+      ]
+    },
+    {
+      "CaseId": "threads-small-uniform-parallel",
+      "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "Equal": true,
+      "Queue": {
+        "Id": "6f3f2b4cccdf4406aae5e784bc7a971d",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "threads",
+          "--size",
+          "small",
+          "--variant",
+          "uniform-parallel",
+          "--source",
+          "c0effa290eee225c296f779a85b9d79109d789a5",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\threads-small-uniform-parallel.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T09:10:26.5176034+08:00",
+        "StartedAtUtc": "2026-10-20T09:22:06.7870844+08:00",
+        "FinishedAtUtc": "2026-10-20T09:22:07.2615292+08:00"
+      },
+      "Comparisons": [
+        {
+          "Boundary": "ScheduledPairOutput",
+          "Required": true,
+          "RelationMedianTicks": 1735,
+          "HandwrittenMedianTicks": 2176,
+          "MedianRatio": 0.7973345588235294,
+          "RelationP95Ticks": 2637.75,
+          "HandwrittenP95Ticks": 3307,
+          "P95Ratio": 0.7976262473540974,
+          "Passed": true
+        },
+        {
+          "Boundary": "Consume",
+          "Required": false,
+          "RelationMedianTicks": 623.5,
+          "HandwrittenMedianTicks": 631,
+          "MedianRatio": 0.9881141045958796,
+          "RelationP95Ticks": 822.75,
+          "HandwrittenP95Ticks": 790.25,
+          "P95Ratio": 1.0411262258778868,
+          "Passed": false
+        }
+      ]
+    }
+  ]
+}

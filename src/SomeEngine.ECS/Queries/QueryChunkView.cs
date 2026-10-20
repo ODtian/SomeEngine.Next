@@ -77,6 +77,15 @@ public readonly ref struct QueryChunkView
         return _chunk.WriteVersionRows(column)[.._chunk.Count];
     }
 
+    /// <summary>Borrows a changed component's row versions once while retaining the original member rows.</summary>
+    public QueryRowChanges ReadRowChanges<T>() where T : struct
+    {
+        if (!QueryAccessGuards.TryRequireReadAccess<T>(_match, out int column) ||
+            !VersionClock.IsNewer(_chunk.ChangeVersions[column], LastSystemVersion))
+            return default;
+        return new(_chunk.WriteVersionRows(column)[.._chunk.Count], LastSystemVersion);
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool HasChangedSinceLastSystemVersion<T>() where T : struct
     {
@@ -222,14 +231,7 @@ public readonly ref struct QueryChunkView
     {
         RequireRow(row);
         int componentId = ComponentMetadata<T>.Id;
-        if (!_match.Archetype.HasComponent(componentId))
-        {
-            throw new InvalidOperationException(
-                $"{typeof(T).Name} was not present on the current query row.");
-        }
-
-        int maskIndex = _match.Archetype.EnableMask(componentId);
-        _chunk.WriteEnabled(maskIndex, row, enabled);
+        _world.WriteEnabledId(_chunk.Entities[row], componentId, enabled);
     }
 
     public DynamicBuffer<T> Buffer<T>(int row)

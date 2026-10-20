@@ -1,0 +1,17 @@
+tools/SomeEngine.ECS.Relations.AotSmoke/SomeEngine.ECS.Relations.AotSmoke.csproj:16:    <PackageReference Include="SomeEngine.ECS" Version="$(SomeEnginePackageVersion)" />
+tools/SomeEngine.ECS.Relations.AotSmoke/SomeEngine.ECS.Relations.AotSmoke.csproj:17:    <PackageReference Include="SomeEngine.ECS.Relations" Version="$(SomeEnginePackageVersion)" />
+tools/SomeEngine.ECS.Relations.AotSmoke/SomeEngine.ECS.Relations.AotSmoke.csproj:18:    <PackageReference Include="SomeEngine.ECS.Systems" Version="$(SomeEnginePackageVersion)" />
+tools/SomeEngine.ECS.Relations.AotSmoke/SomeEngine.ECS.Relations.AotSmoke.csproj:19:    <PackageReference Include="SomeEngine.Job" Version="$(SomeEnginePackageVersion)" />
+tools/SomeEngine.ECS.Relations.AotSmoke/SomeEngine.ECS.Relations.AotSmoke.csproj:20:    <PackageReference Include="SomeEngine.Physics" Version="$(SomeEnginePackageVersion)" />
+tools/SomeEngine.ECS.Relations.AotSmoke/SomeEngine.ECS.Relations.AotSmoke.csproj:21:    <PackageReference Include="SomeEngine.ECS.SourceGen" Version="$(SomeEnginePackageVersion)" PrivateAssets="all" />
+tools/SomeEngine.ECS.Relations.AotSmoke\NumberRelations.cs:70:public readonly struct WeightedTotal8(int minimum) : IRelation<Number<int>, Number<int>, Number<int>, Number<int>, Number<int>, Number<int>, Number<int>, Number<int>>
+tools/SomeEngine.ECS.Relations.AotSmoke\NumberRelations.cs:95:internal ref struct EighthEntity : IRelationOutput<(Entity, Entity, Entity, Entity, Entity, Entity, Entity, Entity)>
+tools/SomeEngine.ECS.Relations.AotSmoke\NumberRelations.cs:99:    internal EighthEntity(Span<Entity> result)
+tools/SomeEngine.ECS.Relations.AotSmoke\NumberRelations.cs:114:internal struct NumberPointValue(Entity entity) : IQueryExecution
+tools/SomeEngine.ECS.Relations.AotSmoke\RelationsSmoke.cs:57:            .Where(new WeightedTotal8(204)).Except(new WeightedTotal8(205));
+tools/SomeEngine.ECS.Relations.AotSmoke\RelationsSmoke.cs:59:        var output = new EighthEntity(result);
+tools/SomeEngine.ECS.Relations.AotSmoke\RelationsSmoke.cs:63:        var numbers = world.Query(world.QueryDefinition().All<Number<int>>().Read<Number<int>>());
+tools/SomeEngine.ECS.Relations.AotSmoke\RelationsSmoke.cs:70:        var point = new NumberPointValue(entities[0]);
+tools/SomeEngine.ECS.Relations.AotSmoke\RelationsSmoke.cs:116:        public void Execute() => values.Add(world.Read<Number<int>>(entity).Value);
+tools/SomeEngine.ECS.Relations.AotSmoke\SpatialFrames.cs:84:        var fill = new FillContacts<SpatialCandidates<TGeometry, TBoundsReader, TFilter, TGroupResults>>(maintenance.Query, pairs);
+tools/SomeEngine.ECS.Relations.AotSmoke\SpatialFrames.cs:90:    private readonly struct FillContacts<TEnumerable>(RelationQuery<TEnumerable, (Entity, Entity)> query,

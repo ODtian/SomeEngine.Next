@@ -4,13 +4,27 @@
 
 `SomeEngine.ECS.Relations` 通过公开 ECS 查询 API 扩展关系枚举。一至八元关系使用 `IRelation<T1,…,Tn>.Matches(in …)` 定义语义。参与集合使用原有 `QueryHandle`；一元身份行采用 `Entity`，二至八元身份行采用相应的标准实体 `ValueTuple`。八元行可直接使用 `row.Item8` 读取第八个实体。
 
-关系描述是普通 struct，保存 World、原查询身份、具体枚举类型和语义参数。终端获取一个外层访问查询及各参与查询，在结束时逐个释放本次获取。原查询由调用方按既有生命周期释放。参与查询使用原定义，保留 All、Any、None、Optional、启用、共享和变更条件原有的成员含义。
+关系描述是普通 struct，保存 World、原查询身份、具体枚举类型和语义参数。终端按具体来源取得成员与组件读取查询，在结束时释放本次获取。原查询由调用方按既有生命周期释放。参与查询使用原定义，保留 All、Any、None、Optional、启用、共享和变更条件原有的成员含义。
+
+`RelationQuery` 由一个普通值字段持有具体描述，`Enumerable` 返回该值。World、QueryCount、GetQuery和AddReads读取描述声明的集合与组件访问，终端直接从该字段取得这些声明。实际枚举在每次执行体的值副本中进行；`QueryIdentityOutput.Value` 持有本次执行的唯一活动输出值，筛选适配器和递归执行体通过内部托管引用更新该终端。最外层 `EnumerateQuery` 在 finally 中向调用方归还输出状态。查询值、执行值和回调借用各自沿这一范围使用。
 
 `QueryDefinition.WithAccessFrom` 将两份定义的存储访问归一化为可选访问并集，其中包含变更、启用等过滤条件所需的读取。`Where`、`Except` 通过 `WithOptionalRead<T>` 将签名读取补入这一并集。外层查询持有完整访问范围，内层嵌套各参与集合的成员查询，执行沿用 `World.ExecuteQuery<TExecution>` 的资源访问、版本与查询进入/结束流程。
 
-回调内的 `RelationQueryViews.Access` 提供完整读取视图，`First` 至 `Eighth` 保留输入集合各自的成员视图。共享 `ComponentRelation<…>` 从 Access 通过 `TryGetRow`、`Has`、`ReadRef` 取得组件只读引用，再分别传入具体关系语义。组件缺失时关系判断为 false，`Where` 保留判断成立的行，`Except` 保留其余行。携带托管引用的 struct 组件沿用相同读取方式。`Between` 在排序后的实体位置上读取组件，因此两个输入集合原来的角色可以交换。
+静态 `ReadsFromSingleQuery` 为 true 的来源声明所有输出参与实体都属于唯一输入集合。该集合只有只读访问时，终端在原成员定义上累积完整语义读取，用一次 `ExecuteQuery` 同时提供成员与组件视图。Within、键桶 Within 和空间单集合来源采用此路径。多集合、写入集合、普通实体持有的多元事实及原生边来源按各自读取范围执行。`WithOptionalRead` 在现有访问已经包含读取时复用当前定义。
 
-`RelationQuery<TEnumerable,TRow>` 实现 `IRelationEnumerable<TRow>`。`Count()`、`Any()` 使用具体值类型输出；`Enumerate(ref output)` 接受自定义 `IRelationOutput<TRow>`。输出 `Add` 返回 true 表示继续，false 表示提前结束；枚举返回 true 表示自然完成，false 表示提前结束。泛型输出转发在每层结束时回写输出状态，支持带 `Span` 的 ref struct 输出。组件绑定、查询视图和筛选输出均在实际回调期间持有借用。
+累积读取后的定义与原定义为同一引用时，单输入只读终端直接借用原成员句柄进入 `World.ExecuteQuery`；原持有者继续管理该句柄。实际派生的读取定义形成自身临时查询，并在 finally 中释放。两条分支均沿原版本参数执行并更新同一活动输出终端；World 继续管理读取准入及迭代作用域。
+
+现有读取由已归一化访问表持有，轻入口直接复用该事实。新增读取在独立方法中完成原类型验证、None条件处理及定义形成，相关成本分别属于复用与定义创建的实际分支。
+
+单成员只读选择入口形成该分支的定义与执行状态；多集合和可写路径在其独立方法中形成查询身份数组、嵌套视图与输出引用。两条路径分别沿原版本参数执行，共享活动输出终端，自身形成的查询按取得顺序的逆序释放。数据形成范围与实际进入的读取范围一致。
+
+回调内的 `RelationQueryViews.Access` 提供完整读取视图，`First` 至 `Eighth` 保留输入集合各自的成员视图。共享 `ComponentRelation<…>` 从 Access 通过 `TryGetRow` 取得实体行，或接收来源已经取得的行，再通过 `TryReadRef` 取得组件只读引用，分别传入具体关系语义。组件缺失时关系判断为 false，`Where` 保留判断成立的行，`Except` 保留其余行。携带托管引用的 struct 组件沿用相同读取方式。`Between` 在排序后的实体位置上读取组件，因此两个输入集合原来的角色可以交换。
+
+`QueryRow.TryReadRef<T>(out ComponentReference<T> component)` 在已编译的读取访问表中同时查找组件存在性和列位置。存在的组件沿 `QueryAccessGuards` 检查声明权限，缺失的组件返回 false。`ComponentReference<T>` 是仅持一个 `ref readonly T` 的回调借用，`Value` 继续返回同一只读引用。原组件、查询定义和访问表分别由 World 与既有查询状态持有。
+
+`RelationQuery<TEnumerable,TRow>` 实现 `IRelationEnumerable<TRow>`。`Count()`、`Any()` 使用具体值类型输出；`Enumerate(ref output)` 接受自定义 `IRelationOutput<TRow>`。输出 `Add` 返回 true 表示继续，false 表示提前结束；枚举返回 true 表示自然完成，false 表示提前结束。公开终端按值取得一次 `TOutput`，各层借用同一活动终端，最外层 finally 一次回写调用方，支持带 `Span` 的 ref struct 输出。内部引用以原类型构造并恢复为同一类型；组件绑定、查询视图和筛选输出均在实际回调期间持有借用。
+
+查询内部的 `IQueryRelationOutput<TRow>` 与 `IQueryRelation<TRow>` 为二元行增加显式 `scoped QueryRow` 值参数回调。来源把已经取得的两行按最终身份位置传给组件、键、位图绑定，后续筛选继续传递同一组行。来源只有身份行时沿原组件绑定读取。公开终端通过一次 `QueryIdentityOutput` 将结果交给原 `IRelationOutput.Add(in identity)`；用户的 Span 输出继续实现这一原有成员。事实实体和显式边的身份位置按各自语义绑定参与实体。
 
 `Count(lastSystemVersion)`、`Any(lastSystemVersion)` 和 `Enumerate(lastSystemVersion, ref output)` 接受既有系统版本基线，用于 Added/Changed 等成员筛选。只读关系执行保持 World 时钟及组件变更版本。
 
@@ -22,7 +36,11 @@
 | `world.Within(A)` | `(Entity, Entity)` | 完整实体身份升序 | 排除 | 每个无序实体对一次 |
 | `world.Between(A,B)` | `(Entity, Entity)` | 完整实体身份升序 | 排除 | 集合交叠时每个无序实体对一次 |
 
-`EntityOrder.Compare` 先比较 Index，再比较 Generation。`Within` 从当前行枚举器复制剩余范围，一次访问每个候选对，再排列输出身份。`Between` 通过相反输入的成员视图识别已有反向组合，保留只有一个输入方向的候选。排序后的身份行决定随后关系语义的输入位置。
+`EntityOrder.Compare` 先比较 Index，再比较 Generation，提供三向排序结果；`EntityOrder.Precedes` 按同一完整身份顺序直接判断先后。`Within` 从当前行枚举器复制剩余范围，一次访问每个候选对，再排列输出身份。`Between` 通过相反输入的成员视图识别已有反向组合，保留只有一个输入方向的候选。排序后的身份行决定随后关系语义的输入位置。
+
+二元普通语义另有接收 `EntityPairsWithin` 的生成薄入口，返回共享 `ComponentPairsWithin<TRelation,TFirst,TSecond,TSelection>`。生成Where选择WhereSelection，Except选择ExceptSelection，IRelationSelection.RequiresMatch静态声明接受匹配结果或其余结果。普通组合值由其具体选择类型确定进入的实现。该枚举缓存外层行的组件引用，内层直接读取已经取得的行；身份换位时组件位置一同换位。Where、Except、计数、存在性与提前结束共用这条具体链。
+
+二元 `IRelation<TFirst,TSecond>.IsSymmetric` 是关系作者提供的静态语义事实，默认值为 false。当两个组件类型相同且作者声明 true，交换两个输入保持 Matches 结果，Within 因此按自然行顺序匹配，再将接受的身份对排列成完整 Entity 升序。默认运动规则的业务例子声明这一事实。其余关系按排序后的身份确定组件位置再调用 Matches。该能力由固定二元接口持有，生成入口继续薄转发。
 
 完整 Body/Hair 业务代码、13 个实体对及对应生成入口见 [二元关系业务例子](Relation-Query-Example.md)。
 
@@ -75,6 +93,8 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 
 `RelationGenerator` 从 Roslyn 关系接口与方法签名取得组件类型，正常 C# 编译负责语义方法体。每个业务关系产生薄的 `Where`、`Except` 方法，方法返回共享泛型绑定；同一命名空间中的方法合入一个 `RelationQueryExtensions` 类。上述单关系示例产生两个入口方法，业务组件专属生成类型数量为零。库中的组件绑定和输出转发按泛型类型共享。
 
+二元语义再产生两个 Within 具体来源重载，仍返回同一共享泛型族；其它来源继续使用通用重载。
+
 `SomeEngine.ECS.Relations.csproj` 通过 `SomeEngineGenerateRelationFamilies` 构建属性启用 `RelationFamilyGenerator`。库构建统一生成一至八元固定族，使用方从实际关系程序集引用这些类型。每个元数的位置积采用展开的嵌套循环，绑定对每个语义输入分别传入 `ref readonly` 组件。
 
 固定生成清单为：
@@ -90,9 +110,9 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 
 `tests/SomeEngine.ECS.Relations.Tests/MultiRelationTests.cs` 是独立使用方的多元行为检查，覆盖三至八元、不同参与集合、重复组件类型、托管组件、筛选、排除、计数、存在性及八元输出提前结束。这组业务例子定义 12 个语义类型，对应 24 个薄入口，合入同一扩展类；一元与二元行为沿用同项目的公开使用方检查。
 
-`IQueryRelationEnumerable<TRow>` 保存参与查询的位置接口：`QueryCount` 表示输入查询数量，`GetQuery(position)` 返回既有集合身份，`AddReads(definition, position)` 累积该位置的语义读取需求，`Enumerate(RelationQueryViews, ref output)` 在已进入的查询视图中执行具体枚举。`Within` 的 QueryCount 为 1，其行元数为 2；`Product(A,B)` 与 `Between(A,B)` 的 QueryCount 为 2。原生邻接来源的 QueryCount 为 0；执行体调用一次 `AddReads(definition, 0)`，并在外层 Access 查询中枚举。零个或一个输入查询的绑定将全部语义位置的组件读取加入 Access。
+`IQueryRelationEnumerable<TRow>` 保存参与查询的位置接口：`QueryCount` 表示输入查询数量，`GetQuery(position)` 返回既有集合身份，`AddReads(definition, position)` 累积该位置的语义读取需求，`Enumerate(scoped RelationQueryViews, ref output)` 在已进入的查询视图中执行具体枚举。`Within` 的 QueryCount 为 1，其行元数为 2；`Product(A,B)` 与 `Between(A,B)` 的 QueryCount 为 2。原生邻接来源的 QueryCount 为 0；执行体调用一次 `AddReads(definition, 0)`，并在外层 Access 查询中枚举。零个或一个输入查询的绑定将全部语义位置的组件读取加入 Access。
 
-共享执行体以输入位置递归进入既有 World 查询回调，值类型句柄缓冲保存八个参与查询及其外层访问查询。每层在结束时回写泛型输出。固定泛型族和查询视图由同一库构建生成器覆盖一至八元；使用方生成器按接口元数组装标准实体元组与共享泛型类型。空间来源可以提供自己的具体枚举，并复用 QueryCount、Access 与同一泛型输出；资源范围与版本继续由现有 ECS/WorldJobs 执行。
+共享执行体以输入位置递归进入既有 World 查询回调，值类型句柄缓冲保存八个参与查询及其外层访问查询。各层通过引用共享活动输出，公开终端结束时一次归还状态。固定泛型族和查询视图由同一库构建生成器覆盖一至八元；使用方生成器按接口元数组装标准实体元组与共享泛型类型。空间来源可以提供自己的具体枚举，并复用 QueryCount、Access 与同一泛型输出；资源范围与版本继续由现有 ECS/WorldJobs 执行。
 
 `SomeEngine.Physics` 的真实二叉 AABB 空间来源、复用树的调用与手写宽相对照见 [空间候选](Spatial-Candidates.md)。
 
@@ -101,6 +121,22 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 ### 空间执行 API 扩展去向
 
 空间描述的 `Prepare` 和节点对枚举进入 `ICollisionPartitionEnumerable`；`FillPairs` 与 `FillPairsParallel` 通过原有 RelationQuery 读取范围接入单线程和并行计数／前缀／填充。两种终端都提供显式 lastSystemVersion 重载。`CollisionPairBuffer.Count/Pairs` 交付真实输出范围，FillAccess 和 ReadAccess 交给对应 Scheduler 工作。Systems 的 `ReadOnlyQueryPairJobs` 提供回调期间的并行借用与同步 join。生命周期、实际输出区间和成对业务调用见 [空间关系分区执行](Spatial-Parallel-Queries.md)。实际包依赖、构建时元数据及原生使用方见 [关系包与 NativeAOT](Relation-Packages-and-AOT.md)。
+
+## 查询回调中的组件引用
+
+每个 `World.ExecuteQuery` 回调在调用栈持有一份 `QueryData`，其中包含 World、QueryState 和 Last/CurrentSystemVersion。`QueryCursor` 只读借用该描述，关系和视图沿同一个描述引用传递；win-x64 中该借用占 8B。`IQueryExecution.Execute` 和两种 `QueryExecution` 委托以 `scoped QueryCursor` 接收借用，关系来源的消费入口以 `scoped RelationQueryViews` 接收视图。实现接口的方法以及显式写出参数类型的回调同步声明 `scoped`，由 C# 约束描述的使用范围。并行任务保存普通 `QueryData`，在实际子任务回调中形成借用；原有同步 join 覆盖这些回调的完整执行。
+
+`QueryCursor.Contains(Entity)` 检查本次查询的成员事实。它和 `TryGetRow` 复用 World 的点匹配流程，应用相同组件集合、共享条件、enabled、chunk 条件、逐行 Changed 与 LastSystemVersion。键桶和 Between 的纯成员确认使用 Contains；需要后续组件引用的链继续取得 QueryRow，并沿借用输出转发。
+
+`QueryCursor.TryReadRef<T>(Entity, out ComponentReference<T>)` 将成员点匹配和一个可选组件读取放在同一公共操作中。它复用相同的 World 点匹配和 QueryAccessGuards 访问声明检查，应用原查询的成员及 LastSystemVersion，再借用实际组件。成功结果只携带一个只读组件引用；缺失成员或组件返回 false。共享组件和带托管引用的 struct 组件沿用原列读取。该操作与 QueryRow.TryReadRef 的引用都借用当前 World.ExecuteQuery 回调中的原数据。
+
+`QueryRow.TryReadRef<T>(out ComponentReference<T>)` 在一次访问声明查找后借用实际组件引用。`ComponentReference<T>.HasValue` 表达可选组件的存在性，`Value` 返回 `ref readonly T`。`QueryCursor.ReadRows<TFirst,TSecond>()` 沿原有行枚举取得成员，在块边界绑定这两个组件的可选列；`MoveNext(out row,out first,out second)` 同时交付原行及两个引用。行推进先形成 `RowIndex < chunk.Count` 的成员行，已绑定列来自同一个chunk；非空列按该有效行号直接借用组件引用，组件缺失判断和读取权限继续由列绑定持有。读取声明由原查询的 `WithOptionalRead<T>()` 形成，成员、共享条件、enabled 和 Changed 仍使用原查询筛选。引用与枚举器的有效期均为当前 `World.ExecuteQuery` 回调。
+
+行枚举所需的 World、QueryState、查询版本以及当前匹配和 chunk 由 `QueryChunkEnumerator` 持有；`QueryRowEnumerator` 额外保存当前行号，`Current` 按当前块状态与行号形成 `QueryRow`。块内行枚举与全查询行枚举共用逐行匹配的推进函数，组件引用继续借用当前查询回调中的存储。
+
+`QueryDefinition.Requires<T>()` 根据 All 或唯一 Any 声明提供必有组件事实，`QueryCursor.Requires<T>()` 委托当前执行的原定义读取同一事实。二元 Within 在普通描述构造时从固定成员定义取得两位置的必需性，并保存一个 `_componentsRequired` 布尔值；枚举直接选择原有 Required/Optional 组件模式。WithOptionalRead 保留成员 Kind，因此读取声明继续沿同一必有事实。可选模式保留缺组件关系为 false 和 Except 保留该行的行为。定义继续由原查询状态持有，描述持有其固定位置对应的派生事实。
+
+`Within(...).Where/Except(...)` 的二元组件入口直接使用这些已有行和引用。后续规则通过查询专用的 `IQueryRelationOutput` 和 `IQueryRelation` 转发借用行，公开终端仍通过 `IRelationOutput.Add(in identity)` 接收身份元组。固定候选、键桶和空间来源同样复用已取得的成员行；存储事实及边保持各自参与者来源和访问读取。
 
 ## 已存储关系边
 

@@ -1,0 +1,19 @@
+{
+  "SourceCommit": "393a9fbf009aa2e8269636fdf532551271a85bc5",
+  "PublishQueueId": "6e2ce65a563b48c98da5ebbe9976a6c9",
+  "StartedAtUtc": "2026-10-19T23:11:20.3670691Z",
+  "LastCaseSubmittedAtUtc": "2026-10-19T23:11:25.752231Z",
+  "InitialObservationEndedAtUtc": "2026-10-19T23:11:25.8119596Z",
+  "WatcherInitialObservationEndedAtUtc": "2026-10-19T23:11:25.7924238Z",
+  "NativeReaderRelease": {
+    "ReaderQueueId": "c0b4357d7bd14e01b9a3e96f942f8bf2",
+    "SourceCommit": "393a9fbf009aa2e8269636fdf532551271a85bc5",
+    "ReadStartedAtUtc": "2026-10-19T23:09:59.0014125Z",
+    "ReadFinishedAtUtc": "2026-10-19T23:09:59.2820996Z",
+    "ReleasedAtUtc": "2026-10-19T23:10:21.4459812Z"
+  },
+  "PreparationEndAtUtc": "2026-10-19T23:11:25.8119596Z",
+  "CaseCount": 14,
+  "ReaderQueueId": "c0b4357d7bd14e01b9a3e96f942f8bf2",
+  "FinalQueueId": "083c1058f838462bb87253cdde752a9d"
+}

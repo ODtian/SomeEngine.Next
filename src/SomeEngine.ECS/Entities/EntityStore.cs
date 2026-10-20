@@ -49,8 +49,11 @@ internal sealed partial class EntityStore
         _freeListHead = source._freeListHead;
         _aliveCount = source._aliveCount;
         _count = source._count;
-        _tableChanges = source._tableChanges;
-        _tableChangeVersion = source._tableChangeVersion;
+        lock (source._tableChangesLock)
+        {
+            _tableChanges = source._tableChanges;
+            _tableChangeVersion = source._tableChangeVersion;
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

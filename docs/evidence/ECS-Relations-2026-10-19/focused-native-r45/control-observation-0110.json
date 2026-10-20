@@ -1,0 +1,80 @@
+{
+  "StartedAtUtc": "2026-10-20T01:10:50.7542719Z",
+  "FinishedAtUtc": "2026-10-20T01:10:50.8161826Z",
+  "PreviousRead": "Active stderr was held by the queue writer; status continued using metadata.",
+  "Master": {
+    "Id": "9f5c43b1a369427f9d1b9619a17d0508",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\focused-native-r45\\master.ps1"
+    ],
+    "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+    "ExitCode": 0,
+    "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+    "Kind": "Exclusive",
+    "SubmittedAtUtc": "2026-10-20T08:56:14.0551006+08:00",
+    "StartedAtUtc": "2026-10-20T09:10:24.5796289+08:00",
+    "FinishedAtUtc": "2026-10-20T09:10:28.0164862+08:00"
+  },
+  "MasterFiles": [
+    {
+      "Name": "result.json",
+      "Length": 544,
+      "LastWriteTimeUtc": "2026-10-20T01:10:28.0167821Z"
+    },
+    {
+      "Name": "stderr.log",
+      "Length": 0,
+      "LastWriteTimeUtc": "2026-10-20T01:10:24.5801868Z"
+    },
+    {
+      "Name": "stdout.log",
+      "Length": 1967,
+      "LastWriteTimeUtc": "2026-10-20T01:10:28.0162184Z"
+    }
+  ],
+  "Manifest": {
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "Submissions": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\submissions.json",
+    "QueueSubmission": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\queue-submission.json",
+    "CaseQueueIds": [
+      "d00b365df16145519b6be626374ae9b5",
+      "6f3f2b4cccdf4406aae5e784bc7a971d"
+    ],
+    "AnalysisQueueIds": [
+      "9f98fc9d4e9b4f7eb48ae39a4c76ed0a"
+    ],
+    "SubmissionFinishedAtUtc": "2026-10-20T01:10:27.0429254Z"
+  },
+  "Children": null,
+  "Cases": [
+    {
+      "Id": "d00b365df16145519b6be626374ae9b5",
+      "ResultExists": false
+    },
+    {
+      "Id": "6f3f2b4cccdf4406aae5e784bc7a971d",
+      "ResultExists": false
+    }
+  ],
+  "PackageSubmissions": [
+    {
+      "Id": "b29fc3fd3ed94505adb27bead7eed42c",
+      "OutputDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\b29fc3fd3ed94505adb27bead7eed42c",
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-20T09:10:27.2558803+08:00",
+      "WorkerProcessId": 81812
+    },
+    {
+      "Id": "0943bc78afa94cbd816e22a2a2350079",
+      "OutputDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\0943bc78afa94cbd816e22a2a2350079",
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-20T09:10:27.6217565+08:00",
+      "WorkerProcessId": 81812
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "StartedAtUtc": "2026-10-20T00:57:55.1956878Z",
+  "FinishedAtUtc": "2026-10-20T00:57:55.2729366Z",
+  "Receipts": [
+    {
+      "Name": "r44-report",
+      "Id": "914c2db70ab949bb81a2b11790accd11",
+      "ExitCode": 0,
+      "StartedAtUtc": "2026-10-20T08:47:19.8976444+08:00",
+      "FinishedAtUtc": "2026-10-20T08:47:25.3324022+08:00"
+    },
+    {
+      "Name": "r44-archive",
+      "Id": "1244cdec74a04e50b62ffef3d34261b9",
+      "ExitCode": 0,
+      "StartedAtUtc": "2026-10-20T08:52:47.4486095+08:00",
+      "FinishedAtUtc": "2026-10-20T08:52:49.9144647+08:00"
+    },
+    {
+      "Name": "r45-producer",
+      "Id": "45457c0a0ea343458c8de1c83d1ba0f8",
+      "ResultExists": false
+    },
+    {
+      "Name": "r45-master",
+      "Id": "9f5c43b1a369427f9d1b9619a17d0508",
+      "ResultExists": false
+    }
+  ],
+  "Source": null
+}

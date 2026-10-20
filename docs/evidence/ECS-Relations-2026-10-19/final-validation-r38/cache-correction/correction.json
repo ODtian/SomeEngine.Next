@@ -1,0 +1,14 @@
+{
+  "StartedAtUtc": "2026-10-19T22:15:06.4959715Z",
+  "FinishedAtUtc": "2026-10-19T22:15:06.6367939Z",
+  "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+  "OriginalStartupElements": 18,
+  "ActualStartupRecords": 9,
+  "CapturedConsoleLines": 9,
+  "FirstWatcherProcessId": 41468,
+  "FirstWatcherExitCode": 1,
+  "FirstWatcherError": "Duplicate empty QueueId from captured startup console lines",
+  "MasterExecutionText": "MasterActual retains the executed Write-Output version",
+  "ControlCorrection": "startup foreach console output uses Write-Host for subsequent reuse; this prepared dataset retains only its nine actual queue records",
+  "CaseTasksResubmitted": 0
+}

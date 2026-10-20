@@ -1,0 +1,8 @@
+{
+  "SourceCommit": "8230fdc15af774f191d6f60432909d740b31fc07",
+  "InputCommit": "e371ba80f95db1627379f5be1c2b240f89bba47c",
+  "CreatedAtUtc": "2026-10-19T13:06:14.771689Z",
+  "Change": "Chunk traversal holds query context; row traversal holds its row index",
+  "CheckQueueTemplate": "3879dd4bb2da4c029de6287917e2fbac",
+  "CheckExitCode": 0
+}

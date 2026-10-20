@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Queries;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Physics;
 
@@ -12,30 +13,38 @@ public enum GroupMatch : byte
 /// <summary>Ordered node-pair proofs and callback-scoped leaf reads for the collision tree.</summary>
 public interface ISpatialFilter<TGroupResults> where TGroupResults : unmanaged
 {
+    static virtual bool ReadsComponentRows => false;
+
     QueryDefinition AddReads(QueryDefinition definition);
 
     /// <summary>Writes attached arrays during initial build or an explicit rebuild.</summary>
-    void RebuildSummaries(QueryCursor access);
+    void RebuildSummaries(scoped QueryCursor access);
 
     /// <summary>Writes one leaf or a branch whose children have already been updated.</summary>
-    void RefitSummary(int node, QueryCursor access);
+    void RefitSummary(int node, scoped QueryCursor access);
 
-    /// <summary>Reports row writes that affect this filter's cached leaf data.</summary>
-    bool HasSummaryChange(QueryChunkView chunk, int row) => false;
+    /// <summary>Binds summary changes once per chunk; geometry changes are already covered by the caller.</summary>
+    void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
+        where TGeometry : struct
+        where TExecution : struct, ISpatialChangeExecution, allows ref struct;
 
     GroupMatch MatchGroups(int firstNode, int secondNode,
+        in CollisionNode first, in CollisionNode second,
         in TGroupResults inherited, out TGroupResults results);
 
     /// <summary>Reads a pair of leaves ordered by their complete Entity identities.</summary>
-    bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in TGroupResults results);
+    bool MatchesLeaves(scoped in QueryRow first, scoped in QueryRow second,
+        int firstNode, int secondNode, in TGroupResults results);
 }
 
 internal static class GroupMatches
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static GroupMatch And(GroupMatch first, GroupMatch second) =>
         first == GroupMatch.None || second == GroupMatch.None ? GroupMatch.None :
         first == GroupMatch.All && second == GroupMatch.All ? GroupMatch.All : GroupMatch.Unknown;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static GroupMatch Except(GroupMatch match) => match switch
     {
         GroupMatch.None => GroupMatch.All,

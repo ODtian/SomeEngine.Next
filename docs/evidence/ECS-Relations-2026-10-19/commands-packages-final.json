@@ -1,0 +1,404 @@
+[
+  {
+    "Queue": {
+      "Id": "8a28339eb87146f28934d2f8ba851ba3",
+      "Executable": "dotnet",
+      "Arguments": [
+        "build",
+        "src/SomeEngine.Physics/SomeEngine.Physics.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "-p:EmitCompilerGeneratedFiles=true"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:19:24.6463717+08:00",
+      "StartedAtUtc": "2026-10-19T15:19:33.8491261+08:00",
+      "FinishedAtUtc": "2026-10-19T15:19:38.6151753+08:00"
+    },
+    "Stdout": "  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Relations -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\n  SomeEngine.Physics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Physics\\bin\\Release\\net10.0\\SomeEngine.Physics.dll\r\n\r\n已成功生成。\r\n    0 个警告\r\n    0 个错误\r\n\r\n已用时间 00:00:04.10\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "9a54ee5661ff437480a018355c452fca",
+      "Executable": "dotnet",
+      "Arguments": [
+        "pack",
+        "src/SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj",
+        "-c",
+        "Release",
+        "--no-build",
+        "-p:Version=0.1.0-relations.231",
+        "-o",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:19:39.1601533+08:00",
+      "StartedAtUtc": "2026-10-19T15:24:31.6244359+08:00",
+      "FinishedAtUtc": "2026-10-19T15:24:33.8309236+08:00"
+    },
+    "Stdout": "  包 SomeEngine.Diagnostics.0.1.0-relations.231 缺少自述文件。转到 https://aka.ms/nuget/authoring-best-practices/readme 了解为什么包阅读主题很重要。\r\n  已成功创建包“F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.Diagnostics.0.1.0-relations.231.nupkg”。\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "0034cf399ad842eeb7aafe567dfb5ece",
+      "Executable": "dotnet",
+      "Arguments": [
+        "pack",
+        "src/SomeEngine.Job.Contracts/SomeEngine.Job.Contracts.csproj",
+        "-c",
+        "Release",
+        "--no-build",
+        "-p:Version=0.1.0-relations.231",
+        "-o",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:19:39.5111811+08:00",
+      "StartedAtUtc": "2026-10-19T15:24:57.1900685+08:00",
+      "FinishedAtUtc": "2026-10-19T15:24:59.2806898+08:00"
+    },
+    "Stdout": "  包 SomeEngine.Job.Contracts.0.1.0-relations.231 缺少自述文件。转到 https://aka.ms/nuget/authoring-best-practices/readme 了解为什么包阅读主题很重要。\r\n  已成功创建包“F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.Job.Contracts.0.1.0-relations.231.nupkg”。\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "a5c2cbe78ff64c779b4bcd07e95452ca",
+      "Executable": "dotnet",
+      "Arguments": [
+        "pack",
+        "src/SomeEngine.Job/SomeEngine.Job.csproj",
+        "-c",
+        "Release",
+        "--no-build",
+        "-p:Version=0.1.0-relations.231",
+        "-o",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:19:39.8376381+08:00",
+      "StartedAtUtc": "2026-10-19T15:25:53.1147433+08:00",
+      "FinishedAtUtc": "2026-10-19T15:25:55.5098602+08:00"
+    },
+    "Stdout": "  包 SomeEngine.Job.0.1.0-relations.231 缺少自述文件。转到 https://aka.ms/nuget/authoring-best-practices/readme 了解为什么包阅读主题很重要。\r\n  已成功创建包“F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.Job.0.1.0-relations.231.nupkg”。\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "1cefbda8cd4c41798c96b52d297d3393",
+      "Executable": "dotnet",
+      "Arguments": [
+        "pack",
+        "src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj",
+        "-c",
+        "Release",
+        "--no-build",
+        "-p:Version=0.1.0-relations.231",
+        "-o",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:19:40.1434433+08:00",
+      "StartedAtUtc": "2026-10-19T15:25:55.5105502+08:00",
+      "FinishedAtUtc": "2026-10-19T15:25:57.5273854+08:00"
+    },
+    "Stdout": "  包 SomeEngine.ECS.SourceGen.0.1.0-relations.231 缺少自述文件。转到 https://aka.ms/nuget/authoring-best-practices/readme 了解为什么包阅读主题很重要。\r\n  已成功创建包“F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.ECS.SourceGen.0.1.0-relations.231.nupkg”。\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "a34dd35dc12d41879f3a01a331dd535d",
+      "Executable": "dotnet",
+      "Arguments": [
+        "pack",
+        "src/SomeEngine.ECS/SomeEngine.ECS.csproj",
+        "-c",
+        "Release",
+        "--no-build",
+        "-p:Version=0.1.0-relations.231",
+        "-o",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:19:40.4664258+08:00",
+      "StartedAtUtc": "2026-10-19T15:25:57.5281941+08:00",
+      "FinishedAtUtc": "2026-10-19T15:26:00.0972636+08:00"
+    },
+    "Stdout": "  包 SomeEngine.ECS.0.1.0-relations.231 缺少自述文件。转到 https://aka.ms/nuget/authoring-best-practices/readme 了解为什么包阅读主题很重要。\r\n  已成功创建包“F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.ECS.0.1.0-relations.231.nupkg”。\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "0346bc2980f641e8a0b26a92388e6f03",
+      "Executable": "dotnet",
+      "Arguments": [
+        "pack",
+        "src/SomeEngine.ECS.Relations/SomeEngine.ECS.Relations.csproj",
+        "-c",
+        "Release",
+        "--no-build",
+        "-p:Version=0.1.0-relations.231",
+        "-o",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:19:40.9087231+08:00",
+      "StartedAtUtc": "2026-10-19T15:26:00.0978976+08:00",
+      "FinishedAtUtc": "2026-10-19T15:26:02.965306+08:00"
+    },
+    "Stdout": "  包 SomeEngine.ECS.Relations.0.1.0-relations.231 缺少自述文件。转到 https://aka.ms/nuget/authoring-best-practices/readme 了解为什么包阅读主题很重要。\r\n  已成功创建包“F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.ECS.Relations.0.1.0-relations.231.nupkg”。\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "2bb0fe116cc24daba50d8cd82a559f82",
+      "Executable": "dotnet",
+      "Arguments": [
+        "pack",
+        "src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj",
+        "-c",
+        "Release",
+        "--no-build",
+        "-p:Version=0.1.0-relations.231",
+        "-o",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:19:41.1983347+08:00",
+      "StartedAtUtc": "2026-10-19T15:26:02.9660415+08:00",
+      "FinishedAtUtc": "2026-10-19T15:26:05.460688+08:00"
+    },
+    "Stdout": "  包 SomeEngine.ECS.Systems.0.1.0-relations.231 缺少自述文件。转到 https://aka.ms/nuget/authoring-best-practices/readme 了解为什么包阅读主题很重要。\r\n  已成功创建包“F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.ECS.Systems.0.1.0-relations.231.nupkg”。\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "d7c2a32f5a8541c08da493032d095f88",
+      "Executable": "dotnet",
+      "Arguments": [
+        "pack",
+        "src/SomeEngine.Physics/SomeEngine.Physics.csproj",
+        "-c",
+        "Release",
+        "--no-build",
+        "-p:Version=0.1.0-relations.231",
+        "-o",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:19:41.4960978+08:00",
+      "StartedAtUtc": "2026-10-19T15:26:05.4614252+08:00",
+      "FinishedAtUtc": "2026-10-19T15:26:07.9272273+08:00"
+    },
+    "Stdout": "  包 SomeEngine.Physics.0.1.0-relations.231 缺少自述文件。转到 https://aka.ms/nuget/authoring-best-practices/readme 了解为什么包阅读主题很重要。\r\n  已成功创建包“F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.Physics.0.1.0-relations.231.nupkg”。\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "e26a9ef4ff9e426a82f2c1d57e2cef0a",
+      "Executable": "dotnet",
+      "Arguments": [
+        "restore",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\SomeEngine.ECS.Relations.AotSmoke.csproj",
+        "-r",
+        "win-x64",
+        "-p:PublishAot=true",
+        "-p:_IsPublishing=true",
+        "-p:RestorePackagesPath=F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\cache",
+        "--configfile",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\NuGet.Config"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:26:08.4022223+08:00",
+      "StartedAtUtc": "2026-10-19T15:26:08.4956704+08:00",
+      "FinishedAtUtc": "2026-10-19T15:26:10.9443593+08:00"
+    },
+    "Stdout": "  正在确定要还原的项目…\r\n  已还原 F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\SomeEngine.ECS.Relations.AotSmoke.csproj (用时 665 毫秒)。\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "e5d40b58343843a49ac997b30b8ccc50",
+      "Executable": "dotnet",
+      "Arguments": [
+        "build",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\SomeEngine.ECS.Relations.AotSmoke.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "-p:RestorePackagesPath=F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\cache",
+        "-t:Rebuild"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:26:11.7475847+08:00",
+      "StartedAtUtc": "2026-10-19T15:26:11.8371007+08:00",
+      "FinishedAtUtc": "2026-10-19T15:26:15.4275852+08:00"
+    },
+    "Stdout": "  SomeEngine.ECS.Relations.AotSmoke -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll\r\n\r\n已成功生成。\r\n    0 个警告\r\n    0 个错误\r\n\r\n已用时间 00:00:03.04\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "b53f4a6144b246a4abe969343c7ae4e5",
+      "Executable": "dotnet",
+      "Arguments": [
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": -532462766,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:26:16.1619319+08:00",
+      "StartedAtUtc": "2026-10-19T15:26:16.2510841+08:00",
+      "FinishedAtUtc": "2026-10-19T15:26:23.7477761+08:00"
+    },
+    "Stdout": "",
+    "Stderr": "Unhandled exception. System.InvalidOperationException: Number`1 was not declared as a data access term in this query.\r\n   at SomeEngine.ECS.World.ReadEntityQueryRef[T](QueryCursor& query, Entity entity)\r\n   at SomeEngine.Tools.RelationsSmoke.NumberPointValue.Execute(QueryCursor query) in F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\NumberRelations.cs:line 122\r\n   at SomeEngine.ECS.World.ExecuteQueryAdmitted[TExecution](QueryHandle query, UInt32 lastSystemVersion, UInt32 currentSystemVersion, Boolean relationshipWrite, TExecution& execution)\r\n--- End of stack trace from previous location ---\r\n   at SomeEngine.ECS.World.ExecuteQueryAdmitted[TExecution](QueryHandle query, UInt32 lastSystemVersion, UInt32 currentSystemVersion, Boolean relationshipWrite, TExecution& execution)\r\n   at SomeEngine.ECS.World.ExecuteQuery[TExecution](QueryHandle query, TExecution& execution)\r\n   at SomeEngine.Tools.RelationsSmoke.RelationsSmoke.CheckNumbersAndEdges(Scheduler jobs) in F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\RelationsSmoke.cs:line 71\r\n   at SomeEngine.Tools.RelationsSmoke.RelationsSmoke.Main() in F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\RelationsSmoke.cs:line 20\r\n"
+  },
+  {
+    "Queue": {
+      "Id": "d625e6340d5d4abf8645e442bf80ced6",
+      "Executable": "dotnet",
+      "Arguments": [
+        "build",
+        "tools/SomeEngine.ECS.Relations.AotSmoke/SomeEngine.ECS.Relations.AotSmoke.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "-p:RestorePackagesPath=F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\cache",
+        "-t:Rebuild"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:27:13.4432751+08:00",
+      "StartedAtUtc": "2026-10-19T15:28:31.3005877+08:00",
+      "FinishedAtUtc": "2026-10-19T15:28:34.0026271+08:00"
+    },
+    "Stdout": "  SomeEngine.ECS.Relations.AotSmoke -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll\r\n\r\n已成功生成。\r\n    0 个警告\r\n    0 个错误\r\n\r\n已用时间 00:00:02.16\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "56045e5db9384f1ebb05061f986b777a",
+      "Executable": "dotnet",
+      "Arguments": [
+        "tools/SomeEngine.ECS.Relations.AotSmoke/bin/Release/net10.0/win-x64/SomeEngine.ECS.Relations.AotSmoke.dll"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:28:41.4825466+08:00",
+      "StartedAtUtc": "2026-10-19T15:30:11.9027113+08:00",
+      "FinishedAtUtc": "2026-10-19T15:30:12.9236487+08:00"
+    },
+    "Stdout": "numbers: 8 arities, Item8, typed/generated reads; edges: identities, roles, maintenance\r\nspatial: key+bitmap+components; parallel/serial=5; updated=3; consumed counts=2,2,0,2\r\nPASS: packages; arities=1..8; Item8; ref output; schema; typed/generated/query access; edges; key; bitmap; spatial; maintenance; parallel; consumption.\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "f93b12d118514bf9b1cb4eea94c91419",
+      "Executable": "dotnet",
+      "Arguments": [
+        "publish",
+        "tools/SomeEngine.ECS.Relations.AotSmoke/SomeEngine.ECS.Relations.AotSmoke.csproj",
+        "-c",
+        "Release",
+        "-r",
+        "win-x64",
+        "--self-contained",
+        "true",
+        "--no-restore",
+        "-p:PublishAot=true",
+        "-p:PublishAotUsingRuntimePack=true",
+        "-p:RestorePackagesPath=F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\cache",
+        "-p:TrimmerSingleWarn=false",
+        "-p:SourceRevisionId=3b582fe541d86d7f556b3f9d6854962d292454ef",
+        "-o",
+        "tools/SomeEngine.ECS.Relations.AotSmoke/bin/Release/net10.0/win-x64/native-publish"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:30:37.4039689+08:00",
+      "StartedAtUtc": "2026-10-19T15:31:50.810085+08:00",
+      "FinishedAtUtc": "2026-10-19T15:32:06.7884565+08:00"
+    },
+    "Stdout": "  SomeEngine.ECS.Relations.AotSmoke -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll\r\n  Generating native code\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\Registry\\JobStorageTypeMetadata.cs(77): Trim analysis warning IL2070: SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>): 'this' argument does not satisfy 'DynamicallyAccessedMemberTypes.PublicFields', 'DynamicallyAccessedMemberTypes.NonPublicFields' in call to 'System.Type.GetFields(BindingFlags)'. The parameter 'type' of method 'SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>)' does not have matching annotations. The source value must declare at least the same requirements as those declared on the target location it is assigned to. [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\SomeEngine.ECS.Relations.AotSmoke.csproj]\r\n  SomeEngine.ECS.Relations.AotSmoke -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\native-publish\\\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "539c1c2010d64157a1de083d14361af4",
+      "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.AotSmoke.exe",
+      "Arguments": [],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T15:32:37.4594704+08:00",
+      "StartedAtUtc": "2026-10-19T15:32:37.5513226+08:00",
+      "FinishedAtUtc": "2026-10-19T15:32:37.7073378+08:00"
+    },
+    "Stdout": "numbers: 8 arities, Item8, typed/generated reads; edges: identities, roles, maintenance\r\nspatial: key+bitmap+components; parallel/serial=5; updated=3; consumed counts=2,2,0,2\r\nPASS: packages; arities=1..8; Item8; ref output; schema; typed/generated/query access; edges; key; bitmap; spatial; maintenance; parallel; consumption.\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "af2f8f1bba48441f89dab86c95ced5ea",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-Command",
+        "$ErrorActionPreference = 'Stop'\n$sourceRoot = (Get-Location).Path\n$consumer = Join-Path $sourceRoot 'tools/SomeEngine.ECS.Relations.AotSmoke'\n$generated = @(Get-ChildItem -LiteralPath (Join-Path $consumer 'obj/Release/net10.0/win-x64/generated') -Recurse -Filter '*.cs')\n$groups = @($generated | Group-Object { $_.Directory.Name } | ForEach-Object {\n    $text = ($_.Group | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join [Environment]::NewLine\n    [pscustomobject]@{ Generator = $_.Name; Files = $_.Count; Where = [regex]::Matches($text, '\\bWhere\\s*(?:<|\\()').Count; Except = [regex]::Matches($text, '\\bExcept\\s*(?:<|\\()').Count }\n})\n$allText = ($generated | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join [Environment]::NewLine\n$fixed = @(Get-ChildItem -LiteralPath (Join-Path $sourceRoot 'src/SomeEngine.ECS.Relations/obj/Release/net10.0/generated') -Recurse -Filter '*.cs' | Where-Object { $_.Directory.Name -match 'RelationFamilyGenerator' })\n$fixedText = ($fixed | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join [Environment]::NewLine\n[xml]$project = Get-Content -LiteralPath (Join-Path $consumer 'SomeEngine.ECS.Relations.AotSmoke.csproj') -Raw\n$assets = Get-Content -LiteralPath (Join-Path $consumer 'obj/project.assets.json') -Raw | ConvertFrom-Json\n$packages = @($assets.libraries.PSObject.Properties | Where-Object { $_.Name.StartsWith('SomeEngine.') } | ForEach-Object { [pscustomobject]@{ Package = $_.Name; Type = $_.Value.type } })\n$data = [pscustomobject]@{ LibrarySourceCommit = '7f8d27eb97fdf34f020d1ab12e42fb3b59f7df82'; ConsumerSourceCommit = '3b582fe541d86d7f556b3f9d6854962d292454ef'; DirectPackageReferences = @($project.Project.ItemGroup.PackageReference).Count; Packages = $packages; GeneratedFiles = $generated.Count; Generators = $groups; ThinWhereExcept = [int](($groups | Measure-Object Where -Sum).Sum + ($groups | Measure-Object Except -Sum).Sum); JobStorageRegistrations = [regex]::Matches($allText, '\\bRegisterJobStorage\\s*<').Count; RelationSchemaRegistrations = [regex]::Matches($allText, '\\bRegisterRelationSchema\\s*<').Count; LibraryFamilyFiles = $fixed.Count; LibraryFamilyTypes = [regex]::Matches($fixedText, '(?m)^public\\s+(?:(?:readonly|ref|partial)\\s+)*(?:struct|interface)\\s+').Count }\n$output = Join-Path $sourceRoot 'docs/evidence/ECS-Relations-2026-10-19/package-final-metadata.json'\n$data | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $output -Encoding utf8\n$data | ConvertTo-Json -Depth 10"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T15:29:43.5953802+08:00",
+      "StartedAtUtc": "2026-10-19T15:30:12.9244046+08:00",
+      "FinishedAtUtc": "2026-10-19T15:30:14.3820156+08:00"
+    },
+    "Stdout": "{\r\n  \"LibrarySourceCommit\": \"7f8d27eb97fdf34f020d1ab12e42fb3b59f7df82\",\r\n  \"ConsumerSourceCommit\": \"3b582fe541d86d7f556b3f9d6854962d292454ef\",\r\n  \"DirectPackageReferences\": 6,\r\n  \"Packages\": [\r\n    {\r\n      \"Package\": \"SomeEngine.Diagnostics/0.1.0-relations.231\",\r\n      \"Type\": \"package\"\r\n    },\r\n    {\r\n      \"Package\": \"SomeEngine.ECS/0.1.0-relations.231\",\r\n      \"Type\": \"package\"\r\n    },\r\n    {\r\n      \"Package\": \"SomeEngine.ECS.Relations/0.1.0-relations.231\",\r\n      \"Type\": \"package\"\r\n    },\r\n    {\r\n      \"Package\": \"SomeEngine.ECS.SourceGen/0.1.0-relations.231\",\r\n      \"Type\": \"package\"\r\n    },\r\n    {\r\n      \"Package\": \"SomeEngine.ECS.Systems/0.1.0-relations.231\",\r\n      \"Type\": \"package\"\r\n    },\r\n    {\r\n      \"Package\": \"SomeEngine.Job/0.1.0-relations.231\",\r\n      \"Type\": \"package\"\r\n    },\r\n    {\r\n      \"Package\": \"SomeEngine.Job.Contracts/0.1.0-relations.231\",\r\n      \"Type\": \"package\"\r\n    },\r\n    {\r\n      \"Package\": \"SomeEngine.Physics/0.1.0-relations.231\",\r\n      \"Type\": \"package\"\r\n    }\r\n  ],\r\n  \"GeneratedFiles\": 27,\r\n  \"Generators\": [\r\n    {\r\n      \"Generator\": \"SomeEngine.ECS.SourceGen.BitmapRelationGenerator\",\r\n      \"Files\": 2,\r\n      \"Where\": 2,\r\n      \"Except\": 2\r\n    },\r\n    {\r\n      \"Generator\": \"SomeEngine.ECS.SourceGen.EcsTypeGenerator\",\r\n      \"Files\": 1,\r\n      \"Where\": 0,\r\n      \"Except\": 0\r\n    },\r\n    {\r\n      \"Generator\": \"SomeEngine.ECS.SourceGen.JobEntityGenerator\",\r\n      \"Files\": 1,\r\n      \"Where\": 0,\r\n      \"Except\": 0\r\n    },\r\n    {\r\n      \"Generator\": \"SomeEngine.ECS.SourceGen.RelationEdgeGenerator\",\r\n      \"Files\": 4,\r\n      \"Where\": 4,\r\n      \"Except\": 4\r\n    },\r\n    {\r\n      \"Generator\": \"SomeEngine.ECS.SourceGen.RelationGenerator\",\r\n      \"Files\": 11,\r\n      \"Where\": 15,\r\n      \"Except\": 15\r\n    },\r\n    {\r\n      \"Generator\": \"SomeEngine.ECS.SourceGen.RelationImplementationGenerator\",\r\n      \"Files\": 1,\r\n      \"Where\": 4,\r\n      \"Except\": 4\r\n    },\r\n    {\r\n      \"Generator\": \"SomeEngine.ECS.SourceGen.SpatialRelationGenerator\",\r\n      \"Files\": 7,\r\n      \"Where\": 14,\r\n      \"Except\": 14\r\n    }\r\n  ],\r\n  \"ThinWhereExcept\": 78,\r\n  \"JobStorageRegistrations\": 17,\r\n  \"RelationSchemaRegistrations\": 2,\r\n  \"LibraryFamilyFiles\": 9,\r\n  \"LibraryFamilyTypes\": 41\r\n}\r\n",
+    "Stderr": ""
+  }
+]

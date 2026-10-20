@@ -48,7 +48,7 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         {
             bool bindingsChanged = false;
             render.ExecuteQuery(query, version, ref bindingsChanged,
-                static (QueryCursor rows, ref bool changed) =>
+                static (scoped QueryCursor rows, ref bool changed) =>
                 {
                     foreach (QueryChunkView chunk in rows.Chunks)
                         changed |= chunk.HasBufferChangedSinceLastSystemVersion<RenderMaterialBinding>();
@@ -254,7 +254,7 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         ExtractAndApply(extraction, mainWorld, renderWorld);
         QueryHandle query = renderWorld.Query(new QueryDefinitionBuilder()
             .Read<RenderSource>().Read<RenderTransform>().Read<RenderPreviousTransform>());
-        static void ReadVersions(QueryCursor cursor, ref Dictionary<Entity, (uint, uint)> versions)
+        static void ReadVersions(scoped QueryCursor cursor, ref Dictionary<Entity, (uint, uint)> versions)
         {
             foreach (QueryChunkView chunk in cursor.Chunks)
             {

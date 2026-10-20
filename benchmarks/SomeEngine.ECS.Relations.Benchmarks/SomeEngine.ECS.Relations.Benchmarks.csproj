@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishAot>true</PublishAot>
+    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="MeasurementSourceCommit" Value="$(SourceRevisionId)" />
+    <Compile Include="../SomeEngine.ECS.Benchmarks/Relations/*.cs" Link="Fixtures/%(Filename)%(Extension)" />
+    <ProjectReference Include="../../src/SomeEngine.ECS/SomeEngine.ECS.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.Relations/SomeEngine.ECS.Relations.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Job/SomeEngine.Job.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

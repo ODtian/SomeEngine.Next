@@ -1,0 +1,7 @@
+"CaseId","UsedBy","ComponentId","Kind","Access","Filters"
+"finite-small-mask1-mutual-control","shared","1","All","None","None"
+"finite-small-mask1-mutual-control","shared","4","None","None","None"
+"finite-small-mask1-mutual-control","shared","3","Optional","Read","None"
+"finite-large-mask8-oneway-control","shared","1","All","None","None"
+"finite-large-mask8-oneway-control","shared","4","None","None","None"
+"finite-large-mask8-oneway-control","shared","3","Optional","Read","None"

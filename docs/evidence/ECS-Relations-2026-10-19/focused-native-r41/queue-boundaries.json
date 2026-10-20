@@ -1,0 +1,458 @@
+{
+  "Summary": {
+    "Series": "focused-native-r41",
+    "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+    "CaseCount": 6,
+    "PreparationExitCode": 0,
+    "CaseExitCodes": [
+      0
+    ],
+    "AnalysisExitCodes": [
+      0
+    ],
+    "LastCaseSubmittedAtUtc": "2026-10-19T23:49:03.8292531Z",
+    "PreparationFinishedAtUtc": "2026-10-20T07:49:04.1954138+08:00",
+    "FirstCaseStartedAtUtc": "2026-10-20T07:49:04.4224393+08:00",
+    "LastCaseFinishedAtUtc": "2026-10-20T07:54:35.1594955+08:00",
+    "FirstAnalysisStartedAtUtc": "2026-10-20T07:55:32.8719255+08:00",
+    "AllCasesSubmittedBeforeExecution": true,
+    "PreparationFinishedBeforeExecution": true,
+    "AnalysisStartedAfterExecution": true,
+    "QuietPassed": true,
+    "CaseExecutionSeconds": 54.5266816,
+    "BetweenCasesSeconds": 276.2103746,
+    "AnalysisExecutionSeconds": 6.1594248,
+    "SubmissionToAnalysisFinishedSeconds": 452.5050594
+  },
+  "Preparation": {
+    "Id": "0683ad2597fd403383b7eae8fa82840c",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-EncodedCommand",
+      "CgAkAEUAcgByAG8AcgBBAGMAdABpAG8AbgBQAHIAZQBmAGUAcgBlAG4AYwBlAD0AJwBTAHQAbwBwACcACgBTAGUAdAAtAEwAbwBjAGEAdABpAG8AbgAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJwBGADoAXAAuAGMAbwBkAGUAeABcAHcAbwByAGsAdAByAGUAZQBzAFwAZQBjAHMALQByAGUAbABhAHQAaQBvAG4AcwAtAHcAbwByAGsAZQByAC0AMwBcAFMAbwBtAGUARQBuAGcAaQBuAGUALgBOAGUAeAB0ACcACgAkAHMAbwB1AHIAYwBlAFIAZQBjAG8AcgBkAD0ARwBlAHQALQBDAG8AbgB0AGUAbgB0ACAALQBMAGkAdABlAHIAYQBsAFAAYQB0AGgAIAAnAGEAcgB0AGkAZgBhAGMAdABzAC8AcgBlAGwAYQB0AGkAbwBuAHMALQBtAGUAYQBzAHUAcgBlAG0AZQBuAHQAcwAvAGYAbwBjAHUAcwBlAGQALQBuAGEAdABpAHYAZQAtAHIANAAxAC8AcwBvAHUAcgBjAGUALgBqAHMAbwBuACcAIAAtAFIAYQB3AHwAQwBvAG4AdgBlAHIAdABGAHIAbwBtAC0ASgBzAG8AbgAKACQAcwBvAHUAcgBjAGUAPQBbAHMAdAByAGkAbgBnAF0AJABzAG8AdQByAGMAZQBSAGUAYwBvAHIAZAAuAFMAbwB1AHIAYwBlAEMAbwBtAG0AaQB0AAoAaQBmACgAJABzAG8AdQByAGMAZQBSAGUAYwBvAHIAZAAuAFAAdQBiAGwAaQBzAGgARQB4AGkAdABDAG8AZABlACAALQBuAGUAIAAwACAALQBvAHIAIAAkAHMAbwB1AHIAYwBlAFIAZQBjAG8AcgBkAC4AUwBvAHUAcgBjAGUAQwBoAGUAYwBrAEUAeABpAHQAQwBvAGQAZQAgAC0AbgBlACAAMAApAHsAZQB4AGkAdAAgADQAfQAKACQAYwBvAG4AdAByAG8AbAA9ACcAYQByAHQAaQBmAGEAYwB0AHMALwByAGUAbABhAHQAaQBvAG4AcwAtAG0AZQBhAHMAdQByAGUAbQBlAG4AdABzAC8AZgBvAGMAdQBzAGUAZAAtAG4AYQB0AGkAdgBlAC0AcgA0ADEAJwAKACQAcwBlAHIAaQBlAHMAPQAnAGYAbwBjAHUAcwBlAGQALQBuAGEAdABpAHYAZQAtAHIANAAxACcACgAkAHAAdQBiAGwAaQBzAGgAPQBHAGUAdAAtAEMAbwBuAHQAZQBuAHQAIAAtAEwAaQB0AGUAcgBhAGwAUABhAHQAaAAgACcAYQByAHQAaQBmAGEAYwB0AHMALwBiAGUAbgBjAGgAbQBhAHIAawAtAHEAdQBlAHUAZQAvAGQAMgAyADEANQAxADcAOAA2AGIAOABhADQAYwBmADgAYQAxAGUANQAwADEAZQAzADAAMAA3ADIAOQBmAGYAMwAvAHIAZQBzAHUAbAB0AC4AagBzAG8AbgAnACAALQBSAGEAdwB8AEMAbwBuAHYAZQByAHQARgByAG8AbQAtAEoAcwBvAG4ACgBXAHIAaQB0AGUALQBPAHUAdABwAHUAdAAgACgAJwBQAFUAQgBMAEkAUwBIAF8ARwBBAFQARQAgACcAKwAkAHAAdQBiAGwAaQBzAGgALgBJAGQAKwAnACAARQB4AGkAdABDAG8AZABlAD0AJwArACQAcAB1AGIAbABpAHMAaAAuAEUAeABpAHQAQwBvAGQAZQArACcAIABGAGkAbgBpAHMAaABlAGQAQQB0AFUAdABjAD0AJwArACQAcAB1AGIAbABpAHMAaAAuAEYAaQBuAGkAcwBoAGUAZABBAHQAVQB0AGMAKQAKAGkAZgAoACQAcAB1AGIAbABpAHMAaAAuAEUAeABpAHQAQwBvAGQAZQAgAC0AbgBlACAAMAApAHsAZQB4AGkAdAAgADIAfQAKACQAcgBlAGEAZABlAHIAPQBHAGUAdAAtAEMAbwBuAHQAZQBuAHQAIAAtAEwAaQB0AGUAcgBhAGwAUABhAHQAaAAgACcAYQByAHQAaQBmAGEAYwB0AHMALwBiAGUAbgBjAGgAbQBhAHIAawAtAHEAdQBlAHUAZQAvADEAYQBjADkANwA3AGQAMABkADMAZAA0ADQANgA3AGUAOQA5AGIANwA3ADMANwA5AGIAMAA1AGMANwA4AGIANwAvAHIAZQBzAHUAbAB0AC4AagBzAG8AbgAnACAALQBSAGEAdwB8AEMAbwBuAHYAZQByAHQARgByAG8AbQAtAEoAcwBvAG4ACgBpAGYAKAAkAHIAZQBhAGQAZQByAC4ARQB4AGkAdABDAG8AZABlACAALQBuAGUAIAAwACkAewBlAHgAaQB0ACAANQB9AAoAZwBpAHQAIABkAGkAZgBmACAALQAtAGUAeABpAHQALQBjAG8AZABlACAAJABzAG8AdQByAGMAZQAgAC0ALQAgACcAcwByAGMALwAqACoALwAqAC4AYwBzACcAIAAnAGIAZQBuAGMAaABtAGEAcgBrAHMALwAqACoALwAqAC4AYwBzACcAIAAnAHQAZQBzAHQAcwAvACoAKgAvACoALgBjAHMAJwAKAGkAZgAoACQATABBAFMAVABFAFgASQBUAEMATwBEAEUAIAAtAG4AZQAgADAAKQB7AGUAeABpAHQAIAAzAH0ACgAkAHMAdABhAHIAdABlAGQAPQBbAEQAYQB0AGUAVABpAG0AZQBdADoAOgBVAHQAYwBOAG8AdwAKACYAIAAnAC4ALwBiAGUAbgBjAGgAbQBhAHIAawBzAC8AUwBvAG0AZQBFAG4AZwBpAG4AZQAuAEUAQwBTAC4AUgBlAGwAYQB0AGkAbwBuAHMALgBCAGUAbgBjAGgAbQBhAHIAawBzAC8AUwB1AGIAbQBpAHQALQBNAGUAYQBzAHUAcgBlAG0AZQBuAHQAcwAuAHAAcwAxACcAIAAtAFMAZQByAGkAZQBzACAAJABzAGUAcgBpAGUAcwAgAC0AQwBhAHMAZQBJAGQAIABAACgAJwB0AGgAcgBlAGEAZABzAC0AcwBtAGEAbABsAC0AcwBwAGEAcgBzAGUALQBwAGEAcgBhAGwAbABlAGwAJwAsACcAZgBpAG4AaQB0AGUALQBsAGEAcgBnAGUALQBtAGEAcwBrADgALQBtAHUAdAB1AGEAbAAnACwAJwBkAGUAZgBhAHUAbAB0AC0AbABhAHIAZwBlAC0AZAB5AG4AYQBtAGkAYwA5ADAAJwAsACcAZABlAGYAYQB1AGwAdAAtAGwAYQByAGcAZQAtAGQAeQBuAGEAbQBpAGMANQAwACcALAAnAGYAaQBuAGkAdABlAC0AcwBtAGEAbABsAC0AbQBhAHMAawAxAC0AbQB1AHQAdQBhAGwAJwAsACcAdABoAHIAZQBhAGQAcwAtAHMAbQBhAGwAbAAtAHUAbgBpAGYAbwByAG0ALQBwAGEAcgBhAGwAbABlAGwAJwApACAALQBCAGEAYwBrAGUAbgBkACAATgBhAHQAaQB2AGUAQQBPAFQAIAAtAE0AbwBkAGUAIABtAGUAYQBzAHUAcgBlACAALQBNAGEAYwBoAGkAbgBlACAARgBpAHgAZQBkACAALQBRAHUAZQB1AGUAUwBjAHIAaQBwAHQAIAAnAEYAOgBcAFMAbwBtAGUARQBuAGcAaQBuAGUALgBOAGUAeAB0AFwAdABvAG8AbABzAFwASQBuAHYAbwBrAGUALQBCAGUAbgBjAGgAbQBhAHIAawAuAHAAcwAxACcAIAAtAFMAZQBzAHMAaQBvAG4AIAAnADAAMQBhADEANQAwADkAMAAtAGYANQBiAGQALQA3AGEAMQAyAC0AOAA2ADAAYQAtAGUAMgAxADQAMwAyADUAZABiADUAYgBiACcAIAAtAEMAbwBsAGwAZQBjAHQAUgBlAHAAbwByAHQAcwAgAC0AUwBvAHUAcgBjAGUAQwBvAG0AbQBpAHQAIAAkAHMAbwB1AHIAYwBlAAoAJAByAGUAcABvAHIAdABSAG8AbwB0AD0AWwBJAE8ALgBQAGEAdABoAF0AOgA6AEcAZQB0AEYAdQBsAGwAUABhAHQAaAAoACcAYQByAHQAaQBmAGEAYwB0AHMALwBlAGMAcwAtAHIAZQBsAGEAdABpAG8AbgBzAC8AbQBlAGEAcwB1AHIAZQBtAGUAbgB0AHMALwBmAG8AYwB1AHMAZQBkAC0AbgBhAHQAaQB2AGUALQByADQAMQAnACkACgAkAHMAdQBiAG0AaQBzAHMAaQBvAG4AcwA9AEcAZQB0AC0AQwBvAG4AdABlAG4AdAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAKABKAG8AaQBuAC0AUABhAHQAaAAgACQAcgBlAHAAbwByAHQAUgBvAG8AdAAgACcAcwB1AGIAbQBpAHMAcwBpAG8AbgBzAC4AagBzAG8AbgAnACkAIAAtAFIAYQB3AHwAQwBvAG4AdgBlAHIAdABGAHIAbwBtAC0ASgBzAG8AbgAKACQAcQB1AGUAdQBlAFMAdQBiAG0AaQBzAHMAaQBvAG4APQBHAGUAdAAtAEMAbwBuAHQAZQBuAHQAIAAtAEwAaQB0AGUAcgBhAGwAUABhAHQAaAAgACgASgBvAGkAbgAtAFAAYQB0AGgAIAAkAHIAZQBwAG8AcgB0AFIAbwBvAHQAIAAnAHEAdQBlAHUAZQAtAHMAdQBiAG0AaQBzAHMAaQBvAG4ALgBqAHMAbwBuACcAKQAgAC0AUgBhAHcAfABDAG8AbgB2AGUAcgB0AEYAcgBvAG0ALQBKAHMAbwBuAAoAJABtAGEAbgBpAGYAZQBzAHQAPQBbAHAAcwBjAHUAcwB0AG8AbQBvAGIAagBlAGMAdABdAEAAewBTAG8AdQByAGMAZQBDAG8AbQBtAGkAdAA9ACQAcwBvAHUAcgBjAGUAOwBTAHUAYgBtAGkAcwBzAGkAbwBuAHMAPQAoAEoAbwBpAG4ALQBQAGEAdABoACAAJAByAGUAcABvAHIAdABSAG8AbwB0ACAAJwBzAHUAYgBtAGkAcwBzAGkAbwBuAHMALgBqAHMAbwBuACcAKQA7AFEAdQBlAHUAZQBTAHUAYgBtAGkAcwBzAGkAbwBuAD0AKABKAG8AaQBuAC0AUABhAHQAaAAgACQAcgBlAHAAbwByAHQAUgBvAG8AdAAgACcAcQB1AGUAdQBlAC0AcwB1AGIAbQBpAHMAcwBpAG8AbgAuAGoAcwBvAG4AJwApADsAQwBhAHMAZQBRAHUAZQB1AGUASQBkAHMAPQBAACgAJABzAHUAYgBtAGkAcwBzAGkAbwBuAHMALgBRAHUAZQB1AGUASQBkACkAOwBBAG4AYQBsAHkAcwBpAHMAUQB1AGUAdQBlAEkAZABzAD0AQAAoACQAcQB1AGUAdQBlAFMAdQBiAG0AaQBzAHMAaQBvAG4ALgBSAGUAcABvAHIAdABzAC4AUQB1AGUAdQBlAEkAZAApADsAUwB1AGIAbQBpAHMAcwBpAG8AbgBGAGkAbgBpAHMAaABlAGQAQQB0AFUAdABjAD0AJABxAHUAZQB1AGUAUwB1AGIAbQBpAHMAcwBpAG8AbgAuAEYAaQBuAGkAcwBoAGUAZABBAHQAVQB0AGMAfQAKACQAdABlAG0AcABvAHIAYQByAHkAPQBKAG8AaQBuAC0AUABhAHQAaAAgACQAYwBvAG4AdAByAG8AbAAgACcAbQBhAG4AaQBmAGUAcwB0AC0AcgBlAGEAZAB5AC4AagBzAG8AbgAuAHQAbQBwACcACgBbAEkATwAuAEYAaQBsAGUAXQA6ADoAVwByAGkAdABlAEEAbABsAFQAZQB4AHQAKAAkAHQAZQBtAHAAbwByAGEAcgB5ACwAKAAkAG0AYQBuAGkAZgBlAHMAdAB8AEMAbwBuAHYAZQByAHQAVABvAC0ASgBzAG8AbgAgAC0ARABlAHAAdABoACAANQApACkACgBbAEkATwAuAEYAaQBsAGUAXQA6ADoATQBvAHYAZQAoACQAdABlAG0AcABvAHIAYQByAHkALAAoAEoAbwBpAG4ALQBQAGEAdABoACAAJABjAG8AbgB0AHIAbwBsACAAJwBtAGEAbgBpAGYAZQBzAHQALQByAGUAYQBkAHkALgBqAHMAbwBuACcAKQAsACQAdAByAHUAZQApAAoAdwBoAGkAbABlACgAIQAoAFQAZQBzAHQALQBQAGEAdABoACAALQBMAGkAdABlAHIAYQBsAFAAYQB0AGgAIAAoAEoAbwBpAG4ALQBQAGEAdABoACAAJABjAG8AbgB0AHIAbwBsACAAJwB3AGEAdABjAGgAZQByAC0AcgBlAGEAZAB5AC4AagBzAG8AbgAnACkAKQAgAC0AbwByACAAIQAoAFQAZQBzAHQALQBQAGEAdABoACAALQBMAGkAdABlAHIAYQBsAFAAYQB0AGgAIAAoAEoAbwBpAG4ALQBQAGEAdABoACAAJABjAG8AbgB0AHIAbwBsACAAJwBuAGEAdABpAHYAZQAtAHIAZQBhAGQAZQByAC0AcgBlAGwAZQBhAHMAZQBkAC4AagBzAG8AbgAnACkAKQAgAC0AbwByACAAIQAoAFQAZQBzAHQALQBQAGEAdABoACAALQBMAGkAdABlAHIAYQBsAFAAYQB0AGgAIAAoAEoAbwBpAG4ALQBQAGEAdABoACAAJABjAG8AbgB0AHIAbwBsACAAJwByAG8AbwB0AC0AaABvAHMAdAAtAHIAZQBsAGUAYQBzAGUAZAAuAGoAcwBvAG4AJwApACkAKQB7AFMAdABhAHIAdAAtAFMAbABlAGUAcAAgAC0ATQBpAGwAbABpAHMAZQBjAG8AbgBkAHMAIAAyADAAfQAKACQAcgBlAGEAZAB5AD0ARwBlAHQALQBDAG8AbgB0AGUAbgB0ACAALQBMAGkAdABlAHIAYQBsAFAAYQB0AGgAIAAoAEoAbwBpAG4ALQBQAGEAdABoACAAJABjAG8AbgB0AHIAbwBsACAAJwB3AGEAdABjAGgAZQByAC0AcgBlAGEAZAB5AC4AagBzAG8AbgAnACkAIAAtAFIAYQB3AHwAQwBvAG4AdgBlAHIAdABGAHIAbwBtAC0ASgBzAG8AbgAKACQAcgBlAGEAZABlAHIAUgBlAGwAZQBhAHMAZQA9AEcAZQB0AC0AQwBvAG4AdABlAG4AdAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAKABKAG8AaQBuAC0AUABhAHQAaAAgACQAYwBvAG4AdAByAG8AbAAgACcAbgBhAHQAaQB2AGUALQByAGUAYQBkAGUAcgAtAHIAZQBsAGUAYQBzAGUAZAAuAGoAcwBvAG4AJwApACAALQBSAGEAdwB8AEMAbwBuAHYAZQByAHQARgByAG8AbQAtAEoAcwBvAG4ACgAkAHIAbwBvAHQAUgBlAGwAZQBhAHMAZQA9AEcAZQB0AC0AQwBvAG4AdABlAG4AdAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAKABKAG8AaQBuAC0AUABhAHQAaAAgACQAYwBvAG4AdAByAG8AbAAgACcAcgBvAG8AdAAtAGgAbwBzAHQALQByAGUAbABlAGEAcwBlAGQALgBqAHMAbwBuACcAKQAgAC0AUgBhAHcAfABDAG8AbgB2AGUAcgB0AEYAcgBvAG0ALQBKAHMAbwBuAAoAaQBmACgAJAByAG8AbwB0AFIAZQBsAGUAYQBzAGUALgBTAG8AdQByAGMAZQBDAG8AbQBtAGkAdAAgAC0AbgBlACAAJABzAG8AdQByAGMAZQApAHsAZQB4AGkAdAAgADcAfQAKAGkAZgAoACQAcgBlAGEAZABlAHIAUgBlAGwAZQBhAHMAZQAuAFIAZQBhAGQAZQByAFEAdQBlAHUAZQBJAGQAIAAtAG4AZQAgACQAcgBlAGEAZABlAHIALgBJAGQAIAAtAG8AcgAgACQAcgBlAGEAZABlAHIAUgBlAGwAZQBhAHMAZQAuAFMAbwB1AHIAYwBlAEMAbwBtAG0AaQB0ACAALQBuAGUAIAAkAHMAbwB1AHIAYwBlACkAewBlAHgAaQB0ACAANgB9AAoAJABmAGkAbgBpAHMAaABlAGQAPQBbAEQAYQB0AGUAVABpAG0AZQBdADoAOgBVAHQAYwBOAG8AdwAKACQAcgBlAGMAbwByAGQAPQBbAHAAcwBjAHUAcwB0AG8AbQBvAGIAagBlAGMAdABdAEAAewBTAG8AdQByAGMAZQBDAG8AbQBtAGkAdAA9ACQAcwBvAHUAcgBjAGUAOwBQAHUAYgBsAGkAcwBoAFEAdQBlAHUAZQBJAGQAPQAkAHAAdQBiAGwAaQBzAGgALgBJAGQAOwBTAHQAYQByAHQAZQBkAEEAdABVAHQAYwA9ACQAcwB0AGEAcgB0AGUAZAA7AEwAYQBzAHQAQwBhAHMAZQBTAHUAYgBtAGkAdAB0AGUAZABBAHQAVQB0AGMAPQAkAHEAdQBlAHUAZQBTAHUAYgBtAGkAcwBzAGkAbwBuAC4ARgBpAG4AaQBzAGgAZQBkAEEAdABVAHQAYwA7AEkAbgBpAHQAaQBhAGwATwBiAHMAZQByAHYAYQB0AGkAbwBuAEUAbgBkAGUAZABBAHQAVQB0AGMAPQAkAGYAaQBuAGkAcwBoAGUAZAA7AFcAYQB0AGMAaABlAHIASQBuAGkAdABpAGEAbABPAGIAcwBlAHIAdgBhAHQAaQBvAG4ARQBuAGQAZQBkAEEAdABVAHQAYwA9ACQAcgBlAGEAZAB5AC4ASQBuAGkAdABpAGEAbABPAGIAcwBlAHIAdgBhAHQAaQBvAG4ARQBuAGQAZQBkAEEAdABVAHQAYwA7AE4AYQB0AGkAdgBlAFIAZQBhAGQAZQByAFIAZQBsAGUAYQBzAGUAPQAkAHIAZQBhAGQAZQByAFIAZQBsAGUAYQBzAGUAOwBSAG8AbwB0AEgAbwBzAHQAUgBlAGwAZQBhAHMAZQA9ACQAcgBvAG8AdABSAGUAbABlAGEAcwBlADsAUAByAGUAcABhAHIAYQB0AGkAbwBuAEUAbgBkAEEAdABVAHQAYwA9ACQAZgBpAG4AaQBzAGgAZQBkADsAQwBhAHMAZQBDAG8AdQBuAHQAPQAkAHMAdQBiAG0AaQBzAHMAaQBvAG4AcwAuAEMAbwB1AG4AdAA7AFIAZQBhAGQAZQByAFEAdQBlAHUAZQBJAGQAPQAkAHIAZQBhAGQAZQByAC4ASQBkADsARgBpAG4AYQBsAFEAdQBlAHUAZQBJAGQAPQAkAHIAZQBhAGQAeQAuAEYAaQBuAGEAbABRAHUAZQB1AGUASQBkAH0ACgAkAHIAZQBjAG8AcgBkAHwAQwBvAG4AdgBlAHIAdABUAG8ALQBKAHMAbwBuACAALQBEAGUAcAB0AGgAIAA1AHwAUwBlAHQALQBDAG8AbgB0AGUAbgB0ACAALQBMAGkAdABlAHIAYQBsAFAAYQB0AGgAIAAoAEoAbwBpAG4ALQBQAGEAdABoACAAJABjAG8AbgB0AHIAbwBsACAAJwBwAHIAZQBwAGEAcgBhAHQAaQBvAG4ALgBqAHMAbwBuACcAKQAgAC0ARQBuAGMAbwBkAGkAbgBnACAAdQB0AGYAOAAKAFcAcgBpAHQAZQAtAE8AdQB0AHAAdQB0ACAAKAAnAFAAUgBFAFAAQQBSAEEAVABJAE8ATgBfAEUATgBEACAAJwArACgAJAByAGUAYwBvAHIAZAB8AEMAbwBuAHYAZQByAHQAVABvAC0ASgBzAG8AbgAgAC0AQwBvAG0AcAByAGUAcwBzACkAKQAKAGUAeABpAHQAIAAwAAoA"
+    ],
+    "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+    "ExitCode": 0,
+    "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+    "Kind": "Exclusive",
+    "SubmittedAtUtc": "2026-10-20T07:48:06.5262909+08:00",
+    "StartedAtUtc": "2026-10-20T07:49:00.1211142+08:00",
+    "FinishedAtUtc": "2026-10-20T07:49:04.1954138+08:00"
+  },
+  "BatchPreparation": {
+    "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+    "PublishQueueId": "d22151786b8a4cf8a1e501e300729ff3",
+    "StartedAtUtc": "2026-10-19T23:49:01.2052653Z",
+    "LastCaseSubmittedAtUtc": "2026-10-19T23:49:03.8292531Z",
+    "InitialObservationEndedAtUtc": "2026-10-19T23:49:03.9150154Z",
+    "WatcherInitialObservationEndedAtUtc": "2026-10-19T23:49:03.8901982Z",
+    "NativeReaderRelease": {
+      "ReaderQueueId": "1ac977d0d3d4467e99b77379b05c78b7",
+      "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+      "ProcessId": 98836,
+      "ProcessStartUtc": "2026-10-19T23:46:24.4386321Z",
+      "ReadStartedAtUtc": "2026-10-19T23:46:25.5914026Z",
+      "ReadFinishedAtUtc": "2026-10-19T23:46:25.9546416Z",
+      "ReleasedAtUtc": "2026-10-19T23:46:25.9546416Z"
+    },
+    "RootHostRelease": {
+      "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+      "RootHostReadEndedAtUtc": "2026-10-19T23:48:04Z",
+      "StandardsReadEndedAtUtc": "2026-10-19T23:42:36Z",
+      "SpecReadEndedAtUtc": "2026-10-19T23:38:48Z",
+      "RecordedAtUtc": "2026-10-19T23:48:24.9331648Z"
+    },
+    "PreparationEndAtUtc": "2026-10-19T23:49:03.9150154Z",
+    "CaseCount": 6,
+    "ReaderQueueId": "1ac977d0d3d4467e99b77379b05c78b7",
+    "FinalQueueId": "4d417bfc23f34af599c07cbd82d27049"
+  },
+  "Cases": [
+    {
+      "CaseId": "finite-small-mask1-mutual",
+      "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+      "Queue": {
+        "Id": "9d2d390ce22c4b9a8725d91e43d5b03b",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "small",
+          "--variant",
+          "mask1-mutual",
+          "--source",
+          "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r41\\finite-small-mask1-mutual.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T07:49:01.6549386+08:00",
+        "StartedAtUtc": "2026-10-20T07:49:04.4224393+08:00",
+        "FinishedAtUtc": "2026-10-20T07:49:04.8411968+08:00"
+      }
+    },
+    {
+      "CaseId": "threads-small-sparse-parallel",
+      "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+      "Queue": {
+        "Id": "f0dd8f531400423ebeb6d5fbc74c8681",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "threads",
+          "--size",
+          "small",
+          "--variant",
+          "sparse-parallel",
+          "--source",
+          "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r41\\threads-small-sparse-parallel.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T07:49:01.954281+08:00",
+        "StartedAtUtc": "2026-10-20T07:49:43.4281976+08:00",
+        "FinishedAtUtc": "2026-10-20T07:49:43.7731816+08:00"
+      }
+    },
+    {
+      "CaseId": "threads-small-uniform-parallel",
+      "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+      "Queue": {
+        "Id": "0e3e36c2ad1f43588fbc0c311d052fd8",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "threads",
+          "--size",
+          "small",
+          "--variant",
+          "uniform-parallel",
+          "--source",
+          "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r41\\threads-small-uniform-parallel.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T07:49:02.2633401+08:00",
+        "StartedAtUtc": "2026-10-20T07:51:07.290357+08:00",
+        "FinishedAtUtc": "2026-10-20T07:51:07.7459789+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-large-mask8-mutual",
+      "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+      "Queue": {
+        "Id": "b062f4cf81bc46e38852a9c082e62ea4",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "large",
+          "--variant",
+          "mask8-mutual",
+          "--source",
+          "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r41\\finite-large-mask8-mutual.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T07:49:02.5699821+08:00",
+        "StartedAtUtc": "2026-10-20T07:52:15.2732349+08:00",
+        "FinishedAtUtc": "2026-10-20T07:52:31.546688+08:00"
+      }
+    },
+    {
+      "CaseId": "default-large-dynamic50",
+      "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+      "Queue": {
+        "Id": "37a259b987cf4f598bf219a208fe7a62",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "large",
+          "--variant",
+          "dynamic50",
+          "--source",
+          "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r41\\default-large-dynamic50.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T07:49:02.9668883+08:00",
+        "StartedAtUtc": "2026-10-20T07:53:10.7168974+08:00",
+        "FinishedAtUtc": "2026-10-20T07:53:28.5028421+08:00"
+      }
+    },
+    {
+      "CaseId": "default-large-dynamic90",
+      "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+      "Queue": {
+        "Id": "37feeb1a99da44c1a39db44ee5e60f0c",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "large",
+          "--variant",
+          "dynamic90",
+          "--source",
+          "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r41\\default-large-dynamic90.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T07:49:03.2899592+08:00",
+        "StartedAtUtc": "2026-10-20T07:54:15.9115751+08:00",
+        "FinishedAtUtc": "2026-10-20T07:54:35.1594955+08:00"
+      }
+    }
+  ],
+  "Analyses": [
+    {
+      "Id": "4d417bfc23f34af599c07cbd82d27049",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Complete-Measurements.ps1",
+        "-Series",
+        "focused-native-r41"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-20T07:49:03.6023497+08:00",
+      "StartedAtUtc": "2026-10-20T07:55:32.8719255+08:00",
+      "FinishedAtUtc": "2026-10-20T07:55:39.0313503+08:00"
+    }
+  ],
+  "PostprocessStages": [
+    {
+      "Script": "Collect-Measurements.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1",
+        "-Series",
+        "focused-native-r41"
+      ],
+      "StartedAtUtc": "2026-10-19T23:55:33.8190396Z",
+      "FinishedAtUtc": "2026-10-19T23:55:35.4146059Z",
+      "ExitCode": 0
+    },
+    {
+      "Script": "Export-Evidence.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1",
+        "-Series",
+        "focused-native-r41"
+      ],
+      "StartedAtUtc": "2026-10-19T23:55:35.5003055Z",
+      "FinishedAtUtc": "2026-10-19T23:55:36.974007Z",
+      "ExitCode": 0
+    },
+    {
+      "Script": "Write-MeasurementReport.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1",
+        "-Series",
+        "focused-native-r41"
+      ],
+      "StartedAtUtc": "2026-10-19T23:55:36.9807103Z",
+      "FinishedAtUtc": "2026-10-19T23:55:38.831463Z",
+      "ExitCode": 0
+    }
+  ],
+  "BetweenCases": [
+    {
+      "BeforeCaseId": "finite-small-mask1-mutual",
+      "AfterCaseId": "threads-small-sparse-parallel",
+      "Seconds": 38.5870008
+    },
+    {
+      "BeforeCaseId": "threads-small-sparse-parallel",
+      "AfterCaseId": "threads-small-uniform-parallel",
+      "Seconds": 83.5171754
+    },
+    {
+      "BeforeCaseId": "threads-small-uniform-parallel",
+      "AfterCaseId": "finite-large-mask8-mutual",
+      "Seconds": 67.527256
+    },
+    {
+      "BeforeCaseId": "finite-large-mask8-mutual",
+      "AfterCaseId": "default-large-dynamic50",
+      "Seconds": 39.1702094
+    },
+    {
+      "BeforeCaseId": "default-large-dynamic50",
+      "AfterCaseId": "default-large-dynamic90",
+      "Seconds": 47.408733
+    }
+  ],
+  "WatcherReady": {
+    "ProcessId": 72740,
+    "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+    "InitialObservationStartedAtUtc": "2026-10-19T23:49:03.872835Z",
+    "InitialObservationEndedAtUtc": "2026-10-19T23:49:03.8901982Z",
+    "CaseQueueIds": [
+      "9d2d390ce22c4b9a8725d91e43d5b03b",
+      "f0dd8f531400423ebeb6d5fbc74c8681",
+      "0e3e36c2ad1f43588fbc0c311d052fd8",
+      "b062f4cf81bc46e38852a9c082e62ea4",
+      "37a259b987cf4f598bf219a208fe7a62",
+      "37feeb1a99da44c1a39db44ee5e60f0c"
+    ],
+    "AnalysisQueueIds": [
+      "4d417bfc23f34af599c07cbd82d27049"
+    ],
+    "FinalQueueId": "4d417bfc23f34af599c07cbd82d27049",
+    "FinalReceipt": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\4d417bfc23f34af599c07cbd82d27049\\result.json"
+  },
+  "ControlObservation": {
+    "ProcessId": 95108,
+    "ProcessStartedAtUtc": "2026-10-19T23:55:23.4473669Z",
+    "ObservationStartedAtUtc": "2026-10-19T23:55:24.9948681Z",
+    "ObservationEndedAtUtc": "2026-10-19T23:55:26.5538199Z",
+    "Receipts": [
+      {
+        "QueueId": "37feeb1a99da44c1a39db44ee5e60f0c",
+        "ResultCreated": true,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "StartedAtUtc": "2026-10-20T07:54:15.9115751+08:00",
+        "FinishedAtUtc": "2026-10-20T07:54:35.1594955+08:00",
+        "ExitCode": 0
+      },
+      {
+        "QueueId": "4d417bfc23f34af599c07cbd82d27049",
+        "ResultCreated": false
+      }
+    ],
+    "WorkerProcesses": [
+      {
+        "ProcessId": 90944,
+        "ParentProcessId": 81812,
+        "Name": "conhost.exe",
+        "StartedAtUtc": "2026-10-19T08:23:27.762154Z",
+        "Workspace": null,
+        "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+      },
+      {
+        "ProcessId": 56396,
+        "ParentProcessId": 81812,
+        "Name": "python.exe",
+        "StartedAtUtc": "2026-10-19T23:54:35.198338Z",
+        "Workspace": null,
+        "Command": "\"C:/Users/boqi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe\" -B F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/run.py --scene bistro --scene-cache F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/bistro.npz --scene-layout F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/loads/bistro-sparse-motion.json --width 480 --height 270 --warmup 96 --frames 32 --variants screen_chain_surfel_grid_ray screen_mature_hash_grid_ray screen_dense_hash_grid_ray --profiles static camera moving turn_lights --primary-query raster --geometry-query cells --object-query cell --object-walk lists --object-update split --object-covers --object-grid 32 --dense-grid 4 --pointer-seeds 0 --cell-ray-bounds --triangle-data aos --cell-triangle-indices packed --tail-cache sharc_nrc --neural-coordinates world --neural-weights uniform --probe-sampling history --probe-spacing 16 --probe-rays 1 --pixel-rays quad --surfel-history --surfel-capacity 65536 --surfel-read center --lighting-history 4 --training 128 --training-stride 4 --training-width 1 --training-sampling scan --raster-bucket 128 --temporal-frames 16 --temporal-width 64 --temporal-spp 256 --temporal-reference-repeats 2 --quality-checks 1 --query-rays 0 --combine-passes --frame-timing --out F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/results-mature-hash-v1-fast-small-bistro-motion --gather-width 8 --reference-spp 256 --save-linear"
+      },
+      {
+        "ProcessId": 75364,
+        "ParentProcessId": 56396,
+        "Name": "conhost.exe",
+        "StartedAtUtc": "2026-10-19T23:54:35.219992Z",
+        "Workspace": null,
+        "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+      }
+    ]
+  },
+  "ControlObservationOverlaps": [
+    null
+  ],
+  "RootHostRelease": {
+    "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+    "RootHostReadEndedAtUtc": "2026-10-19T23:48:04Z",
+    "StandardsReadEndedAtUtc": "2026-10-19T23:42:36Z",
+    "SpecReadEndedAtUtc": "2026-10-19T23:38:48Z",
+    "RecordedAtUtc": "2026-10-19T23:48:24.9331648Z"
+  },
+  "NativeReaderRelease": {
+    "ReaderQueueId": "1ac977d0d3d4467e99b77379b05c78b7",
+    "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+    "ProcessId": 98836,
+    "ProcessStartUtc": "2026-10-19T23:46:24.4386321Z",
+    "ReadStartedAtUtc": "2026-10-19T23:46:25.5914026Z",
+    "ReadFinishedAtUtc": "2026-10-19T23:46:25.9546416Z",
+    "ReleasedAtUtc": "2026-10-19T23:46:25.9546416Z"
+  }
+}

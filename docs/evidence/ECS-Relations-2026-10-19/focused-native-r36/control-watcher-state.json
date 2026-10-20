@@ -1,0 +1,38 @@
+{
+  "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+  "ProcessId": 85240,
+  "ProcessStartedAtUtc": "2026-10-19T19:02:37.6090946Z",
+  "WatchReadyAtUtc": "2026-10-19T19:02:38.6117838Z",
+  "InitialObservationEndedAtUtc": "2026-10-19T19:06:40.7717975Z",
+  "Cases": [
+    {
+      "QueueId": "e2e4e19cbeea4841aac2b0471c15319c",
+      "ObservedAtUtc": "2026-10-19T19:08:33.4245374Z"
+    },
+    {
+      "QueueId": "6c44520bd50c44439f63e7c4809e15d8",
+      "ObservedAtUtc": "2026-10-19T19:08:54.2747184Z"
+    },
+    {
+      "QueueId": "6f884f25b90f43e98419dbd6e338dc84",
+      "ObservedAtUtc": "2026-10-19T19:09:26.2439461Z"
+    },
+    {
+      "QueueId": "61fb745a57b7462e8fa4bbb697ac8fe4",
+      "ObservedAtUtc": "2026-10-19T19:10:23.6053426Z"
+    },
+    {
+      "QueueId": "e3d43f0ae6ba4ee58585c979e8bba113",
+      "ObservedAtUtc": "2026-10-19T19:11:02.7624537Z"
+    }
+  ],
+  "FinalObservedAtUtc": "2026-10-19T19:12:44.8567829Z",
+  "CaseQueueIds": [
+    "e2e4e19cbeea4841aac2b0471c15319c",
+    "6c44520bd50c44439f63e7c4809e15d8",
+    "6f884f25b90f43e98419dbd6e338dc84",
+    "61fb745a57b7462e8fa4bbb697ac8fe4",
+    "e3d43f0ae6ba4ee58585c979e8bba113"
+  ],
+  "FinalQueueId": "9461f6b1eabc4ec7b6238c4d44d136b4"
+}

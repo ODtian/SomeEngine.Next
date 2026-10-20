@@ -1,0 +1,40 @@
+
+CaseId                             Boundary            Required MedianRatio P95Ratio Status            QueueId
+------                             --------            -------- ----------- -------- ------            -------
+finite-middle-mask4-mutual         Query                   True        1.03     1.01 measured-overhead a76d8551498c409бн
+finite-middle-mask4-mutual         Consume                False        1.01     0.99 measured-overhead a76d8551498c409бн
+default-middle-dynamic50           Query                   True        1.03     1.01 measured-overhead 0be9be5ec0a04c8бн
+default-middle-dynamic50           Consume                False        1.00     1.00 pass              0be9be5ec0a04c8бн
+character-middle-hair16-clustered  Query                   True        1.00     0.90 measured-overhead 2743ddcbb850427бн
+character-middle-hair16-clustered  Consume                False        1.00     1.03 measured-overhead 2743ddcbb850427бн
+bitmap-space-middle-uniform-mutual Query                   True        0.75     0.59 pass              6b5f0854ca90487бн
+bitmap-space-middle-uniform-mutual Consume                False        1.00     0.98 measured-overhead 6b5f0854ca90487бн
+complete-middle-uniform            Query                   True        0.81     0.80 pass              0e4bb1c22093468бн
+complete-middle-uniform            FrameTotal              True        0.86     0.84 pass              0e4bb1c22093468бн
+complete-middle-uniform            Consume                False        1.00     0.97 pass              0e4bb1c22093468бн
+updates-middle-uniform             MaintenanceAndQuery     True        0.85     0.23 pass              5d8e59f345234a5бн
+updates-middle-uniform             FrameTotal              True        0.87     0.89 pass              5d8e59f345234a5бн
+consume-middle-uniform             PairsAndConsume         True        0.87     0.22 pass              4c1bd3d863bc433бн
+consume-middle-uniform             Consume                False        1.01     1.00 measured-overhead 4c1bd3d863bc433бн
+threads-middle-uniform-parallel    ScheduledPairOutput     True        0.82     0.26 pass              78f3138d93d14c2бн
+threads-middle-uniform-parallel    Consume                False        0.99     0.93 pass              78f3138d93d14c2бн
+character-space-middle-clustered   Query                   True        0.95     0.96 pass              8ca4dde3b9644b8бн
+character-space-middle-clustered   Consume                False        1.00     1.00 measured-overhead 8ca4dde3b9644b8бн
+
+{"Script":"Collect-Measurements.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1","-Series","final-jit-r38"],"StartedAtUtc":"2026-10-19T22:45:20.8418399Z","FinishedAtUtc":"2026-10-19T22:45:22.556797Z","ExitCode":0}
+final-jit-r38: 9 reports; F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\docs\evidence\ECS-Relations-2026-10-19\final-jit-r38
+{"Script":"Export-Evidence.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1","-Series","final-jit-r38"],"StartedAtUtc":"2026-10-19T22:45:22.6448802Z","FinishedAtUtc":"2026-10-19T22:45:24.5878379Z","ExitCode":0}
+final-jit-r38: cases=9; required=11; passed=8; approved=9; approvedRatioLimit=1.01; F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\docs\evidence\ECS-Relations-2026-10-19\final-jit-r38
+CLASS bitmap-space: strict=1/1; approved=1/1; approvedRatioLimit=1.01
+CLASS character: strict=0/1; approved=1/1; approvedRatioLimit=1.01
+CLASS character-space: strict=1/1; approved=1/1; approvedRatioLimit=1.01
+CLASS complete: strict=2/2; approved=2/2; approvedRatioLimit=1.01
+CLASS consume: strict=1/1; approved=1/1; approvedRatioLimit=1.01
+CLASS default: strict=0/1; approved=0/1; approvedRatioLimit=1.01
+CLASS finite: strict=0/1; approved=0/1; approvedRatioLimit=1.01
+CLASS threads: strict=1/1; approved=1/1; approvedRatioLimit=1.01
+CLASS updates: strict=2/2; approved=2/2; approvedRatioLimit=1.01
+OVERHEAD finite-middle-mask4-mutual Query median=1.026331419520887 p95=1.0094165352556883
+OVERHEAD default-middle-dynamic50 Query median=1.0285612914670925 p95=1.006035917434611
+OVERHEAD character-middle-hair16-clustered Query median=1.0033108763645493 p95=0.90396932882466297
+{"Script":"Write-MeasurementReport.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1","-Series","final-jit-r38"],"StartedAtUtc":"2026-10-19T22:45:24.5939187Z","FinishedAtUtc":"2026-10-19T22:45:26.9794668Z","ExitCode":0}

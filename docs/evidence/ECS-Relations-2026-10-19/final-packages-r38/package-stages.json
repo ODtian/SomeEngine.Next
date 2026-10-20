@@ -1,0 +1,269 @@
+[
+  {
+    "Stage": "BuildPackages",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "QueueId": "21b8f27309a94c259b38d14f5bd89192",
+    "Executable": "dotnet",
+    "Arguments": [
+      "build",
+      "src/SomeEngine.Physics/SomeEngine.Physics.csproj",
+      "-c",
+      "Release",
+      "--no-restore",
+      "-p:EmitCompilerGeneratedFiles=true",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b"
+    ],
+    "StartedAtUtc": "2026-10-20T06:00:35.3300041+08:00",
+    "FinishedAtUtc": "2026-10-20T06:00:50.3343538+08:00",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "Pack:SomeEngine.Diagnostics",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:00:52.2379401Z",
+    "FinishedAtUtc": "2026-10-19T22:00:54.3125472Z",
+    "ExitCode": 0,
+    "QueueId": "85b23478035843e0be2e3e8f7a24e0bd"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Job.Contracts",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.Job.Contracts/SomeEngine.Job.Contracts.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:00:54.3569992Z",
+    "FinishedAtUtc": "2026-10-19T22:00:56.343947Z",
+    "ExitCode": 0,
+    "QueueId": "85b23478035843e0be2e3e8f7a24e0bd"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Job",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.Job/SomeEngine.Job.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:00:56.3499812Z",
+    "FinishedAtUtc": "2026-10-19T22:00:58.6449628Z",
+    "ExitCode": 0,
+    "QueueId": "85b23478035843e0be2e3e8f7a24e0bd"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.SourceGen",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:00:58.6484851Z",
+    "FinishedAtUtc": "2026-10-19T22:01:00.6553221Z",
+    "ExitCode": 0,
+    "QueueId": "85b23478035843e0be2e3e8f7a24e0bd"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.ECS/SomeEngine.ECS.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:01:00.6588781Z",
+    "FinishedAtUtc": "2026-10-19T22:01:03.1050188Z",
+    "ExitCode": 0,
+    "QueueId": "85b23478035843e0be2e3e8f7a24e0bd"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.Relations",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.ECS.Relations/SomeEngine.ECS.Relations.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:01:03.1088478Z",
+    "FinishedAtUtc": "2026-10-19T22:01:05.444275Z",
+    "ExitCode": 0,
+    "QueueId": "85b23478035843e0be2e3e8f7a24e0bd"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.Systems",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:01:05.4472083Z",
+    "FinishedAtUtc": "2026-10-19T22:01:07.8393952Z",
+    "ExitCode": 0,
+    "QueueId": "85b23478035843e0be2e3e8f7a24e0bd"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Physics",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Executable": "dotnet",
+    "Arguments": [
+      "pack",
+      "src/SomeEngine.Physics/SomeEngine.Physics.csproj",
+      "-c",
+      "Release",
+      "--no-build",
+      "-p:Version=0.1.0-relations.231",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed"
+    ],
+    "StartedAtUtc": "2026-10-19T22:01:07.8427912Z",
+    "FinishedAtUtc": "2026-10-19T22:01:10.2657023Z",
+    "ExitCode": 0,
+    "QueueId": "85b23478035843e0be2e3e8f7a24e0bd"
+  },
+  {
+    "Stage": "RestoreConsumer",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "QueueId": "01372c533eef42feab5f7eeac6ce5a4d",
+    "Executable": "dotnet",
+    "Arguments": [
+      "restore",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\SomeEngine.ECS.Relations.AotSmoke.csproj",
+      "-r",
+      "win-x64",
+      "-p:PublishAot=true",
+      "-p:_IsPublishing=true",
+      "-p:RestorePackagesPath=F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\cache",
+      "--configfile",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\NuGet.Config",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b"
+    ],
+    "StartedAtUtc": "2026-10-20T06:01:10.8818696+08:00",
+    "FinishedAtUtc": "2026-10-20T06:01:13.2592197+08:00",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "RebuildConsumer",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "QueueId": "0f985a0162d04f169a988fbe404b4838",
+    "Executable": "dotnet",
+    "Arguments": [
+      "build",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\SomeEngine.ECS.Relations.AotSmoke.csproj",
+      "-c",
+      "Release",
+      "--no-restore",
+      "-p:RestorePackagesPath=F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\cache",
+      "-t:Rebuild",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b"
+    ],
+    "StartedAtUtc": "2026-10-20T06:01:14.2333601+08:00",
+    "FinishedAtUtc": "2026-10-20T06:01:17.8209798+08:00",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "RunConsumerJit",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "QueueId": "37edd2edd37e48b58e4d53d3b4a9eaa5",
+    "Executable": "dotnet",
+    "Arguments": [
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll"
+    ],
+    "StartedAtUtc": "2026-10-20T06:01:18.5571981+08:00",
+    "FinishedAtUtc": "2026-10-20T06:01:19.597867+08:00",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "PublishConsumerNative",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "QueueId": "249d36807dc840139d4efd93d8c52ec8",
+    "Executable": "dotnet",
+    "Arguments": [
+      "publish",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\SomeEngine.ECS.Relations.AotSmoke.csproj",
+      "-c",
+      "Release",
+      "-r",
+      "win-x64",
+      "--self-contained",
+      "true",
+      "--no-restore",
+      "-p:PublishAot=true",
+      "-p:PublishAotUsingRuntimePack=true",
+      "-p:RestorePackagesPath=F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\cache",
+      "-p:TrimmerSingleWarn=false",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\native-publish",
+      "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b"
+    ],
+    "StartedAtUtc": "2026-10-20T06:01:20.8690138+08:00",
+    "FinishedAtUtc": "2026-10-20T06:01:36.9758045+08:00",
+    "ExitCode": 0
+  },
+  {
+    "Stage": "RunConsumerNative",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "QueueId": "d5af5248f43c4571ad9890a57823e2ba",
+    "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.AotSmoke.exe",
+    "Arguments": [],
+    "StartedAtUtc": "2026-10-20T06:01:37.3380021+08:00",
+    "FinishedAtUtc": "2026-10-20T06:01:37.4361252+08:00",
+    "ExitCode": 0
+  }
+]

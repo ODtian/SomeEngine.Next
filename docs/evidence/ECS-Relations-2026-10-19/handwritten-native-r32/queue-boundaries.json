@@ -1,0 +1,190 @@
+{
+  "Summary": {
+    "Series": "handwritten-native-r32",
+    "SourceCommit": "3b582fe541d86d7f556b3f9d6854962d292454ef",
+    "Backend": "NativeAOT",
+    "CaseCount": 2,
+    "SessionIds": [
+      "01a15090-f5bd-7a12-860a-e214325db5bb"
+    ],
+    "PreparationExitCode": 0,
+    "CaseExitCodes": [
+      0
+    ],
+    "AnalysisExitCodes": [
+      0
+    ],
+    "LastCaseSubmittedAtUtc": "2026-10-19T16:36:36.2493426+08:00",
+    "FirstCaseStartedAtUtc": "2026-10-19T16:38:20.4200084+08:00",
+    "PreparationFinishedAtUtc": "2026-10-19T16:36:37.6281879+08:00",
+    "LastCaseFinishedAtUtc": "2026-10-19T16:46:35.3059396+08:00",
+    "FirstAnalysisStartedAtUtc": "2026-10-19T16:48:33.6189656+08:00",
+    "AllCasesSubmittedBeforeExecution": true,
+    "PreparationFinishedBeforeExecution": true,
+    "AnalysisStartedAfterExecution": true,
+    "MeasurementSeconds": 494.8859312,
+    "CaseExecutionSeconds": 34.0856913,
+    "BetweenCasesSeconds": 460.8002399,
+    "LongestBetweenCasesSeconds": 460.8002399,
+    "PreparationWaitingSeconds": 215.1588583
+  },
+  "Preparation": {
+    "Id": "b173a1bd83bc4590bf1a0f685f36cc10",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-Command",
+      "& 'F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Submit-Measurements.ps1' -Series 'handwritten-native-r32' -HandwrittenControlsOnly -HandwrittenControlCaseId @('default-large-dynamic50', 'finite-large-mask1-mutual') -Backend 'NativeAOT' -Mode 'measure' -Machine 'Fixed' -QueueScript 'F:\\SomeEngine.Next\\tools\\Invoke-Benchmark.ps1' -Session '01a15090-f5bd-7a12-860a-e214325db5bb' -CollectReports -SourceCommit '3b582fe541d86d7f556b3f9d6854962d292454ef'"
+    ],
+    "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+    "ExitCode": 0,
+    "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+    "Kind": "Exclusive",
+    "SubmittedAtUtc": "2026-10-19T16:32:59.4784478+08:00",
+    "StartedAtUtc": "2026-10-19T16:36:34.6373061+08:00",
+    "FinishedAtUtc": "2026-10-19T16:36:37.6281879+08:00"
+  },
+  "Cases": [
+    {
+      "CaseId": "finite-large-mask1-mutual-control",
+      "SourceCommit": "3b582fe541d86d7f556b3f9d6854962d292454ef",
+      "Queue": {
+        "Id": "9f004fb87b4d43d8adfa57e056e3692e",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "large",
+          "--variant",
+          "mask1-mutual",
+          "--source",
+          "3b582fe541d86d7f556b3f9d6854962d292454ef",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "HandwrittenControl",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\handwritten-native-r32\\finite-large-mask1-mutual-control.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T16:36:35.9306259+08:00",
+        "StartedAtUtc": "2026-10-19T16:38:20.4200084+08:00",
+        "FinishedAtUtc": "2026-10-19T16:38:35.7183983+08:00"
+      }
+    },
+    {
+      "CaseId": "default-large-dynamic50-control",
+      "SourceCommit": "3b582fe541d86d7f556b3f9d6854962d292454ef",
+      "Queue": {
+        "Id": "04ca5c4aca8c4ab9b863dc7dc2a89c5b",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "large",
+          "--variant",
+          "dynamic50",
+          "--source",
+          "3b582fe541d86d7f556b3f9d6854962d292454ef",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "HandwrittenControl",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\handwritten-native-r32\\default-large-dynamic50-control.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T16:36:36.2493426+08:00",
+        "StartedAtUtc": "2026-10-19T16:46:16.5186382+08:00",
+        "FinishedAtUtc": "2026-10-19T16:46:35.3059396+08:00"
+      }
+    }
+  ],
+  "Analyses": [
+    {
+      "Id": "47463abf6cc5473d9997d3f6f156e257",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1",
+        "-Series",
+        "handwritten-native-r32"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T16:36:36.5898678+08:00",
+      "StartedAtUtc": "2026-10-19T16:48:33.6189656+08:00",
+      "FinishedAtUtc": "2026-10-19T16:48:34.8273449+08:00"
+    },
+    {
+      "Id": "d921ac9c3ade43bc9e2c0d8bb250d86a",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1",
+        "-Series",
+        "handwritten-native-r32"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T16:36:36.8838476+08:00",
+      "StartedAtUtc": "2026-10-19T16:50:57.9068032+08:00",
+      "FinishedAtUtc": "2026-10-19T16:50:59.2183042+08:00"
+    },
+    {
+      "Id": "ecc988176f5e4df6892431fc15c14faa",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1",
+        "-Series",
+        "handwritten-native-r32"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T16:36:37.1818783+08:00",
+      "StartedAtUtc": "2026-10-19T16:51:26.4908616+08:00",
+      "FinishedAtUtc": "2026-10-19T16:51:27.937876+08:00"
+    }
+  ],
+  "BetweenCases": [
+    {
+      "BeforeCaseId": "finite-large-mask1-mutual-control",
+      "AfterCaseId": "default-large-dynamic50-control",
+      "StartedAtUtc": "2026-10-19T16:38:35.7183983+08:00",
+      "FinishedAtUtc": "2026-10-19T16:46:16.5186382+08:00",
+      "Seconds": 460.8002399
+    }
+  ],
+  "ProtectedObservation": {
+    "StartedAtUtc": "2026-10-19T08:36:37.4197281+00:00",
+    "FinishedAtUtc": "2026-10-19T08:36:37.434745+00:00",
+    "Seconds": 0.0150169,
+    "OverlappingCases": []
+  }
+}

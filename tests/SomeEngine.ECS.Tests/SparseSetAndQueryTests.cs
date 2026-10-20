@@ -410,7 +410,7 @@ public class QueryCacheTests
     private static int CountRows(World world, QueryHandle query)
     {
         int count = 0;
-        world.ExecuteQuery(query, ref count, static (QueryCursor cursor, ref int state) =>
+        world.ExecuteQuery(query, ref count, static (scoped QueryCursor cursor, ref int state) =>
         {
             foreach (var _ in cursor.Rows)
                 state++;

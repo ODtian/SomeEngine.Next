@@ -25,6 +25,8 @@ public struct Hair : IComponent, IIndexedComponent<Entity>
 
 public readonly struct DefaultContacts : IRelation<Body, Body>
 {
+    public static bool IsSymmetric => true;
+
     public bool Matches(in Body first, in Body second) =>
         first.Kind == MotionKind.Dynamic || second.Kind == MotionKind.Dynamic;
 }

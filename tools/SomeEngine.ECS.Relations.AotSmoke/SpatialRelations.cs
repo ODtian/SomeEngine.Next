@@ -31,6 +31,8 @@ public readonly struct BodyBoundsReader : ICollisionBoundsReader<Body>
 
 public readonly struct DefaultContacts : IRelation<Body, Body>
 {
+    public static bool IsSymmetric => true;
+
     public bool Matches(in Body first, in Body second) =>
         first.Motion == MotionKind.Dynamic || second.Motion == MotionKind.Dynamic;
 }
@@ -54,5 +56,30 @@ public readonly struct MutualCategories : IRelation<Body, Body>
 
 public readonly struct BodyBitmap : IBitmapRelation<MutualCategories, Body, MutualPermission>
 {
-    public CategoryBits Read(in MutualCategories relation, in Body component) => component.Categories;
+    public ulong ReadCategories(in MutualCategories relation, in Body component) => component.Categories.Categories;
+
+    public ulong ReadAllowedCategories(in MutualCategories relation, in Body component) => component.Categories.AllowedCategories;
+}
+
+// Business example: a custom permission keeps its concrete Matches through the default result callback.
+public readonly struct ForwardedMutualPermission : ICategoryPermission
+{
+    public static bool Matches(in CategoryBits first, in CategoryBits second) =>
+        MutualPermission.Matches(in first, in second);
+
+    public static bool Matches<TRelation, TComponent, TReader>(in TRelation relation, ref TReader reader,
+        in TComponent first, in TComponent second)
+        where TRelation : struct
+        where TComponent : struct
+        where TReader : struct, ICategoryBitsReader<TRelation, TComponent> =>
+        MutualPermission.Matches<TRelation, TComponent, TReader>(in relation, ref reader, in first, in second);
+}
+
+public readonly struct ForwardedBodyBitmap : IBitmapRelation<MutualCategories, Body, ForwardedMutualPermission>
+{
+    public ulong ReadCategories(in MutualCategories relation, in Body component) =>
+        default(BodyBitmap).ReadCategories(in relation, in component);
+
+    public ulong ReadAllowedCategories(in MutualCategories relation, in Body component) =>
+        default(BodyBitmap).ReadAllowedCategories(in relation, in component);
 }

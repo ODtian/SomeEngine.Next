@@ -1,0 +1,478 @@
+[
+  {
+    "CaseId": "default-small-dynamic10",
+    "Report": "default-small-dynamic10.json.gz",
+    "SourceCommit": "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+    "Backend": "NativeAOT",
+    "Equal": true,
+    "Passed": false,
+    "Comparisons": [
+      {
+        "Boundary": "Query",
+        "Required": true,
+        "Relation": {
+          "MedianTicks": 1192,
+          "P95Ticks": 1439.4499999999994,
+          "IqrTicks": 39,
+          "StandardDeviationTicks": 131.73561837541425,
+          "MinTicks": 1186,
+          "MaxTicks": 2327,
+          "MeanTicks": 1244.1854838709678,
+          "PairsPerSecond": 12642809.455596678,
+          "TotalFrameAllocatedBytes": 0
+        },
+        "Handwritten": {
+          "MedianTicks": 1061,
+          "P95Ticks": 1252.5499999999997,
+          "IqrTicks": 34,
+          "StandardDeviationTicks": 125.89918969211018,
+          "MinTicks": 1055,
+          "MaxTicks": 2104,
+          "MeanTicks": 1107.2137096774193,
+          "PairsPerSecond": 14206832.757320942,
+          "TotalFrameAllocatedBytes": 0
+        },
+        "MedianRatio": 1.123468426013195,
+        "P95Ratio": 1.1492156001756415,
+        "Passed": false
+      },
+      {
+        "Boundary": "Consume",
+        "Required": false,
+        "Relation": {
+          "MedianTicks": 28,
+          "P95Ticks": 29,
+          "IqrTicks": 0,
+          "StandardDeviationTicks": 2.3177708066894036,
+          "MinTicks": 27,
+          "MaxTicks": 46,
+          "MeanTicks": 28.27016129032258,
+          "PairsPerSecond": 556417058.9074312,
+          "TotalFrameAllocatedBytes": 0
+        },
+        "Handwritten": {
+          "MedianTicks": 28,
+          "P95Ticks": 30,
+          "IqrTicks": 1,
+          "StandardDeviationTicks": 10.881468659757616,
+          "MinTicks": 26,
+          "MaxTicks": 152,
+          "MeanTicks": 28.879032258064516,
+          "PairsPerSecond": 544685841.9435912,
+          "TotalFrameAllocatedBytes": 0
+        },
+        "MedianRatio": 1,
+        "P95Ratio": 0.9666666666666667,
+        "Passed": true
+      }
+    ],
+    "Device": {
+      "Cpu": "Intel64 Family 6 Model 63 Stepping 2, GenuineIntel",
+      "ProcessorCount": 32,
+      "OperatingSystem": "Microsoft Windows 10.0.26200",
+      "Framework": "10.0.13",
+      "ServerGc": false,
+      "TieredCompilation": "default",
+      "ReadyToRun": "default",
+      "StopwatchFrequency": 10000000,
+      "Command": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe --mode measure --case default --size small --variant dynamic10 --source edbd5ab42d3dac63c7c4a98deecc070b57c8cf77 --backend NativeAOT --machine Fixed --comparison RelationHandwritten --output F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-inline-r31\\default-small-dynamic10.json",
+      "SourceCommit": "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+      "Backend": "NativeAOT",
+      "Machine": {
+        "Configuration": "Fixed",
+        "ProcessMask": 4294967295,
+        "MainThreadMask": 4,
+        "PreviousMainThreadMask": 4294967295,
+        "ProcessPriority": "High",
+        "MainThreadPriority": "Normal",
+        "ProcessorAfterSetting": 2
+      }
+    },
+    "DataSharing": "SharedStaticWorkspace",
+    "Workspaces": [
+      {
+        "UsedBy": "shared",
+        "SetupTicks": 66814,
+        "Memory": {
+          "PayloadBytes": {
+            "ParticipantEntities": 1024,
+            "CharacterEntities": 48,
+            "InitialBodies": 6144,
+            "CharacterNumbers": 512,
+            "BodyPresence": 128,
+            "Candidates": 0,
+            "KeyBuckets": 0,
+            "OutputUsed": 25168,
+            "OutputCapacity": 130048,
+            "ContactTotals": 1328
+          },
+          "Counts": {
+            "ParticipantCapacity": 128,
+            "CharacterCapacity": 6,
+            "CandidateCapacity": 0,
+            "OutputCapacity": 8128,
+            "ContactCapacity": 166
+          }
+        },
+        "MemberTerms": [
+          {
+            "ComponentId": 1,
+            "Kind": "All",
+            "Access": "Read",
+            "Filters": "None"
+          },
+          {
+            "ComponentId": 3,
+            "Kind": "None",
+            "Access": "None",
+            "Filters": "None"
+          }
+        ]
+      }
+    ],
+    "ReportKind": "measure",
+    "Queue": {
+      "Id": "87afe3ed12d94db5b1e267757e0dff4e",
+      "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+      "Arguments": [
+        "--mode",
+        "measure",
+        "--case",
+        "default",
+        "--size",
+        "small",
+        "--variant",
+        "dynamic10",
+        "--source",
+        "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+        "--backend",
+        "NativeAOT",
+        "--machine",
+        "Fixed",
+        "--comparison",
+        "RelationHandwritten",
+        "--output",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-inline-r31\\default-small-dynamic10.json"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T14:57:41.0177112+08:00",
+      "StartedAtUtc": "2026-10-19T14:57:42.7559402+08:00",
+      "FinishedAtUtc": "2026-10-19T14:57:43.0023394+08:00"
+    },
+    "Stdout": "EQUIVALENT default-small-dynamic10: frames=1; pairs=1573\r\ndefault-small-dynamic10 Query: median=1.123468426013195 p95=1.1492156001756415 required=True pass=False\r\ndefault-small-dynamic10 Consume: median=1 p95=0.9666666666666667 required=False pass=True\r\nREPORT F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-inline-r31\\default-small-dynamic10.json; acceptance=False\r\n",
+    "Stderr": "",
+    "RelationIndexBuildTicks": 1164,
+    "HandwrittenIndexBuildTicks": 3,
+    "RelationMemory": {
+      "PayloadBytes": {
+        "TreeLive": 0,
+        "TreeAddressed": 0,
+        "TreeCapacity": 0,
+        "CategoryLive": 0,
+        "CategoryAddressed": 0,
+        "CategoryCapacity": 0,
+        "KeyLive": 0,
+        "KeyAddressed": 0,
+        "KeyCapacity": 0,
+        "LeafMapKeyValues": 0,
+        "OutputUsed": 0,
+        "OutputCapacity": 0,
+        "PartitionUsed": 0,
+        "PartitionCapacity": 0,
+        "AccessDataUsed": 0,
+        "AccessDataCapacity": 0,
+        "MaintenanceAccess": 0,
+        "ContactTotals": 0
+      },
+      "Counts": {
+        "TreeLeaves": 0,
+        "TreeLiveNodes": 0,
+        "TreeAddressCount": 0,
+        "TreeNodeCapacity": 0,
+        "LeafMapEntries": 0,
+        "LeafMapCapacityEntries": 0,
+        "PartitionCount": 0,
+        "FilledPartitionCount": 0,
+        "PartitionCapacity": 0,
+        "OutputCount": 1573,
+        "OutputCapacity": 0
+      }
+    },
+    "HandwrittenMemory": {
+      "PayloadBytes": {
+        "TreeLive": 0,
+        "TreeAddressed": 0,
+        "TreeCapacity": 0,
+        "CategoryLive": 0,
+        "CategoryAddressed": 0,
+        "CategoryCapacity": 0,
+        "KeyLive": 0,
+        "KeyAddressed": 0,
+        "KeyCapacity": 0,
+        "LeafMapKeyValues": 0,
+        "OutputUsed": 0,
+        "OutputCapacity": 0,
+        "PartitionUsed": 0,
+        "PartitionCapacity": 0,
+        "AccessDataUsed": 0,
+        "AccessDataCapacity": 0,
+        "MaintenanceAccess": 0,
+        "ContactTotals": 0
+      },
+      "Counts": {
+        "TreeLeaves": 0,
+        "TreeLiveNodes": 0,
+        "TreeAddressCount": 0,
+        "TreeNodeCapacity": 0,
+        "LeafMapEntries": 0,
+        "LeafMapCapacityEntries": 0,
+        "PartitionCount": 0,
+        "FilledPartitionCount": 0,
+        "PartitionCapacity": 0,
+        "OutputCount": 1573,
+        "OutputCapacity": 0
+      }
+    }
+  },
+  {
+    "CaseId": "default-large-dynamic50",
+    "Report": "default-large-dynamic50.json.gz",
+    "SourceCommit": "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+    "Backend": "NativeAOT",
+    "Equal": true,
+    "Passed": false,
+    "Comparisons": [
+      {
+        "Boundary": "Query",
+        "Required": true,
+        "Relation": {
+          "MedianTicks": 311122.5,
+          "P95Ticks": 326171.44999999995,
+          "IqrTicks": 7811.75,
+          "StandardDeviationTicks": 6935.591403984571,
+          "MinTicks": 304909,
+          "MaxTicks": 352298,
+          "MeanTicks": 313143.9193548387,
+          "PairsPerSecond": 50211800.479455926,
+          "TotalFrameAllocatedBytes": 0
+        },
+        "Handwritten": {
+          "MedianTicks": 273507.5,
+          "P95Ticks": 288362.29999999993,
+          "IqrTicks": 7835.25,
+          "StandardDeviationTicks": 8991.261006303796,
+          "MinTicks": 267722,
+          "MaxTicks": 380289,
+          "MeanTicks": 275974.5483870968,
+          "PairsPerSecond": 56974529.324875794,
+          "TotalFrameAllocatedBytes": 0
+        },
+        "MedianRatio": 1.137528221346764,
+        "P95Ratio": 1.1311168276851726,
+        "Passed": false
+      },
+      {
+        "Boundary": "Consume",
+        "Required": false,
+        "Relation": {
+          "MedianTicks": 34162,
+          "P95Ticks": 36792.15,
+          "IqrTicks": 2147.75,
+          "StandardDeviationTicks": 1492.5076950332877,
+          "MinTicks": 31488,
+          "MaxTicks": 39620,
+          "MeanTicks": 34156.895161290326,
+          "PairsPerSecond": 460332238.21289563,
+          "TotalFrameAllocatedBytes": 0
+        },
+        "Handwritten": {
+          "MedianTicks": 33918,
+          "P95Ticks": 36649.45,
+          "IqrTicks": 2346.25,
+          "StandardDeviationTicks": 1576.9164302235881,
+          "MinTicks": 30900,
+          "MaxTicks": 41593,
+          "MeanTicks": 34091.42741935484,
+          "PairsPerSecond": 461216240.8627464,
+          "TotalFrameAllocatedBytes": 0
+        },
+        "MedianRatio": 1.0071938203903532,
+        "P95Ratio": 1.003893646425799,
+        "Passed": false
+      }
+    ],
+    "Device": {
+      "Cpu": "Intel64 Family 6 Model 63 Stepping 2, GenuineIntel",
+      "ProcessorCount": 32,
+      "OperatingSystem": "Microsoft Windows 10.0.26200",
+      "Framework": "10.0.13",
+      "ServerGc": false,
+      "TieredCompilation": "default",
+      "ReadyToRun": "default",
+      "StopwatchFrequency": 10000000,
+      "Command": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe --mode measure --case default --size large --variant dynamic50 --source edbd5ab42d3dac63c7c4a98deecc070b57c8cf77 --backend NativeAOT --machine Fixed --comparison RelationHandwritten --output F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-inline-r31\\default-large-dynamic50.json",
+      "SourceCommit": "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+      "Backend": "NativeAOT",
+      "Machine": {
+        "Configuration": "Fixed",
+        "ProcessMask": 4294967295,
+        "MainThreadMask": 4,
+        "PreviousMainThreadMask": 4294967295,
+        "ProcessPriority": "High",
+        "MainThreadPriority": "Normal",
+        "ProcessorAfterSetting": 2
+      }
+    },
+    "DataSharing": "SharedStaticWorkspace",
+    "Workspaces": [
+      {
+        "UsedBy": "shared",
+        "SetupTicks": 128737,
+        "Memory": {
+          "PayloadBytes": {
+            "ParticipantEntities": 16384,
+            "CharacterEntities": 768,
+            "InitialBodies": 98304,
+            "CharacterNumbers": 8192,
+            "BodyPresence": 2048,
+            "Candidates": 0,
+            "KeyBuckets": 0,
+            "OutputUsed": 25157632,
+            "OutputCapacity": 33538048,
+            "ContactTotals": 17408
+          },
+          "Counts": {
+            "ParticipantCapacity": 2048,
+            "CharacterCapacity": 96,
+            "CandidateCapacity": 0,
+            "OutputCapacity": 2096128,
+            "ContactCapacity": 2176
+          }
+        },
+        "MemberTerms": [
+          {
+            "ComponentId": 1,
+            "Kind": "All",
+            "Access": "Read",
+            "Filters": "None"
+          },
+          {
+            "ComponentId": 3,
+            "Kind": "None",
+            "Access": "None",
+            "Filters": "None"
+          }
+        ]
+      }
+    ],
+    "ReportKind": "measure",
+    "Queue": {
+      "Id": "34b7ae28c9c8497d9dc65f7dcd1fe147",
+      "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+      "Arguments": [
+        "--mode",
+        "measure",
+        "--case",
+        "default",
+        "--size",
+        "large",
+        "--variant",
+        "dynamic50",
+        "--source",
+        "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+        "--backend",
+        "NativeAOT",
+        "--machine",
+        "Fixed",
+        "--comparison",
+        "RelationHandwritten",
+        "--output",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-inline-r31\\default-large-dynamic50.json"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T14:57:41.3089803+08:00",
+      "StartedAtUtc": "2026-10-19T14:57:43.0030877+08:00",
+      "FinishedAtUtc": "2026-10-19T14:58:01.733415+08:00"
+    },
+    "Stdout": "EQUIVALENT default-large-dynamic50: frames=1; pairs=1572352\r\ndefault-large-dynamic50 Query: median=1.137528221346764 p95=1.1311168276851726 required=True pass=False\r\ndefault-large-dynamic50 Consume: median=1.0071938203903532 p95=1.003893646425799 required=False pass=False\r\nREPORT F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-inline-r31\\default-large-dynamic50.json; acceptance=False\r\n",
+    "Stderr": "",
+    "RelationIndexBuildTicks": 211,
+    "HandwrittenIndexBuildTicks": 2,
+    "RelationMemory": {
+      "PayloadBytes": {
+        "TreeLive": 0,
+        "TreeAddressed": 0,
+        "TreeCapacity": 0,
+        "CategoryLive": 0,
+        "CategoryAddressed": 0,
+        "CategoryCapacity": 0,
+        "KeyLive": 0,
+        "KeyAddressed": 0,
+        "KeyCapacity": 0,
+        "LeafMapKeyValues": 0,
+        "OutputUsed": 0,
+        "OutputCapacity": 0,
+        "PartitionUsed": 0,
+        "PartitionCapacity": 0,
+        "AccessDataUsed": 0,
+        "AccessDataCapacity": 0,
+        "MaintenanceAccess": 0,
+        "ContactTotals": 0
+      },
+      "Counts": {
+        "TreeLeaves": 0,
+        "TreeLiveNodes": 0,
+        "TreeAddressCount": 0,
+        "TreeNodeCapacity": 0,
+        "LeafMapEntries": 0,
+        "LeafMapCapacityEntries": 0,
+        "PartitionCount": 0,
+        "FilledPartitionCount": 0,
+        "PartitionCapacity": 0,
+        "OutputCount": 1572352,
+        "OutputCapacity": 0
+      }
+    },
+    "HandwrittenMemory": {
+      "PayloadBytes": {
+        "TreeLive": 0,
+        "TreeAddressed": 0,
+        "TreeCapacity": 0,
+        "CategoryLive": 0,
+        "CategoryAddressed": 0,
+        "CategoryCapacity": 0,
+        "KeyLive": 0,
+        "KeyAddressed": 0,
+        "KeyCapacity": 0,
+        "LeafMapKeyValues": 0,
+        "OutputUsed": 0,
+        "OutputCapacity": 0,
+        "PartitionUsed": 0,
+        "PartitionCapacity": 0,
+        "AccessDataUsed": 0,
+        "AccessDataCapacity": 0,
+        "MaintenanceAccess": 0,
+        "ContactTotals": 0
+      },
+      "Counts": {
+        "TreeLeaves": 0,
+        "TreeLiveNodes": 0,
+        "TreeAddressCount": 0,
+        "TreeNodeCapacity": 0,
+        "LeafMapEntries": 0,
+        "LeafMapCapacityEntries": 0,
+        "PartitionCount": 0,
+        "FilledPartitionCount": 0,
+        "PartitionCapacity": 0,
+        "OutputCount": 1572352,
+        "OutputCapacity": 0
+      }
+    }
+  }
+]

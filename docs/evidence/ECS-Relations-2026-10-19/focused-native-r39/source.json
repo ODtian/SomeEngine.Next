@@ -1,0 +1,42 @@
+{
+  "SourceCommit": "393a9fbf009aa2e8269636fdf532551271a85bc5",
+  "ChangedFiles": [
+    "src/SomeEngine.ECS.Relations/IQueryRelationOutput.cs",
+    "src/SomeEngine.ECS.Relations/RelationQuery.cs",
+    "src/SomeEngine.Physics/CollisionPairBuffer.cs"
+  ],
+  "BehaviorQueueId": "b128d839e2ad497591e55cf22eb9054e",
+  "BehaviorExitCode": 0,
+  "TokenName": "_pairRangesResource",
+  "PushExitCode": 0,
+  "PreviousPublishQueueId": "78b059ee1e4a48539229aea72a669595",
+  "PreviousTaskExitCode": 1,
+  "RestoreNativePackages": true,
+  "PublishArguments": [
+    "publish",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+    "-c",
+    "Release",
+    "-r",
+    "win-x64",
+    "-p:PublishAot=true",
+    "-p:SelfContained=true",
+    "-p:SourceRevisionId=393a9fbf009aa2e8269636fdf532551271a85bc5",
+    "-o",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish"
+  ],
+  "PublishStartedAtUtc": "2026-10-19T23:08:47.8937503Z",
+  "PublishFinishedAtUtc": "2026-10-19T23:09:21.4050715Z",
+  "PublishExitCode": 0,
+  "SourceCheckExitCode": 0,
+  "Object": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.Benchmarks.obj",
+    "LastWriteTimeUtc": "2026-10-19T23:09:20.0988272Z",
+    "Length": 26034417
+  },
+  "Executable": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+    "LastWriteTimeUtc": "2026-10-19T23:09:20.8549520Z",
+    "Length": 4944384
+  }
+}

@@ -1,0 +1,34 @@
+[
+  {
+    "CaseId": "threads-small-sparse-parallel",
+    "Boundary": "ScheduledPairOutput",
+    "PreviousSourceCommit": "bf4348ce600cd423090d1c1430596fc60ea97a2e",
+    "CurrentSourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "PreviousMedianRatio": 1.0134656272147413,
+    "CurrentMedianRatio": 0.7474747474747475,
+    "PreviousP95Ratio": 0.9440736478711163,
+    "CurrentP95Ratio": 0.7210204081632653,
+    "CurrentRelationMedianTicks": 555,
+    "CurrentHandwrittenMedianTicks": 742.5,
+    "CurrentRelationP95Ticks": 883.25,
+    "CurrentHandwrittenP95Ticks": 1225,
+    "Frequency": 10000000,
+    "ApprovedPassed": true
+  },
+  {
+    "CaseId": "threads-small-uniform-parallel",
+    "Boundary": "ScheduledPairOutput",
+    "PreviousSourceCommit": "bf4348ce600cd423090d1c1430596fc60ea97a2e",
+    "CurrentSourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "PreviousMedianRatio": 0.8629013892051924,
+    "CurrentMedianRatio": 0.7973345588235294,
+    "PreviousP95Ratio": 0.7337390921756984,
+    "CurrentP95Ratio": 0.7976262473540974,
+    "CurrentRelationMedianTicks": 1735,
+    "CurrentHandwrittenMedianTicks": 2176,
+    "CurrentRelationP95Ticks": 2637.75,
+    "CurrentHandwrittenP95Ticks": 3307,
+    "Frequency": 10000000,
+    "ApprovedPassed": true
+  }
+]

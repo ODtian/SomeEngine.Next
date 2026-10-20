@@ -1,0 +1,17 @@
+{
+  "BaseSourceCommit": "a182cc35b9bbf7d63008c8cbe4a96f976091614d",
+  "ReaderQueueId": "e7fbdd33adcf45499f2559cd463538db",
+  "StartedAtUtc": "2026-10-19T19:03:09.053407Z",
+  "ChangedFile": "benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCandidatePairs.cs",
+  "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+  "CommittedAtUtc": "2026-10-19T19:03:09.934644Z",
+  "CheckStartedAtUtc": "2026-10-19T19:03:15.7970543Z",
+  "CheckExitCode": 0,
+  "CheckFinishedAtUtc": "2026-10-19T19:03:47.5943227Z",
+  "PublishStartedAtUtc": "2026-10-19T19:03:47.6286754Z",
+  "PublishExitCode": 0,
+  "PublishFinishedAtUtc": "2026-10-19T19:04:12.3524713Z",
+  "ObjectLastWriteTimeUtc": "2026-10-19T19:04:11.0600041Z",
+  "ObjectBytes": 26199322,
+  "FinishedAtUtc": "2026-10-19T19:04:12.4699233Z"
+}

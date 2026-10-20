@@ -378,7 +378,7 @@ public class Chunk
     /// <summary>
     /// 写入 enableable 组件在指定 row 的 bit。
     /// </summary>
-    internal void WriteEnabled(int maskIndex, int row, bool enabled)
+    internal bool WriteEnabled(int maskIndex, int row, bool enabled)
     {
         UInt128[]? masks = Volatile.Read(ref _storage).EnableMasks;
         if (masks is null)
@@ -386,7 +386,7 @@ public class Chunk
 
         UInt128 rowMask = (UInt128)1 << row;
         if (((masks[maskIndex] & rowMask) != 0) == enabled)
-            return;
+            return false;
 
         EnsureWritable();
         masks = Volatile.Read(ref _storage).EnableMasks!;
@@ -394,6 +394,7 @@ public class Chunk
             masks[maskIndex] |= rowMask;
         else
             masks[maskIndex] &= ~rowMask;
+        return true;
     }
 
     /// <summary>

@@ -60,6 +60,18 @@ internal static partial class RelationsSmoke
         Require(!eight.Enumerate(ref output) && output.Count == 1 && result[0] == entities[7], "eighth identity and output stop");
         Require(eight.Count() == 1 && eight.Any(), "eight-position terminals");
 
+        var numbers = world.Query(world.QueryDefinition().All<Number<int>>().Read<Number<int>>());
+        var within = world.Within(numbers).Where(new Total2(14)).Except(new Total2(15));
+        var pair = new FirstNumberPair();
+        Require(!within.Enumerate(ref pair) && pair.Count == 1 &&
+            pair.Value == (entities[5], entities[7]), "within row binding and output stop");
+        Require(within.Count() == 1 && within.Any() &&
+            world.Within(numbers).Except(new Total2(4)).Count() == 1, "within where and except terminals");
+        var point = new NumberPointValue(entities[0]);
+        world.ExecuteQuery(numbers, ref point);
+        Require(point.Value == 1, "point component reference");
+        world.ReleaseQuery(numbers);
+
         new IncreaseNumbers().Schedule(world).Complete();
         var values = new List<int>();
         ComponentJobAccess<Number<int>>.ScheduleRead(world, new ReadNumber(world, entities[0], values)).Complete();
@@ -102,6 +114,19 @@ internal static partial class RelationsSmoke
     private readonly struct ReadNumber(World world, Entity entity, List<int> values) : IJob
     {
         public void Execute() => values.Add(world.Read<Number<int>>(entity).Value);
+    }
+
+    private struct FirstNumberPair : IRelationOutput<(Entity, Entity)>
+    {
+        public (Entity, Entity) Value;
+        public int Count;
+
+        public bool Add(in (Entity, Entity) row)
+        {
+            Value = row;
+            Count++;
+            return false;
+        }
     }
 
     private readonly struct ReadWireTarget(World world, RelationEdge<Wire<int>> edge, List<Entity> targets) : IJob

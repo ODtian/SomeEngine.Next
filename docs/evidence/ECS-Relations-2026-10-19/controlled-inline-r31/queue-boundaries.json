@@ -1,0 +1,190 @@
+{
+  "Summary": {
+    "Series": "controlled-inline-r31",
+    "SourceCommit": "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+    "Backend": "NativeAOT",
+    "CaseCount": 2,
+    "SessionIds": [
+      "01a15090-f5bd-7a12-860a-e214325db5bb"
+    ],
+    "PreparationExitCode": 0,
+    "CaseExitCodes": [
+      0
+    ],
+    "AnalysisExitCodes": [
+      0
+    ],
+    "LastCaseSubmittedAtUtc": "2026-10-19T14:57:41.3089803+08:00",
+    "FirstCaseStartedAtUtc": "2026-10-19T14:57:42.7559402+08:00",
+    "PreparationFinishedAtUtc": "2026-10-19T14:57:42.7551094+08:00",
+    "LastCaseFinishedAtUtc": "2026-10-19T14:58:01.733415+08:00",
+    "FirstAnalysisStartedAtUtc": "2026-10-19T14:58:05.14077+08:00",
+    "AllCasesSubmittedBeforeExecution": true,
+    "PreparationFinishedBeforeExecution": true,
+    "AnalysisStartedAfterExecution": true,
+    "MeasurementSeconds": 18.9774748,
+    "CaseExecutionSeconds": 18.976726499999998,
+    "BetweenCasesSeconds": 0.0007483,
+    "LongestBetweenCasesSeconds": 0.0007483,
+    "PreparationWaitingSeconds": 0.0914394
+  },
+  "Preparation": {
+    "Id": "7cec1c9eb475439a89ad39cadbda76a9",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-Command",
+      "[string[]]$feedbackCases = @('default-small-dynamic10','default-large-dynamic50')\n& 'F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Submit-Measurements.ps1' -CaseId $feedbackCases -Machine Fixed -QueueScript 'F:\\SomeEngine.Next\\tools\\Invoke-Benchmark.ps1' -Session '01a15090-f5bd-7a12-860a-e214325db5bb' -CollectReports -SourceCommit 'edbd5ab42d3dac63c7c4a98deecc070b57c8cf77' -Series 'controlled-inline-r31'"
+    ],
+    "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+    "ExitCode": 0,
+    "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+    "Kind": "Exclusive",
+    "SubmittedAtUtc": "2026-10-19T14:57:39.6596667+08:00",
+    "StartedAtUtc": "2026-10-19T14:57:39.7511061+08:00",
+    "FinishedAtUtc": "2026-10-19T14:57:42.7551094+08:00"
+  },
+  "Cases": [
+    {
+      "CaseId": "default-small-dynamic10",
+      "SourceCommit": "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+      "Queue": {
+        "Id": "87afe3ed12d94db5b1e267757e0dff4e",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "small",
+          "--variant",
+          "dynamic10",
+          "--source",
+          "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-inline-r31\\default-small-dynamic10.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T14:57:41.0177112+08:00",
+        "StartedAtUtc": "2026-10-19T14:57:42.7559402+08:00",
+        "FinishedAtUtc": "2026-10-19T14:57:43.0023394+08:00"
+      }
+    },
+    {
+      "CaseId": "default-large-dynamic50",
+      "SourceCommit": "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+      "Queue": {
+        "Id": "34b7ae28c9c8497d9dc65f7dcd1fe147",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "large",
+          "--variant",
+          "dynamic50",
+          "--source",
+          "edbd5ab42d3dac63c7c4a98deecc070b57c8cf77",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-inline-r31\\default-large-dynamic50.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T14:57:41.3089803+08:00",
+        "StartedAtUtc": "2026-10-19T14:57:43.0030877+08:00",
+        "FinishedAtUtc": "2026-10-19T14:58:01.733415+08:00"
+      }
+    }
+  ],
+  "Analyses": [
+    {
+      "Id": "a987fe86ad8d45d184c1b5b6039f1a1a",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1",
+        "-Series",
+        "controlled-inline-r31"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T14:57:41.6917173+08:00",
+      "StartedAtUtc": "2026-10-19T14:58:05.14077+08:00",
+      "FinishedAtUtc": "2026-10-19T14:58:06.4278625+08:00"
+    },
+    {
+      "Id": "45e9d251259f4e01ba576cb63358acd4",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1",
+        "-Series",
+        "controlled-inline-r31"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T14:57:41.9792523+08:00",
+      "StartedAtUtc": "2026-10-19T14:58:06.428568+08:00",
+      "FinishedAtUtc": "2026-10-19T14:58:07.8439776+08:00"
+    },
+    {
+      "Id": "6402da0fc5e34aba9a4f49d4d4f0068e",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1",
+        "-Series",
+        "controlled-inline-r31"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T14:57:42.2698686+08:00",
+      "StartedAtUtc": "2026-10-19T14:58:07.8446512+08:00",
+      "FinishedAtUtc": "2026-10-19T14:58:09.5541243+08:00"
+    }
+  ],
+  "BetweenCases": [
+    {
+      "BeforeCaseId": "default-small-dynamic10",
+      "AfterCaseId": "default-large-dynamic50",
+      "StartedAtUtc": "2026-10-19T14:57:43.0023394+08:00",
+      "FinishedAtUtc": "2026-10-19T14:57:43.0030877+08:00",
+      "Seconds": 0.0007483
+    }
+  ],
+  "ProtectedObservation": {
+    "StartedAtUtc": "2026-10-19T06:57:42.5042767+00:00",
+    "FinishedAtUtc": "2026-10-19T06:57:42.5218438+00:00",
+    "Seconds": 0.0175671,
+    "OverlappingCases": []
+  }
+}

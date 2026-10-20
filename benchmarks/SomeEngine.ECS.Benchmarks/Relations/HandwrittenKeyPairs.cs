@@ -22,53 +22,21 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
     private static bool Enumerate<TOutput>(World world, QueryHandle members, bool exclude, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition definition = world.GetQueryDefinition(members);
-        QueryHandle memberQuery = world.Query(definition);
-        QueryHandle accessQuery = world.Query(QueryDefinition.Empty.WithAccessFrom(definition).WithOptionalRead<TComponent>());
-        var execution = new AccessExecution<TOutput>(world, memberQuery, exclude, output);
+        QueryDefinition original = world.GetQueryDefinition(members);
+        QueryDefinition definition = original.WithOptionalRead<TComponent>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : members;
+        var execution = new MemberExecution<TOutput>(world, exclude, output);
         try
         {
-            world.ExecuteQuery(accessQuery, ref execution);
+            world.ExecuteQuery(query, ref execution);
             return execution.Completed;
         }
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(accessQuery);
-            world.ReleaseQuery(memberQuery);
-        }
-    }
-
-    private ref struct AccessExecution<TOutput> : IQueryExecution
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
-    {
-        private readonly World _world;
-        private readonly QueryHandle _members;
-        private readonly bool _exclude;
-
-        public AccessExecution(World world, QueryHandle members, bool exclude, TOutput output)
-        {
-            _world = world;
-            _members = members;
-            _exclude = exclude;
-            Output = output;
-        }
-
-        public TOutput Output;
-        public bool Completed { get; private set; }
-
-        public void Execute(QueryCursor access)
-        {
-            var execution = new MemberExecution<TOutput>(_world, access, _exclude, Output);
-            try
-            {
-                _world.ExecuteQuery(_members, ref execution);
-                Completed = execution.Completed;
-            }
-            finally
-            {
-                Output = execution.Output;
-            }
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 
@@ -76,13 +44,11 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
         private readonly World _world;
-        private readonly QueryCursor _access;
         private readonly bool _exclude;
 
-        public MemberExecution(World world, QueryCursor access, bool exclude, TOutput output)
+        public MemberExecution(World world, bool exclude, TOutput output)
         {
             _world = world;
-            _access = access;
             _exclude = exclude;
             Output = output;
         }
@@ -90,14 +56,14 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
         public TOutput Output;
         public bool Completed { get; private set; }
 
-        public void Execute(QueryCursor members)
+        public void Execute(scoped QueryCursor members)
         {
             var keys = new HashSet<TKey>();
             var missing = new List<Entity>();
             foreach (var member in members.Rows)
             {
-                if (_access.TryGetRow(member.Entity, out var row) && row.Has<TComponent>())
-                    keys.Add(row.ReadRef<TComponent>().GetKey());
+                if (member.Has<TComponent>())
+                    keys.Add(member.ReadRef<TComponent>().GetKey());
                 else
                     missing.Add(member.Entity);
             }
@@ -129,14 +95,13 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
                         continue;
                     foreach (Entity first in firstEntities)
                     {
-                        if (!members.TryGetRow(first, out _))
+                        if (!members.Contains(first))
                             continue;
                         foreach (Entity second in secondEntities)
                         {
-                            int order = first.Index.CompareTo(second.Index);
-                            if (order == 0)
-                                order = first.Generation.CompareTo(second.Generation);
-                            if (order >= 0 || !members.TryGetRow(second, out _))
+                            bool ascending = first.Index < second.Index ||
+                                first.Index == second.Index && first.Generation < second.Generation;
+                            if (!ascending || !members.Contains(second))
                                 continue;
                             var pair = (first, second);
                             if (!Output.Add(in pair))

@@ -1,0 +1,37 @@
+  正在确定要还原的项目…
+  已还原 F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\external\Alimer.Bindings\src\Alimer.Bindings.MeshOptimizer\Alimer.Bindings.MeshOptimizer.csproj (用时 558 毫秒)。
+  已还原 F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Render.Cluster.Pipeline\SomeEngine.Render.Cluster.Pipeline.csproj (用时 558 毫秒)。
+  已还原 F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Render.Features\SomeEngine.Render.Features.csproj (用时 558 毫秒)。
+  已还原 F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Runtime\SomeEngine.Runtime.csproj (用时 558 毫秒)。
+  20 个项目(共 24 个)是最新的，无法还原。
+  SomeEngine.Generators -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Generators\bin\Release\netstandard2.0\SomeEngine.Generators.dll
+  SomeEngine.Job.Contracts -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Job.Contracts\bin\Release\net10.0\SomeEngine.Job.Contracts.dll
+  SomeEngine.Diagnostics -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Diagnostics\bin\Release\net10.0\SomeEngine.Diagnostics.dll
+  SomeEngine.ECS.SourceGen -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS.SourceGen\bin\Release\netstandard2.0\SomeEngine.ECS.SourceGen.dll
+  SomeEngine.Graphics -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Graphics\bin\Release\net10.0\SomeEngine.Graphics.dll
+  SomeEngine.Job -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Job\bin\Release\net10.0\SomeEngine.Job.dll
+  SomeEngine.ECS -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS\bin\Release\net10.0\SomeEngine.ECS.dll
+  SomeEngine.Graphics.Validation -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Graphics.Validation\bin\Release\net10.0\SomeEngine.Graphics.Validation.dll
+  SomeEngine.Serialization -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Serialization\bin\Release\net10.0\SomeEngine.Serialization.dll
+  SomeEngine.Graphics.Vulkan -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Graphics.Vulkan\bin\Release\net10.0\SomeEngine.Graphics.Vulkan.dll
+  SomeEngine.Graphics.Direct3D12 -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Graphics.Direct3D12\bin\Release\net10.0\SomeEngine.Graphics.Direct3D12.dll
+  SomeEngine.ECS.Systems -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS.Systems\bin\Release\net10.0\SomeEngine.ECS.Systems.dll
+  SomeEngine.Resources -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Resources\bin\Release\net10.0\SomeEngine.Resources.dll
+  SomeEngine.ECS.Serialization -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS.Serialization\bin\Release\net10.0\SomeEngine.ECS.Serialization.dll
+  SomeEngine.Core -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Core\bin\Release\net10.0\SomeEngine.Core.dll
+  SomeEngine.Assets -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Assets\bin\Release\net10.0\SomeEngine.Assets.dll
+  SomeEngine.RenderGraph -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.RenderGraph\bin\Release\net10.0\SomeEngine.RenderGraph.dll
+  SomeEngine.Render -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Render\bin\Release\net10.0\SomeEngine.Render.dll
+  SomeEngine.RenderGraph.Diagnostics -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.RenderGraph.Diagnostics\bin\Release\net10.0\SomeEngine.RenderGraph.Diagnostics.dll
+  SomeEngine.Render.Cluster -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Render.Cluster\bin\Release\net10.0\SomeEngine.Render.Cluster.dll
+  Alimer.Bindings.MeshOptimizer -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\external\Alimer.Bindings\artifacts\bin\Alimer.Bindings.MeshOptimizer\release_net10.0\Alimer.Bindings.MeshOptimizer.dll
+  SomeEngine.Render.Cluster.Pipeline -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Render.Cluster.Pipeline\bin\Release\net10.0\SomeEngine.Render.Cluster.Pipeline.dll
+  SomeEngine.Render.Features -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Render.Features\bin\Release\net10.0\SomeEngine.Render.Features.dll
+  SomeEngine.Runtime -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Runtime\bin\Release\net10.0\SomeEngine.Runtime.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:10.42
+RUNTIME_DEPENDENCY {"Dependency":"F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\external\\Alimer.Bindings","SharedDependency":"F:\\SomeEngine.Next\\external\\Alimer.Bindings","GitlinkCommit":"8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4","SharedCommit":"8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4","StartedAtUtc":"2026-10-19T21:34:09.9757471Z","BuildStartedAtUtc":"2026-10-19T21:34:09.9985216Z","BuildFinishedAtUtc":"2026-10-19T21:34:20.9802887Z","BuildExitCode":0,"JunctionRemovedAtUtc":"2026-10-19T21:34:20.9921493Z","EmptyDirectoryRestored":true}

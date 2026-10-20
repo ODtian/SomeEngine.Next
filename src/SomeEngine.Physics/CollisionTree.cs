@@ -19,6 +19,12 @@ public sealed partial class CollisionTree
 
     public int NodeCount { get; private set; }
 
+    public int NodeCapacity => _nodes.Length;
+
+    public int LeafMapCount => _leaves.Count;
+
+    public int LeafMapCapacity => _leaves.EnsureCapacity(0);
+
     public int Height => Root < 0 ? 0 : _nodes[Root].Height;
 
     public ReadOnlySpan<CollisionNode> Nodes => _nodes.AsSpan(0, NodeCount);
@@ -43,7 +49,7 @@ public sealed partial class CollisionTree
     }
 
     /// <summary>Builds from the participating members under their encompassing read scope.</summary>
-    public void Rebuild<TComponent, TBoundsReader>(QueryCursor members, QueryCursor access,
+    public void Rebuild<TComponent, TBoundsReader>(scoped QueryCursor members, scoped QueryCursor access,
         TBoundsReader boundsReader)
         where TComponent : struct
         where TBoundsReader : struct, ICollisionBoundsReader<TComponent>
@@ -127,7 +133,7 @@ public sealed partial class CollisionTree
         where TComponent : struct
         where TBoundsReader : struct, ICollisionBoundsReader<TComponent>
     {
-        public void Execute(QueryCursor query) =>
+        public void Execute(scoped QueryCursor query) =>
             tree.Rebuild<TComponent, TBoundsReader>(query, query, boundsReader);
     }
 }

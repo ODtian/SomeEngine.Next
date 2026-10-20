@@ -264,7 +264,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 query,
                 context.LastSystemVersion,
                 ref snapshot,
-                static (QueryCursor cursor, ref UpdateSnapshot<TComposer> state) =>
+                static (scoped QueryCursor cursor, ref UpdateSnapshot<TComposer> state) =>
                     state.Update(cursor));
             return snapshot.Changed;
         }
@@ -319,7 +319,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
 
         internal bool Changed { get; private set; }
 
-        internal void Update(QueryCursor cursor)
+        internal void Update(scoped QueryCursor cursor)
         {
             ReadOnlyQueryPacketPlan packets =
                 ReadOnlyQueryPacketJobs.CreatePlan(cursor, _owner._rowsPerPacket);

@@ -257,7 +257,8 @@ internal sealed class AdmittedWorldWrite : IDisposable
         _root.Iteration.BeginQueryBorrow();
         try
         {
-            execution(new QueryCursor(_world, state, CurrentTick, CurrentTick));
+            var data = new QueryData(_world, state, CurrentTick, CurrentTick);
+            execution(new QueryCursor(in data));
         }
         finally
         {

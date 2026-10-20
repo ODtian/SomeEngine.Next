@@ -1,0 +1,206 @@
+FILE src/SomeEngine.ECS/Queries/ComponentRowEnumerator.cs
+   1: using SomeEngine.ECS.Archetypes;
+   2: using System.Runtime.CompilerServices;
+   3: 
+   4: namespace SomeEngine.ECS.Queries;
+   5: 
+   6: /// <summary>Member-row traversal with callback-scoped optional component columns.</summary>
+   7: public ref struct ComponentRowEnumerator<TFirst, TSecond>
+   8:     where TFirst : struct
+   9:     where TSecond : struct
+  10: {
+  11:     private QueryRowEnumerator<NoSharedFilter> _rows;
+  12:     private ReadOnlySpan<TFirst> _firstComponents;
+  13:     private ReadOnlySpan<TSecond> _secondComponents;
+  14: 
+  15:     internal ComponentRowEnumerator(QueryRowEnumerator<NoSharedFilter> rows)
+  16:     {
+  17:         _rows = rows;
+  18:         _firstComponents = default;
+  19:         _secondComponents = default;
+  20:     }
+  21: 
+  22:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  23:     public bool MoveNext(out QueryRow row, out ComponentReference<TFirst> first, out ComponentReference<TSecond> second)
+  24:     {
+  25:         Chunk? previous = _rows.CurrentChunk;
+  26:         if (!_rows.MoveNext(out row))
+  27:         {
+  28:             first = default;
+  29:             second = default;
+  30:             return false;
+  31:         }
+  32:         if (!ReferenceEquals(previous, _rows.CurrentChunk))
+  33:             BindColumns(_rows.CurrentMatch, _rows.CurrentChunk!);
+  34: 
+  35:         first = _firstComponents.IsEmpty ? default : new(in _firstComponents[row.RowIndex]);
+  36:         // Repeated positions borrow the same component type, which proves this reference cast.
+  37:         second = typeof(TFirst) == typeof(TSecond)
+  38:             ? new(in Unsafe.As<TFirst, TSecond>(ref Unsafe.AsRef(in first.Value)))
+  39:             : _secondComponents.IsEmpty ? default : new(in _secondComponents[row.RowIndex]);
+  40:         return true;
+  41:     }
+  42: 
+  43:     [MethodImpl(MethodImplOptions.NoInlining)]
+  44:     private void BindColumns(QueryArchetypeMatch match, Chunk chunk)
+  45:     {
+  46:         _firstComponents = QueryAccessGuards.TryRequireReadAccess<TFirst>(match, out int firstColumn)
+  47:             ? chunk.ComponentRows<TFirst>(firstColumn) : default;
+  48:         if (typeof(TFirst) != typeof(TSecond))
+  49:             _secondComponents = QueryAccessGuards.TryRequireReadAccess<TSecond>(match, out int secondColumn)
+  50:                 ? chunk.ComponentRows<TSecond>(secondColumn) : default;
+  51:     }
+  52: }
+FILE src/SomeEngine.ECS/Queries/QueryRow.cs
+   1: using SomeEngine.ECS.Archetypes;
+   2: using SomeEngine.ECS.Components;
+   3: using SomeEngine.ECS.Entities;
+   4: using SomeEngine.ECS.Registry;
+   5: using System.Runtime.CompilerServices;
+   6: 
+   7: namespace SomeEngine.ECS.Queries;
+   8: 
+   9: public readonly ref struct QueryRow
+  10: {
+  11:     private readonly World _world;
+  12:     private readonly QueryArchetypeMatch _match;
+  13:     private readonly Chunk _chunk;
+  14:     private readonly int _row;
+  15: 
+  16:     internal QueryRow(
+  17:         World world,
+  18:         QueryArchetypeMatch match,
+  19:         Chunk chunk,
+  20:         int row,
+  21:         uint lastSystemVersion,
+  22:         uint currentSystemVersion)
+  23:     {
+  24:         _world = world;
+  25:         _match = match;
+  26:         _chunk = chunk;
+  27:         _row = row;
+  28:         LastSystemVersion = lastSystemVersion;
+  29:         CurrentSystemVersion = currentSystemVersion;
+  30:     }
+  31: 
+  32:     public Entity Entity => _chunk.Entities[_row];
+  33: 
+  34:     internal int RowIndex => _row;
+  35: 
+  36:     public uint LastSystemVersion { get; }
+  37: 
+  38:     public uint CurrentSystemVersion { get; }
+  39: 
+  40:     public bool Has<T>() where T : struct =>
+  41:         _match.Archetype.HasComponent(ComponentMetadata<T>.Id);
+  42: 
+  43:     public T Read<T>() where T : struct
+  44:     {
+  45:         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
+  46:         return _chunk.ReadComponent<T>(column, _row);
+  47:     }
+  48: 
+  49:     public ref readonly T ReadRef<T>() where T : struct
+  50:     {
+  51:         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
+  52:         return ref _chunk.ComponentRows<T>(column)[_row];
+  53:     }
+  54: 
+  55:     /// <summary>Finds one present readable component and borrows its value without copying it.</summary>
+  56:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  57:     public bool TryReadRef<T>(out ComponentReference<T> component) where T : struct
+  58:     {
+  59:         if (QueryAccessGuards.TryRequireReadAccess<T>(_match, out int column))
+  60:         {
+  61:             component = new(in _chunk.ComponentRows<T>(column)[_row]);
+  62:             return true;
+  63:         }
+  64:         component = default;
+  65:         return false;
+  66:     }
+  67: 
+  68:     public ref T Write<T>() where T : struct
+  69:     {
+  70:         int column = QueryAccessGuards.RequireAccess<T>(_match, read: false, write: true);
+  71:         return ref _world.Components.WriteRef<T>(
+  72:             Entity,
+  73:             _chunk,
+  74:             _row,
+  75:             column,
+  76:             CurrentSystemVersion);
+  77:     }
+  78: 
+  79:     public ref T ReadWrite<T>() where T : struct
+  80:     {
+  81:         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: true);
+  82:         return ref _world.Components.WriteRef<T>(
+  83:             Entity,
+  84:             _chunk,
+  85:             _row,
+  86:             column,
+  87:             CurrentSystemVersion);
+  88:     }
+  89: 
+  90:     public void SetComponentEnabled<T>(bool enabled)
+  91:         where T : struct, IEnableableComponent
+  92:     {
+  93:         int componentId = ComponentMetadata<T>.Id;
+  94:         if (!_match.Archetype.HasComponent(componentId))
+  95:         {
+  96:             throw new InvalidOperationException(
+  97:                 $"{typeof(T).Name} was not present on the current query row.");
+  98:         }
+  99: 
+ 100:         int maskIndex = _match.Archetype.EnableMask(componentId);
+ 101:         _chunk.WriteEnabled(maskIndex, _row, enabled);
+ 102:     }
+ 103: 
+ 104:     public bool TryRead<T>(out T value) where T : struct
+ 105:     {
+ 106:         if (!Has<T>())
+ 107:         {
+ 108:             value = default;
+ 109:             return false;
+ 110:         }
+ 111: 
+ 112:         value = Read<T>();
+ 113:         return true;
+ 114:     }
+ 115: 
+ 116:     public DynamicBuffer<T> Buffer<T>()
+ 117:         where T : struct, IBufferElement
+ 118:     {
+ 119:         QueryAccessGuards.RequireBufferAccess<T>(
+ 120:             _match,
+ 121:             read: false,
+ 122:             write: true,
+ 123:             out int headerColumn,
+ 124:             out int inlineColumn);
+ 125: 
+ 126:         return new DynamicBuffer<T>(
+ 127:             _world.Buffers,
+ 128:             _chunk,
+ 129:             _row,
+ 130:             headerColumn,
+ 131:             inlineColumn,
+ 132:             CurrentSystemVersion);
+ 133:     }
+ 134: 
+ 135:     public BufferView<T> ReadBuffer<T>()
+ 136:         where T : struct, IBufferElement
+ 137:     {
+ 138:         QueryAccessGuards.RequireBufferAccess<T>(
+ 139:             _match,
+ 140:             read: true,
+ 141:             write: false,
+ 142:             out int headerColumn,
+ 143:             out int inlineColumn);
+ 144: 
+ 145:         return new BufferView<T>(
+ 146:             _chunk,
+ 147:             _row,
+ 148:             headerColumn,
+ 149:             inlineColumn);
+ 150:     }
+ 151: }
+ 152: 

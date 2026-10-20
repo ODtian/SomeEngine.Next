@@ -1,0 +1,38 @@
+[
+  {
+    "Version": "bf4348ce600cd423090d1c1430596fc60ea97a2e",
+    "Role": "PartitionData",
+    "Start": "0x1a6900",
+    "EndExclusive": "0x1a6a08",
+    "Bytes": 264,
+    "Instructions": 59,
+    "StackBytes": 184,
+    "InitialXmm4Bytes": 112,
+    "DirectXmm4Clears": 1,
+    "LoopInitial": 96,
+    "LoopStep": 48,
+    "IndexedClears": 3,
+    "CopyCallSites": 0,
+    "CallSites": 2,
+    "StartMod32": 0,
+    "StartMod64": 0
+  },
+  {
+    "Version": "bf4348ce600cd423090d1c1430596fc60ea97a2e",
+    "Role": "CountTraversal",
+    "Start": "0x225180",
+    "EndExclusive": "0x226014",
+    "Bytes": 3732,
+    "Instructions": 968,
+    "StackBytes": 440,
+    "InitialXmm4Bytes": 0,
+    "DirectXmm4Clears": 0,
+    "LoopInitial": 96,
+    "LoopStep": 48,
+    "IndexedClears": 0,
+    "CopyCallSites": 0,
+    "CallSites": 24,
+    "StartMod32": 0,
+    "StartMod64": 0
+  }
+]

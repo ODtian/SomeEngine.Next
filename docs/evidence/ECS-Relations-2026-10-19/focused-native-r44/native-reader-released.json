@@ -1,0 +1,9 @@
+{
+  "ReaderQueueId": "f90e715b3bc04b5c9a94b7fa48d63682",
+  "SourceCommit": "bf4348ce600cd423090d1c1430596fc60ea97a2e",
+  "NativeReaderStartedAtUtc": "2026-10-20T00:46:36.0091553Z",
+  "NativeReaderFinishedAtUtc": "2026-10-20T00:46:39.4179483Z",
+  "NativeReaderExitCode": 0,
+  "ReleasedAtUtc": "2026-10-20T00:46:39.4179483Z",
+  "ReleaseBasis": "Both selected full functions and reader facts are saved."
+}

@@ -1,4 +1,6 @@
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Relations;
 
@@ -9,7 +11,10 @@ public interface IKeyPairing
 
     static abstract bool ReordersPairs { get; }
 
-    static abstract bool TryPair(RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair);
+    static virtual bool ReadsFromSingleQuery => false;
+
+    static abstract bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+        Entity first, Entity second, out (Entity, Entity) pair);
 }
 
 public readonly struct KeyPairsWithin : IKeyPairing
@@ -18,10 +23,14 @@ public readonly struct KeyPairsWithin : IKeyPairing
 
     public static bool ReordersPairs => false;
 
-    public static bool TryPair(RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
+    public static bool ReadsFromSingleQuery => true;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+        Entity first, Entity second, out (Entity, Entity) pair)
     {
         pair = (first, second);
-        return EntityOrder.Compare(first, second) < 0;
+        return EntityOrder.Precedes(first, second);
     }
 }
 
@@ -31,7 +40,9 @@ public readonly struct KeyProduct2 : IKeyPairing
 
     public static bool ReordersPairs => false;
 
-    public static bool TryPair(RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+        Entity first, Entity second, out (Entity, Entity) pair)
     {
         pair = (first, second);
         return true;
@@ -44,11 +55,13 @@ public readonly struct KeyPairsBetween : IKeyPairing
 
     public static bool ReordersPairs => true;
 
-    public static bool TryPair(RelationQueryViews queries, Entity first, Entity second, out (Entity, Entity) pair)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+        Entity first, Entity second, out (Entity, Entity) pair)
     {
         int order = EntityOrder.Compare(first, second);
         pair = order < 0 ? (first, second) : (second, first);
-        return order != 0 && (order < 0 || !queries.First.TryGetRow(second, out _) ||
-            !queries.Second.TryGetRow(first, out _));
+        return order != 0 && (order < 0 || !firstMembers.Contains(second) ||
+            !secondMembers.Contains(first));
     }
 }

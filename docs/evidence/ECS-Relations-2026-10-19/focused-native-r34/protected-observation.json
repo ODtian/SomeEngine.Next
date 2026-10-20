@@ -1,0 +1,94 @@
+{
+  "Series": "focused-native-r34",
+  "SourceCommit": "8230fdc15af774f191d6f60432909d740b31fc07",
+  "WatchReadyAtUtc": "2026-10-19T12:32:14.3856520Z",
+  "MasterReceiptReadStartedAtUtc": "2026-10-19T12:33:14.4340218Z",
+  "MasterReceiptReadFinishedAtUtc": "2026-10-19T12:33:14.4484455Z",
+  "ManifestReadStartedAtUtc": "2026-10-19T13:36:16.0843945Z",
+  "ManifestReadFinishedAtUtc": "2026-10-19T13:36:16.0903996Z",
+  "FinalReportQueueId": "83b54bc91c404cbaa9ef35d96d17a9e7",
+  "FinalEventObservedAtUtc": "2026-10-19T18:09:16.4125705Z",
+  "ObservedCaseReceipts": 16,
+  "CaseReceiptEvents": [
+    {
+      "QueueId": "d71a6e82702345769e4b636a8297c6c9",
+      "ObservedAtUtc": "2026-10-19T14:02:45.0874383Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "27b408a128ea46f992f01a38b5f28233",
+      "ObservedAtUtc": "2026-10-19T14:17:30.1357661Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "faef9367c6364d63b5da956b0075485b",
+      "ObservedAtUtc": "2026-10-19T14:28:30.2633595Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "64792199804d4d9fb41f3a3cad738b6c",
+      "ObservedAtUtc": "2026-10-19T14:54:32.5735104Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "97cc31d92f8d4ce19a7d088be23a6400",
+      "ObservedAtUtc": "2026-10-19T14:58:21.8604464Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "f70d71fb9e6945c1bfc6186c336cbbd5",
+      "ObservedAtUtc": "2026-10-19T15:07:55.6923815Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "fe78f3ec469448c1bb65f631cd9aff03",
+      "ObservedAtUtc": "2026-10-19T15:22:46.8932042Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "af1d321889fa4d84bedc5b1f01a3741b",
+      "ObservedAtUtc": "2026-10-19T15:45:57.1993049Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "1e34c3249a014183b7baa2051d27ef38",
+      "ObservedAtUtc": "2026-10-19T15:48:43.4024234Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "e617e86913954e5188872420bdc31069",
+      "ObservedAtUtc": "2026-10-19T15:50:29.2611798Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "db086ca22f20470ca483708730b3d7cd",
+      "ObservedAtUtc": "2026-10-19T16:01:07.7154266Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "643b6b3d1afe405bbb1b623750e4072b",
+      "ObservedAtUtc": "2026-10-19T16:09:57.2984829Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "e8972b6ece6e41edbbe0d6653ec400e4",
+      "ObservedAtUtc": "2026-10-19T16:15:37.0207773Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "5bfd11a1a2774c958061f00ea767f874",
+      "ObservedAtUtc": "2026-10-19T16:21:29.7738301Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "606a6870373945a7b5f716605b197d55",
+      "ObservedAtUtc": "2026-10-19T16:38:52.9106506Z",
+      "Event": "Created"
+    },
+    {
+      "QueueId": "7017069cf3b34990b11c5deeb0ee37cc",
+      "ObservedAtUtc": "2026-10-19T17:06:30.0398787Z",
+      "Event": "Created"
+    }
+  ]
+}

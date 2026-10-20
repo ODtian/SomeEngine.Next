@@ -1,0 +1,490 @@
+[
+  {
+    "CaseId": "threads-small-sparse-parallel",
+    "Report": "threads-small-sparse-parallel.json.gz",
+    "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+    "Backend": "NativeAOT",
+    "Equal": true,
+    "Passed": false,
+    "Comparisons": [
+      {
+        "Boundary": "ScheduledPairOutput",
+        "Required": true,
+        "Relation": {
+          "MedianTicks": 703,
+          "P95Ticks": 1039.75,
+          "IqrTicks": 130.5,
+          "StandardDeviationTicks": 245.0301136955355,
+          "MinTicks": 595,
+          "MaxTicks": 3956,
+          "MeanTicks": 752.765625,
+          "PairsPerSecond": 0,
+          "TotalFrameAllocatedBytes": 983544
+        },
+        "Handwritten": {
+          "MedianTicks": 681,
+          "P95Ticks": 1159.75,
+          "IqrTicks": 119.25,
+          "StandardDeviationTicks": 167.1725823929318,
+          "MinTicks": 612,
+          "MaxTicks": 1432,
+          "MeanTicks": 751.203125,
+          "PairsPerSecond": 0,
+          "TotalFrameAllocatedBytes": 983744
+        },
+        "MedianRatio": 1.0323054331864905,
+        "P95Ratio": 0.8965294244449235,
+        "Passed": false
+      },
+      {
+        "Boundary": "Consume",
+        "Required": false,
+        "Relation": {
+          "MedianTicks": 454,
+          "P95Ticks": 584.25,
+          "IqrTicks": 30,
+          "StandardDeviationTicks": 18459.60839261663,
+          "MinTicks": 133,
+          "MaxTicks": 295823,
+          "MeanTicks": 1625.8046875,
+          "PairsPerSecond": 0,
+          "TotalFrameAllocatedBytes": 983544
+        },
+        "Handwritten": {
+          "MedianTicks": 456,
+          "P95Ticks": 582,
+          "IqrTicks": 32.25,
+          "StandardDeviationTicks": 6287.206260846034,
+          "MinTicks": 140,
+          "MaxTicks": 101051,
+          "MeanTicks": 864.921875,
+          "PairsPerSecond": 0,
+          "TotalFrameAllocatedBytes": 983744
+        },
+        "MedianRatio": 0.9956140350877193,
+        "P95Ratio": 1.0038659793814433,
+        "Passed": false
+      }
+    ],
+    "Device": {
+      "Cpu": "Intel64 Family 6 Model 63 Stepping 2, GenuineIntel",
+      "ProcessorCount": 32,
+      "OperatingSystem": "Microsoft Windows 10.0.26200",
+      "Framework": "10.0.13",
+      "ServerGc": false,
+      "TieredCompilation": "default",
+      "ReadyToRun": "default",
+      "StopwatchFrequency": 10000000,
+      "Command": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe --mode measure --case threads --size small --variant sparse-parallel --source d224fbff18b9ec94cefb85edaf37db8bad6cf173 --backend NativeAOT --machine Fixed --comparison RelationHandwritten --output F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r42\\threads-small-sparse-parallel.json",
+      "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+      "Backend": "NativeAOT",
+      "Machine": {
+        "Configuration": "Fixed",
+        "ProcessMask": 4294967295,
+        "MainThreadMask": 4,
+        "PreviousMainThreadMask": 4294967295,
+        "ProcessPriority": "High",
+        "MainThreadPriority": "Normal",
+        "ProcessorAfterSetting": 2
+      }
+    },
+    "DataSharing": "SharedStaticWorkspace",
+    "Workspaces": [
+      {
+        "UsedBy": "shared",
+        "SetupTicks": 145523,
+        "Memory": {
+          "PayloadBytes": {
+            "ParticipantEntities": 4096,
+            "CharacterEntities": 192,
+            "InitialBodies": 24576,
+            "CharacterNumbers": 2048,
+            "BodyPresence": 512,
+            "Candidates": 0,
+            "KeyBuckets": 0,
+            "OutputUsed": 0,
+            "OutputCapacity": 0,
+            "ContactTotals": 0
+          },
+          "Counts": {
+            "ParticipantCapacity": 512,
+            "CharacterCapacity": 24,
+            "CandidateCapacity": 0,
+            "OutputCapacity": 0,
+            "ContactCapacity": 0
+          }
+        },
+        "MemberTerms": [
+          {
+            "ComponentId": 1,
+            "Kind": "All",
+            "Access": "Read",
+            "Filters": "None"
+          },
+          {
+            "ComponentId": 3,
+            "Kind": "None",
+            "Access": "None",
+            "Filters": "None"
+          },
+          {
+            "ComponentId": 2,
+            "Kind": "Optional",
+            "Access": "Read",
+            "Filters": "None"
+          }
+        ]
+      }
+    ],
+    "ReportKind": "measure",
+    "Queue": {
+      "Id": "53a70d2c49954185a12387a6e32f3f97",
+      "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+      "Arguments": [
+        "--mode",
+        "measure",
+        "--case",
+        "threads",
+        "--size",
+        "small",
+        "--variant",
+        "sparse-parallel",
+        "--source",
+        "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+        "--backend",
+        "NativeAOT",
+        "--machine",
+        "Fixed",
+        "--comparison",
+        "RelationHandwritten",
+        "--output",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r42\\threads-small-sparse-parallel.json"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-20T08:10:28.3370296+08:00",
+      "StartedAtUtc": "2026-10-20T08:14:45.7548996+08:00",
+      "FinishedAtUtc": "2026-10-20T08:14:46.2588103+08:00"
+    },
+    "Stdout": "EQUIVALENT threads-small-sparse-parallel: frames=1; pairs=0\r\nthreads-small-sparse-parallel ScheduledPairOutput: median=1.0323054331864905 p95=0.8965294244449235 required=True pass=False\r\nthreads-small-sparse-parallel Consume: median=0.9956140350877193 p95=1.0038659793814433 required=False pass=False\r\nREPORT F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r42\\threads-small-sparse-parallel.json; acceptance=False\r\n",
+    "Stderr": "",
+    "RelationIndexBuildTicks": 45101,
+    "HandwrittenIndexBuildTicks": 24278,
+    "RelationMemory": {
+      "PayloadBytes": {
+        "TreeLive": 53196,
+        "TreeAddressed": 53196,
+        "TreeCapacity": 53248,
+        "CategoryLive": 40920,
+        "CategoryAddressed": 40920,
+        "CategoryCapacity": 40920,
+        "KeyLive": 16368,
+        "KeyAddressed": 16368,
+        "KeyCapacity": 16368,
+        "LeafMapKeyValues": 6144,
+        "OutputUsed": 0,
+        "OutputCapacity": 0,
+        "PartitionUsed": 260,
+        "PartitionCapacity": 324,
+        "AccessDataUsed": 768,
+        "AccessDataCapacity": 2304,
+        "MaintenanceAccess": 192,
+        "ContactTotals": 4544
+      },
+      "Counts": {
+        "TreeLeaves": 512,
+        "TreeLiveNodes": 1023,
+        "TreeAddressCount": 1023,
+        "TreeNodeCapacity": 1024,
+        "LeafMapEntries": 512,
+        "LeafMapCapacityEntries": 919,
+        "PartitionCount": 16,
+        "FilledPartitionCount": 0,
+        "PartitionCapacity": 16,
+        "OutputCount": 0,
+        "OutputCapacity": 0
+      }
+    },
+    "HandwrittenMemory": {
+      "PayloadBytes": {
+        "TreeLive": 53196,
+        "TreeAddressed": 53196,
+        "TreeCapacity": 53248,
+        "CategoryLive": 40920,
+        "CategoryAddressed": 40920,
+        "CategoryCapacity": 40920,
+        "KeyLive": 16368,
+        "KeyAddressed": 16368,
+        "KeyCapacity": 16368,
+        "LeafMapKeyValues": 6144,
+        "OutputUsed": 0,
+        "OutputCapacity": 0,
+        "PartitionUsed": 260,
+        "PartitionCapacity": 324,
+        "AccessDataUsed": 768,
+        "AccessDataCapacity": 2304,
+        "MaintenanceAccess": 192,
+        "ContactTotals": 4544
+      },
+      "Counts": {
+        "TreeLeaves": 512,
+        "TreeLiveNodes": 1023,
+        "TreeAddressCount": 1023,
+        "TreeNodeCapacity": 1024,
+        "LeafMapEntries": 512,
+        "LeafMapCapacityEntries": 919,
+        "PartitionCount": 16,
+        "FilledPartitionCount": 0,
+        "PartitionCapacity": 16,
+        "OutputCount": 0,
+        "OutputCapacity": 0
+      }
+    }
+  },
+  {
+    "CaseId": "threads-small-uniform-parallel",
+    "Report": "threads-small-uniform-parallel.json.gz",
+    "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+    "Backend": "NativeAOT",
+    "Equal": true,
+    "Passed": true,
+    "Comparisons": [
+      {
+        "Boundary": "ScheduledPairOutput",
+        "Required": true,
+        "Relation": {
+          "MedianTicks": 2075.5,
+          "P95Ticks": 2782.25,
+          "IqrTicks": 278.75,
+          "StandardDeviationTicks": 4911.421667495122,
+          "MinTicks": 1699,
+          "MaxTicks": 80538,
+          "MeanTicks": 2456.98828125,
+          "PairsPerSecond": 520963.0057123416,
+          "TotalFrameAllocatedBytes": 1533744
+        },
+        "Handwritten": {
+          "MedianTicks": 2251.5,
+          "P95Ticks": 3724.5,
+          "IqrTicks": 357.25,
+          "StandardDeviationTicks": 4326.541026428629,
+          "MinTicks": 1949,
+          "MaxTicks": 59352,
+          "MeanTicks": 2784.4609375,
+          "PairsPerSecond": 459694.0049549537,
+          "TotalFrameAllocatedBytes": 1554800
+        },
+        "MedianRatio": 0.9218298911836553,
+        "P95Ratio": 0.7470130218821318,
+        "Passed": true
+      },
+      {
+        "Boundary": "Consume",
+        "Required": false,
+        "Relation": {
+          "MedianTicks": 661,
+          "P95Ticks": 880.75,
+          "IqrTicks": 98.25,
+          "StandardDeviationTicks": 98.5095676122475,
+          "MinTicks": 529,
+          "MaxTicks": 1171,
+          "MeanTicks": 692.26953125,
+          "PairsPerSecond": 1848990.8080870777,
+          "TotalFrameAllocatedBytes": 1533744
+        },
+        "Handwritten": {
+          "MedianTicks": 657.5,
+          "P95Ticks": 861,
+          "IqrTicks": 87,
+          "StandardDeviationTicks": 6245.660723986803,
+          "MinTicks": 380,
+          "MaxTicks": 100595,
+          "MeanTicks": 1075.21484375,
+          "PairsPerSecond": 1190459.755499446,
+          "TotalFrameAllocatedBytes": 1554800
+        },
+        "MedianRatio": 1.0053231939163498,
+        "P95Ratio": 1.022938443670151,
+        "Passed": false
+      }
+    ],
+    "Device": {
+      "Cpu": "Intel64 Family 6 Model 63 Stepping 2, GenuineIntel",
+      "ProcessorCount": 32,
+      "OperatingSystem": "Microsoft Windows 10.0.26200",
+      "Framework": "10.0.13",
+      "ServerGc": false,
+      "TieredCompilation": "default",
+      "ReadyToRun": "default",
+      "StopwatchFrequency": 10000000,
+      "Command": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe --mode measure --case threads --size small --variant uniform-parallel --source d224fbff18b9ec94cefb85edaf37db8bad6cf173 --backend NativeAOT --machine Fixed --comparison RelationHandwritten --output F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r42\\threads-small-uniform-parallel.json",
+      "SourceCommit": "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+      "Backend": "NativeAOT",
+      "Machine": {
+        "Configuration": "Fixed",
+        "ProcessMask": 4294967295,
+        "MainThreadMask": 4,
+        "PreviousMainThreadMask": 4294967295,
+        "ProcessPriority": "High",
+        "MainThreadPriority": "Normal",
+        "ProcessorAfterSetting": 2
+      }
+    },
+    "DataSharing": "SharedStaticWorkspace",
+    "Workspaces": [
+      {
+        "UsedBy": "shared",
+        "SetupTicks": 69509,
+        "Memory": {
+          "PayloadBytes": {
+            "ParticipantEntities": 4096,
+            "CharacterEntities": 192,
+            "InitialBodies": 24576,
+            "CharacterNumbers": 2048,
+            "BodyPresence": 512,
+            "Candidates": 0,
+            "KeyBuckets": 0,
+            "OutputUsed": 0,
+            "OutputCapacity": 0,
+            "ContactTotals": 0
+          },
+          "Counts": {
+            "ParticipantCapacity": 512,
+            "CharacterCapacity": 24,
+            "CandidateCapacity": 0,
+            "OutputCapacity": 0,
+            "ContactCapacity": 0
+          }
+        },
+        "MemberTerms": [
+          {
+            "ComponentId": 1,
+            "Kind": "All",
+            "Access": "Read",
+            "Filters": "None"
+          },
+          {
+            "ComponentId": 3,
+            "Kind": "None",
+            "Access": "None",
+            "Filters": "None"
+          },
+          {
+            "ComponentId": 2,
+            "Kind": "Optional",
+            "Access": "Read",
+            "Filters": "None"
+          }
+        ]
+      }
+    ],
+    "ReportKind": "measure",
+    "Queue": {
+      "Id": "c1d465cdff234907a06d766b0b7fd561",
+      "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+      "Arguments": [
+        "--mode",
+        "measure",
+        "--case",
+        "threads",
+        "--size",
+        "small",
+        "--variant",
+        "uniform-parallel",
+        "--source",
+        "d224fbff18b9ec94cefb85edaf37db8bad6cf173",
+        "--backend",
+        "NativeAOT",
+        "--machine",
+        "Fixed",
+        "--comparison",
+        "RelationHandwritten",
+        "--output",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r42\\threads-small-uniform-parallel.json"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-20T08:10:28.6439486+08:00",
+      "StartedAtUtc": "2026-10-20T08:14:49.1679773+08:00",
+      "FinishedAtUtc": "2026-10-20T08:14:49.669574+08:00"
+    },
+    "Stdout": "EQUIVALENT threads-small-uniform-parallel: frames=1; pairs=128\r\nthreads-small-uniform-parallel ScheduledPairOutput: median=0.9218298911836553 p95=0.7470130218821318 required=True pass=True\r\nthreads-small-uniform-parallel Consume: median=1.0053231939163498 p95=1.022938443670151 required=False pass=False\r\nREPORT F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r42\\threads-small-uniform-parallel.json; acceptance=True\r\n",
+    "Stderr": "",
+    "RelationIndexBuildTicks": 27191,
+    "HandwrittenIndexBuildTicks": 22880,
+    "RelationMemory": {
+      "PayloadBytes": {
+        "TreeLive": 53196,
+        "TreeAddressed": 53196,
+        "TreeCapacity": 53248,
+        "CategoryLive": 40920,
+        "CategoryAddressed": 40920,
+        "CategoryCapacity": 40920,
+        "KeyLive": 16368,
+        "KeyAddressed": 16368,
+        "KeyCapacity": 16368,
+        "LeafMapKeyValues": 6144,
+        "OutputUsed": 2048,
+        "OutputCapacity": 2048,
+        "PartitionUsed": 276,
+        "PartitionCapacity": 324,
+        "AccessDataUsed": 1152,
+        "AccessDataCapacity": 2304,
+        "MaintenanceAccess": 192,
+        "ContactTotals": 4544
+      },
+      "Counts": {
+        "TreeLeaves": 512,
+        "TreeLiveNodes": 1023,
+        "TreeAddressCount": 1023,
+        "TreeNodeCapacity": 1024,
+        "LeafMapEntries": 512,
+        "LeafMapCapacityEntries": 919,
+        "PartitionCount": 16,
+        "FilledPartitionCount": 4,
+        "PartitionCapacity": 16,
+        "OutputCount": 128,
+        "OutputCapacity": 128
+      }
+    },
+    "HandwrittenMemory": {
+      "PayloadBytes": {
+        "TreeLive": 53196,
+        "TreeAddressed": 53196,
+        "TreeCapacity": 53248,
+        "CategoryLive": 40920,
+        "CategoryAddressed": 40920,
+        "CategoryCapacity": 40920,
+        "KeyLive": 16368,
+        "KeyAddressed": 16368,
+        "KeyCapacity": 16368,
+        "LeafMapKeyValues": 6144,
+        "OutputUsed": 2048,
+        "OutputCapacity": 2048,
+        "PartitionUsed": 276,
+        "PartitionCapacity": 324,
+        "AccessDataUsed": 1152,
+        "AccessDataCapacity": 2304,
+        "MaintenanceAccess": 192,
+        "ContactTotals": 4544
+      },
+      "Counts": {
+        "TreeLeaves": 512,
+        "TreeLiveNodes": 1023,
+        "TreeAddressCount": 1023,
+        "TreeNodeCapacity": 1024,
+        "LeafMapEntries": 512,
+        "LeafMapCapacityEntries": 919,
+        "PartitionCount": 16,
+        "FilledPartitionCount": 4,
+        "PartitionCapacity": 16,
+        "OutputCount": 128,
+        "OutputCapacity": 128
+      }
+    }
+  }
+]

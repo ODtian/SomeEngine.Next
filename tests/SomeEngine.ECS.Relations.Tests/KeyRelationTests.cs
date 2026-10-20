@@ -186,7 +186,7 @@ public sealed class KeyRelationTests
         var first = world.CreateEntity(new IndexedWord { Value = "cloth" });
         var second = world.CreateEntity(new IndexedWord { Value = "cloth" });
         var third = world.CreateEntity(new IndexedWord { Value = "cloth" });
-        var words = world.Query(world.QueryDefinition().All<IndexedWord>());
+        var words = world.Query(world.QueryDefinition().Read<IndexedWord>());
         Span<(Entity, Entity)> result = stackalloc (Entity, Entity)[1];
         var output = new FirstPair(result);
         var selected = world.Within(words)
