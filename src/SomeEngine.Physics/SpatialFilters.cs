@@ -30,9 +30,10 @@ public readonly struct SpatialComponentFilter<TRelation, TFirst, TSecond>
         where TExecution : struct, ISpatialChangeExecution, allows ref struct =>
         execution.Execute(default(UnchangedQueryRows));
 
+    /// <summary>Defers component relation evaluation to individual leaf pairs.</summary>
     public GroupMatch MatchGroups(int firstNode, int secondNode,
         in CollisionNode first, in CollisionNode second, in GroupMatch inherited, out GroupMatch results) =>
-        results = inherited;
+        results = GroupMatch.Unknown;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MatchesLeaves(scoped in QueryRow first, scoped in QueryRow second,
