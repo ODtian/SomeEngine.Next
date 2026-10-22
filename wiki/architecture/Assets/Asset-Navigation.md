@@ -20,6 +20,8 @@
 
 从几何按规格生成这些变体，以及通过 ImportContext 选择 `NavigationMeshImporter`，见[按角色规格烘焙导航网格](../Navigation-Baking.md)。
 
+`HeadingNavigationMeshBlock` 使用相同的 Profile/变体选择键，保存连续朝向区间、平移/旋转连接和自身区域图；构建与位姿查询见[朝向导航网格](../Heading-Navigation.md)。
+
 当前常驻网格 Block 在 `GetBlockAsync` 完成时取得全部变体的数组。创建与 Block 分支复用取得的只读资源。编码和解码通过 `NavigationArrayData` 提交 Job，资产关闭时释放来源与 Block 引用，已交付资源通过普通引用继续保持数组有效。
 
 下面是从资产选择网格的调用例子：
