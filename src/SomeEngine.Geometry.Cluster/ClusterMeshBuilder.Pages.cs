@@ -590,7 +590,7 @@ public static partial class ClusterMeshBuilder
                 throw new InvalidDataException($"Cluster LOD error {value} is invalid.");
 
             // The hierarchy uses float.MaxValue to mark a terminal/root LOD. Both the page
-            // cluster ABI and the BVH need a finite value, while the largest finite half already
+            // cluster format and the BVH need a finite value, while the largest finite half already
             // keeps that terminal LOD selected throughout the supported projection range.
             // The BVH rejects the finer group with the same error that the
             // packed coarse clusters accept. Different rounding opens a gap

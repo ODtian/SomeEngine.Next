@@ -412,12 +412,12 @@ public static partial class ClusterMeshBuilder
         ReadOnlySpan<uint> remap,
         int nextGroupId)
     {
-        List<int> pending = CreatePendingClusters(clusters.Count);
+        List<int> levelClusters = CreateLeafClusterIndices(clusters.Count);
         var workspace = new LodWorkspace();
         int depth = 0;
-        while (pending.Count > 1)
+        while (levelClusters.Count > 1)
         {
-            pending = ReduceClusterLodDepth(
+            levelClusters = ReduceClusterLodDepth(
                 config,
                 positions,
                 materialIndicesArray,
@@ -425,24 +425,24 @@ public static partial class ClusterMeshBuilder
                 globalIndices,
                 locks,
                 remap,
-                pending,
+                levelClusters,
                 workspace,
                 ref nextGroupId,
                 depth++);
         }
 
-        AssignRootParentError(clusters, pending);
+        AssignRootParentError(clusters, levelClusters);
     }
 
-    private static List<int> CreatePendingClusters(int clusterCount)
+    private static List<int> CreateLeafClusterIndices(int clusterCount)
     {
-        var pending = new List<int>(clusterCount);
+        var levelClusters = new List<int>(clusterCount);
         for (int index = 0; index < clusterCount; index++)
         {
-            pending.Add(index);
+            levelClusters.Add(index);
         }
 
-        return pending;
+        return levelClusters;
     }
 
     private static List<int> ReduceClusterLodDepth(
@@ -453,18 +453,18 @@ public static partial class ClusterMeshBuilder
         List<uint> globalIndices,
         Span<byte> locks,
         ReadOnlySpan<uint> remap,
-        List<int> pending,
+        List<int> levelClusters,
         LodWorkspace workspace,
         ref int nextGroupId,
         int depth)
     {
-        Partition(config, positions, clusters, globalIndices, pending, remap, workspace.GroupOffsets);
-        LockBoundary(locks, clusters, globalIndices, pending, workspace.GroupOffsets, remap);
-        var nextPending = new List<int>();
-        Span<int> pendingSpan = CollectionsMarshal.AsSpan(pending);
+        Partition(config, positions, clusters, globalIndices, levelClusters, remap, workspace.GroupOffsets);
+        LockBoundary(locks, clusters, globalIndices, levelClusters, workspace.GroupOffsets, remap);
+        var nextLevelClusters = new List<int>();
+        Span<int> levelClusterIndices = CollectionsMarshal.AsSpan(levelClusters);
         for (int groupIndex = 0; groupIndex < workspace.GroupOffsets.Count - 1; groupIndex++)
         {
-            Span<int> group = PendingGroup(pendingSpan, workspace.GroupOffsets, groupIndex);
+            Span<int> group = GetClusterGroup(levelClusterIndices, workspace.GroupOffsets, groupIndex);
             ReduceClusterGroup(
                 config,
                 positions,
@@ -474,22 +474,22 @@ public static partial class ClusterMeshBuilder
                 locks,
                 group,
                 workspace,
-                nextPending,
+                nextLevelClusters,
                 ref nextGroupId,
                 depth);
         }
 
-        return nextPending;
+        return nextLevelClusters;
     }
 
-    private static Span<int> PendingGroup(
-        Span<int> pending,
+    private static Span<int> GetClusterGroup(
+        Span<int> levelClusters,
         List<int> groupOffsets,
         int groupIndex)
     {
         int start = groupOffsets[groupIndex];
         int count = groupOffsets[groupIndex + 1] - start;
-        return pending.Slice(start, count);
+        return levelClusters.Slice(start, count);
     }
 
     private static void ReduceClusterGroup(
@@ -501,7 +501,7 @@ public static partial class ClusterMeshBuilder
         Span<byte> locks,
         Span<int> group,
         LodWorkspace workspace,
-        List<int> nextPending,
+        List<int> nextLevelClusters,
         ref int nextGroupId,
         int depth)
     {
@@ -529,7 +529,7 @@ public static partial class ClusterMeshBuilder
             groupError,
             groupId,
             depth,
-            nextPending);
+            nextLevelClusters);
     }
 
     private static void MergeGroupIndices(
@@ -590,7 +590,7 @@ public static partial class ClusterMeshBuilder
         float error,
         int groupId,
         int depth,
-        List<int> nextPending)
+        List<int> nextLevelClusters)
     {
         int start = clusters.Count;
         Clusterize(
@@ -610,7 +610,7 @@ public static partial class ClusterMeshBuilder
                 error,
                 groupId,
                 depth + 1);
-            nextPending.Add(index);
+            nextLevelClusters.Add(index);
         }
     }
 
@@ -639,16 +639,16 @@ public static partial class ClusterMeshBuilder
         return cluster;
     }
 
-    private static void AssignRootParentError(List<BuilderMeshlet> clusters, List<int> pending)
+    private static void AssignRootParentError(List<BuilderMeshlet> clusters, List<int> levelClusters)
     {
-        if (pending.Count != 1)
+        if (levelClusters.Count != 1)
         {
             return;
         }
 
-        BuilderMeshlet cluster = clusters[pending[0]];
+        BuilderMeshlet cluster = clusters[levelClusters[0]];
         cluster.ParentError = float.MaxValue;
-        clusters[pending[0]] = cluster;
+        clusters[levelClusters[0]] = cluster;
     }
 }
 
@@ -1176,26 +1176,26 @@ public static partial class ClusterMeshBuilder
         ReadOnlySpan<Vector3> positions,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices,
-        List<int> pending,
+        List<int> levelClusters,
         ReadOnlySpan<uint> remap,
         List<int> groupOffsets
     )
     {
         groupOffsets.Clear();
-        if (pending.Count <= config.PartitionSize)
+        if (levelClusters.Count <= config.PartitionSize)
         {
-            AddSinglePartition(pending, groupOffsets);
+            AddSinglePartition(levelClusters, groupOffsets);
             return 1;
         }
 
-        int totalIndexCount = TotalPartitionIndexCount(clusters, pending);
-        PartitionScratch scratch = RentPartitionScratch(pending.Count, totalIndexCount);
+        int totalIndexCount = TotalPartitionIndexCount(clusters, levelClusters);
+        PartitionScratch scratch = RentPartitionScratch(levelClusters.Count, totalIndexCount);
         try
         {
-            FillPartitionInputs(scratch, clusters, globalIndices, pending, remap);
-            nuint partitionCount = ExecutePartition(config, positions, scratch, totalIndexCount, pending.Count);
-            scratch.Remap = CreatePartitionRemap(config, positions, clusters, pending, scratch.Partitions, partitionCount);
-            ApplyPartitionOrder(pending, groupOffsets, scratch, partitionCount);
+            FillPartitionInputs(scratch, clusters, globalIndices, levelClusters, remap);
+            nuint partitionCount = ExecutePartition(config, positions, scratch, totalIndexCount, levelClusters.Count);
+            scratch.Remap = CreatePartitionRemap(config, positions, clusters, levelClusters, scratch.Partitions, partitionCount);
+            ApplyPartitionOrder(levelClusters, groupOffsets, scratch, partitionCount);
             return (int)partitionCount;
         }
         finally
@@ -1204,44 +1204,44 @@ public static partial class ClusterMeshBuilder
         }
     }
 
-    private static void AddSinglePartition(List<int> pending, List<int> groupOffsets)
+    private static void AddSinglePartition(List<int> levelClusters, List<int> groupOffsets)
     {
         groupOffsets.Add(0);
-        groupOffsets.Add(pending.Count);
+        groupOffsets.Add(levelClusters.Count);
     }
 
-    private static int TotalPartitionIndexCount(List<BuilderMeshlet> clusters, List<int> pending)
+    private static int TotalPartitionIndexCount(List<BuilderMeshlet> clusters, List<int> levelClusters)
     {
         int total = 0;
-        for (int index = 0; index < pending.Count; index++)
+        for (int index = 0; index < levelClusters.Count; index++)
         {
-            total += clusters[pending[index]].IndicesCount;
+            total += clusters[levelClusters[index]].IndicesCount;
         }
 
         return total;
     }
 
-    private static PartitionScratch RentPartitionScratch(int pendingCount, int totalIndexCount)
+    private static PartitionScratch RentPartitionScratch(int levelClusterCount, int totalIndexCount)
     {
         return new PartitionScratch(
             ArrayPool<uint>.Shared.Rent(totalIndexCount),
-            ArrayPool<uint>.Shared.Rent(pendingCount),
-            ArrayPool<uint>.Shared.Rent(pendingCount),
-            ArrayPool<int>.Shared.Rent(pendingCount));
+            ArrayPool<uint>.Shared.Rent(levelClusterCount),
+            ArrayPool<uint>.Shared.Rent(levelClusterCount),
+            ArrayPool<int>.Shared.Rent(levelClusterCount));
     }
 
     private static void FillPartitionInputs(
         PartitionScratch scratch,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices,
-        List<int> pending,
+        List<int> levelClusters,
         ReadOnlySpan<uint> remap)
     {
         int offset = 0;
         Span<uint> globalIndicesSpan = CollectionsMarshal.AsSpan(globalIndices);
-        for (int index = 0; index < pending.Count; index++)
+        for (int index = 0; index < levelClusters.Count; index++)
         {
-            BuilderMeshlet cluster = clusters[pending[index]];
+            BuilderMeshlet cluster = clusters[levelClusters[index]];
             scratch.Counts[index] = (uint)cluster.IndicesCount;
             offset = CopyPartitionIndices(cluster, globalIndicesSpan, remap, scratch.Indices, offset);
         }
@@ -1268,13 +1268,13 @@ public static partial class ClusterMeshBuilder
         ReadOnlySpan<Vector3> positions,
         PartitionScratch scratch,
         int totalIndexCount,
-        int pendingCount)
+        int levelClusterCount)
     {
         ReadOnlySpan<float> positionSpan = MemoryMarshal.Cast<Vector3, float>(positions);
         return Meshopt.PartitionClusters(
-            scratch.Partitions.AsSpan(0, pendingCount),
+            scratch.Partitions.AsSpan(0, levelClusterCount),
             scratch.Indices.AsSpan(0, totalIndexCount),
-            scratch.Counts.AsSpan(0, pendingCount),
+            scratch.Counts.AsSpan(0, levelClusterCount),
             config.PartitionSpatial ? positionSpan : default,
             (nuint)Unsafe.SizeOf<Vector3>(),
             (nuint)config.PartitionSize);
@@ -1284,7 +1284,7 @@ public static partial class ClusterMeshBuilder
         ClusterLodConfig config,
         ReadOnlySpan<Vector3> positions,
         List<BuilderMeshlet> clusters,
-        List<int> pending,
+        List<int> levelClusters,
         uint[] clusterPart,
         nuint partitionCount)
     {
@@ -1297,7 +1297,7 @@ public static partial class ClusterMeshBuilder
         uint[] partitionRemap = ArrayPool<uint>.Shared.Rent((int)partitionCount);
         try
         {
-            FillPartitionPoints(partitionPoints, clusters, pending, clusterPart);
+            FillPartitionPoints(partitionPoints, clusters, levelClusters, clusterPart);
             Meshopt.SpatialSortRemap(
                 partitionRemap.AsSpan(0, (int)partitionCount),
                 partitionPoints.AsSpan(0, (int)partitionCount * 3),
@@ -1313,12 +1313,12 @@ public static partial class ClusterMeshBuilder
     private static void FillPartitionPoints(
         float[] partitionPoints,
         List<BuilderMeshlet> clusters,
-        List<int> pending,
+        List<int> levelClusters,
         uint[] clusterPart)
     {
-        for (int index = 0; index < pending.Count; index++)
+        for (int index = 0; index < levelClusters.Count; index++)
         {
-            Vector3 center = clusters[pending[index]].Center;
+            Vector3 center = clusters[levelClusters[index]].Center;
             int offset = (int)clusterPart[index] * 3;
             partitionPoints[offset + 0] = center.X;
             partitionPoints[offset + 1] = center.Y;
@@ -1327,7 +1327,7 @@ public static partial class ClusterMeshBuilder
     }
 
     private static void ApplyPartitionOrder(
-        List<int> pending,
+        List<int> levelClusters,
         List<int> groupOffsets,
         PartitionScratch scratch,
         nuint partitionCount)
@@ -1338,9 +1338,9 @@ public static partial class ClusterMeshBuilder
         try
         {
             Array.Clear(partitionSizes, 0, count);
-            CountPartitionSizes(scratch, pending.Count, partitionSizes);
+            CountPartitionSizes(scratch, levelClusters.Count, partitionSizes);
             FillPartitionOffsets(partitionSizes, count, offsets, groupOffsets);
-            CopySortedPending(pending, scratch, offsets);
+            CopyClustersByPartition(levelClusters, scratch, offsets);
         }
         finally
         {
@@ -1351,10 +1351,10 @@ public static partial class ClusterMeshBuilder
 
     private static void CountPartitionSizes(
         PartitionScratch scratch,
-        int pendingCount,
+        int levelClusterCount,
         int[] partitionSizes)
     {
-        for (int index = 0; index < pendingCount; index++)
+        for (int index = 0; index < levelClusterCount; index++)
         {
             uint partitionId = RemappedPartitionId(scratch, index);
             partitionSizes[(int)partitionId]++;
@@ -1383,19 +1383,19 @@ public static partial class ClusterMeshBuilder
         }
     }
 
-    private static void CopySortedPending(
-        List<int> pending,
+    private static void CopyClustersByPartition(
+        List<int> levelClusters,
         PartitionScratch scratch,
         int[] offsets)
     {
-        for (int index = 0; index < pending.Count; index++)
+        for (int index = 0; index < levelClusters.Count; index++)
         {
             uint partitionId = RemappedPartitionId(scratch, index);
             int destination = offsets[partitionId]++;
-            scratch.SortedPending[destination] = pending[index];
+            scratch.ClusterOrder[destination] = levelClusters[index];
         }
 
-        new Span<int>(scratch.SortedPending, 0, pending.Count).CopyTo(CollectionsMarshal.AsSpan(pending));
+        new Span<int>(scratch.ClusterOrder, 0, levelClusters.Count).CopyTo(CollectionsMarshal.AsSpan(levelClusters));
     }
 }
 
@@ -1405,18 +1405,18 @@ public static partial class ClusterMeshBuilder
 
     private sealed class PartitionScratch
     {
-        public PartitionScratch(uint[] indices, uint[] counts, uint[] partitions, int[] sortedPending)
+        public PartitionScratch(uint[] indices, uint[] counts, uint[] partitions, int[] clusterOrder)
         {
             Indices = indices;
             Counts = counts;
             Partitions = partitions;
-            SortedPending = sortedPending;
+            ClusterOrder = clusterOrder;
         }
 
         public uint[] Indices { get; }
         public uint[] Counts { get; }
         public uint[] Partitions { get; }
-        public int[] SortedPending { get; }
+        public int[] ClusterOrder { get; }
         public uint[]? Remap { get; set; }
 
         public void Return()
@@ -1424,7 +1424,7 @@ public static partial class ClusterMeshBuilder
             ArrayPool<uint>.Shared.Return(Indices);
             ArrayPool<uint>.Shared.Return(Counts);
             ArrayPool<uint>.Shared.Return(Partitions);
-            ArrayPool<int>.Shared.Return(SortedPending);
+            ArrayPool<int>.Shared.Return(ClusterOrder);
             if (Remap != null)
             {
                 ArrayPool<uint>.Shared.Return(Remap);
@@ -1438,7 +1438,7 @@ public static partial class ClusterMeshBuilder
         Span<byte> locks,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices,
-        List<int> pending,
+        List<int> levelClusters,
         List<int> groupOffsets,
         ReadOnlySpan<uint> remap
     )
@@ -1456,7 +1456,7 @@ public static partial class ClusterMeshBuilder
         {
             int start = groupOffsets[g];
             int count = groupOffsets[g + 1] - start;
-            var group = CollectionsMarshal.AsSpan(pending).Slice(start, count);
+            var group = CollectionsMarshal.AsSpan(levelClusters).Slice(start, count);
 
             foreach (int clusterIdx in group)
             {
