@@ -18,6 +18,8 @@
 2. `TerrainLodSystem` 根据各放置指定的固定 LOD 和块范围维护实体。
 3. `TerrainMeshSystem` 捕获受影响块需要的表面版本，通过 Scheduler 构建几何。
 
+该功能同时安装地形请求提取、GPU 准备、帧录制与完成观察。块实体的 `TerrainSource` 引用使请求进入同一条 Game world 到 Rendering world 的提取路径，GPU 页的按需 CPU 读取为后续网格任务提供样本，详见 [GPU 编辑](Terrain-Gpu-Editing.md)。
+
 高度编辑提交产生 `HeightFieldChange`。场景结合写入范围和采样邻域选择需要更新的块；一次共享 Terrain 的构建完成后，所有引用对应几何的放置一起取得该版本。构建期间保留当前几何。
 
 块实体使用 `WorldTransform`、`MeshInstance` 和 `MeshMaterialBinding`，由现有 [Mesh 提取](../rendering/Extraction.md) 进入 Rendering world。`GetChunks` 返回游戏世界当前提交的块版本。`WaitForBuildsAsync` 等待当前已提交的构建任务；接着运行的提交系统应用结果。

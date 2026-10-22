@@ -45,6 +45,21 @@ internal static class SceneImages
         }
     }
 
+    internal static void AssertChanged(SceneImage before, SceneImage after,
+        [CallerMemberName] string test = "")
+    {
+        try
+        {
+            Assert.False(before.Pixels.Span.SequenceEqual(after.Pixels.Span),
+                $"Frames {before.Frame} and {after.Frame}: the edit should change the captured pixels.");
+        }
+        catch (XunitException)
+        {
+            SaveFailure(before, after, test);
+            throw;
+        }
+    }
+
     internal static void AssertEqualRegion(SceneImage expected, SceneImage actual, int left, int top, int width, int height,
         [CallerMemberName] string test = "")
     {

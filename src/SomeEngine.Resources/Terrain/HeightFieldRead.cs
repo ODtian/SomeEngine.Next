@@ -28,8 +28,8 @@ public sealed class HeightFieldRead
         var accesses = new List<JobResourceAccess>();
         for (int z = Range.MinZ / size; z * size < Range.MaxZ; z++)
         for (int x = Range.MinX / size; x * size < Range.MaxX; x++)
-            if (_data.Pages.TryGetValue((x, z), out float[]? page))
-                accesses.Add(JobResourceAccess.Read(scheduler, page));
+            if (_data.Pages.TryGetValue((x, z), out TerrainFieldPage? page))
+                accesses.Add(JobResourceAccess.Read(scheduler, page.Samples!));
         return accesses.ToArray();
     }
 
@@ -50,8 +50,8 @@ public sealed class HeightFieldRead
         get
         {
             int size = Grid.PageSize;
-            return _data.Pages.TryGetValue((x / size, z / size), out float[]? page)
-                ? page[(z % size) * size + x % size]
+            return _data.Pages.TryGetValue((x / size, z / size), out TerrainFieldPage? page)
+                ? page.Samples![(z % size) * size + x % size]
                 : _initialHeight;
         }
     }
