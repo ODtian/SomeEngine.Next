@@ -23,8 +23,8 @@ public sealed class HeightFieldRead
         get
         {
             int size = Grid.PageSize;
-            return _data.Pages.TryGetValue((x / size, z / size), out float[]? page)
-                ? page[(z % size) * size + x % size]
+            return _data.Pages.TryGetValue((x / size, z / size), out TerrainFieldPage? page)
+                ? page.Samples![(z % size) * size + x % size]
                 : _initialHeight;
         }
     }
