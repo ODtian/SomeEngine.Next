@@ -15,6 +15,7 @@ internal sealed class NativeWindow : IDisposable
     private const uint QueueAllInput = 0x04FF;
     private const uint WaitInputAvailable = 0x0004;
     private const uint TrackMouseLeave = 0x00000002;
+    private const uint SetPositionNoMove = 0x0002;
     private const uint SetPositionNoActivate = 0x0010;
     private const uint SetPositionNoZOrder = 0x0004;
     private const int ShowNormal = 5;
@@ -148,6 +149,18 @@ internal sealed class NativeWindow : IDisposable
     internal bool IsMinimized { get; private set; }
 
     internal bool CloseRequested => _closeRequested;
+
+    internal void SetClientSize(int width, int height)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        var outer = new NativeRect(0, 0, width, height);
+        if (!AdjustWindowRectEx(ref outer, WindowStyleOverlapped, false, 0) ||
+            !SetWindowPos(Handle, 0, 0, 0, outer.Right - outer.Left, outer.Bottom - outer.Top,
+                SetPositionNoActivate | SetPositionNoZOrder | SetPositionNoMove))
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Window size change failed.");
+        ThrowDispatchFailure();
+    }
 
     internal bool PumpMessages()
     {
