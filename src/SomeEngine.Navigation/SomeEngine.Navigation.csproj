@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
+    <ProjectReference Include="../SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

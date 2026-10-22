@@ -25,6 +25,10 @@ public sealed partial class WorldJobs
     public static World CreateWorld(int initialEntityCapacity = 256, Scheduler? scheduler = null) =>
         new(initialEntityCapacity, new WorldJobs(scheduler ?? JobSystem.Default));
 
+    /// <summary>Joins stage completions on the scheduler selected by this World.</summary>
+    public static JobHandle CombineDependencies(World world, ReadOnlySpan<JobHandle> dependencies) =>
+        WorldStorageJobResources.RequireJobs(world).Scheduler.CombineDependencies(dependencies);
+
     internal override void Attach(World world)
     {
         if (Interlocked.CompareExchange(ref _world, world, null) is not null)

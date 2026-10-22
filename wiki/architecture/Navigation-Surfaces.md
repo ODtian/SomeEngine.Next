@@ -2,6 +2,9 @@
 
 `SomeEngine.Navigation` 持有导航几何、表面与构建对象，依赖 ECS.Systems 的 Job 调度能力。`SomeEngine.Assets` 引用导航项目，提供 MeshAsset 中的 NavigationGeometryBlock 与 NavigationAsset 中的 NavigationSurfaceBlock。
 
+角色输入与网格变体的资产入口见[导航规格、策略与网格资产](Assets/Asset-Navigation.md)。
+目标组件、路径求解、运动消费和实际进度见[目标、路径与实际运动](Navigation-Paths.md)。
+
 ## 几何输入
 
 `NavigationGeometry` 保存位置、带面积分类的三角形和局部包围范围。位置与拓扑通过 `ReadOnlyMemory` 共享；提供数组的调用方在资源使用期保持数组内容只读。
