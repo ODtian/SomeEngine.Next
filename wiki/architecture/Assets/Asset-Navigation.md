@@ -14,7 +14,7 @@
 
 ## 网格变体
 
-`NavigationMeshSelection` 由 `AssetId<NavigationProfileAsset>` 和构建变体名组成。`NavigationMeshBlock.SetMesh(selection, mesh)` 安装对应完整结果；`Variants` 返回当前选择目录，`Create(selection)` 与 `CreateAsync(selection)` 取得所选网格。
+`NavigationMeshSelection` 由 `AssetId<NavigationProfileAsset>` 和构建变体名组成。`NavigationMeshBlock.SetMesh(selection, mesh)` 安装对应完整结果；`Variants` 返回当前选择目录。`CreateAsync(selection)` 显式取得选中变体的详细数组；`Create(selection)` 返回此前已经取得的完整资源。
 
 每个变体保存位置、多边形顶点索引、多边形与入口、详细高度位置及三角形、内容版本。多边形保留区域、能力要求、入口范围、详细三角形范围及所属块；入口保留目标多边形、左右端点、通行成本、能力要求和动作标识。Profile 身份进入资产引用目录。
 
@@ -22,7 +22,9 @@
 
 `HeadingNavigationMeshBlock` 使用相同的 Profile/变体选择键，保存连续朝向区间、平移/旋转连接和自身区域图；构建与位姿查询见[朝向导航网格](../Heading-Navigation.md)。
 
-当前常驻网格 Block 在 `GetBlockAsync` 完成时取得全部变体的数组。创建与 Block 分支复用取得的只读资源。编码和解码通过 `NavigationArrayData` 提交 Job，资产关闭时释放来源与 Block 引用，已交付资源通过普通引用继续保持数组有效。
+`GetBlockAsync` 取得变体元数据和入口图。带区域图的变体将每个详细 Tile 编成独立六数组组，另存跨块原始 portal，完整创建时重组多边形范围与连接。元数据同时保留完整网格和独立块的 `BakedRadius`。创建与 Block 分支共享已取得的完整资源。
+
+`CreateTileSource(selection)` 返回独立保持文件来源的 `NavigationMeshTileSource`，公开 `Graph` 与 `Directory`。`ScheduleRead(tile, scheduler)` 在 I/O 完成后经外部 fence 提交解码 Job；Job 声明实际已取得的字节数组，`Completion` 覆盖来源释放，`Complete()` 返回详细 Mesh。资产关闭后 TileSource 继续取得后续块，已交付资源由普通引用保持数组有效。场景的兴趣、驻留与请求续行见[导航流送](../Navigation-Streaming.md)。
 
 下面是从资产选择网格的调用例子：
 

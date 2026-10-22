@@ -6,7 +6,7 @@ namespace SomeEngine.Navigation;
 public sealed partial class NavigationMesh
 {
     internal NavigationMesh WithRegionGraph(NavigationRegionGraph graph, NavigationMeshTile[] tiles) =>
-        new(Positions, PolygonVertices, Polygons, Portals, DetailPositions, DetailTriangles, ContentVersion, graph, tiles);
+        new(Positions, PolygonVertices, Polygons, Portals, DetailPositions, DetailTriangles, ContentVersion, graph, tiles, BakedRadius);
 
     internal NavigationMeshTile[] SeparateTiles()
     {
@@ -58,7 +58,7 @@ public sealed partial class NavigationMesh
                 PortalCount = portals.Count - portalStart, DetailStart = detailStart });
         }
         return new(positions.ToArray(), vertices.ToArray(), polygons.ToArray(), portals.ToArray(),
-            details.ToArray(), triangles.ToArray(), ContentVersion);
+            details.ToArray(), triangles.ToArray(), ContentVersion, bakedRadius: BakedRadius);
     }
 
     internal NavigationMesh Transform(Matrix4x4 transform)
@@ -84,8 +84,12 @@ public sealed partial class NavigationMesh
         var tiles = new NavigationMeshTile[Tiles.Length];
         for (int index = 0; index < tiles.Length; index++)
             tiles[index] = new(Tiles.Span[index].Tile, Tiles.Span[index].Mesh.Transform(transform), Tiles.Span[index].Bounds?.Transform(transform));
+        // The smallest XZ singular value is the disk radius contained in the transformed clearance ellipse.
+        Vector2 xAxis = new(transform.M11, transform.M13), zAxis = new(transform.M31, transform.M33);
+        float xx = xAxis.LengthSquared(), zz = zAxis.LengthSquared(), xz = Vector2.Dot(xAxis, zAxis);
+        float minimumScale = MathF.Sqrt(MathF.Max(0, (xx + zz - MathF.Sqrt((xx - zz) * (xx - zz) + 4 * xz * xz)) * 0.5f));
         return new(positions, PolygonVertices.ToArray(), Polygons.ToArray(), portals,
-            details, DetailTriangles.ToArray(), ContentVersion, tiles: tiles);
+            details, DetailTriangles.ToArray(), ContentVersion, tiles: tiles, bakedRadius: BakedRadius * minimumScale);
     }
 
     internal void AddReadAccesses(Scheduler scheduler, List<JobResourceAccess> accesses)

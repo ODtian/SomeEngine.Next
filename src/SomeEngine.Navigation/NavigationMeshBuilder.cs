@@ -277,7 +277,8 @@ public static class NavigationMeshBuilder
             for (int index = 0; index < tiles.Length; index++)
                 tiles[index] = new(ranges[index].Tile, state.TileData[index].Mesh, state.Surface.Tiles.Span[index].InteriorBounds);
             state.Mesh = new(positions.ToArray(), vertices.ToArray(), polygons.ToArray(), combined.ToArray(),
-                details.ToArray(), triangles.ToArray(), state.Settings.ContentVersion, tiles: tiles);
+                details.ToArray(), triangles.ToArray(), state.Settings.ContentVersion, tiles: tiles,
+                bakedRadius: NavigationSurfaceTraversal.GetRotationRadius(state.Profile.Footprint.Span));
         }
     }
 }
