@@ -16,11 +16,6 @@ namespace SomeEngine.Render.Cluster;
 internal sealed class ClusterMeshCache
 {
     private readonly ClusterResidency _residency;
-    private readonly object _instanceGeometryGate = new();
-    private RenderMesh[] _instanceGeometry = [];
-    private int[] _instanceEntityGenerations = [];
-    private uint[] _instanceRoots = [];
-
     internal ClusterMeshCache(ClusterResidency residency)
         => _residency = residency ?? throw new ArgumentNullException(nameof(residency));
 
@@ -50,93 +45,8 @@ internal sealed class ClusterMeshCache
         CancellationToken cancellationToken = default) =>
         _residency.LoadOpeningPagesAsync(lowestDetailPageIds, cancellationToken);
 
-    internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
-    {
-        if (_residency.TryGetPublishedRoot(mesh, out root))
-            return true;
-        root = ClusterRenderFeature.MissingBvhRoot;
-        return false;
-    }
-
-    internal void ResolveInstanceGeometry(
-        ReadOnlySpan<Entity> entities,
-        ReadOnlySpan<RenderMesh> meshes,
-        Span<uint> roots,
-        Span<float> boundsExpansions)
-    {
-        if (entities.Length != meshes.Length ||
-            roots.Length != meshes.Length ||
-            boundsExpansions.Length != meshes.Length)
-        {
-            throw new ArgumentException(
-                "Cluster instance geometry inputs and destinations must have identical lengths.");
-        }
-
-        lock (_instanceGeometryGate)
-        {
-            int required = 0;
-            for (int row = 0; row < entities.Length; row++)
-                required = Math.Max(required, checked(entities[row].Index + 1));
-            EnsureInstanceGeometryCapacity(required);
-
-            Mesh? lastMesh = null;
-            uint lastRoot = ClusterRenderFeature.MissingBvhRoot;
-            bool lastRootPublished = false;
-            for (int row = 0; row < entities.Length; row++)
-            {
-                Entity entity = entities[row];
-                RenderMesh geometry = meshes[row];
-                int index = entity.Index;
-                uint root;
-                bool published;
-                if (_instanceEntityGenerations[index] == entity.Generation &&
-                    _instanceGeometry[index] == geometry)
-                {
-                    root = _instanceRoots[index];
-                    published = true;
-                }
-                else if (lastRootPublished &&
-                    lastMesh == geometry.Mesh)
-                {
-                    root = lastRoot;
-                    published = true;
-                }
-                else
-                {
-                    published = TryGetPublishedRoot(geometry.Mesh, out root);
-                }
-
-                if (published)
-                {
-                    _instanceGeometry[index] = geometry;
-                    _instanceEntityGenerations[index] = entity.Generation;
-                    _instanceRoots[index] = root;
-                    lastMesh = geometry.Mesh;
-                    lastRoot = root;
-                    lastRootPublished = true;
-                }
-                else
-                {
-                    _instanceEntityGenerations[index] = 0;
-                    root = ClusterRenderFeature.MissingBvhRoot;
-                    lastRootPublished = false;
-                }
-
-                roots[row] = root;
-                boundsExpansions[row] = geometry.BoundsExpansion;
-            }
-        }
-    }
-
-    private void EnsureInstanceGeometryCapacity(int required)
-    {
-        if (_instanceRoots.Length >= required)
-            return;
-        int capacity = Math.Max(required, Math.Max(16, _instanceRoots.Length * 2));
-        Array.Resize(ref _instanceGeometry, capacity);
-        Array.Resize(ref _instanceEntityGenerations, capacity);
-        Array.Resize(ref _instanceRoots, capacity);
-    }
+    internal bool TryGetGeometry(Mesh mesh, out ClusterGeometry geometry)
+        => _residency.TryGetGeometry(mesh, out geometry);
 }
 
 /// <summary>
@@ -149,7 +59,8 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
     private readonly ClusterMeshCache _cache;
     private readonly QueryHandle _meshQuery;
     private readonly EntityTableChanges _tableChanges;
-    private readonly Dictionary<Entity, Mesh> _entityMeshes = [];
+    private readonly Dictionary<Entity, RenderMesh> _entityMeshes = [];
+    private readonly HashSet<Entity> _geometryChanges = [];
     private readonly Dictionary<Mesh, int> _meshReferences = [];
     private readonly Dictionary<Mesh, RenderMesh> _missing = [];
     private uint _lastVersion;
@@ -220,20 +131,22 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
     private void SetMesh(Entity entity, RenderMesh? value)
     {
         Mesh? mesh = value?.Mesh;
-        if (_entityMeshes.TryGetValue(entity, out Mesh? previous))
+        if (_entityMeshes.TryGetValue(entity, out RenderMesh previous))
         {
-            if (ReferenceEquals(previous, mesh)) return;
+            if (previous == value) return;
             _entityMeshes.Remove(entity);
-            int count = _meshReferences[previous] - 1;
+            int count = _meshReferences[previous.Mesh] - 1;
             if (count == 0)
             {
-                _meshReferences.Remove(previous);
-                _missing.Remove(previous);
+                _meshReferences.Remove(previous.Mesh);
+                _missing.Remove(previous.Mesh);
             }
-            else _meshReferences[previous] = count;
+            else _meshReferences[previous.Mesh] = count;
         }
+        else if (mesh is null) return;
+        _geometryChanges.Add(entity);
         if (mesh is null) return;
-        _entityMeshes.Add(entity, mesh);
+        _entityMeshes.Add(entity, value!.Value);
         _meshReferences.TryGetValue(mesh, out int references);
         _meshReferences[mesh] = references + 1;
         if (references == 0 && !_cache.IsRegistered(mesh)) _missing.TryAdd(mesh, value!.Value);
@@ -269,6 +182,23 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
         }
     }
 
+    internal void ApplyGeometry()
+    {
+        foreach (Entity entity in _geometryChanges.ToArray())
+        {
+            if (_entityMeshes.TryGetValue(entity, out RenderMesh mesh))
+            {
+                if (!_cache.TryGetGeometry(mesh.Mesh, out ClusterGeometry geometry)) continue;
+                var value = new RenderClusterGeometry(geometry, mesh.BoundsExpansion);
+                if (_world.Has<RenderClusterGeometry>(entity)) _world.Replace(entity, value);
+                else _world.Add(entity, value);
+            }
+            else if (_world.IsAlive(entity) && _world.Has<RenderClusterGeometry>(entity))
+                _world.Remove<RenderClusterGeometry>(entity);
+            _geometryChanges.Remove(entity);
+        }
+    }
+
     public void Dispose()
     {
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
@@ -283,6 +213,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
             _world.ReleaseQuery(_meshQuery);
             _tableChanges.Dispose();
             _entityMeshes.Clear();
+            _geometryChanges.Clear();
             _meshReferences.Clear();
             _missing.Clear();
             Volatile.Write(ref _disposed, 2);

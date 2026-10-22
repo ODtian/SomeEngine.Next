@@ -271,6 +271,16 @@ internal sealed class RuntimeScene : IDisposable
 
     internal Entity[] GetMeshEntities() => Entities(_world, new QueryDefinitionBuilder().Read<MeshInstance>());
 
+    internal Mesh GetMesh(Entity entity) => _world.Read<MeshInstance>(entity).Mesh;
+
+    internal void ReplaceMesh(Entity entity, Mesh mesh)
+    {
+        MeshInstance instance = _world.Read<MeshInstance>(entity);
+        instance.Mesh = mesh;
+        instance.PageSource = null;
+        _world.Replace(entity, instance);
+    }
+
     internal void SetCameraTransform(Vector3 position, Quaternion rotation) =>
         Camera = new RuntimeCamera(position, position + Vector3.Transform(Vector3.UnitZ, rotation),
             Vector3.Transform(Vector3.UnitY, rotation));
@@ -289,10 +299,22 @@ internal sealed class RuntimeScene : IDisposable
     {
         MeshMaterialBinding[] bindings = [];
         _world.ExecuteBufferRead<MeshMaterialBinding>(source, values => bindings = values.AsSpan().ToArray());
+        return AddMeshEntity(_world.Read<MeshInstance>(source), bindings, transform);
+    }
+
+    internal Entity AddEntity(Mesh mesh, IReadOnlyList<Material> materials, TransformQvvs transform)
+    {
+        var bindings = new MeshMaterialBinding[materials.Count];
+        for (int index = 0; index < materials.Count; index++) bindings[index] = new(materials[index]);
+        return AddMeshEntity(new MeshInstance { Mesh = mesh }, bindings, transform);
+    }
+
+    private Entity AddMeshEntity(MeshInstance instance, MeshMaterialBinding[] bindings, TransformQvvs transform)
+    {
         Entity entity = _world.CreateEntity(new WorldTransform { Qvvs = transform });
         try
         {
-            _world.Add(entity, _world.Read<MeshInstance>(source));
+            _world.Add(entity, instance);
             _world.AddBuffer<MeshMaterialBinding>(entity);
             _world.ExecuteBufferWrite<MeshMaterialBinding>(entity, values =>
             {

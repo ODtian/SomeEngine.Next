@@ -309,6 +309,7 @@ public sealed class ClusterRenderResources : IDisposable
                         scope.AcquireTimeline(_residencyTimeline);
 
                     bool prepared = _residency.PreparePublication();
+                    _meshPrepare.ApplyGeometry();
                     return new ClusterPrepareResult(prepared);
                 }
                 finally
@@ -364,7 +365,7 @@ public sealed class ClusterRenderResources : IDisposable
         }
     }
 
-    internal ClusterGeometryProducer CreateGeometryProducer() => new(_meshes);
+    internal ClusterGeometryProducer CreateGeometryProducer() => new();
 
     /// <summary>
     /// Exposes a non-cacheable binding for the opaque metadata contract carried by the actual
@@ -792,15 +793,13 @@ public sealed class ClusterRenderResources : IDisposable
 
     internal readonly struct ClusterGeometryProducer : IRenderInstanceProducer
     {
-        private readonly ClusterMeshCache _meshes;
         private readonly ResolvedRenderInstanceProperty<RenderTransform> _currentTransform;
         private readonly ResolvedRenderInstanceProperty<RenderPreviousTransform> _previousTransform;
         private readonly ResolvedRenderInstanceProperty<uint> _bvhRoot;
         private readonly ResolvedRenderInstanceProperty<float> _boundsExpansion;
 
-        internal ClusterGeometryProducer(ClusterMeshCache meshes)
+        public ClusterGeometryProducer()
         {
-            _meshes = meshes;
             RenderInstancePropertyLayout clusterProperties = ClusterRenderFeature.GeometryLayout;
             _currentTransform = clusterProperties.Resolve<RenderTransform>(
                 RenderInstanceTransformProperties.CurrentTransformKey);
@@ -817,7 +816,7 @@ public sealed class ClusterRenderResources : IDisposable
             uint lastSystemVersion) =>
             packet.ChangedSince<RenderTransform>(lastSystemVersion)
             || packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)
-            || packet.ChangedSince<RenderMesh>(lastSystemVersion)
+            || packet.ChangedSince<RenderClusterGeometry>(lastSystemVersion)
                 ? RenderInstanceChanges.Values
                 : RenderInstanceChanges.None;
 
@@ -845,7 +844,7 @@ public sealed class ClusterRenderResources : IDisposable
             if (previous) destination.Write(_previousTransform, packet.Read<RenderPreviousTransform>());
             if (!mesh) return;
 
-            ReadOnlySpan<RenderMesh> renderMeshes = packet.Read<RenderMesh>();
+            ReadOnlySpan<RenderClusterGeometry> geometries = packet.Read<RenderClusterGeometry>();
             uint[]? rentedRoots = null;
             float[]? rentedExpansions = null;
             scoped Span<uint> roots;
@@ -864,11 +863,11 @@ public sealed class ClusterRenderResources : IDisposable
             }
             try
             {
-                _meshes.ResolveInstanceGeometry(
-                    packet.Entities,
-                    renderMeshes,
-                    roots,
-                    expansions);
+                for (int row = 0; row < geometries.Length; row++)
+                {
+                    roots[row] = geometries[row].Geometry.RootBvh;
+                    expansions[row] = geometries[row].BoundsExpansion;
+                }
                 destination.Write(_bvhRoot, roots);
                 destination.Write(_boundsExpansion, expansions);
             }

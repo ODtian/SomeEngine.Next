@@ -6,6 +6,9 @@ namespace SomeEngine.Runtime;
 /// <summary>Application content, rendering settings and callbacks executed on the application thread.</summary>
 public sealed class ApplicationScene(string contentDirectory)
 {
+    private readonly List<IApplicationGeometryFeature> _geometryFeatures = [];
+    internal IReadOnlyList<IApplicationGeometryFeature> GeometryFeatures => _geometryFeatures;
+
     public string ContentDirectory { get; set; } = contentDirectory;
     public RuntimeStartupOptions Options { get; set; } = RuntimeStartupOptions.Parse([]);
     public uint GeometryMemoryBytes { get; set; } = 256u * 1024 * 1024;
@@ -17,6 +20,9 @@ public sealed class ApplicationScene(string contentDirectory)
     public Action<ApplicationFrame>? FrameCompleted { get; set; }
     public Action<ApplicationResult>? SceneCompleted { get; set; }
     public bool ReloadRequested { get; internal set; }
+
+    /// <summary>Installs the feature for each scene run, before extraction and rendering begin.</summary>
+    public void InstallGeometry(IApplicationGeometryFeature feature) => _geometryFeatures.Add(feature);
 
     /// <summary>Loads the current content and settings after this scene run completes.</summary>
     public void Reload() => ReloadRequested = true;

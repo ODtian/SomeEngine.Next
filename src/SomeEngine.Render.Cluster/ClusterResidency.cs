@@ -285,6 +285,17 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         return false;
     }
 
+    internal bool TryGetGeometry(Mesh mesh, out ClusterGeometry geometry)
+    {
+        if (TryGetPublishedRoot(mesh, out uint root))
+        {
+            geometry = _meshes.GetGeometry(mesh, root);
+            return true;
+        }
+        geometry = default;
+        return false;
+    }
+
     internal int PublishedMeshCount
     {
         get
