@@ -106,9 +106,11 @@ public sealed class NavigationScene(NavigationSceneContent content) : INavigatio
         return tile is not null;
     }
 
+    internal void ApplyCompleted(NavigationSceneContent content) => Volatile.Write(ref _content,
+        new(content.Regions, content.Connections, content.Tiles, Content.Version + 1));
+
     private readonly struct ApplyContent(NavigationScene scene, NavigationSceneContent content) : IJob
     {
-        public void Execute() => Volatile.Write(ref scene._content,
-            new(content.Regions, content.Connections, content.Tiles, scene.Content.Version + 1));
+        public void Execute() => scene.ApplyCompleted(content);
     }
 }

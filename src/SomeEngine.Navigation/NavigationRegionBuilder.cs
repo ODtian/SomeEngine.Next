@@ -11,6 +11,7 @@ public sealed class NavigationRegionBuildState
     internal NavigationProfile Profile { get; }
     internal NavigationPolicy Policy { get; }
     internal ReadOnlyMemory<NavigationRegionPort> Ports { get; }
+    internal NavigationRegionGraph? Previous { get; }
     internal NavigationMeshTile[] TileMeshes = [];
     internal NavigationRegionTile[] Tiles = [];
     internal NavigationRegionEntrance[] Entrances = [];
@@ -18,8 +19,8 @@ public sealed class NavigationRegionBuildState
     internal NavigationRegionEdge[][] LocalEdges = [];
 
     internal NavigationRegionBuildState(NavigationMesh mesh, NavigationProfile profile,
-        NavigationPolicy policy, ReadOnlyMemory<NavigationRegionPort> ports) =>
-        (Input, Profile, Policy, Ports) = (mesh, profile, policy, ports);
+        NavigationPolicy policy, ReadOnlyMemory<NavigationRegionPort> ports, NavigationRegionGraph? previous) =>
+        (Input, Profile, Policy, Ports, Previous) = (mesh, profile, policy, ports, previous);
 }
 
 /// <summary>Builds HPA-style entrance costs using actual polygon searches inside each detailed tile.</summary>
@@ -32,10 +33,10 @@ public static class NavigationRegionBuilder
 
     public static NavigationBuild<NavigationRegionBuildState> Schedule(NavigationMesh mesh,
         NavigationProfile profile, NavigationPolicy policy, ReadOnlyMemory<NavigationRegionPort> ports = default,
-        JobHandle dependency = default, Scheduler? scheduler = null)
+        JobHandle dependency = default, Scheduler? scheduler = null, NavigationRegionGraph? previous = null)
     {
         scheduler ??= JobSystem.Default;
-        var state = new NavigationRegionBuildState(mesh, profile, policy, ports);
+        var state = new NavigationRegionBuildState(mesh, profile, policy, ports, previous);
         var accesses = new List<JobResourceAccess>
         {
             NavigationJobAccess.Read(scheduler, profile.Footprint),
@@ -44,6 +45,12 @@ public static class NavigationRegionBuilder
             NavigationJobAccess.Read(scheduler, ports),
         };
         mesh.AddReadAccesses(scheduler, accesses);
+        if (previous is not null)
+        {
+            accesses.Add(NavigationJobAccess.Read(scheduler, previous.Tiles));
+            accesses.Add(NavigationJobAccess.Read(scheduler, previous.Entrances));
+            accesses.Add(NavigationJobAccess.Read(scheduler, previous.Edges));
+        }
         return new(state, scheduler.Schedule(new BuildTopology(state, scheduler), accesses.ToArray(), dependency));
     }
 
@@ -87,7 +94,8 @@ public static class NavigationRegionBuilder
             {
                 NavigationMesh tile = state.TileMeshes[tileIndices[port.Tile]].Mesh;
                 int polygon = tile.FindPolygon(port.Position);
-                tile.TrySampleHeight(polygon, port.Position, out float height);
+                float height = port.Position.Y;
+                if (polygon >= 0) tile.TrySampleHeight(polygon, port.Position, out height);
                 Vector3 position = new(port.Position.X, height, port.Position.Z);
                 entrances.Add(new(port.Tile, polygon, position, position, position, Port: port.Id));
             }
@@ -108,7 +116,7 @@ public static class NavigationRegionBuilder
                 NavigationMeshTile data = state.TileMeshes[tile];
                 int entranceEnd = entranceStart;
                 while (entranceEnd < state.Entrances.Length && state.Entrances[entranceEnd].Tile == data.Tile) entranceEnd++;
-                state.Tiles[tile] = new(data.Tile, data.Mesh.Bounds, data.Mesh.ContentVersion, entranceStart, entranceEnd - entranceStart);
+                state.Tiles[tile] = new(data.Tile, data.Bounds ?? data.Mesh.Bounds, data.Mesh.ContentVersion, entranceStart, entranceEnd - entranceStart);
                 entranceStart = entranceEnd;
             }
             ScheduleLocalEdges();
@@ -132,6 +140,11 @@ public static class NavigationRegionBuilder
             var jobs = new JobHandle[state.TileMeshes.Length];
             for (int tile = 0; tile < jobs.Length; tile++)
             {
+                if (TryReuseLocalEdges(state, tile, out NavigationRegionEdge[] retained))
+                {
+                    state.LocalEdges[tile] = retained;
+                    continue;
+                }
                 var accesses = new List<JobResourceAccess>
                 {
                     NavigationJobAccess.Read(scheduler, state.Profile.Footprint),
@@ -150,6 +163,32 @@ public static class NavigationRegionBuilder
     private static bool Available(NavigationPolygon polygon, ulong capabilities, NavigationPolicy policy) =>
         (polygon.RequiredCapabilities & capabilities) == polygon.RequiredCapabilities &&
         float.IsFinite(policy.GetAreaCost(polygon.Area));
+
+    private static bool TryReuseLocalEdges(NavigationRegionBuildState state, int tileIndex, out NavigationRegionEdge[] edges)
+    {
+        edges = [];
+        if (state.Previous is not { } previous) return false;
+        NavigationRegionTile tile = state.Tiles[tileIndex];
+        foreach (NavigationRegionTile old in previous.Tiles.Span)
+        {
+            if (old.Tile != tile.Tile || old.ContentVersion != tile.ContentVersion || old.EntranceCount != tile.EntranceCount) continue;
+            for (int entrance = 0; entrance < tile.EntranceCount; entrance++)
+            {
+                NavigationRegionEntrance current = state.Entrances[tile.EntranceStart + entrance];
+                NavigationRegionEntrance before = previous.Entrances.Span[old.EntranceStart + entrance];
+                if (current with { EdgeStart = 0, EdgeCount = 0 } != before with { EdgeStart = 0, EdgeCount = 0 }) return false;
+            }
+            int offset = tile.EntranceStart - old.EntranceStart;
+            var retained = new List<NavigationRegionEdge>();
+            foreach (NavigationRegionEdge edge in previous.Edges.Span)
+                if (edge.From >= old.EntranceStart && edge.From < old.EntranceStart + old.EntranceCount &&
+                    edge.To >= old.EntranceStart && edge.To < old.EntranceStart + old.EntranceCount)
+                    retained.Add(edge with { From = edge.From + offset, To = edge.To + offset });
+            edges = retained.ToArray();
+            return true;
+        }
+        return false;
+    }
 
     private readonly struct BuildLocalEdges(NavigationRegionBuildState state, int tileIndex) : IJob
     {

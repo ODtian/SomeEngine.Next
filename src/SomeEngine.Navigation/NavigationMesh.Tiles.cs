@@ -83,7 +83,7 @@ public sealed partial class NavigationMesh
         }
         var tiles = new NavigationMeshTile[Tiles.Length];
         for (int index = 0; index < tiles.Length; index++)
-            tiles[index] = new(Tiles.Span[index].Tile, Tiles.Span[index].Mesh.Transform(transform));
+            tiles[index] = new(Tiles.Span[index].Tile, Tiles.Span[index].Mesh.Transform(transform), Tiles.Span[index].Bounds?.Transform(transform));
         return new(positions, PolygonVertices.ToArray(), Polygons.ToArray(), portals,
             details, DetailTriangles.ToArray(), ContentVersion, tiles: tiles);
     }
