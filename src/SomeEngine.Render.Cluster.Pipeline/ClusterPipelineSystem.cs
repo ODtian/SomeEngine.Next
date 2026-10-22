@@ -890,7 +890,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _pendingReadbackEpoch = binding.ReadbackEpoch;
             _pendingInstanceGeneration = binding.InstanceGeneration;
             _pendingResidencyPublication = binding.Publication;
-            _outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRange);
+            _outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRanges);
             _residentPageReads = _outputs.Geometry.ResidentPageReads;
             _hasPendingFrame = true;
 

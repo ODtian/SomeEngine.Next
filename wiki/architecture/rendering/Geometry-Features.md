@@ -16,6 +16,8 @@
 
 Mesh 准备将 `ClusterGeometry` 写入渲染实体的 `RenderClusterGeometry`。它包含根 BVH、版本、顶点编码、包围范围和驻留分配关联。Cluster 材质分配与实例生产消费该结果。原生页面与 BVH 由 Cluster 驻留系统持有，几何结果描述这组资源中的范围。
 
+替换后的完整几何就绪并写入 Rendering world 后，最后一个引用结束的 Mesh 进入驻留回收。驻留系统按已接受提交的完成点归还页面和 BVH 空间，并在源读取结束后释放对应页面来源。页面编号继续递增，BVH 地址范围按完成情况复用；RenderGraph 声明当前有效的 BVH 范围。实现入口为 [ClusterMeshPreparation](../../../src/SomeEngine.Render.Cluster/ClusterMeshPreparation.cs)、[ClusterMeshes](../../../src/SomeEngine.Render.Cluster/ClusterMeshes.cs) 和 [ClusterBvh](../../../src/SomeEngine.Render.Cluster/ClusterBvh.cs)。应用可通过 `GeometryMemoryBytes` 与 `GeometryBvhMemoryBytes` 设置对应设备缓冲的容量。
+
 下面是调用示例，变换参数用于展示额外实例的摆放：
 
 ```csharp

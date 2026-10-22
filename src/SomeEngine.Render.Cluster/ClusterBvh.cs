@@ -6,6 +6,7 @@ using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Core.Collections;
+using SomeEngine.Graphics;
 
 namespace SomeEngine.Render.Cluster;
 
@@ -60,23 +61,30 @@ internal sealed class ClusterBvh
         (uint)Marshal.OffsetOf<ClusterBVHNode>(nameof(ClusterBVHNode.ChildPointer)).ToInt64());
 
     private readonly IClusterBvhStorage _storage;
+    private readonly ClusterBufferAllocator _ranges;
     private readonly List<ClusterBvhAllocation> _allocations = [];
     private readonly List<ClusterBvhPatch> _pendingPatches = [];
     private readonly FlatDictionary<Mesh, ClusterRootState> _roots = new();
-    private readonly List<ClusterBvhLeafIndex> _leafIndexes = [];
+    private readonly List<ClusterBvhLeafIndex> _pageIndexes = [];
+    private readonly List<ClusterBvhLeafIndex> _nodeIndexes = [];
+    private BufferRange[] _readRanges = [];
     private readonly List<Mesh> _pendingRootMeshes = [];
     private uint _count;
     private uint _registeredPageCount;
     private int _publishedCount;
 
-    internal ClusterBvh(IClusterBvhStorage? storage = null)
-        => _storage = storage ?? new SparseClusterBvhStorage(DefaultCapacityBytes);
+    internal ClusterBvh(IClusterBvhStorage? storage = null, ulong capacityBytes = DefaultCapacityBytes)
+    {
+        _storage = storage ?? new SparseClusterBvhStorage(capacityBytes);
+        _ranges = new(capacityBytes, NodeBytes);
+    }
 
     public int HierarchyLevels { get; private set; } = 1;
 
     public int RegisteredCount => _roots.Count;
     public int PublishedCount => _publishedCount;
     public ulong ByteLength => checked((ulong)_count * NodeBytes);
+    public BufferRange[] ReadRanges => _readRanges;
     public bool HasPendingPublication
         => _pendingPatches.Count != 0 ||
            _pendingRootMeshes.Count != 0;
@@ -126,12 +134,11 @@ internal sealed class ClusterBvh
     {
         if (byteLength <= 0 || byteLength % checked((int)NodeBytes) != 0)
             throw new InvalidDataException($"Cluster BVH length must be a positive multiple of {NodeBytes} bytes.");
-        uint nodeCount = checked((uint)(byteLength / checked((int)NodeBytes)));
-        if (nodeCount > uint.MaxValue - _count)
-            throw new InvalidOperationException("Global Cluster BVH node index space is exhausted.");
         _allocations.EnsureCapacity(checked(_allocations.Count + 1));
-        ulong offset = checked((ulong)_count * NodeBytes);
-        return new ClusterBvhDestination(offset, _storage.Allocate(offset, byteLength));
+        if (!_ranges.TryAllocate(checked((ulong)byteLength), out ulong offset))
+            throw new InvalidOperationException("Global Cluster BVH storage capacity is exhausted.");
+        try { return new ClusterBvhDestination(offset, _storage.Allocate(offset, byteLength)); }
+        catch { _ranges.Free(offset, checked((ulong)byteLength)); throw; }
     }
 
     public Exception? CancelRegistration(in ClusterBvhDestination destination)
@@ -139,6 +146,7 @@ internal sealed class ClusterBvh
         try
         {
             _storage.Release(destination.Offset, destination.Memory.Length);
+            _ranges.Free(destination.Offset, checked((ulong)destination.Memory.Length));
             return null;
         }
         catch (Exception error)
@@ -149,7 +157,7 @@ internal sealed class ClusterBvh
             uint byteLength = checked((uint)destination.Memory.Length);
             uint nodeCount = checked(byteLength / NodeBytes);
             _allocations.Add(new ClusterBvhAllocation(destination.Offset, byteLength));
-            _count = checked(_count + nodeCount);
+            _count = Math.Max(_count, checked((uint)(destination.Offset / NodeBytes) + nodeCount));
             return error;
         }
     }
@@ -170,9 +178,7 @@ internal sealed class ClusterBvh
 
         int nodeCount = destination.Memory.Length / checked((int)NodeBytes);
 
-        uint firstNode = _count;
-        if (destination.Offset != checked((ulong)firstNode * NodeBytes))
-            throw new InvalidOperationException("Cluster BVH destination is stale.");
+        uint firstNode = checked((uint)(destination.Offset / NodeBytes));
         uint nodeCount32 = checked((uint)nodeCount);
         if (nodeCount32 > uint.MaxValue - firstNode)
         {
@@ -219,10 +225,10 @@ internal sealed class ClusterBvh
         _storage.Stage(byteOffset, registration.ByteLength);
         var range = new ClusterBvhAllocation(byteOffset, checked((uint)registration.ByteLength));
         _allocations.Add(range);
-        _count += registration.NodeCount;
+        _count = Math.Max(_count, checked(registration.FirstNode + registration.NodeCount));
         HierarchyLevels = Math.Max(HierarchyLevels, registration.HierarchyLevels);
         _roots.Add(registration.Mesh, new ClusterRootState(registration.Root, Published: false));
-        _leafIndexes.Add(new ClusterBvhLeafIndex(
+        var index = new ClusterBvhLeafIndex(
             registration.Mesh,
             registration.FirstNode,
             registration.NodeCount,
@@ -231,7 +237,11 @@ internal sealed class ClusterBvh
             registration.LocalPageByNode,
             registration.NodesByPage,
             registration.Nodes,
-            registration.LodGroups));
+            registration.LodGroups);
+        _pageIndexes.Add(index);
+        int nodeIndex = _nodeIndexes.FindIndex(existing => existing.FirstNode > index.FirstNode);
+        _nodeIndexes.Insert(nodeIndex < 0 ? _nodeIndexes.Count : nodeIndex, index);
+        UpdateReadRanges();
         _registeredPageCount = checked(
             registration.FirstPage + checked((uint)registration.PageCount));
         _pendingRootMeshes.Add(registration.Mesh);
@@ -240,8 +250,7 @@ internal sealed class ClusterBvh
 
     public void ReserveCommit(in ClusterBvhRegistration registration)
     {
-        if (registration.FirstNode != _count ||
-            registration.FirstPage != _registeredPageCount ||
+        if (registration.FirstPage != _registeredPageCount ||
             registration.NodeCount == 0 ||
             registration.ByteLength != checked((int)(registration.NodeCount * NodeBytes)) ||
             registration.PageCount <= 0 ||
@@ -254,7 +263,8 @@ internal sealed class ClusterBvh
 
         _allocations.EnsureCapacity(checked(_allocations.Count + 1));
         _roots.EnsureCapacity(checked(_roots.Count + 1));
-        _leafIndexes.EnsureCapacity(checked(_leafIndexes.Count + 1));
+        _pageIndexes.EnsureCapacity(checked(_pageIndexes.Count + 1));
+        _nodeIndexes.EnsureCapacity(checked(_nodeIndexes.Count + 1));
         _pendingRootMeshes.EnsureCapacity(checked(_pendingRootMeshes.Count + 1));
     }
 
@@ -330,7 +340,7 @@ internal sealed class ClusterBvh
             if (TryFindLeafIndexByNode(node, out ClusterBvhLeafIndex mesh))
                 changedMeshes.Add(mesh.FirstNode);
         }
-        foreach (ClusterBvhLeafIndex mesh in _leafIndexes)
+        foreach (ClusterBvhLeafIndex mesh in _pageIndexes)
         {
             if (!changedMeshes.Contains(mesh.FirstNode) && !_pendingRootMeshes.Contains(mesh.Mesh))
                 continue;
@@ -378,6 +388,44 @@ internal sealed class ClusterBvh
         _pendingRootMeshes.RemoveRange(0, publication.RootMeshes.Length);
     }
 
+    internal ClusterBvhAllocation RemoveMesh(Mesh mesh)
+    {
+        ClusterRootState root = _roots[mesh];
+        _ = TryFindLeafIndexByNode(root.NodeIndex, out ClusterBvhLeafIndex index);
+        _roots.Remove(mesh);
+        _pageIndexes.Remove(index);
+        _nodeIndexes.Remove(index);
+        _pendingRootMeshes.Remove(mesh);
+        if (root.Published) _publishedCount--;
+        ulong offset = checked((ulong)index.FirstNode * NodeBytes);
+        uint length = checked(index.NodeCount * NodeBytes);
+        _pendingPatches.RemoveAll(patch => patch.Offset >= offset && patch.Offset < offset + length);
+        _storage.DiscardStagedRange(offset, checked((int)length));
+        UpdateReadRanges();
+        return new(offset, length);
+    }
+
+    internal void ReleaseAllocation(ClusterBvhAllocation allocation)
+    {
+        _storage.Release(allocation.Offset, checked((int)allocation.Length));
+        _ranges.Free(allocation.Offset, allocation.Length);
+        _allocations.Remove(allocation);
+    }
+
+    private void UpdateReadRanges()
+    {
+        var ranges = new List<BufferRange>(_nodeIndexes.Count);
+        foreach (ClusterBvhLeafIndex mesh in _nodeIndexes)
+        {
+            ulong offset = checked((ulong)mesh.FirstNode * NodeBytes);
+            ulong size = checked((ulong)mesh.NodeCount * NodeBytes);
+            if (ranges.Count > 0 && ranges[^1].Offset + ranges[^1].Size == offset)
+                ranges[^1] = new(ranges[^1].Offset, ranges[^1].Size + size);
+            else ranges.Add(new(offset, size));
+        }
+        _readRanges = [.. ranges];
+    }
+
     public Exception? Clear()
     {
         Exception? firstFailure = null;
@@ -395,7 +443,10 @@ internal sealed class ClusterBvh
         _allocations.Clear();
         _pendingPatches.Clear();
         _roots.Clear();
-        _leafIndexes.Clear();
+        _pageIndexes.Clear();
+        _nodeIndexes.Clear();
+        _readRanges = [];
+        _ranges.Reset();
         _pendingRootMeshes.Clear();
         _count = 0;
         HierarchyLevels = 1;
@@ -497,11 +548,11 @@ internal sealed class ClusterBvh
     private bool TryFindLeafIndexByNode(uint nodeIndex, out ClusterBvhLeafIndex result)
     {
         int low = 0;
-        int high = _leafIndexes.Count - 1;
+        int high = _nodeIndexes.Count - 1;
         while (low <= high)
         {
             int middle = low + ((high - low) / 2);
-            ClusterBvhLeafIndex candidate = _leafIndexes[middle];
+            ClusterBvhLeafIndex candidate = _nodeIndexes[middle];
             if (nodeIndex < candidate.FirstNode)
             {
                 high = middle - 1;
@@ -524,11 +575,11 @@ internal sealed class ClusterBvh
     private ClusterBvhLeafIndex GetLeafIndexByPage(uint pageId)
     {
         int low = 0;
-        int high = _leafIndexes.Count - 1;
+        int high = _pageIndexes.Count - 1;
         while (low <= high)
         {
             int middle = low + ((high - low) / 2);
-            ClusterBvhLeafIndex candidate = _leafIndexes[middle];
+            ClusterBvhLeafIndex candidate = _pageIndexes[middle];
             if (pageId < candidate.FirstPage)
             {
                 high = middle - 1;

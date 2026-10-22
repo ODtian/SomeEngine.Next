@@ -5,6 +5,7 @@ using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
 using SomeEngine.Resources;
+using SomeEngine.Assets.Schema;
 
 namespace SomeEngine.Runtime.Tests;
 
@@ -12,6 +13,33 @@ namespace SomeEngine.Runtime.Tests;
 [Collection("Scene content")]
 public sealed class ApplicationGeometryTests(SceneContentFixture content)
 {
+    [Fact]
+    public async Task RepeatedMeshReplacementReusesTheGeometryBudget()
+    {
+        using MeshAsset asset = await MeshAsset.OpenAsync(Path.Combine(content.DirectoryPath, "assets/Meshes/sphere-0.mesh.asset"));
+        ClusterMeshBlock clusters = await asset.GetBlockAsync<ClusterMeshBlock>();
+        SceneImage? before = null, after = null;
+        Mesh? mesh = null;
+        var scene = new ApplicationScene(content.DirectoryPath)
+        {
+            GeometryBvhMemoryBytes = clusters.BvhLength * 3,
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "20"]),
+            UpdateFrame = frame =>
+            {
+                if (frame.Index == 0) mesh = frame.Scene.GetMesh(frame.Scene.MeshEntities[0]);
+                if (frame.Index == 8) frame.Scene.CaptureImage(image => before = image);
+                if (frame.Index is 9 or 11) mesh!.Update(mesh.Duplicate());
+                if (frame.Index == 19) frame.Scene.CaptureImage(image => after = image);
+            },
+        };
+
+        int result = await Application.RunAsync([], application: scene);
+
+        Assert.Equal(0, result);
+        SceneImages.AssertEqual(before!, after!);
+    }
+
     [Fact]
     public async Task ReplacingMeshDataSwitchesGeometryAndPreservesThePicture()
     {

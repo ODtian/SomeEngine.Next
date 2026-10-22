@@ -46,7 +46,7 @@ internal readonly ref struct ClusterRenderBinding
         Bvh = residency.Bvh;
         PageFaultCapacity = residency.PageFaultCapacity;
         ResidentPageRanges = residency.ResidentPageRanges;
-        BvhRange = residency.BvhRange;
+        BvhRanges = residency.BvhRanges;
         Publication = residency.Publication;
         PropertyData = instanceProperties.PropertyData ??
             throw new ArgumentException(
@@ -77,7 +77,7 @@ internal readonly ref struct ClusterRenderBinding
 
     internal BufferRange[] ResidentPageRanges { get; }
 
-    internal BufferRange BvhRange { get; }
+    internal BufferRange[] BvhRanges { get; }
 
     internal ClusterResidencyPublication? Publication { get; }
 
@@ -121,7 +121,6 @@ public sealed class ClusterRenderResources : IDisposable
     private readonly RenderInstanceResources _instances;
     private readonly RenderInstanceBorrowerLease _instanceBorrower;
     private readonly RenderWorld _renderWorld;
-    private readonly ClusterMeshCache _meshes;
     private readonly ClusterMeshPrepareSystem _meshPrepare;
     private readonly RenderTimeline _residencyTimeline;
     private readonly ClusterEpochId _epoch;
@@ -179,7 +178,6 @@ public sealed class ClusterRenderResources : IDisposable
         }
 
         ClusterResidency? residency = null;
-        ClusterMeshCache? meshes = null;
         ClusterMeshPrepareSystem? meshPrepare = null;
         try
         {
@@ -205,14 +203,12 @@ public sealed class ClusterRenderResources : IDisposable
                 device,
                 residencyTimeline,
                 selected.Residency);
-            meshes = new ClusterMeshCache(residency);
-            meshPrepare = new ClusterMeshPrepareSystem(renderWorld, meshes);
+            meshPrepare = new ClusterMeshPrepareSystem(renderWorld, residency);
 
             _residency = residency;
             _instances = instances.Storage;
             _instanceBorrower = instanceBorrower;
             _renderWorld = renderWorld;
-            _meshes = meshes;
             _meshPrepare = meshPrepare;
             _residencyTimeline = residencyTimeline;
             _epoch = residency.EpochId;
@@ -239,7 +235,7 @@ public sealed class ClusterRenderResources : IDisposable
 
     internal RenderTimeline InstanceTimeline => _instances.Timeline;
 
-    internal int PublishedMeshCount => _meshes.PublishedMeshCount;
+    internal int PublishedMeshCount => _residency.PublishedMeshCount;
 
     internal int HierarchyLevels => _residency.HierarchyLevels;
 

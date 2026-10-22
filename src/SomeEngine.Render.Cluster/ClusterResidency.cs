@@ -37,7 +37,7 @@ internal readonly record struct ClusterResidencyBinding(
     Buffer Bvh,
     int PageFaultCapacity,
     BufferRange[] ResidentPageRanges,
-    BufferRange BvhRange,
+    BufferRange[] BvhRanges,
     ClusterResidencyPublication? Publication);
 
 internal sealed record ClusterResidencyPublication(
@@ -70,6 +70,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     private int _lifecycleState;
     private ulong _publicationSequence;
     private ClusterResidencyPublication? _activePublication;
+    private readonly HashSet<Mesh> _unusedMeshes = [];
 
     internal int HierarchyLevels => _meshes.HierarchyLevels;
 
@@ -121,7 +122,8 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
                 selected.PageHeapCapacityBytes,
                 residency: null,
                 pageStorage,
-                bvhStorage);
+                bvhStorage,
+                selected.BvhCapacityBytes);
             pageStorage = null;
             bvhStorage = null;
             stream = new PageStream(meshes);
@@ -190,7 +192,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             _bvhBuffer,
             _pageFaultCapacity,
             _activePublication?.Meshes.ResidentPageRanges ?? _meshes.CaptureResidentPageRanges(),
-            _meshes.CaptureBvhRange(),
+            _meshes.CaptureBvhRanges(),
             _activePublication);
     }
 
@@ -227,6 +229,21 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     {
         ThrowIfNotActive();
         return _meshes.IsMeshRegistered(mesh);
+    }
+
+    internal void KeepMesh(Mesh mesh) => _unusedMeshes.Remove(mesh);
+    internal void MarkMeshUnused(Mesh mesh) => _unusedMeshes.Add(mesh);
+
+    internal void ReleaseUnusedMeshes()
+    {
+        if (_activePublication is not null) return;
+        if (_unusedMeshes.Count != 0)
+        {
+            QueueCompletion[] completions = Timeline.GetGenerationFences(0);
+            foreach (Mesh mesh in _unusedMeshes) _meshes.RemoveMesh(mesh, completions);
+            _unusedMeshes.Clear();
+        }
+        _meshes.RetireCompleted(_backend);
     }
 
     /// <summary>Advances page-fault ingestion and page IO without publishing GPU-visible data.</summary>
@@ -482,6 +499,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 
             ReleaseBuffer(_bvhBuffer, ref _bvhBufferDestroyed);
             ReleaseBuffer(_pageHeapBuffer, ref _pageHeapBufferDestroyed);
+            _unusedMeshes.Clear();
 
             if (failures is not null)
             {

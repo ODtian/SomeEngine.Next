@@ -558,6 +558,7 @@ internal static class RuntimeApplication
                 Residency = new ClusterResidencyOptions
                 {
                     PageHeapCapacityBytes = script?.GeometryMemoryBytes ?? application!.GeometryMemoryBytes,
+                    BvhCapacityBytes = application?.GeometryBvhMemoryBytes ?? 64ul * 1024 * 1024,
                 },
             });
         var materialAssignments = new ClusterMaterialAssignments();
