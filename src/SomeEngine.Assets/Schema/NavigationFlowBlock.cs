@@ -57,7 +57,7 @@ public sealed partial class NavigationFlowBlock : AssetBlock, IAssetBlockWriter
             _goalVersion = input.GoalVersion;
             _inputVersion = input.Version;
             _field = includePrecomputed && ReferenceEquals(field?.Input, input)
-                ? new(field!.CumulativeCosts, field.SuccessorEdges, field.Directions, field.GoalIndices, field.Dependencies, field.Solver)
+                ? new(field!.CumulativeCosts, field.SuccessorEdges, field.Directions, field.GoalIndices, field.Dependencies, field.Solver, field.Sampling)
                 : null;
             MarkChanged();
         }
@@ -91,7 +91,7 @@ public sealed partial class NavigationFlowBlock : AssetBlock, IAssetBlockWriter
             sameInputs ? copy._inputVersion : copy._inputVersion + 1);
         if (sameInputs && copy._field is { } saved && saved.Solver == TSolver.Id)
             return new(new NavigationFlowField(input, saved.Costs, saved.Successors, saved.Directions,
-                saved.GoalIndices, saved.Dependencies, saved.Solver));
+                saved.GoalIndices, saved.Dependencies, saved.Solver, saved.Sampling));
         var flow = new NavigationFlow(input);
         new NavigationFlowSystem<TSolver, TState>(flow, scheduler).Schedule().Complete();
         return flow;
@@ -125,7 +125,7 @@ public sealed partial class NavigationFlowBlock : AssetBlock, IAssetBlockWriter
             ReadOnlyMemory<byte> dependencies = await source.ReadBytesAsync(6, cancellationToken).ConfigureAwait(false);
             result._field = new(NavigationArrayData.Decode<float>(costs), NavigationArrayData.Decode<int>(successors),
                 NavigationArrayData.Decode<Vector3>(directions), NavigationArrayData.Decode<int>(goalIndices),
-                NavigationArrayData.Decode<NavigationFlowDependency>(dependencies), data.Solver);
+                NavigationArrayData.Decode<NavigationFlowDependency>(dependencies), data.Solver, data.Sampling);
         }
         result.AttachSource(source);
         return result;
@@ -142,7 +142,7 @@ public sealed partial class NavigationFlowBlock : AssetBlock, IAssetBlockWriter
             NavigationVersion = source.NavigationVersion, ProfileVersion = source.ProfileVersion, PolicyVersion = source.PolicyVersion,
             GridVersion = copy._gridVersion, CostVersion = copy._costVersion,
             GoalVersion = copy._goalVersion, InputVersion = copy._inputVersion,
-            HasField = copy._field is not null, Solver = copy._field?.Solver ?? "",
+            HasField = copy._field is not null, Solver = copy._field?.Solver ?? "", Sampling = copy._field?.Sampling ?? NavigationFlowSampling.Successor,
         });
         writer.WriteChunk(1, NavigationArrayData.Encode(copy._goals));
         if (copy._field is { } field)
@@ -165,7 +165,7 @@ public sealed partial class NavigationFlowBlock : AssetBlock, IAssetBlockWriter
 
     private sealed record NavigationFlowArrays(ReadOnlyMemory<float> Costs, ReadOnlyMemory<int> Successors,
         ReadOnlyMemory<Vector3> Directions, ReadOnlyMemory<int> GoalIndices,
-        ReadOnlyMemory<NavigationFlowDependency> Dependencies, string Solver);
+        ReadOnlyMemory<NavigationFlowDependency> Dependencies, string Solver, NavigationFlowSampling Sampling);
 }
 
 [BinarySerializable]
@@ -184,4 +184,5 @@ internal sealed partial class NavigationFlowData
     public ulong InputVersion { get; set; }
     public bool HasField { get; set; }
     public string Solver { get; set; } = "";
+    public NavigationFlowSampling Sampling { get; set; }
 }

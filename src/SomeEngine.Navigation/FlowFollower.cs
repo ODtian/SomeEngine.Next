@@ -37,6 +37,8 @@ public readonly struct FlowFollowerResources : IJobComponentResources<FlowFollow
         NavigationGrid grid = field.Input.Costs.Grid;
         resources.Read(grid.Cells);
         resources.Read(grid.Edges);
+        resources.Read(field.Input.Costs.CellCosts);
+        resources.Read(field.Input.Costs.EdgeCosts);
         resources.Read(field.CumulativeCosts);
         resources.Read(field.SuccessorEdges);
         resources.Read(field.Directions);

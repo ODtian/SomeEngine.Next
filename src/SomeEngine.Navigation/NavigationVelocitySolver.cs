@@ -18,6 +18,7 @@ internal static class NavigationVelocitySolver
         if (failed < lines.Count) SolveProjected(lines, boundaryCount, failed, maximumSpeed, projected, ref result);
         return result;
     }
+
     private static bool SolveLine(IList<NavigationVelocityConstraint> lines, int lineNo, float radius, Vector2 optVelocity, bool directionOpt, ref Vector2 result)
     {
         float dotProduct = Vector2.Dot(lines[lineNo].Point, lines[lineNo].Direction);

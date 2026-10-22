@@ -8,6 +8,8 @@ public readonly record struct NavigationFlowGoal(
 public readonly record struct NavigationFlowDependency(
     NavigationTileCoordinate Tile, ulong GridVersion, ulong CostVersion, ulong GoalVersion);
 
+public enum NavigationFlowSampling : byte { Successor, Gradient }
+
 public sealed class NavigationFlowInput(NavigationCosts costs, NavigationProfile profile,
     ReadOnlyMemory<NavigationFlowGoal> goals, ulong goalVersion = 1, ulong version = 1)
 {
@@ -21,7 +23,8 @@ public sealed class NavigationFlowInput(NavigationCosts costs, NavigationProfile
 /// <summary>One complete integration result. SuccessorEdges retain forward transition and action identity.</summary>
 public sealed class NavigationFlowField(NavigationFlowInput input, ReadOnlyMemory<float> cumulativeCosts,
     ReadOnlyMemory<int> successorEdges, ReadOnlyMemory<Vector3> directions,
-    ReadOnlyMemory<int> goalIndices, ReadOnlyMemory<NavigationFlowDependency> dependencies, string solver = "")
+    ReadOnlyMemory<int> goalIndices, ReadOnlyMemory<NavigationFlowDependency> dependencies, string solver = "",
+    NavigationFlowSampling sampling = NavigationFlowSampling.Successor)
 {
     public NavigationFlowInput Input { get; } = input;
     public ReadOnlyMemory<float> CumulativeCosts { get; } = cumulativeCosts;
@@ -30,6 +33,14 @@ public sealed class NavigationFlowField(NavigationFlowInput input, ReadOnlyMemor
     public ReadOnlyMemory<int> GoalIndices { get; } = goalIndices;
     public ReadOnlyMemory<NavigationFlowDependency> Dependencies { get; } = dependencies;
     public string Solver { get; } = solver;
+    public NavigationFlowSampling Sampling { get; } = sampling;
+
+    /// <summary>Samples the installed direction on the position's support layer.</summary>
+    public Vector3 SampleDirection(Vector3 position)
+    {
+        int cell = Input.Costs.Grid.FindCell(position);
+        return cell >= 0 ? NavigationFlowSampler.Direction(this, cell, position) : Vector3.Zero;
+    }
 }
 
 /// <summary>The game's shared target and its most recently completed field.</summary>

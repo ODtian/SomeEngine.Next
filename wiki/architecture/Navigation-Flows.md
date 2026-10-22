@@ -22,6 +22,12 @@ Grid 同时实现 `INavigationSpace<NavigationGrid>`，提供静态资源描述�
 
 `ReverseDijkstraFlow` 将所有目标种子放入最小成本队列。取出单元 `v` 后，沿每条入边 `u → v` 计算 `edgeCost(u,v) + value[v]`；改进时保存该正向边作为 `u` 的后继并加入队列。一次预算限制本次扩展数量，后续调用保留队列和累计值。这是 [Dijkstra 最短路扩展](https://link.springer.com/article/10.1007/BF01386390) 在显式有向图上的反向多源应用。
 
+`FastIterativeFlow` 与 `FastIterativeFlowState` 实现 [Jeong、Whitaker 的 Fast Iterative Method](https://epubs.siam.org/doi/abs/10.1137/060670298)。它用于各向同性正标量地形：`CellCosts` 表示 XZ 平面单位距离的成本，求解 `|grad T| = cost`，正无穷表示阻断。X/Z 邻居来自能力和策略允许的双向普通通行边，每个方向使用最近高度层。普通边给出可走表面连接，单元标量给出此求解器的通行权重；有向动作与逐边权重由 `ReverseDijkstraFlow` 表达。
+
+FIM 工作区持有累计值、固定目标边界值、活动单元以及本轮候选值。一次 `Schedule` 的预算按单元更新次数计数；预算结束时，已处理的活动单元和候选值留待后续调用继续。每轮读取同一份累计值，多个 Job 按活动索引区间写各自候选输出；本轮全部完成后，合并 Job 写入改进值并激活受影响邻居。相邻轴的最小上风值为 `a`、`b`，`d = CellSize * cost`：`|a-b| >= d` 时使用 `min(a,b)+d`，其余使用 `(a+b+sqrt(2*d*d-(a-b)*(a-b)))/2`。目标种子保持零值，活动集在浮点值收敛后结束。
+
+收敛后的独立输出阶段按单元区间并行计算负梯度、后继及目标关系，然后安装完整的 `NavigationFlowField`。`Sampling` 保存方向消费方式；`SampleDirection(position)` 在实际支撑层上查询方向。Gradient 方式对同一目标和有效表面邻域内的方向作双线性插值，普通轴边约束移动方向，完整的两个轴通路共同确定对角穿越。每次 Guidance 的位移限制在 0.45 格内，再结合当前目标区域调整终段移动。高度由实际通过的支撑层给出。
+
 完成的 `NavigationFlowField` 同时保存累计成本、后继边、方向、目标索引、求解器标识，以及 Grid/Costs/Goal 版本对应的块依赖。Apply 只有在当前输入仍匹配时安装整份场，并将场引用与 `FieldVersion` 一并交换。角色采样使用一份已安装的完整结果；生成式组件资源描述器读取 Flow 对象及其实际数组，并以 `FieldVersion` 重建对应访问集合。
 
 成本、积分、方向和块依赖的分工沿用 [Emerson 的 Flow Field Tiles 组织](https://www.gameaipro.com/GameAIPro/GameAIPro_Chapter23_Crowd_Pathfinding_and_Steering_Using_Flow_Field_Tiles.pdf)，具体存储采用普通共享数组。
@@ -58,4 +64,6 @@ JobHandle progress = navigation.ScheduleProgress(moved);
 
 `CreateAsync(loader, scheduler)` 通过强类型资产入口取得 Grid、Profile 和 Policy。输入资产版本、Grid 内容版本和求解器标识匹配时复用预计算场；其余创建过程在 Job 中求解当前输入。泛型重载允许指定其它流场求解器。返回的普通 Flow 保持实际输入与结果数组有效，业务可在资产和 Loader 关闭后继续同步采样。
 
-公共行为检查位于 [NavigationFlowTests](../../tests/SomeEngine.Navigation.Tests/NavigationFlowTests.cs) 和 [NavigationFlowAssetTests](../../tests/SomeEngine.Assets.Tests/NavigationFlowAssetTests.cs)。
+FIM 的具体调用使用 `NavigationFlowSystem<FastIterativeFlow, FastIterativeFlowState>`；资产取得使用 `CreateAsync<FastIterativeFlow, FastIterativeFlowState>`。预计算场一并保存 `Sampling`，重开后继续按相应方向方式采样。
+
+公共行为检查位于 [NavigationFlowTests](../../tests/SomeEngine.Navigation.Tests/NavigationFlowTests.cs)、[FastIterativeFlowTests](../../tests/SomeEngine.Navigation.Tests/FastIterativeFlowTests.cs) 和 [NavigationFlowAssetTests](../../tests/SomeEngine.Assets.Tests/NavigationFlowAssetTests.cs)。FIM 检查使用均匀区域及一片高成本地形作为输入例子，观察几何方向、预算续算以及角色绕行后的实际到达。

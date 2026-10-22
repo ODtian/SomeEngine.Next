@@ -60,7 +60,13 @@ public static class NavigationMeshBuilder
             accesses[^1] = JobResourceAccess.Write(scheduler.GetResourceToken(state.TileData), index, 1);
             built[index] = scheduler.Schedule(new BuildTile(state, index), accesses, dependency);
         }
+        return ScheduleConnections(state, scheduler, built, reads);
+    }
 
+    internal static JobHandle ScheduleConnections(NavigationMeshBuildState state, Scheduler scheduler,
+        JobHandle[] built, List<JobResourceAccess> reads)
+    {
+        ReadOnlySpan<NavigationSurfaceTile> tiles = state.Surface.Tiles.Span;
         var pairs = new List<(int First, int Second)>();
         for (int first = 0; first < tiles.Length; first++)
         for (int second = first + 1; second < tiles.Length; second++)
@@ -238,9 +244,12 @@ public static class NavigationMeshBuilder
                 combined.AddRange(portals[index]);
             }
             state.Tiles = ranges;
+            var tiles = new NavigationMeshTile[state.TileData.Length];
+            for (int index = 0; index < tiles.Length; index++)
+                tiles[index] = new(ranges[index].Tile, state.TileData[index].Mesh);
             state.Mesh = new(positions.ToArray(), vertices.ToArray(), polygons.ToArray(), combined.ToArray(),
-                details.ToArray(), triangles.ToArray(), state.Settings.ContentVersion,
-                NavigationSurfaceTraversal.GetRotationRadius(state.Profile.Footprint.Span));
+                details.ToArray(), triangles.ToArray(), state.Settings.ContentVersion, tiles: tiles,
+                bakedRadius: NavigationSurfaceTraversal.GetRotationRadius(state.Profile.Footprint.Span));
             state.TileData = [];
         }
     }

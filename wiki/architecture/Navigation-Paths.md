@@ -2,6 +2,8 @@
 
 `NavigationSystems<TSpace,TSearch,TState,TMotion,TReader>` 将目标求解、路径引导、运动建议与实际运动反馈连接起来。`TSpace` 指定导航表示，`TSearch` 使用静态接口推进 `TState`，`TMotion` 与 `TReader` 接入游戏已有的运动数据。多边形网格通过 `NavigationMesh` 接入，搜索类型决定求解方法。
 
+带放置变换的多区域组合使用 `NavigationScene`、`SceneNavigationSearch` 和 `SceneSearchState`。入口图、详细路径分段与区域依赖见[区域入口图与场景放置](Navigation-Regions.md)。
+
 ## 角色输入与结果
 
 `NavigationComponents.AddPath<TSpace,TState>` 添加公共输入、输出与每个实体独占的搜索工作区。组合对象的 `AddAgent` 调用同一入口。`NavigationAgent` 引用共享的 `NavigationProfile`、`NavigationPolicy`，并提供期望速度；`PathNavigation<TSpace>` 引用导航表示。
