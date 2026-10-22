@@ -5,6 +5,7 @@ public sealed partial class Terrain
 {
     private readonly List<HeightField> _heightFields = [];
     private readonly List<VoxelField> _voxelFields = [];
+    private TerrainSurface? _surface;
     private ulong _revision;
 
     internal object Gate { get; } = new();
@@ -22,6 +23,24 @@ public sealed partial class Terrain
     public ulong Revision { get { lock (Gate) return _revision; } }
     public IReadOnlyList<HeightField> HeightFields { get; }
     public IReadOnlyList<VoxelField> VoxelFields { get; }
+    public event Action<TerrainChange>? Changed;
+    public TerrainSurface? Surface
+    {
+        get { lock (Gate) return _surface; }
+        set
+        {
+            ulong revision;
+            lock (Gate)
+            {
+                if (ReferenceEquals(_surface, value)) return;
+                _surface = value;
+                revision = NextRevision();
+            }
+            NotifyChange(new TerrainSurfaceChange(this, revision));
+        }
+    }
+
+    internal void NotifyChange(TerrainChange change) => Changed?.Invoke(change);
 
     public HeightField CreateHeightField(string name, HeightGrid grid, float initialHeight = 0f)
     {
@@ -57,6 +76,7 @@ public sealed partial class Terrain
             foreach (VoxelField field in _voxelFields)
                 terrain._voxelFields.Add(new VoxelField(terrain, field.Id, field.Name,
                     field.Grid, field.InitialValue, field.Data));
+            terrain._surface = _surface?.Duplicate(terrain);
             return terrain;
         }
     }
