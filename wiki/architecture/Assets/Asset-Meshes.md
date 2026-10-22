@@ -4,6 +4,8 @@
 
 `MeshBlock` 保存通用几何描述、边界和区域。`MeshMaterialsBlock` 保存区域直接引用的语义材质。`ClusterMeshBlock` 保存 Cluster 表示所需的顶点编码、payload 描述、BVH 和页摘要。将来其他扩展可添加自己的 Block，不更改 Scene 的 MeshAsset 身份。
 
+`NavigationGeometryBlock` 保存导航使用的位置、三角形、面积分类与局部范围，创建普通 `NavigationGeometry` 供共享表面构建读取。接口与数据职责见[导航几何与多层表面](../Navigation-Surfaces.md)。
+
 ## 生产与查询
 
 通用 glTF 几何 Importer 只生产 MeshBlock；Cluster Importer 只生产 ClusterMeshBlock，并接收项目明确提供的顶点编码器。材质引用由独立 Importer 生产。无材质几何不被迫依赖 Standard 或 Unlit。

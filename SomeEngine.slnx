@@ -6,6 +6,8 @@
   <Project Path="tests\SomeEngine.Diagnostics.Tests\SomeEngine.Diagnostics.Tests.csproj" />
   <Project Path="src\SomeEngine.Core\SomeEngine.Core.csproj" />
   <Project Path="src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+  <Project Path="src\SomeEngine.Navigation\SomeEngine.Navigation.csproj" />
+  <Project Path="tests\SomeEngine.Navigation.Tests\SomeEngine.Navigation.Tests.csproj" />
   <Project Path="src\SomeEngine.Resources\SomeEngine.Resources.csproj" />
   <Project Path="tests\SomeEngine.Resources.Tests\SomeEngine.Resources.Tests.csproj" />
   <Project Path="src\SomeEngine.Assets.Importers\SomeEngine.Assets.Importers.csproj" />
