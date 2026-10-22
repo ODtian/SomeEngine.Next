@@ -1,0 +1,91 @@
+using System.Numerics;
+
+namespace SomeEngine.Navigation;
+
+public readonly record struct NavigationFlowGoal(
+    Vector3 Position, float ArrivalRange = 0, float? Heading = null, float HeadingTolerance = 0.05f);
+
+public readonly record struct NavigationFlowDependency(
+    NavigationTileCoordinate Tile, ulong GridVersion, ulong CostVersion, ulong GoalVersion);
+
+public sealed class NavigationFlowInput(NavigationCosts costs, NavigationProfile profile,
+    ReadOnlyMemory<NavigationFlowGoal> goals, ulong goalVersion = 1, ulong version = 1)
+{
+    public NavigationCosts Costs { get; } = costs;
+    public NavigationProfile Profile { get; } = profile;
+    public ReadOnlyMemory<NavigationFlowGoal> Goals { get; } = goals;
+    public ulong GoalVersion { get; } = goalVersion;
+    public ulong Version { get; } = version;
+}
+
+/// <summary>One complete integration result. SuccessorEdges retain forward transition and action identity.</summary>
+public sealed class NavigationFlowField(NavigationFlowInput input, ReadOnlyMemory<float> cumulativeCosts,
+    ReadOnlyMemory<int> successorEdges, ReadOnlyMemory<Vector3> directions,
+    ReadOnlyMemory<int> goalIndices, ReadOnlyMemory<NavigationFlowDependency> dependencies, string solver = "")
+{
+    public NavigationFlowInput Input { get; } = input;
+    public ReadOnlyMemory<float> CumulativeCosts { get; } = cumulativeCosts;
+    public ReadOnlyMemory<int> SuccessorEdges { get; } = successorEdges;
+    public ReadOnlyMemory<Vector3> Directions { get; } = directions;
+    public ReadOnlyMemory<int> GoalIndices { get; } = goalIndices;
+    public ReadOnlyMemory<NavigationFlowDependency> Dependencies { get; } = dependencies;
+    public string Solver { get; } = solver;
+}
+
+/// <summary>The game's shared target and its most recently completed field.</summary>
+public sealed class NavigationFlow
+{
+    private readonly Lock _gate = new();
+    private NavigationFlowInput _input;
+    private NavigationFlowData _data = new(null, 0);
+
+    public NavigationFlow(NavigationCosts costs, NavigationProfile profile, NavigationFlowGoal[] goals)
+        : this(costs, profile, (ReadOnlyMemory<NavigationFlowGoal>)goals) { }
+
+    public NavigationFlow(NavigationCosts costs, NavigationProfile profile, ReadOnlyMemory<NavigationFlowGoal> goals) =>
+        _input = new(costs, profile, goals);
+
+    public NavigationFlow(NavigationFlowInput input) => _input = input;
+
+    public NavigationFlow(NavigationFlowField field)
+    {
+        _input = field.Input;
+        _data = new(field, 1);
+    }
+
+    public NavigationFlowInput Input => Volatile.Read(ref _input);
+    public NavigationFlowField? Field => Volatile.Read(ref _data).Field;
+    public long FieldVersion => Volatile.Read(ref _data).Version;
+    public NavigationCosts Costs => Input.Costs;
+    public NavigationProfile Profile => Input.Profile;
+    public ReadOnlyMemory<NavigationFlowGoal> Goals => Input.Goals;
+
+    public void SetGoals(NavigationFlowGoal[] goals) => SetGoals((ReadOnlyMemory<NavigationFlowGoal>)goals);
+
+    public void SetGoals(ReadOnlyMemory<NavigationFlowGoal> goals)
+    {
+        lock (_gate)
+        {
+            NavigationFlowInput current = _input;
+            Volatile.Write(ref _input, new(current.Costs, current.Profile, goals, current.GoalVersion + 1, current.Version + 1));
+        }
+    }
+
+    public void SetCosts(NavigationCosts costs)
+    {
+        lock (_gate)
+        {
+            NavigationFlowInput current = _input;
+            Volatile.Write(ref _input, new(costs, current.Profile, current.Goals, current.GoalVersion, current.Version + 1));
+        }
+    }
+
+    internal void Apply(NavigationFlowField field)
+    {
+        lock (_gate)
+            if (ReferenceEquals(_input, field.Input) && !ReferenceEquals(_data.Field, field))
+                Volatile.Write(ref _data, new(field, _data.Version + 1));
+    }
+
+    private sealed record NavigationFlowData(NavigationFlowField? Field, long Version);
+}
