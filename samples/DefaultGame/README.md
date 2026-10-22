@@ -31,6 +31,8 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 同一示例的 `AddHeightGpu(shader, delta)` 使用驻留的 `terrain_height_delta` Shader 提交 GPU 增量。字段读取和 CPU 网格构建共享 GPU 页的按需读回，完成后的几何同步到两个放置；调用路径见 [GPU 高度编辑](../../wiki/architecture/terrain/Terrain-Gpu-Editing.md)。
 
+`VoxelTerrainExample` 展示三维体素场的同一流程：`Install` 安装地形系统，`AddPlacement` 创建放置，`WriteSphere` 在 `SampleRegion` 内重新写入球体标量。每米一个采样点、一米半径、`[-3,4)` 的样本区域及初始球心 `(-1,0,0)` 属于示例参数。`Field.ReadCpuAsync` 取得固定版本的标量，`Scene` 的几何更新使用既有空间块及 Cluster 通路。
+
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
 ```powershell

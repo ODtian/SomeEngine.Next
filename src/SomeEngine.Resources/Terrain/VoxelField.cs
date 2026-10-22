@@ -40,19 +40,31 @@ public sealed class VoxelField
     /// </code>
     /// </example>
     public TerrainEdit EditCpu<TBrush>(TBrush brush, JobHandle dependency = default)
-        where TBrush : struct, IVoxelBrushCpu => Terrain.Editing.EditCpu(this, brush, dependency);
+        where TBrush : struct, IVoxelBrushCpu
+    {
+        TerrainEdit edit = Terrain.Editing.EditCpu(this, brush, dependency);
+        Terrain.NotifyChange(new VoxelFieldChange(this, brush.Range, brush.ReadBorder, edit));
+        return edit;
+    }
 
     /// <summary>Captures the submitted version on entry and returns its requested samples when ready.</summary>
     public ValueTask<VoxelFieldRead> ReadCpuAsync(VoxelRegion range)
     {
         lock (Terrain.Gate)
-            return ReadCpuAsync(Data, range);
+            return CompleteReadAsync(CaptureCpuRead(range));
     }
 
-    private async ValueTask<VoxelFieldRead> ReadCpuAsync(VoxelFieldData data, VoxelRegion range)
+    internal VoxelFieldCpuRead CaptureCpuRead(VoxelRegion range)
     {
-        await data.Edit.WaitAsync().ConfigureAwait(false);
-        return new VoxelFieldRead(Grid, InitialValue, data, range);
+        VoxelFieldData data = Data;
+        var samples = new VoxelFieldRead(Grid, InitialValue, data, range);
+        return new(samples, data.Edit.Completion, samples.GetReadAccesses(Terrain.Editing.Scheduler));
+    }
+
+    private static async ValueTask<VoxelFieldRead> CompleteReadAsync(VoxelFieldCpuRead read)
+    {
+        await read.Completion.WaitAsync().ConfigureAwait(false);
+        return read.Samples;
     }
 }
 
@@ -62,3 +74,6 @@ internal sealed class VoxelFieldData(
     internal Dictionary<(int X, int Y, int Z), float[]> Pages { get; } = pages;
     internal TerrainEdit Edit { get; } = edit;
 }
+
+internal readonly record struct VoxelFieldCpuRead(
+    VoxelFieldRead Samples, JobHandle Completion, JobResourceAccess[] Accesses);
