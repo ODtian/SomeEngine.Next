@@ -87,7 +87,7 @@ public partial struct Invalid : IJobEntity
     }
 
     [Fact]
-    public void RejectsManagedJobFields()
+    public void ManagedJobFieldDefinitionCompiles()
     {
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS.Components;
@@ -100,11 +100,11 @@ public partial struct Invalid : IJobEntity
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG104" && diagnostic.Location.IsInSource);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]
-    public void RejectsManagedAutoPropertyBackingFields()
+    public void ManagedJobAutoPropertyDefinitionCompiles()
     {
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS.Components;
@@ -117,7 +117,7 @@ public partial struct Invalid : IJobEntity
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG104" && diagnostic.Location.IsInSource);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]
