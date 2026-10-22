@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
     <Compile Remove="Content/**/*.cs" Condition="'$(SomeEngineDevelopment)' != 'true'" />
   </ItemGroup>
   <Target Name="WriteTestScenes" AfterTargets="Build">

@@ -1,6 +1,16 @@
 using System.Numerics;
 
-namespace SomeEngine.Assets.Importers;
+namespace SomeEngine.Geometry.Cluster;
+
+public interface IClusterVertexEncoder<TAttributes> where TAttributes : unmanaged
+{
+    string Compatibility { get; }
+
+    EncodedClusterVertices Encode(
+        ReadOnlySpan<Vector3> positions,
+        ReadOnlySpan<TAttributes> attributes,
+        ReadOnlySpan<uint> clusterVertices);
+}
 
 public interface IClusterVertexEncoder
 {

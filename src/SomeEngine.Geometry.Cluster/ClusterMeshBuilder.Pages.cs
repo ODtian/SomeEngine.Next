@@ -8,96 +8,58 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SomeEngine.Resources.Geometry;
-using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
-using SomeEngine.Serialization.Containers;
-using SomeEngine.Serialization.IO;
-using MeshAsset = SomeEngine.Assets.Schema.MeshAsset;
 using ValueType = SomeEngine.Resources.Geometry.ValueType;
 using Stream = System.IO.Stream;
 
-namespace SomeEngine.Assets.Importers;
+namespace SomeEngine.Geometry.Cluster;
 
-public static partial class ClusterBuilder
+public static partial class ClusterMeshBuilder
 {
-    private static MeshAsset ProcessRawCore(
-        Vector3[] rawPos,
-        List<RawAttribute> rawAttributes,
-        uint[] rawIndices,
-        IReadOnlyList<MeshMaterialSlot> materialSlots,
-        string name,
-        IClusterVertexEncoder vertexEncoder)
+    private static Mesh BuildCore(
+        Vector3[] positions, VertexData attributes, uint[] indices, float[] materialIndices,
+        int materialCount, string name, ClusterBuildStrategy strategy)
     {
-        ArgumentNullException.ThrowIfNull(vertexEncoder);
-        ArgumentException.ThrowIfNullOrWhiteSpace(vertexEncoder.Compatibility);
-        if (materialSlots.Count is 0 or > 256)
-            throw new ArgumentOutOfRangeException(
-                nameof(materialSlots),
-                "Cluster meshes require between one and 256 material/deform cook slots.");
         using var stream = new MemoryStream();
-        var scratch = new RawMeshScratch(rawPos.Length);
+        var scratch = new RawMeshScratch(positions.Length);
         try
         {
-            PreparedRawMesh prepared = PrepareRawMesh(rawPos, rawAttributes, rawIndices, scratch);
-            MeshletBuild meshletBuild = BuildMeshletData(prepared, materialSlots);
-            SortMeshlets(meshletBuild.Meshlets, meshletBuild.Bounds);
-            List<ClusterInfo> clusterInfos = WriteMeshPages(
-                stream,
-                scratch.PageBuffer,
-                prepared,
-                meshletBuild,
-                vertexEncoder);
-            uint[] lowestDetailPageIndices = clusterInfos
+            MeshInput mesh = PrepareMesh(positions, attributes, indices, materialIndices, strategy, scratch);
+            MeshletBuild meshlets = BuildMeshletData(mesh, strategy);
+            SortMeshlets(meshlets.Meshlets, meshlets.Bounds);
+            List<ClusterInfo> clusters = WriteMeshPages(stream, scratch.PageBuffer, mesh, meshlets);
+            uint[] lowestPages = clusters
                 .Where(static cluster => cluster.LODError >= (float)Half.MaxValue)
-                .Select(static cluster => cluster.PageIndex)
-                .Distinct()
-                .Order()
-                .ToArray();
-            if (lowestDetailPageIndices.Length == 0)
-                lowestDetailPageIndices = [clusterInfos.Max(static cluster => cluster.PageIndex)];
-            long bvhOffset = WriteBvh(stream, clusterInfos);
+                .Select(static cluster => cluster.PageIndex).Distinct().Order().ToArray();
+            if (lowestPages.Length == 0)
+                lowestPages = [clusters.Max(static cluster => cluster.PageIndex)];
+            long bvhOffset = WriteBvh(stream, clusters);
             byte[] content = stream.ToArray();
-            return CreateMeshAsset(
-                name,
-                materialSlots,
-                content,
-                meshletBuild.Bounds,
-                vertexEncoder.Compatibility,
-                bvhOffset,
-                lowestDetailPageIndices);
+            var descriptions = MeshIntegrity.Inspect(content, bvhOffset, attributes.Compatibility);
+            var pages = new ReadOnlyMemory<byte>[descriptions.Length];
+            for (int index = 0; index < pages.Length; index++)
+                pages[index] = content.AsMemory((int)descriptions[index].Offset, (int)descriptions[index].Length);
+            return Mesh.Create(name, attributes.Compatibility, descriptions, content.AsMemory((int)bvhOffset),
+                pages, CreateBounds(meshlets.Bounds), CreateMeshRegions(materialCount), lowestPages);
         }
-        finally
-        {
-            scratch.Return();
-        }
+        finally { scratch.Return(); }
     }
 
-    private static PreparedRawMesh PrepareRawMesh(
-        Vector3[] rawPositions,
-        List<RawAttribute> rawAttributes,
-        uint[] rawIndices,
-        RawMeshScratch scratch)
+    private static MeshInput PrepareMesh(Vector3[] positions, VertexData attributes,
+        uint[] indices, float[] materialIndices, ClusterBuildStrategy strategy, RawMeshScratch scratch)
     {
-        nuint vertexCount = BuildRemap(
-            scratch.Remap.AsSpan(0, rawPositions.Length),
-            rawIndices.AsSpan(),
-            rawPositions,
-            rawAttributes);
+        if (strategy == ClusterBuildStrategy.Realtime)
+            return new(positions, indices, positions.Length, indices.Length, attributes, materialIndices);
+
+        nuint vertexCount = BuildRemap(scratch.Remap.AsSpan(0, positions.Length), indices, positions, attributes, materialIndices);
         scratch.Positions = ArrayPool<Vector3>.Shared.Rent((int)vertexCount);
-        scratch.Indices = ArrayPool<uint>.Shared.Rent(rawIndices.Length);
-        RemapPositions(rawPositions, scratch.Remap, vertexCount, scratch.Positions);
-        RemapIndices(rawIndices, scratch.Remap.AsSpan(0, rawPositions.Length), scratch.Indices);
-        List<RawAttribute> attributes = RemapAttributes(rawPositions.Length, rawAttributes, scratch, vertexCount);
-        Meshopt.OptimizeVertexCache(
-            scratch.Indices.AsSpan(0, rawIndices.Length),
-            scratch.Indices.AsSpan(0, rawIndices.Length),
-            vertexCount);
-        return new PreparedRawMesh(
-            scratch.Positions,
-            scratch.Indices,
-            (int)vertexCount,
-            rawIndices.Length,
-            attributes);
+        scratch.Indices = ArrayPool<uint>.Shared.Rent(indices.Length);
+        RemapPositions(positions, scratch.Remap, vertexCount, scratch.Positions);
+        RemapIndices(indices, scratch.Remap.AsSpan(0, positions.Length), scratch.Indices);
+        VertexData remapped = attributes.Remap(scratch.Remap.AsSpan(0, positions.Length), (int)vertexCount);
+        float[] remappedMaterialIndices = RemapValues(materialIndices, scratch.Remap.AsSpan(0, positions.Length), (int)vertexCount);
+        Meshopt.OptimizeVertexCache(scratch.Indices.AsSpan(0, indices.Length), scratch.Indices.AsSpan(0, indices.Length), vertexCount);
+        return new(scratch.Positions, scratch.Indices, (int)vertexCount, indices.Length, remapped, remappedMaterialIndices);
     }
 
     private static void RemapPositions(
@@ -127,95 +89,27 @@ public static partial class ClusterBuilder
             remap);
     }
 
-    private static List<RawAttribute> RemapAttributes(
-        int rawVertexCount,
-        List<RawAttribute> rawAttributes,
-        RawMeshScratch scratch,
-        nuint vertexCount)
-    {
-        var attributes = new List<RawAttribute>(rawAttributes.Count);
-        foreach (RawAttribute attribute in rawAttributes)
-        {
-            float[] data = RemapAttributeData(rawVertexCount, attribute, scratch, vertexCount);
-            attributes.Add(
-                new RawAttribute(
-                    attribute.Name,
-                    data,
-                    attribute.Dimension,
-                    attribute.TargetType,
-                    attribute.NumComponents,
-                    attribute.Normalized));
-        }
-
-        return attributes;
-    }
-
-    private static float[] RemapAttributeData(
-        int rawVertexCount,
-        RawAttribute attribute,
-        RawMeshScratch scratch,
-        nuint vertexCount)
-    {
-        float[] destination = ArrayPool<float>.Shared.Rent((int)vertexCount * attribute.Dimension);
-        scratch.AttributeBuffers.Add(destination);
-        for (int oldIndex = 0; oldIndex < rawVertexCount; oldIndex++)
-        {
-            uint newIndex = scratch.Remap[oldIndex];
-            if (newIndex != uint.MaxValue && newIndex < vertexCount)
-            {
-                CopyAttributeValues(attribute, oldIndex, destination, (int)newIndex);
-            }
-        }
-
-        return destination;
-    }
-
-    private static void CopyAttributeValues(
-        RawAttribute attribute,
-        int sourceIndex,
-        float[] destination,
-        int destinationIndex)
-    {
-        int sourceBase = sourceIndex * attribute.Dimension;
-        int destinationBase = destinationIndex * attribute.Dimension;
-        for (int component = 0; component < attribute.Dimension; component++)
-        {
-            destination[destinationBase + component] = attribute.Data[sourceBase + component];
-        }
-    }
-
-    private static MeshletBuild BuildMeshletData(
-        PreparedRawMesh prepared,
-        IReadOnlyList<MeshMaterialSlot> materialSlots)
+    private static MeshletBuild BuildMeshletData(MeshInput mesh, ClusterBuildStrategy strategy)
     {
         var meshlets = new List<BuilderMeshlet>();
         var globalIndices = new List<uint>();
-        float[] materialIndices = ExtractMaterialIndices(prepared);
-        BuildClusterLod(
-            ClusterLodConfig.GetDefault() with { ClusterSpatial = true },
-            new ReadOnlySpan<Vector3>(prepared.Positions, 0, prepared.VertexCount),
-            new ReadOnlySpan<uint>(prepared.Indices, 0, prepared.IndexCount),
-            materialIndices,
-            meshlets,
-            globalIndices);
-        RemoveInternalMaterialAttribute(prepared.Attributes);
-        MeshBoundsInfo bounds = ComputeMeshBounds(prepared.Positions, prepared.VertexCount);
-        return new MeshletBuild(meshlets, globalIndices, bounds);
-    }
-
-    private static float[] ExtractMaterialIndices(PreparedRawMesh prepared)
-    {
-        RawAttribute? materialIndex = prepared.Attributes.FirstOrDefault(static attr => attr.Name == "_MATERIAL_INDEX");
-        return materialIndex?.Data ?? new float[prepared.VertexCount];
-    }
-
-    private static void RemoveInternalMaterialAttribute(List<RawAttribute> attributes)
-    {
-        RawAttribute? materialIndex = attributes.FirstOrDefault(static attr => attr.Name == "_MATERIAL_INDEX");
-        if (materialIndex != null)
+        ClusterLodConfig config = ClusterLodConfig.GetDefault() with { ClusterSpatial = true };
+        ReadOnlySpan<Vector3> positions = mesh.Positions.AsSpan(0, mesh.VertexCount);
+        ReadOnlySpan<uint> indices = mesh.Indices.AsSpan(0, mesh.IndexCount);
+        if (strategy == ClusterBuildStrategy.Offline)
+            BuildClusterLod(config, positions, indices, mesh.MaterialIndices, meshlets, globalIndices);
+        else
         {
-            attributes.Remove(materialIndex);
+            Clusterize(config, indices, positions, mesh.MaterialIndices, meshlets, globalIndices);
+            InitializeLeafClusters(positions, meshlets, globalIndices);
+            for (int index = 0; index < meshlets.Count; index++)
+            {
+                BuilderMeshlet cluster = meshlets[index];
+                cluster.ParentError = float.MaxValue;
+                meshlets[index] = cluster;
+            }
         }
+        return new(meshlets, globalIndices, ComputeMeshBounds(mesh.Positions, mesh.VertexCount));
     }
 
     private static MeshBoundsInfo ComputeMeshBounds(Vector3[] positions, int vertexCount)
@@ -262,11 +156,10 @@ public static partial class ClusterBuilder
     private static List<ClusterInfo> WriteMeshPages(
         Stream stream,
         byte[] pageBuffer,
-        PreparedRawMesh prepared,
-        MeshletBuild meshletBuild,
-        IClusterVertexEncoder vertexEncoder)
+        MeshInput mesh,
+        MeshletBuild meshletBuild)
     {
-        var writer = new MeshPageWriter(stream, pageBuffer, prepared, meshletBuild, vertexEncoder);
+        var writer = new MeshPageWriter(stream, pageBuffer, mesh, meshletBuild);
         return writer.Write();
     }
 
@@ -278,43 +171,6 @@ public static partial class ClusterBuilder
         ReadOnlySpan<byte> bvhBytes = MemoryMarshal.Cast<ClusterBVHNode, byte>(bvhSpan);
         stream.Write(bvhBytes);
         return bvhOffset;
-    }
-
-    private static MeshAsset CreateMeshAsset(
-        string name,
-        IReadOnlyList<MeshMaterialSlot> materialSlots,
-        ReadOnlyMemory<byte> payload,
-        MeshBoundsInfo bounds,
-        string vertexEncoding,
-        long bvhOffset,
-        uint[] lowestDetailPageIndices)
-    {
-        using var geometry = new MeshBlock
-        {
-            Bounds = CreateBounds(bounds),
-            Regions = CreateMeshRegions(materialSlots.Count),
-        };
-        using var materials = new MeshMaterialsBlock
-        {
-            Materials = materialSlots
-                .Select(static slot => new AssetId<MaterialAsset>(slot.MaterialGuid))
-                .ToArray(),
-        };
-        using var clusters = new ClusterMeshBlock
-        {
-            VertexEncoding = vertexEncoding,
-            LowestDetailPageIndices = lowestDetailPageIndices,
-        };
-        clusters.SetPayload(payload, checked((ulong)bvhOffset));
-        var meshAsset = new MeshAsset { Name = name };
-        try
-        {
-            meshAsset.SetBlock(geometry);
-            meshAsset.SetBlock(clusters);
-            meshAsset.SetBlock(materials);
-            return meshAsset;
-        }
-        catch { meshAsset.Dispose(); throw; }
     }
 
     private static SomeEngine.Resources.Bounds CreateBounds(MeshBoundsInfo bounds)
@@ -357,7 +213,6 @@ public static partial class ClusterBuilder
         public uint[] Remap { get; }
         public Vector3[]? Positions { get; set; }
         public uint[]? Indices { get; set; }
-        public List<float[]> AttributeBuffers { get; } = [];
 
         public void Return()
         {
@@ -365,7 +220,6 @@ public static partial class ClusterBuilder
             ArrayPool<uint>.Shared.Return(Remap);
             ReturnPositions();
             ReturnIndices();
-            ReturnAttributes();
         }
 
         private void ReturnPositions()
@@ -384,13 +238,6 @@ public static partial class ClusterBuilder
             }
         }
 
-        private void ReturnAttributes()
-        {
-            foreach (float[] buffer in AttributeBuffers)
-            {
-                ArrayPool<float>.Shared.Return(buffer);
-            }
-        }
     }
 
     private sealed partial class MeshPageWriter
@@ -398,23 +245,20 @@ public static partial class ClusterBuilder
         public MeshPageWriter(
             Stream stream,
             byte[] pageBuffer,
-            PreparedRawMesh mesh,
-            MeshletBuild meshletBuild,
-            IClusterVertexEncoder vertexEncoder)
+            MeshInput mesh,
+            MeshletBuild meshletBuild)
         {
             Stream = stream;
             PageBuffer = pageBuffer;
             MeshInput = mesh;
             MeshletBuild = meshletBuild;
-            VertexEncoder = vertexEncoder;
-            VertexEncodingHash = VertexEncodingCompatibility.Hash(vertexEncoder.Compatibility);
+            VertexEncodingHash = VertexEncodingCompatibility.Hash(mesh.Attributes.Compatibility);
         }
 
         private Stream Stream { get; }
         private byte[] PageBuffer { get; }
-        private PreparedRawMesh MeshInput { get; }
+        private MeshInput MeshInput { get; }
         private MeshletBuild MeshletBuild { get; }
-        private IClusterVertexEncoder VertexEncoder { get; }
         private ulong VertexEncodingHash { get; }
         private List<ClusterInfo> ClusterInfos { get; } = [];
         private List<PackedCluster> CurrentClusters { get; } = [];
@@ -480,9 +324,8 @@ public static partial class ClusterBuilder
                 LocalIndices.Add((byte)localIndex);
             }
 
-            EncodedClusterVertices output = VertexEncoder.Encode(
+            EncodedClusterVertices output = MeshInput.Attributes.Encode(
                 new ReadOnlySpan<Vector3>(MeshInput.Positions, 0, MeshInput.VertexCount),
-                MeshInput.Attributes,
                 CollectionsMarshal.AsSpan(LocalVertices));
             if (output.Blob.IsEmpty)
                 throw new InvalidDataException("A cluster vertex encoder returned an empty opaque blob.");
@@ -747,7 +590,7 @@ public static partial class ClusterBuilder
                 throw new InvalidDataException($"Cluster LOD error {value} is invalid.");
 
             // The hierarchy uses float.MaxValue to mark a terminal/root LOD. Both the page
-            // cluster ABI and the BVH need a finite value, while the largest finite half already
+            // cluster format and the BVH need a finite value, while the largest finite half already
             // keeps that terminal LOD selected throughout the supported projection range.
             // The BVH rejects the finer group with the same error that the
             // packed coarse clusters accept. Different rounding opens a gap
@@ -844,12 +687,13 @@ public static partial class ClusterBuilder
         }
     }
 
-    private readonly record struct PreparedRawMesh(
+    private readonly record struct MeshInput(
         Vector3[] Positions,
         uint[] Indices,
         int VertexCount,
         int IndexCount,
-        List<RawAttribute> Attributes);
+        VertexData Attributes,
+        float[] MaterialIndices);
 
     private readonly record struct MeshletBuild(
         List<BuilderMeshlet> Meshlets,
