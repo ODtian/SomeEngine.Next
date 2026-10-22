@@ -64,7 +64,7 @@ public readonly record struct NavigationProgress(
     NavigationStatus Status, float Distance, float HeadingError, ulong RequestVersion) : IComponent;
 
 /// <summary>Adds an entity's navigation inputs, outputs and its private search workspace.</summary>
-public static class NavigationComponents
+public static partial class NavigationComponents
 {
     public static void AddPath<TSpace, TState>(World world, Entity entity, TSpace space,
         NavigationProfile profile, NavigationPolicy policy, NavigationGoal goal, float desiredSpeed)

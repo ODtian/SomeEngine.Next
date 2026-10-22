@@ -20,6 +20,8 @@
 
 `NavigationMeshBuildState.Mesh` 持有完成的位置、多边形顶点索引、多边形、双向入口、详细高度位置和三角形。每个 `NavigationPolygon.Tile` 保存原始块坐标。`Tiles` 中的 `NavigationMeshTileRange` 给出每块在最终网格中的多边形起点与数量，各多边形继续给出详细高度与入口范围。跨块入口的目标索引指向同一网格，端点与详细高度使用同一世界坐标。
 
+完成 Mesh 的 `Tiles` 属性另行持有各块独立的详细网格数组。区域构建与场景放置直接使用这些块，接口见[区域入口图与场景放置](Navigation-Regions.md)。
+
 以下是程序化调用的例子；几何输入、规格、策略与前置依赖由业务提供：
 
 ```csharp

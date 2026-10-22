@@ -1,5 +1,7 @@
 # 导航规格、策略与网格资产
 
+分层 Grid 变体和共享目标 Flow 的资产入口见[分层栅格与共享目标流场](../Navigation-Flows.md#资产创建)。
+
 `NavigationProfileAsset`、`NavigationPolicyAsset` 和 `NavigationAsset` 分别持有规格、策略和导航表示的身份。对应 Block 返回普通 Navigation 资源，由角色、路径和应用直接共享。
 
 ## 规格与策略

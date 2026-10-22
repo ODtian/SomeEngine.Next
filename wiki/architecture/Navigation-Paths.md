@@ -2,6 +2,8 @@
 
 `NavigationSystems<TSpace,TSearch,TState,TMotion,TReader>` 将目标求解、路径引导、运动建议与实际运动反馈连接起来。`TSpace` 指定导航表示，`TSearch` 使用静态接口推进 `TState`，`TMotion` 与 `TReader` 接入游戏已有的运动数据。多边形网格通过 `NavigationMesh` 接入，搜索类型决定求解方法。
 
+带放置变换的多区域组合使用 `NavigationScene`、`SceneNavigationSearch` 和 `SceneSearchState`。入口图、详细路径分段与区域依赖见[区域入口图与场景放置](Navigation-Regions.md)。
+
 ## 角色输入与结果
 
 `NavigationComponents.AddPath<TSpace,TState>` 添加公共输入、输出与每个实体独占的搜索工作区。组合对象的 `AddAgent` 调用同一入口。`NavigationAgent` 引用共享的 `NavigationProfile`、`NavigationPolicy`，并提供期望速度；`PathNavigation<TSpace>` 引用导航表示。
@@ -17,6 +19,8 @@
 `Schedule(deltaTime, expansionBudget, motionReady)` 接收实际运动输入的就绪句柄，返回 `Paths`、`Guidance`、`Steering` 三个完成句柄。每个请求按本次预算继续自己的搜索队列，路径完成后引导角色逐段到达路径拐点，并在预测的下一位置采样表面高度。
 
 运动消费者依赖 `Steering`，写回实际位姿与速度；`ScheduleProgress(motionCompletion)` 等待运动完成后读取结果。进度距离使用 `max(0, distance(actualPosition, targetPosition) - arrivalRange)`；进入目标区域后按实际朝向报告 `Aligning` 或 `Arrived`。其它进度状态包括 `Idle`、`Searching`、`Moving`、`Unreachable` 和 `TargetUnavailable`。
+
+`ScheduleGuidance` 返回路径与引导的完成句柄，供调用方将其与[共享流场](Navigation-Flows.md)和邻居工作汇合，再由所选避让阶段写入本步 Steering。
 
 以下是调用方式的例子，运动组件、资源与目标由游戏提供：
 

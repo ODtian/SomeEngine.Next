@@ -35,6 +35,8 @@ public interface INavigationSpace<TSpace> where TSpace : class
 {
     static abstract void CollectResources(TSpace space, ref JobResourceAccessBuilder resources);
 
+    static virtual long GetVersion(TSpace space) => 0;
+
     static virtual bool TryGetHeight(TSpace space, Vector3 position, out float height)
     {
         height = position.Y;
@@ -47,16 +49,18 @@ public sealed partial class NavigationMesh : INavigationSpace<NavigationMesh>
 {
     public NavigationMesh(Vector3[] positions, int[] polygonVertices, NavigationPolygon[] polygons,
         NavigationPortal[] portals, Vector3[]? detailPositions = null,
-        NavigationDetailTriangle[]? detailTriangles = null, ulong contentVersion = 1)
+        NavigationDetailTriangle[]? detailTriangles = null, ulong contentVersion = 1,
+        NavigationRegionGraph? regionGraph = null, ReadOnlyMemory<NavigationMeshTile> tiles = default)
         : this((ReadOnlyMemory<Vector3>)positions, polygonVertices, polygons, portals,
             detailPositions is null ? ReadOnlyMemory<Vector3>.Empty : detailPositions,
             detailTriangles is null ? ReadOnlyMemory<NavigationDetailTriangle>.Empty : detailTriangles,
-            contentVersion) { }
+            contentVersion, regionGraph, tiles) { }
 
     public NavigationMesh(ReadOnlyMemory<Vector3> positions, ReadOnlyMemory<int> polygonVertices,
         ReadOnlyMemory<NavigationPolygon> polygons, ReadOnlyMemory<NavigationPortal> portals,
         ReadOnlyMemory<Vector3> detailPositions = default,
-        ReadOnlyMemory<NavigationDetailTriangle> detailTriangles = default, ulong contentVersion = 1)
+        ReadOnlyMemory<NavigationDetailTriangle> detailTriangles = default, ulong contentVersion = 1,
+        NavigationRegionGraph? regionGraph = null, ReadOnlyMemory<NavigationMeshTile> tiles = default)
     {
         Positions = positions;
         PolygonVertices = polygonVertices;
@@ -65,6 +69,8 @@ public sealed partial class NavigationMesh : INavigationSpace<NavigationMesh>
         DetailPositions = detailPositions;
         DetailTriangles = detailTriangles;
         ContentVersion = contentVersion;
+        RegionGraph = regionGraph;
+        Tiles = tiles;
         Vector3 minimum = new(float.PositiveInfinity), maximum = new(float.NegativeInfinity);
         foreach (Vector3 position in positions.Span)
         {
@@ -82,6 +88,8 @@ public sealed partial class NavigationMesh : INavigationSpace<NavigationMesh>
     public ReadOnlyMemory<NavigationDetailTriangle> DetailTriangles { get; }
     public ulong ContentVersion { get; }
     public NavigationBounds Bounds { get; }
+    public NavigationRegionGraph? RegionGraph { get; }
+    public ReadOnlyMemory<NavigationMeshTile> Tiles { get; }
 
     public static void CollectResources(NavigationMesh space, ref JobResourceAccessBuilder resources)
     {

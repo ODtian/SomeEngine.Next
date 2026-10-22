@@ -46,7 +46,7 @@ internal partial struct NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(
         if (corner == corners.Length - 1)
             travel = MathF.Min(travel, regionDistance);
         Vector3 next = motion.Position + direction * (travel / distance);
-        if (TSpace.TryGetHeight(navigation.Space, next, out float height))
+        if (path.TrySampleHeight(next, out float height) || TSpace.TryGetHeight(navigation.Space, next, out height))
             next.Y = height;
         Vector3 velocity = (next - motion.Position) / _deltaTime;
         guidance = new(velocity, NavigationHeading.FromDirection(direction), result.RequestVersion, true);
