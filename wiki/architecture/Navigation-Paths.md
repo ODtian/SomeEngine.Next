@@ -1,6 +1,6 @@
 # 目标、路径与实际运动
 
-`NavigationSystems<TSpace,TSearch,TState,TMotion,TReader>` 将目标求解、路径引导、运动建议与实际运动反馈连接起来。`TSpace` 指定导航表示，`TSearch` 使用静态接口推进 `TState`，`TMotion` 与 `TReader` 接入游戏已有的运动数据。多边形网格组合使用 `NavigationMesh`、`PolygonNavigationSearch` 和 `PolygonSearchState`。
+`NavigationSystems<TSpace,TSearch,TState,TMotion,TReader>` 将目标求解、路径引导、运动建议与实际运动反馈连接起来。`TSpace` 指定导航表示，`TSearch` 使用静态接口推进 `TState`，`TMotion` 与 `TReader` 接入游戏已有的运动数据。多边形网格通过 `NavigationMesh` 接入，搜索类型决定求解方法。
 
 ## 角色输入与结果
 
@@ -14,7 +14,7 @@
 
 ## 完成依赖
 
-`Schedule(deltaTime, expansionBudget, motionReady)` 接收实际运动输入的就绪句柄，返回 `Paths`、`Guidance`、`Steering` 三个完成句柄。每个请求按本次预算继续自己的搜索队列，路径完成后引导角色逐段到达 Funnel 拐点，并在预测的下一位置采样表面高度。
+`Schedule(deltaTime, expansionBudget, motionReady)` 接收实际运动输入的就绪句柄，返回 `Paths`、`Guidance`、`Steering` 三个完成句柄。每个请求按本次预算继续自己的搜索队列，路径完成后引导角色逐段到达路径拐点，并在预测的下一位置采样表面高度。
 
 运动消费者依赖 `Steering`，写回实际位姿与速度；`ScheduleProgress(motionCompletion)` 等待运动完成后读取结果。进度距离使用 `max(0, distance(actualPosition, targetPosition) - arrivalRange)`；进入目标区域后按实际朝向报告 `Aligning` 或 `Arrived`。其它进度状态包括 `Idle`、`Searching`、`Moving`、`Unreachable` 和 `TargetUnavailable`。
 
@@ -45,8 +45,23 @@ NavigationProgress result = world.Read<NavigationProgress>(entity);
 
 Funnel 按 [Mononen 的入口收紧算法](https://digestingduck.blogspot.com/2010/03/simple-stupid-funnel-algorithm.html) 生成拐点。`FindPolygon` 按 XZ 包含关系和最近高度层选择多边形，`TrySampleHeight` 使用细节三角形或多边形三角扇插值，拐点和运动引导共享该高度查询。
 
+### Polyanya 几何最短路径
+
+平面凸多边形网格采用统一欧氏距离目标时，组合使用 `PolyanyaNavigationSearch` 和 `PolyanyaSearchState`。规格、区域和入口的能力条件以及策略中的正无穷成本确定可通行范围，`NavigationPath.Cost` 表示以米计的几何路径长度。调用方为这种目标提供统一距离权重及零附加入口、动作成本。
+
+`PolyanyaSearchState` 持有本请求的根点、入口可见区间、根点累计距离、前驱链和优先队列。搜索把区间投影到相邻凸多边形；可见部分保留根点，阴影部分在相应边界端点转向。部分边入口的端点参与边界转角识别。队列使用经过区间的几何距离下界排序，目标节点出队后沿根点前驱链生成位置路径，走廊及块内容版本使用公共路径结果。
+
+以下是选择 Polyanya 的调用例子，后续 `AddAgent`、`Schedule` 与 `ScheduleProgress` 使用上面的公共入口：
+
+```csharp
+var navigation = new NavigationSystems<NavigationMesh, PolyanyaNavigationSearch,
+    PolyanyaSearchState, Movement, MovementReader>(world);
+```
+
+算法依据为 [Cui、Harabor、Grastien，IJCAI 2017](https://www.ijcai.org/proceedings/2017/0070.pdf)，实现入口为 [PolyanyaNavigationSearch](../../src/SomeEngine.Navigation/PolyanyaNavigationSearch.cs)。
+
 ## 数据访问
 
 组件列访问与组件引用指向的数据访问分别声明。规格轮廓、策略成本、网格和完成路径数组作为实际只读资源共享；每个请求的可变搜索对象作为独占资源使用。生成式 Job 在语义依赖完成后收集实际引用，按完整访问集合调度角色范围。组件、Job 字段和请求引用保持计算数据有效。
 
-资产创建入口及共享数组寿命见[导航规格、策略与网格资产](Assets/Asset-Navigation.md)，几何和表面构建见[导航几何与多层表面](Navigation-Surfaces.md)。公共行为检查位于 [NavigationMovementTests](../../tests/SomeEngine.Navigation.Tests/NavigationMovementTests.cs) 和 [PolygonPathTests](../../tests/SomeEngine.Navigation.Tests/PolygonPathTests.cs)。
+资产创建入口及共享数组寿命见[导航规格、策略与网格资产](Assets/Asset-Navigation.md)，几何和表面构建见[导航几何与多层表面](Navigation-Surfaces.md)。公共行为检查位于 [NavigationMovementTests](../../tests/SomeEngine.Navigation.Tests/NavigationMovementTests.cs)、[PolygonPathTests](../../tests/SomeEngine.Navigation.Tests/PolygonPathTests.cs) 和 [PolyanyaPathTests](../../tests/SomeEngine.Navigation.Tests/PolyanyaPathTests.cs)。

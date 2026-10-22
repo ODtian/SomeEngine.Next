@@ -5,6 +5,7 @@
 角色输入与网格变体的资产入口见[导航规格、策略与网格资产](Assets/Asset-Navigation.md)。
 目标组件、路径求解、运动消费和实际进度见[目标、路径与实际运动](Navigation-Paths.md)。
 分层栅格、共享目标积分和群体运动见[分层栅格与共享目标流场](Navigation-Flows.md)。
+角色规格筛选、Recast 网格阶段与导入入口见[按角色规格烘焙导航网格](Navigation-Baking.md)。
 
 ## 几何输入
 
@@ -16,7 +17,7 @@
 
 ## 分块构建
 
-`NavigationSurfaceBuilder.Schedule(input, dependency)` 返回 `NavigationBuild<NavigationSurfaceBuildState>`。`Completion` 表达整个构建完成，`Complete().Surface` 取得结果；`State.Input` 保留该次输入。工作区和块结果由 State 持有，最后一个创建 Job 组装完整表面。
+`NavigationSurfaceBuilder.Schedule(input, dependency, scheduler)` 返回 `NavigationBuild<NavigationSurfaceBuildState>`。`Completion` 表达整个构建完成，`Complete().Surface` 取得结果；`State.Input` 保留该次输入。工作区和块结果由 State 持有，最后一个创建 Job 组装完整表面。调用方可提供与角色 World 共用的 Scheduler。
 
 每块作为独立 Job 处理，读取固定几何数组，写入自己的块结果和工作区数组范围。显式前置句柄决定开始顺序。构建将三角形裁剪到 XZ 单元，沿高度形成占据区间，再合并相交区间。流程依据 [Recast 高度场与栅格化接口](https://recastnav.com/group__recast.html)。
 

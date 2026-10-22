@@ -7,29 +7,30 @@ namespace SomeEngine.Navigation;
 public static class NavigationSurfaceBuilder
 {
     public static NavigationBuild<NavigationSurfaceBuildState> Schedule(
-        NavigationBuildInput input, JobHandle dependency = default)
+        NavigationBuildInput input, JobHandle dependency = default, Scheduler? scheduler = null)
     {
+        scheduler ??= JobSystem.Default;
         float tileWidth = input.Settings.TileSize * input.Settings.CellSize;
         int width = (int)MathF.Ceiling((input.Region.Maximum.X - input.Region.Minimum.X) / tileWidth);
         int depth = (int)MathF.Ceiling((input.Region.Maximum.Z - input.Region.Minimum.Z) / tileWidth);
         var state = new NavigationSurfaceBuildState(input, width * depth);
         var handles = new JobHandle[state.Tiles.Length];
-        var reads = new List<JobResourceAccess> { JobResourceAccess.Read(input.Sources) };
+        var reads = new List<JobResourceAccess> { NavigationJobAccess.Read(scheduler, input.Sources) };
         foreach (NavigationGeometrySource source in input.Sources.Span)
         {
-            reads.Add(JobResourceAccess.Read(source.Geometry.Positions));
-            reads.Add(JobResourceAccess.Read(source.Geometry.Triangles));
+            reads.Add(NavigationJobAccess.Read(scheduler, source.Geometry.Positions));
+            reads.Add(NavigationJobAccess.Read(scheduler, source.Geometry.Triangles));
         }
         var accesses = new JobResourceAccess[reads.Count + 2];
         reads.CopyTo(accesses);
         for (int index = 0; index < handles.Length; index++)
         {
-            accesses[^2] = JobResourceAccess.Write(state.Tiles, index, 1);
-            accesses[^1] = JobResourceAccess.Write(state.Columns, index, 1);
-            handles[index] = JobSystem.Schedule(new BuildTile(state, index, width), accesses, dependency);
+            accesses[^2] = JobResourceAccess.Write(scheduler.GetResourceToken(state.Tiles), index, 1);
+            accesses[^1] = JobResourceAccess.Write(scheduler.GetResourceToken(state.Columns), index, 1);
+            handles[index] = scheduler.Schedule(new BuildTile(state, index, width), accesses, dependency);
         }
-        JobHandle complete = JobSystem.Schedule(new CreateSurface(state),
-            JobResourceAccess.Read(state.Tiles), JobSystem.CombineDependencies(handles));
+        JobHandle complete = scheduler.Schedule(new CreateSurface(state),
+            JobResourceAccess.Read(scheduler.GetResourceToken(state.Tiles)), scheduler.CombineDependencies(handles));
         return new(state, complete);
     }
 
