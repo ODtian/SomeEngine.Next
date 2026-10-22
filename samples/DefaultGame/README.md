@@ -21,7 +21,7 @@ await Application.RunAsync(args, application: application);
 
 `GpuClusterExample` 展示通过公开应用入口生成并渲染 GPU 几何。构建输入、配套编码器、图内顺序与范围回收见 [GPU 几何构建](../../wiki/architecture/rendering/Geometry-Features.md#gpu-几何构建)。
 
-示例中的两米正方形、红色材质、每顶点 `float3` 位置与 `float2` UV 布局均属于示例数据。开发构建可通过以下命令运行：
+示例使用 32×32 个网格单元，初始边长两米，第 120 帧将宽度改为四米；尺寸、密度、更新时间、红色材质和每顶点 `float3` 位置加 `float2` UV 布局均属于示例数据。生成期间继续显示原有网格，完成后切换画面和 `GeometryRevision`。开发构建可通过以下命令运行：
 
 ```powershell
 dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEngineDevelopment=true -p:PublishAot=false -- --gpu-cluster --static-scene --no-vsm --no-taa

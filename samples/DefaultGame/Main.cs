@@ -38,14 +38,19 @@ public static class SampleApplication
             using GpuClusterExample example = await GpuClusterExample.CreateAsync(ProjectPaths.Root);
             using var material = new UnlitMaterial { BaseColorTint = new(1, 0, 0, 1) };
             example.SetMaterial(material);
+            // Grid density, dimensions and the update frame are example data.
+            example.SetGrid(32, new(2, 2));
             var scene = new ApplicationScene(ProjectPaths.Root)
             {
                 Options = RuntimeStartupOptions.Parse(args),
                 UpdateFrame = frame =>
                 {
-                    if (frame.Index != 0) return;
-                    foreach (var entity in frame.Scene.MeshEntities) frame.Scene.DeleteEntity(entity);
-                    frame.Scene.SetCameraTransform(System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity);
+                    if (frame.Index == 0)
+                    {
+                        foreach (var entity in frame.Scene.MeshEntities) frame.Scene.DeleteEntity(entity);
+                        frame.Scene.SetCameraTransform(System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity);
+                    }
+                    if (frame.Index == 120) example.SetGrid(32, new(4, 2));
                 },
             };
             scene.InstallGeometry(example);
