@@ -659,10 +659,10 @@ public static partial class ClusterMeshBuilder
         ReadOnlySpan<uint> indices,
         Vector3[] positions,
         VertexData attributes,
-        float[] materials)
+        float[] materialIndices)
     {
         VertexStream[] attributesStreams = attributes.Streams;
-        VertexStream[] inputs = [new(positions, Unsafe.SizeOf<Vector3>()), .. attributesStreams, new(materials, sizeof(float))];
+        VertexStream[] inputs = [new(positions, Unsafe.SizeOf<Vector3>()), .. attributesStreams, new(materialIndices, sizeof(float))];
         var streams = new MeshOptimizer.Stream[inputs.Length];
         var handles = new GCHandle[inputs.Length];
         try

@@ -8,6 +8,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SomeEngine.Resources\SomeEngine.Resources.csproj" />
+    <ProjectReference Include="..\SomeEngine.Generators\SomeEngine.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\external\Alimer.Bindings\src\Alimer.Bindings.MeshOptimizer\Alimer.Bindings.MeshOptimizer.csproj" />
   </ItemGroup>
   <ItemGroup>

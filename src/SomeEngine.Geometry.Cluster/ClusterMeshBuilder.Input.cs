@@ -29,7 +29,7 @@ public static partial class ClusterMeshBuilder
     {
         var groupedPositions = new List<Vector3>();
         var groupedAttributes = new List<TAttributes>();
-        var groupedMaterials = new List<float>();
+        var groupedMaterialIndices = new List<float>();
         var groupedIndices = new List<uint>(indices.Length);
         var vertices = new Dictionary<(uint Vertex, byte Material), uint>();
         int materialCount = 0;
@@ -45,7 +45,7 @@ public static partial class ClusterMeshBuilder
                     vertices.Add(key, vertex);
                     groupedPositions.Add(positions[sourceVertex]);
                     groupedAttributes.Add(attributes[sourceVertex]);
-                    groupedMaterials.Add(group.MaterialIndex);
+                    groupedMaterialIndices.Add(group.MaterialIndex);
                 }
                 groupedIndices.Add(vertex);
             }
@@ -53,14 +53,14 @@ public static partial class ClusterMeshBuilder
 
         return BuildCore(groupedPositions.ToArray(),
             new TypedVertexData<TAttributes>(groupedAttributes.ToArray(), vertexEncoder),
-            groupedIndices.ToArray(), groupedMaterials.ToArray(), materialCount, name, strategy);
+            groupedIndices.ToArray(), groupedMaterialIndices.ToArray(), materialCount, name, strategy);
     }
 
     /// <summary>Builds geometry from named float attributes supplied by source-format integrations.</summary>
     public static Mesh Build(Vector3[] positions, IReadOnlyList<RawAttribute> attributes, uint[] indices,
         int materialCount, IClusterVertexEncoder vertexEncoder, ClusterBuildStrategy strategy, string name)
     {
-        RawAttribute? materials = attributes.FirstOrDefault(static attribute => attribute.Name == "_MATERIAL_INDEX");
+        RawAttribute? materialIndices = attributes.FirstOrDefault(static attribute => attribute.Name == "_MATERIAL_INDEX");
         var vertexAttributes = attributes.Where(static attribute => attribute.Name != "_MATERIAL_INDEX").ToArray();
         foreach (RawAttribute attribute in vertexAttributes)
         {
@@ -68,7 +68,7 @@ public static partial class ClusterMeshBuilder
                 throw new ArgumentException("Attribute data must cover every input vertex.", nameof(attributes));
         }
         return BuildCore(positions, new RawVertexData(vertexAttributes, vertexEncoder), indices,
-            materials?.Data ?? new float[positions.Length], materialCount, name, strategy);
+            materialIndices?.Data ?? new float[positions.Length], materialCount, name, strategy);
     }
 
     private static T[] RemapValues<T>(T[] source, ReadOnlySpan<uint> remap, int vertexCount)

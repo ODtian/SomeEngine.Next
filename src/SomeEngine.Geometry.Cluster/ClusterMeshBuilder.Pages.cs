@@ -17,14 +17,14 @@ namespace SomeEngine.Geometry.Cluster;
 public static partial class ClusterMeshBuilder
 {
     private static Mesh BuildCore(
-        Vector3[] positions, VertexData attributes, uint[] indices, float[] materials,
+        Vector3[] positions, VertexData attributes, uint[] indices, float[] materialIndices,
         int materialCount, string name, ClusterBuildStrategy strategy)
     {
         using var stream = new MemoryStream();
         var scratch = new RawMeshScratch(positions.Length);
         try
         {
-            MeshInput mesh = PrepareMesh(positions, attributes, indices, materials, strategy, scratch);
+            MeshInput mesh = PrepareMesh(positions, attributes, indices, materialIndices, strategy, scratch);
             MeshletBuild meshlets = BuildMeshletData(mesh, strategy);
             SortMeshlets(meshlets.Meshlets, meshlets.Bounds);
             List<ClusterInfo> clusters = WriteMeshPages(stream, scratch.PageBuffer, mesh, meshlets);
@@ -46,20 +46,20 @@ public static partial class ClusterMeshBuilder
     }
 
     private static MeshInput PrepareMesh(Vector3[] positions, VertexData attributes,
-        uint[] indices, float[] materials, ClusterBuildStrategy strategy, RawMeshScratch scratch)
+        uint[] indices, float[] materialIndices, ClusterBuildStrategy strategy, RawMeshScratch scratch)
     {
         if (strategy == ClusterBuildStrategy.Realtime)
-            return new(positions, indices, positions.Length, indices.Length, attributes, materials);
+            return new(positions, indices, positions.Length, indices.Length, attributes, materialIndices);
 
-        nuint vertexCount = BuildRemap(scratch.Remap.AsSpan(0, positions.Length), indices, positions, attributes, materials);
+        nuint vertexCount = BuildRemap(scratch.Remap.AsSpan(0, positions.Length), indices, positions, attributes, materialIndices);
         scratch.Positions = ArrayPool<Vector3>.Shared.Rent((int)vertexCount);
         scratch.Indices = ArrayPool<uint>.Shared.Rent(indices.Length);
         RemapPositions(positions, scratch.Remap, vertexCount, scratch.Positions);
         RemapIndices(indices, scratch.Remap.AsSpan(0, positions.Length), scratch.Indices);
         VertexData remapped = attributes.Remap(scratch.Remap.AsSpan(0, positions.Length), (int)vertexCount);
-        float[] remappedMaterials = RemapValues(materials, scratch.Remap.AsSpan(0, positions.Length), (int)vertexCount);
+        float[] remappedMaterialIndices = RemapValues(materialIndices, scratch.Remap.AsSpan(0, positions.Length), (int)vertexCount);
         Meshopt.OptimizeVertexCache(scratch.Indices.AsSpan(0, indices.Length), scratch.Indices.AsSpan(0, indices.Length), vertexCount);
-        return new(scratch.Positions, scratch.Indices, (int)vertexCount, indices.Length, remapped, remappedMaterials);
+        return new(scratch.Positions, scratch.Indices, (int)vertexCount, indices.Length, remapped, remappedMaterialIndices);
     }
 
     private static void RemapPositions(
@@ -97,10 +97,10 @@ public static partial class ClusterMeshBuilder
         ReadOnlySpan<Vector3> positions = mesh.Positions.AsSpan(0, mesh.VertexCount);
         ReadOnlySpan<uint> indices = mesh.Indices.AsSpan(0, mesh.IndexCount);
         if (strategy == ClusterBuildStrategy.Offline)
-            BuildClusterLod(config, positions, indices, mesh.Materials, meshlets, globalIndices);
+            BuildClusterLod(config, positions, indices, mesh.MaterialIndices, meshlets, globalIndices);
         else
         {
-            Clusterize(config, indices, positions, mesh.Materials, meshlets, globalIndices);
+            Clusterize(config, indices, positions, mesh.MaterialIndices, meshlets, globalIndices);
             InitializeLeafClusters(positions, meshlets, globalIndices);
             for (int index = 0; index < meshlets.Count; index++)
             {
@@ -693,7 +693,7 @@ public static partial class ClusterMeshBuilder
         int VertexCount,
         int IndexCount,
         VertexData Attributes,
-        float[] Materials);
+        float[] MaterialIndices);
 
     private readonly record struct MeshletBuild(
         List<BuilderMeshlet> Meshlets,

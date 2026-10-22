@@ -12,6 +12,14 @@ Importer 直接使用 glTF 库的 Mesh 对象；多个生产者在一次 Context
 
 管线直接请求认识的 Block。取得是按持久类型 ID 的索引查询，不遍历全部块，也不通过行为枚举解释通用数据袋。
 
+## CPU 程序几何
+
+`SomeEngine.Geometry.Cluster` 持有 CPU Cluster 构建核心。`ClusterMeshBuilder.Build<TAttributes>` 接收位置、用户属性、三角形索引、材质分组和配套的 `IClusterVertexEncoder<TAttributes>`，直接返回所有页面与 BVH 已就绪的 `Mesh`。材质分组以索引起点、索引数量和材质编号表达，相邻分组可以引用共同输入顶点。
+
+`ClusterBuildStrategy.Realtime` 构建叶子 cluster 与 BVH。`ClusterBuildStrategy.Offline` 执行顶点焊接、缓存顺序优化、完整简化与 LOD 层级构建。两种策略的结果通过相同的 Mesh 提取和驻留流程消费。用户编码器返回编码身份、顶点字节及包围范围，材质的 `IVertexEvaluate` 解释这些字节；`StandardClusterVertexEncoder` 是一种可显式选择的编码器。
+
+导入层的 `ClusterBuilder.ProcessRaw` 与 `ProcessMesh` 调用该核心的离线策略，再通过 `CreateAsset` 组织 `MeshBlock`、`MeshMaterialsBlock` 和 `ClusterMeshBlock`。`CreateAsset` 先捕获 Mesh 当前数据，资产保存使用这份已完成几何。公开程序几何调用示例见 [ProceduralClusterExample](../../../samples/DefaultGame/ProceduralClusterExample.cs)。
+
 ## payload 与页
 
 Cluster 的多个几何页是同一个 payload chunk 内的范围，BVH 有自己的偏移、长度和摘要。它们不是 Texture 的独立 tile chunk，也不对应通用 CPU 内存页。既有页编码、BVH、完整性验证及流送机制继续使用。
@@ -30,4 +38,4 @@ Cluster 的多个几何页是同一个 payload chunk 内的范围，BVH 有自�
 
 本次冷读、数组共享、描述修改、旧来源保留、页完整性、原生 AOT 和三场景反馈见 [2026-09-30 验证](Asset-Verification-2026-09-30.md)。同 Mesh 多 Block、外部生产者及原工程的多帧绘制证据保留在 [2026-09-16 记录](Asset-Verification-2026-09-16.md)。
 
-实现：[MeshAsset](../../../src/SomeEngine.Assets/Schema/MeshAsset.cs)、[MeshBlock](../../../src/SomeEngine.Assets/Schema/MeshBlock.cs)、[ClusterMeshBlock](../../../src/SomeEngine.Assets/Schema/ClusterMeshBlock.cs)、[几何生产者](../../../src/SomeEngine.Assets.Importers/Importers/GltfMeshImporter.cs)、[Cluster 生产者](../../../src/SomeEngine.Assets.Importers/Importers/ClusterGltfMeshImporter.cs)。
+实现：[CPU 构建入口](../../../src/SomeEngine.Geometry.Cluster/ClusterMeshBuilder.Input.cs)、[CPU 编码与页面构建](../../../src/SomeEngine.Geometry.Cluster/ClusterMeshBuilder.Pages.cs)、[MeshAsset 组装](../../../src/SomeEngine.Assets.Importers/Importers/ClusterBuilder.Assets.cs)、[MeshAsset](../../../src/SomeEngine.Assets/Schema/MeshAsset.cs)、[MeshBlock](../../../src/SomeEngine.Assets/Schema/MeshBlock.cs)、[ClusterMeshBlock](../../../src/SomeEngine.Assets/Schema/ClusterMeshBlock.cs)、[几何生产者](../../../src/SomeEngine.Assets.Importers/Importers/GltfMeshImporter.cs)、[Cluster 生产者](../../../src/SomeEngine.Assets.Importers/Importers/ClusterGltfMeshImporter.cs)。
