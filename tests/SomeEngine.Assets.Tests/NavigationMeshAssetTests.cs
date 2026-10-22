@@ -1,4 +1,7 @@
 using System.Numerics;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 using SomeEngine.Navigation;
 
 namespace SomeEngine.Assets.Tests;
@@ -8,6 +11,64 @@ public sealed class NavigationMeshAssetTests : IDisposable
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "SomeEngine-NavigationMesh-" + Guid.NewGuid().ToString("N"));
     public NavigationMeshAssetTests() => Directory.CreateDirectory(_directory);
     public void Dispose() => Directory.Delete(_directory, recursive: true);
+
+    [Fact]
+    public async Task ReopenedNavigationResourcesDriveAnActorToArrivalAfterAssetsClose()
+    {
+        string profilePath = Path.Combine(_directory, "actor.navigation-profile.asset");
+        string policyPath = Path.Combine(_directory, "actor.navigation-policy.asset");
+        string meshPath = Path.Combine(_directory, "actor.navigation.asset");
+        NavigationMeshSelection selection;
+        using (var profileAsset = new NavigationProfileAsset())
+        using (var policyAsset = new NavigationPolicyAsset())
+        using (var meshAsset = new NavigationAsset())
+        using (var profileBlock = new NavigationProfileBlock())
+        using (var policyBlock = new NavigationPolicyBlock())
+        using (var meshBlock = new NavigationMeshBlock())
+        {
+            profileBlock.SetProfile(new NavigationProfile(
+                [new(-0.2f, -0.2f), new(0.2f, -0.2f), new(0.2f, 0.2f), new(-0.2f, 0.2f)], 1.8f));
+            policyBlock.SetPolicy(new NavigationPolicy());
+            selection = new(profileAsset.Reference, "main");
+            meshBlock.SetMesh(selection, CreateMesh(0));
+            profileAsset.SetBlock(profileBlock);
+            policyAsset.SetBlock(policyBlock);
+            meshAsset.SetBlock(meshBlock);
+            await profileAsset.SaveAsync(profilePath);
+            await policyAsset.SaveAsync(policyPath);
+            await meshAsset.SaveAsync(meshPath);
+        }
+        NavigationProfile profile;
+        NavigationPolicy policy;
+        NavigationMesh mesh;
+        using (var asset = await NavigationProfileAsset.OpenAsync(profilePath))
+            profile = await (await asset.GetBlockAsync<NavigationProfileBlock>()).CreateAsync();
+        using (var asset = await NavigationPolicyAsset.OpenAsync(policyPath))
+            policy = await (await asset.GetBlockAsync<NavigationPolicyBlock>()).CreateAsync();
+        using (var asset = await NavigationAsset.OpenAsync(meshPath))
+            mesh = await (await asset.GetBlockAsync<NavigationMeshBlock>()).CreateAsync(selection);
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
+            PolygonSearchState, AssetMotion, AssetMotionReader>(world);
+        var entity = world.CreateEntity(new AssetMotion(new(0.5f, 0, 1), default, 0));
+        navigation.AddAgent(entity, mesh, profile, policy, new NavigationGoal(new Vector3(3.5f, 0, 1), 0.1f), 2f);
+        for (int step = 0; step < 60 && world.Read<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
+        {
+            navigation.Schedule(0.1f, 2).Steering.Complete();
+            NavigationSteering steering = world.Read<NavigationSteering>(entity);
+            AssetMotion motion = world.Read<AssetMotion>(entity);
+            world.Replace(entity, new AssetMotion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
+            navigation.ScheduleProgress(default).Complete();
+        }
+        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(entity).Status);
+    }
+
+    private readonly record struct AssetMotion(Vector3 Position, Vector3 Velocity, float Heading) : IComponent;
+    private readonly struct AssetMotionReader : INavigationMotionReader<AssetMotion>
+    {
+        public static NavigationMotion Read(in AssetMotion motion) => new(motion.Position, motion.Velocity, motion.Heading, true);
+    }
 
     [Fact]
     public async Task RepeatedCreationsShareTheAcquiredMeshArrays()
