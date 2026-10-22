@@ -6,6 +6,8 @@
 
 `Terrain.Surface` 持有标量表面根。`HeightSurface` 使用高度场的 `F(x,y,z) = y - H(x,z)`，负值表示实体内部。`TerrainSurfaceRead` 持有固定版本的读取数据；`ReadCpuAsync` 在样本就绪后返回，`ScheduleRead` 将版本依赖和页读取访问交给现有 Scheduler，随后执行调用方的并行工作。
 
+[VoxelSurface](../../../src/SomeEngine.Resources/Terrain/VoxelSurface.cs) 使用体素字段的三线性标量值 `D(x,y,z)`。读取区域覆盖三维空间块、调用方采样邻域及插值所需的相邻样本；固定读取继续对应捕获时的字段页。它和高度表面使用相同的表面读取、法线、几何及 Cluster 适配接口。
+
 `TerrainPlacement` 持有 Terrain 引用、变换、材质绑定、选定的三维块范围和 LOD。`TerrainScene` 管理放置编号、块实体、共享几何和构建任务。同一个 Terrain、块坐标与 LOD 对应一份几何；每个放置保持各自的变换和材质。`TerrainChunk` 组件记录放置编号、三维坐标、LOD、已提交的源版本和几何编号。字段页及样本数据由 Terrain 字段持有。
 
 `TerrainChunkGrid` 给出每边单元数和最细采样间距；LOD 每增加一级，单元边长加倍。`TerrainChunkRange` 的最大坐标为排除端点。高度场的最小、最大高度用于限制每列的竖向单元访问。
@@ -19,6 +21,8 @@
 3. `TerrainMeshSystem` 捕获受影响块需要的表面版本，通过 Scheduler 构建几何。
 
 高度编辑提交产生 `HeightFieldChange`。场景结合写入范围和采样邻域选择需要更新的块；一次共享 Terrain 的构建完成后，所有引用对应几何的放置一起取得该版本。构建期间保留当前几何。
+
+体素编辑提交产生 [VoxelFieldChange](../../../src/SomeEngine.Resources/Terrain/VoxelFieldChange.cs)，按三维写入范围和采样邻域选择空间块。表面提取在对应三维单元中生成零等值面；提交和提取继续使用相同的三个游戏系统。
 
 块实体使用 `WorldTransform`、`MeshInstance` 和 `MeshMaterialBinding`，由现有 [Mesh 提取](../rendering/Extraction.md) 进入 Rendering world。`GetChunks` 返回游戏世界当前提交的块版本。`WaitForBuildsAsync` 等待当前已提交的构建任务；接着运行的提交系统应用结果。
 
@@ -47,3 +51,5 @@ await Application.RunAsync(args, application: application);
 ```
 
 表面读取、平面几何、局部块版本与应用画面的行为入口分别为 `TerrainSurfaceTests`、`TerrainMesherTests`、`TerrainSceneTests` 和 `HeightTerrainRenderingTests`。
+
+[VoxelTerrainExample](../../../samples/DefaultGame/VoxelTerrainExample.cs) 展示三维体素表面：`Install` 安装已有地形系统，`AddPlacement` 设置材质和放置变换，`WriteSphere` 在明确的编辑区域内写入球体标量。每米一个采样点、一米半径及 `[-3,4)` 的样本区域属于示例参数。示例将球心从 `(-1,0,0)` 移到 `(1,0,0)`，这两处粗采样表面的零等值面均由六个轴向交点和八个三角形组成。`VoxelTerrainRenderingTests` 通过应用入口移动该表面，并读取对应标量版本。

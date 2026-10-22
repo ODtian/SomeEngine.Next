@@ -18,6 +18,7 @@ public abstract class TerrainSurface
     public abstract Terrain Terrain { get; }
     public abstract TerrainSurface Duplicate(Terrain terrain);
     public virtual bool Uses(HeightField field) => false;
+    public virtual bool Uses(VoxelField field) => false;
 
     public ValueTask<TerrainSurfaceRead> ReadCpuAsync(TerrainBounds bounds)
     {

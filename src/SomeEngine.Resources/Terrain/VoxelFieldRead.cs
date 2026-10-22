@@ -1,4 +1,5 @@
 using System.Numerics;
+using SomeEngine.Job;
 
 namespace SomeEngine.Resources;
 
@@ -19,6 +20,19 @@ public sealed class VoxelFieldRead
     public VoxelGrid Grid { get; }
     public VoxelRegion Range { get; }
     public ulong Revision => _data.Edit.Revision;
+
+    /// <summary>Declares reads of this version's pages in the requested region.</summary>
+    public JobResourceAccess[] GetReadAccesses(Scheduler scheduler)
+    {
+        int size = Grid.PageSize;
+        var accesses = new List<JobResourceAccess>();
+        for (int z = Grid.PageCoordinate(Range.MinZ); z * size < Range.MaxZ; z++)
+        for (int y = Grid.PageCoordinate(Range.MinY); y * size < Range.MaxY; y++)
+        for (int x = Grid.PageCoordinate(Range.MinX); x * size < Range.MaxX; x++)
+            if (_data.Pages.TryGetValue((x, y, z), out float[]? page))
+                accesses.Add(JobResourceAccess.Read(scheduler, page));
+        return accesses.ToArray();
+    }
 
     /// <summary>Reads a global sample coordinate, including the initial value in untouched regions.</summary>
     public float this[int x, int y, int z]
