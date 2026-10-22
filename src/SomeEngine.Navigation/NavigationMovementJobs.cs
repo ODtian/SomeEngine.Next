@@ -29,7 +29,7 @@ internal partial struct NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(
             guidance = new(default, goal.Heading ?? motion.Heading, result.RequestVersion, true);
             return;
         }
-        if (result.Path is not { } path || result.Status != NavigationSearchStatus.Found)
+        if (result.Path is not { } path || path.Corners.IsEmpty || result.Status == NavigationSearchStatus.Unreachable)
             return;
 
         NavigationRequestData<TSpace, TState> data = request.Data;
@@ -72,7 +72,7 @@ internal partial struct NavigationProgressJob<TMotion, TReader>(World world) : I
     private readonly World _world = world;
 
     public void Execute(in NavigationGoal goal,
-        [JobResources<NavigationPathAssignment>] in NavigationPathResult path,
+        [JobResources<NavigationPathResources>] in NavigationPathResult path,
         in TMotion movement, ref NavigationProgress progress)
     {
         if (!NavigationTargets<TMotion, TReader>.TryResolve(_world, in goal, out Vector3 target))
@@ -90,6 +90,9 @@ internal partial struct NavigationProgressJob<TMotion, TReader>(World world) : I
             {
                 NavigationSearchStatus.Searching => NavigationStatus.Searching,
                 NavigationSearchStatus.Unreachable => NavigationStatus.Unreachable,
+                NavigationSearchStatus.WaitingForTiles => path.Path is { } prefix && !prefix.Corners.IsEmpty &&
+                    Vector3.DistanceSquared(motion.Position, prefix.Corners.Span[^1]) > 0.000001f
+                    ? NavigationStatus.Moving : NavigationStatus.WaitingForTiles,
                 _ => NavigationStatus.Moving,
             };
         progress = new(status, distance, headingError, path.RequestVersion);

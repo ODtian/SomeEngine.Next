@@ -67,11 +67,16 @@ internal partial struct NavigationPathJob<TSpace, TSearch, TState, TMotion, TRea
 
         if (data.Search is { } search)
         {
-            if (search.Status == NavigationSearchStatus.Searching)
+            NavigationMotion motion = TReader.Read(in movement);
+            var input = new NavigationSearchInput<TSpace>(navigation.Space, agent.Profile, agent.Policy,
+                motion.Position, target, goal.ArrivalRange, motion.Heading, goal.Heading);
+            bool resumed = TSearch.Update(search.State, in input);
+            if (search.Status == NavigationSearchStatus.Searching || resumed)
             {
                 NavigationSearchStep step = TSearch.Advance(search.State, _expansionBudget);
                 search.Status = step.Status;
                 search.Path = step.Path;
+                if (step.ResetPathProgress) data.CornerIndex = 0;
             }
             result = new(search.Path, data.Version, search.Status, target, true);
         }

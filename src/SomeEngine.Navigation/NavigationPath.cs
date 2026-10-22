@@ -12,7 +12,8 @@ public sealed class NavigationPath(
     float cost = 0,
     NavigationRegionRoute? regionRoute = null,
     ReadOnlyMemory<NavigationPathSection> sections = default,
-    ReadOnlyMemory<NavigationConnectionDependency> connectionDependencies = default)
+    ReadOnlyMemory<NavigationConnectionDependency> connectionDependencies = default,
+    ReadOnlyMemory<NavigationSceneTileId> requiredTiles = default)
 {
     public ReadOnlyMemory<int> Corridor { get; } = corridor;
     public ReadOnlyMemory<Vector3> Corners { get; } = corners;
@@ -21,6 +22,7 @@ public sealed class NavigationPath(
     public NavigationRegionRoute? RegionRoute { get; } = regionRoute;
     public ReadOnlyMemory<NavigationPathSection> Sections { get; } = sections;
     public ReadOnlyMemory<NavigationConnectionDependency> ConnectionDependencies { get; } = connectionDependencies;
+    public ReadOnlyMemory<NavigationSceneTileId> RequiredTiles { get; } = requiredTiles;
 
     public bool TrySampleHeight(Vector3 position, out float height)
     {
@@ -45,9 +47,10 @@ public enum NavigationSearchStatus : byte
     Searching,
     Found,
     Unreachable,
+    WaitingForTiles,
 }
 
-public readonly record struct NavigationSearchStep(NavigationSearchStatus Status, NavigationPath? Path = null);
+public readonly record struct NavigationSearchStep(NavigationSearchStatus Status, NavigationPath? Path = null, bool ResetPathProgress = false);
 
 public readonly record struct NavigationSearchInput<TSpace>(
     TSpace Space,
@@ -67,6 +70,7 @@ public interface INavigationSearch<TSpace, TState>
 {
     static abstract TState Create(in NavigationSearchInput<TSpace> input);
     static abstract NavigationSearchStep Advance(TState state, int expansionBudget);
+    static virtual bool Update(TState state, in NavigationSearchInput<TSpace> input) => false;
 }
 
 /// <summary>Retains a request's workspace and result while successive jobs spend its search budget.</summary>

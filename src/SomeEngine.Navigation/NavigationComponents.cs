@@ -59,6 +59,7 @@ public enum NavigationStatus : byte
     Arrived,
     Unreachable,
     TargetUnavailable,
+    WaitingForTiles,
 }
 
 /// <summary>Distance is the geometric distance from actual position to the goal region.</summary>
