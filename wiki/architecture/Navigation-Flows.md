@@ -10,6 +10,8 @@
 
 `FindCell` 按 XZ 单元和最近高度层定位，`GetColumn` 取得一列的所有层。`FindAxisNeighbor` 沿已建立的普通通行边寻找相应 X/Z 方向的邻层，供标量求解和局部查询使用。`NavigationGridConnection` 提供明确的层间或动作连接；其方向由 `From/To` 和 `Bidirectional` 表达。
 
+Grid 同时实现 `INavigationSpace<NavigationGrid>`，提供静态资源描述和高度查询，供具体图搜索器通过既有路径组合接入。
+
 `NavigationCostSystem.Schedule` 在 Job 中生成 `NavigationCosts`。单元成本等于基础成本乘以策略区域倍率；正向边使用出发单元成本乘以边基础成本，再加动作成本。策略决定可进入的单元及动作，规格与策略的能力集合决定可用的有向边。多个场直接共享同一个 Costs 对象。
 
 ## 积分与安装

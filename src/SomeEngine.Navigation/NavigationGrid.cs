@@ -1,4 +1,5 @@
 using System.Numerics;
+using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Navigation;
 
@@ -25,7 +26,7 @@ public readonly record struct NavigationGridShape(
 }
 
 /// <summary>Completed multi-layer cells and explicit forward and incoming traversal graphs.</summary>
-public sealed class NavigationGrid
+public sealed partial class NavigationGrid : INavigationSpace<NavigationGrid>
 {
     private readonly Dictionary<NavigationCellOffset, int[]> _columns;
 
@@ -86,6 +87,22 @@ public sealed class NavigationGrid
     public ReadOnlyMemory<NavigationGridEdge> Edges { get; }
     public ReadOnlyMemory<NavigationGridRange> IncomingRanges { get; }
     public ReadOnlyMemory<NavigationGridIncoming> IncomingEdges { get; }
+
+    public static void CollectResources(NavigationGrid space, ref JobResourceAccessBuilder resources)
+    {
+        resources.Read(space.Cells);
+        resources.Read(space.Edges);
+        resources.Read(space.IncomingRanges);
+        resources.Read(space.IncomingEdges);
+        if (!space.Shape.Footprint.IsEmpty) resources.Read(space.Shape.Footprint);
+    }
+
+    public static bool TryGetHeight(NavigationGrid space, Vector3 position, out float height)
+    {
+        int cell = space.FindCell(position);
+        height = cell >= 0 ? space.Cells.Span[cell].Position.Y : position.Y;
+        return cell >= 0;
+    }
 
     public NavigationCellOffset GetCoordinate(Vector3 position) => new(
         (int)MathF.Floor((position.X - Bounds.Minimum.X) / CellSize),
