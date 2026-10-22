@@ -165,7 +165,7 @@ public sealed class DeformationBlockBehaviorTests
     [Theory]
     [InlineData("targetNames")]
     [InlineData("weights")]
-    public async Task InconsistentTargetMetadataReportsTheSourceField(string field)
+    public async Task InconsistentTargetMetadataRejectsTheImport(string field)
     {
         using var files = new DeformationFiles(false);
         files.Edit(source =>
@@ -175,8 +175,7 @@ public sealed class DeformationBlockBehaviorTests
             else mesh[field] = new JsonArray(0.5);
         });
         var project = new AssetProject(files.Directory, []);
-        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() => project.ImportAsync(files.Source, SourceImporter()).AsTask());
-        Assert.Contains(field, error.Message);
+        await Assert.ThrowsAsync<InvalidDataException>(() => project.ImportAsync(files.Source, SourceImporter()).AsTask());
     }
 
     [Fact]

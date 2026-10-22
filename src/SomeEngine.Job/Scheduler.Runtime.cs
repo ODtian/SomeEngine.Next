@@ -121,6 +121,9 @@ public sealed partial class Scheduler
             : mode;
     }
 
+    /// <summary>Returns the resource identity of this actual object on this scheduler.</summary>
+    public JobResourceToken GetResourceToken(object resource) => GetContainerResourceToken(resource);
+
     internal JobResourceToken GetContainerResourceToken(object container)
     {
         EnsureCurrentScopeBelongsToThisRuntime();

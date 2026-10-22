@@ -13,6 +13,40 @@ namespace SomeEngine.Animation.Pose.Tests;
 public sealed class SkeletonBehaviorTests
 {
     [Fact]
+    public async Task ImportedAndCreatedSkeletonsKeepTheirContentAfterAssetClosure()
+    {
+        using var files = new SkeletonFiles(false);
+        var project = new AssetProject(files.Directory, []);
+        await project.ImportAsync(files.Source, SourceImporter());
+        AssetEntry entry = Assert.Single(project.Manifest.Assets.Values, value => value.AssetType == SkeletonAsset.FileType);
+        string saved = Path.Combine(files.Directory, "readable.skeleton.asset");
+        using (SkeletonAsset asset = await SkeletonAsset.OpenAsync(Path.Combine(files.Directory, entry.Path)))
+            await asset.SaveAsync(saved);
+        Skeleton imported;
+        using (SkeletonAsset asset = await SkeletonAsset.OpenAsync(saved))
+            imported = (await asset.GetBlockAsync<SkeletonBlock>()).CreateSkeleton();
+
+        float halfSqrt = MathF.Sqrt(0.5f);
+        var created = new Skeleton([-1, 0, 1, 0],
+            [new() { Translation = new(1, 2, 3), Rotation = new(0, 0, 1, 0), Scale = new(2, 3, 4) },
+             new() { Translation = new(4, 5, 6), Rotation = new(0, 0, halfSqrt, halfSqrt), Scale = new(2, 3, 4) },
+             new() { Translation = new(7, 8, 9), Rotation = Quaternion.Identity, Scale = Vector3.One },
+             new() { Rotation = Quaternion.Identity, Scale = Vector3.One }],
+            [BoneNames.Hash("root"), BoneNames.Hash("桥🌉"), BoneNames.Hash("tip"), 0], [2, 0, 1, 3]);
+
+        Assert.Equal(4, imported.BoneCount);
+        Assert.Equal(created.BoneCount, imported.BoneCount);
+        Assert.Equal(created.Parents.ToArray(), imported.Parents.ToArray());
+        Assert.Equal(created.JointBones.ToArray(), imported.JointBones.ToArray());
+        Assert.Equal(created.NameHashes.ToArray(), imported.NameHashes.ToArray());
+        for (int bone = 0; bone < created.BoneCount; bone++)
+        {
+            BoneTransform expected = created.ReferencePose[bone];
+            AssertTransform(imported.ReferencePose[bone], expected.Translation, expected.Rotation, expected.Scale);
+        }
+    }
+
+    [Fact]
     public async Task ReferencedNeutralGroupImportsSkeletonsFromTheProjectsDefaultChoices()
     {
         using var files = new SkeletonFiles(false);
