@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.Core.Math;
 using SomeEngine.Geometry.Cluster;
 using SomeEngine.Job;
+using SomeEngine.Render.Terrain;
 using SomeEngine.Resources;
 using SomeEngine.Runtime;
 using SomeEngine.Terrains;
@@ -37,6 +38,10 @@ public sealed class VoxelTerrainExample
 
     /// <summary>Replaces the example's editing region with samples of a unit sphere at this centre.</summary>
     public TerrainEdit WriteSphere(Vector3 center) => Field.EditCpu(new SphereSamples(SampleRegion, center));
+
+    /// <summary>Adds a GPU sphere delta with linear falloff to this example's sampled surface.</summary>
+    public TerrainEdit AddSphereDeltaGpu(Shader shader, Vector3 center, float radius, float delta) =>
+        Field.EditGpu(new VoxelSphereDeltaBrushGpu(shader, Field.Grid, center, radius, delta));
 
     private readonly record struct SphereSamples(VoxelRegion Range, Vector3 Center) : IVoxelBrushCpu
     {

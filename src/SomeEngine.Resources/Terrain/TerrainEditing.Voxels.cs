@@ -14,9 +14,10 @@ public sealed partial class TerrainEditing
             VoxelRegion range = brush.Range;
             VoxelGrid grid = field.Grid;
             int size = grid.PageSize;
-            var pages = new Dictionary<(int X, int Y, int Z), float[]>(source.Pages);
+            var pages = new Dictionary<(int X, int Y, int Z), TerrainFieldPage>(source.Pages);
             var jobs = new List<JobHandle>();
-            JobHandle input = Scheduler.CombineDependencies([source.Edit.Completion, dependency]);
+            VoxelFieldCpuRead inputData = field.CaptureCpuRead(range.Expand(brush.ReadBorder));
+            JobHandle input = Scheduler.CombineDependencies([inputData.Completion, dependency]);
 
             for (int pageZ = grid.PageCoordinate(range.MinZ); pageZ * size < range.MaxZ; pageZ++)
             for (int pageY = grid.PageCoordinate(range.MinY); pageY * size < range.MaxY; pageY++)
@@ -27,19 +28,20 @@ public sealed partial class TerrainEditing
                 VoxelRegion readRange = writeRange.Expand(brush.ReadBorder);
                 var read = new VoxelFieldRead(grid, field.InitialValue, source, readRange);
                 var destination = new float[size * size * size];
-                source.Pages.TryGetValue((pageX, pageY, pageZ), out float[]? previous);
-                pages[(pageX, pageY, pageZ)] = destination;
+                source.Pages.TryGetValue((pageX, pageY, pageZ), out TerrainFieldPage? previous);
 
                 var accesses = new List<JobResourceAccess> { JobResourceAccess.Write(Scheduler, destination) };
                 for (int readZ = grid.PageCoordinate(readRange.MinZ); readZ * size < readRange.MaxZ; readZ++)
                 for (int readY = grid.PageCoordinate(readRange.MinY); readY * size < readRange.MaxY; readY++)
                 for (int readX = grid.PageCoordinate(readRange.MinX); readX * size < readRange.MaxX; readX++)
-                    if (source.Pages.TryGetValue((readX, readY, readZ), out float[]? page))
-                        accesses.Add(JobResourceAccess.Read(Scheduler, page));
+                    if (source.Pages.TryGetValue((readX, readY, readZ), out TerrainFieldPage? page))
+                        accesses.Add(JobResourceAccess.Read(Scheduler, page.Samples!));
 
-                jobs.Add(Scheduler.Schedule(
-                    new VoxelPageJob<TBrush>(brush, read, writeRange, pageRange, previous, destination, field.InitialValue),
-                    CollectionsMarshal.AsSpan(accesses), input));
+                JobHandle job = Scheduler.Schedule(
+                    new VoxelPageJob<TBrush>(brush, read, writeRange, pageRange, previous?.Samples, destination, field.InitialValue),
+                    CollectionsMarshal.AsSpan(accesses), input);
+                jobs.Add(job);
+                pages[(pageX, pageY, pageZ)] = new TerrainFieldPage(destination, job);
             }
 
             var edit = new TerrainEdit(field.Terrain.NextRevision(), Scheduler.CombineDependencies(CollectionsMarshal.AsSpan(jobs)));
