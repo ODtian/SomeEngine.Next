@@ -45,6 +45,36 @@ JobHandle sampled = new SampleHeight(heights).ScheduleParallel(
 
 `Schedule`、`ScheduleParallel` 和同步 `Execute` 均接受显式资源集合。提交时复制访问集合并保留 Job 配置；语义依赖完成后，捕获查询的工作与执行行的子任务沿既有就绪及资源协议交接访问。依赖句柄表达读取哪次写入结果，独立范围允许并行推进。Job 中的引用由完成状态持有至全部子任务完成，随后随普通引用生命周期回收。执行仍通过生成的强类型 adapter 调用用户方法。
 
+组件字段中的普通资源引用由参数上的 `JobResources<TResources>` 选择静态描述器。描述器实现 `IJobComponentResources<TComponent>`，在 `Collect(in component, ref resources)` 中声明此次调用实际读取或修改的数据。组件列的 `in/ref` 表达引用值的访问，`JobResourceAccessBuilder` 的 `Read/Write/Exclusive` 表达所指数据的访问。
+
+以下是组件引用共享高度数据的使用例子：
+
+```csharp
+public readonly record struct HeightSource(ReadOnlyMemory<float> Heights, int Index) : IComponent;
+
+public readonly struct HeightResources : IJobComponentResources<HeightSource>
+{
+    public static void Collect(in HeightSource component, ref JobResourceAccessBuilder resources)
+        => resources.Read(component.Heights);
+}
+
+public partial struct SampleComponentHeight : IJobEntity
+{
+    public void Execute([JobResources<HeightResources>] in HeightSource source, ref Height height)
+        => height.Value = source.Heights.Span[source.Index];
+}
+
+new SampleComponentHeight().ScheduleParallel(world, dependency).Complete();
+```
+
+泛型 Job 使用 `[JobResources(typeof(Resources<>))]` 指定开放泛型描述器。生成器将组件类型的实参填入描述器，再生成闭合的静态接口调用。例如 `Source<T>` 配合 `Resources<>` 会得到 `Resources<T>`；这是开放泛型描述器的参数匹配规则。
+
+Builder 接受普通对象、数组及范围。`Memory<T>` / `ReadOnlyMemory<T>` 的重载沿用 `JobResourceAccess` 的数组底层与切片规则：两个指向同一数组的视图使用相同身份，范围按数组偏移协调，实际数组随工作保留。描述器的 `GetVersion(in component)` 默认为零；引用对象内部重新选择数据时，实现该方法返回随数据绑定变化的版本，并将其可变映射数据纳入访问声明。替换整个组件引用由 ECS 列写入序号追踪。
+
+组件资源查询按既有 Scheduler 的固定访问集合执行：语义依赖完成后，在 ECS 列读取权限下按查询分区发现引用、数据版本与范围；按实际资源身份和重叠范围合并冲突行；取得完整 ECS 与资源集合后再次核对列写入序号、启用序号、拓扑代次及描述器版本。发生变化时，将重新发现作为子工作提交。校验成功后，分组工作计入同一 JobHandle 的工作数量，完整权限持续到所有分组执行结束。
+
+只读共享数据和独立范围分别允许并行。含写入或 Exclusive 的重叠范围进入同一组，组内按查询行顺序执行；多个资源的冲突关系共同决定分组。查询描述器按 World 缓存分组；引用、成员、筛选状态及资源数据版本保持一致时复用分组。组件写入序号逐次递增，可区分同一 ECS tick 中的多次引用替换。已取得的组件引用和实际数据保留至执行子任务全部结束。
+
 chunk/SIMD API 扩展现有 `IJobChunk`，由 SG 生成显式 adapter：
 
 ```csharp

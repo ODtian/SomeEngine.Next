@@ -56,6 +56,8 @@ public sealed partial class Scheduler
 
     private interface IExecutionStore
     {
+        void AddWorkItems(JobHandle handle, int count);
+
         SomeEngine.Diagnostics.TraceContext GetTraceContext(JobHandle handle);
         bool CanExecute(JobHandle handle);
 
