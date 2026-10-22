@@ -30,24 +30,24 @@ public static class NavigationSurfaceTraversal
         return MathF.Sqrt(radiusSquared);
     }
 
-    /// <summary>Cells intersecting the origin-centered circle covering the footprint at every heading.</summary>
+    /// <summary>Cells intersecting the all-heading circle swept through the complete reference cell.</summary>
     public static NavigationCellOffset[] RasterizeFootprintSweep(ReadOnlySpan<Vector2> footprint, float cellSize)
     {
         float radius = GetRotationRadius(footprint);
-        int extent = (int)MathF.Ceiling(radius / cellSize + 0.5f);
+        int extent = (int)MathF.Ceiling(radius / cellSize + 1f);
         var offsets = new List<NavigationCellOffset>();
         for (int z = -extent; z <= extent; z++)
         for (int x = -extent; x <= extent; x++)
         {
-            float nearestX = MathF.Max(MathF.Abs(x * cellSize) - cellSize * 0.5f, 0);
-            float nearestZ = MathF.Max(MathF.Abs(z * cellSize) - cellSize * 0.5f, 0);
+            float nearestX = MathF.Max(MathF.Abs(x * cellSize) - cellSize, 0);
+            float nearestZ = MathF.Max(MathF.Abs(z * cellSize) - cellSize, 0);
             if (nearestX * nearestX + nearestZ * nearestZ <= radius * radius) offsets.Add(new(x, z));
         }
         return offsets.ToArray();
     }
 
     /// <summary>Cells intersecting the complete footprint at heading zero (+Z), including contour edges.</summary>
-    public static NavigationCellOffset[] RasterizeFootprint(ReadOnlySpan<Vector2> footprint, float cellSize)
+    public static NavigationCellOffset[] RasterizeFootprint(ReadOnlySpan<Vector2> footprint, float cellSize, float padding = 0)
     {
         Vector2 minimum = Vector2.Zero, maximum = Vector2.Zero;
         foreach (Vector2 point in footprint)
@@ -56,11 +56,11 @@ public static class NavigationSurfaceTraversal
             maximum = Vector2.Max(maximum, point);
         }
         var offsets = new List<NavigationCellOffset>();
-        for (int z = (int)MathF.Ceiling(minimum.Y / cellSize - 0.5f); z <= (int)MathF.Floor(maximum.Y / cellSize + 0.5f); z++)
-        for (int x = (int)MathF.Ceiling(minimum.X / cellSize - 0.5f); x <= (int)MathF.Floor(maximum.X / cellSize + 0.5f); x++)
+        for (int z = (int)MathF.Ceiling((minimum.Y - padding) / cellSize - 0.5f); z <= (int)MathF.Floor((maximum.Y + padding) / cellSize + 0.5f); z++)
+        for (int x = (int)MathF.Ceiling((minimum.X - padding) / cellSize - 0.5f); x <= (int)MathF.Floor((maximum.X + padding) / cellSize + 0.5f); x++)
         {
-            Vector2 lower = new((x - 0.5f) * cellSize, (z - 0.5f) * cellSize);
-            Vector2 upper = lower + new Vector2(cellSize);
+            Vector2 lower = new((x - 0.5f) * cellSize - padding, (z - 0.5f) * cellSize - padding);
+            Vector2 upper = lower + new Vector2(cellSize + padding * 2);
             if (Intersects(footprint, lower, upper)) offsets.Add(new(x, z));
         }
         return offsets.ToArray();

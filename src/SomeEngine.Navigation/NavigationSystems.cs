@@ -20,7 +20,6 @@ public sealed class NavigationSystems<TSpace, TSearch, TState, TMotion, TReader>
     private readonly QueryDefinition _enabledGoal;
     private readonly QueryDefinition _disabledGoal;
     private JobHandle _completion;
-    private JobHandle _steering;
 
     public NavigationSystems(World world)
     {
@@ -40,6 +39,16 @@ public sealed class NavigationSystems<TSpace, TSearch, TState, TMotion, TReader>
     /// <summary>motionReady completes the producer of this step's actual movement input.</summary>
     public NavigationStep Schedule(float deltaTime, int expansionBudget, JobHandle motionReady = default)
     {
+        NavigationStep step = ScheduleGuidance(deltaTime, expansionBudget, motionReady);
+        JobHandle steering = new NavigationSteeringJob().ScheduleParallel(_world,
+            new JobEntityScheduleOptions(filter: _enabledGoal), step.Guidance);
+        _completion = steering;
+        return step with { Steering = steering };
+    }
+
+    /// <summary>Returns path guidance for a caller-selected steering or avoidance stage.</summary>
+    public NavigationStep ScheduleGuidance(float deltaTime, int expansionBudget, JobHandle motionReady = default)
+    {
         JobHandle ready = WorldJobs.CombineDependencies(_world, [_completion, motionReady]);
         var enabled = new JobEntityScheduleOptions(filter: _enabledGoal);
         var disabled = new JobEntityScheduleOptions(filter: _disabledGoal);
@@ -49,15 +58,14 @@ public sealed class NavigationSystems<TSpace, TSearch, TState, TMotion, TReader>
             .ScheduleParallel(_world, [ComponentJobAccess<TMotion>.Read(_world)], enabled, stopped);
         JobHandle guidance = new NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(deltaTime)
             .ScheduleParallel(_world, enabled, paths);
-        _steering = new NavigationSteeringJob().ScheduleParallel(_world, enabled, guidance);
-        _completion = _steering;
-        return new(paths, guidance, _steering);
+        _completion = guidance;
+        return new(paths, guidance, default);
     }
 
     /// <summary>Reads actual positions and headings after the movement consumer has completed.</summary>
     public JobHandle ScheduleProgress(JobHandle motionCompletion)
     {
-        JobHandle moved = WorldJobs.CombineDependencies(_world, [_steering, motionCompletion]);
+        JobHandle moved = WorldJobs.CombineDependencies(_world, [_completion, motionCompletion]);
         _completion = new NavigationProgressJob<TMotion, TReader>(_world)
             .ScheduleParallel(_world, [ComponentJobAccess<TMotion>.Read(_world)],
                 new JobEntityScheduleOptions(filter: _enabledGoal), moved);
