@@ -32,6 +32,14 @@ public sealed class HeightTerrainExample
     public TerrainEdit AddHeightGpu(Shader shader, float delta) =>
         Heights.EditGpu(new HeightDeltaBrushGpu(shader, Heights.Grid.Range, delta));
 
+    /// <summary>Smooths the fixed source neighborhood under a circular terrain-local brush.</summary>
+    public TerrainEdit Smooth(Vector2 center, float radius, int neighborRadius, float strength = 1f) =>
+        Heights.EditCpu(new HeightSmoothBrush(Heights.Grid, center, radius, neighborRadius, strength));
+
+    /// <summary>Flattens the circular brush region toward a terrain-local plane.</summary>
+    public TerrainEdit Flatten(Vector2 center, float radius, Plane plane, float strength = 1f) =>
+        Heights.EditCpu(new HeightFlattenBrush(Heights.Grid, center, radius, plane, strength));
+
     public (int First, int Second) AddPlacements(Material firstMaterial, Material secondMaterial)
     {
         var chunks = new TerrainChunkRange(0, -1, 0, 1, 2, 1);

@@ -11,11 +11,11 @@ public sealed partial class ClusterRenderResources
     private ulong _geometryBuildFrame;
     private readonly List<GraphPassId> _geometryBuilds = [];
 
-    internal ClusterGeometry ReserveGpu(in RenderPrepareSystemContext context, uint bytes,
+    internal ClusterGeometry ReserveGpu(in RenderPrepareSystemContext context, ClusterGpuBufferSizes sizes,
         string encoding, ulong revision, Bounds? bounds)
     {
         using RenderTimelineLease access = context.ActiveScope.AcquireTimeline(_residencyTimeline);
-        return _residency.ReserveGpu(bytes, encoding, revision, bounds);
+        return _residency.ReserveGpu(sizes, encoding, revision, bounds);
     }
 
     internal void ReleaseGpu(in RenderPrepareSystemContext context, ClusterGeometry geometry)

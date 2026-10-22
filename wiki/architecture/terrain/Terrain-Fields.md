@@ -136,6 +136,8 @@ CPU 笔刷使用实现相应接口的值类型。`EditCpu` 按值复制笔刷参
 
 编辑服务按每页实际写入区域扩展 `ReadBorder`，向笔刷提供该输入区域。高度场输入区域继续与字段范围取交集。邻域内各样本来自同一个编辑前版本，输出写入新页面。接口见[高度笔刷](../../../src/SomeEngine.Resources/Terrain/HeightBrushes.cs)与[体素笔刷](../../../src/SomeEngine.Resources/Terrain/VoxelBrushes.cs)。
 
+内置平滑、压平及读取视图的梯度入口见[地形邻域笔刷](Terrain-Brushes.md)。它们使用同一字段编辑与页面读取路径。
+
 ## 行为检查入口
 
 - [HeightFieldTests](../../../tests/SomeEngine.Resources.Tests/HeightFieldTests.cs)：区域增量、提交顺序、固定版本读取、共享复制与跨页邻域读取。

@@ -49,6 +49,15 @@ public sealed class VoxelFieldRead
         }
     }
 
+    /// <summary>Scalar derivatives along terrain-local X/Y/Z, using captured adjacent samples and metre spacing.</summary>
+    public Vector3 GetGradient(int x, int y, int z)
+    {
+        float distance = 2f * Grid.SampleSpacing;
+        return new((this[x + 1, y, z] - this[x - 1, y, z]) / distance,
+            (this[x, y + 1, z] - this[x, y - 1, z]) / distance,
+            (this[x, y, z + 1] - this[x, y, z - 1]) / distance);
+    }
+
     /// <summary>Trilinearly samples a terrain-local position whose eight lattice samples are in this region.</summary>
     public float Sample(Vector3 position)
     {

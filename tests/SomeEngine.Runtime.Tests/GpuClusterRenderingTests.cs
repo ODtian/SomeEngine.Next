@@ -11,6 +11,53 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class GpuClusterRenderingTests(SceneContentFixture content)
 {
     [Fact]
+    public async Task GpuMeshReplacementUpdatesItsPictureAndGeometryRevision()
+    {
+        using GpuClusterExample example = await GpuClusterExample.CreateAsync(content.DirectoryPath);
+        using var material = new UnlitMaterial { BaseColorTint = new(1, 0, 0, 1) };
+        example.SetMaterial(material);
+        // These dimensions and subdivisions are example data spanning several geometry pages.
+        example.SetGrid(32, new(2, 2));
+        SceneImage? before = null, building = null, after = null;
+        ApplicationResult? completed = null;
+        ulong beforeRevision = 0;
+        var scene = new ApplicationScene(content.DirectoryPath)
+        {
+            SceneCompleted = value => completed = value,
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "4"]),
+            UpdateFrame = frame =>
+            {
+                if (frame.Index == 0)
+                    foreach (var entity in frame.Scene.MeshEntities) frame.Scene.DeleteEntity(entity);
+                if (frame.Index == 1)
+                {
+                    beforeRevision = example.GeometryRevision;
+                    frame.Scene.CaptureImage(value => before = value);
+                }
+                if (frame.Index == 2)
+                {
+                    example.SetGrid(32, new(4, 2));
+                    frame.Scene.CaptureImage(value => building = value);
+                }
+                if (frame.Index == 3) frame.Scene.CaptureImage(value => after = value);
+            },
+        };
+        scene.InstallGeometry(example);
+
+        int result = await Application.RunAsync([], application: scene);
+
+        Assert.True(result == 0, completed?.Error?.ToString());
+        Assert.True(example.BuildCompleted);
+        Assert.Equal(beforeRevision + 1, example.GeometryRevision);
+        SceneImages.AssertEqual(before!, building!);
+        SceneImages.AssertColorRegion(before!, 28, 28, 8, 8, 186, 0, 0);
+        SceneImages.AssertColorRegion(before!, 18, 28, 3, 8, 0, 0, 0);
+        SceneImages.AssertColorRegion(after!, 18, 28, 3, 8, 186, 0, 0);
+        SceneImages.AssertColorRegion(after!, 43, 28, 3, 8, 186, 0, 0);
+    }
+
+    [Fact]
     public async Task GpuEncodedGeometryUsesItsVertexEvaluatorBeforeTheFirstPicture()
     {
         using GpuClusterExample example = await GpuClusterExample.CreateAsync(content.DirectoryPath);

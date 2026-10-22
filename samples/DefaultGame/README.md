@@ -21,7 +21,7 @@ await Application.RunAsync(args, application: application);
 
 `GpuClusterExample` 展示通过公开应用入口生成并渲染 GPU 几何。构建输入、配套编码器、图内顺序与范围回收见 [GPU 几何构建](../../wiki/architecture/rendering/Geometry-Features.md#gpu-几何构建)。
 
-示例中的两米正方形、红色材质、每顶点 `float3` 位置与 `float2` UV 布局均属于示例数据。开发构建可通过以下命令运行：
+示例使用 32×32 个网格单元，初始边长两米，第 120 帧将宽度改为四米；尺寸、密度、更新时间、红色材质和每顶点 `float3` 位置加 `float2` UV 布局均属于示例数据。生成期间继续显示原有网格，完成后切换画面和 `GeometryRevision`。开发构建可通过以下命令运行：
 
 ```powershell
 dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEngineDevelopment=true -p:PublishAot=false -- --gpu-cluster --static-scene --no-vsm --no-taa
@@ -34,6 +34,8 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 `VoxelTerrainExample` 展示三维体素场的同一流程：`Install` 安装地形系统，`AddPlacement` 创建放置，`WriteSphere` 在 `SampleRegion` 内重新写入球体标量。每米一个采样点、一米半径、`[-3,4)` 的样本区域及初始球心 `(-1,0,0)` 属于示例参数。`Field.ReadCpuAsync` 取得固定版本的标量，`Scene` 的几何更新使用既有空间块及 Cluster 通路。
 
 同一示例的 `AddSphereDeltaGpu(shader, center, radius, delta)` 使用驻留的 `terrain_voxel_delta` Shader 提交球形增量。球心与半径采用地形局部米制坐标，增量按距离线性衰减；CPU 读取和空间块构建继续使用同一字段版本与完成依赖。
+
+两个地形示例的 `Smooth(center, radius, neighborRadius, strength)` 与 `Flatten(center, radius, plane, strength)` 使用统一的米制半径和线性衰减；平滑的邻域半径以样本为单位，压平目标采用地形局部 `Plane`。方法返回 `TerrainEdit`，完成后可经公开字段读取采样；安装的地形系统更新对应空间块画面。固定版本邻域与自定义梯度笔刷用法见[地形邻域笔刷](../../wiki/architecture/terrain/Terrain-Brushes.md)。
 
 `BlendTerrainExample` 从高度表面生成局部体素初值，以带渐变区域的 `BlendSurface` 组合两个源。`RaiseDetail` 继续编辑体素并更新共享表面；`Voxels.ReadCpuAsync` 读取相应样本版本。八米地表、一米采样间距、两米渐变和放置位置属于示例参数。完整接口与调用见[地形表面组合](../../wiki/architecture/terrain/Terrain-Surfaces.md)。
 

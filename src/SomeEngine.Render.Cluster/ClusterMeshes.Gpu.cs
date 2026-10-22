@@ -3,29 +3,36 @@ using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Cluster;
 
-internal readonly record struct ClusterGpuAllocation(uint PageOffset, uint PageBytes, ClusterBvhAllocation Bvh);
+internal readonly record struct ClusterGpuBufferSizes(
+    uint PageStride, uint PageCount, uint BvhNodeCount, int BvhLevels)
+{
+    internal uint PageBytes => checked(PageStride * PageCount);
+}
+
+internal readonly record struct ClusterGpuAllocation(
+    uint PageOffset, ClusterGpuBufferSizes Sizes, ClusterBvhAllocation Bvh);
 
 internal sealed partial class ClusterMeshes
 {
     private readonly Dictionary<uint, ClusterGpuAllocation> _gpuGeometry = [];
     private readonly List<(ClusterGpuAllocation Allocation, QueueCompletion[] Completions)> _gpuRetirements = [];
 
-    internal ClusterGeometry ReserveGpu(uint pageBytes, string vertexEncoding, ulong revision, Bounds? bounds)
+    internal ClusterGeometry ReserveGpu(ClusterGpuBufferSizes sizes, string vertexEncoding, ulong revision, Bounds? bounds)
     {
         lock (_gate)
         {
-            pageBytes = PageHeap.AllocationSize(pageBytes);
+            uint pageBytes = sizes.PageBytes;
             if (!_heap.TryAlloc(pageBytes, out uint offset))
                 throw new InvalidOperationException("Cluster page-heap capacity is exhausted.");
             ClusterBvhAllocation bvh;
-            try { bvh = _bvh.ReserveGpu(1); }
+            try { bvh = _bvh.ReserveGpu(sizes.BvhNodeCount, sizes.BvhLevels); }
             catch { _heap.Free(offset, pageBytes); throw; }
             uint root = checked((uint)(bvh.Offset / ClusterBvh.NodeBytes));
-            _gpuGeometry.Add(root, new(offset, pageBytes, bvh));
+            _gpuGeometry.Add(root, new(offset, sizes, bvh));
             _residentPageRanges = BuildResidentPageRanges([], []);
             AdvanceRevision();
             return new(root, revision, vertexEncoding, bounds,
-                new(EpochId.Value, uint.MaxValue, 1, root, 1));
+                new(EpochId.Value, uint.MaxValue, sizes.PageCount, root, sizes.BvhNodeCount));
         }
     }
 
@@ -53,7 +60,7 @@ internal sealed partial class ClusterMeshes
         {
             var retirement = _gpuRetirements[index];
             if (retirement.Completions.Any(completion => !backend.IsComplete(completion))) continue;
-            _heap.Free(retirement.Allocation.PageOffset, retirement.Allocation.PageBytes);
+            _heap.Free(retirement.Allocation.PageOffset, retirement.Allocation.Sizes.PageBytes);
             _bvh.ReleaseGpu(retirement.Allocation.Bvh);
             _gpuRetirements.RemoveAt(index);
         }
