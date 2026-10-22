@@ -526,13 +526,6 @@ internal static class RuntimeApplication
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
 
 
-        if (!options.SynchronousFrames && script is null)
-        {
-            if (options.ScenePlayback is not null)
-                scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
-                    orbitCamera: options.ScenePlayback == "camera");
-            extraction.Extract(mainWorld);
-        }
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
             scene.Camera.View,
             scene.Projection(boot.Width, boot.Height),
@@ -549,7 +542,7 @@ internal static class RuntimeApplication
             coordinator,
             renderWorld,
             ClusterRenderFeature.InstanceLayout,
-            script is null ? new RenderInstanceOptions
+            script is null && application is null ? new RenderInstanceOptions
             {
                 RowCapacity = Math.Max(1, scene.MeshInstanceCount),
                 BatchCapacity = 1,
@@ -577,9 +570,6 @@ internal static class RuntimeApplication
         var prepareSystems = new RenderPrepareSystems(renderWorld, instances, extraction);
         var viewSystem = new RuntimeViewPrepareSystem(viewEntity);
         _ = prepareSystems.Add(viewSystem);
-        _ = prepareSystems.Add(new ClusterResidencySystem(cluster));
-        _ = prepareSystems.Add(materialSystem);
-        _ = prepareSystems.Add(instanceSystem);
 
         Queue graphicsQueue = backend.GetQueue(device, QueueType.Graphics);
         Queue computeQueue = backend.GetQueue(device, QueueType.Compute);
@@ -621,9 +611,9 @@ internal static class RuntimeApplication
             pipeline,
             lighting);
         stageResources.Add(virtualShadows);
-        RenderFrameSystems frameSystems = CreateFrameSystems(
-            pipeline,
-            virtualShadows);
+        var frameSystems = new RenderFrameSystems(renderWorld, instances);
+        var geometry = new ApplicationGeometryContext(backend, device, renderDevice, cluster, renderGraph,
+            mainWorld, renderWorld, extraction, prepareSystems, frameSystems);
         var graphCompletionSlots = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         var graphCompletions = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         FrameOutputVerifier? outputVerifier = null;
@@ -672,11 +662,11 @@ internal static class RuntimeApplication
             if (latestGraphStatistics.AnalysisReused) reusedAnalysisFrames++;
         }
 
-        RenderFrameSystems CreateFrameSystems(
+        void AddFrameSystems(
+            RenderFrameSystems systems,
             ClusterPipelineSystem receiver,
             VirtualShadowFeature virtualShadowFeature)
         {
-            var systems = new RenderFrameSystems(renderWorld, instances);
             _ = systems.Add(lightSystem);
             _ = systems.Add(new LightingFeatureSystem(
                 lighting,
@@ -686,7 +676,6 @@ internal static class RuntimeApplication
                 virtualShadowFeature,
                 lightSystem));
             _ = systems.Add(receiver);
-            return systems;
         }
 
         int frameIndex = 0;
@@ -696,7 +685,20 @@ internal static class RuntimeApplication
         int actionIndex = 0;
         try
         {
+            geometry.Install(application?.GeometryFeatures ?? []);
+            _ = prepareSystems.Add(new ClusterResidencySystem(cluster));
+            _ = prepareSystems.Add(materialSystem);
+            _ = prepareSystems.Add(instanceSystem);
+            AddFrameSystems(frameSystems, pipeline, virtualShadows);
             frameSystems.Initialize();
+            if (!options.SynchronousFrames && script is null)
+            {
+                if (options.ScenePlayback is not null)
+                    scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
+                        orbitCamera: options.ScenePlayback == "camera");
+                geometry.UpdateGame(0);
+                extraction.Extract(mainWorld);
+            }
             outputVerifier = options.VerifyFrameOutput || options.FrameOutputPath is not null
                 ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
                 : null;
@@ -911,6 +913,7 @@ internal static class RuntimeApplication
                 {
                     if (animateScene && options.ScenePlayback is null)
                         scene.Update(sceneSeconds);
+                    geometry.UpdateGame(deltaSeconds);
                     extraction.Extract(mainWorld);
                 }
                 long prepareStarted = Stopwatch.GetTimestamp();
@@ -992,6 +995,7 @@ internal static class RuntimeApplication
                     graphCompletions,
                     coordinator,
                     frameSystems,
+                    geometry,
                     pipeline,
                     streamingConsumer,
                     virtualShadows,
@@ -1066,7 +1070,11 @@ internal static class RuntimeApplication
                                 orbitCamera: options.ScenePlayback == "camera");
                         else if (updateScene)
                             scene.Update(nextSceneTime);
-                        if (script is null) extraction.Extract(mainWorld);
+                        if (script is null)
+                        {
+                            geometry.UpdateGame(deltaSeconds);
+                            extraction.Extract(mainWorld);
+                        }
                     });
                 }
 
@@ -1215,6 +1223,8 @@ internal static class RuntimeApplication
             temporal?.Dispose();
             frameSystems.Dispose();
             Shutdown(prepareSystems, cluster, instances, coordinator);
+            extraction.Dispose();
+            geometry.DisposeFeatures();
             scene.Dispose();
             if (device.Status == DeviceStatus.Active)
                 backend.CollectCompleted(device);
@@ -1273,6 +1283,7 @@ internal static class RuntimeApplication
         QueueCompletion[] completions,
         RenderFrameCoordinator coordinator,
         RenderFrameSystems systems,
+        ApplicationGeometryContext geometry,
         ClusterPipelineSystem pipeline,
         ClusterStreamingFeedbackConsumer streamingConsumer,
         VirtualShadowFeature virtualShadows,
@@ -1318,6 +1329,7 @@ internal static class RuntimeApplication
                         Diagnostics: graphDiagnostics));
                 try
                 {
+                    geometry.Observe(ref graphFrame);
                     if (reportMilestones)
                         Console.WriteLine("First frame: recording render systems.");
                     if (image is { } acquired) presentation.Bind(ref graphFrame, acquired, graphicsQueue);

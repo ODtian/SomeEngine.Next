@@ -1,0 +1,36 @@
+# 几何功能接入
+
+本页收录已实现的公共 API 与执行顺序。源码入口为 [ApplicationGeometry](../../../src/SomeEngine.Runtime/ApplicationGeometry.cs)、[ApplicationScene](../../../src/SomeEngine.Runtime/ApplicationScene.cs) 和 [ClusterGeometry](../../../src/SomeEngine.Render.Cluster/ClusterGeometry.cs)。
+
+`ApplicationScene.InstallGeometry` 注册 `IApplicationGeometryFeature`。每次场景运行调用一次 `Install`；场景结束时，在 GPU 使用和系统结束后释放它返回的资源。安装上下文提供设备、RenderDevice、持久 RenderGraph、Cluster 资源及 Rendering world。
+
+| 安装入口 | 执行时点 | 数据访问 |
+| --- | --- | --- |
+| `AddGameSystem` | 每次提取前 | `ImmediateSystemContext.World` 中的游戏数据 |
+| `AddExtractor` | 既有提取批次 | 源查询中的游戏数据及提取上下文 |
+| `AddPrepareSystem` | 提取应用后、Cluster 驻留与实例准备前 | `RenderPrepareSystemContext.World` 中的渲染数据 |
+| `AddFrameSystem` | Cluster 管线录制前 | `RenderFrameSystemContext` 中的渲染数据与图 |
+| `AddCompletionObserver` | 图接受提交及结束当帧录制时 | `RenderGraphFrameResult` 中的提交完成点与资源状态 |
+
+`OnRenderGraphSubmitted` 提供已提交 pass 的 `QueueCompletion`。使用后端完成查询或外部 fence 确认 GPU 完成后读取结果；字段与任务使用对应完成点衔接后续工作。其语义见 [Range Completions](../render-graph/Range-Completions.md)。
+
+Mesh 准备将 `ClusterGeometry` 写入渲染实体的 `RenderClusterGeometry`。它包含根 BVH、版本、顶点编码、包围范围和驻留分配关联。Cluster 材质分配与实例生产消费该结果。原生页面与 BVH 由 Cluster 驻留系统持有，几何结果描述这组资源中的范围。
+
+下面是调用示例，变换参数用于展示额外实例的摆放：
+
+```csharp
+scene.UpdateFrame = frame =>
+{
+    if (frame.Index != 0) return;
+    var source = frame.Scene.MeshEntities[0];
+    var mesh = frame.Scene.GetMesh(source).Duplicate();
+    var material = frame.Scene.GetMaterial(source);
+    frame.Scene.AddEntity(mesh, [material],
+        new SomeEngine.Core.Math.TransformQvvs(
+            new System.Numerics.Vector3(2, 0, 6), System.Numerics.Quaternion.Identity));
+};
+```
+
+`SceneEdit.ReplaceMesh` 替换实体的几何引用；`Mesh.Update` 更新共享 Mesh 的内容。两种操作通过既有 Mesh 提取进入渲染世界。
+
+完整的功能安装调用示例位于 [ApplicationGeometryTransferTests](../../../tests/SomeEngine.Runtime.Tests/ApplicationGeometryTransferTests.cs)：游戏系统提交数值，提取器传递数值，准备系统计算上传值，帧系统录制复制，观察器按 GPU 完成点读取结果。Mesh 版本与画面切换调用示例位于 [ApplicationGeometryTests](../../../tests/SomeEngine.Runtime.Tests/ApplicationGeometryTests.cs)。
