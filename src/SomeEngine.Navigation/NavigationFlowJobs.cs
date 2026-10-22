@@ -28,6 +28,14 @@ internal partial struct NavigationFlowGuidanceJob<TMotion, TReader>(float deltaT
             guidance = new(default, goal.Heading ?? motion.Heading, field.Input.Version, true);
             return;
         }
+        if (field.Sampling == NavigationFlowSampling.Gradient)
+        {
+            float speed = MathF.Min(agent.DesiredSpeed, agent.Profile.MaximumSpeed);
+            Vector3 move = NavigationFlowSampler.Displacement(field, cell, motion.Position, speed * _deltaTime);
+            float facing = move.X == 0 && move.Z == 0 ? motion.Heading : NavigationHeading.FromDirection(move);
+            guidance = new(move / _deltaTime, facing, field.Input.Version, true);
+            return;
+        }
         if (following.FieldVersion != follower.Flow.FieldVersion ||
             cell != following.Cell && cell != following.Destination)
         {
