@@ -43,6 +43,14 @@ public sealed class VoxelTerrainExample
     public TerrainEdit AddSphereDeltaGpu(Shader shader, Vector3 center, float radius, float delta) =>
         Field.EditGpu(new VoxelSphereDeltaBrushGpu(shader, Field.Grid, center, radius, delta));
 
+    /// <summary>Smooths the fixed source neighborhood under a spherical terrain-local brush.</summary>
+    public TerrainEdit Smooth(Vector3 center, float radius, int neighborRadius, float strength = 1f) =>
+        Field.EditCpu(new VoxelSmoothBrush(Field.Grid, center, radius, neighborRadius, strength));
+
+    /// <summary>Flattens the spherical brush region toward a terrain-local signed plane.</summary>
+    public TerrainEdit Flatten(Vector3 center, float radius, Plane plane, float strength = 1f) =>
+        Field.EditCpu(new VoxelFlattenBrush(Field.Grid, center, radius, plane, strength));
+
     private readonly record struct SphereSamples(VoxelRegion Range, Vector3 Center) : IVoxelBrushCpu
     {
         public int ReadBorder => 0;
