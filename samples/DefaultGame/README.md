@@ -33,6 +33,8 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 `VoxelTerrainExample` 展示三维体素场的同一流程：`Install` 安装地形系统，`AddPlacement` 创建放置，`WriteSphere` 在 `SampleRegion` 内重新写入球体标量。每米一个采样点、一米半径、`[-3,4)` 的样本区域及初始球心 `(-1,0,0)` 属于示例参数。`Field.ReadCpuAsync` 取得固定版本的标量，`Scene` 的几何更新使用既有空间块及 Cluster 通路。
 
+`BlendTerrainExample` 从高度表面生成局部体素初值，以带渐变区域的 `BlendSurface` 组合两个源。`RaiseDetail` 继续编辑体素并更新共享表面；`Voxels.ReadCpuAsync` 读取相应样本版本。八米地表、一米采样间距、两米渐变和放置位置属于示例参数。完整接口与调用见[地形表面组合](../../wiki/architecture/terrain/Terrain-Surfaces.md)。
+
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
 ```powershell
