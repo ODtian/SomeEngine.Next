@@ -10,12 +10,14 @@ public static class HeightGpuEditing
         where TBrush : struct, IHeightBrushGpu
     {
         Resources.Terrain terrain = field.Terrain;
+        TerrainEdit edit;
+        HeightRegion range;
         lock (terrain.Gate)
         {
             HeightFieldData source = field.Data;
-            HeightRegion range = brush.Range.Intersect(field.Grid.Range);
+            range = brush.Range.Intersect(field.Grid.Range);
             var completion = new TerrainCompletion(terrain.Editing.Scheduler);
-            var edit = new TerrainEdit(terrain.NextRevision(), completion.Handle);
+            edit = new TerrainEdit(terrain.NextRevision(), completion.Handle);
             var pages = new Dictionary<(int X, int Z), TerrainFieldPage>(source.Pages);
             var outputs = new List<HeightPageWrite>();
             int size = field.Grid.PageSize;
@@ -31,8 +33,9 @@ public static class HeightGpuEditing
                 field.Grid, field.InitialHeight, source, range, outputs.ToArray(), brush);
             terrain.RetainRequest(request);
             field.Data = new HeightFieldData(pages, edit);
-            return edit;
         }
+        terrain.NotifyChange(new HeightFieldChange(field, range, brush.ReadBorder, edit));
+        return edit;
     }
 }
 

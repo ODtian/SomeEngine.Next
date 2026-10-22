@@ -218,6 +218,7 @@ public sealed class TerrainScene(ITerrainClusterAdapter adapter, TerrainChunkGri
         }
         Entity entity = _world!.CreateEntity(new TerrainChunk(placementId, coordinates, placement.Lod,
             geometry.Revision, geometry.Id));
+        _world.Add(entity, new TerrainSource(placement.Terrain));
         _world.Add(entity, new WorldTransform { Qvvs = placement.Transform });
         _world.AddBuffer<MeshMaterialBinding>(entity);
         SetMaterials(entity, placement.Materials);

@@ -1,7 +1,11 @@
+using System.Numerics;
+using DefaultGame;
 using SlangShaderSharp;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Core.Math;
+using SomeEngine.Geometry.Cluster;
 using SomeEngine.Job;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Terrain;
@@ -79,6 +83,71 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Assert.Equal(20f, cpu[0, 0]);
         Assert.Equal(gpuEdit.Revision, gpu.Revision);
         Assert.Equal(cpuEdit.Revision, cpu.Revision);
+    }
+
+    [Fact]
+    public async Task GpuHeightEditMovesBothPlacementsToTheRaisedSurface()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        var example = new HeightTerrainExample(scheduler);
+        Shader shader = await LoadHeightShaderAsync();
+        TerrainEdit edit = default;
+        SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
+            UpdateFrame = frame =>
+            {
+                if (frame.Index == 0)
+                {
+                    var red = frame.Scene.GetMaterial(frame.Scene.MeshEntities.Single(entity => frame.Scene.GetMaterial(entity).Name == "red sphere"));
+                    var green = frame.Scene.GetMaterial(frame.Scene.MeshEntities.Single(entity => frame.Scene.GetMaterial(entity).Name == "green sphere"));
+                    foreach (var entity in frame.Scene.MeshEntities) frame.Scene.DeleteEntity(entity);
+                    example.AddPlacements(red, green);
+                }
+                if (frame.Index == 1) example.Scene.WaitForBuildsAsync().GetAwaiter().GetResult();
+                if (frame.Index == 8) frame.Scene.CaptureImage(image => before = image);
+                if (frame.Index == 9) edit = example.AddHeightGpu(shader, 1f);
+                if (frame.Index == 17) frame.Scene.CaptureImage(image => after = image);
+            },
+        };
+        example.Install(application);
+
+        int result = await Application.RunAsync([], application: application);
+        await edit.WaitAsync();
+        HeightFieldRead heights = await example.Heights.ReadCpuAsync(example.Heights.Grid.Range);
+        Assert.Equal(0, result);
+        Assert.Equal(1f, heights[2, 2]);
+
+        Mesh ground = CreateGround(0);
+        await SceneImages.RunAsync("d3d12", new SceneScript(content.DirectoryPath, 18,
+        [
+            new(0, scene =>
+            {
+                var red = scene.GetMaterial(scene.MeshEntities.Single(entity => scene.GetMaterial(entity).Name == "red sphere"));
+                var green = scene.GetMaterial(scene.MeshEntities.Single(entity => scene.GetMaterial(entity).Name == "green sphere"));
+                foreach (var entity in scene.MeshEntities) scene.DeleteEntity(entity);
+                scene.AddEntity(ground, [red], new TransformQvvs(new Vector3(-5, -2, 6), Quaternion.Identity));
+                scene.AddEntity(ground, [green], new TransformQvvs(new Vector3(1, -2, 6), Quaternion.Identity));
+            }),
+            new(8, scene => scene.CaptureImage(image => expectedBefore = image)),
+            new(9, _ => ground.Update(CreateGround(1))),
+            new(17, scene => scene.CaptureImage(image => expectedAfter = image)),
+        ]), "--no-taa", "--no-vsm");
+
+        SceneImages.AssertEqual(expectedBefore!, before!);
+        SceneImages.AssertEqual(expectedAfter!, after!);
+        SceneImages.AssertChanged(before!, after!);
+
+        static Mesh CreateGround(float height)
+        {
+            Vector3[] positions = [new(0, height, 0), new(4, height, 0), new(0, height, 4), new(4, height, 4)];
+            StandardClusterAttributes[] attributes = positions.Select(position =>
+                new StandardClusterAttributes(Vector3.UnitY, new(1, 0, 0, 1), new(position.X, position.Z))).ToArray();
+            return ClusterMeshBuilder.Build(positions, attributes, [0u, 2, 1, 1, 2, 3], [new(0, 6, 0)],
+                StandardClusterVertexEncoder.Instance, ClusterBuildStrategy.Realtime, "Raised ground reference");
+        }
     }
 
     private static async ValueTask<Shader> LoadHeightShaderAsync()

@@ -75,7 +75,7 @@ public sealed class HeightField
 
     private static async ValueTask<HeightFieldRead> CompleteReadAsync(HeightFieldCpuRead read)
     {
-        await new TerrainEdit(read.Samples.Revision, read.Completion).WaitAsync().ConfigureAwait(false);
+        await read.Completion.WaitAsync().ConfigureAwait(false);
         return read.Samples;
     }
 }
