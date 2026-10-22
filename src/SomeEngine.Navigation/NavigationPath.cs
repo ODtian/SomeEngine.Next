@@ -13,7 +13,9 @@ public sealed class NavigationPath(
     NavigationRegionRoute? regionRoute = null,
     ReadOnlyMemory<NavigationPathSection> sections = default,
     ReadOnlyMemory<NavigationConnectionDependency> connectionDependencies = default,
-    ReadOnlyMemory<NavigationSceneTileId> requiredTiles = default)
+    ReadOnlyMemory<NavigationSceneTileId> requiredTiles = default,
+    ReadOnlyMemory<NavigationPose> poses = default,
+    ReadOnlyMemory<NavigationMotionSegment> motionSegments = default)
 {
     public ReadOnlyMemory<int> Corridor { get; } = corridor;
     public ReadOnlyMemory<Vector3> Corners { get; } = corners;
@@ -23,6 +25,8 @@ public sealed class NavigationPath(
     public ReadOnlyMemory<NavigationPathSection> Sections { get; } = sections;
     public ReadOnlyMemory<NavigationConnectionDependency> ConnectionDependencies { get; } = connectionDependencies;
     public ReadOnlyMemory<NavigationSceneTileId> RequiredTiles { get; } = requiredTiles;
+    public ReadOnlyMemory<NavigationPose> Poses { get; } = poses;
+    public ReadOnlyMemory<NavigationMotionSegment> MotionSegments { get; } = motionSegments;
 
     public bool TrySampleHeight(Vector3 position, out float height)
     {
@@ -60,7 +64,8 @@ public readonly record struct NavigationSearchInput<TSpace>(
     Vector3 Goal,
     float GoalRange = 0,
     float StartHeading = 0,
-    float? GoalHeading = null)
+    float? GoalHeading = null,
+    float GoalHeadingTolerance = 0.05f)
     where TSpace : class, INavigationSpace<TSpace>;
 
 /// <summary>One concrete search implementation with a separate mutable workspace for each request.</summary>

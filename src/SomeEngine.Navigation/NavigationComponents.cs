@@ -44,9 +44,11 @@ public readonly record struct NavigationPathResult(
     Vector3 TargetPosition,
     bool HasTarget) : IComponent;
 
-public readonly record struct NavigationGuidance(Vector3 Velocity, float Heading, ulong RequestVersion, bool Active) : IComponent;
+public readonly record struct NavigationGuidance(Vector3 Velocity, float Heading, ulong RequestVersion, bool Active,
+    NavigationVehicleControl? VehicleControl = null) : IComponent;
 
-public readonly record struct NavigationSteering(Vector3 Velocity, float Heading, ulong RequestVersion, bool Active) : IComponent;
+public readonly record struct NavigationSteering(Vector3 Velocity, float Heading, ulong RequestVersion, bool Active,
+    NavigationVehicleControl? VehicleControl = null) : IComponent;
 
 public enum NavigationStatus : byte
 {

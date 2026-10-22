@@ -23,6 +23,12 @@ internal partial struct NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(
         guidance = new(default, motion.Heading, result.RequestVersion, false);
         if (!result.HasTarget)
             return;
+        if (result.Path is { MotionSegments.IsEmpty: false } vehiclePath)
+        {
+            guidance = NavigationVehicleGuidance.Sample(vehiclePath, ref request.Data.CornerIndex, motion,
+                agent.Profile, agent.DesiredSpeed, _deltaTime, result.RequestVersion);
+            return;
+        }
         float regionDistance = MathF.Max(0, Vector3.Distance(motion.Position, result.TargetPosition) - goal.ArrivalRange);
         if (regionDistance <= 0.0001f)
         {
@@ -62,7 +68,7 @@ internal partial struct NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(
 internal partial struct NavigationSteeringJob : IJobEntity
 {
     public void Execute(in NavigationGuidance guidance, ref NavigationSteering steering) =>
-        steering = new(guidance.Velocity, guidance.Heading, guidance.RequestVersion, guidance.Active);
+        steering = new(guidance.Velocity, guidance.Heading, guidance.RequestVersion, guidance.Active, guidance.VehicleControl);
 }
 
 internal partial struct NavigationProgressJob<TMotion, TReader>(World world) : IJobEntity
