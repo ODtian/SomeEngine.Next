@@ -799,6 +799,18 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
+    internal ClusterGeometry GetGeometry(Mesh mesh, uint root)
+    {
+        lock (_gate)
+        {
+            _pages.TryRegistration(mesh, out uint firstPage, out uint pageCount);
+            uint nodeCount = checked((uint)(mesh.BvhLength / ClusterBvh.NodeBytes));
+            var allocation = new ClusterGeometryAllocation(
+                EpochId.Value, firstPage, pageCount, checked(root + 1 - nodeCount), nodeCount);
+            return new ClusterGeometry(root, mesh.Revision, mesh.VertexEncoding, mesh.Bounds, allocation);
+        }
+    }
+
     public int PublishedMeshCount
     {
         get

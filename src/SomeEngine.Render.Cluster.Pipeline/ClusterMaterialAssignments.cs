@@ -267,7 +267,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
         _assignments = assignments ?? throw new ArgumentNullException(nameof(assignments));
     public static QueryDefinition EntityQuery() => new QueryDefinitionBuilder()
         .Read<RenderInstance>().Read<RenderTransform>().Read<RenderPreviousTransform>()
-        .Read<RenderMesh>().ReadBuffer<RenderMaterialBinding>().Build();
+        .Read<RenderClusterGeometry>().ReadBuffer<RenderMaterialBinding>().Build();
     public void OnCreate(ref RenderPrepareSystemContext context)
     {
         if (_created) throw new InvalidOperationException("The material assignment system is already created.");
@@ -320,14 +320,13 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
             _membership.Add(entity);
             if (!world.IsAlive(entity) || !world.Has<RenderInstance>(entity) ||
                 !world.Has<RenderTransform>(entity) || !world.Has<RenderPreviousTransform>(entity) ||
-                !world.Has<RenderMesh>(entity) || !world.HasBuffer<RenderMaterialBinding>(entity))
+                !world.Has<RenderClusterGeometry>(entity) || !world.HasBuffer<RenderMaterialBinding>(entity))
             {
                 _update.Remove(entity);
                 return;
             }
-            RenderMesh mesh = world.Read<RenderMesh>(entity);
-            string encoding = mesh.Mesh.VertexEncoding ?? throw new InvalidDataException(
-                $"Cluster mesh '{mesh.Mesh.Name}' has no vertex encoding compatibility.");
+            RenderClusterGeometry mesh = world.Read<RenderClusterGeometry>(entity);
+            string encoding = mesh.Geometry.VertexEncoding;
             var state = new MaterialBindings(_update, entity, encoding);
             world.ExecuteBufferRead<RenderMaterialBinding, MaterialBindings>(
                 entity, ref state, static (BufferView<RenderMaterialBinding> bindings, ref MaterialBindings state) =>
@@ -350,18 +349,17 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
             foreach (QueryChunkView chunk in query.Chunks)
             {
                 bool bindingsChanged = chunk.HasBufferChangedSinceLastSystemVersion<RenderMaterialBinding>();
-                bool meshesChanged = chunk.HasChangedSinceLastSystemVersion<RenderMesh>();
+                bool meshesChanged = chunk.HasChangedSinceLastSystemVersion<RenderClusterGeometry>();
                 if (!bindingsChanged && !meshesChanged) continue;
-                ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
+                ReadOnlySpan<RenderClusterGeometry> meshes = chunk.Read<RenderClusterGeometry>();
                 for (int row = 0; row < chunk.Entities.Length; row++)
                 {
                     Entity entity = chunk.Entities[row];
                     if (_membership.Contains(entity)) continue;
                     if (
                         !(bindingsChanged && chunk.RowBufferChangedSinceLastSystemVersion<RenderMaterialBinding>(row)) &&
-                        !(meshesChanged && chunk.RowChangedSinceLastSystemVersion<RenderMesh>(row))) continue;
-                    string encoding = meshes[row].Mesh.VertexEncoding ?? throw new InvalidDataException(
-                        $"Cluster mesh '{meshes[row].Mesh.Name}' has no vertex encoding compatibility.");
+                        !(meshesChanged && chunk.RowChangedSinceLastSystemVersion<RenderClusterGeometry>(row))) continue;
+                    string encoding = meshes[row].Geometry.VertexEncoding;
                     _update.Set(entity, chunk.ReadBuffer<RenderMaterialBinding>(row).AsSpan(), encoding);
                 }
             }
@@ -392,7 +390,7 @@ public readonly struct ClusterMaterialOffsetProducer : IRenderInstanceProducer
         ReadOnlyQueryPacket packet,
         uint lastSystemVersion) =>
         packet.BufferChangedSince<RenderMaterialBinding>(lastSystemVersion) ||
-        packet.ChangedSince<RenderMesh>(lastSystemVersion)
+        packet.ChangedSince<RenderClusterGeometry>(lastSystemVersion)
             ? RenderInstanceChanges.Values
             : RenderInstanceChanges.None;
 
