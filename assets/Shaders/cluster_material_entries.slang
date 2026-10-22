@@ -1,12 +1,16 @@
 #ifndef CLUSTER_MATERIAL_ENTRIES_SLANG
 #define CLUSTER_MATERIAL_ENTRIES_SLANG
 
+#ifndef CLUSTER_VERTEX_ENCODING
+#define CLUSTER_VERTEX_ENCODING "someengine.vertex.standard.cluster.v1"
+#endif
+
 #include "cluster_shade_pipeline.slang"
 #include "sw_raster_core.slang"
 #include "cluster_policy_raster_output.slang"
 #include "cluster_draw_core.slang"
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -21,7 +25,7 @@ void ClusterRasterSoftwareImageAtomic64(
     SWRasterKernel(vertex, visibility, output, groupID, groupThreadIndex);
 }
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -41,7 +45,7 @@ void ClusterRasterSoftwareBufferAtomic64(
 #if defined(CLUSTER_SOFTWARE_MESHLET_RASTER)
 // Opt in when keeping two evaluated user vertices per lane fits the material's
 // register budget. The same entry still accepts individual vertex-reuse batches.
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -54,7 +58,7 @@ void ClusterRasterSoftwareMeshletImageAtomic64(
     SWRasterKernel(vertex, visibility, output, groupID, groupThreadIndex, true);
 }
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -70,7 +74,7 @@ void ClusterRasterSoftwareMeshletBufferAtomic64(
 }
 #endif
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("finite")]
 [shader("vertex")]
 ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterRasterVertex(
@@ -83,7 +87,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterRasterVertex(
         vertex, visibility, vertexID, instanceID);
 }
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("finite")]
 [shader("mesh")]
 [outputtopology("triangle")]
@@ -102,7 +106,7 @@ void ClusterRasterMesh(
 
 // Opt in only when the user varying payload fits the larger mesh output.
 #if defined(CLUSTER_MESHLET_RASTER)
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("finite")]
 [shader("mesh")]
 [outputtopology("triangle")]
@@ -223,7 +227,7 @@ PSVisBufferOutput EvaluateClusterRasterPixelHardwareOnly(
     return output;
 }
 
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void ClusterShade(
@@ -295,7 +299,7 @@ PSVisBufferOutput ClusterRasterPixelHardwareOnly(
 }
 
 // Optional depth-target entries leave the primary visibility output unused.
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -309,7 +313,7 @@ void ClusterRasterSoftwareTarget(
 }
 
 #if defined(CLUSTER_SOFTWARE_MESHLET_RASTER)
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(32, 1, 1)]

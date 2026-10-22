@@ -4,6 +4,7 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Render.Components;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Systems;
 
@@ -489,6 +490,10 @@ public sealed class RenderExtractionContext : IDisposable
     }
 
     public RenderWorld World => _world;
+
+    /// <summary>Transfers material references used by this extractor to the rendering world.</summary>
+    public void UpdateMaterials(IEnumerable<Material> materials, IEnumerable<long> removed) =>
+        _world.UpdateMaterials(materials, removed);
 
     public ReadOnlySpan<RenderMirror> Mirrors => System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_mirrors);
 

@@ -790,6 +790,17 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphFrame graph,
         in ClusterRenderBinding binding)
     {
+        foreach (GraphPassId build in _resources.GeometryBuilds(graph.FrameIdentity))
+        {
+            graph.OrderAfter(_sceneBoundsPass, build);
+            if (_traversalSeedPass != default) graph.OrderAfter(_traversalSeedPass, build);
+            if (_continuationTraversalSeedPass != default) graph.OrderAfter(_continuationTraversalSeedPass, build);
+            foreach (GraphPassId pass in _pageHeapReaderPasses) graph.OrderAfter(pass, build);
+            foreach (GraphPassId pass in _traversalLevelPasses) graph.OrderAfter(pass, build);
+            foreach (GraphPassId pass in _primaryPostTraversalLevelPasses) graph.OrderAfter(pass, build);
+            foreach (GraphPassId pass in _continuationTraversalLevelPasses) graph.OrderAfter(pass, build);
+            foreach (GraphPassId pass in _continuationPostTraversalLevelPasses) graph.OrderAfter(pass, build);
+        }
         foreach (GraphPassId passId in _pageHeapReaderPasses)
         {
             PassDefinition pass = graph.GetPass(passId);

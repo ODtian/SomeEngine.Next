@@ -107,7 +107,7 @@ internal readonly ref struct ClusterRenderBinding
 /// Owns one Cluster algorithm-resource epoch. It borrows the Render-owned shared instance storage
 /// and owns only residency, mesh preparation, and Cluster's instance-field contributor.
 /// </summary>
-public sealed class ClusterRenderResources : IDisposable
+public sealed partial class ClusterRenderResources : IDisposable
 {
     private static readonly SomeEngine.Diagnostics.TraceSite UseTrace = new("render", "Cluster.ResourceUse");
     private static readonly ConditionalWeakTable<RenderWorld, ClusterWorldClaim> s_worldClaims = new();

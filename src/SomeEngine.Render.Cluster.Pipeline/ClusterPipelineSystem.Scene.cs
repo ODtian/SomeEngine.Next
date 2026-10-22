@@ -78,7 +78,8 @@ public sealed partial class ClusterPipelineSystem
     private void BindSceneBounds(ref RenderGraphFrame graph, RenderInstanceBatch batch, bool hasTargetViews)
     {
         bool hasPrevious = ReferenceEquals(_sceneBatch, batch);
-        bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision || _sceneGeometryRevision != GeometryRevision;
+        bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision ||
+            _sceneGeometryRevision != GeometryRevision || !_resources.GeometryBuilds(graph.FrameIdentity).IsEmpty;
         // Movement changes bounds, not the instance membership of the spatial groups.
         // Keep their order until batch replacement changes the row mapping; the GPU refits
         // the existing groups below. Geometry residency changes also preserve that mapping.
