@@ -16,6 +16,32 @@ public sealed class DeformCacheRenderingTests
     [Fact]
     public async Task User_encoded_deformation_matches_inline_geometry_in_the_application_image()
     {
+        using DeformContent content = await CreateContentAsync();
+        SceneImage? cached = null;
+        await SceneImages.RunAsync("d3d12", new SceneScript(content.Project.RootPath, 4,
+            [new(3, scene => scene.CaptureImage(image => cached = image))]), "--no-taa", "--no-vsm");
+
+        await File.WriteAllTextAsync(content.ShaderPath, content.Shader
+            .Replace("typedef CachedVertexEval<UserDeformation> VertexEvaluate;", "typedef UserDeformation VertexEvaluate;")
+            .Replace("\n#include \"cluster_deform.slang\"\n", ""));
+        await content.Project.BuildAsync(content.ShaderPath.Replace(".slang", ".shader"));
+        SceneImage? inline = null;
+        await SceneImages.RunAsync("d3d12", new SceneScript(content.Project.RootPath, 4,
+            [new(3, scene => scene.CaptureImage(image => inline = image))]), "--no-taa", "--no-vsm");
+        SceneImage reference = Assert.IsType<SceneImage>(inline);
+        int center = (reference.Height / 2 * reference.Width + reference.Width / 2) * 4;
+        Assert.InRange(reference.Pixels.Span[center], (byte)16, byte.MaxValue);
+        SceneImages.AssertEqual(reference, Assert.IsType<SceneImage>(cached));
+    }
+
+    private sealed record DeformContent(AssetProject Project, string Shader) : IDisposable
+    {
+        internal string ShaderPath => Path.Combine(Project.RootPath, "assets", "Shaders", "standard.slang");
+        public void Dispose() => Directory.Delete(Project.RootPath, recursive: true);
+    }
+
+    private static async Task<DeformContent> CreateContentAsync()
+    {
         string root = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(root, "SomeEngine.slnx"))) root = Path.GetDirectoryName(root)!;
         string content = Path.Combine(Path.GetTempPath(), $"SomeEngine-Deform-{Guid.NewGuid():N}");
@@ -35,11 +61,12 @@ public sealed class DeformCacheRenderingTests
             string shader = await File.ReadAllTextAsync(shaderPath);
             shader = shader.Replace("typedef StaticVertexEval VertexEvaluate;", UserDeformation + "\ntypedef CachedVertexEval<UserDeformation> VertexEvaluate;\ntypedef UserDeformation DeformEvaluate;");
             shader = shader.Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef VertexEvaluate RasterVertexEvaluate;");
+            shader = shader.Replace("typedef LinearSurface DomainEvaluate;", "typedef UserSurface DomainEvaluate;");
             shader += "\n#include \"cluster_deform.slang\"\n";
             await File.WriteAllTextAsync(shaderPath, shader);
             await DefaultContent.BuildAsync(content, root);
             var project = new AssetProject(content, [], sourceFormats: [new ShaderSourceFormat([Path.Combine(root, "assets", "Shaders")])]);
-            AssetEntry sceneEntry = project.Manifest.List(WorldAsset.FileType).Single();
+            AssetEntry sceneEntry = project.Manifest.List(WorldAsset.FileType).Single(entry => entry.Name == "Default");
             using (var world = new World())
             {
                 var sphere = world.CreateEntity(new WorldTransform { Qvvs = new(new(0, 0, 4), Quaternion.Identity) });
@@ -51,52 +78,75 @@ public sealed class DeformCacheRenderingTests
                 scene.WriteWorld(world, SceneSerialization.CreateRegistry());
                 project.RegisterAsset(await scene.SaveAsync(Path.Combine(content, sceneEntry.Path)));
             }
-            string cached = Path.Combine(content, "cached.bmp");
-            Assert.Equal(0, await Application.RunAsync([
-                "--content-directory", content, "--frames", "4", "--hidden-window", "--no-debug-ui",
-                "--static-scene", "--no-taa", "--no-vsm", "--synchronous-frames", "--fixed-step", "0.016666667",
-                "--frame-output", cached]));
-
-            await File.WriteAllTextAsync(shaderPath, shader.Replace("typedef CachedVertexEval<UserDeformation> VertexEvaluate;", "typedef UserDeformation VertexEvaluate;"));
-            await project.BuildAsync(shaderPath.Replace(".slang", ".shader"));
-            string inline = Path.Combine(content, "inline.bmp");
-            Assert.Equal(0, await Application.RunAsync([
-                "--content-directory", content, "--frames", "4", "--hidden-window", "--no-debug-ui",
-                "--static-scene", "--no-taa", "--no-vsm", "--synchronous-frames", "--fixed-step", "0.016666667",
-                "--frame-output", inline]));
-            Assert.Equal(await File.ReadAllBytesAsync(inline), await File.ReadAllBytesAsync(cached));
+            return new(project, shader);
         }
-        finally { Directory.Delete(content, recursive: true); }
+        catch { Directory.Delete(content, recursive: true); throw; }
     }
 
     private const string UserDeformation = """
         #include "vertex_deform_cache.slang"
+        struct UserVertex
+        {
+            StandardVertex Surface;
+            uint Marker;
+        };
         struct UserDeformation : IVertexDeformCache
         {
-            typedef StandardVertex Vertex;
+            typedef UserVertex Vertex;
             Vertex evaluate(VertexEvalContext context)
             {
                 WaveVertexEval wave;
-                return wave.evaluate(context);
+                Vertex result;
+                result.Surface = wave.evaluate(context);
+                result.Marker = 7u;
+                return result;
             }
-            float3 getPosition(Vertex value) { return value.position; }
+            float3 getPosition(Vertex value) { return value.Marker == 7u ? value.Surface.position : 0.0.xxx; }
             Vertex readLane(Vertex value, uint lane)
             {
                 StaticVertexEval vertex;
-                return vertex.readLane(value, lane);
+                Vertex result;
+                result.Surface = vertex.readLane(value.Surface, lane);
+                result.Marker = WaveReadLaneAt(value.Marker, lane);
+                return result;
             }
-            uint getCacheByteSize(uint count) { return 32u + count * 120u; }
+            uint getCacheByteSize(uint count) { return 32u + count * 128u; }
             uint getCacheByteAlignment() { return 32u; }
             void writeCache(RWByteAddressBuffer cache, uint address, uint count, uint index, Vertex current, Vertex previous)
             {
-                cache.Store<Vertex>(address + 32u + index * 60u, current);
-                cache.Store<Vertex>(address + 32u + (count + index) * 60u, previous);
+                uint offset = address + 32u + index * 128u;
+                cache.Store<StandardVertex>(offset, current.Surface);
+                cache.Store(offset + 60u, current.Marker ^ 0x12345678u);
+                cache.Store<StandardVertex>(offset + 64u, previous.Surface);
+                cache.Store(offset + 124u, previous.Marker ^ 0x12345678u);
             }
             Vertex readCache(ByteAddressBuffer cache, uint address, uint count, VertexEvalContext context)
             {
-                uint index = context.localVertexIndex + context.IsPreviousFrame * count;
-                return cache.Load<Vertex>(address + 32u + index * 60u);
+                uint offset = address + 32u + context.localVertexIndex * 128u + context.IsPreviousFrame * 64u;
+                Vertex result;
+                result.Surface = cache.Load<StandardVertex>(offset);
+                result.Marker = cache.Load(offset + 60u) ^ 0x12345678u;
+                return result;
             }
+        };
+        struct UserSurface : IDomainEvaluate<UserVertex>
+        {
+            typedef Triangle TriangleData;
+            typedef SurfaceEval Surface;
+            LinearSurface source;
+            TriangleData makeTriangle(UserVertex a, UserVertex b, UserVertex c)
+            { return source.makeTriangle(a.Surface, b.Surface, c.Surface); }
+            float3 cornerPosition(TriangleData value, uint corner) { return source.cornerPosition(value, corner); }
+            float3 position(TriangleData value, float3 bary) { return source.position(value, bary); }
+            Surface eval(TriangleData value, float3 bary) { return source.eval(value, bary); }
+            SurfaceBarycentrics reconstruct(TriangleData value, SurfaceReconstructionInput input)
+            { return source.reconstruct(value, input); }
+            void bounds(TriangleData value, out float3 minimum, out float3 maximum)
+            { source.bounds(value, minimum, maximum); }
+            void patchBounds(TriangleData value, float3 a, float3 b, float3 c, out float3 minimum, out float3 maximum)
+            { source.patchBounds(value, a, b, c, minimum, maximum); }
+            DomainErrorBounds errorBounds(TriangleData value, float3 a, float3 b, float3 c, float3 p, float3 q, float3 r)
+            { return source.errorBounds(value, a, b, c, p, q, r); }
         };
         """;
 }

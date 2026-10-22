@@ -100,7 +100,8 @@ internal readonly record struct ClusterRasterCompatibilityKey(
     ClusterTessellationCompatibilityKey? Tessellation,
     uint StageAbiRevision,
     ClusterComputePipeline? TargetSoftware = null,
-    ClusterRasterPipeline? TargetHardware = null);
+    ClusterRasterPipeline? TargetHardware = null,
+    ClusterComputePipeline? Deformation = null);
 
 internal readonly record struct ClusterShadeCompatibilityKey(
     IComponentType SlangCode,
@@ -412,7 +413,7 @@ internal readonly record struct ClusterLinkedStageKey(
     string? SecondEntry);
 
 /// <summary>Owns raster-only compatibility grouping and its material-slot mapping.</summary>
-internal sealed class ClusterRasterStages : IDisposable
+internal sealed partial class ClusterRasterStages : IDisposable
 {
     private static readonly SomeEngine.Diagnostics.TraceSite ResolveTrace =
         new("render", "Cluster.RasterStageResolve");
@@ -494,6 +495,9 @@ internal sealed class ClusterRasterStages : IDisposable
             if (invocation.SoftwareResources is { } software)
                 ClusterMaterialEntries.AddResourceProperties(properties, software.MaterialBindings);
             ClusterMaterialEntries.AddResourceProperties(properties, invocation.HardwareResources.MaterialBindings);
+            if (invocation.Deformation is { } deformation)
+                foreach (ClusterDeformStage stage in deformation.Stages)
+                    ClusterMaterialEntries.AddResourceProperties(properties, stage.Resources.MaterialBindings);
             if (invocation.TargetStages?.SoftwareResources is { } targetSoftware)
                 ClusterMaterialEntries.AddResourceProperties(properties, targetSoftware.MaterialBindings);
             if (invocation.TargetStages?.HardwareResources is { } targetHardware)
@@ -823,6 +827,7 @@ internal sealed class ClusterRasterStages : IDisposable
             if (tessellationBounds != ClusterConservativeBounds.Finite)
                 bounds = ClusterConservativeBounds.Unbounded;
         }
+        ClusterDeformation? deformation = ResolveDeformation(material, vertexEncoding, bindingKeys);
         ClusterCommandBindingKey commandBindings = ClusterCommandBindingKey.Combine([.. bindingKeys]);
         var key = new ClusterRasterCompatibilityKey(
             software,
@@ -830,7 +835,8 @@ internal sealed class ClusterRasterStages : IDisposable
             tessellation?.Key,
             StageAbiRevision: 4,
             TargetSoftware: targetStages?.Software,
-            TargetHardware: targetStages?.Hardware);
+            TargetHardware: targetStages?.Hardware,
+            Deformation: deformation?.Stages[0].Pipeline);
         return new ClusterRasterInvocation(
             0,
             material,
@@ -846,6 +852,7 @@ internal sealed class ClusterRasterStages : IDisposable
         {
             SoftwareUsesMaterialRanges = softwareUsesMaterialRanges,
             TargetStages = targetStages,
+            Deformation = deformation,
         };
     }
 
@@ -905,7 +912,7 @@ internal sealed class ClusterRasterStages : IDisposable
         GraphResourceBinder?[] featureBinders = resources.ResolveFeatureResources(
             materialResources,
             _featureResources,
-            isCore,
+            name => isCore(name) || ClusterDeformResourceNames.IsRead(name),
             allowNeutralRasterTarget: true);
         ClusterMaterialStageBinding[] materialBindings = ResolveMaterialBindings(
             material,
@@ -962,6 +969,8 @@ internal sealed class ClusterRasterStages : IDisposable
         }
 
         Queue(ClusterMaterialEntries.Shade, SlangStage.Compute);
+        foreach (string entry in ClusterDeformation.Entries)
+            Queue(entry, SlangStage.Compute);
         string? softwareEntry = _visibilityMode == ClusterVisibilityMode.HardwareOnly
             ? null
             : ClusterMaterialEntries.SoftwareRaster(_visibilityMode);
@@ -1322,8 +1331,10 @@ internal sealed record ClusterRasterInvocation(
 {
     internal bool SoftwareUsesMaterialRanges { get; init; }
     internal ClusterRasterTargetStages? TargetStages { get; init; }
+    internal ClusterDeformation? Deformation { get; init; }
 
     internal bool HasSameBindings(ClusterRasterInvocation other) =>
+        ClusterDeformation.SameBindings(Deformation, other.Deformation) &&
         SameBindings(SoftwareResources, other.SoftwareResources) &&
         SameBindings(HardwareResources, other.HardwareResources) &&
         SameBindings(TargetStages?.SoftwareResources, other.TargetStages?.SoftwareResources) &&
@@ -1537,7 +1548,7 @@ internal sealed class ClusterShadeStages : IDisposable
         GraphResourceBinder?[] featureResourceBinders = resources.ResolveFeatureResources(
             materialResources,
             _featureResources,
-            ClusterShadeCoreResources.Contains);
+            name => ClusterShadeCoreResources.Contains(name) || ClusterDeformResourceNames.IsRead(name));
         ClusterMaterialStageBinding[] materialBindings = ResolveMaterialBindings(
             material,
             resources,
