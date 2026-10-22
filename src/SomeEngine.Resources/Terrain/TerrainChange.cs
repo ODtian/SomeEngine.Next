@@ -17,7 +17,8 @@ public sealed record HeightFieldChange(HeightField Field, HeightRegion Range, in
     public override bool Affects(TerrainSurface surface, TerrainBounds bounds, float readDistance)
     {
         float spacing = Field.Grid.SampleSpacing;
-        float border = ReadBorder * spacing + readDistance;
+        // Bilinear interpolation spreads each changed height through its adjacent cells.
+        float border = (ReadBorder + 1) * spacing + readDistance;
         return surface.Uses(Field)
             && Range.MinX * spacing - border <= bounds.Max.X
             && (Range.MaxX - 1) * spacing + border >= bounds.Min.X
