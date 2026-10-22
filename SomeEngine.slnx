@@ -1,4 +1,6 @@
 <Solution>
+  <Project Path="src/SomeEngine.Terrain/SomeEngine.Terrain.csproj" />
+  <Project Path="tests/SomeEngine.Terrain.Tests/SomeEngine.Terrain.Tests.csproj" />
   <Project Path="src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
   <Project Path="templates/DefaultProject/Game.csproj" />
   <Project Path="samples/DefaultGame/DefaultGame.csproj" />

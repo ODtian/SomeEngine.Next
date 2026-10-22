@@ -48,4 +48,3 @@ scene.UpdateFrame = frame =>
 `Record` 返回生成 pass 的 `GraphPassId`。Cluster 将当帧 BVH 和页面读取排在生成工作之后，并在本帧重新计算场景包围范围；主体渲染图继续保持。完成观察器通过 `TryGetPassCompletion` 取得该 pass 的队列完成点。移除几何的渲染引用后，在准备阶段调用 `Release`，Cluster 驻留系统在已提交使用完成后回收范围。生成与回收的数据持有见 [ClusterRenderResources.Gpu](../../../src/SomeEngine.Render.Cluster/ClusterRenderResources.Gpu.cs) 和 [ClusterMeshes.Gpu](../../../src/SomeEngine.Render.Cluster/ClusterMeshes.Gpu.cs)。
 
 完整调用示例为 [GpuClusterExample](../../../samples/DefaultGame/GpuClusterExample.cs)。其中两米正方形和 `float3` 位置加 `float2` UV 的布局属于示例数据；[GpuClusterRenderingTests](../../../tests/SomeEngine.Runtime.Tests/GpuClusterRenderingTests.cs) 通过公开应用入口验证生成后的首帧图像、用户 UV 属性和 GPU 完成点。
-

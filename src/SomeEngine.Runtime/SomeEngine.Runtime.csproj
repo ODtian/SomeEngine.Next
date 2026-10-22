@@ -26,6 +26,7 @@
     <ProjectReference Include="..\SomeEngine.Render.Features\SomeEngine.Render.Features.csproj" />
     <ProjectReference Include="..\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="..\SomeEngine.RenderGraph.Diagnostics\SomeEngine.RenderGraph.Diagnostics.csproj" />
+    <ProjectReference Include="..\SomeEngine.Terrain\SomeEngine.Terrain.csproj" />
     <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
   </ItemGroup>
   <ItemGroup>
