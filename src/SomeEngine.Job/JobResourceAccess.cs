@@ -129,6 +129,12 @@ public readonly struct JobResourceAccess
         return CreateContainerAccess(array, JobAccessMode.Read);
     }
 
+    /// <summary>Declares an array read on the supplied scheduler.</summary>
+    public static JobResourceAccess Read<T>(Scheduler scheduler, T[] array)
+    {
+        return Read(scheduler.GetContainerResourceToken(array));
+    }
+
     public static JobResourceAccess Read<T>(T[] array, long start, long length)
     {
         return CreateContainerRangeAccess(array, array.LongLength, new IndexRange(start, length), JobAccessMode.Read);
@@ -250,6 +256,12 @@ public readonly struct JobResourceAccess
     public static JobResourceAccess Write<T>(T[] array)
     {
         return CreateContainerAccess(array, JobAccessMode.Write);
+    }
+
+    /// <summary>Declares an array write on the supplied scheduler.</summary>
+    public static JobResourceAccess Write<T>(Scheduler scheduler, T[] array)
+    {
+        return Write(scheduler.GetContainerResourceToken(array));
     }
 
     public static JobResourceAccess Write<T>(T[] array, long start, long length)
