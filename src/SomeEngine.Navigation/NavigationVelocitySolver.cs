@@ -12,27 +12,21 @@ namespace SomeEngine.Navigation;
 internal static class NavigationVelocitySolver
 {
     internal static Vector2 Solve(List<NavigationVelocityConstraint> lines, int boundaryCount, float maximumSpeed,
+        Vector2 preferredVelocity, List<NavigationVelocityConstraint> projected) =>
+        Solve(lines, boundaryCount, new NavigationVelocityDisks(maximumSpeed), preferredVelocity, projected);
+
+    internal static Vector2 Solve(List<NavigationVelocityConstraint> lines, int boundaryCount, NavigationVelocityDisks disks,
         Vector2 preferredVelocity, List<NavigationVelocityConstraint> projected)
     {
-        int failed = SolveVelocity(lines, maximumSpeed, preferredVelocity, false, out Vector2 result);
-        if (failed < lines.Count) SolveProjected(lines, boundaryCount, failed, maximumSpeed, projected, ref result);
+        int failed = SolveVelocity(lines, disks, preferredVelocity, false, out Vector2 result);
+        if (failed < lines.Count) SolveProjected(lines, boundaryCount, failed, disks, projected, ref result);
         return result;
     }
 
-    private static bool SolveLine(IList<NavigationVelocityConstraint> lines, int lineNo, float radius, Vector2 optVelocity, bool directionOpt, ref Vector2 result)
+    private static bool SolveLine(IList<NavigationVelocityConstraint> lines, int lineNo, NavigationVelocityDisks disks,
+        Vector2 optVelocity, bool directionOpt, ref Vector2 result)
     {
-        float dotProduct = Vector2.Dot(lines[lineNo].Point, lines[lineNo].Direction);
-        float discriminant = dotProduct * dotProduct + radius * radius - LengthSquared(lines[lineNo].Point);
-
-        if (discriminant < 0.0f)
-        {
-            /* Max speed circle fully invalidates line lineNo. */
-            return false;
-        }
-
-        float sqrtDiscriminant = MathF.Sqrt(discriminant);
-        float tLeft = -dotProduct - sqrtDiscriminant;
-        float tRight = -dotProduct + sqrtDiscriminant;
+        if (!disks.ClipLine(lines[lineNo].Point, lines[lineNo].Direction, out float tLeft, out float tRight)) return false;
 
         for (int i = 0; i < lineNo; ++i)
         {
@@ -105,26 +99,10 @@ internal static class NavigationVelocitySolver
         return true;
     }
 
-    private static int SolveVelocity(IList<NavigationVelocityConstraint> lines, float radius, Vector2 optVelocity, bool directionOpt, out Vector2 result)
+    private static int SolveVelocity(IList<NavigationVelocityConstraint> lines, NavigationVelocityDisks disks,
+        Vector2 optVelocity, bool directionOpt, out Vector2 result)
     {
-        if (directionOpt)
-        {
-            /*
-             * Optimize direction. Note that the optimization velocity is of
-             * unit length in this case.
-             */
-            result = optVelocity * radius;
-        }
-        else if (LengthSquared(optVelocity) > radius * radius)
-        {
-            /* Optimize closest point and outside circle. */
-            result = Vector2.Normalize(optVelocity) * radius;
-        }
-        else
-        {
-            /* Optimize closest point and inside circle. */
-            result = optVelocity;
-        }
+        result = disks.Project(optVelocity, directionOpt);
 
         for (int i = 0; i < lines.Count; ++i)
         {
@@ -132,7 +110,7 @@ internal static class NavigationVelocitySolver
             {
                 /* Result does not satisfy constraint i. Compute new optimal result. */
                 Vector2 tempResult = result;
-                if (!SolveLine(lines, i, radius, optVelocity, directionOpt, ref result))
+                if (!SolveLine(lines, i, disks, optVelocity, directionOpt, ref result))
                 {
                     result = tempResult;
 
@@ -144,7 +122,8 @@ internal static class NavigationVelocitySolver
         return lines.Count;
     }
 
-    private static void SolveProjected(IList<NavigationVelocityConstraint> lines, int numObstLines, int beginLine, float radius, List<NavigationVelocityConstraint> projected, ref Vector2 result)
+    private static void SolveProjected(IList<NavigationVelocityConstraint> lines, int numObstLines, int beginLine,
+        NavigationVelocityDisks disks, List<NavigationVelocityConstraint> projected, ref Vector2 result)
     {
         float distance = 0.0f;
 
@@ -190,7 +169,7 @@ internal static class NavigationVelocitySolver
                 }
 
                 Vector2 tempResult = result;
-                if (SolveVelocity(projLines, radius, new Vector2(-lines[i].Direction.Y, lines[i].Direction.X), true, out result) < projLines.Count)
+                if (SolveVelocity(projLines, disks, new Vector2(-lines[i].Direction.Y, lines[i].Direction.X), true, out result) < projLines.Count)
                 {
                     /*
                      * This should in principle not happen. The result is by
@@ -205,7 +184,6 @@ internal static class NavigationVelocitySolver
             }
         }
     }
-    private static float LengthSquared(Vector2 value) => value.LengthSquared();
     private static float Cross(Vector2 a, Vector2 b) => a.X * b.Y - a.Y * b.X;
 
 }
