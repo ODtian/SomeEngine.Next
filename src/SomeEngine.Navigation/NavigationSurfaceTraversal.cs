@@ -14,8 +14,37 @@ public static class NavigationSurfaceTraversal
 
     public static bool CanTraverse(in NavigationSurfaceSpan first, float firstCeiling,
         in NavigationSurfaceSpan second, float secondCeiling, NavigationProfile profile) =>
-        MathF.Abs(first.Height - second.Height) <= profile.MaximumStepHeight &&
-        MathF.Min(firstCeiling, secondCeiling) - MathF.Max(first.Height, second.Height) >= profile.Height;
+        CanTraverseHeights(first.Height, firstCeiling, second.Height, secondCeiling, profile);
+
+    public static bool CanTraverse(in NavigationSupport first, in NavigationSupport second, NavigationProfile profile) =>
+        CanTraverseHeights(first.Position.Y, first.CeilingHeight, second.Position.Y, second.CeilingHeight, profile);
+
+    private static bool CanTraverseHeights(float first, float firstCeiling, float second, float secondCeiling,
+        NavigationProfile profile) => MathF.Abs(first - second) <= profile.MaximumStepHeight &&
+        MathF.Min(firstCeiling, secondCeiling) - MathF.Max(first, second) >= profile.Height;
+
+    public static float GetRotationRadius(ReadOnlySpan<Vector2> footprint)
+    {
+        float radiusSquared = 0;
+        foreach (Vector2 point in footprint) radiusSquared = MathF.Max(radiusSquared, point.LengthSquared());
+        return MathF.Sqrt(radiusSquared);
+    }
+
+    /// <summary>Cells intersecting the origin-centered circle covering the footprint at every heading.</summary>
+    public static NavigationCellOffset[] RasterizeFootprintSweep(ReadOnlySpan<Vector2> footprint, float cellSize)
+    {
+        float radius = GetRotationRadius(footprint);
+        int extent = (int)MathF.Ceiling(radius / cellSize + 0.5f);
+        var offsets = new List<NavigationCellOffset>();
+        for (int z = -extent; z <= extent; z++)
+        for (int x = -extent; x <= extent; x++)
+        {
+            float nearestX = MathF.Max(MathF.Abs(x * cellSize) - cellSize * 0.5f, 0);
+            float nearestZ = MathF.Max(MathF.Abs(z * cellSize) - cellSize * 0.5f, 0);
+            if (nearestX * nearestX + nearestZ * nearestZ <= radius * radius) offsets.Add(new(x, z));
+        }
+        return offsets.ToArray();
+    }
 
     /// <summary>Cells intersecting the complete footprint at heading zero (+Z), including contour edges.</summary>
     public static NavigationCellOffset[] RasterizeFootprint(ReadOnlySpan<Vector2> footprint, float cellSize)
