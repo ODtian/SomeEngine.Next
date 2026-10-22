@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using SomeEngine.Core.Diagnostics;
+
 namespace SomeEngine.Render.Cluster;
 
 /// <summary>Coalescing byte ranges used by Cluster page and BVH buffers.</summary>
@@ -54,15 +57,16 @@ internal sealed class ClusterBufferAllocator
         return false;
     }
 
+    [Conditional("DEBUG")]
     internal void ValidateFree(ulong offset, ulong size)
     {
-        if ((offset & (_alignment - 1)) != 0) throw new ArgumentOutOfRangeException(nameof(offset));
-        ArgumentOutOfRangeException.ThrowIfZero(size);
+        DevelopmentCheck.Require((offset & (_alignment - 1)) == 0, "The released Cluster range must be aligned.");
+        DevelopmentCheck.Require(size != 0, "The released Cluster range must contain bytes.");
         ulong end = checked(offset + AllocationSize(size));
-        if (end > Capacity) throw new ArgumentOutOfRangeException(nameof(size));
+        DevelopmentCheck.Require(end <= Capacity, "The released Cluster range must fit its buffer.");
         foreach (FreeRange range in _free)
-            if (offset < range.Offset + range.Size && range.Offset < end)
-                throw new InvalidOperationException("The released Cluster range overlaps free memory.");
+            DevelopmentCheck.Require(offset >= range.Offset + range.Size || range.Offset >= end,
+                "The released Cluster range overlaps free memory.");
     }
 
     internal void Free(ulong offset, ulong size)

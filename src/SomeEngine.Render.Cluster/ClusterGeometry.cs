@@ -3,7 +3,7 @@ using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Cluster;
 
-/// <summary>Page and BVH ranges held by the Cluster residency that produced this geometry.</summary>
+/// <summary>Page and BVH ranges held by Cluster residency. GPU-generated pages use FirstPage = uint.MaxValue.</summary>
 public readonly record struct ClusterGeometryAllocation(
     ulong Epoch,
     uint FirstPage,
@@ -11,7 +11,7 @@ public readonly record struct ClusterGeometryAllocation(
     uint FirstBvhNode,
     uint BvhNodeCount);
 
-/// <summary>Geometry ready for Cluster instances at the rendering preparation boundary.</summary>
+/// <summary>Cluster instance geometry, its vertex encoding and its residency association.</summary>
 public readonly record struct ClusterGeometry(
     uint RootBvh,
     ulong Revision,

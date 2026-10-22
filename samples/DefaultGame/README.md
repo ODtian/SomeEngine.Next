@@ -19,6 +19,14 @@ await Application.RunAsync(args, application: application);
 
 实时策略构建叶子 cluster 与 BVH；离线策略执行顶点焊接、网格优化、简化和 LOD 层级构建。调用方的属性类型通过 `IClusterVertexEncoder<TAttributes>` 编码，配套材质用 `IVertexEvaluate` 解释相同的 `VertexEncoding`。Asset 导入入口 `ClusterBuilder.ProcessRaw` 与 `ProcessMesh` 使用同一 CPU 构建核心；`ClusterBuilder.CreateAsset` 可将完成的 Mesh 连同材质引用保存为 Asset。
 
+`GpuClusterExample` 展示通过公开应用入口生成并渲染 GPU 几何。构建输入、配套编码器、图内顺序与范围回收见 [GPU 几何构建](../../wiki/architecture/rendering/Geometry-Features.md#gpu-几何构建)。
+
+示例中的两米正方形、红色材质、每顶点 `float3` 位置与 `float2` UV 布局均属于示例数据。开发构建可通过以下命令运行：
+
+```powershell
+dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEngineDevelopment=true -p:PublishAot=false -- --gpu-cluster --static-scene --no-vsm --no-taa
+```
+
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
 ```powershell

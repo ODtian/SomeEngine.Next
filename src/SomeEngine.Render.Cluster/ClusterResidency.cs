@@ -104,7 +104,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
                 device,
                 new BufferDesc(
                     selected.PageHeapCapacityBytes,
-                    BufferUsages.ShaderRead | BufferUsages.CopyDestination,
+                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination,
                     "Cluster page heap"),
                 MemoryType.DeviceLocal);
             pageStorage = new SparseClusterPageStorage(selected.PageHeapCapacityBytes);
@@ -113,7 +113,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
                 device,
                 new BufferDesc(
                     selected.BvhCapacityBytes,
-                    BufferUsages.ShaderRead | BufferUsages.CopyDestination,
+                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination,
                     "Cluster BVH"),
                 MemoryType.DeviceLocal);
             bvhStorage = new SparseClusterBvhStorage(selected.BvhCapacityBytes);
@@ -232,6 +232,14 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     }
 
     internal void KeepMesh(Mesh mesh) => _unusedMeshes.Remove(mesh);
+
+    internal ClusterGeometry ReserveGpu(uint bytes, string encoding, ulong revision, Bounds? bounds) =>
+        _meshes.ReserveGpu(bytes, encoding, revision, bounds);
+
+    internal ClusterGpuAllocation GetGpu(ClusterGeometry geometry) => _meshes.GetGpu(geometry);
+
+    internal void ReleaseGpu(ClusterGeometry geometry) =>
+        _meshes.ReleaseGpu(geometry, Timeline.GetGenerationFences(0));
     internal void MarkMeshUnused(Mesh mesh) => _unusedMeshes.Add(mesh);
 
     internal void ReleaseUnusedMeshes()

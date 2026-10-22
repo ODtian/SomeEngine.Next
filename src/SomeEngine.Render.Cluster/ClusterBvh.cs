@@ -63,6 +63,7 @@ internal sealed class ClusterBvh
     private readonly IClusterBvhStorage _storage;
     private readonly ClusterBufferAllocator _ranges;
     private readonly List<ClusterBvhAllocation> _allocations = [];
+    private readonly List<ClusterBvhAllocation> _gpuRanges = [];
     private readonly List<ClusterBvhPatch> _pendingPatches = [];
     private readonly FlatDictionary<Mesh, ClusterRootState> _roots = new();
     private readonly List<ClusterBvhLeafIndex> _pageIndexes = [];
@@ -412,17 +413,38 @@ internal sealed class ClusterBvh
         _allocations.Remove(allocation);
     }
 
+    internal ClusterBvhAllocation ReserveGpu(uint nodeCount)
+    {
+        uint bytes = checked(nodeCount * NodeBytes);
+        if (!_ranges.TryAllocate(bytes, out ulong offset))
+            throw new InvalidOperationException("Global Cluster BVH storage capacity is exhausted.");
+        var allocation = new ClusterBvhAllocation(offset, bytes);
+        _gpuRanges.Add(allocation);
+        _count = Math.Max(_count, checked((uint)(offset / NodeBytes) + nodeCount));
+        UpdateReadRanges();
+        return allocation;
+    }
+
+    internal void RemoveGpu(ClusterBvhAllocation allocation)
+    {
+        _gpuRanges.Remove(allocation);
+        UpdateReadRanges();
+    }
+
+    internal void ReleaseGpu(ClusterBvhAllocation allocation) => _ranges.Free(allocation.Offset, allocation.Length);
+
     private void UpdateReadRanges()
     {
-        var ranges = new List<BufferRange>(_nodeIndexes.Count);
+        var ranges = new List<BufferRange>(_nodeIndexes.Count + _gpuRanges.Count);
+        foreach (ClusterBvhAllocation allocation in _gpuRanges)
+            ranges.Add(new(allocation.Offset, allocation.Length));
         foreach (ClusterBvhLeafIndex mesh in _nodeIndexes)
         {
             ulong offset = checked((ulong)mesh.FirstNode * NodeBytes);
             ulong size = checked((ulong)mesh.NodeCount * NodeBytes);
-            if (ranges.Count > 0 && ranges[^1].Offset + ranges[^1].Size == offset)
-                ranges[^1] = new(ranges[^1].Offset, ranges[^1].Size + size);
-            else ranges.Add(new(offset, size));
+            ranges.Add(new(offset, size));
         }
+        ranges.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
         _readRanges = [.. ranges];
     }
 
@@ -445,6 +467,7 @@ internal sealed class ClusterBvh
         _roots.Clear();
         _pageIndexes.Clear();
         _nodeIndexes.Clear();
+        _gpuRanges.Clear();
         _readRanges = [];
         _ranges.Reset();
         _pendingRootMeshes.Clear();

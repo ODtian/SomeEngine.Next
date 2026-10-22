@@ -1006,6 +1006,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                 if (retirement.Pages.OwnsSource) (sources ??= []).Add(retirement.Pages.Source);
                 AdvanceRevision();
             }
+            RetireGpu(backend);
         }
 
         if (reservations is not null)
@@ -1071,6 +1072,8 @@ internal sealed partial class ClusterMeshes : IDisposable
         ReadOnlySpan<PageRetirement> publishingEvictions)
     {
         var ranges = new List<BufferRange>(_pageAllocations.Count);
+        foreach (ClusterGpuAllocation allocation in _gpuGeometry.Values)
+            ranges.Add(new(allocation.PageOffset, allocation.PageBytes));
         foreach ((uint pageId, PageAllocation backing) in _pageAllocations)
         {
             bool loading = publishingLoads.BinarySearch(pageId) >= 0;
@@ -1283,6 +1286,8 @@ internal sealed partial class ClusterMeshes : IDisposable
             _quarantinedStagingBlocks.Clear();
             _pendingPageRetirements.Clear();
             _meshRetirements.Clear();
+            _gpuGeometry.Clear();
+            _gpuRetirements.Clear();
             _preparedPublication = null;
             _pages.CommitDisposal(pageDisposal);
             cleanupFailure = _bvh.Clear();

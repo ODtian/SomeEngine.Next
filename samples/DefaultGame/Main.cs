@@ -33,6 +33,24 @@ public static class SampleApplication
                 SampleAssetCapabilities.BuildVersion);
             return await AssetCommands.RunAsync(project, args, Console.Out);
         }
+        if (args.Contains("--gpu-cluster", StringComparer.Ordinal))
+        {
+            using GpuClusterExample example = await GpuClusterExample.CreateAsync(ProjectPaths.Root);
+            using var material = new UnlitMaterial { BaseColorTint = new(1, 0, 0, 1) };
+            example.SetMaterial(material);
+            var scene = new ApplicationScene(ProjectPaths.Root)
+            {
+                Options = RuntimeStartupOptions.Parse(args),
+                UpdateFrame = frame =>
+                {
+                    if (frame.Index != 0) return;
+                    foreach (var entity in frame.Scene.MeshEntities) frame.Scene.DeleteEntity(entity);
+                    frame.Scene.SetCameraTransform(System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity);
+                },
+            };
+            scene.InstallGeometry(example);
+            return await Application.RunAsync(args, application: scene);
+        }
 #endif
         ImportedScenes.SceneMaterialAsset.Register();
         var scenes = SceneTestPlatform.ReadScenes(Path.Combine(AppContext.BaseDirectory, "test-scenes.json"));
