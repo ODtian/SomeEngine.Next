@@ -12,19 +12,19 @@ namespace SomeEngine.Terrain.Tests;
 public sealed class TerrainSceneTests
 {
     [Fact]
-    public async Task VoxelEditUpdatesTheSpatialChunkContainingItsSamples()
+    public async Task VoxelEditUpdatesChunksWithinItsSamplingNeighborhood()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         using var material = new UnlitMaterial();
         var terrain = new Resources.Terrain(new TerrainEditing(scheduler));
-        VoxelField voxels = terrain.CreateVoxelField("solid", new VoxelGrid(4));
+        VoxelField voxels = terrain.CreateVoxelField("solid", new VoxelGrid(4, 2f));
         terrain.Surface = new VoxelSurface(voxels);
         var adapter = new TerrainClusterAdapter<StandardClusterAttributes>(new SurfaceAttributes(),
             StandardClusterVertexEncoder.Instance, ClusterBuildStrategy.Realtime);
-        var scene = new TerrainScene(adapter, new TerrainChunkGrid(4, 1f));
-        int placement = scene.Add(new TerrainPlacement(terrain, new(-1, -1, -1, 2, 2, 2), [material]));
+        var scene = new TerrainScene(adapter, new TerrainChunkGrid(8, 1f));
+        int placement = scene.Add(new TerrainPlacement(terrain, new(0, 0, 0, 2, 2, 2), [material]));
         systems.Add(new TerrainCommitSystem(scene));
         systems.Add(new TerrainLodSystem(scene));
         systems.Add(new TerrainMeshSystem(scene));
@@ -33,18 +33,18 @@ public sealed class TerrainSceneTests
         systems.Update();
         var before = scene.GetChunks(placement).ToDictionary(chunk => chunk.Coordinates);
 
-        TerrainEdit edit = voxels.EditCpu(new SolidSample(new(2, 2, 2, 1, 1, 1)));
+        TerrainEdit edit = voxels.EditCpu(new SolidSample(new(5, 2, 2, 1, 1, 1)));
         systems.Update();
         await scene.WaitForBuildsAsync();
         systems.Update();
 
         foreach (TerrainChunk chunk in scene.GetChunks(placement))
-            Assert.Equal(chunk.Coordinates == new TerrainChunkCoordinate(0, 0, 0)
+            Assert.Equal(chunk.Coordinates.Y == 0 && chunk.Coordinates.Z == 0
                 ? edit.Revision : before[chunk.Coordinates].Revision, chunk.Revision);
-        TerrainChunk solid = scene.GetChunks(placement).Single(chunk => chunk.Coordinates == new TerrainChunkCoordinate(0, 0, 0));
+        TerrainChunk solid = scene.GetChunks(placement).Single(chunk => chunk.Coordinates == new TerrainChunkCoordinate(1, 0, 0));
         Assert.NotNull(scene.GetGeometry(solid.GeometryId));
-        VoxelFieldRead samples = await voxels.ReadCpuAsync(new(2, 2, 2, 1, 1, 1));
-        Assert.Equal(-1f, samples[2, 2, 2]);
+        VoxelFieldRead samples = await voxels.ReadCpuAsync(new(5, 2, 2, 1, 1, 1));
+        Assert.Equal(-1f, samples[5, 2, 2]);
     }
 
     [Fact]
