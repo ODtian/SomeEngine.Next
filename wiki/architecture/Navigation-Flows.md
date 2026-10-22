@@ -54,7 +54,7 @@ JobHandle moved = new MoveCharacters(deltaTime).ScheduleParallel(world, step.Ste
 JobHandle progress = navigation.ScheduleProgress(moved);
 ```
 
-路径和流场的组合对象都提供 `ScheduleGuidance`。调用方合并这些 Guidance 句柄与邻居完成句柄，再调用所选的避让或运动建议阶段作为本步 Steering 写入方；移动消费使用该阶段的完成句柄。路径的目标语义和强类型运动接口见[目标、路径与实际运动](Navigation-Paths.md)。
+路径和流场的组合对象都提供 `ScheduleGuidance`。调用方合并这些 Guidance 句柄与邻居完成句柄，再调用所选的避让或运动建议阶段作为本步 Steering 写入方；移动消费使用该阶段的完成句柄。路径的目标语义和强类型运动接口见[目标、路径与实际运动](Navigation-Paths.md)，共享邻居及圆盘模型见[共同邻居与 ORCA 避让](Navigation-Avoidance.md)。
 
 ## 资产创建
 

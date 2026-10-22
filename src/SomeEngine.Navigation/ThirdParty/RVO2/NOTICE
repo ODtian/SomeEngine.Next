@@ -1,0 +1,8 @@
+RVO2 Library C#
+Copyright 2008 University of North Carolina at Chapel Hill
+Authors: Jur van den Berg, Stephen J. Guy, Jamie Snape, Ming C. Lin, Dinesh Manocha
+https://github.com/snape/RVO2-CS/blob/8e7cf2f9bdc331fe0802cdfb10d6c19fb5b20745/RVOCS/Agent.cs
+
+OrcaAvoidance.cs and NavigationVelocitySolver.cs adapt the finite-horizon ORCA construction and linear programs.
+The engine supplies sampled actual movement, typed navigation boundaries, resource-aware Jobs,
+weighted pair responsibility, baked-clearance accounting and reusable workspaces.

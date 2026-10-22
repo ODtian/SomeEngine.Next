@@ -4,7 +4,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Navigation;
 
 /// <summary>Actual movement feedback. Heading uses <see cref="NavigationHeading"/>.</summary>
-public readonly record struct NavigationMotion(Vector3 Position, Vector3 Velocity, float Heading, bool Grounded);
+public readonly record struct NavigationMotion(Vector3 Position, Vector3 Velocity, float Heading, bool Grounded, int Layer = 0);
 
 public interface INavigationMotionReader<TMotion> where TMotion : unmanaged, IComponent
 {
