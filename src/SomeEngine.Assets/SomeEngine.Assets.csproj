@@ -14,6 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SomeEngine.Resources\SomeEngine.Resources.csproj" />
+    <ProjectReference Include="..\SomeEngine.Navigation\SomeEngine.Navigation.csproj" />
     <ProjectReference Include="..\SomeEngine.ECS\SomeEngine.ECS.csproj" />
     <ProjectReference Include="..\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
     <ProjectReference Include="..\SomeEngine.Serialization\SomeEngine.Serialization.csproj" />
