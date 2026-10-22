@@ -1,3 +1,4 @@
+using SomeEngine.Geometry.Cluster;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources.Geometry;
