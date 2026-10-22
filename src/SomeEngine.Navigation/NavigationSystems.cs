@@ -25,8 +25,12 @@ public sealed class NavigationSystems<TSpace, TSearch, TState, TMotion, TReader>
     public NavigationSystems(World world)
     {
         _world = world;
-        _enabledGoal = world.QueryDefinition().Enabled<NavigationGoal>().Build();
-        _disabledGoal = world.QueryDefinition().Disabled<NavigationGoal>().Build();
+        _enabledGoal = world.QueryDefinition()
+            .All<PathNavigation<TSpace>>().All<NavigationRequest<TSpace, TState>>().All<TMotion>()
+            .Enabled<NavigationGoal>().Build();
+        _disabledGoal = world.QueryDefinition()
+            .All<PathNavigation<TSpace>>().All<NavigationRequest<TSpace, TState>>().All<TMotion>()
+            .Disabled<NavigationGoal>().Build();
     }
 
     public void AddAgent(Entity entity, TSpace space, NavigationProfile profile, NavigationPolicy policy,
