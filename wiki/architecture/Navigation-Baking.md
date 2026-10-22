@@ -8,7 +8,7 @@
 
 每块将源占据区间转换成 Recast 高度场，依据角色坡度、支撑高度到上方占据区间的净空，以及策略的可用区域完成筛选。Recast 继续执行低障碍、边缘与净空过滤、紧凑高度场连接、单调区域划分、轮廓提取、凸多边形合并和详细高度采样。计算使用 [DotRecast.Recast 2026.3.1](https://github.com/ikpil/DotRecast/tree/2026.3.1/src/DotRecast.Recast)，依赖通过 NuGet 引入。
 
-普通网格允许角色随路线改变朝向，因此 `NavigationSurfaceTraversal.RasterizeFootprintSweep` 使用轮廓绕原点的外接圆覆盖全部朝向。圆内及圆边缘相交的单元共同参与筛选；每个覆盖单元都需要可用支撑、可跨越的高度差和足够的共同净空。该职责对应 [SE(2) Navigation Mesh 的普通通行区与朝向层定义](https://arxiv.org/html/2607.01454v1#S4.SS2)。`RasterizeFootprint` 提供指定轮廓在零朝向（+Z）的单元覆盖，供表达朝向可行域的表示使用。
+普通网格允许角色随路线改变朝向，因此 `NavigationSurfaceTraversal.RasterizeFootprintSweep` 使用轮廓绕原点的外接圆覆盖全部朝向，并覆盖参考点在完整方格内的平移。圆扫掠范围相交的单元共同参与筛选；每个覆盖单元都需要可用支撑、可跨越的高度差和足够的共同净空。该职责对应 [SE(2) Navigation Mesh 的普通通行区与朝向层定义](https://arxiv.org/html/2607.01454v1#S4.SS2)。`RasterizeFootprint` 提供指定轮廓在零朝向（+Z）的单元覆盖；连续通道构建与查询见[朝向导航网格](Heading-Navigation.md)。
 
 `NavigationSurfaceTraversal.IsWalkable` 使用源表面的法线、支撑高度、上方占据区间与区域策略。`CanTraverse` 比较两个支撑的高度差及开放高度区间交集。源面积分类映射为 Recast 的正面积编号，在多边形输出时恢复原分类。详细高度样本回到源表面的相应高度层，`NavigationMesh.TrySampleHeight` 与角色引导消费这些三角形。
 

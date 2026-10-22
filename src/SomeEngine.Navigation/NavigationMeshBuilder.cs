@@ -60,7 +60,13 @@ public static class NavigationMeshBuilder
             accesses[^1] = JobResourceAccess.Write(scheduler.GetResourceToken(state.TileData), index, 1);
             built[index] = scheduler.Schedule(new BuildTile(state, index), accesses, dependency);
         }
+        return ScheduleConnections(state, scheduler, built, reads);
+    }
 
+    internal static JobHandle ScheduleConnections(NavigationMeshBuildState state, Scheduler scheduler,
+        JobHandle[] built, List<JobResourceAccess> reads)
+    {
+        ReadOnlySpan<NavigationSurfaceTile> tiles = state.Surface.Tiles.Span;
         var pairs = new List<(int First, int Second)>();
         for (int first = 0; first < tiles.Length; first++)
         for (int second = first + 1; second < tiles.Length; second++)

@@ -5,10 +5,24 @@ using static DotRecast.Recast.RcRecast;
 
 namespace SomeEngine.Navigation;
 
+internal sealed record NavigationRecastField(RcCompactHeightfield Compact, int[] OriginalAreas,
+    NavigationSurfaceSpan[] Supports, float[] Ceilings, List<int> AreaCodes);
+
 internal static class NavigationRecast
 {
     internal static NavigationMeshTileData BuildTile(NavigationSurface surface, NavigationSurfaceTile tile,
         NavigationProfile profile, NavigationPolicy policy, NavigationMeshSettings settings)
+    {
+        NavigationRecastField field = CreateField(surface, tile, profile, policy);
+        bool[] covered = EvaluateFootprint(field,
+            NavigationSurfaceTraversal.RasterizeFootprintSweep(profile.Footprint.Span, surface.Settings.CellSize), profile);
+        for (int index = 0; index < covered.Length; index++)
+            if (!covered[index]) field.Compact.areas[index] = RC_NULL_AREA;
+        return Polygonize(surface, tile, field, field.AreaCodes, settings, out _);
+    }
+
+    internal static NavigationRecastField CreateField(NavigationSurface surface, NavigationSurfaceTile tile,
+        NavigationProfile profile, NavigationPolicy policy)
     {
         var context = new RcContext();
         float cellSize = surface.Settings.CellSize, cellHeight = surface.Settings.CellHeight;
@@ -68,21 +82,29 @@ internal static class NavigationRecast
             }
         }
         RcCompactHeightfield compact = RcCompacts.BuildCompactHeightfield(context, walkableHeight, walkableClimb, field);
-        ApplyFootprint(compact, sourceSpans, profile, cellSize, origin.Y, cellHeight);
+        (NavigationSurfaceSpan[] supports, float[] ceilings) = MapSupports(compact, sourceSpans, origin.Y, cellHeight);
+        return new(compact, (int[])compact.areas.Clone(), supports, ceilings, decodedAreas);
+    }
+
+    internal static NavigationMeshTileData Polygonize(NavigationSurface surface, NavigationSurfaceTile tile,
+        NavigationRecastField field, List<int> areas, NavigationMeshSettings settings, out int[] polygonClasses)
+    {
+        var context = new RcContext();
+        RcCompactHeightfield compact = field.Compact;
         RcRegions.BuildRegionsMonotone(context, compact, settings.MinimumRegionCells, settings.MergeRegionCells);
         RcContourSet contours = RcContours.BuildContours(context, compact, settings.MaximumContourError,
-            (int)MathF.Round(settings.MaximumEdgeLength / cellSize), RcBuildContoursFlags.RC_CONTOUR_TESS_WALL_EDGES);
+            (int)MathF.Round(settings.MaximumEdgeLength / surface.Settings.CellSize), RcBuildContoursFlags.RC_CONTOUR_TESS_WALL_EDGES);
         RcPolyMesh mesh = RcMeshs.BuildPolyMesh(context, contours, settings.MaximumPolygonVertices);
+        polygonClasses = mesh.areas.AsSpan(0, mesh.npolys).ToArray();
         if (mesh.npolys == 0) return new(new([], [], [], []), []);
         RcPolyMeshDetail detail = RcMeshDetails.BuildPolyMeshDetail(context, mesh, compact,
             settings.DetailSampleDistance, settings.DetailMaximumError);
-        return Convert(surface, tile, mesh, detail, decodedAreas, settings.ContentVersion);
+        return Convert(surface, tile, mesh, detail, areas, settings.ContentVersion);
     }
 
-    private static void ApplyFootprint(RcCompactHeightfield compact, NavigationSurfaceSpan[][] columns,
-        NavigationProfile profile, float cellSize, float originHeight, float cellHeight)
+    private static (NavigationSurfaceSpan[], float[]) MapSupports(RcCompactHeightfield compact,
+        NavigationSurfaceSpan[][] columns, float originHeight, float cellHeight)
     {
-        NavigationCellOffset[] footprint = NavigationSurfaceTraversal.RasterizeFootprintSweep(profile.Footprint.Span, cellSize);
         var supports = new NavigationSurfaceSpan[compact.spanCount];
         var ceilings = new float[compact.spanCount];
         for (int cell = 0; cell < compact.cells.Length; cell++)
@@ -103,27 +125,38 @@ internal static class NavigationRecast
                 }
             }
         }
-        int[] originalAreas = (int[])compact.areas.Clone();
+        return (supports, ceilings);
+    }
+
+    internal static bool[] EvaluateFootprint(NavigationRecastField field, NavigationCellOffset[] footprint, NavigationProfile profile)
+    {
+        RcCompactHeightfield compact = field.Compact;
+        var result = new bool[compact.spanCount];
         for (int z = 0; z < compact.height; z++)
         for (int x = 0; x < compact.width; x++)
         {
             RcCompactCell range = compact.cells[z * compact.width + x];
             for (int index = range.index; index < range.index + range.count; index++)
-            foreach (NavigationCellOffset offset in footprint)
             {
-                int otherX = x + offset.X, otherZ = z + offset.Z;
-                bool covered = false;
-                if (otherX >= 0 && otherX < compact.width && otherZ >= 0 && otherZ < compact.height)
+                bool admitted = field.OriginalAreas[index] != RC_NULL_AREA;
+                foreach (NavigationCellOffset offset in footprint)
                 {
-                    RcCompactCell other = compact.cells[otherZ * compact.width + otherX];
-                    for (int neighbor = other.index; neighbor < other.index + other.count; neighbor++)
-                        if (originalAreas[neighbor] != RC_NULL_AREA && NavigationSurfaceTraversal.CanTraverse(
-                            supports[index], ceilings[index], supports[neighbor], ceilings[neighbor], profile))
-                        { covered = true; break; }
+                    int otherX = x + offset.X, otherZ = z + offset.Z;
+                    bool covered = false;
+                    if (otherX >= 0 && otherX < compact.width && otherZ >= 0 && otherZ < compact.height)
+                    {
+                        RcCompactCell other = compact.cells[otherZ * compact.width + otherX];
+                        for (int neighbor = other.index; neighbor < other.index + other.count; neighbor++)
+                            if (field.OriginalAreas[neighbor] != RC_NULL_AREA && NavigationSurfaceTraversal.CanTraverse(
+                                field.Supports[index], field.Ceilings[index], field.Supports[neighbor], field.Ceilings[neighbor], profile))
+                            { covered = true; break; }
+                    }
+                    if (!covered) { admitted = false; break; }
                 }
-                if (!covered) { compact.areas[index] = RC_NULL_AREA; break; }
+                result[index] = admitted;
             }
         }
+        return result;
     }
 
     private static NavigationMeshTileData Convert(NavigationSurface surface, NavigationSurfaceTile tile,
