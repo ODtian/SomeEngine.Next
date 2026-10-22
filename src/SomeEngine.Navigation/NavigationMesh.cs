@@ -35,6 +35,9 @@ public interface INavigationSpace<TSpace> where TSpace : class
 {
     static abstract void CollectResources(TSpace space, ref JobResourceAccessBuilder resources);
 
+    static virtual void CollectBoundaries(TSpace space, Vector3 position, float radius,
+        NavigationProfile profile, NavigationPolicy policy, ref NavigationBoundaryBuilder builder) { }
+
     static virtual bool TryGetHeight(TSpace space, Vector3 position, out float height)
     {
         height = position.Y;

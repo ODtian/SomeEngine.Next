@@ -37,6 +37,8 @@ NavigationProgress result = world.Read<NavigationProgress>(entity);
 
 `WorldJobs.CombineDependencies` 在 World 选定的 Scheduler 上合并阶段句柄。组合对象保存上一步完成句柄，使连续调度保持实际运动到导航进度的先后关系。
 
+需要避让的组合使用 `ScheduleGuidance`，与 Flow 群体共同加入[邻居与 ORCA 阶段](Navigation-Avoidance.md)，再消费该阶段写出的 Steering。
+
 ## 多边形路径
 
 `NavigationMesh` 保存凸多边形的连续顶点索引、定向入口范围及可选细节三角形。入口的左右端点沿行进方向定义：在 XZ 中，行进方向与“入口中点到左端点”的叉积为正，反向入口交换端点。
