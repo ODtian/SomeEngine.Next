@@ -12,6 +12,7 @@ public sealed class ApplicationScene(string contentDirectory)
     public string ContentDirectory { get; set; } = contentDirectory;
     public RuntimeStartupOptions Options { get; set; } = RuntimeStartupOptions.Parse([]);
     public uint GeometryMemoryBytes { get; set; } = 256u * 1024 * 1024;
+    public ulong GeometryBvhMemoryBytes { get; set; } = 64ul * 1024 * 1024;
     public string? StartupTraceOutput { get; set; }
     public bool DebugUiEnabled { get; set; } = true;
     public Action<long>? SceneStarted { get; set; }

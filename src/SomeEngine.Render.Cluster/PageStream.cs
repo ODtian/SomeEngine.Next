@@ -382,6 +382,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                     stagedPages++;
                     break;
                 case PageLoadResult.AlreadyTracked:
+                case PageLoadResult.Removed:
                     break;
                 case PageLoadResult.Deferred:
                     if (_queuedPageSet.Count < _maxQueuedPages && _queuedPageSet.Add(completed.PageID))
