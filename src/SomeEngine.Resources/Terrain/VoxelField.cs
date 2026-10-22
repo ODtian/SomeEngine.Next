@@ -57,8 +57,21 @@ public sealed class VoxelField
     internal VoxelFieldCpuRead CaptureCpuRead(VoxelRegion range)
     {
         VoxelFieldData data = Data;
-        var samples = new VoxelFieldRead(Grid, InitialValue, data, range);
-        return new(samples, data.Edit.Completion, samples.GetReadAccesses(Terrain.Editing.Scheduler));
+        var dependencies = new List<JobHandle> { data.Edit.Completion };
+        var accesses = new List<JobResourceAccess>();
+        int size = Grid.PageSize;
+        for (int z = Grid.PageCoordinate(range.MinZ); z * size < range.MaxZ; z++)
+        for (int y = Grid.PageCoordinate(range.MinY); y * size < range.MaxY; y++)
+        for (int x = Grid.PageCoordinate(range.MinX); x * size < range.MaxX; x++)
+            if (data.Pages.TryGetValue((x, y, z), out TerrainFieldPage? page))
+            {
+                TerrainPageRead read = page.ReadCpu(Terrain);
+                dependencies.Add(read.Completion);
+                accesses.Add(JobResourceAccess.Read(Terrain.Editing.Scheduler, read.Samples));
+            }
+        return new(new VoxelFieldRead(Grid, InitialValue, data, range),
+            Terrain.Editing.Scheduler.CombineDependencies(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(dependencies)),
+            accesses.ToArray());
     }
 
     private static async ValueTask<VoxelFieldRead> CompleteReadAsync(VoxelFieldCpuRead read)
@@ -69,9 +82,9 @@ public sealed class VoxelField
 }
 
 internal sealed class VoxelFieldData(
-    Dictionary<(int X, int Y, int Z), float[]> pages, TerrainEdit edit)
+    Dictionary<(int X, int Y, int Z), TerrainFieldPage> pages, TerrainEdit edit)
 {
-    internal Dictionary<(int X, int Y, int Z), float[]> Pages { get; } = pages;
+    internal Dictionary<(int X, int Y, int Z), TerrainFieldPage> Pages { get; } = pages;
     internal TerrainEdit Edit { get; } = edit;
 }
 

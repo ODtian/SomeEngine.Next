@@ -11,8 +11,8 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Terrain;
 
-/// <summary>Device height pages, extracted compute requests and their GPU completions.</summary>
-public sealed class RenderTerrainData : ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>,
+/// <summary>Device terrain pages, extracted compute requests and their GPU completions.</summary>
+public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>,
     IRenderGraphFrameExecutionObserver, IDisposable
 {
     private readonly IGraphicsBackend _backend;
@@ -96,7 +96,7 @@ public sealed class RenderTerrainData : ISystem<RenderPrepareSystemContext>, ISy
     {
         var key = (shader, entry);
         if (!_pipelines.TryGetValue(key, out LinkedComputePipeline? pipeline))
-            _pipelines.Add(key, pipeline = LinkedComputePipeline.Create(_backend, _device, shader, entry, "Terrain height brush"));
+            _pipelines.Add(key, pipeline = LinkedComputePipeline.Create(_backend, _device, shader, entry, "Terrain field brush"));
         return pipeline;
     }
 

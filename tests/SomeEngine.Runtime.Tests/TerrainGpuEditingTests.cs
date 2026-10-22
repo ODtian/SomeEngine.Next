@@ -18,6 +18,143 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class TerrainGpuEditingTests(SceneContentFixture content)
 {
     [Fact]
+    public async Task GpuVoxelSphereDeltaMatchesCpuSamplesAfterTheEditCompletes()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        var cpuTerrain = new Terrain(new TerrainEditing(scheduler));
+        var gpuTerrain = new Terrain(new TerrainEditing(scheduler));
+        var grid = new VoxelGrid(4);
+        VoxelField cpu = cpuTerrain.CreateVoxelField("cave", grid, 2f);
+        VoxelField gpu = gpuTerrain.CreateVoxelField("cave", grid, 2f);
+        Shader shader = await LoadVoxelShaderAsync();
+        var brush = new VoxelSphereDeltaBrush(grid, new Vector3(-1, 0, 0), 2f, -4f);
+        await cpu.EditCpu(brush).WaitAsync();
+        TerrainEdit edit = gpu.EditGpu(new VoxelSphereDeltaBrushGpu(shader, grid, brush.Center, brush.Radius, brush.Delta));
+        VoxelRegion range = brush.Range.Expand(1);
+        Task<VoxelFieldRead> read = gpu.ReadCpuAsync(range).AsTask();
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
+        };
+        application.InstallGeometry(new FieldFeature(gpuTerrain));
+
+        int result = await Application.RunAsync([], application: application);
+        await edit.WaitAsync();
+        VoxelFieldRead actual = await read;
+        VoxelFieldRead expected = await cpu.ReadCpuAsync(range);
+
+        Assert.Equal(0, result);
+        Assert.Equal(edit.Revision, actual.Revision);
+        Assert.True(edit.Completion.IsCompleted);
+        for (int z = range.MinZ; z < range.MaxZ; z++)
+        for (int y = range.MinY; y < range.MaxY; y++)
+        for (int x = range.MinX; x < range.MaxX; x++)
+            Assert.Equal(expected[x, y, z], actual[x, y, z], precision: 5);
+    }
+
+    [Fact]
+    public async Task AlternatingCpuAndGpuVoxelEditsKeepEachCapturedVersion()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        var terrain = new Terrain(new TerrainEditing(scheduler));
+        VoxelField field = terrain.CreateVoxelField("cave", new VoxelGrid(4), 2f);
+        Shader shader = await LoadVoxelShaderAsync();
+        var brush = new VoxelSphereDeltaBrushGpu(shader, field.Grid, new Vector3(-1, 0, 0), 2f, -6f);
+        var range = new VoxelRegion(-1, 0, 0, 3, 1, 1);
+        var start = new EditStart();
+        field.EditCpu(new ScaleVoxelBrush(brush.Range, 2f), scheduler.CreateExternalFenceHandle(start));
+        TerrainEdit firstGpu = field.EditGpu(brush);
+        Task<VoxelFieldRead> earlier = field.ReadCpuAsync(range).AsTask();
+        TerrainEdit cpuEdit = field.EditCpu(new ScaleVoxelBrush(brush.Range, 3f));
+        Task<VoxelFieldRead> middle = field.ReadCpuAsync(range).AsTask();
+        TerrainEdit lastGpu = field.EditGpu(new VoxelSphereDeltaBrushGpu(shader, field.Grid, brush.Center, brush.Radius, 1f));
+        Task<VoxelFieldRead> latest = field.ReadCpuAsync(range).AsTask();
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
+            UpdateFrame = frame => { if (frame.Index == 0) start.Complete(); },
+        };
+        application.InstallGeometry(new FieldFeature(terrain));
+
+        int result = await Application.RunAsync([], application: application);
+        VoxelFieldRead first = await earlier;
+        VoxelFieldRead second = await middle;
+        VoxelFieldRead third = await latest;
+
+        Assert.Equal(0, result);
+        Assert.Equal([-2f, 1f, 4f], new[] { first[-1, 0, 0], first[0, 0, 0], first[1, 0, 0] });
+        Assert.Equal([-6f, 3f, 12f], new[] { second[-1, 0, 0], second[0, 0, 0], second[1, 0, 0] });
+        Assert.Equal([-5f, 3.5f, 12f], new[] { third[-1, 0, 0], third[0, 0, 0], third[1, 0, 0] });
+        Assert.Equal(firstGpu.Revision, first.Revision);
+        Assert.Equal(cpuEdit.Revision, second.Revision);
+        Assert.Equal(lastGpu.Revision, third.Revision);
+    }
+
+    [Fact]
+    public async Task GpuVoxelSphereDeltaRendersTheSameChangedSurfaceAsCpu()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        var gpu = new VoxelTerrainExample(scheduler);
+        var cpu = new VoxelTerrainExample(scheduler);
+        Shader shader = await LoadVoxelShaderAsync();
+        var center = new Vector3(-1, 0, 0);
+        TerrainEdit edit = default;
+        SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
+            UpdateFrame = frame =>
+            {
+                if (frame.Index == 0)
+                {
+                    var material = frame.Scene.GetMaterial(frame.Scene.MeshEntities.Single(entity => frame.Scene.GetMaterial(entity).Name == "red sphere"));
+                    foreach (var entity in frame.Scene.MeshEntities) frame.Scene.DeleteEntity(entity);
+                    gpu.AddPlacement(material);
+                }
+                if (frame.Index == 1) gpu.Scene.WaitForBuildsAsync().GetAwaiter().GetResult();
+                if (frame.Index == 8) frame.Scene.CaptureImage(image => before = image);
+                if (frame.Index == 9) edit = gpu.AddSphereDeltaGpu(shader, center, 2f, -1f);
+                if (frame.Index == 17) frame.Scene.CaptureImage(image => after = image);
+            },
+        };
+        gpu.Install(application);
+
+        int result = await Application.RunAsync([], application: application);
+        await edit.WaitAsync();
+        VoxelFieldRead values = await gpu.Field.ReadCpuAsync(gpu.SampleRegion);
+        Assert.Equal(0, result);
+        Assert.Equal(-2f, values[-1, 0, 0]);
+
+        var reference = new ApplicationScene(content.DirectoryPath)
+        {
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
+            UpdateFrame = frame =>
+            {
+                if (frame.Index == 0)
+                {
+                    var material = frame.Scene.GetMaterial(frame.Scene.MeshEntities.Single(entity => frame.Scene.GetMaterial(entity).Name == "red sphere"));
+                    foreach (var entity in frame.Scene.MeshEntities) frame.Scene.DeleteEntity(entity);
+                    cpu.AddPlacement(material);
+                }
+                if (frame.Index is 1 or 10) cpu.Scene.WaitForBuildsAsync().GetAwaiter().GetResult();
+                if (frame.Index == 8) frame.Scene.CaptureImage(image => expectedBefore = image);
+                if (frame.Index == 9) cpu.Field.EditCpu(new VoxelSphereDeltaBrush(cpu.Field.Grid, center, 2f, -1f));
+                if (frame.Index == 17) frame.Scene.CaptureImage(image => expectedAfter = image);
+            },
+        };
+        cpu.Install(reference);
+        Assert.Equal(0, await Application.RunAsync([], application: reference));
+
+        SceneImages.AssertEqual(expectedBefore!, before!);
+        SceneImages.AssertEqual(expectedAfter!, after!);
+        SceneImages.AssertChanged(before!, after!);
+    }
+
+    [Fact]
     public async Task GpuHeightDeltaMatchesCpuSamplesAfterTheEditCompletes()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
@@ -164,6 +301,20 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         }, "terrain height delta");
     }
 
+    private static async ValueTask<Shader> LoadVoxelShaderAsync()
+    {
+        DirectoryInfo? source = new(AppContext.BaseDirectory);
+        while (source is not null && !File.Exists(Path.Combine(source.FullName, "SomeEngine.slnx")))
+            source = source.Parent;
+        using var block = new ShaderSourceBlock { SourceNames = ["terrain_voxel_delta.slang"] };
+        IGlobalSession slang = SlangShaderImporter.GlobalSession;
+        return await block.CreateAsync(slang, new SessionDesc
+        {
+            Targets = [new TargetDesc { Format = SlangCompileTarget.Dxil, Profile = slang.FindProfile("sm_6_6") }],
+            SearchPaths = [Path.Combine(source!.FullName, "assets/Shaders")],
+        }, "terrain voxel delta");
+    }
+
     private sealed class FieldFeature(Terrain terrain) : IApplicationGeometryFeature
     {
         public IDisposable Install(ApplicationGeometryContext context)
@@ -188,6 +339,12 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     {
         public int ReadBorder => 0;
         public float Apply(HeightFieldRead source, int x, int z) => source[x, z] * Scale;
+    }
+
+    private readonly record struct ScaleVoxelBrush(VoxelRegion Range, float Scale) : IVoxelBrushCpu
+    {
+        public int ReadBorder => 0;
+        public float Apply(VoxelFieldRead source, int x, int y, int z) => source[x, y, z] * Scale;
     }
 
     private sealed class EditStart : IJobExternalFence
