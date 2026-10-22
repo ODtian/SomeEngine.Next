@@ -7,6 +7,7 @@
 - [[architecture/Rendering|Rendering]]
 - [[architecture/RHI/Index|RHI]]
 - [[architecture/ECS-Architecture|ECS]]
+- [[architecture/Navigation-Surfaces|导航几何与多层表面]]
 - [[architecture/Product-Boundary|Product Boundary]]
 - [[architecture/Profiler-Bridge-Only|Profiler Bridge Only]]
 - [[architecture/Tracy-Toolchain|Tracy Toolchain]]
