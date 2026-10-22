@@ -2,7 +2,7 @@
 
 ## Data and public API
 
-`SomeEngine.Animation.Pose` supplies `SkeletonBlock`, an asset Block containing parent-ordered bones. `SkeletonAsset` supplies the identity and typed asset reference through the existing asset API. The Block exposes:
+`SomeEngine.Animation.Pose` supplies `Skeleton`, a synchronous use object containing parent-ordered bones. `SkeletonAsset` supplies the identity and typed asset reference; `SkeletonBlock` stores the skeleton through the existing asset API. Both `Skeleton` and its Block expose:
 
 | Member | Data |
 | --- | --- |
@@ -14,7 +14,21 @@
 
 `BoneTransform` is a struct with `Vector3 Translation`, `Quaternion Rotation` and `Vector3 Scale` fields. `BoneNames.Hash(ReadOnlySpan<char>)` provides the same name hash for callers. Hashes are lookup data; source names can repeat or collide.
 
-The constructor accepts spans for the four arrays and copies them. Copies and asset branches share these private immutable arrays. Development builds report inconsistent array lengths, parent order and joint indices through Core `DevelopmentCheck`. Reading each frame uses the spans directly.
+The `Skeleton` constructor accepts spans for the four arrays and copies them. `SkeletonBlock` holds the ready `Skeleton`; copies and asset branches share its immutable data. Development builds report inconsistent array lengths, parent order and joint indices through Core `DevelopmentCheck`. Reading each frame uses the spans directly.
+
+After `GetBlockAsync<SkeletonBlock>()` finishes, `CreateSkeleton()` returns the ready use object. A caller retains that object through an ordinary reference, including after the Asset and Block close. Instances share this object directly. Program-created skeletons use the same constructor data and public reads.
+
+Public API usage example:
+
+```csharp
+Skeleton skeleton;
+using (SkeletonAsset asset = await SkeletonAsset.OpenAsync(path))
+    skeleton = (await asset.GetBlockAsync<SkeletonBlock>()).CreateSkeleton();
+
+ReadOnlySpan<BoneTransform> referencePose = skeleton.ReferencePose;
+```
+
+Source: [Skeleton](../../../src/SomeEngine.Animation.Pose/Skeleton.cs), [SkeletonBlock](../../../src/SomeEngine.Animation.Pose/SkeletonBlock.cs).
 
 ## glTF import
 
@@ -28,7 +42,7 @@ The bone count therefore includes the retained ancestor nodes. `JointBones.Lengt
 
 The Block uses the asset system's static typed binary codec. Metadata stores a bone count, each bone's parent/TRS/name hash, then the source joint mapping. `SkeletonAsset.SaveAsync`, `OpenAsync`, `GetBlockAsync<SkeletonBlock>`, `Duplicate` and `CreateCopy` preserve all four arrays. Collection allocation limits remain in the serialization layer.
 
-Public behavior tests in `tests/SomeEngine.Animation.Pose.Tests` import a GLB with reordered joints, matrix and TRS transforms, intermediate ancestors, default transforms, and Unicode names. They check parent propagation, asset persistence and copying, empty and maximum-index skeletons, reimport identity and edited pose, a project-selected replacement skeleton importer, and a user importer consuming the joint mapping through `ImportContext`.
+Public behavior tests in `tests/SomeEngine.Animation.Pose.Tests` import a GLB with reordered joints, matrix and TRS transforms, intermediate ancestors, default transforms, and Unicode names. They check parent propagation, asset persistence and copying, use-object reads after asset closure, equivalent directly created data, empty and maximum-index skeletons, reimport identity and edited pose, a project-selected replacement skeleton importer, and a user importer consuming the joint mapping through `ImportContext`.
 
 ## Relations
 
