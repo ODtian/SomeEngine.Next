@@ -163,12 +163,12 @@ internal sealed unsafe partial class D3D12Backend
 
         if (command.EnhancedBarriers)
         {
-            // Separate ordered Barrier calls plus ALL->ALL scopes complete all
-            // preceding access before any after-side discard. NO_ACCESS makes
-            // the old contents unnecessary; it does not promise a write flush. The
-            // after entries deliberately remain NO_ACCESS/UNDEFINED; a later
-            // ordinary barrier declares the real first use.
+            // Complete memory visibility at the resource switch; subsequent accesses
+            // may name a different resource over the same heap bytes.
             EncodeEnhancedAliasingBatches(command, barrier.Before, barrier.After);
+            GlobalBarrier aliasMemory = new(BarrierSync.All, BarrierSync.All, BarrierAccess.Common, BarrierAccess.Common);
+            BarrierGroup aliasGroup = new(BarrierType.Global, 1, pGlobalBarriers: &aliasMemory);
+            D3D12CommandListFastCalls.Barrier(command.List, 1, &aliasGroup);
             return;
         }
 

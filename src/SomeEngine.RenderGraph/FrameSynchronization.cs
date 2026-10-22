@@ -134,7 +134,7 @@ internal sealed partial class FrameExecutor
         bool aliasActivated = resource.Placement.Aliases;
         BufferPhysicalState state = aliasActivated
             ? new BufferPhysicalState(
-                PipelineSync.None,
+                PipelineSync.All,
                 ResourceAccess.NoAccess,
                 null,
                 -1,
@@ -296,7 +296,8 @@ internal sealed partial class FrameExecutor
             if (!seen && !resource.Placement.Aliases)
                 AddInitialCompletions(resource.EntryBoundaryStates, queue, pass);
             if (!seen && resource.Placement.Aliases)
-                AddBufferTransition(-1, pass, buffer, PipelineSync.None, sync,
+                // The alias barrier precedes this access in the same command stream.
+                AddBufferTransition(-1, pass, buffer, PipelineSync.All, sync,
                     ResourceAccess.NoAccess, access, false);
 
             // D3D12 permits concurrent readers. Serialize writers for the whole buffer:
@@ -826,7 +827,7 @@ internal sealed partial class FrameExecutor
     {
         _textureRegions.Clear();
         TexturePhysicalState initial = aliasActivated
-            ? new(PipelineSync.None, ResourceAccess.NoAccess, TextureLayout.Undefined, null, -1, false, false)
+            ? new(PipelineSync.All, ResourceAccess.NoAccess, TextureLayout.Undefined, null, -1, false, false)
             : new(texture.InitialSync, texture.InitialAccess, texture.InitialLayout, null, -1,
                 ResourceAccessRules.Writes(texture.InitialAccess), false);
         for (int aspect = 0; aspect < TextureAspectCount(resource.Format); aspect++)
