@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SomeEngine.Resources/SomeEngine.Resources.csproj" />
+    <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
+    <ProjectReference Include="../SomeEngine.Render/SomeEngine.Render.csproj" />
+    <ProjectReference Include="../SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
+    <ProjectReference Include="../SomeEngine.Generators/SomeEngine.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Meshing/Transvoxel.LICENSE" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

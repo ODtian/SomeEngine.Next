@@ -39,7 +39,12 @@ public sealed class HeightField
     /// </code>
     /// </example>
     public TerrainEdit EditCpu<TBrush>(TBrush brush, JobHandle dependency = default)
-        where TBrush : struct, IHeightBrushCpu => Terrain.Editing.EditCpu(this, brush, dependency);
+        where TBrush : struct, IHeightBrushCpu
+    {
+        TerrainEdit edit = Terrain.Editing.EditCpu(this, brush, dependency);
+        Terrain.NotifyChange(new HeightFieldChange(this, brush.Range.Intersect(Grid.Range), brush.ReadBorder, edit));
+        return edit;
+    }
 
     /// <summary>Captures the submitted version on entry and returns its requested samples when ready.</summary>
     public ValueTask<HeightFieldRead> ReadCpuAsync(HeightRegion range)

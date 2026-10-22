@@ -19,6 +19,8 @@ await Application.RunAsync(args, application: application);
 
 实时策略构建叶子 cluster 与 BVH；离线策略执行顶点焊接、网格优化、简化和 LOD 层级构建。调用方的属性类型通过 `IClusterVertexEncoder<TAttributes>` 编码，配套材质用 `IVertexEvaluate` 解释相同的 `VertexEncoding`。Asset 导入入口 `ClusterBuilder.ProcessRaw` 与 `ProcessMesh` 使用同一 CPU 构建核心；`ClusterBuilder.CreateAsset` 可将完成的 Mesh 连同材质引用保存为 Asset。
 
+`HeightTerrainExample` 展示共享高度地形：`Install` 安装游戏世界的提交、分块和构建系统，`AddPlacements` 创建引用同一 Terrain 的两个放置，`Heights.EditCpu` 提交高度编辑。场景使用固定 LOD 的空间块，完成的 Mesh 由现有提取通路呈现。四米方形、每米一个采样点、两层竖向块与放置位置属于示例参数。数据职责与完整调用见[地形放置与 CPU 分块](../../wiki/architecture/terrain/Terrain-Scene.md)。
+
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
 ```powershell
