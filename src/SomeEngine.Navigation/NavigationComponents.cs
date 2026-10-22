@@ -46,7 +46,9 @@ public readonly record struct NavigationPathResult(
 
 public readonly record struct NavigationGuidance(Vector3 Velocity, float Heading, ulong RequestVersion, bool Active) : IComponent;
 
-public readonly record struct NavigationSteering(Vector3 Velocity, float Heading, ulong RequestVersion, bool Active) : IComponent;
+/// <summary>The selected target velocity and the response model used by movement and prediction.</summary>
+public readonly record struct NavigationSteering(Vector3 Velocity, float Heading, ulong RequestVersion, bool Active,
+    NavigationVelocityResponse Response = default) : IComponent;
 
 public enum NavigationStatus : byte
 {

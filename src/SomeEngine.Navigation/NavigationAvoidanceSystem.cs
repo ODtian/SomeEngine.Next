@@ -97,6 +97,6 @@ internal partial struct NavigationAvoidanceJob<TSolver>(NavigationNeighbors neig
         Vector2 velocity = TSolver.Solve(in input, work.Workspace);
         Vector3 motion = new(velocity.X, guidance.Velocity.Y, velocity.Y);
         float heading = velocity.LengthSquared() > 0.000001f ? NavigationHeading.FromDirection(motion) : guidance.Heading;
-        steering = new(motion, heading, guidance.RequestVersion, guidance.Active);
+        steering = new(motion, heading, guidance.RequestVersion, guidance.Active, TSolver.GetResponse(in self));
     }
 }
