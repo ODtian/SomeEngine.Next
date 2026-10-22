@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | 系统基线与查询版本 | [Change-Tracking](../../wiki/architecture/ECS/Change-Tracking.md)、[Systems](../../wiki/architecture/ECS/Systems.md) | `SystemGroup.UpdateCore`、`SystemSlot`、`ImmediateSystemDriver`、`World.Queries.cs`；每个系统的 Last/Current 版本及回调成功后的写回 |
 | Job 依赖与资源访问 | ADR 0002、[Readiness-Admission](../../wiki/architecture/ECS/Readiness-Admission.md) | `Scheduler.cs`、`Scheduler.Dependency.cs`；资源保留、依赖结束后的访问激活、work release 与显式依赖错误策略 |
+| Terrain 字段 | [Terrain](../../wiki/architecture/Terrain.md)、[CPU 字段](../../wiki/architecture/terrain/Terrain-Fields.md) | `src/SomeEngine.Resources/Terrain/`、`HeightFieldTests`、`VoxelFieldTests`；字段坐标、CPU 笔刷、提交版本、任务完成与共享复制 |
 | 查询与借用 | [Synchronous-Execute](../../wiki/architecture/ECS/Synchronous-Execute.md) | `QueryCursor`、`QueryRow`、`QueryChunkView`、`World.Queries.cs`；当前公共签名和查询回调边界 |
 | Relation/Hierarchy | ADR 0003、[Hierarchy](../../wiki/architecture/ECS/Hierarchy.md)、[Structural-Transactions](../../wiki/architecture/ECS/Structural-Transactions.md) | `HierarchyComponents.cs`、`World.StructuralTransaction.cs`、`World.cs`、对应 Owners 实现；Parent/Children 模型和候选根提交。涉及 cardinality、顺序或批处理时继续查具体路径 |
 | ECS 存档 | ADR 0005、[Save-Contracts](../../wiki/architecture/ECS/Save-Contracts.md) | `PayloadFormat.cs`、`SerializationOptions.cs`、对应 codec；版本 4、RawCheckpoint/DurableSave 两种用途 |
