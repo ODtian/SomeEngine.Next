@@ -11,6 +11,7 @@ TVE.Vertex EvaluateVertexWave<TVE : IVertexEvaluate>(
     VertexEvalContext context,
     uint visibleClusterIndex)
 {
+    context.visibleClusterIndex = visibleClusterIndex;
     if (!WaveActiveAllEqual(visibleClusterIndex))
         return evaluator.evaluate(context);
 
