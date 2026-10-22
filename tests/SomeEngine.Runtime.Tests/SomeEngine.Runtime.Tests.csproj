@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.Core\SomeEngine.Core.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" />
+    <ProjectReference Include="../../templates/DefaultProject/Game.Build/Game.Build.csproj" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
