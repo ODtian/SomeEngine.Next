@@ -76,7 +76,8 @@ internal static class NavigationRecast
         if (mesh.npolys == 0) return new(new([], [], [], []), []);
         RcPolyMeshDetail detail = RcMeshDetails.BuildPolyMeshDetail(context, mesh, compact,
             settings.DetailSampleDistance, settings.DetailMaximumError);
-        return Convert(surface, tile, mesh, detail, decodedAreas, settings.ContentVersion);
+        return Convert(surface, tile, mesh, detail, decodedAreas, settings.ContentVersion,
+            NavigationSurfaceTraversal.GetRotationRadius(profile.Footprint.Span));
     }
 
     private static void ApplyFootprint(RcCompactHeightfield compact, NavigationSurfaceSpan[][] columns,
@@ -127,7 +128,7 @@ internal static class NavigationRecast
     }
 
     private static NavigationMeshTileData Convert(NavigationSurface surface, NavigationSurfaceTile tile,
-        RcPolyMesh mesh, RcPolyMeshDetail detail, List<int> areas, ulong contentVersion)
+        RcPolyMesh mesh, RcPolyMeshDetail detail, List<int> areas, ulong contentVersion, float bakedRadius)
     {
         var positions = new Vector3[mesh.nverts];
         for (int index = 0; index < positions.Length; index++)
@@ -178,7 +179,7 @@ internal static class NavigationRecast
             }
             polygons[index] = polygon with { PortalStart = start, PortalCount = portals.Count - start };
         }
-        return new(new(positions, vertices.ToArray(), polygons, portals.ToArray(), details, triangles.ToArray(), contentVersion), borders.ToArray());
+        return new(new(positions, vertices.ToArray(), polygons, portals.ToArray(), details, triangles.ToArray(), contentVersion, bakedRadius), borders.ToArray());
     }
 
     private static Vector3 RestoreHeight(NavigationSurface surface, NavigationSurfaceTile tile, Vector3 position)

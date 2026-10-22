@@ -239,7 +239,8 @@ public static class NavigationMeshBuilder
             }
             state.Tiles = ranges;
             state.Mesh = new(positions.ToArray(), vertices.ToArray(), polygons.ToArray(), combined.ToArray(),
-                details.ToArray(), triangles.ToArray(), state.Settings.ContentVersion);
+                details.ToArray(), triangles.ToArray(), state.Settings.ContentVersion,
+                NavigationSurfaceTraversal.GetRotationRadius(state.Profile.Footprint.Span));
             state.TileData = [];
         }
     }

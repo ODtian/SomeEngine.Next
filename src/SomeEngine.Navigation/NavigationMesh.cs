@@ -47,16 +47,16 @@ public sealed partial class NavigationMesh : INavigationSpace<NavigationMesh>
 {
     public NavigationMesh(Vector3[] positions, int[] polygonVertices, NavigationPolygon[] polygons,
         NavigationPortal[] portals, Vector3[]? detailPositions = null,
-        NavigationDetailTriangle[]? detailTriangles = null, ulong contentVersion = 1)
+        NavigationDetailTriangle[]? detailTriangles = null, ulong contentVersion = 1, float bakedRadius = 0)
         : this((ReadOnlyMemory<Vector3>)positions, polygonVertices, polygons, portals,
             detailPositions is null ? ReadOnlyMemory<Vector3>.Empty : detailPositions,
             detailTriangles is null ? ReadOnlyMemory<NavigationDetailTriangle>.Empty : detailTriangles,
-            contentVersion) { }
+            contentVersion, bakedRadius) { }
 
     public NavigationMesh(ReadOnlyMemory<Vector3> positions, ReadOnlyMemory<int> polygonVertices,
         ReadOnlyMemory<NavigationPolygon> polygons, ReadOnlyMemory<NavigationPortal> portals,
         ReadOnlyMemory<Vector3> detailPositions = default,
-        ReadOnlyMemory<NavigationDetailTriangle> detailTriangles = default, ulong contentVersion = 1)
+        ReadOnlyMemory<NavigationDetailTriangle> detailTriangles = default, ulong contentVersion = 1, float bakedRadius = 0)
     {
         Positions = positions;
         PolygonVertices = polygonVertices;
@@ -65,6 +65,7 @@ public sealed partial class NavigationMesh : INavigationSpace<NavigationMesh>
         DetailPositions = detailPositions;
         DetailTriangles = detailTriangles;
         ContentVersion = contentVersion;
+        BakedRadius = bakedRadius;
         Vector3 minimum = new(float.PositiveInfinity), maximum = new(float.NegativeInfinity);
         foreach (Vector3 position in positions.Span)
         {
@@ -81,6 +82,8 @@ public sealed partial class NavigationMesh : INavigationSpace<NavigationMesh>
     public ReadOnlyMemory<Vector3> DetailPositions { get; }
     public ReadOnlyMemory<NavigationDetailTriangle> DetailTriangles { get; }
     public ulong ContentVersion { get; }
+    /// <summary>World-space disk radius already applied to this mesh's walkable boundaries.</summary>
+    public float BakedRadius { get; }
     public NavigationBounds Bounds { get; }
 
     public static void CollectResources(NavigationMesh space, ref JobResourceAccessBuilder resources)
