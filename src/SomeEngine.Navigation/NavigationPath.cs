@@ -2,19 +2,42 @@ using System.Numerics;
 
 namespace SomeEngine.Navigation;
 
-public readonly record struct NavigationPathDependency(NavigationTileCoordinate Tile, ulong ContentVersion);
+public readonly record struct NavigationPathDependency(NavigationTileCoordinate Tile, ulong ContentVersion, int Region = 0);
 
 /// <summary>The selected polygon corridor, ordered world-space corners and data dependencies.</summary>
 public sealed class NavigationPath(
     ReadOnlyMemory<int> corridor,
     ReadOnlyMemory<Vector3> corners,
     ReadOnlyMemory<NavigationPathDependency> dependencies = default,
-    float cost = 0)
+    float cost = 0,
+    NavigationRegionRoute? regionRoute = null,
+    ReadOnlyMemory<NavigationPathSection> sections = default,
+    ReadOnlyMemory<NavigationConnectionDependency> connectionDependencies = default)
 {
     public ReadOnlyMemory<int> Corridor { get; } = corridor;
     public ReadOnlyMemory<Vector3> Corners { get; } = corners;
     public ReadOnlyMemory<NavigationPathDependency> Dependencies { get; } = dependencies;
     public float Cost { get; } = cost;
+    public NavigationRegionRoute? RegionRoute { get; } = regionRoute;
+    public ReadOnlyMemory<NavigationPathSection> Sections { get; } = sections;
+    public ReadOnlyMemory<NavigationConnectionDependency> ConnectionDependencies { get; } = connectionDependencies;
+
+    public bool TrySampleHeight(Vector3 position, out float height)
+    {
+        height = position.Y;
+        float closest = float.PositiveInfinity;
+        bool found = false;
+        foreach (NavigationPathSection section in Sections.Span)
+        {
+            if (!NavigationMesh.TryGetHeight(section.Mesh, position, out float candidate)) continue;
+            float distance = MathF.Abs(candidate - position.Y);
+            if (distance >= closest) continue;
+            closest = distance;
+            height = candidate;
+            found = true;
+        }
+        return found;
+    }
 }
 
 public enum NavigationSearchStatus : byte
