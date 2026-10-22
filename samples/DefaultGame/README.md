@@ -6,6 +6,19 @@ DefaultGame 是引擎的统一渲染样例。1024 小球场景、Sponza、Amazon
 
 项目 Shader 定义和顶层组合入口位于 `assets/Shaders`。各管线入口封装自己的资源和执行依赖，材质使用阶段输入完成求值。
 
+`ProceduralClusterExample` 展示程序几何进入 Cluster 的公开调用：位置、`StandardClusterAttributes`、索引和 `ClusterMaterialGroup` 交给 `ClusterMeshBuilder.Build`，指定编码器与 `Realtime` 或 `Offline` 策略后取得 `Mesh`。`Add` 方法在应用帧回调中通过 `SceneEdit.AddEntity` 添加两个材质区段。四米宽、两米高的面片及其 UV 属于示例参数。
+
+```csharp
+application.UpdateFrame = frame =>
+{
+    if (frame.Index == 0)
+        ProceduralClusterExample.Add(frame.Scene, firstMaterial, secondMaterial);
+};
+await Application.RunAsync(args, application: application);
+```
+
+实时策略构建叶子 cluster 与 BVH；离线策略执行顶点焊接、网格优化、简化和 LOD 层级构建。调用方的属性类型通过 `IClusterVertexEncoder<TAttributes>` 编码，配套材质用 `IVertexEvaluate` 解释相同的 `VertexEncoding`。Asset 导入入口 `ClusterBuilder.ProcessRaw` 与 `ProcessMesh` 使用同一 CPU 构建核心；`ClusterBuilder.CreateAsset` 可将完成的 Mesh 连同材质引用保存为 Asset。
+
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
 ```powershell

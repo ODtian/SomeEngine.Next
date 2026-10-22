@@ -1,13 +1,15 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 
-namespace SomeEngine.Assets.Importers;
+namespace SomeEngine.Geometry.Cluster;
+
+public readonly record struct StandardClusterAttributes(Vector3 Normal, Vector4 Tangent, Vector2 TexCoord);
 
 /// <summary>
 /// Built-in high-density cluster-local encoding. Its private blob uses variable-width quantized
 /// positions and UVs plus packed signed-normalized normal/tangent fields in one bitstream.
 /// </summary>
-public sealed class StandardClusterVertexEncoder : IClusterVertexEncoder
+public sealed class StandardClusterVertexEncoder : IClusterVertexEncoder, IClusterVertexEncoder<StandardClusterAttributes>
 {
     public const string EncodingCompatibility = "someengine.vertex.standard.cluster.v1";
     public const uint BlobMagic = 0x31564353u; // "SCV1"
@@ -20,6 +22,39 @@ public sealed class StandardClusterVertexEncoder : IClusterVertexEncoder
     }
 
     public string Compatibility => EncodingCompatibility;
+
+    public EncodedClusterVertices Encode(ReadOnlySpan<Vector3> positions,
+        ReadOnlySpan<StandardClusterAttributes> attributes, ReadOnlySpan<uint> clusterVertices)
+    {
+        int count = clusterVertices.Length;
+        var localPositions = new Vector3[count];
+        var localVertices = new uint[count];
+        var normals = new float[count * 3];
+        var tangents = new float[count * 4];
+        var texCoords = new float[count * 2];
+        for (int index = 0; index < count; index++)
+        {
+            int source = (int)clusterVertices[index];
+            localPositions[index] = positions[source];
+            localVertices[index] = (uint)index;
+            StandardClusterAttributes vertex = attributes[source];
+            normals[index * 3] = vertex.Normal.X;
+            normals[index * 3 + 1] = vertex.Normal.Y;
+            normals[index * 3 + 2] = vertex.Normal.Z;
+            tangents[index * 4] = vertex.Tangent.X;
+            tangents[index * 4 + 1] = vertex.Tangent.Y;
+            tangents[index * 4 + 2] = vertex.Tangent.Z;
+            tangents[index * 4 + 3] = vertex.Tangent.W;
+            texCoords[index * 2] = vertex.TexCoord.X;
+            texCoords[index * 2 + 1] = vertex.TexCoord.Y;
+        }
+        return Encode(localPositions, new RawAttribute[]
+        {
+            new("NORMAL", normals, 3, Resources.Geometry.ValueType.Float32, 3, false),
+            new("TANGENT", tangents, 4, Resources.Geometry.ValueType.Float32, 4, false),
+            new("TEXCOORD_0", texCoords, 2, Resources.Geometry.ValueType.Float32, 2, false),
+        }, localVertices);
+    }
 
     public EncodedClusterVertices Encode(
         ReadOnlySpan<Vector3> positions,

@@ -1,6 +1,6 @@
 using SomeEngine.Resources.Geometry;
 
-namespace SomeEngine.Assets.Importers;
+namespace SomeEngine.Geometry.Cluster;
 
 public class RawAttribute(
     string name,

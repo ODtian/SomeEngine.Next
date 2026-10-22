@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
   <Project Path="templates/DefaultProject/Game.csproj" />
   <Project Path="samples/DefaultGame/DefaultGame.csproj" />
   <Project Path="src\SomeEngine.Diagnostics\SomeEngine.Diagnostics.csproj" />
