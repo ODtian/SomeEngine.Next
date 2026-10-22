@@ -33,9 +33,18 @@ public static class NavigationRegionBuilder
 
     public static NavigationBuild<NavigationRegionBuildState> Schedule(NavigationMesh mesh,
         NavigationProfile profile, NavigationPolicy policy, ReadOnlyMemory<NavigationRegionPort> ports = default,
-        JobHandle dependency = default, Scheduler? scheduler = null, NavigationRegionGraph? previous = null)
+        JobHandle dependency = default, Scheduler? scheduler = null) =>
+        ScheduleGraph(mesh, profile, policy, ports, dependency, scheduler ?? JobSystem.Default, null);
+
+    internal static NavigationBuild<NavigationRegionBuildState> ScheduleRebuild(NavigationMesh mesh,
+        NavigationProfile profile, NavigationPolicy policy, ReadOnlyMemory<NavigationRegionPort> ports,
+        NavigationRegionGraph? previous, Scheduler scheduler) =>
+        ScheduleGraph(mesh, profile, policy, ports, default, scheduler, previous);
+
+    private static NavigationBuild<NavigationRegionBuildState> ScheduleGraph(NavigationMesh mesh,
+        NavigationProfile profile, NavigationPolicy policy, ReadOnlyMemory<NavigationRegionPort> ports,
+        JobHandle dependency, Scheduler scheduler, NavigationRegionGraph? previous)
     {
-        scheduler ??= JobSystem.Default;
         var state = new NavigationRegionBuildState(mesh, profile, policy, ports, previous);
         var accesses = new List<JobResourceAccess>
         {

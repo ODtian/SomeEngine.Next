@@ -82,8 +82,8 @@ public static class NavigationBuildSystem
         public void Execute()
         {
             NavigationRegionSettings settings = state.Input.Settings;
-            NavigationBuild<NavigationRegionBuildState> graph = NavigationRegionBuilder.Schedule(state.MeshBuild.Mesh,
-                settings.Profile, settings.Policy, settings.Ports, scheduler: scheduler, previous: state.Previous?.Mesh.RegionGraph);
+            NavigationBuild<NavigationRegionBuildState> graph = NavigationRegionBuilder.ScheduleRebuild(state.MeshBuild.Mesh,
+                settings.Profile, settings.Policy, settings.Ports, state.Previous?.Mesh.RegionGraph, scheduler);
             scheduler.Schedule(new CompleteBuild(state, graph.State),
                 JobResourceAccess.Write(scheduler.GetResourceToken(state)), graph.Completion);
         }

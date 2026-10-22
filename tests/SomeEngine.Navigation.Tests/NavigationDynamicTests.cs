@@ -9,7 +9,7 @@ namespace SomeEngine.Navigation.Tests;
 public sealed class NavigationDynamicTests
 {
     [Fact]
-    public void SourceCollectionUsesTheCompletedTransformWhenInstallingItsRegion()
+    public void SourceInputVersionsSelectGeometryFromCompletedTransforms()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
@@ -29,6 +29,23 @@ public sealed class NavigationDynamicTests
         Assert.True(NavigationScene.TryGetHeight(scene, new(9, 0, 3), out float height));
         Assert.Equal(0, height);
         Assert.Contains(new NavigationTileCoordinate(1, 0), built.State.RebuiltTiles.ToArray());
+
+        NavigationSceneContent installed = scene.Content;
+        world.Replace(source, new SourcePlacement(Matrix4x4.Identity));
+        NavigationBuild<NavigationRegionUpdate> earlier = NavigationBuildSystem.Schedule(sources.Schedule(), scheduler);
+        earlier.Complete();
+        world.Replace(source, new SourcePlacement(Matrix4x4.CreateTranslation(6, 0, 0)));
+        NavigationBuild<NavigationSourceChanges> latest = sources.Schedule();
+        latest.Complete();
+        NavigationApplySystem.Schedule(earlier, scheduler).Complete();
+        Assert.Same(installed, scene.Content);
+
+        NavigationApplySystem.Schedule(NavigationBuildSystem.Schedule(latest, scheduler), scheduler).Complete();
+        Assert.True(NavigationScene.TryGetHeight(scene, new(9, 0, 3), out _));
+        Assert.Equal(latest.State.Input.Version, scene.Content.GetTile(new(7, new(1, 0))).Mesh.ContentVersion);
+        using NavigationTileSource<NavigationMesh> completedSource = region.CreateTileSource();
+        NavigationMesh acquired = completedSource.ScheduleRead(new(1, 0), scheduler).Complete();
+        Assert.True(NavigationMesh.TryGetHeight(acquired, new(9, 0, 3), out _));
     }
 
     [Fact]
@@ -55,6 +72,7 @@ public sealed class NavigationDynamicTests
         NavigationPath oldPath = Assert.IsType<NavigationPath>(world.Read<NavigationPathResult>(moving).Path);
         NavigationPath unrelatedPath = Assert.IsType<NavigationPath>(world.Read<NavigationPathResult>(unrelated).Path);
         NavigationSceneTile remoteTile = scene.Content.GetTile(new(7, new(0, 1)));
+        long contentVersion = scene.Content.ContentVersion, residenceVersion = scene.Content.ResidenceVersion;
 
         Entity obstacle = world.CreateEntity(new NavigationObstacle(Box(new(-0.5f, 0, -2.5f), new(0.5f, 3, 2.5f))));
         world.Add(obstacle, new SourcePlacement(Matrix4x4.CreateTranslation(11, 0, 1.5f)));
@@ -66,6 +84,8 @@ public sealed class NavigationDynamicTests
         Assert.NotSame(oldPath, detour);
         Assert.Same(unrelatedPath, world.Read<NavigationPathResult>(unrelated).Path);
         Assert.Same(remoteTile.Mesh, scene.Content.GetTile(remoteTile.Id).Mesh);
+        Assert.True(scene.Content.ContentVersion > contentVersion);
+        Assert.Equal(residenceVersion, scene.Content.ResidenceVersion);
         Assert.True(oldPath.TrySampleHeight(new(11, 0, 1.5f), out _));
         Assert.Null(scene.Content.FindTile(new(11, 0, 1.5f), out _));
         var positions = new List<Vector3>();

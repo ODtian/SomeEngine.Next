@@ -70,7 +70,29 @@ public sealed class NavigationRegionSources
     { lock (Gate) Volatile.Write(ref _settings, _settings with { Surface = surface, Mesh = mesh }); }
     public void SetPorts(ReadOnlyMemory<NavigationRegionPort> ports)
     { lock (Gate) Volatile.Write(ref _settings, _settings with { Ports = ports }); }
+    public NavigationTileSource<NavigationMesh> CreateTileSource()
+    {
+        lock (Gate)
+        {
+            NavigationMesh mesh = Completed!.Mesh;
+            return new BuiltTileSource(mesh.RegionGraph!.Tiles, mesh.Tiles.ToArray().ToDictionary(tile => tile.Tile, tile => tile.Mesh));
+        }
+    }
     internal void SetInput(NavigationSourceInput input) => Volatile.Write(ref _input, input);
+
+    private sealed class BuiltTileSource(ReadOnlyMemory<NavigationRegionTile> directory,
+        Dictionary<NavigationTileCoordinate, NavigationMesh> tiles) : NavigationTileSource<NavigationMesh>
+    {
+        public override ReadOnlyMemory<NavigationRegionTile> Directory => directory;
+        public override NavigationTileSource<NavigationMesh> Retain() => new BuiltTileSource(directory, tiles);
+        public override ValueTask<NavigationTileBytes> ReadAsync(NavigationTileCoordinate tile, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(new NavigationTileBytes([]));
+        }
+        public override NavigationMesh Decode(NavigationTileCoordinate tile, NavigationTileBytes bytes) => tiles[tile];
+        public override void Dispose() { }
+    }
 }
 
 public sealed class NavigationSourceChanges(NavigationRegionSources region, NavigationRegionSettings settings)
