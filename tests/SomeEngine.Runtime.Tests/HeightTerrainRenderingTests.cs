@@ -58,6 +58,7 @@ public sealed class HeightTerrainRenderingTests(SceneContentFixture content)
 
         SceneImages.AssertEqual(expectedBefore!, before!);
         SceneImages.AssertEqual(expectedAfter!, after!);
+        SceneImages.AssertChanged(before!, after!);
 
         static Mesh CreateGround(float height)
         {

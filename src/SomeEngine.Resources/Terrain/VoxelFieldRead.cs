@@ -29,8 +29,8 @@ public sealed class VoxelFieldRead
         for (int z = Grid.PageCoordinate(Range.MinZ); z * size < Range.MaxZ; z++)
         for (int y = Grid.PageCoordinate(Range.MinY); y * size < Range.MaxY; y++)
         for (int x = Grid.PageCoordinate(Range.MinX); x * size < Range.MaxX; x++)
-            if (_data.Pages.TryGetValue((x, y, z), out float[]? page))
-                accesses.Add(JobResourceAccess.Read(scheduler, page));
+            if (_data.Pages.TryGetValue((x, y, z), out TerrainFieldPage? page))
+                accesses.Add(JobResourceAccess.Read(scheduler, page.Samples!));
         return accesses.ToArray();
     }
 
@@ -43,8 +43,8 @@ public sealed class VoxelFieldRead
             int pageX = Grid.PageCoordinate(x);
             int pageY = Grid.PageCoordinate(y);
             int pageZ = Grid.PageCoordinate(z);
-            return _data.Pages.TryGetValue((pageX, pageY, pageZ), out float[]? page)
-                ? page[((z - pageZ * size) * size + y - pageY * size) * size + x - pageX * size]
+            return _data.Pages.TryGetValue((pageX, pageY, pageZ), out TerrainFieldPage? page)
+                ? page.Samples![((z - pageZ * size) * size + y - pageY * size) * size + x - pageX * size]
                 : _initialValue;
         }
     }
