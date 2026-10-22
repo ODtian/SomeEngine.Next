@@ -160,24 +160,41 @@ public static class JobEntityRuntime
         GeneratedQueryAccessDescriptor descriptor,
         JobEntityScheduleOptions options = default,
         JobHandle dependency = default)
-        where TJob : unmanaged, IJobEntity
+        where TJob : struct, IJobEntity
+        where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
+        => Schedule(world, in job, adapter, descriptor,
+            ReadOnlySpan<JobResourceAccess>.Empty, options, dependency);
+
+    public static JobHandle Schedule<TJob, TAdapter>(
+        World world,
+        in TJob job,
+        TAdapter adapter,
+        GeneratedQueryAccessDescriptor descriptor,
+        ReadOnlySpan<JobResourceAccess> externalAccesses,
+        JobEntityScheduleOptions options = default,
+        JobHandle dependency = default)
+        where TJob : struct, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(descriptor);
         WorldStorageJobResources.RequireJobs(world);
         descriptor = descriptor.WithFilter(options.Filter);
+        JobResourceAccess[] captureAccesses = BuildCaptureAccesses(world, externalAccesses);
         var capture = new SerialQueryCaptureJob<TJob, TAdapter>(
             world,
             job,
             adapter,
             descriptor,
+            captureAccesses,
             options);
-        return WorldStorageJobResources.RequireJobs(world).Scheduler.Schedule(
+        Scheduler scheduler = WorldStorageJobResources.RequireJobs(world).Scheduler;
+        JobHandle handle = scheduler.Schedule(
             capture,
-            RelationshipJobAccess.TopologyRead(world),
+            captureAccesses,
             options.JobOptions,
             dependency);
+        return KeepJobData(scheduler, handle, in job);
     }
 
     public static JobHandle ScheduleParallel<TJob, TAdapter>(
@@ -187,7 +204,20 @@ public static class JobEntityRuntime
         GeneratedQueryAccessDescriptor descriptor,
         JobEntityScheduleOptions options = default,
         JobHandle dependency = default)
-        where TJob : unmanaged, IJobEntity
+        where TJob : struct, IJobEntity
+        where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
+        => ScheduleParallel(world, in job, adapter, descriptor,
+            ReadOnlySpan<JobResourceAccess>.Empty, options, dependency);
+
+    public static JobHandle ScheduleParallel<TJob, TAdapter>(
+        World world,
+        in TJob job,
+        TAdapter adapter,
+        GeneratedQueryAccessDescriptor descriptor,
+        ReadOnlySpan<JobResourceAccess> externalAccesses,
+        JobEntityScheduleOptions options = default,
+        JobHandle dependency = default)
+        where TJob : struct, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
     {
         ArgumentNullException.ThrowIfNull(world);
@@ -204,17 +234,31 @@ public static class JobEntityRuntime
         // frontier until the full semantic dependency, including attached descendants, completes.
         // The capture then resolves stable packets and attaches their resource-bearing dispatch to
         // the returned scope before releasing its own topology-read work grant.
+        JobResourceAccess[] captureAccesses = BuildCaptureAccesses(world, externalAccesses);
         var capture = new PacketCaptureJob<TJob, TAdapter>(
             world,
             job,
             adapter,
             descriptor,
+            captureAccesses,
             options);
-        return WorldStorageJobResources.RequireJobs(world).Scheduler.Schedule(
+        Scheduler scheduler = WorldStorageJobResources.RequireJobs(world).Scheduler;
+        JobHandle handle = scheduler.Schedule(
             capture,
-            RelationshipJobAccess.TopologyRead(world),
+            captureAccesses,
             options.JobOptions,
             dependency);
+        return KeepJobData(scheduler, handle, in job);
+    }
+
+    private static JobHandle KeepJobData<TJob>(Scheduler scheduler, JobHandle handle, in TJob job)
+        where TJob : struct, IJobEntity
+    {
+        // The completion state keeps the configuration alive after row work has released its
+        // accesses, until every attached child has also completed.
+        if (RuntimeHelpers.IsReferenceOrContainsReferences<TJob>())
+            scheduler.OnCompleted(handle, static (_, data) => GC.KeepAlive(data), job);
+        return handle;
     }
 
     public static void Execute<TJob, TAdapter>(
@@ -224,7 +268,7 @@ public static class JobEntityRuntime
         GeneratedQueryAccessDescriptor descriptor,
         JobEntityScheduleOptions options = default,
         JobHandle dependency = default)
-        where TJob : unmanaged, IJobEntity
+        where TJob : struct, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
     {
         JobHandle handle = Schedule(
@@ -235,6 +279,20 @@ public static class JobEntityRuntime
             options,
             dependency);
         handle.Complete();
+    }
+
+    public static void Execute<TJob, TAdapter>(
+        World world,
+        in TJob job,
+        TAdapter adapter,
+        GeneratedQueryAccessDescriptor descriptor,
+        ReadOnlySpan<JobResourceAccess> externalAccesses,
+        JobEntityScheduleOptions options = default,
+        JobHandle dependency = default)
+        where TJob : struct, IJobEntity
+        where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
+    {
+        Schedule(world, in job, adapter, descriptor, externalAccesses, options, dependency).Complete();
     }
 
     /// <summary>Returns only immutable packet proof metadata; no packet storage capability escapes.</summary>
@@ -320,28 +378,38 @@ public static class JobEntityRuntime
             lastSystemVersion);
     }
 
+    private static JobResourceAccess[] BuildCaptureAccesses(
+        World world,
+        ReadOnlySpan<JobResourceAccess> externalAccesses)
+    {
+        var accesses = new JobResourceAccess[externalAccesses.Length + 1];
+        accesses[0] = RelationshipJobAccess.TopologyRead(world);
+        externalAccesses.CopyTo(accesses.AsSpan(1));
+        return accesses;
+    }
+
     private static JobResourceAccess[] BuildWholeAccesses(
         World world,
-        GeneratedQueryAccessDescriptor descriptor)
+        GeneratedQueryAccessDescriptor descriptor,
+        ReadOnlySpan<JobResourceAccess> captureAccesses)
     {
-        var accesses = new JobResourceAccess[descriptor.AccessCount + 1];
+        var accesses = new JobResourceAccess[descriptor.AccessCount + captureAccesses.Length];
+        captureAccesses.CopyTo(accesses);
         accesses[0] = descriptor.HasRelationshipWrite
             ? RelationshipJobAccess.TopologyWrite(world)
             : RelationshipJobAccess.TopologyRead(world);
         for (int i = 0; i < descriptor.AccessCount; i++)
-            accesses[i + 1] = WholeAccess(world, descriptor.GetAccess(i));
+            accesses[i + captureAccesses.Length] = WholeAccess(world, descriptor.GetAccess(i));
         return accesses;
     }
 
     private static JobResourceAccess[] BuildPacketAccesses(
         World world,
         GeneratedQueryAccessDescriptor descriptor,
-        StableQueryPacketSet packets)
+        StableQueryPacketSet packets,
+        JobResourceAccess[] captureAccesses)
     {
-        var accesses = new List<JobResourceAccess>
-        {
-            RelationshipJobAccess.TopologyRead(world),
-        };
+        var accesses = new List<JobResourceAccess>(captureAccesses);
 
         for (int accessIndex = 0; accessIndex < descriptor.AccessCount; accessIndex++)
         {
@@ -475,7 +543,7 @@ public static class JobEntityRuntime
             access.ComponentId);
 
     private readonly struct SerialJob<TJob, TAdapter> : IJob
-        where TJob : unmanaged, IJobEntity
+        where TJob : struct, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
     {
         private readonly World _world;
@@ -519,13 +587,14 @@ public static class JobEntityRuntime
     }
 
     private readonly struct SerialQueryCaptureJob<TJob, TAdapter> : IJob
-        where TJob : unmanaged, IJobEntity
+        where TJob : struct, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
     {
         private readonly World _world;
         private readonly TJob _job;
         private readonly TAdapter _adapter;
         private readonly GeneratedQueryAccessDescriptor _descriptor;
+        private readonly JobResourceAccess[] _captureAccesses;
         private readonly JobEntityScheduleOptions _options;
 
         internal SerialQueryCaptureJob(
@@ -533,12 +602,14 @@ public static class JobEntityRuntime
             in TJob job,
             TAdapter adapter,
             GeneratedQueryAccessDescriptor descriptor,
+            JobResourceAccess[] captureAccesses,
             JobEntityScheduleOptions options)
         {
             _world = world;
             _job = job;
             _adapter = adapter;
             _descriptor = descriptor;
+            _captureAccesses = captureAccesses;
             _options = options;
         }
 
@@ -546,7 +617,7 @@ public static class JobEntityRuntime
         {
             JobSystem.RequireCurrentAccess(RelationshipJobAccess.TopologyRead(_world));
             QueryHandle query = _descriptor.Resolve(_world);
-            JobResourceAccess[] accesses = BuildWholeAccesses(_world, _descriptor);
+            JobResourceAccess[] accesses = BuildWholeAccesses(_world, _descriptor, _captureAccesses);
             var scheduled = new SerialJob<TJob, TAdapter>(
                 _world,
                 query,
@@ -563,13 +634,14 @@ public static class JobEntityRuntime
     }
 
     private readonly struct PacketCaptureJob<TJob, TAdapter> : IJob
-        where TJob : unmanaged, IJobEntity
+        where TJob : struct, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
     {
         private readonly World _world;
         private readonly TJob _job;
         private readonly TAdapter _adapter;
         private readonly GeneratedQueryAccessDescriptor _descriptor;
+        private readonly JobResourceAccess[] _captureAccesses;
         private readonly JobEntityScheduleOptions _options;
 
         internal PacketCaptureJob(
@@ -577,12 +649,14 @@ public static class JobEntityRuntime
             TJob job,
             TAdapter adapter,
             GeneratedQueryAccessDescriptor descriptor,
+            JobResourceAccess[] captureAccesses,
             JobEntityScheduleOptions options)
         {
             _world = world;
             _job = job;
             _adapter = adapter;
             _descriptor = descriptor;
+            _captureAccesses = captureAccesses;
             _options = options;
         }
 
@@ -595,7 +669,7 @@ public static class JobEntityRuntime
                 query,
                 _options.RowsPerPacket,
                 _options.LastSystemVersion);
-            JobResourceAccess[] accesses = BuildPacketAccesses(_world, _descriptor, packets);
+            JobResourceAccess[] accesses = BuildPacketAccesses(_world, _descriptor, packets, _captureAccesses);
             var scheduled = new ParallelJob<TJob, TAdapter>(
                 packets,
                 _job,
@@ -616,7 +690,7 @@ public static class JobEntityRuntime
     }
 
     private struct SerialState<TJob, TAdapter>
-        where TJob : unmanaged, IJobEntity
+        where TJob : struct, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
     {
         internal SerialState(
@@ -658,7 +732,7 @@ public static class JobEntityRuntime
     }
 
     private readonly struct ParallelJob<TJob, TAdapter> : IJobParallelFor
-        where TJob : unmanaged, IJobEntity
+        where TJob : struct, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
     {
         private readonly StableQueryPacketSet _packets;
@@ -800,7 +874,7 @@ public static class JobEntityRuntime
     private static void ExecuteCursor<TJob, TAdapter>(
         QueryCursor cursor,
         ref SerialState<TJob, TAdapter> state)
-        where TJob : unmanaged, IJobEntity
+        where TJob : struct, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
     {
         QueryChunkEnumerator<NoSharedFilter> chunks = cursor.Chunks;
