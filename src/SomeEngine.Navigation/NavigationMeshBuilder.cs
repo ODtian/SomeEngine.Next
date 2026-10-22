@@ -238,8 +238,11 @@ public static class NavigationMeshBuilder
                 combined.AddRange(portals[index]);
             }
             state.Tiles = ranges;
+            var tiles = new NavigationMeshTile[state.TileData.Length];
+            for (int index = 0; index < tiles.Length; index++)
+                tiles[index] = new(ranges[index].Tile, state.TileData[index].Mesh);
             state.Mesh = new(positions.ToArray(), vertices.ToArray(), polygons.ToArray(), combined.ToArray(),
-                details.ToArray(), triangles.ToArray(), state.Settings.ContentVersion);
+                details.ToArray(), triangles.ToArray(), state.Settings.ContentVersion, tiles: tiles);
             state.TileData = [];
         }
     }

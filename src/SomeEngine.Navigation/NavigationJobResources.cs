@@ -19,6 +19,8 @@ public readonly struct PathNavigationResources<TSpace> : IJobComponentResources<
 {
     public static void Collect(in PathNavigation<TSpace> component, ref JobResourceAccessBuilder resources) =>
         TSpace.CollectResources(component.Space, ref resources);
+
+    public static long GetVersion(in PathNavigation<TSpace> component) => TSpace.GetVersion(component.Space);
 }
 
 public readonly struct NavigationPathResources : IJobComponentResources<NavigationPathResult>
@@ -31,6 +33,14 @@ public readonly struct NavigationPathResources : IJobComponentResources<Navigati
         resources.Read(path.Corners);
         if (!path.Dependencies.IsEmpty)
             resources.Read(path.Dependencies);
+        if (path.RegionRoute is { } route) resources.Read(route.Entrances);
+        if (!path.ConnectionDependencies.IsEmpty) resources.Read(path.ConnectionDependencies);
+        if (!path.Sections.IsEmpty)
+        {
+            resources.Read(path.Sections);
+            foreach (NavigationPathSection section in path.Sections.Span)
+                NavigationMesh.CollectResources(section.Mesh, ref resources);
+        }
     }
 }
 
