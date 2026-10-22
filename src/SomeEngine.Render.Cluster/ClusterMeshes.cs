@@ -1073,7 +1073,7 @@ internal sealed partial class ClusterMeshes : IDisposable
     {
         var ranges = new List<BufferRange>(_pageAllocations.Count);
         foreach (ClusterGpuAllocation allocation in _gpuGeometry.Values)
-            ranges.Add(new(allocation.PageOffset, allocation.PageBytes));
+            ranges.Add(new(allocation.PageOffset, allocation.Sizes.PageBytes));
         foreach ((uint pageId, PageAllocation backing) in _pageAllocations)
         {
             bool loading = publishingLoads.BinarySearch(pageId) >= 0;

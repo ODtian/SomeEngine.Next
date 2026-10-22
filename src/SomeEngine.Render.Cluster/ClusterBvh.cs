@@ -413,7 +413,7 @@ internal sealed class ClusterBvh
         _allocations.Remove(allocation);
     }
 
-    internal ClusterBvhAllocation ReserveGpu(uint nodeCount)
+    internal ClusterBvhAllocation ReserveGpu(uint nodeCount, int hierarchyLevels)
     {
         uint bytes = checked(nodeCount * NodeBytes);
         if (!_ranges.TryAllocate(bytes, out ulong offset))
@@ -421,6 +421,7 @@ internal sealed class ClusterBvh
         var allocation = new ClusterBvhAllocation(offset, bytes);
         _gpuRanges.Add(allocation);
         _count = Math.Max(_count, checked((uint)(offset / NodeBytes) + nodeCount));
+        HierarchyLevels = Math.Max(HierarchyLevels, hierarchyLevels);
         UpdateReadRanges();
         return allocation;
     }

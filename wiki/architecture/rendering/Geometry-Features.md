@@ -41,10 +41,14 @@ scene.UpdateFrame = frame =>
 
 ## GPU 几何构建
 
-已实现入口为 [ClusterGpuBuilder](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterGpuBuilder.cs)，计算核心为 [cluster_build.slang](../../../assets/Shaders/cluster_build.slang)。`Reserve` 在渲染准备阶段从现有 Cluster 页堆和 BVH 分配范围，返回描述该范围的 `ClusterGeometry`。`Record` 在首次绘制前录制生成工作，接收当帧 `ClusterGpuMeshInput` 中的四个 `GraphBufferSlice`：`float3` 位置、用户属性字节、`uint` 索引和计数。计数依次存储顶点数量与索引数量；当前入口生成一个 Cluster，支持至多 64 个顶点和 124 个三角形。
+已实现入口为 [ClusterGpuBuilder](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterGpuBuilder.cs)，计算核心为 [cluster_build.slang](../../../assets/Shaders/cluster_build.slang)。构建器接收 Cluster 管线使用的持久 RenderGraph，并复用该图中页面与 BVH 缓冲的注册及内容状态。`Reserve` 在渲染准备阶段从现有 Cluster 页堆和 BVH 分配范围，返回描述该范围的 `ClusterGeometry`。`Record` 在首次绘制前录制生成工作，接收当帧 `ClusterGpuMeshInput` 中的四个 `GraphBufferSlice`：`float3` 位置、用户属性字节、`uint` 索引和计数。计数依次存储顶点数量与索引数量；每个 Cluster 支持至多 64 个顶点和 124 个三角形。
 
-调用方通过 `ClusterGpuVertexEncoder` 提供 Slang Shader、计算入口、`VertexEncoding` 和顶点字节容量。该计算入口调用 `BuildCluster`，由调用方的 `IClusterVertexEncode` 实现写入顶点字节，公共计算核心写入 Cluster 元数据、拓扑和 BVH。配套 `IVertexEvaluate` 解释相同编码的顶点字节；使用公共材质入口包含文件时，通过 `CLUSTER_VERTEX_ENCODING` 声明编码身份。
+`Reserve(context, capacity, revision, bounds)` 接收 `ClusterGpuMeshCapacity` 中的源顶点数量与三角形数量上限，按上限预留页面和 BVH 节点。GPU 按实际计数遍历三角形，收集局部顶点索引；达到一个 Cluster 的容量后写出页面，再处理余下三角形。每个 Cluster 写入一页，页面包围范围组成 16 路 BVH。`ClusterGeometry.Allocation` 描述预留容量，BVH 子链接限定实际生成的页面。简写 `Reserve(context, revision, bounds)` 使用一个 Cluster 的源容量。
+
+调用方通过 `ClusterGpuVertexEncoder` 提供 Slang Shader、计算入口、`VertexEncoding` 和每个 Cluster 的顶点字节容量。该计算入口调用 `BuildCluster`，由调用方的 `IClusterVertexEncode` 实现写入顶点字节。编码器收到的 `ClusterVertexInput` 包含位置缓冲、用户属性缓冲、局部顶点数量和 `SourceIndices`；通过这些来源索引读取对应属性。公共计算核心写入 Cluster 元数据、拓扑和 BVH。配套 `IVertexEvaluate` 解释相同编码的顶点字节；使用公共材质入口包含文件时，通过 `CLUSTER_VERTEX_ENCODING` 声明编码身份。
 
 `Record` 返回生成 pass 的 `GraphPassId`。Cluster 将当帧 BVH 和页面读取排在生成工作之后，并在本帧重新计算场景包围范围；主体渲染图继续保持。完成观察器通过 `TryGetPassCompletion` 取得该 pass 的队列完成点。移除几何的渲染引用后，在准备阶段调用 `Release`，Cluster 驻留系统在已提交使用完成后回收范围。生成与回收的数据持有见 [ClusterRenderResources.Gpu](../../../src/SomeEngine.Render.Cluster/ClusterRenderResources.Gpu.cs) 和 [ClusterMeshes.Gpu](../../../src/SomeEngine.Render.Cluster/ClusterMeshes.Gpu.cs)。
 
-完整调用示例为 [GpuClusterExample](../../../samples/DefaultGame/GpuClusterExample.cs)。其中两米正方形和 `float3` 位置加 `float2` UV 的布局属于示例数据；[GpuClusterRenderingTests](../../../tests/SomeEngine.Runtime.Tests/GpuClusterRenderingTests.cs) 通过公开应用入口验证生成后的首帧图像、用户 UV 属性和 GPU 完成点。
+完整调用示例为 [GpuClusterExample](../../../samples/DefaultGame/GpuClusterExample.cs)。`SetMesh` 接收示例使用的 CPU 位置、UV 与索引，沿游戏组件和提取器传到渲染侧，再通过图上传作为 GPU 构建输入。几何替换先生成新分配；完成观察器确认 GPU 完成后，下一次准备更新 `RenderClusterGeometry` 和公开的 `GeometryRevision`，并归还旧分配。旧几何在生成期间继续呈现。
+
+`SetGrid` 的网格密度、尺寸和 `float3` 位置加 `float2` UV 布局属于示例数据；[GpuClusterRenderingTests](../../../tests/SomeEngine.Runtime.Tests/GpuClusterRenderingTests.cs) 通过公开应用入口验证首帧图像、用户 UV 属性、多页面几何更新及其版本。

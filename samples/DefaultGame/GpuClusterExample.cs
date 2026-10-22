@@ -21,14 +21,19 @@ using Shader = SomeEngine.Resources.Shader;
 
 namespace DefaultGame;
 
-/// <summary>A GPU-built quad using explicit float3 positions and float2 user UV attributes.</summary>
+/// <summary>GPU-built geometry using explicit float3 positions and float2 user UV attributes.</summary>
 public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
 {
     private const string Encoding = "example.vertex.float3_uv.v1";
     private readonly Shader _buildShader;
     private readonly Shader _drawShader;
     private Material? _material;
+    private ExampleMesh _mesh = new(1,
+        [new(-1, -1, 0), new(1, -1, 0), new(-1, 1, 0), new(1, 1, 0)],
+        [new(0, 0), new(1, 0), new(0, 1), new(1, 1)], [0, 2, 1, 1, 2, 3],
+        new Bounds { Radius = MathF.Sqrt(2) });
     public bool BuildCompleted { get; private set; }
+    public ulong GeometryRevision { get; private set; }
 
     private GpuClusterExample(Shader build, Shader draw) { _buildShader = build; _drawShader = draw; }
 
@@ -58,6 +63,43 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         };
     }
 
+    public void SetMesh(ReadOnlySpan<Vector3> positions, ReadOnlySpan<Vector2> attributes, ReadOnlySpan<uint> indices)
+    {
+        float radius = 0;
+        foreach (Vector3 position in positions) radius = Math.Max(radius, position.Length());
+        _mesh = new(_mesh.Revision + 1, positions.ToArray(), attributes.ToArray(), indices.ToArray(), new Bounds { Radius = radius });
+        BuildCompleted = false;
+    }
+
+    /// <summary>Creates example grid data; the builder accepts arbitrary user mesh buffers.</summary>
+    public void SetGrid(int cells, Vector2 size)
+    {
+        int side = cells + 1;
+        var positions = new Vector3[side * side];
+        var attributes = new Vector2[positions.Length];
+        var indices = new uint[cells * cells * 6];
+        for (int y = 0; y < side; y++)
+        for (int x = 0; x < side; x++)
+        {
+            var uv = new Vector2((float)x / cells, (float)y / cells);
+            positions[y * side + x] = new((uv.X - .5f) * size.X, (uv.Y - .5f) * size.Y, 0);
+            attributes[y * side + x] = uv;
+        }
+        for (int y = 0; y < cells; y++)
+        for (int x = 0; x < cells; x++)
+        {
+            uint first = (uint)(y * side + x);
+            int offset = (y * cells + x) * 6;
+            indices[offset] = first;
+            indices[offset + 1] = first + (uint)side;
+            indices[offset + 2] = first + 1;
+            indices[offset + 3] = first + 1;
+            indices[offset + 4] = first + (uint)side;
+            indices[offset + 5] = first + (uint)side + 1;
+        }
+        SetMesh(positions, attributes, indices);
+    }
+
     public IDisposable Install(ApplicationGeometryContext context)
     {
         var rendering = new ExampleRendering(context, _buildShader, this);
@@ -71,23 +113,27 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
 
     public void Dispose() => _material?.Dispose();
 
-    private readonly record struct ExampleGeometry(Material Material) : IComponent;
-    private readonly record struct ExampleRenderGeometry : IComponent;
+    private sealed record ExampleMesh(ulong Revision, Vector3[] Positions, Vector2[] Attributes, uint[] Indices, Bounds Bounds);
+    private readonly record struct ExampleGeometry(Material Material, ExampleMesh Mesh) : IComponent;
+    private readonly record struct ExampleRenderGeometry(ExampleMesh Mesh) : IComponent;
 
     private sealed class ExampleGame(GpuClusterExample example) : ISystem<ImmediateSystemContext>
     {
-        private bool _added;
+        private Entity _entity;
+        private ulong _revision;
         public void OnUpdate(ref ImmediateSystemContext context)
         {
-            if (_added || example._material is null) return;
-            context.World.CreateEntity(new ExampleGeometry(example._material));
-            _added = true;
+            if (example._material is null || _revision == example._mesh.Revision) return;
+            var value = new ExampleGeometry(example._material, example._mesh);
+            if (_entity == default) _entity = context.World.CreateEntity(value);
+            else context.World.Replace(_entity, value);
+            _revision = example._mesh.Revision;
         }
     }
 
     private sealed class ExampleExtractor : IRenderExtractionSystem
     {
-        private readonly List<(Entity Source, Material Material)> _values = [];
+        private readonly List<(Entity Source, ExampleGeometry Geometry)> _values = [];
         public void DeclareReads(RenderExtractionQuery query)
         {
             query.ReadOptional<ExampleGeometry>();
@@ -99,22 +145,31 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         {
             if (!chunk.TryRead<ExampleGeometry>(out var geometries)) return;
             for (int index = 0; index < geometries.Length; index++)
-                _values.Add((chunk.Entities[index], geometries[index].Material));
+                _values.Add((chunk.Entities[index], geometries[index]));
         }
-        public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) => false;
-        public void ApplyChanges(RenderExtractionContext context) { }
+        public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+        {
+            if (!chunk.Has<ExampleGeometry>() || !chunk.HasChangedSinceLastSystemVersion<ExampleGeometry>()) return false;
+            Collect(chunk);
+            return true;
+        }
+        public void ApplyChanges(RenderExtractionContext context)
+        {
+            foreach (var value in _values)
+                context.UpdateExisting(context.RequireMirror(value.Source), new ExampleRenderGeometry(value.Geometry.Mesh));
+        }
         public void Apply(RenderExtractionContext context)
         {
-            context.UpdateMaterials(_values.Select(value => value.Material), []);
+            context.UpdateMaterials(_values.Select(value => value.Geometry.Material), []);
             foreach (var value in _values)
             {
                 Entity entity = context.RetainMirror(value.Source);
-                context.Upsert(entity, new ExampleRenderGeometry());
+                context.Upsert(entity, new ExampleRenderGeometry(value.Geometry.Mesh));
                 context.Upsert(entity, new RenderInstance());
                 // This placement and the quad dimensions below are example scene data.
                 context.RetainTransform(entity, new RenderTransform(new TransformQvvs(new Vector3(0, 0, 6), Quaternion.Identity)));
                 if (!context.World.HasBuffer<RenderMaterialBinding>(entity)) context.World.AddBuffer<RenderMaterialBinding>(entity);
-                long material = value.Material.MaterialId;
+                long material = value.Geometry.Material.MaterialId;
                 context.World.ExecuteBufferWrite<RenderMaterialBinding, long>(entity, ref material,
                     static (DynamicBuffer<RenderMaterialBinding> buffer, ref long id) =>
                     { buffer.Clear(); buffer.Add(new(id)); });
@@ -130,15 +185,22 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         private readonly GpuClusterExample _example;
         private QueryHandle _query;
         private ClusterGeometry _geometry;
-        private GraphPassId _build;
+        private ExampleBuild? _build;
         private bool _reserved;
-        private bool _recorded;
+
+        private sealed class ExampleBuild(ClusterGeometry geometry, ExampleMesh mesh)
+        {
+            internal ClusterGeometry Geometry = geometry;
+            internal ExampleMesh Mesh = mesh;
+            internal GraphPassId Pass;
+            internal bool Complete;
+        }
 
         internal ExampleRendering(ApplicationGeometryContext context, Shader shader, GpuClusterExample example)
         {
             _backend = context.Backend;
             _example = example;
-            _builder = new(context.Backend, context.Device, context.Cluster,
+            _builder = new(context.Backend, context.Device, context.Cluster, context.Graph,
                 new(shader, "BuildExampleCluster", Encoding, 64 * 20));
         }
         public void OnCreate(ref RenderPrepareSystemContext context) =>
@@ -146,40 +208,64 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         public void OnDestroy(ref RenderPrepareSystemContext context)
         {
             if (_reserved) _builder.Release(context, _geometry);
+            if (_build is { } build && build.Geometry != _geometry) _builder.Release(context, build.Geometry);
             context.World.ReleaseQuery(_query);
         }
         public void OnUpdate(ref RenderPrepareSystemContext context)
         {
-            if (_reserved) return;
             Entity entity = default;
+            ExampleMesh? mesh = null;
             context.World.ExecuteQuery(_query, query =>
-            { foreach (QueryChunkView chunk in query.Chunks) entity = chunk.Entities[0]; });
+            {
+                foreach (QueryChunkView chunk in query.Chunks)
+                {
+                    entity = chunk.Entities[0];
+                    mesh = chunk.Read<ExampleRenderGeometry>()[0].Mesh;
+                }
+            });
             if (entity == default) return;
-            _geometry = _builder.Reserve(context, 1, new Bounds { Radius = MathF.Sqrt(2) });
-            context.World.Add(entity, new RenderClusterGeometry(_geometry, 0));
-            _reserved = true;
+            if (_build is { Complete: true } completed)
+            {
+                if (completed.Geometry != _geometry)
+                {
+                    context.World.Replace(entity, new RenderClusterGeometry(completed.Geometry, 0));
+                    _builder.Release(context, _geometry);
+                    _geometry = completed.Geometry;
+                    _example.GeometryRevision = _geometry.Revision;
+                }
+                _build = null;
+            }
+            if (_build is not null || _reserved && _geometry.Revision == mesh!.Revision) return;
+            var capacity = new ClusterGpuMeshCapacity((uint)mesh!.Positions.Length, (uint)mesh.Indices.Length / 3);
+            ClusterGeometry geometry = _builder.Reserve(context, capacity, mesh.Revision, mesh.Bounds);
+            _build = new(geometry, mesh);
+            if (!_reserved)
+            {
+                _geometry = geometry;
+                context.World.Add(entity, new RenderClusterGeometry(_geometry, 0));
+                _example.GeometryRevision = _geometry.Revision;
+                _reserved = true;
+            }
         }
         public void OnUpdate(ref RenderFrameSystemContext context)
         {
-            if (!_reserved || _recorded) return;
+            if (_build is not { } build || build.Pass != default) return;
             RenderGraphFrame graph = context.Graph;
-            Vector3[] positions = [new(-1, -1, 0), new(1, -1, 0), new(-1, 1, 0), new(1, 1, 0)];
-            Vector2[] attributes = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
-            uint[] indices = [0, 2, 1, 1, 2, 3];
-            uint[] counts = [4, 6];
+            ExampleMesh mesh = build.Mesh;
+            uint[] counts = [(uint)mesh.Positions.Length, (uint)mesh.Indices.Length];
             var input = new ClusterGpuMeshInput(
-                graph.Upload<Vector3>(positions, BufferUsages.ShaderRead),
-                graph.Upload<Vector2>(attributes, BufferUsages.ShaderRead),
-                graph.Upload<uint>(indices, BufferUsages.ShaderRead),
+                graph.Upload<Vector3>(mesh.Positions, BufferUsages.ShaderRead),
+                graph.Upload<Vector2>(mesh.Attributes, BufferUsages.ShaderRead),
+                graph.Upload<uint>(mesh.Indices, BufferUsages.ShaderRead),
                 graph.Upload<uint>(counts, BufferUsages.ShaderRead));
-            _build = _builder.Record(ref context, _geometry, input);
-            _recorded = true;
+            build.Pass = _builder.Record(ref context, build.Geometry, input);
         }
         public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
         {
-            if (_example.BuildCompleted || !result.TryGetPassCompletion(_build, out QueueCompletion completion)) return;
+            if (_build is not { Complete: false } build || !result.TryGetPassCompletion(build.Pass, out QueueCompletion completion)) return;
             if (_backend.WaitCpu(completion, TimeSpan.FromSeconds(30)) != WaitStatus.Completed) throw new TimeoutException();
-            _example.BuildCompleted = _backend.IsComplete(completion);
+            build.Complete = _backend.IsComplete(completion);
+            _example.BuildCompleted = build.Complete;
         }
         public void Dispose() => _builder.Dispose();
     }

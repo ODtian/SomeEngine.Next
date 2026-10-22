@@ -233,8 +233,8 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 
     internal void KeepMesh(Mesh mesh) => _unusedMeshes.Remove(mesh);
 
-    internal ClusterGeometry ReserveGpu(uint bytes, string encoding, ulong revision, Bounds? bounds) =>
-        _meshes.ReserveGpu(bytes, encoding, revision, bounds);
+    internal ClusterGeometry ReserveGpu(ClusterGpuBufferSizes sizes, string encoding, ulong revision, Bounds? bounds) =>
+        _meshes.ReserveGpu(sizes, encoding, revision, bounds);
 
     internal ClusterGpuAllocation GetGpu(ClusterGeometry geometry) => _meshes.GetGpu(geometry);
 
