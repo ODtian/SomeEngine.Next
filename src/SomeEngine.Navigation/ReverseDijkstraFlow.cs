@@ -102,7 +102,7 @@ public readonly struct ReverseDijkstraFlow : INavigationFlowSolver<ReverseDijkst
 
     private static void Seed(ReverseDijkstraFlowState state, int cell, int goal)
     {
-        if (state.Values[cell] == 0) return;
+        if (state.Values[cell] == 0 || float.IsPositiveInfinity(state.Input.Costs.CellCosts.Span[cell])) return;
         state.Values[cell] = 0;
         state.Goals[cell] = goal;
         state.Open.Enqueue(cell, 0);

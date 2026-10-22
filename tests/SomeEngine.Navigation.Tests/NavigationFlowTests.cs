@@ -65,6 +65,52 @@ public sealed class NavigationFlowTests
         Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(upper).Status);
     }
 
+    [Fact]
+    public void PolicyRejectsAnUnavailableDestinationLayer()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        NavigationGrid original = DirectedGrid();
+        NavigationGridCell[] cells = original.Cells.ToArray();
+        cells[3] = cells[3] with { Area = 7 };
+        var grid = new NavigationGrid(original.Bounds, original.CellSize, cells, original.Edges);
+        var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
+        NavigationCosts costs = NavigationCostSystem.Schedule(grid,
+            new NavigationPolicy([new(7, float.PositiveInfinity)]), scheduler: scheduler).Complete().Costs;
+        var flow = new NavigationFlow(costs, profile, [new(new(2.5f, 2, 0.5f))]);
+
+        new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler).Schedule().Complete();
+
+        Assert.True(float.IsPositiveInfinity(flow.Field!.CumulativeCosts.Span[2]));
+        Assert.True(float.IsPositiveInfinity(flow.Field.CumulativeCosts.Span[3]));
+    }
+
+    [Fact]
+    public void ReplacingSharedGoalsRedirectsAnExistingFollower()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
+        NavigationCosts costs = NavigationCostSystem.Schedule(DirectedGrid(), new NavigationPolicy(), scheduler: scheduler).Complete().Costs;
+        var flow = new NavigationFlow(costs, profile, [new(new(2.5f, 2, 0.5f))]);
+        var solver = new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler);
+        solver.Schedule().Complete();
+        var navigation = new NavigationSystems<TestMotion, TestMotionReader>(world);
+        Vector3 start = new(0.5f, 0, 0.5f);
+        Entity entity = world.CreateEntity(new TestMotion { Position = start });
+        navigation.AddFlowAgent(entity, flow, 2);
+        JobHandle moved = new ConsumeSteering(0.1f).ScheduleParallel(world, navigation.Schedule(0.1f).Steering);
+        navigation.ScheduleProgress(moved).Complete();
+        float distanceBefore = Vector3.Distance(start, world.Read<TestMotion>(entity).Position);
+
+        flow.SetGoals([new(start, 0.01f)]);
+        JobHandle changed = solver.Schedule().Completion;
+        moved = new ConsumeSteering(0.1f).ScheduleParallel(world, navigation.Schedule(0.1f, changed).Steering);
+        navigation.ScheduleProgress(moved).Complete();
+
+        Assert.True(Vector3.Distance(start, world.Read<TestMotion>(entity).Position) < distanceBefore);
+        Assert.Equal(2UL, world.Read<NavigationGuidance>(entity).RequestVersion);
+    }
+
     // These two support layers and stair heights are an example supplied through the public surface model.
     private static NavigationSurface LayeredSurface()
     {

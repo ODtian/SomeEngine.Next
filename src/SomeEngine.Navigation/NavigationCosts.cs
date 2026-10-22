@@ -45,12 +45,18 @@ public static class NavigationCostSystem
             for (int cell = 0; cell < grid.Cells.Length; cell++)
             {
                 NavigationGridCell from = grid.Cells.Span[cell];
-                float cost = from.BaseCost * state.Policy.GetAreaCost(from.Area);
-                state.Cells[cell] = cost;
+                state.Cells[cell] = from.BaseCost * state.Policy.GetAreaCost(from.Area);
+            }
+            for (int cell = 0; cell < grid.Cells.Length; cell++)
+            {
+                NavigationGridCell from = grid.Cells.Span[cell];
                 for (int edge = from.EdgeStart; edge < from.EdgeStart + from.EdgeCount; edge++)
                 {
                     NavigationGridEdge transition = grid.Edges.Span[edge];
-                    state.Edges[edge] = transition.Cost * cost + state.Policy.GetActionCost(transition.Action);
+                    state.Edges[edge] = float.IsPositiveInfinity(state.Cells[cell]) ||
+                        float.IsPositiveInfinity(state.Cells[transition.ToCell])
+                        ? float.PositiveInfinity
+                        : transition.Cost * state.Cells[cell] + state.Policy.GetActionCost(transition.Action);
                 }
             }
             state.Costs = new(grid, state.Policy, state.Cells, state.Edges, state.Version);

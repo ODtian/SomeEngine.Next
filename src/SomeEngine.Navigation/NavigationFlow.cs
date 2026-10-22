@@ -45,6 +45,8 @@ public sealed class NavigationFlow
     public NavigationFlow(NavigationCosts costs, NavigationProfile profile, ReadOnlyMemory<NavigationFlowGoal> goals) =>
         _input = new(costs, profile, goals);
 
+    public NavigationFlow(NavigationFlowInput input) => _input = input;
+
     public NavigationFlow(NavigationFlowField field)
     {
         _input = field.Input;
