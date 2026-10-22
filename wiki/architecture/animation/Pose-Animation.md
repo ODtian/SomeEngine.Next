@@ -4,13 +4,14 @@
 姿势动画以整套骨骼姿势为数据单位，是引擎动画子系统的数据形态。它与属性动画共用时间线、层与混合规则、图的构建与融合；骨架、压缩片段、姿势缓冲、按骨骼遮罩混合、IK 与物理控制、根运动和蒙皮输出由它自己负责。
 
 ## Current design
-- 状态：规格已确定；骨架资产与 GLB skin 导入已实现，其余部分按规格推进。规格见 `docs/Pose-Animation-Spec.md`。
+- 状态：规格已确定；骨架资产、GLB skin 导入、原始片段采样与骨架实例已实现，其余部分按规格推进。规格见 `docs/Pose-Animation-Spec.md`。
 - 骨架数据、公开 API、关节映射与 GLB 层级规则见 [[architecture/animation/Skeleton-Assets|Skeleton Assets]]。
 - 混合使用 `IValueOps<T>` 的批量版本，按骨骼数组做 SIMD。
 - 蒙皮输出作为一种 Deform 实现接入 cluster 渲染（[[architecture/cluster/Deform-Cache|Deform Cache]]）。
 - 每种片段方案由 Importer 与 `AnimationClipBlock` 子类组成，来源 `.meta` 选择具体组合。`RawClipBlock`、`AclClipBlock` 和用户 Block 经同一 `Sampler` 提供采样函数及共享数据；公共 glTF 曲线读取由普通库函数提供。
-- 骨骼按数组存储，挂点按需成为实体。最终局部姿势、模型姿势和蒙皮矩阵存于世界级连续姿势存储，实例以 `PoseRange` 引用，唯一写入方是姿势求值系统。
-- 读取口子：`PoseAnimation.ModelPose(world, entity)` 提供只读模型空间姿势及版本。
+- 原始片段已经通过 `RawClipImporter`、`RawClipBlock` 与同步 `AnimationClip.SampleLocal` 接入；公开入口、来源插值及用户编码扩展见 [Clip Assets](Clip-Assets.md)。
+- 骨骼按数组存储，挂点按需成为实体。`PoseStorage` 持有连续的局部姿势和模型空间 G，`SkeletonInstance` 通过 `PoseRange` 引用自身区段；对应求值阶段通过公开 `Update` 写入结果。
+- `SkeletonInstance.ModelPose` 提供只读模型空间 G、求值版本和计算时刻；创建、更新与使用期见 [[architecture/animation/Skeleton-Instances|Skeleton Instances]]。
 - 根运动输出 `RootMotionDelta`，由移动系统决定如何应用。
 
 ## Non-goals
