@@ -124,6 +124,22 @@ public sealed class NavigationAvoidanceTests
         }
     }
 
+    [Fact]
+    public void ScenePlacementPreservesBakedClearanceThroughTileExtraction()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)], 1);
+        NavigationMesh geometry = CorridorMesh();
+        var mesh = new NavigationMesh(geometry.Positions, geometry.PolygonVertices, geometry.Polygons, geometry.Portals, bakedRadius: 0.3f);
+        Matrix4x4 transform = Matrix4x4.CreateScale(2, 1, 3) * Matrix4x4.CreateRotationY(0.4f);
+
+        NavigationScene scene = NavigationSceneBuilder.Schedule([new NavigationRegionPlacement(4, mesh, transform)],
+            [], profile, new NavigationPolicy(), scheduler: scheduler).Complete().Scene;
+
+        NavigationSceneTile tile = Assert.Single(scene.Content.Tiles.ToArray());
+        Assert.Equal(0.6f, tile.Mesh.BakedRadius, 5);
+    }
+
     // This corridor is an acceptance example expressed through the public completed-data models.
     private static NavigationMesh CorridorMesh() => new(
         [new(0, 0, 0), new(10, 0, 0), new(10, 0, 3), new(0, 0, 3)],

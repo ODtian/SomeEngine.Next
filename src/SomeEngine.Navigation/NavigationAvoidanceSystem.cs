@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -14,6 +15,8 @@ public sealed class NavigationAvoidanceSystem<TSolver, TMotion, TReader>(World w
     where TReader : struct, INavigationMotionReader<TMotion>
 {
     private JobHandle _completion;
+    private readonly QueryDefinition _actors = world.QueryDefinition()
+        .All<NavigationAgent>().All<AvoidanceAgent>().All<TMotion>().Build();
 
     public JobHandle SchedulePathBoundaries<TSpace>(JobHandle motionReady = default)
         where TSpace : class, INavigationSpace<TSpace> =>
@@ -28,7 +31,8 @@ public sealed class NavigationAvoidanceSystem<TSolver, TMotion, TReader>(World w
     {
         JobHandle ready = WorldJobs.CombineDependencies(world, [_completion, guidanceReady, neighborsReady, boundariesReady]);
         _completion = new NavigationAvoidanceJob<TSolver>(neighbors.Data, deltaTime).ScheduleParallel(world,
-            [JobResourceAccess.Read(neighbors.Scheduler.GetResourceToken(neighbors.Data))], ready);
+            [JobResourceAccess.Read(neighbors.Scheduler.GetResourceToken(neighbors.Data))],
+            new JobEntityScheduleOptions(filter: _actors), ready);
         return _completion;
     }
 }

@@ -206,7 +206,6 @@ internal static class NavigationVelocitySolver
         }
     }
     private static float LengthSquared(Vector2 value) => value.LengthSquared();
-    private static float Length(Vector2 value) => value.Length();
     private static float Cross(Vector2 a, Vector2 b) => a.X * b.Y - a.Y * b.X;
 
 }

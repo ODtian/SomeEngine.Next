@@ -18,7 +18,8 @@ internal static class NavigationRecast
             NavigationSurfaceTraversal.RasterizeFootprintSweep(profile.Footprint.Span, surface.Settings.CellSize), profile);
         for (int index = 0; index < covered.Length; index++)
             if (!covered[index]) field.Compact.areas[index] = RC_NULL_AREA;
-        return Polygonize(surface, tile, field, field.AreaCodes, settings, out _);
+        return Polygonize(surface, tile, field, field.AreaCodes, settings, out _,
+            NavigationSurfaceTraversal.GetRotationRadius(profile.Footprint.Span));
     }
 
     internal static NavigationRecastField CreateField(NavigationSurface surface, NavigationSurfaceTile tile,
@@ -87,7 +88,7 @@ internal static class NavigationRecast
     }
 
     internal static NavigationMeshTileData Polygonize(NavigationSurface surface, NavigationSurfaceTile tile,
-        NavigationRecastField field, List<int> areas, NavigationMeshSettings settings, out int[] polygonClasses)
+        NavigationRecastField field, List<int> areas, NavigationMeshSettings settings, out int[] polygonClasses, float bakedRadius = 0)
     {
         var context = new RcContext();
         RcCompactHeightfield compact = field.Compact;
@@ -99,8 +100,7 @@ internal static class NavigationRecast
         if (mesh.npolys == 0) return new(new([], [], [], []), []);
         RcPolyMeshDetail detail = RcMeshDetails.BuildPolyMeshDetail(context, mesh, compact,
             settings.DetailSampleDistance, settings.DetailMaximumError);
-        return Convert(surface, tile, mesh, detail, areas, settings.ContentVersion,
-            NavigationSurfaceTraversal.GetRotationRadius(profile.Footprint.Span));
+        return Convert(surface, tile, mesh, detail, areas, settings.ContentVersion, bakedRadius);
     }
 
     private static (NavigationSurfaceSpan[], float[]) MapSupports(RcCompactHeightfield compact,

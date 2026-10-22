@@ -22,6 +22,8 @@ Mesh 从当前多边形沿可通行入口查询附近多边形，在每条边上
 
 Mesh 构建把 Profile 旋转圆半径记入 `NavigationMesh.BakedRadius`，Grid 的全朝向模式使用已记录的 Shape。ORCA 将边界约束半径设为 `max(0, Radius + Spacing - BakedRadius)`，因此角色轮廓已经应用的侵蚀与运行时补充间距共同得到一次完整圆盘间距。
 
+Mesh 的区域图附加和独立块提取保留这个半径。场景变换按 XZ 线性部分的最小奇异值缩放，记录变换后侵蚀椭圆的内含圆半径，使运行时继续使用世界坐标的圆盘间距。
+
 ## 调度与运动消费
 
 `NavigationComponents.AddAvoidance` 添加避让参数和每角色独占工作区。以下是同时组合路径角色与 Flow 群体的调用例子；具体角色、空间和运动组件由业务提供：
