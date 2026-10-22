@@ -327,6 +327,10 @@ public readonly struct JobResourceAccess
         return Create(ResourceKind.Token, token.Id, token.Version, token.Generation, JobAccessMode.Exclusive);
     }
 
+    public static JobResourceAccess Exclusive(JobResourceToken token, long start, long length) =>
+        CreateRange(ResourceKind.Token, token.Id, token.Version, token.Generation,
+            JobAccessMode.Exclusive, new IndexRange(start, length));
+
     public static JobResourceAccess Exclusive<T>(T[] array)
     {
         return CreateContainerAccess(array, JobAccessMode.Exclusive);
@@ -357,6 +361,9 @@ public readonly struct JobResourceAccess
     {
         return CreateMemoryAccess<T>(memory, JobAccessMode.Exclusive);
     }
+
+    public static JobResourceAccess Exclusive<T>(Memory<T> memory, long start, long length) =>
+        CreateMemoryRangeAccess<T>(memory, new IndexRange(start, length), JobAccessMode.Exclusive);
 
     public static JobResourceAccess Exclusive<TContainer, TProvider>(ref TContainer container)
         where TProvider : struct, IJobResourceProvider<TContainer, WholeAccess>
@@ -465,7 +472,7 @@ public readonly struct JobResourceAccess
             new IndexRange(segment.Offset + range.Start, range.Length));
     }
 
-    private static ArraySegment<T> GetArraySegment<T>(ReadOnlyMemory<T> memory)
+    internal static ArraySegment<T> GetArraySegment<T>(ReadOnlyMemory<T> memory)
     {
         if (!MemoryMarshal.TryGetArray(memory, out ArraySegment<T> segment) || segment.Array is null)
         {
