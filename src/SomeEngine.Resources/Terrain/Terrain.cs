@@ -69,7 +69,8 @@ public sealed partial class Terrain
     {
         lock (Gate)
         {
-            var terrain = new Terrain(Editing) { _revision = _revision };
+            var terrain = new Terrain(Editing) { _revision = _revision, _requestSequence = _requestSequence };
+            terrain._requests.AddRange(_requests.Where(static request => !request.IsSubmitted));
             foreach (HeightField field in _heightFields)
                 terrain._heightFields.Add(new HeightField(terrain, field.Id, field.Name,
                     field.Grid, field.InitialHeight, field.Data));

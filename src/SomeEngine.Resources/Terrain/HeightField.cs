@@ -50,19 +50,42 @@ public sealed class HeightField
     public ValueTask<HeightFieldRead> ReadCpuAsync(HeightRegion range)
     {
         lock (Terrain.Gate)
-            return ReadCpuAsync(Data, range.Intersect(Grid.Range));
+            return CompleteReadAsync(CaptureCpuRead(range));
     }
 
-    private async ValueTask<HeightFieldRead> ReadCpuAsync(HeightFieldData data, HeightRegion range)
+    internal HeightFieldCpuRead CaptureCpuRead(HeightRegion range)
     {
-        await data.Edit.WaitAsync().ConfigureAwait(false);
-        return new HeightFieldRead(Grid, InitialHeight, data, range);
+        range = range.Intersect(Grid.Range);
+        HeightFieldData data = Data;
+        var dependencies = new List<JobHandle> { data.Edit.Completion };
+        var accesses = new List<JobResourceAccess>();
+        int size = Grid.PageSize;
+        for (int z = range.MinZ / size; z * size < range.MaxZ; z++)
+        for (int x = range.MinX / size; x * size < range.MaxX; x++)
+            if (data.Pages.TryGetValue((x, z), out TerrainFieldPage? page))
+            {
+                TerrainPageRead read = page.ReadCpu(Terrain);
+                dependencies.Add(read.Completion);
+                accesses.Add(JobResourceAccess.Read(Terrain.Editing.Scheduler, read.Samples));
+            }
+        return new(new HeightFieldRead(Grid, InitialHeight, data, range),
+            Terrain.Editing.Scheduler.CombineDependencies(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(dependencies)),
+            accesses.ToArray());
+    }
+
+    private static async ValueTask<HeightFieldRead> CompleteReadAsync(HeightFieldCpuRead read)
+    {
+        await read.Completion.WaitAsync().ConfigureAwait(false);
+        return read.Samples;
     }
 }
 
 internal sealed class HeightFieldData(
-    Dictionary<(int X, int Z), float[]> pages, TerrainEdit edit)
+    Dictionary<(int X, int Z), TerrainFieldPage> pages, TerrainEdit edit)
 {
-    internal Dictionary<(int X, int Z), float[]> Pages { get; } = pages;
+    internal Dictionary<(int X, int Z), TerrainFieldPage> Pages { get; } = pages;
     internal TerrainEdit Edit { get; } = edit;
 }
+
+internal readonly record struct HeightFieldCpuRead(
+    HeightFieldRead Samples, JobHandle Completion, JobResourceAccess[] Accesses);

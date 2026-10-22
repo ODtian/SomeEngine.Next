@@ -16,9 +16,10 @@ public sealed partial class TerrainEditing(Scheduler scheduler)
             HeightFieldData source = field.Data;
             HeightRegion range = brush.Range.Intersect(field.Grid.Range);
             int size = field.Grid.PageSize;
-            var pages = new Dictionary<(int X, int Z), float[]>(source.Pages);
+            var pages = new Dictionary<(int X, int Z), TerrainFieldPage>(source.Pages);
             var jobs = new List<JobHandle>();
-            JobHandle input = Scheduler.CombineDependencies([source.Edit.Completion, dependency]);
+            HeightFieldCpuRead inputData = field.CaptureCpuRead(range.Expand(brush.ReadBorder));
+            JobHandle input = Scheduler.CombineDependencies([inputData.Completion, dependency]);
 
             for (int pageZ = range.MinZ / size; pageZ * size < range.MaxZ; pageZ++)
             for (int pageX = range.MinX / size; pageX * size < range.MaxX; pageX++)
@@ -28,18 +29,19 @@ public sealed partial class TerrainEditing(Scheduler scheduler)
                 HeightRegion readRange = writeRange.Expand(brush.ReadBorder).Intersect(field.Grid.Range);
                 var read = new HeightFieldRead(field.Grid, field.InitialHeight, source, readRange);
                 var destination = new float[size * size];
-                source.Pages.TryGetValue((pageX, pageZ), out float[]? previous);
-                pages[(pageX, pageZ)] = destination;
+                source.Pages.TryGetValue((pageX, pageZ), out TerrainFieldPage? previous);
 
                 var accesses = new List<JobResourceAccess> { JobResourceAccess.Write(Scheduler, destination) };
                 for (int readZ = readRange.MinZ / size; readZ * size < readRange.MaxZ; readZ++)
                 for (int readX = readRange.MinX / size; readX * size < readRange.MaxX; readX++)
-                    if (source.Pages.TryGetValue((readX, readZ), out float[]? page))
-                        accesses.Add(JobResourceAccess.Read(Scheduler, page));
+                    if (source.Pages.TryGetValue((readX, readZ), out TerrainFieldPage? page))
+                        accesses.Add(JobResourceAccess.Read(Scheduler, page.Samples!));
 
-                jobs.Add(Scheduler.Schedule(
-                    new HeightPageJob<TBrush>(brush, read, writeRange, previous, destination, field.InitialHeight),
-                    CollectionsMarshal.AsSpan(accesses), input));
+                JobHandle job = Scheduler.Schedule(
+                    new HeightPageJob<TBrush>(brush, read, writeRange, previous?.Samples, destination, field.InitialHeight),
+                    CollectionsMarshal.AsSpan(accesses), input);
+                jobs.Add(job);
+                pages[(pageX, pageZ)] = new TerrainFieldPage(destination, job);
             }
 
             var edit = new TerrainEdit(field.Terrain.NextRevision(), Scheduler.CombineDependencies(CollectionsMarshal.AsSpan(jobs)));

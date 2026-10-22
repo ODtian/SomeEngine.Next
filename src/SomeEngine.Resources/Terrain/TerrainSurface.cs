@@ -97,10 +97,8 @@ public sealed class HeightSurface(HeightField field) : TerrainSurface
         int minZ = (int)MathF.Floor(bounds.Min.Z / spacing);
         int maxX = (int)MathF.Ceiling(bounds.Max.X / spacing) + 1;
         int maxZ = (int)MathF.Ceiling(bounds.Max.Z / spacing) + 1;
-        HeightFieldData data = Field.Data;
-        HeightRegion range = new HeightRegion(minX, minZ, maxX - minX, maxZ - minZ).Intersect(Field.Grid.Range);
-        var read = new HeightFieldRead(Field.Grid, Field.InitialHeight, data, range);
-        return new(new HeightSurfaceRead(read, Terrain.Revision), data.Edit.Completion);
+        HeightFieldCpuRead read = Field.CaptureCpuRead(new(minX, minZ, maxX - minX, maxZ - minZ));
+        return new(new HeightSurfaceRead(read.Samples, Terrain.Revision), read.Completion);
     }
 
     public override TerrainSurface Duplicate(Terrain terrain) => new HeightSurface(terrain.HeightFields[Field.Id]);

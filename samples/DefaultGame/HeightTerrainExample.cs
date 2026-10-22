@@ -3,6 +3,7 @@ using SomeEngine.Core.Math;
 using SomeEngine.Geometry.Cluster;
 using SomeEngine.Job;
 using SomeEngine.Resources;
+using SomeEngine.Render.Terrain;
 using SomeEngine.Runtime;
 using SomeEngine.Terrains;
 
@@ -26,6 +27,10 @@ public sealed class HeightTerrainExample
     public TerrainScene Scene { get; }
 
     public void Install(ApplicationScene application) => application.InstallGeometry(new TerrainGeometryFeature(Scene));
+
+    /// <summary>Adds a GPU height delta to the example's shared field using a resident brush shader.</summary>
+    public TerrainEdit AddHeightGpu(Shader shader, float delta) =>
+        Heights.EditGpu(new HeightDeltaBrushGpu(shader, Heights.Grid.Range, delta));
 
     public (int First, int Second) AddPlacements(Material firstMaterial, Material secondMaterial)
     {
