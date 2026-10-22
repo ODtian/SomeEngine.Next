@@ -34,6 +34,12 @@ public readonly record struct NavigationDetailTriangle(int A, int B, int C);
 public interface INavigationSpace<TSpace> where TSpace : class
 {
     static abstract void CollectResources(TSpace space, ref JobResourceAccessBuilder resources);
+
+    static virtual bool TryGetHeight(TSpace space, Vector3 position, out float height)
+    {
+        height = position.Y;
+        return false;
+    }
 }
 
 /// <summary>Completed polygon and detail arrays, shared directly by paths, jobs and callers.</summary>
