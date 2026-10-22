@@ -116,19 +116,19 @@ public sealed class NavigationFlowTests
     {
         var columns = new List<NavigationSurfaceColumn>();
         var spans = new List<NavigationSurfaceSpan>();
-        for (int z = 0; z < 2; z++)
-        for (int x = 0; x < 4; x++)
+        for (int z = -1; z < 3; z++)
+        for (int x = -1; x < 5; x++)
         {
             int start = spans.Count;
             float height = x >= 2 ? 1 : 0;
             spans.Add(new(height - 0.1f, height, height, Vector3.UnitY, 0));
-            if (x == 0 && z == 1)
+            if (x >= -1 && x <= 1 && z >= 0 && z <= 2)
                 spans.Add(new(2.9f, 3, 3, Vector3.UnitY, 0));
             columns.Add(new(start, spans.Count - start));
         }
-        var bounds = new NavigationBounds(new(0, -1, 0), new(4, 4, 2));
-        var tile = new NavigationSurfaceTile(default, bounds, Vector2.Zero, 1, 4, 2, columns.ToArray(), spans.ToArray());
-        return new(bounds, new() { CellSize = 1, TileSize = 4 }, new[] { tile });
+        var bounds = new NavigationBounds(new(-1, -1, -1), new(5, 4, 3));
+        var tile = new NavigationSurfaceTile(default, bounds, new(-1, -1), 1, 6, 4, columns.ToArray(), spans.ToArray());
+        return new(bounds, new() { CellSize = 1, TileSize = 6 }, new[] { tile });
     }
 
     // The six cells are an example with a costly lower route and one directed upper connection.

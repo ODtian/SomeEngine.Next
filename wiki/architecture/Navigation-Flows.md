@@ -4,7 +4,7 @@
 
 ## 栅格与通行成本
 
-`NavigationGridBuilder.Schedule(surface, profile, connections, ..., scheduler)` 从 `NavigationSurface` 生成多层单元与明确的有向通行边。构建复用 `NavigationSurfaceTraversal` 的坡度、净空、台阶与轮廓判定。普通流场默认使用 `AllHeadings`：轮廓绕原点的外接圆给出全朝向扫掠范围。`HeadingZero` 保留零朝向轮廓筛选，`Point` 保留支撑位置和身体净空，供后继姿态与扫掠查询使用。
+`NavigationGridBuilder.Schedule(surface, profile, connections, ..., scheduler)` 从 `NavigationSurface` 生成多层单元与明确的有向通行边。构建复用 `NavigationSurfaceTraversal` 的坡度、净空、台阶与轮廓判定。普通流场默认使用 `AllHeadings`：轮廓绕原点的外接圆给出全朝向扫掠范围，叠加角色参考点在整格内的平移范围。`HeadingZero` 使用零朝向轮廓并计入整格平移，`Point` 保留支撑位置和身体净空，供后继姿态与扫掠查询使用。
 
 `Grid.Shape` 记录所用轮廓、身高、坡度、台阶与 `FootprintMode`。`Grid.Cells` 的 `Position` 是单元支撑位置，`Layer` 是该列的表面层序号，`CeilingHeight - Position.Y` 是几何净空；`Area`、`BaseCost` 和 `Tile` 保存分类、基础成本及所属块。`EdgeStart/EdgeCount` 指向该单元的正向边范围，边保存目标单元、基础通行成本、能力要求和动作标识。`IncomingRanges/IncomingEdges` 保存对应的入边索引。
 

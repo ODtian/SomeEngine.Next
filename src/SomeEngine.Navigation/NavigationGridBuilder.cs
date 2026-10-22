@@ -60,7 +60,7 @@ public static class NavigationGridBuilder
             NavigationCellOffset[] footprint = state.FootprintMode switch
             {
                 NavigationGridFootprintMode.Point => [new(0, 0)],
-                NavigationGridFootprintMode.HeadingZero => NavigationSurfaceTraversal.RasterizeFootprint(profile.Footprint.Span, cellSize),
+                NavigationGridFootprintMode.HeadingZero => NavigationSurfaceTraversal.RasterizeFootprint(profile.Footprint.Span, cellSize, cellSize * 0.5f),
                 _ => NavigationSurfaceTraversal.RasterizeFootprintSweep(profile.Footprint.Span, cellSize),
             };
             var supports = new List<CellSupport>();
