@@ -25,6 +25,25 @@ public abstract class TerrainSurface
         lock (Terrain.Gate) return CompleteReadAsync(CaptureCpu(bounds));
     }
 
+    /// <summary>Writes this captured scalar surface into a voxel field belonging to the same Terrain.</summary>
+    public TerrainEdit WriteVoxelsCpu(VoxelField destination, VoxelRegion range, JobHandle dependency = default)
+    {
+        TerrainEdit edit;
+        lock (Terrain.Gate)
+        {
+            VoxelGrid grid = destination.Grid;
+            var bounds = new TerrainBounds(grid.SamplePosition(range.MinX, range.MinY, range.MinZ),
+                grid.SamplePosition(range.MaxX - 1, range.MaxY - 1, range.MaxZ - 1));
+            CpuSurfaceData data = CaptureCpu(bounds);
+            Scheduler scheduler = Terrain.Editing.Scheduler;
+            JobHandle input = scheduler.CombineDependencies([data.Completion, dependency]);
+            edit = Terrain.Editing.EditCpu(destination, new SurfaceSamples(range, data.Samples), input,
+                data.Samples.GetReadAccesses(scheduler));
+        }
+        Terrain.NotifyChange(new VoxelFieldChange(destination, range, 0, edit));
+        return edit;
+    }
+
     /// <summary>Captures one version and runs parallel work after its samples are ready.</summary>
     public TerrainSurfaceJob ScheduleRead<TWork>(TerrainBounds bounds, in TWork work, int length, int batchSize = 1)
         where TWork : struct, ITerrainSurfaceWork
@@ -40,7 +59,8 @@ public abstract class TerrainSurface
     }
 
     protected abstract CpuSurfaceData CaptureCpu(TerrainBounds bounds);
-    protected readonly record struct CpuSurfaceData(TerrainSurfaceRead Samples, JobHandle Completion);
+    internal CpuSurfaceData CaptureCpuRead(TerrainBounds bounds) => CaptureCpu(bounds);
+    protected internal readonly record struct CpuSurfaceData(TerrainSurfaceRead Samples, JobHandle Completion);
 
     private static async ValueTask<TerrainSurfaceRead> CompleteReadAsync(CpuSurfaceData data)
     {
@@ -52,6 +72,12 @@ public abstract class TerrainSurface
         where TWork : struct, ITerrainSurfaceWork
     {
         public void Execute(int index) => work.Execute(samples, index);
+    }
+
+    private readonly record struct SurfaceSamples(VoxelRegion Range, TerrainSurfaceRead Samples) : IVoxelBrushCpu
+    {
+        public int ReadBorder => 0;
+        public float Apply(VoxelFieldRead source, int x, int y, int z) => Samples.Sample(source.Grid.SamplePosition(x, y, z));
     }
 }
 
@@ -93,10 +119,10 @@ public sealed class HeightSurface(HeightField field) : TerrainSurface
     protected override CpuSurfaceData CaptureCpu(TerrainBounds bounds)
     {
         float spacing = Field.Grid.SampleSpacing;
-        int minX = (int)MathF.Floor(bounds.Min.X / spacing);
-        int minZ = (int)MathF.Floor(bounds.Min.Z / spacing);
-        int maxX = (int)MathF.Ceiling(bounds.Max.X / spacing) + 1;
-        int maxZ = (int)MathF.Ceiling(bounds.Max.Z / spacing) + 1;
+        int minX = Math.Clamp((int)MathF.Floor(bounds.Min.X / spacing), 0, Field.Grid.Width - 1);
+        int minZ = Math.Clamp((int)MathF.Floor(bounds.Min.Z / spacing), 0, Field.Grid.Depth - 1);
+        int maxX = Math.Clamp((int)MathF.Floor(bounds.Max.X / spacing) + 2, 1, Field.Grid.Width);
+        int maxZ = Math.Clamp((int)MathF.Floor(bounds.Max.Z / spacing) + 2, 1, Field.Grid.Depth);
         HeightFieldCpuRead read = Field.CaptureCpuRead(new(minX, minZ, maxX - minX, maxZ - minZ));
         return new(new HeightSurfaceRead(read.Samples, Terrain.Revision), read.Completion);
     }

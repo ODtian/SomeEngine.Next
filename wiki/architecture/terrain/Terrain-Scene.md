@@ -4,9 +4,7 @@
 
 ## 数据职责
 
-`Terrain.Surface` 持有标量表面根。`HeightSurface` 使用高度场的 `F(x,y,z) = y - H(x,z)`，负值表示实体内部。`TerrainSurfaceRead` 持有固定版本的读取数据；`ReadCpuAsync` 在样本就绪后返回，`ScheduleRead` 将版本依赖和页读取访问交给现有 Scheduler，随后执行调用方的并行工作。
-
-[VoxelSurface](../../../src/SomeEngine.Resources/Terrain/VoxelSurface.cs) 使用体素字段的三线性标量值 `D(x,y,z)`。读取区域覆盖三维空间块、调用方采样邻域及插值所需的相邻样本；固定读取继续对应捕获时的字段页。它和高度表面使用相同的表面读取、法线、几何及 Cluster 适配接口。
+表面读取、固定版本、权重混合和局部体素初始化见[地形表面组合](Terrain-Surfaces.md)。空间块统一消费 Terrain 的表面根及对应采样邻域。
 
 `TerrainPlacement` 持有 Terrain 引用、变换、材质绑定、选定的三维块范围和 LOD。`TerrainScene` 管理放置编号、块实体、共享几何和构建任务。同一个 Terrain、块坐标与 LOD 对应一份几何；每个放置保持各自的变换和材质。`TerrainChunk` 组件记录放置编号、三维坐标、LOD、已提交的源版本和几何编号。字段页及样本数据由 Terrain 字段持有。
 

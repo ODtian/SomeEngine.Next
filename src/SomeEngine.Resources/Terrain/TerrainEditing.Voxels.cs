@@ -5,7 +5,8 @@ namespace SomeEngine.Resources;
 
 public sealed partial class TerrainEditing
 {
-    internal TerrainEdit EditCpu<TBrush>(VoxelField field, TBrush brush, JobHandle dependency)
+    internal TerrainEdit EditCpu<TBrush>(VoxelField field, TBrush brush, JobHandle dependency,
+        ReadOnlySpan<JobResourceAccess> sourceReads = default)
         where TBrush : struct, IVoxelBrushCpu
     {
         lock (field.Terrain.Gate)
@@ -31,6 +32,7 @@ public sealed partial class TerrainEditing
                 source.Pages.TryGetValue((pageX, pageY, pageZ), out TerrainFieldPage? previous);
 
                 var accesses = new List<JobResourceAccess> { JobResourceAccess.Write(Scheduler, destination) };
+                foreach (JobResourceAccess access in sourceReads) accesses.Add(access);
                 for (int readZ = grid.PageCoordinate(readRange.MinZ); readZ * size < readRange.MaxZ; readZ++)
                 for (int readY = grid.PageCoordinate(readRange.MinY); readY * size < readRange.MaxY; readY++)
                 for (int readX = grid.PageCoordinate(readRange.MinX); readX * size < readRange.MaxX; readX++)

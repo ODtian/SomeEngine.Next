@@ -12,6 +12,48 @@ namespace SomeEngine.Terrain.Tests;
 public sealed class TerrainSceneTests
 {
     [Fact]
+    public async Task BlendSourceEditsUpdateChunksWithinEachFieldsSamplingNeighborhood()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var world = new World();
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        using var material = new UnlitMaterial();
+        var terrain = new Resources.Terrain(new TerrainEditing(scheduler));
+        HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(13, 5, 4, 2f), 4f);
+        VoxelField voxels = terrain.CreateVoxelField("detail", new VoxelGrid(4, 2f));
+        terrain.Surface = new BlendSurface(new HeightSurface(heights), new VoxelSurface(voxels), .5f);
+        var adapter = new TerrainClusterAdapter<StandardClusterAttributes>(new SurfaceAttributes(),
+            StandardClusterVertexEncoder.Instance, ClusterBuildStrategy.Realtime);
+        var scene = new TerrainScene(adapter, new TerrainChunkGrid(8, 1f));
+        int placement = scene.Add(new TerrainPlacement(terrain, new(0, 0, 0, 3, 1, 1), [material]));
+        systems.Add(new TerrainCommitSystem(scene));
+        systems.Add(new TerrainLodSystem(scene));
+        systems.Add(new TerrainMeshSystem(scene));
+        systems.Update();
+        await scene.WaitForBuildsAsync();
+        systems.Update();
+        var before = scene.GetChunks(placement).ToDictionary(chunk => chunk.Coordinates);
+
+        TerrainEdit heightEdit = heights.EditCpu(new HeightDeltaBrush(new(5, 2, 1, 1), 1f));
+        systems.Update();
+        await scene.WaitForBuildsAsync();
+        systems.Update();
+        var afterHeight = scene.GetChunks(placement).ToDictionary(chunk => chunk.Coordinates);
+        foreach (TerrainChunk chunk in afterHeight.Values)
+            Assert.Equal(chunk.Coordinates.X < 2 ? heightEdit.Revision : before[chunk.Coordinates].Revision, chunk.Revision);
+
+        TerrainEdit voxelEdit = voxels.EditCpu(new SolidSample(new(10, 2, 2, 1, 1, 1)));
+        systems.Update();
+        await scene.WaitForBuildsAsync();
+        systems.Update();
+        foreach (TerrainChunk chunk in scene.GetChunks(placement))
+        {
+            Assert.Equal(chunk.Coordinates.X == 2 ? voxelEdit.Revision : afterHeight[chunk.Coordinates].Revision, chunk.Revision);
+            Assert.NotNull(scene.GetGeometry(chunk.GeometryId));
+        }
+    }
+
+    [Fact]
     public async Task VoxelEditUpdatesChunksWithinItsSamplingNeighborhood()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
