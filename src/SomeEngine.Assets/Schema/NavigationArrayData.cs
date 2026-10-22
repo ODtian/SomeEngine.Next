@@ -5,6 +5,8 @@ namespace SomeEngine.Assets.Schema;
 
 internal static class NavigationArrayData
 {
+    internal static byte[] EncodeNow<T>(ReadOnlyMemory<T> values) where T : unmanaged => MemoryMarshal.AsBytes(values.Span).ToArray();
+    internal static T[] DecodeNow<T>(ReadOnlyMemory<byte> bytes) where T : unmanaged => MemoryMarshal.Cast<byte, T>(bytes.Span).ToArray();
     internal static ReadOnlyMemory<byte> Encode<T>(ReadOnlyMemory<T> values) where T : unmanaged
     {
         var result = new byte[1][];
@@ -23,11 +25,11 @@ internal static class NavigationArrayData
 
     private readonly struct EncodeArray<T>(ReadOnlyMemory<T> values, byte[][] result) : IJob where T : unmanaged
     {
-        public void Execute() => result[0] = MemoryMarshal.AsBytes(values.Span).ToArray();
+        public void Execute() => result[0] = EncodeNow(values);
     }
 
     private readonly struct DecodeArray<T>(ReadOnlyMemory<byte> bytes, T[][] result) : IJob where T : unmanaged
     {
-        public void Execute() => result[0] = MemoryMarshal.Cast<byte, T>(bytes.Span).ToArray();
+        public void Execute() => result[0] = DecodeNow<T>(bytes);
     }
 }

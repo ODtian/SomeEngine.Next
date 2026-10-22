@@ -5,6 +5,45 @@ namespace SomeEngine.Navigation;
 /// <summary>One request's endpoint connections, coarse route and detailed polygon searches.</summary>
 public sealed class SceneSearchState
 {
+    private SceneSearchRun _run;
+    private NavigationPath? _path;
+    private long _version;
+    private bool _replace;
+
+    internal SceneSearchState(in NavigationSearchInput<NavigationScene> input)
+    {
+        _run = new(in input);
+        _version = input.Space.Content.Version;
+    }
+
+    internal bool Update(in NavigationSearchInput<NavigationScene> input)
+    {
+        if (!_run.Waiting || _version == input.Space.Content.Version) return false;
+        _version = input.Space.Content.Version;
+        if (_run.StartMissing || (_run.GoalMissing && input.Space.Content.TryGetTile(_run.GoalTile, out _)))
+        {
+            _run = new(in input);
+            _replace = true;
+        }
+        else _run.Resume();
+        return true;
+    }
+
+    internal NavigationSearchStep Advance(int budget)
+    {
+        NavigationSearchStep step = _run.Advance(budget);
+        bool reset = false;
+        if (step.Path is { } path)
+        {
+            _path = path;
+            if (_replace && !path.Corners.IsEmpty) { reset = true; _replace = false; }
+        }
+        return step with { Path = _path, ResetPathProgress = reset };
+    }
+}
+
+internal sealed class SceneSearchRun
+{
     private readonly NavigationSearchInput<NavigationScene> _input;
     private readonly List<SceneNode> _nodes = [];
     private readonly List<List<RouteEdge>> _edges = [];
@@ -31,7 +70,13 @@ public sealed class SceneSearchState
     private NavigationSearchStatus _status;
     private NavigationPath? _path;
 
-    internal SceneSearchState(in NavigationSearchInput<NavigationScene> input)
+    internal bool Waiting => _status == NavigationSearchStatus.WaitingForTiles;
+    internal bool StartMissing { get; }
+    internal bool GoalMissing { get; }
+    internal NavigationSceneTileId GoalTile { get; }
+    internal void Resume() => _status = NavigationSearchStatus.Searching;
+
+    internal SceneSearchRun(in NavigationSearchInput<NavigationScene> input)
     {
         _input = input;
         _minimumAreaCost = input.Policy.DefaultAreaCost;
@@ -40,7 +85,23 @@ public sealed class SceneSearchState
         NavigationSceneContent content = input.Space.Content;
         NavigationSceneTile? start = content.FindTile(input.Start, out Vector3 startPoint);
         NavigationSceneTile? goal = content.FindTile(input.Goal, out Vector3 goalPoint);
-        if (start is null || goal is null)
+        NavigationSceneTileId? startId = start?.Id ?? content.FindTileInDirectory(input.Start);
+        NavigationSceneTileId? goalId = goal?.Id ?? content.FindTileInDirectory(input.Goal);
+        if (startId is null || goalId is null)
+        {
+            _status = NavigationSearchStatus.Unreachable;
+            return;
+        }
+        GoalTile = goalId.Value;
+        StartMissing = start is null;
+        GoalMissing = goal is null;
+        if (StartMissing)
+        {
+            _status = NavigationSearchStatus.WaitingForTiles;
+            _path = new(default, default, requiredTiles: new NavigationSceneTileId[] { startId.Value });
+            return;
+        }
+        if (GoalMissing && content.TryGetTile(GoalTile, out _))
         {
             _status = NavigationSearchStatus.Unreachable;
             return;
@@ -57,8 +118,8 @@ public sealed class SceneSearchState
                 _edges.Add([]);
             }
         }
-        _nodes.Add(new(start.Region, start.Tile, -1, startPoint));
-        _nodes.Add(new(goal.Region, goal.Tile, -1, goalPoint));
+        _nodes.Add(new(start!.Region, start.Tile, -1, startPoint));
+        _nodes.Add(new(GoalTile.Region, GoalTile.Tile, -1, goalPoint));
         _edges.Add([]);
         _edges.Add([]);
         _distances = new float[_nodes.Count];
@@ -91,10 +152,15 @@ public sealed class SceneSearchState
             SceneNode node = _nodes[entrance];
             if (node.Region == start.Region && node.Tile == start.Tile)
                 _connectors.Add(new(StartNode, entrance, 0, start.Id));
-            if (node.Region == goal.Region && node.Tile == goal.Tile)
-                _connectors.Add(new(entrance, GoalNode, 0, goal.Id));
+            if (node.Region == GoalTile.Region && node.Tile == GoalTile.Tile)
+            {
+                var edge = new RouteEdge(entrance, GoalNode,
+                    Vector3.Distance(node.Position, goalPoint) * _minimumAreaCost, GoalTile);
+                if (GoalMissing) _edges[entrance].Add(edge);
+                else _connectors.Add(edge);
+            }
         }
-        if (start.Id == goal.Id)
+        if (start.Id == GoalTile)
             _connectors.Add(new(StartNode, GoalNode, 0, start.Id));
     }
 
@@ -186,14 +252,18 @@ public sealed class SceneSearchState
     {
         if (_detail == _route.Count)
         {
-            _path = new(_corridor.ToArray(), _corners.ToArray(), _dependencies.ToArray(), _detailedCost,
-                _regionRoute, _sections.ToArray(), _connectionDependencies.ToArray());
+            PublishPath();
             _status = NavigationSearchStatus.Found;
             return;
         }
         RouteEdge edge = _route[_detail];
         if (edge.Tile is { } tile)
         {
+            if (edge.Path is null && !_input.Space.Content.TryGetTile(tile, out _))
+            {
+                WaitForTiles();
+                return;
+            }
             if (edge.Path is { } cached)
                 AppendDetails(tile, edge.Mesh!, cached);
             else
@@ -213,16 +283,38 @@ public sealed class SceneSearchState
         else
         {
             SceneNode from = _nodes[edge.From], to = _nodes[edge.To];
+            if (!_input.Space.Content.TryGetTile(new(to.Region, to.Tile), out NavigationSceneTile? target))
+            {
+                WaitForTiles();
+                return;
+            }
             AppendCorner(from.Position);
             AppendCorner(to.Position);
-            AddDependency(_input.Space.Content.GetTile(new(from.Region, from.Tile)));
-            AddDependency(_input.Space.Content.GetTile(new(to.Region, to.Tile)));
+            if (_input.Space.Content.TryGetTile(new(from.Region, from.Tile), out NavigationSceneTile? source)) AddDependency(source!);
+            AddDependency(target!);
             _detailedCost += edge.Cost;
             if (edge.Connection >= 0 && _usedConnections.Add(edge.Connection))
                 _connectionDependencies.Add(new(edge.Connection, edge.ConnectionVersion));
         }
         _detail++;
     }
+
+    private void WaitForTiles()
+    {
+        var required = new List<NavigationSceneTileId>();
+        foreach (RouteEdge edge in _route.Skip(_detail))
+        {
+            SceneNode node = _nodes[edge.To];
+            var tile = new NavigationSceneTileId(node.Region, node.Tile);
+            if (!_input.Space.Content.TryGetTile(tile, out _) && !required.Contains(tile)) required.Add(tile);
+        }
+        PublishPath(required.ToArray());
+        _status = NavigationSearchStatus.WaitingForTiles;
+    }
+
+    private void PublishPath(NavigationSceneTileId[]? required = null) =>
+        _path = new(_corridor.ToArray(), _corners.ToArray(), _dependencies.ToArray(), _detailedCost,
+            _regionRoute, _sections.ToArray(), _connectionDependencies.ToArray(), required ?? []);
 
     private NavigationSearchStep AdvanceLocal(RouteEdge edge)
     {
@@ -282,4 +374,5 @@ public readonly struct SceneNavigationSearch : INavigationSearch<NavigationScene
 {
     public static SceneSearchState Create(in NavigationSearchInput<NavigationScene> input) => new(in input);
     public static NavigationSearchStep Advance(SceneSearchState state, int expansionBudget) => state.Advance(expansionBudget);
+    public static bool Update(SceneSearchState state, in NavigationSearchInput<NavigationScene> input) => state.Update(in input);
 }
