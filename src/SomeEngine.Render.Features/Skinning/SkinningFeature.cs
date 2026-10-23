@@ -1,117 +1,510 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Animation.Pose;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
+using SomeEngine.Render.Assets;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 
 namespace SomeEngine.Render.Features.Skinning;
 
-/// <summary>Uploads copied Rendering-world bones and binds them for user vertex evaluation.</summary>
-public sealed class SkinningFeature : IGraphResourceProvider,
-    ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>
+/// <summary>Produces model-space bones from extracted CPU poses or uniform GPU clips.</summary>
+public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposable,
+    ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>, IRenderGraphFrameExecutionObserver
 {
-    private readonly GraphBufferInput _currentBones;
-    private readonly GraphBufferInput _previousBones;
-    private readonly GraphBufferInput _jointIndices;
-    private readonly GraphBufferInput _inverseBind;
-    private readonly List<Matrix4x4> _current = [];
-    private readonly List<Matrix4x4> _previous = [];
-    private readonly List<uint> _joints = [];
-    private readonly List<Matrix4x4> _bindings = [];
-    private readonly Dictionary<RenderBonePose, uint> _boneOffsets = [];
-    private readonly Dictionary<SkinBinding, uint> _bindOffsets = [];
-    private QueryHandle _query;
+    private const BufferUsages PoseUsages = BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination;
+    private readonly IGraphicsBackend _backend;
+    private readonly Device _device;
+    private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
+    private readonly LinkedComputePipeline _loadPipeline, _samplePipeline, _storePipeline;
+    private readonly GraphBufferInput _currentBones, _previousBones, _controlsInput, _sectionsInput, _workInput, _clipsInput;
+    private readonly GraphBufferInput _historyCurrentInput, _historyPreviousInput, _jointIndices, _inverseBind, _definitionUpload, _cpuUpload;
+    private readonly GraphBufferId _definitions;
+    private GraphBufferId _historyCurrent, _historyPrevious, _readyCurrent, _readyPrevious;
+    private readonly List<GraphBufferId> _retiredHistories = [];
+    private readonly Dictionary<Entity, Section> _sections = [];
+    private readonly Dictionary<Entity, RenderMeshSkin> _meshes = [];
+    private readonly List<Entity> _removed = [];
+    private readonly List<Control> _controls = [];
+    private readonly List<Matrix4x4> _cpuValues = [];
+    private readonly List<CpuCopy> _cpuCopies = [];
+    private readonly List<GraphPassId> _posePasses = [];
+    private readonly List<GraphPassId> _samplePasses = [];
+    private readonly List<BufferRange> _workLevels = [];
+    private Section[] _sectionOrder = [];
+    private byte[] _definitionBytes = [];
+    private BufferRange _sectionBytes, _jointBytes, _inverseBytes;
+    private QueryHandle _sectionQuery, _meshQuery;
+    private GraphPassId _uploadPass, _loadPass, _cpuPass, _storePass;
+    private ulong _collection;
+    private int _boneCount = 1;
+    private bool _definitionsChanged = true, _membershipChanged = true, _uploadRequired, _migrationRequired;
 
-    public SkinningFeature(global::SomeEngine.RenderGraph.RenderGraph graph)
+    public GraphBufferInput CurrentBones => _currentBones;
+    public GraphBufferInput PreviousBones => _previousBones;
+    public GraphPassId CompletePass { get; }
+
+    public SkinningFeature(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph)
     {
+        (_backend, _device, _graph) = (backend, device, graph);
+        var shader = GpuPoseShaders.Get(device.Capabilities.CompileTarget);
+        _loadPipeline = LinkedComputePipeline.Create(backend, device, shader, "LoadPoseHistory", "Load pose history");
+        _samplePipeline = LinkedComputePipeline.Create(backend, device, shader, "SamplePoseLevel", "Sample GPU pose level");
+        _storePipeline = LinkedComputePipeline.Create(backend, device, shader, "StorePoseHistory", "Store pose history");
         using RenderGraphEdit edit = graph.BeginEdit();
-        _currentBones = edit.CreateBufferInput(BufferUsages.ShaderRead);
-        _previousBones = edit.CreateBufferInput(BufferUsages.ShaderRead);
+        _currentBones = edit.CreateBufferInput(PoseUsages);
+        _previousBones = edit.CreateBufferInput(PoseUsages);
+        _historyCurrentInput = edit.CreateBufferInput(PoseUsages);
+        _historyPreviousInput = edit.CreateBufferInput(PoseUsages);
+        _controlsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+        _sectionsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+        _workInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+        _clipsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _jointIndices = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _inverseBind = edit.CreateBufferInput(BufferUsages.ShaderRead);
+        _definitionUpload = edit.CreateBufferInput(BufferUsages.CopySource);
+        _cpuUpload = edit.CreateBufferInput(BufferUsages.CopySource);
+        _definitions = edit.CreatePersistentBuffer(new BufferDesc(256, BufferUsages.ShaderRead | BufferUsages.CopyDestination, Label: "Pose definitions"));
+        CompletePass = edit.AddCopyFramePass("Model poses complete", PassQueueSelection.AnyOfType(QueueType.Graphics), 0,
+            new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            static (ref PassDefinition _, ref int _) => { }, static (ref CopyPassCommandScope _, in int _) => { });
         edit.Commit();
     }
 
-    public void OnCreate(ref RenderPrepareSystemContext context) =>
-        _query = context.World.Query(new QueryDefinitionBuilder().Read<RenderMeshSkin>().Write<RenderSkinBinding>());
+    public void OnCreate(ref RenderPrepareSystemContext context)
+    {
+        _sectionQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderBoneSectionData>().Write<RenderPoseSection>());
+        _meshQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderMeshSkin>().Write<RenderSkinBinding>());
+    }
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
-        _current.Clear();
-        _previous.Clear();
-        _joints.Clear();
-        _bindings.Clear();
-        _boneOffsets.Clear();
-        _bindOffsets.Clear();
+        _collection++;
         SkinningFeature feature = this;
-        context.World.ExecuteQuery(_query, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
+        context.World.ExecuteQuery(_sectionQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
         {
             foreach (QueryRow row in rows.Rows)
             {
-                RenderMeshSkin mesh = row.Read<RenderMeshSkin>();
-                uint jointOffset = (uint)feature._joints.Count;
-                if (!feature._bindOffsets.TryGetValue(mesh.Binding, out uint bindOffset))
+                RenderBoneSectionData data = row.Read<RenderBoneSectionData>();
+                if (!feature._sections.TryGetValue(row.Entity, out Section? section))
                 {
-                    bindOffset = (uint)feature._bindings.Count;
-                    foreach (Matrix4x4 value in mesh.Binding.InverseBindMatrices) feature._bindings.Add(value);
-                    feature._bindOffsets.Add(mesh.Binding, bindOffset);
+                    feature._sections.Add(row.Entity, section = new(row.Entity));
+                    feature._membershipChanged = feature._definitionsChanged = true;
                 }
-                foreach (RenderSkinJoint joint in mesh.Joints)
-                {
-                    if (!feature._boneOffsets.TryGetValue(joint.Pose, out uint boneOffset))
-                    {
-                        boneOffset = (uint)feature._current.Count;
-                        feature._current.AddRange(joint.Pose.Current);
-                        feature._previous.AddRange(joint.Pose.Previous);
-                        feature._boneOffsets.Add(joint.Pose, boneOffset);
-                    }
-                    feature._joints.Add(boneOffset + (uint)joint.Bone);
-                }
-                row.Write<RenderSkinBinding>() = new(jointOffset, bindOffset);
+                if (!ReferenceEquals(section.Data.Parents, data.Parents) || !ReferenceEquals(section.Data.Clip, data.Clip))
+                    feature._definitionsChanged = true;
+                section.Data = data;
+                section.Collection = feature._collection;
             }
         });
-        if (_current.Count == 0)
+        _removed.Clear();
+        foreach ((Entity entity, Section section) in _sections)
+            if (section.Collection != _collection) _removed.Add(entity);
+        foreach (Entity entity in _removed) { _sections.Remove(entity); _membershipChanged = _definitionsChanged = true; }
+        context.World.ExecuteQuery(_meshQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
         {
-            _current.Add(Matrix4x4.Identity);
-            _previous.Add(Matrix4x4.Identity);
-            _joints.Add(0);
-            _bindings.Add(Matrix4x4.Identity);
+            foreach (QueryRow row in rows.Rows)
+            {
+                RenderMeshSkin data = row.Read<RenderMeshSkin>();
+                if (!feature._meshes.TryGetValue(row.Entity, out RenderMeshSkin before) || before != data)
+                {
+                    feature._meshes[row.Entity] = data;
+                    feature._definitionsChanged = true;
+                }
+            }
+        });
+        _removed.Clear();
+        foreach (Entity entity in _meshes.Keys)
+            if (!context.World.IsAlive(entity) || !context.World.Has<RenderMeshSkin>(entity)) _removed.Add(entity);
+        foreach (Entity entity in _removed) { _meshes.Remove(entity); _definitionsChanged = true; }
+
+        if (_definitionsChanged) Rebuild(context.World);
+        else RetireHistories();
+        context.World.ExecuteQuery(_sectionQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
+        {
+            foreach (QueryRow row in rows.Rows)
+            {
+                Section section = feature._sections[row.Entity];
+                RenderBoneSectionData data = section.Data;
+                row.Write<RenderPoseSection>() = new(section.Range, data.Starts, data.InputNumber, data.CalculationTime, data.SampleTime);
+            }
+        });
+    }
+
+    private void ReadFrameInputs()
+    {
+        _controls.Clear(); _cpuValues.Clear(); _cpuCopies.Clear();
+        foreach (Section section in _sectionOrder)
+        {
+            RenderBoneSectionData data = section.Data;
+            Input input = new(data.InputNumber, data.Starts, data.BindingVersion, data.Clip);
+            bool advance = !section.HasResult || section.AcceptedInput != input;
+            uint flags = (advance ? 1u : 0u) | (!section.HasResult ? 2u : 0u) | (data.Clip is not null ? 4u : 0u);
+            _controls.Add(new(section.ClipOffset, data.SampleTime, flags, data.Starts, data.InputNumber, data.CalculationTime));
+            section.FrameInput = input;
+            if (data.Clip is null && (!section.HasResult || section.CpuVersion != data.Version || section.AcceptedInput.Clip is not null))
+            {
+                _cpuCopies.Add(new(_cpuValues.Count, section.Range.Start, section.Range.Count));
+                _cpuValues.AddRange(data.Current);
+            }
         }
     }
 
-    public void OnDestroy(ref RenderPrepareSystemContext context) => context.World.ReleaseQuery(_query);
+    private void Rebuild(RenderWorld world)
+    {
+        _sectionOrder = [.. _sections.Values];
+        int boneCount = 0;
+        for (int index = 0; index < _sectionOrder.Length; index++)
+        {
+            Section section = _sectionOrder[index];
+            section.Index = index;
+            section.Range = new(boneCount, section.Data.Skeleton.BoneCount);
+            section.Depths = new int[section.Range.Count];
+            Array.Fill(section.Depths, -1);
+            boneCount += section.Range.Count;
+        }
+        _boneCount = Math.Max(1, boneCount);
+        using var bytes = new MemoryStream();
+        using var writer = new BinaryWriter(bytes);
+        var clips = new Dictionary<QuantizedClipData, uint>();
+        foreach (Section section in _sectionOrder)
+        {
+            if (section.Data.Clip is not QuantizedClipData clip) { section.ClipOffset = uint.MaxValue; continue; }
+            if (!clips.TryGetValue(clip, out uint offset))
+            {
+                Align(writer, 16);
+                offset = (uint)bytes.Position;
+                clips.Add(clip, offset);
+                writer.Write((uint)clip.BoneCount); writer.Write((uint)clip.SampleCount);
+                writer.Write(clip.Duration == 0 ? 0 : (clip.SampleCount - 1) / clip.Duration);
+                writer.Write(16u + (uint)clip.BoneCount * 64u);
+                writer.Write(MemoryMarshal.AsBytes(clip.Ranges)); writer.Write(MemoryMarshal.AsBytes(clip.Samples));
+            }
+            section.ClipOffset = offset;
+        }
+        var work = new List<List<BoneWork>>();
+        foreach (Section section in _sectionOrder)
+        {
+            if (section.Data.Clip is null) continue;
+            for (int bone = 0; bone < section.Range.Count; bone++)
+            {
+                int depth = Depth(section, bone);
+                while (work.Count <= depth) work.Add([]);
+                RenderBoneParent parent = section.Data.Parents[bone];
+                uint parentBone = parent.Section == Entity.Null ? uint.MaxValue : (uint)(_sections[parent.Section].Range.Start + parent.Bone);
+                work[depth].Add(new((uint)section.Index, (uint)bone, parentBone, (uint)(section.Range.Start + bone)));
+            }
+        }
+        _workLevels.Clear();
+        foreach (List<BoneWork> level in work)
+        {
+            Align(writer, 16);
+            ulong start = (ulong)bytes.Position;
+            writer.Write(MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(level)));
+            _workLevels.Add(new(start, (ulong)(level.Count * 16)));
+        }
+        Align(writer, 16);
+        ulong sectionsStart = (ulong)bytes.Position;
+        foreach (Section section in _sectionOrder)
+            for (int bone = 0; bone < section.Range.Count; bone++) writer.Write((uint)section.Index);
+        if (boneCount == 0) writer.Write(uint.MaxValue);
+        _sectionBytes = new(sectionsStart, (ulong)_boneCount * 4);
+        Align(writer, 64);
+        var bindOffsets = new Dictionary<SkinBinding, uint>();
+        ulong inverseStart = (ulong)bytes.Position;
+        foreach (RenderMeshSkin mesh in _meshes.Values)
+        {
+            if (bindOffsets.ContainsKey(mesh.Binding)) continue;
+            bindOffsets.Add(mesh.Binding, (uint)(((ulong)bytes.Position - inverseStart) / 64));
+            writer.Write(MemoryMarshal.AsBytes(mesh.Binding.InverseBindMatrices));
+        }
+        if ((ulong)bytes.Position == inverseStart) WriteMatrix(writer, Matrix4x4.Identity);
+        _inverseBytes = new(inverseStart, (ulong)bytes.Position - inverseStart);
+        Align(writer, 4);
+        ulong jointsStart = (ulong)bytes.Position;
+        foreach ((Entity entity, RenderMeshSkin mesh) in _meshes)
+        {
+            uint jointOffset = (uint)(((ulong)bytes.Position - jointsStart) / 4);
+            foreach (RenderSkinJoint joint in mesh.Joints) writer.Write((uint)(_sections[joint.Section].Range.Start + joint.Bone));
+            world.Replace(entity, new RenderSkinBinding(jointOffset, bindOffsets[mesh.Binding]));
+        }
+        if ((ulong)bytes.Position == jointsStart) writer.Write(0u);
+        _jointBytes = new(jointsStart, (ulong)bytes.Position - jointsStart);
+        Align(writer, 64);
+        _definitionBytes = bytes.ToArray();
+
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        foreach (GraphPassId pass in _posePasses) edit.Remove(pass);
+        _posePasses.Clear(); _samplePasses.Clear();
+        foreach (GraphBufferId buffer in _retiredHistories) edit.Remove(buffer);
+        _retiredHistories.Clear();
+        edit.SetBufferDescription(_definitions, new BufferDesc((ulong)_definitionBytes.Length,
+            BufferUsages.ShaderRead | BufferUsages.CopyDestination, Label: "Pose definitions"));
+        var migrations = new List<HistoryCopy>();
+        if (_membershipChanged)
+        {
+            if (_historyCurrent != default && _historyCurrent != _readyCurrent)
+            { edit.Remove(_historyCurrent); edit.Remove(_historyPrevious); }
+            _historyCurrent = edit.CreatePersistentBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Current pose history"));
+            _historyPrevious = edit.CreatePersistentBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Previous pose history"));
+            foreach (Section section in _sectionOrder)
+                if (section.HasResult) migrations.Add(new(section.StoredRange, section.Range));
+            _migrationRequired = true;
+        }
+        var upload = new DefinitionCopy(_definitionUpload, _definitions, _definitionBytes.Length,
+            _migrationRequired, _readyCurrent, _readyPrevious, _historyCurrent, _historyPrevious, [.. migrations]);
+        _uploadPass = edit.AddCopyFramePass("Upload pose definitions", PassQueueSelection.AnyOfType(QueueType.Graphics), upload,
+            new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
+        _posePasses.Add(_uploadPass);
+        _loadPass = AddKernel(edit, _loadPipeline, Kernel.Load, BufferRange.Whole, _boneCount);
+        edit.OrderAfter(_loadPass, _uploadPass);
+        _cpuPass = edit.AddCopyFramePass("Copy CPU model sections", PassQueueSelection.AnyOfType(QueueType.Graphics),
+            new CpuPoseCopy(_cpuUpload, _currentBones, _cpuCopies), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            CpuPoseCopy.Declare, CpuPoseCopy.Record);
+        _posePasses.Add(_cpuPass);
+        edit.OrderAfter(_cpuPass, _loadPass);
+        GraphPassId predecessor = _cpuPass;
+        foreach (BufferRange level in _workLevels)
+        {
+            GraphPassId pass = AddKernel(edit, _samplePipeline, Kernel.Sample, level, (int)(level.Size / 16));
+            edit.OrderAfter(pass, predecessor);
+            _samplePasses.Add(pass);
+            predecessor = pass;
+        }
+        _storePass = AddKernel(edit, _storePipeline, Kernel.Store, BufferRange.Whole, _boneCount);
+        edit.OrderAfter(_storePass, predecessor);
+        edit.OrderAfter(CompletePass, _storePass);
+        edit.Commit();
+        _uploadRequired = true;
+        _membershipChanged = _definitionsChanged = false;
+    }
+
+    private int Depth(Section section, int bone)
+    {
+        if (section.Depths[bone] >= 0) return section.Depths[bone];
+        RenderBoneParent parent = section.Data.Parents[bone];
+        int depth = 0;
+        if (parent.Section != Entity.Null)
+        {
+            Section source = _sections[parent.Section];
+            if (source.Data.Clip is not null) depth = Depth(source, parent.Bone) + 1;
+        }
+        return section.Depths[bone] = depth;
+    }
+
+    private GraphPassId AddKernel(RenderGraphEdit edit, LinkedComputePipeline pipeline, Kernel kernel, BufferRange work, int count)
+    {
+        GraphPassId id = edit.AddComputeFramePass($"GPU poses {kernel}", PassQueueSelection.AnyCompatible(),
+            new DispatchArguments((uint)((count + 63) / 64), 1, 1), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            pipeline.Pipeline, pipeline.ParameterLayout, default,
+            static (ref PassDefinition _, ref DispatchArguments _) => { },
+            static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch));
+        PassDefinition pass = edit.GetPass(id);
+        Resource[] resources = FeatureResourceLayout.Resolve<Resource>(pipeline.ParameterLayout, static (name, _) => name switch
+        {
+            "GpuPoseControls" => Resource.Controls, "GpuPoseSections" => Resource.Sections,
+            "GpuPoseWork" => Resource.Work, "GpuPoseClips" => Resource.Clips,
+            "GpuPoseModels" => Resource.Models, "GpuPosePrevious" => Resource.Previous,
+            "GpuPoseHistoryCurrent" => Resource.HistoryCurrent, "GpuPoseHistoryPrevious" => Resource.HistoryPrevious, _ => null,
+        });
+        foreach (Resource resource in resources)
+        {
+            switch (resource)
+            {
+                case Resource.Controls: pass.Bind(edit.CreateBufferSrv(_controlsInput, structureStride: 32), PipelineSync.ComputeShading); break;
+                case Resource.Sections: pass.Bind(edit.CreateBufferSrv(_sectionsInput, structureStride: 4), PipelineSync.ComputeShading); break;
+                case Resource.Work:
+                    pass.Bind(edit.CreateBufferSrv(_workInput, kernel == Kernel.Sample ? work : new BufferRange(0, 16), structureStride: 16), PipelineSync.ComputeShading); break;
+                case Resource.Clips: pass.Bind(edit.CreateBufferSrv(_clipsInput), PipelineSync.ComputeShading); break;
+                case Resource.Models:
+                    pass.Bind(edit.CreateBufferUav(_currentBones, structureStride: 64), PipelineSync.ComputeShading,
+                        kernel == Kernel.Load ? GraphAccessMode.Write : kernel == Kernel.Store ? GraphAccessMode.Read : GraphAccessMode.ReadWrite,
+                        kernel == Kernel.Load ? WriteCoverage.Complete : WriteCoverage.Partial); break;
+                case Resource.Previous:
+                    pass.Bind(edit.CreateBufferUav(_previousBones, structureStride: 64), PipelineSync.ComputeShading,
+                        kernel == Kernel.Load ? GraphAccessMode.Write : kernel == Kernel.Store ? GraphAccessMode.ReadWrite : GraphAccessMode.Read,
+                        kernel == Kernel.Load ? WriteCoverage.Complete : WriteCoverage.Partial); break;
+                case Resource.HistoryCurrent:
+                    pass.Bind(edit.CreateBufferUav(_historyCurrentInput, structureStride: 64), PipelineSync.ComputeShading,
+                        kernel == Kernel.Store ? GraphAccessMode.ReadWrite : GraphAccessMode.Read); break;
+                case Resource.HistoryPrevious:
+                    pass.Bind(edit.CreateBufferUav(_historyPreviousInput, structureStride: 64), PipelineSync.ComputeShading,
+                        kernel == Kernel.Store ? GraphAccessMode.ReadWrite : GraphAccessMode.Read); break;
+            }
+        }
+        _posePasses.Add(id);
+        return id;
+    }
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
         RenderGraphFrame frame = context.Graph;
-        frame.SetBufferInput(_currentBones, frame.Upload<Matrix4x4>(CollectionsMarshal.AsSpan(_current), BufferUsages.ShaderRead, "Skin current bones"));
-        frame.SetBufferInput(_previousBones, frame.Upload<Matrix4x4>(CollectionsMarshal.AsSpan(_previous), BufferUsages.ShaderRead, "Skin previous bones"));
-        frame.SetBufferInput(_jointIndices, frame.Upload<uint>(CollectionsMarshal.AsSpan(_joints), BufferUsages.ShaderRead, "Skin source joints"));
-        frame.SetBufferInput(_inverseBind, frame.Upload<Matrix4x4>(CollectionsMarshal.AsSpan(_bindings), BufferUsages.ShaderRead, "Skin inverse bind matrices"));
+        ReadFrameInputs();
+        if (_controls.Count == 0) _controls.Add(default);
+        frame.SetBufferInput(_currentBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Current model bones")), BufferRange.Whole));
+        frame.SetBufferInput(_previousBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Previous model bones")), BufferRange.Whole));
+        frame.SetBufferInput(_historyCurrentInput, new(_historyCurrent, BufferRange.Whole));
+        frame.SetBufferInput(_historyPreviousInput, new(_historyPrevious, BufferRange.Whole));
+        frame.SetBufferInput(_controlsInput, frame.Upload<Control>(CollectionsMarshal.AsSpan(_controls), BufferUsages.ShaderRead));
+        frame.SetBufferInput(_sectionsInput, new(_definitions, _sectionBytes));
+        frame.SetBufferInput(_jointIndices, new(_definitions, _jointBytes));
+        frame.SetBufferInput(_inverseBind, new(_definitions, _inverseBytes));
+        frame.SetBufferInput(_workInput, new(_definitions, BufferRange.Whole));
+        frame.SetBufferInput(_clipsInput, new(_definitions, BufferRange.Whole));
+        frame.SetPassEnabled(_loadPass, _sectionOrder.Length != 0);
+        frame.SetPassEnabled(_storePass, _sectionOrder.Length != 0);
+        if (_uploadRequired) frame.SetBufferInput(_definitionUpload, frame.Upload(_definitionBytes, BufferUsages.CopySource));
+        frame.SetPassEnabled(_uploadPass, _uploadRequired);
+        if (_cpuValues.Count != 0) frame.SetBufferInput(_cpuUpload, frame.Upload<Matrix4x4>(CollectionsMarshal.AsSpan(_cpuValues), BufferUsages.CopySource));
+        frame.SetPassEnabled(_cpuPass, _cpuCopies.Count != 0);
+        frame.ObserveExecution(this);
+        RecordReadbacks(ref frame);
     }
+
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+    {
+        if (result.TryGetPassCompletion(_uploadPass, out _))
+        {
+            _uploadRequired = false;
+            if (_migrationRequired)
+            {
+                if (_readyCurrent != default) { _retiredHistories.Add(_readyCurrent); _retiredHistories.Add(_readyPrevious); }
+                _readyCurrent = _historyCurrent; _readyPrevious = _historyPrevious;
+                foreach (Section section in _sectionOrder) section.StoredRange = section.Range;
+                _migrationRequired = false;
+            }
+        }
+        if (result.TryGetPassCompletion(_storePass, out _))
+            foreach (Section section in _sectionOrder)
+            {
+                section.AcceptedInput = section.FrameInput;
+                section.CpuVersion = section.Data.Version;
+                section.HasResult = true;
+                section.StoredRange = section.Range;
+            }
+        AcceptReadbacks(result);
+    }
+
+    private void RetireHistories()
+    {
+        if (_retiredHistories.Count == 0) return;
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        edit.Remove(_uploadPass);
+        _posePasses.Remove(_uploadPass);
+        var upload = new DefinitionCopy(_definitionUpload, _definitions, _definitionBytes.Length,
+            false, default, default, _historyCurrent, _historyPrevious, []);
+        _uploadPass = edit.AddCopyFramePass("Upload pose definitions", PassQueueSelection.AnyOfType(QueueType.Graphics), upload,
+            new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
+        _posePasses.Add(_uploadPass);
+        edit.OrderAfter(_loadPass, _uploadPass);
+        foreach (GraphBufferId buffer in _retiredHistories) edit.Remove(buffer);
+        _retiredHistories.Clear();
+        edit.Commit();
+    }
+
+    public void OnDestroy(ref RenderPrepareSystemContext context)
+    { context.World.ReleaseQuery(_sectionQuery); context.World.ReleaseQuery(_meshQuery); }
 
     public bool TryResolve(string name, ResourceBindingType type, out GraphResourceBinder binder)
     {
         binder = type == ResourceBindingType.BufferSrv ? name switch
         {
-            "SkinCurrentBones" => BindCurrent,
-            "SkinPreviousBones" => BindPrevious,
-            "SkinJointIndices" => BindJoints,
-            "SkinInverseBind" => BindInverse,
-            _ => null!,
+            "SkinCurrentBones" => BindCurrent, "SkinPreviousBones" => BindPrevious,
+            "SkinJointIndices" => BindJoints, "SkinInverseBind" => BindInverse, _ => null!,
         } : null!;
         return binder is not null;
     }
+    private void BindCurrent(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
+    { pass.Bind(graph.CreateBufferSrv(_currentBones, structureStride: 64), sync); graph.OrderAfter(pass.Id, CompletePass); }
+    private void BindPrevious(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
+    { pass.Bind(graph.CreateBufferSrv(_previousBones, structureStride: 64), sync); graph.OrderAfter(pass.Id, CompletePass); }
+    private void BindJoints(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
+    { pass.Bind(graph.CreateBufferSrv(_jointIndices, structureStride: 4), sync); graph.OrderAfter(pass.Id, CompletePass); }
+    private void BindInverse(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
+    { pass.Bind(graph.CreateBufferSrv(_inverseBind, structureStride: 64), sync); graph.OrderAfter(pass.Id, CompletePass); }
 
-    private void BindCurrent(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
-        pass.Bind(graph.CreateBufferSrv(_currentBones, structureStride: 64), sync);
-    private void BindPrevious(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
-        pass.Bind(graph.CreateBufferSrv(_previousBones, structureStride: 64), sync);
-    private void BindJoints(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
-        pass.Bind(graph.CreateBufferSrv(_jointIndices, structureStride: 4), sync);
-    private void BindInverse(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
-        pass.Bind(graph.CreateBufferSrv(_inverseBind, structureStride: 64), sync);
+    public void Dispose()
+    {
+        CompleteReadbacks();
+        foreach (Readback readback in _readbacks) readback.Buffer?.Dispose();
+        _readbacks.Clear();
+        _loadPipeline.Dispose(); _samplePipeline.Dispose(); _storePipeline.Dispose();
+    }
+
+    private static void Align(BinaryWriter writer, int alignment)
+    { while (writer.BaseStream.Position % alignment != 0) writer.Write((byte)0); }
+    private static void WriteMatrix(BinaryWriter writer, Matrix4x4 matrix) =>
+        writer.Write(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in matrix, 1)));
+
+    private enum Kernel { Load, Sample, Store }
+    private enum Resource { Controls, Sections, Work, Clips, Models, Previous, HistoryCurrent, HistoryPrevious }
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly record struct Control(uint ClipOffset, float SampleTime, uint Flags, uint Starts, ulong InputNumber, double CalculationTime);
+    private readonly record struct BoneWork(uint Section, uint Bone, uint Parent, uint Output);
+    private readonly record struct Input(ulong Number, uint Starts, ulong BindingVersion, QuantizedClipData? Clip);
+    private readonly record struct CpuCopy(int Source, int Destination, int Count);
+    private readonly record struct HistoryCopy(PoseRange Source, PoseRange Destination);
+    private sealed class Section(Entity entity)
+    {
+        internal readonly Entity Entity = entity;
+        internal RenderBoneSectionData Data;
+        internal ulong Collection, CpuVersion;
+        internal PoseRange Range, StoredRange;
+        internal int Index;
+        internal int[] Depths = [];
+        internal uint ClipOffset;
+        internal bool HasResult;
+        internal Input AcceptedInput, FrameInput;
+    }
+
+    private readonly record struct CpuPoseCopy(GraphBufferInput Source, GraphBufferInput Destination, List<CpuCopy> Regions)
+    {
+        internal static void Declare(ref PassDefinition pass, ref CpuPoseCopy data)
+        {
+            pass.Read(data.Source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+            pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination,
+                WriteCoverage.Partial, resultContents: ResourceContentState.Defined);
+        }
+        internal static void Record(ref CopyPassCommandScope commands, in CpuPoseCopy data)
+        {
+            BufferRegion source = commands.GetBufferRegion(data.Source), destination = commands.GetBufferRegion(data.Destination);
+            foreach (CpuCopy region in data.Regions)
+                commands.CopyBuffer(new(source.Buffer, source.Range.Offset + (ulong)region.Source * 64,
+                    destination.Buffer, destination.Range.Offset + (ulong)region.Destination * 64, (ulong)region.Count * 64));
+        }
+    }
+
+    private readonly record struct DefinitionCopy(GraphBufferInput Upload, GraphBufferId Definitions, int Bytes,
+        bool Migrate, GraphBufferId BeforeCurrent, GraphBufferId BeforePrevious, GraphBufferId Current, GraphBufferId Previous, HistoryCopy[] Regions)
+    {
+        internal static void Declare(ref PassDefinition pass, ref DefinitionCopy data)
+        {
+            pass.Read(data.Upload, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+            pass.Write(data.Definitions, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+            if (!data.Migrate) return;
+            pass.Write(data.Current, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+            pass.Write(data.Previous, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+            if (data.BeforeCurrent == default) return;
+            pass.Read(data.BeforeCurrent, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+            pass.Read(data.BeforePrevious, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+        }
+        internal static void Record(ref CopyPassCommandScope commands, in DefinitionCopy data)
+        {
+            BufferRegion upload = commands.GetBufferRegion(data.Upload);
+            commands.CopyBuffer(new(upload.Buffer, upload.Range.Offset, commands.GetBuffer(data.Definitions), 0, (ulong)data.Bytes));
+            if (!data.Migrate) return;
+            SomeEngine.Graphics.Buffer current = commands.GetBuffer(data.Current), previous = commands.GetBuffer(data.Previous);
+            commands.ClearBuffer(current, BufferRange.Whole, 0); commands.ClearBuffer(previous, BufferRange.Whole, 0);
+            foreach (HistoryCopy region in data.Regions)
+            {
+                commands.CopyBuffer(new(commands.GetBuffer(data.BeforeCurrent), (ulong)region.Source.Start * 64,
+                    current, (ulong)region.Destination.Start * 64, (ulong)region.Source.Count * 64));
+                commands.CopyBuffer(new(commands.GetBuffer(data.BeforePrevious), (ulong)region.Source.Start * 64,
+                    previous, (ulong)region.Destination.Start * 64, (ulong)region.Source.Count * 64));
+            }
+        }
+    }
 }
