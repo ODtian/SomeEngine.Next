@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Numerics;
+using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
@@ -84,6 +85,31 @@ public sealed class TerrainScene
 
     public Mesh? GetGeometry(int geometryId) => _geometryById[geometryId].Mesh;
 
+    /// <summary>Seeds matching CPU geometry before adding placements. Returns the accepted chunk count.</summary>
+    public int UseCache(Resources.Terrain terrain, TerrainClusterData cache, TerrainGeometryIdentity identity)
+    {
+        if (_adapter is null || cache.Identity != identity || cache.VertexEncoding != _adapter.VertexEncoding
+            || cache.MesherReadBorder != _mesher!.ReadBorder || cache.AttributeReadBorder != _adapter.ReadBorder
+            || !cache.Fields.HeightFieldIds.AsSpan().SequenceEqual(_adapter.Fields.HeightFieldIds.AsSpan().ToArray().Distinct().Order().ToArray())
+            || !cache.Fields.VoxelFieldIds.AsSpan().SequenceEqual(_adapter.Fields.VoxelFieldIds.AsSpan().ToArray().Distinct().Order().ToArray())) return 0;
+        int count = 0;
+        foreach (TerrainClusterMesh cached in cache.Meshes)
+        {
+            TerrainClusterEntry entry = cached.Entry;
+            if (entry.CellCount != Grid.CellCount || MathF.ScaleB(entry.CellSize, -entry.Lod) != Grid.CellSize
+                || !cache.MatchesSources(terrain, entry)) continue;
+            GeometryData geometry = GetGeometry(terrain, new(new(entry.X, entry.Y, entry.Z), entry.CellCount,
+                entry.CellSize, entry.Lod, (TerrainTransitionFaces)entry.TransitionFaces));
+            geometry.Mesh = cached.Mesh?.Duplicate();
+            geometry.Revision = entry.Revision;
+            geometry.Cached = true;
+            _dirtyGeometry.Remove(geometry.Id);
+            count++;
+        }
+        if (_subscriptions.Add(terrain)) terrain.Changed += CollectChange;
+        return count;
+    }
+
     /// <summary>Waits for submitted builds. TerrainCommitSystem applies their results at the next game update.</summary>
     public ValueTask WaitForBuildsAsync() => new(Task.WhenAll(
         _batches.Values.Select(static batch => batch.Work.Completion.WaitAsync().AsTask())));
@@ -143,7 +169,14 @@ public sealed class TerrainScene
             TerrainChunkBounds bounds = Grid.GetBounds(geometry.Key.Coordinates, geometry.Key.Lod);
             float border = ReadBorder * bounds.CellSize;
             TerrainSurface? surface = change.Terrain.Surface;
-            if (surface is null || change.Affects(surface, bounds.Volume, border)) _dirtyGeometry.Add(geometry.Id);
+            TerrainFieldInputs fields = _adapter?.Fields ?? default;
+            bool attributeChanged = change switch
+            {
+                HeightFieldChange height => fields.HeightFieldIds.AsSpan().Contains(height.Field.Id) && height.Affects(bounds.Volume, border),
+                VoxelFieldChange voxel => fields.VoxelFieldIds.AsSpan().Contains(voxel.Field.Id) && voxel.Affects(bounds.Volume, border),
+                _ => false,
+            };
+            if (surface is null || change.Affects(surface, bounds.Volume, border) || attributeChanged) _dirtyGeometry.Add(geometry.Id);
         }
     }
 
@@ -221,7 +254,7 @@ public sealed class TerrainScene
         foreach (PlacementBuild placement in batch.Placements)
         foreach (GeometryData geometry in placement.Selection) used.Add(geometry.Id);
         foreach ((GeometryKey key, GeometryData geometry) in _geometryByKey.ToArray())
-            if (!used.Contains(geometry.Id))
+            if (!geometry.Cached && !used.Contains(geometry.Id))
             {
                 _geometryByKey.Remove(key);
                 _geometryById.Remove(geometry.Id);
@@ -370,6 +403,7 @@ public sealed class TerrainScene
         public GeometryKey Key { get; } = key;
         public Mesh? Mesh;
         public ulong Revision;
+        public bool Cached;
     }
 
     private sealed class ChunkBuild(GeometryData geometry, TerrainChunkBounds bounds)

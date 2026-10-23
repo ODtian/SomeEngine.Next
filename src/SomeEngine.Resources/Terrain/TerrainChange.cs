@@ -15,12 +15,14 @@ public sealed record HeightFieldChange(HeightField Field, HeightRegion Range, in
     : TerrainChange(Field.Terrain, Edit.Revision)
 {
     public override bool Affects(TerrainSurface surface, TerrainBounds bounds, float readDistance)
+        => surface.Uses(Field) && Affects(bounds, readDistance);
+
+    public bool Affects(TerrainBounds bounds, float readDistance)
     {
         float spacing = Field.Grid.SampleSpacing;
         // Bilinear interpolation spreads each changed height through its adjacent cells.
         float border = (ReadBorder + 1) * spacing + readDistance;
-        return surface.Uses(Field)
-            && Range.MinX * spacing - border <= bounds.Max.X
+        return Range.MinX * spacing - border <= bounds.Max.X
             && (Range.MaxX - 1) * spacing + border >= bounds.Min.X
             && Range.MinZ * spacing - border <= bounds.Max.Z
             && (Range.MaxZ - 1) * spacing + border >= bounds.Min.Z;

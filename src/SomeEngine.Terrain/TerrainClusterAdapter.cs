@@ -7,6 +7,7 @@ namespace SomeEngine.Terrains;
 public interface ITerrainAttributeGenerator<TAttributes> where TAttributes : unmanaged
 {
     int ReadBorder { get; }
+    TerrainFieldInputs Fields => default;
     TAttributes CreateVertex(TerrainSurfaceRead surface, TerrainSurfacePoint point);
     byte GetMaterial(TerrainSurfaceRead surface, Vector3 position);
 }
@@ -14,6 +15,8 @@ public interface ITerrainAttributeGenerator<TAttributes> where TAttributes : unm
 public interface ITerrainClusterAdapter
 {
     int ReadBorder { get; }
+    TerrainFieldInputs Fields { get; }
+    string VertexEncoding { get; }
     Mesh? Build(TerrainSurfaceRead surface, TerrainSurfaceMesh geometry, string name);
 }
 
@@ -23,6 +26,8 @@ public sealed class TerrainClusterAdapter<TAttributes>(ITerrainAttributeGenerato
     where TAttributes : unmanaged
 {
     public int ReadBorder => attributes.ReadBorder;
+    public TerrainFieldInputs Fields => attributes.Fields;
+    public string VertexEncoding => encoder.Compatibility;
 
     public Mesh? Build(TerrainSurfaceRead surface, TerrainSurfaceMesh geometry, string name)
     {
