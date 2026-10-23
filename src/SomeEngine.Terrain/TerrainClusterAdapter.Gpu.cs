@@ -8,9 +8,14 @@ namespace SomeEngine.Terrains;
 /// <summary>Device geometry completion and the later rendering-world batch binding.</summary>
 public readonly record struct TerrainGpuBuild(ulong Revision, JobHandle Completion, JobHandle Visibility);
 
-/// <summary>The user's attribute kernel and output size. MaterialIndex selects this build's material group.</summary>
+/// <summary>The user's attribute kernel, fixed field inputs and optional triangle-material kernel.</summary>
 public sealed record TerrainGpuAttributes(Shader Shader, string EntryPoint, uint VertexBytes,
-    int ReadBorder = 0, byte MaterialIndex = 0);
+    int ReadBorder = 0, byte MaterialIndex = 0)
+{
+    public TerrainFieldInputs Fields { get; init; }
+    public string? MaterialEntryPoint { get; init; }
+    public uint MaterialCount { get; init; } = 1;
+}
 
 /// <summary>Connects GPU surface extraction and user attributes to the common GPU Cluster builder.</summary>
 public sealed class TerrainClusterAdapter(ITerrainMesherGpu mesher, TerrainGpuAttributes attributes,
