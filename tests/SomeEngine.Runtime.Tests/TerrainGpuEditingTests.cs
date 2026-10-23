@@ -18,6 +18,116 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class TerrainGpuEditingTests(SceneContentFixture content)
 {
     [Fact]
+    public async Task GpuCaptureSavesItsFieldsAndBlendWhileTheOriginalContinuesEditing()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Gpu-Terrain-{Guid.NewGuid():N}.terrain.asset");
+        try
+        {
+            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            var editing = new TerrainEditing(scheduler);
+            var terrain = new Terrain(editing);
+            HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(5, 5, 2));
+            VoxelField voxels = terrain.CreateVoxelField("detail", new VoxelGrid(2));
+            var height = new HeightSurface(heights);
+            var voxelRange = new VoxelRegion(-2, -2, -2, 7, 7, 7);
+            await height.WriteVoxelsCpu(voxels, voxelRange).WaitAsync();
+            var region = new TerrainBounds(new(0, -4, 0), new(4, 4, 4));
+            var blend = new BlendSurface(height, new VoxelSurface(voxels), .5f, region, 1f);
+            terrain.Surface = new BlendSurface(blend, height, .5f);
+            Shader heightShader = await LoadHeightShaderAsync();
+            Shader voxelShader = await LoadVoxelShaderAsync();
+            var center = new Vector3(1, 1, 1);
+            TerrainEdit savedHeightEdit = default, savedVoxelEdit = default, nextHeightEdit = default, nextVoxelEdit = default;
+            ulong savedRevision = 0, nextRevision = 0;
+            Task<TerrainCpuData>? capture = null;
+            Task<HeightFieldRead>? nextHeights = null;
+            Task<VoxelFieldRead>? nextVoxels = null;
+            Task<TerrainSurfaceRead>? nextSurface = null;
+            var application = new ApplicationScene(content.DirectoryPath)
+            {
+                Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                    "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
+                UpdateFrame = frame =>
+                {
+                    if (frame.Index == 0)
+                    {
+                        savedHeightEdit = heights.EditGpu(new HeightDeltaBrushGpu(heightShader, heights.Grid.Range, 2f));
+                        savedVoxelEdit = voxels.EditGpu(new VoxelSphereDeltaBrushGpu(voxelShader, voxels.Grid, center, 2f, -1f));
+                        savedRevision = terrain.Revision;
+                        capture = terrain.CaptureCpuAsync().AsTask();
+
+                        nextHeightEdit = heights.EditGpu(new HeightDeltaBrushGpu(heightShader, heights.Grid.Range, 5f));
+                        nextVoxelEdit = voxels.EditGpu(new VoxelSphereDeltaBrushGpu(voxelShader, voxels.Grid, center, 2f, 3f));
+                        terrain.Surface = height;
+                        nextRevision = terrain.Revision;
+                        nextHeights = heights.ReadCpuAsync(heights.Grid.Range).AsTask();
+                        nextVoxels = voxels.ReadCpuAsync(voxelRange).AsTask();
+                        nextSurface = terrain.Surface.ReadCpuAsync(region).AsTask();
+                    }
+                },
+            };
+            application.InstallGeometry(new FieldFeature(terrain));
+
+            Assert.Equal(0, await Application.RunAsync([], application: application));
+            TerrainCpuData data = await capture!;
+            using (var asset = new TerrainAsset { Name = "Captured GPU terrain" })
+            {
+                await asset.UpdateAsync(data, []);
+                await asset.SaveAsync(path);
+            }
+            Terrain restored;
+            using (TerrainAsset asset = await TerrainAsset.OpenAsync(path))
+                restored = await asset.CreateTerrainAsync(editing);
+
+            HeightFieldRead savedHeights = await restored.HeightFields[0].ReadCpuAsync(heights.Grid.Range);
+            VoxelFieldRead savedVoxels = await restored.VoxelFields[0].ReadCpuAsync(voxelRange);
+            TerrainSurfaceRead savedSurface = await restored.Surface!.ReadCpuAsync(region);
+            HeightFieldRead changedHeights = await nextHeights!;
+            VoxelFieldRead changedVoxels = await nextVoxels!;
+            TerrainSurfaceRead changedSurface = await nextSurface!;
+
+            for (int z = 0; z < heights.Grid.Depth; z++)
+            for (int x = 0; x < heights.Grid.Width; x++)
+            {
+                Assert.Equal(2f, savedHeights[x, z]);
+                Assert.Equal(7f, changedHeights[x, z]);
+            }
+            for (int z = voxelRange.MinZ; z < voxelRange.MaxZ; z++)
+            for (int y = voxelRange.MinY; y < voxelRange.MaxY; y++)
+            for (int x = voxelRange.MinX; x < voxelRange.MaxX; x++)
+            {
+                float weight = MathF.Max(0f, 1f - Vector3.Distance(new(x, y, z), center) / 2f);
+                Assert.Equal(y - weight, savedVoxels[x, y, z], tolerance: 1e-5f);
+                Assert.Equal(y + 2f * weight, changedVoxels[x, y, z], tolerance: 1e-5f);
+            }
+            Assert.Equal(savedRevision, data.Revision);
+            Assert.Equal(savedRevision, restored.Revision);
+            Assert.Equal(savedRevision, savedSurface.Revision);
+            Assert.Equal(savedHeightEdit.Revision, savedHeights.Revision);
+            Assert.Equal(savedVoxelEdit.Revision, savedVoxels.Revision);
+            Assert.Equal(nextRevision, terrain.Revision);
+            Assert.Equal(nextRevision, changedSurface.Revision);
+            Assert.Equal(nextHeightEdit.Revision, changedHeights.Revision);
+            Assert.Equal(nextVoxelEdit.Revision, changedVoxels.Revision);
+            Assert.True(nextHeightEdit.Revision > savedRevision);
+            Assert.True(nextVoxelEdit.Revision > savedRevision);
+            Assert.Equal(-.75f, savedSurface.Sample(center));
+            Assert.Equal(-6f, changedSurface.Sample(center));
+            var restoredRoot = Assert.IsType<BlendSurface>(restored.Surface);
+            var restoredBlend = Assert.IsType<BlendSurface>(restoredRoot.First);
+            Assert.Same(restoredBlend.First, restoredRoot.Second);
+            Assert.Same(restored.HeightFields[0], Assert.IsType<HeightSurface>(restoredRoot.Second).Field);
+            Assert.Same(restored.VoxelFields[0], Assert.IsType<VoxelSurface>(restoredBlend.Second).Field);
+            Assert.Equal(.5f, restoredRoot.Weight);
+            Assert.Equal(.5f, restoredBlend.Weight);
+            Assert.Equal(region, restoredBlend.Region);
+            Assert.Equal(1f, restoredBlend.FadeDistance);
+            Assert.Same(height, terrain.Surface);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public async Task GpuVoxelNeighborhoodEditsMatchTheCpuVersions()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
