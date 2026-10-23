@@ -2,6 +2,8 @@
 
 分层 Grid 变体和共享目标 Flow 的资产入口见[分层栅格与共享目标流场](../Navigation-Flows.md#资产创建)。
 
+`NavigationLinkBlock` 保存动作端点、方向、能力、成本和参数，并创建普通 `NavigationLinkSet`。场景安装、路径选择和动作反馈入口见[导航动作连接](../Navigation-Actions.md)。
+
 `NavigationProfileAsset`、`NavigationPolicyAsset` 和 `NavigationAsset` 分别持有规格、策略和导航表示的身份。对应 Block 返回普通 Navigation 资源，由角色、路径和应用直接共享。
 
 ## 规格与策略
@@ -22,7 +24,7 @@
 
 从几何按规格生成这些变体，以及通过 ImportContext 选择 `NavigationMeshImporter`，见[按角色规格烘焙导航网格](../Navigation-Baking.md)。
 
-`HeadingNavigationMeshBlock` 使用相同的 Profile/变体选择键，保存连续朝向区间、平移/旋转连接和自身区域图；构建与位姿查询见[朝向导航网格](../Heading-Navigation.md)。
+`HeadingNavigationMeshBlock` 使用相同的 Profile/变体选择键，保存连续朝向区间、平移/旋转连接和自身区域图。`GetBlockAsync` 取得目录与摘要，`CreateAsync` 取得完整资源，`CreateTileSource` 返回独立保持文件的 `HeadingNavigationMeshTileSource`。每个详细块以十二组数组保存几何、朝向与图数据；构建、ASA 与分块续行见[朝向导航网格](../Heading-Navigation.md)。
 
 `GetBlockAsync` 取得变体元数据和入口图。带区域图的变体将每个详细 Tile 编成独立六数组组，另存跨块原始 portal，完整创建时重组多边形范围与连接。元数据同时保留完整网格和独立块的 `BakedRadius`。创建与 Block 分支共享已取得的完整资源。
 

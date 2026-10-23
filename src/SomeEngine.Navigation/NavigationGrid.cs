@@ -8,8 +8,9 @@ public readonly record struct NavigationGridCell(
     Vector3 Position, int EdgeStart, int EdgeCount, int Area = 0, float BaseCost = 1,
     int Layer = 0, float CeilingHeight = float.PositiveInfinity, NavigationTileCoordinate Tile = default);
 
-/// <summary>A directed forward transition. Cost is its base traversal cost before area and action policy.</summary>
-public readonly record struct NavigationGridEdge(int ToCell, float Cost, ulong RequiredCapabilities = 0, int Action = 0);
+/// <summary>A directed forward transition. Ordinary edges carry base cost; coarse entrance edges mark their completed policy cost.</summary>
+public readonly record struct NavigationGridEdge(int ToCell, float Cost, ulong RequiredCapabilities = 0, int Action = 0,
+    bool IncludesPolicyCost = false);
 
 public readonly record struct NavigationGridIncoming(int FromCell, int Edge);
 public readonly record struct NavigationGridRange(int Start, int Count);
@@ -29,14 +30,18 @@ public readonly record struct NavigationGridShape(
 public sealed partial class NavigationGrid : INavigationSpace<NavigationGrid>
 {
     private readonly Dictionary<NavigationCellOffset, int[]> _columns;
+    private readonly int[] _cellTiles;
 
     public NavigationGrid(NavigationBounds bounds, float cellSize,
-        NavigationGridCell[] cells, NavigationGridEdge[] edges, NavigationGridShape shape = default, ulong contentVersion = 1)
-        : this(bounds, cellSize, (ReadOnlyMemory<NavigationGridCell>)cells, edges, shape, contentVersion) { }
+        NavigationGridCell[] cells, NavigationGridEdge[] edges, NavigationGridShape shape = default, ulong contentVersion = 1,
+        NavigationGridRegionGraph? regionGraph = null, ReadOnlyMemory<NavigationGridTile> tiles = default,
+        ReadOnlyMemory<NavigationGridTileRange> tileRanges = default)
+        : this(bounds, cellSize, (ReadOnlyMemory<NavigationGridCell>)cells, edges, shape, contentVersion, regionGraph, tiles, tileRanges) { }
 
     public NavigationGrid(NavigationBounds bounds, float cellSize,
         ReadOnlyMemory<NavigationGridCell> cells, ReadOnlyMemory<NavigationGridEdge> edges,
-        NavigationGridShape shape = default, ulong contentVersion = 1)
+        NavigationGridShape shape = default, ulong contentVersion = 1, NavigationGridRegionGraph? regionGraph = null,
+        ReadOnlyMemory<NavigationGridTile> tiles = default, ReadOnlyMemory<NavigationGridTileRange> tileRanges = default)
     {
         Bounds = bounds;
         CellSize = cellSize;
@@ -44,6 +49,15 @@ public sealed partial class NavigationGrid : INavigationSpace<NavigationGrid>
         Edges = edges;
         Shape = shape;
         ContentVersion = contentVersion;
+        RegionGraph = regionGraph;
+        Tiles = tiles;
+        TileRanges = tileRanges;
+        _cellTiles = new int[cells.Length];
+        for (int tile = 0; tile < tileRanges.Length; tile++)
+        {
+            NavigationGridTileRange range = tileRanges.Span[tile];
+            Array.Fill(_cellTiles, tile, range.CellStart, range.CellCount);
+        }
         var columns = new Dictionary<NavigationCellOffset, List<int>>();
         var counts = new int[cells.Length];
         for (int cell = 0; cell < cells.Length; cell++)
@@ -87,6 +101,11 @@ public sealed partial class NavigationGrid : INavigationSpace<NavigationGrid>
     public ReadOnlyMemory<NavigationGridEdge> Edges { get; }
     public ReadOnlyMemory<NavigationGridRange> IncomingRanges { get; }
     public ReadOnlyMemory<NavigationGridIncoming> IncomingEdges { get; }
+    public NavigationGridRegionGraph? RegionGraph { get; }
+    public ReadOnlyMemory<NavigationGridTile> Tiles { get; }
+    public ReadOnlyMemory<NavigationGridTileRange> TileRanges { get; }
+    internal ReadOnlyMemory<int> CellTiles => _cellTiles;
+    public bool IsDetailedCell(int cell) => TileRanges.IsEmpty || TileRanges.Span[_cellTiles[cell]].Detailed;
 
     public static void CollectResources(NavigationGrid space, ref JobResourceAccessBuilder resources)
     {
@@ -94,6 +113,8 @@ public sealed partial class NavigationGrid : INavigationSpace<NavigationGrid>
         resources.Read(space.Edges);
         resources.Read(space.IncomingRanges);
         resources.Read(space.IncomingEdges);
+        resources.Read(space.CellTiles);
+        if (!space.TileRanges.IsEmpty) resources.Read(space.TileRanges);
         if (!space.Shape.Footprint.IsEmpty) resources.Read(space.Shape.Footprint);
     }
 

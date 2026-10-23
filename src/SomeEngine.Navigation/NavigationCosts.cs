@@ -25,6 +25,14 @@ public sealed class NavigationCostBuildState(NavigationGrid grid, NavigationPoli
 
 public static class NavigationCostSystem
 {
+    internal static NavigationCosts Create(NavigationGrid grid, NavigationPolicy policy, ulong version)
+    {
+        var cells = new float[grid.Cells.Length];
+        var edges = new float[grid.Edges.Length];
+        Fill(grid, policy, cells, edges);
+        return new(grid, policy, cells, edges, version);
+    }
+
     public static NavigationBuild<NavigationCostBuildState> Schedule(NavigationGrid grid, NavigationPolicy policy,
         ulong version = 1, Scheduler? scheduler = null, JobHandle dependency = default)
     {
@@ -41,25 +49,28 @@ public static class NavigationCostSystem
     {
         public void Execute()
         {
-            NavigationGrid grid = state.Grid;
-            for (int cell = 0; cell < grid.Cells.Length; cell++)
+            Fill(state.Grid, state.Policy, state.Cells, state.Edges);
+            state.Costs = new(state.Grid, state.Policy, state.Cells, state.Edges, state.Version);
+        }
+    }
+
+    private static void Fill(NavigationGrid grid, NavigationPolicy policy, float[] cells, float[] edges)
+    {
+        for (int cell = 0; cell < grid.Cells.Length; cell++)
+        {
+            NavigationGridCell from = grid.Cells.Span[cell];
+            cells[cell] = from.BaseCost * policy.GetAreaCost(from.Area);
+        }
+        for (int cell = 0; cell < grid.Cells.Length; cell++)
+        {
+            NavigationGridCell from = grid.Cells.Span[cell];
+            for (int edge = from.EdgeStart; edge < from.EdgeStart + from.EdgeCount; edge++)
             {
-                NavigationGridCell from = grid.Cells.Span[cell];
-                state.Cells[cell] = from.BaseCost * state.Policy.GetAreaCost(from.Area);
+                NavigationGridEdge transition = grid.Edges.Span[edge];
+                edges[edge] = float.IsPositiveInfinity(cells[cell]) || float.IsPositiveInfinity(cells[transition.ToCell])
+                    ? float.PositiveInfinity : transition.IncludesPolicyCost ? transition.Cost
+                    : transition.Cost * cells[cell] + policy.GetActionCost(transition.Action);
             }
-            for (int cell = 0; cell < grid.Cells.Length; cell++)
-            {
-                NavigationGridCell from = grid.Cells.Span[cell];
-                for (int edge = from.EdgeStart; edge < from.EdgeStart + from.EdgeCount; edge++)
-                {
-                    NavigationGridEdge transition = grid.Edges.Span[edge];
-                    state.Edges[edge] = float.IsPositiveInfinity(state.Cells[cell]) ||
-                        float.IsPositiveInfinity(state.Cells[transition.ToCell])
-                        ? float.PositiveInfinity
-                        : transition.Cost * state.Cells[cell] + state.Policy.GetActionCost(transition.Action);
-                }
-            }
-            state.Costs = new(grid, state.Policy, state.Cells, state.Edges, state.Version);
         }
     }
 }

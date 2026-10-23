@@ -60,6 +60,9 @@ public enum NavigationStatus : byte
     Arrived,
     Unreachable,
     TargetUnavailable,
+    Traversing,
+    TraversalFailed,
+    WaitingForPassage,
     WaitingForTiles,
 }
 
@@ -82,6 +85,8 @@ public static partial class NavigationComponents
         world.Add(entity, default(NavigationGuidance));
         world.Add(entity, default(NavigationSteering));
         world.Add(entity, default(NavigationProgress));
+        world.Add(entity, default(NavigationTraversalRequest));
+        world.Add(entity, default(NavigationTraversalResult));
         world.Add(entity, new NavigationRequest<TSpace, TState>(new()));
     }
 }
@@ -102,6 +107,8 @@ internal sealed class NavigationRequestData<TSpace, TState>
     public NavigationSearch<TState>? Search;
     public ulong Version;
     public int CornerIndex;
+    public int TraversalIndex;
+    public ulong TraversalSequence;
     public bool Active;
     public bool TargetAvailable;
 }

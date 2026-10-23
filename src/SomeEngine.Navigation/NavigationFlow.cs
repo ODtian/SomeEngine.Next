@@ -8,6 +8,11 @@ public readonly record struct NavigationFlowGoal(
 public readonly record struct NavigationFlowDependency(
     NavigationTileCoordinate Tile, ulong GridVersion, ulong CostVersion, ulong GoalVersion);
 
+public readonly record struct NavigationFlowTile(NavigationTileCoordinate Tile, int CellStart, int CellCount,
+    ulong GridVersion, ulong CostVersion, ulong GoalVersion, bool Detailed);
+public readonly record struct NavigationFlowBoundaryDependency(NavigationTileCoordinate From, NavigationTileCoordinate To,
+    int FromCell, int ToCell, float Cost, ulong InputVersion, ulong Round);
+
 public enum NavigationFlowSampling : byte { Successor, Gradient }
 
 public sealed class NavigationFlowInput(NavigationCosts costs, NavigationProfile profile,
@@ -24,7 +29,10 @@ public sealed class NavigationFlowInput(NavigationCosts costs, NavigationProfile
 public sealed class NavigationFlowField(NavigationFlowInput input, ReadOnlyMemory<float> cumulativeCosts,
     ReadOnlyMemory<int> successorEdges, ReadOnlyMemory<Vector3> directions,
     ReadOnlyMemory<int> goalIndices, ReadOnlyMemory<NavigationFlowDependency> dependencies, string solver = "",
-    NavigationFlowSampling sampling = NavigationFlowSampling.Successor)
+    NavigationFlowSampling sampling = NavigationFlowSampling.Successor,
+    ReadOnlyMemory<NavigationFlowTile> tiles = default,
+    ReadOnlyMemory<NavigationFlowBoundaryDependency> boundaryDependencies = default,
+    ReadOnlyMemory<NavigationTileCoordinate> requiredTiles = default, ulong round = 0)
 {
     public NavigationFlowInput Input { get; } = input;
     public ReadOnlyMemory<float> CumulativeCosts { get; } = cumulativeCosts;
@@ -34,6 +42,10 @@ public sealed class NavigationFlowField(NavigationFlowInput input, ReadOnlyMemor
     public ReadOnlyMemory<NavigationFlowDependency> Dependencies { get; } = dependencies;
     public string Solver { get; } = solver;
     public NavigationFlowSampling Sampling { get; } = sampling;
+    public ReadOnlyMemory<NavigationFlowTile> Tiles { get; } = tiles;
+    public ReadOnlyMemory<NavigationFlowBoundaryDependency> BoundaryDependencies { get; } = boundaryDependencies;
+    public ReadOnlyMemory<NavigationTileCoordinate> RequiredTiles { get; } = requiredTiles;
+    public ulong Round { get; } = round;
 
     /// <summary>Samples the installed direction on the position's support layer.</summary>
     public Vector3 SampleDirection(Vector3 position)
@@ -96,6 +108,16 @@ public sealed class NavigationFlow
         lock (_gate)
             if (ReferenceEquals(_input, field.Input) && !ReferenceEquals(_data.Field, field))
                 Volatile.Write(ref _data, new(field, _data.Version + 1));
+    }
+
+    internal bool ApplyCosts(NavigationFlowInput input, NavigationCosts costs)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_input, input)) return false;
+            Volatile.Write(ref _input, new(costs, input.Profile, input.Goals, input.GoalVersion, input.Version + 1));
+            return true;
+        }
     }
 
     private sealed record NavigationFlowData(NavigationFlowField? Field, long Version);

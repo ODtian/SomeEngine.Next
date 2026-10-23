@@ -20,12 +20,24 @@ internal partial struct NavigationFlowGuidanceJob<TMotion, TReader>(float deltaT
         if (field is null) return;
         NavigationGrid grid = field.Input.Costs.Grid;
         int cell = grid.FindCell(motion.Position);
-        if (cell < 0 || field.GoalIndices.Span[cell] < 0) return;
+        if (cell < 0 || !grid.IsDetailedCell(cell) || field.GoalIndices.Span[cell] < 0) return;
         int goalIndex = NavigationFlowTargets.Closest(field.Input.Goals.Span, motion.Position, out float regionDistance);
         NavigationFlowGoal goal = field.Input.Goals.Span[goalIndex];
         if (regionDistance <= 0.0001f)
         {
             guidance = new(default, goal.Heading ?? motion.Heading, field.Input.Version, true);
+            return;
+        }
+        int boundaryEdge = field.SuccessorEdges.Span[cell];
+        if (boundaryEdge >= 0 && !grid.IsDetailedCell(grid.Edges.Span[boundaryEdge].ToCell))
+        {
+            Vector3 frontier = grid.Cells.Span[cell].Position - motion.Position;
+            float length = frontier.Length();
+            if (length > 0.0001f)
+            {
+                float frontierTravel = MathF.Min(length, MathF.Min(agent.DesiredSpeed, agent.Profile.MaximumSpeed) * _deltaTime);
+                guidance = new(frontier * (frontierTravel / (length * _deltaTime)), NavigationHeading.FromDirection(frontier), field.Input.Version, true);
+            }
             return;
         }
         if (field.Sampling == NavigationFlowSampling.Gradient)
@@ -103,8 +115,13 @@ internal partial struct NavigationFlowProgressJob<TMotion, TReader> : IJobEntity
         NavigationFlowGoal goal = field.Input.Goals.Span[goalIndex];
         float headingError = goal.Heading is { } heading ? MathF.Abs(NavigationHeading.Difference(heading, motion.Heading)) : 0;
         int cell = field.Input.Costs.Grid.FindCell(motion.Position);
+        NavigationGrid grid = field.Input.Costs.Grid;
+        int edge = cell >= 0 ? field.SuccessorEdges.Span[cell] : -1;
+        bool waiting = cell >= 0 && (!grid.IsDetailedCell(cell) || edge >= 0 && !grid.IsDetailedCell(grid.Edges.Span[edge].ToCell) &&
+            Vector3.DistanceSquared(motion.Position, grid.Cells.Span[cell].Position) <= 0.000001f);
         NavigationStatus status = distance <= 0.0001f
             ? headingError <= goal.HeadingTolerance ? NavigationStatus.Arrived : NavigationStatus.Aligning
+            : waiting ? NavigationStatus.WaitingForTiles
             : cell >= 0 && float.IsFinite(field.CumulativeCosts.Span[cell]) ? NavigationStatus.Moving : NavigationStatus.Unreachable;
         progress = new(status, distance, headingError, field.Input.Version);
     }

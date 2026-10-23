@@ -17,15 +17,23 @@ internal partial struct NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(
         [JobResources(typeof(PathNavigationResources<>))] in PathNavigation<TSpace> navigation,
         [JobResources<NavigationPathResources>] in NavigationPathResult result,
         [JobResources(typeof(NavigationRequestResources<,>))] ref NavigationRequest<TSpace, TState> request,
-        in NavigationGoal goal, in TMotion movement, ref NavigationGuidance guidance)
+        in NavigationGoal goal, in NavigationTraversalRequest traversal, in TMotion movement, ref NavigationGuidance guidance)
     {
         NavigationMotion motion = TReader.Read(in movement);
         guidance = new(default, motion.Heading, result.RequestVersion, false);
+        if (traversal.Status is NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing or NavigationTraversalStatus.Waiting)
+            return;
         if (!result.HasTarget)
             return;
         if (result.Path is { MotionSegments.IsEmpty: false } vehiclePath)
         {
             guidance = NavigationVehicleGuidance.Sample(vehiclePath, ref request.Data.CornerIndex, motion,
+                agent.Profile, agent.DesiredSpeed, _deltaTime, result.RequestVersion);
+            return;
+        }
+        if (result.Path is { Poses.IsEmpty: false } posePath)
+        {
+            guidance = NavigationPoseGuidance.Sample(posePath, ref request.Data.CornerIndex, motion,
                 agent.Profile, agent.DesiredSpeed, _deltaTime, result.RequestVersion);
             return;
         }
@@ -41,7 +49,8 @@ internal partial struct NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(
         NavigationRequestData<TSpace, TState> data = request.Data;
         ReadOnlySpan<Vector3> corners = path.Corners.Span;
         int corner = data.CornerIndex;
-        while (corner < corners.Length - 1 && HorizontalDistance(motion.Position, corners[corner]) <= 0.0001f)
+        int limit = NavigationTraversalGuidance.CornerLimit(path, data.TraversalIndex);
+        while (corner < limit && HorizontalDistance(motion.Position, corners[corner]) <= 0.0001f)
             corner++;
         data.CornerIndex = corner;
         Vector3 direction = corners[corner] - motion.Position;
@@ -78,6 +87,7 @@ internal partial struct NavigationProgressJob<TMotion, TReader>(World world) : I
     private readonly World _world = world;
 
     public void Execute(in NavigationGoal goal,
+        in NavigationTraversalRequest traversal,
         [JobResources<NavigationPathResources>] in NavigationPathResult path,
         in TMotion movement, ref NavigationProgress progress)
     {
@@ -101,6 +111,10 @@ internal partial struct NavigationProgressJob<TMotion, TReader>(World world) : I
                     ? NavigationStatus.Moving : NavigationStatus.WaitingForTiles,
                 _ => NavigationStatus.Moving,
             };
+        if (traversal.Status is NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing)
+            status = NavigationStatus.Traversing;
+        else if (traversal.Status == NavigationTraversalStatus.Failed) status = NavigationStatus.TraversalFailed;
+        else if (traversal.Status == NavigationTraversalStatus.Waiting) status = NavigationStatus.WaitingForPassage;
         progress = new(status, distance, headingError, path.RequestVersion);
     }
 }

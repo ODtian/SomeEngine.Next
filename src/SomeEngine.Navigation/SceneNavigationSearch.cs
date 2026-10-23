@@ -72,6 +72,7 @@ internal sealed class SceneSearchRun
     private readonly List<NavigationPathDependency> _dependencies = [];
     private readonly HashSet<NavigationSceneTileId> _usedTiles = [];
     private readonly List<NavigationConnectionDependency> _connectionDependencies = [];
+    private readonly List<NavigationPathTraversal> _traversals = [];
     private readonly HashSet<int> _usedConnections = [];
     private List<RouteEdge> _route = [];
     private NavigationRegionRoute? _regionRoute;
@@ -180,9 +181,9 @@ internal sealed class SceneSearchRun
             float cost = Vector3.Distance(_nodes[from].Position, _nodes[to].Position) * input.Policy.DefaultAreaCost +
                 connection.Cost + input.Policy.GetActionCost(connection.Action);
             if (!float.IsFinite(cost)) continue;
-            _edges[from].Add(new(from, to, cost, null, connection.Id, connection.ContentVersion));
+            _edges[from].Add(new(from, to, cost, null, connection.Id, connection.ContentVersion, connection.Action, connection.Links));
             if (connection.Bidirectional)
-                _edges[to].Add(new(to, from, cost, null, connection.Id, connection.ContentVersion));
+                _edges[to].Add(new(to, from, cost, null, connection.Id, connection.ContentVersion, connection.Action, connection.Links));
         }
         for (int entrance = 0; entrance < StartNode; entrance++)
         {
@@ -326,7 +327,16 @@ internal sealed class SceneSearchRun
                 return;
             }
             AppendCorner(from.Position);
+            int entryCorner = _corners.Count - 1;
             AppendCorner(to.Position);
+            if (edge.Action != 0)
+            {
+                NavigationLink link = edge.Links?.GetLink(edge.Connection) ?? new(edge.Connection,
+                    new(from.Region, -1), new(to.Region, -1), edge.Action);
+                _traversals.Add(new(edge.Connection, edge.Action, entryCorner, _corners.Count - 1,
+                    from.Position, to.Position, link.Parameters, link.EntryRange, link.ExitRange,
+                    edge.ConnectionVersion, edge.Links));
+            }
             if (_input.Space.Content.TryGetTile(new(from.Region, from.Tile), out NavigationSceneTile? source)) AddDependency(source!);
             AddDependency(target!);
             _detailedCost += edge.Cost;
@@ -351,7 +361,7 @@ internal sealed class SceneSearchRun
 
     private void PublishPath(NavigationSceneTileId[]? required = null) =>
         _path = new(_corridor.ToArray(), _corners.ToArray(), _dependencies.ToArray(), _detailedCost,
-            _regionRoute, _sections.ToArray(), _connectionDependencies.ToArray(), required ?? []);
+            _regionRoute, _sections.ToArray(), _connectionDependencies.ToArray(), required ?? [], traversals: _traversals.ToArray());
 
     private NavigationSearchStep AdvanceLocal(RouteEdge edge)
     {
@@ -392,7 +402,7 @@ internal sealed class SceneSearchRun
     private readonly record struct QueueEntry(int Node, float Cost);
 
     private sealed class RouteEdge(int from, int to, float cost, NavigationSceneTileId? tile,
-        int connection = -1, ulong connectionVersion = 0)
+        int connection = -1, ulong connectionVersion = 0, int action = 0, NavigationLinkSet? links = null)
     {
         public int From { get; } = from;
         public int To { get; } = to;
@@ -400,6 +410,8 @@ internal sealed class SceneSearchRun
         public NavigationSceneTileId? Tile { get; } = tile;
         public int Connection { get; } = connection;
         public ulong ConnectionVersion { get; } = connectionVersion;
+        public int Action { get; } = action;
+        public NavigationLinkSet? Links { get; } = links;
         public NavigationPath? Path { get; set; }
         public NavigationMesh? Mesh { get; set; }
     }
