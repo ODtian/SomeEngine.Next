@@ -48,7 +48,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
             foreach (QueryChunkView chunk in query.Chunks)
             foreach (RenderTerrainRequests data in chunk.Read<RenderTerrainRequests>())
             foreach (TerrainDataRequest request in data.Requests)
-                if (!request.IsSubmitted) _requests.Add((TerrainGpuRequest)request);
+                if (request is TerrainGpuRequest gpu && !gpu.IsSubmitted) _requests.Add(gpu);
         });
         _completions.RemoveAll(static task => task.IsCompletedSuccessfully);
     }

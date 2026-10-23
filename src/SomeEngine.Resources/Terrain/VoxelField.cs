@@ -74,6 +74,18 @@ public sealed class VoxelField
             accesses.ToArray());
     }
 
+    internal JobHandle PrepareGpuRead(VoxelRegion range)
+    {
+        var dependencies = new List<JobHandle> { Data.Edit.Completion };
+        int size = Grid.PageSize;
+        for (int z = Grid.PageCoordinate(range.MinZ); z * size < range.MaxZ; z++)
+        for (int y = Grid.PageCoordinate(range.MinY); y * size < range.MaxY; y++)
+        for (int x = Grid.PageCoordinate(range.MinX); x * size < range.MaxX; x++)
+            if (Data.Pages.TryGetValue((x, y, z), out TerrainFieldPage? page))
+                dependencies.Add(page.PrepareGpuRead(Terrain));
+        return Terrain.Editing.Scheduler.CombineDependencies(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(dependencies));
+    }
+
     private static async ValueTask<VoxelFieldRead> CompleteReadAsync(VoxelFieldCpuRead read)
     {
         await read.Completion.WaitAsync().ConfigureAwait(false);

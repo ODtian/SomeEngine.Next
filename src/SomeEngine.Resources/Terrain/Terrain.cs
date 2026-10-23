@@ -69,7 +69,9 @@ public sealed partial class Terrain
     {
         lock (Gate)
         {
+            ObjectDisposedException.ThrowIf(_sourcesClosed, this);
             var terrain = new Terrain(Editing) { _revision = _revision, _requestSequence = _requestSequence };
+            foreach (ITerrainFileSource source in _fileSources) terrain._fileSources.Add(source.Retain());
             terrain._requests.AddRange(_requests.Where(static request => !request.IsSubmitted));
             foreach (HeightField field in _heightFields)
                 terrain._heightFields.Add(new HeightField(terrain, field.Id, field.Name,
