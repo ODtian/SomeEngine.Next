@@ -2,6 +2,8 @@
 
 游戏通过 `NavigationFlow.SetCosts`、`SetProfile`、`SetGoals` 改变共享输入。`NavigationFlowSystem.Schedule(budget, dependency)` 在前置任务完成后取得该输入，调用具体求解器的 `Update`，继续使用同一个 `ReverseDijkstraFlowState` 或 `FastIterativeFlowState`。目标版本随目标编辑推进，输入版本随输入替换推进；`NavigationCosts` 作为完成对象继续由多个 Flow 共享。
 
+[人流成本反馈](Navigation-Crowds.md) 将运动完成后的实际密度和速度转成新的共享 Costs，再通过同一个更新入口传播到当前场块。
+
 ## 保留值与传播
 
 更新按支撑位置、高度层、块身份和详细数据状态映射已有单元及有向边，保留仍有效的累计值。删除的支撑、提高的成本和撤去的目标约束激活依赖失效。失效沿旧结果实际采用的依赖向上游传播，然后由当前可走邻居重新计算。降低成本、新通路与新目标激活局部改进。此前预算保留的队列和当前轮次内已计算的边界变化一起进入新输入。
