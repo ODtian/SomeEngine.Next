@@ -79,9 +79,9 @@ joint 与权重，选择影响数，并计算位置、法线和切线。上一�
 
 ## 变形范围
 
-网格的 `MeshSource.BoundsExpansion` / `MeshInstance.BoundsExpansion` 声明动画允许的
-有限偏移范围，参与既有 Cluster 可见性判断。调用者根据选定片段、绑定矩阵与用户变形
-确定该值。图像示例选择 3 单位扩展，覆盖示例片段的一秒平移以及两套绑定偏移。
+配套 LBS 通过 [Deformed Bounds](Deformed-Bounds.md) 的关节影响盒生成每个姿势对应的
+实例、BVH 和 cluster 边界。`MeshSource.BoundsExpansion` / `MeshInstance.BoundsExpansion`
+继续表达调用者声明的额外有限偏移，并参与 Cluster 可见性判断。
 
 相关主题：[Skeleton Inheritance](Skeleton-Inheritance.md)、[Pose Graphs](Pose-Graphs.md)、
 [Deform Cache](../cluster/Deform-Cache.md)。

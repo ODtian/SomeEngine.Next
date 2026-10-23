@@ -54,7 +54,7 @@ public static class MeshPayloadLayout
                 $"clusters={header.ClustersOffset}, vertexBlobs={header.VertexBlobsOffset}, " +
                 $"indices={header.IndicesOffset}, extensions={header.ExtensionDataOffset}.");
         }
-        if (header.VertexEncodingHash == 0 || header.Reserved != 0)
+        if (header.VertexEncodingHash == 0)
         {
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} has invalid opaque vertex metadata.");

@@ -109,7 +109,7 @@ public sealed partial class ClusterGeometryBlock : AssetBlock
         var ready = new ReadOnlyMemory<byte>[data.PageCount];
         foreach (uint index in data.LowestDetailPageIndices) data.TryGetPage((int)index, out ready[index]);
         return ValueTask.FromResult(Mesh.Create(name, data.VertexEncoding, data.PageDigests, data.Bvh, ready,
-            shape.Bounds, shape.Regions.ToArray(), data.LowestDetailPageIndices));
+            shape.Bounds, shape.Regions.ToArray(), data.LowestDetailPageIndices, data.ClusterGeometryIndices));
     }
 
     public async ValueTask LoadPagesAsync(Mesh mesh, ClusterVertexAttributesBlock attributes, IEnumerable<int> pageIndices, CancellationToken cancellationToken = default)

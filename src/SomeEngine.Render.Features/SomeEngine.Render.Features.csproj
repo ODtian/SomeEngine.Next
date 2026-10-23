@@ -14,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../assets/Shaders/gpu_pose.slang" LogicalName="SomeEngine.Render.Features.Shaders.gpu_pose.slang" />
+    <EmbeddedResource Include="../../assets/Shaders/skin_bounds.slang" LogicalName="SomeEngine.Render.Features.Shaders.skin_bounds.slang" />
   </ItemGroup>
 </Project>
