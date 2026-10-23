@@ -14,7 +14,7 @@
 
 `NavigationGoal` 支持世界坐标点目标与实体目标，实体目标的位置来自同一强类型运动读取器，并加上目标组件中的世界坐标偏移。`ArrivalRange` 给出目标区域半径；`Heading` 和 `HeadingTolerance` 给出到达朝向。`World.Replace` 修改目标或资源引用，`World.Disable<NavigationGoal>` 暂停导航，`World.Enable<NavigationGoal>` 从实际位置重新求解。
 
-目标、目标位置、规格、策略、表示或启用状态变化会推进请求版本。`NavigationPathResult` 保存路径、搜索状态、目标位置与请求版本。`NavigationGuidance` 保存当前期望速度和朝向，`NavigationSteering` 提供运动消费者使用的建议。每个输出携带对应的请求版本。
+目标、规格、策略、表示或启用状态变化会立即推进请求版本。实体目标移动时，正在预算推进或等待详细块的搜索保留本次目标位置和队列，完成后再从实际位置追踪最新目标并推进版本。`NavigationPathResult` 始终报告目标的当前实际位置，并保存路径、搜索状态与请求版本；最终进度同样使用当前目标位置。`NavigationGuidance` 保存当前期望速度和朝向，`NavigationSteering` 提供运动消费者使用的建议。每个输出携带对应的请求版本。
 
 `INavigationMotionReader<TMotion>.Read` 返回实际位置、速度、朝向和接地结果。朝向遵循 `NavigationHeading`：XZ 平面上的弧度，零朝 +Z，正向由 +Z 转向 +X。`Direction`、`FromDirection`、`Difference` 统一方向转换和角差。
 
