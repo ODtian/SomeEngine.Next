@@ -73,22 +73,26 @@ internal partial struct NavigationMppiPrepare<TSpace, TModel, TMotion, TReader>(
             return;
         }
         NavigationMppiReference<TSpace, TModel>.Prepare(data, path);
+        var modelAccesses = new List<JobResourceAccess>();
+        var resources = new JobResourceAccessBuilder(_scheduler, modelAccesses);
+        TSpace.CollectResources(mppi.Space, ref resources);
+        NavigationAgentResources.Collect(in agent, ref resources);
         var handles = new JobHandle[settings.CandidateCount];
         JobHandle previous = default;
-        // The generated parent keeps its complete component and space read grants through these descendants.
+        // Each evaluation holds its own model inputs while its work executes.
         for (int iteration = 0; iteration < settings.Iterations; iteration++)
         {
             for (int candidate = 0; candidate < settings.CandidateCount; candidate++)
             {
                 int start = candidate * settings.HorizonSteps;
                 handles[candidate] = _scheduler.Schedule(new NavigationMppiCandidate<TSpace, TModel>(data, candidate, iteration),
-                    [Read(data), Read(data.Controls), Read(data.Reference), Read(data.ReferenceSpeeds), Read(_neighbors),
+                    [.. modelAccesses, Read(data), Read(data.Controls), Read(data.Reference), Read(data.ReferenceSpeeds), Read(_neighbors),
                      Write(data.Noise, start, settings.HorizonSteps), Write(data.CandidateControls, start, settings.HorizonSteps),
                      Write(data.CandidateMotions, candidate * (settings.HorizonSteps + 1), settings.HorizonSteps + 1),
                      Write(data.Scores, candidate, 1)], previous);
             }
             previous = _scheduler.Schedule(new NavigationMppiImprove<TSpace, TModel>(data),
-                [JobResourceAccess.Write(_scheduler.GetResourceToken(data)), Read(data.Noise), Read(data.Scores),
+                [.. modelAccesses, JobResourceAccess.Write(_scheduler.GetResourceToken(data)), Read(data.Noise), Read(data.Scores),
                  Read(data.CandidateControls), Read(data.CandidateMotions), Read(data.Reference), Read(data.ReferenceSpeeds), Read(_neighbors),
                  Write(data.Controls, 0, settings.HorizonSteps), Write(data.UpdatedControls, 0, settings.HorizonSteps),
                  Write(data.SelectedControls, 0, settings.HorizonSteps), Write(data.SelectedMotions, 0, settings.HorizonSteps + 1),

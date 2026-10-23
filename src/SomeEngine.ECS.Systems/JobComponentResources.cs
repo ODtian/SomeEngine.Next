@@ -34,8 +34,16 @@ public interface IJobComponentResources<TComponent>
 public readonly ref struct JobResourceAccessBuilder
 {
     private readonly Scheduler _scheduler;
-    private readonly List<ComponentResourceUse> _accesses;
-    private readonly List<object> _references;
+    private readonly List<ComponentResourceUse>? _accesses;
+    private readonly List<object>? _references;
+    private readonly List<JobResourceAccess>? _jobAccesses;
+
+    /// <summary>Reuses component and space descriptions for an explicitly scheduled Job.</summary>
+    public JobResourceAccessBuilder(Scheduler scheduler, List<JobResourceAccess> accesses)
+    {
+        _scheduler = scheduler;
+        _jobAccesses = accesses;
+    }
 
     internal JobResourceAccessBuilder(
         Scheduler scheduler,
@@ -88,10 +96,22 @@ public readonly ref struct JobResourceAccessBuilder
     public void Exclusive<T>(Memory<T> data, long start, long length) =>
         Add(JobResourceAccess.GetArraySegment<T>(data).Array!, JobResourceAccess.Exclusive(data, start, length));
 
-    private void Add(object data, JobResourceAccess access) =>
-        _accesses.Add(new ComponentResourceUse(data, access));
+    private void Add(object data, JobResourceAccess access)
+    {
+        if (_jobAccesses is { } jobs)
+        {
+            JobResourceToken token = _scheduler.GetResourceToken(data);
+            jobs.Add(access.Mode switch
+            {
+                JobAccessMode.Read => access.HasRange ? JobResourceAccess.Read(token, access.RangeStart, access.RangeLength) : JobResourceAccess.Read(token),
+                JobAccessMode.Write => access.HasRange ? JobResourceAccess.Write(token, access.RangeStart, access.RangeLength) : JobResourceAccess.Write(token),
+                _ => access.HasRange ? JobResourceAccess.Exclusive(token, access.RangeStart, access.RangeLength) : JobResourceAccess.Exclusive(token),
+            });
+        }
+        else _accesses!.Add(new ComponentResourceUse(data, access));
+    }
 
-    internal void Retain<T>(in T component) where T : struct => _references.Add(component);
+    internal void Retain<T>(in T component) where T : struct => _references!.Add(component);
 }
 
 internal readonly record struct ComponentResourceUse(object Data, JobResourceAccess Access);
