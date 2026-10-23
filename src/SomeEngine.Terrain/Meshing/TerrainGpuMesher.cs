@@ -1,3 +1,4 @@
+using System.Numerics;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.RenderGraph;
@@ -13,14 +14,15 @@ public interface ITerrainMesherGpu
     GraphPassId Record(ref TerrainGpuMesherContext context);
 }
 
-/// <summary>Regular Transvoxel Marching Cubes cells with the selected scalar-source entry.</summary>
+/// <summary>Paired Marching Cubes and Transvoxel cells with the selected scalar-source entry.</summary>
 public sealed class MarchingCubesTerrainMesherGpu(Shader shader, string entryPoint = "ExtractHeightSurface") : ITerrainMesherGpu
 {
     public int ReadBorder => 1;
     public ClusterGpuMeshCapacity GetCapacity(TerrainChunkBounds bounds)
     {
         uint cells = (uint)(bounds.CellCount * bounds.CellCount * bounds.CellCount);
-        return new(cells * 12, cells * 5);
+        uint transitions = (uint)(bounds.CellCount * bounds.CellCount * BitOperations.PopCount((uint)bounds.TransitionFaces));
+        return new((cells + transitions) * 12, cells * 5 + transitions * 12);
     }
 
     public GraphPassId Record(ref TerrainGpuMesherContext context) =>
