@@ -77,9 +77,11 @@ internal sealed partial class NavigationSaveResourceCapture(NavigationSaveResour
             flow.Field?.Solver ?? ReverseDijkstraFlow.Id, source as SavedFlowAsset, heading);
     }
 
-    private SavedCosts CaptureCosts(NavigationCosts costs)
+    private NavigationSavedResource CaptureCosts(NavigationCosts costs)
     {
         NavigationGrid grid = costs.Grid;
+        if (_derived.TryGetValue(grid, out NavigationSavedResource? derived) && derived is SavedHeadingGrid heading)
+            return new SavedHeadingCostValues(heading.Graph, Add(costs.Policy), costs.Version, costs.CellCosts.ToArray(), costs.EdgeCosts.ToArray());
         var cells = new SavedCellCost[grid.Cells.Length];
         var edges = new List<SavedEdgeCost>(grid.Edges.Length);
         for (int cell = 0; cell < grid.Cells.Length; cell++)
@@ -94,6 +96,6 @@ internal sealed partial class NavigationSaveResourceCapture(NavigationSaveResour
                 edges.Add(new(key, new(to.Position, to.Layer), transition.Action, transition.RequiredCapabilities, costs.EdgeCosts.Span[edge]));
             }
         }
-        return new(Add(grid), Add(costs.Policy), costs.Version, cells, edges.ToArray());
+        return new SavedCosts(Add(grid), Add(costs.Policy), costs.Version, cells, edges.ToArray());
     }
 }

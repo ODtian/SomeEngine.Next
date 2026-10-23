@@ -17,7 +17,7 @@
 | 来源几何 | `AssetId<MeshAsset>` | `NavigationGeometryBlock.CreateAsync` |
 | 动作连接 | `AssetId<NavigationAsset>` 与当前连接定义 | `NavigationLinkBlock.Create`，随后恢复当前定义 |
 
-普通 Flow 通过 `Register(flow, flowAssetId)` 记录具体 `NavigationFlowBlock` 来源，Heading Flow 通过 `RegisterHeadingFlow` 记录 `HeadingNavigationFlowBlock` 来源。程序创建的 Flow 由其已登记的输入资源和当前共享目标重建。Heading Flow 保存区域、朝向网格、端口和连接，重建 Graph 后把同一 `graph.Costs` 接回 Flow。
+普通 Flow 通过 `Register(flow, flowAssetId)` 记录具体 `NavigationFlowBlock` 来源，Heading Flow 通过 `RegisterHeadingFlow` 记录 `HeadingNavigationFlowBlock` 来源。程序创建的 Flow 由其已登记的输入资源和当前共享目标重建。Heading Flow 保存区域、朝向网格、端口和连接，基础成本在重建 Graph 后接回同一 `graph.Costs`。
 
 ## 保存与恢复边界
 
@@ -53,10 +53,12 @@ resources = restored.Resources;
 
 成本捕获沿 `NavigationCosts.Source` 取得完整输入，并在分配保存记录前合并同一输入的引用。记录包含已退出驻留范围的通行修改，多个 Flow 在恢复后共享对应的同一 Costs。普通 Grid 的单元位置、支撑层和有向连接标识用于应用保存值；恢复先通过 `NavigationCostSystem` 建立当前基线，再应用保存的完整成本。Flow 根据恢复的 Costs、目标及对应求解方法建立完成场，后续驻留投影继续持有该完整输入。
 
+Heading Flow 修改后的成本保存所属 Graph 和按该图 `Nodes`、`Transitions` 顺序排列的单元与边成本。节点的 Region、Polygon、Channel 和 Pose 由保存的区域、网格、端口与连接顺序重建，同一位置的各朝向及各动作边分别取得对应成本。恢复后的多个 Flow 继续共享这一 Costs 对象与 HeadingGraph，并按保存的费用选择实际旋转和动作交接。
+
 来源驱动的区域使用 `resources.RegisterRegion(region, gridBuildSystem)` 登记重建配置。保存表包含来源/障碍的几何引用、版本、启用状态、参与方式和区域构建参数；实际 Transform 由游戏 registry 保存。恢复时用 `new NavigationSaveOptions().UseSources<TTransform,TReader>()` 提供强类型读取器，经过 Source → Build → Apply，再通过 `NavigationGridBuildSystem` 形成 Grid/Costs。`restored.Resources.Regions` 提供完成的区域对象，供游戏继续创建更新系统。
 
 场景通过 `Register(scene, placements, profile, policy)` 保存区域来源与 Transform，连接成本、能力、启用状态和容量随当前连接定义恢复。Heading 场景通过 `Register(scene, headingMesh)` 保存对应的表示来源。
 
 `NavigationTraversalIntent` 保存当前交接请求和单调请求序号。`CapturePathTraversal` / `RestorePathTraversal` 与 Flow 对应入口将该意图接回公开组合；游戏动作消费者从自己的 durable 执行状态继续更新实际运动及 `NavigationTraversalResult`。正在执行的连接重新建立 Passage 占用，动作完成且实际位置达到出口后，导航从该实际位置重新求解。后续请求延续已保存的序号。
 
-四个验收例子覆盖独立目标与共享 Flow 的成本修改、来源障碍重建后的实际绕行、Heading Flow 动作途中恢复及再次交接、MotionBlock 与车辆控制恢复。车辆检查同时验证恢复后实际下一步与 MPPI 选中 Buffer 的对应点一致。
+验收例子覆盖独立目标与共享 Flow 的成本修改、流送后完整成本恢复、来源障碍重建后的实际绕行、Heading Flow 的修改成本与动作途中恢复、MotionBlock 与车辆控制恢复。车辆检查同时验证恢复后实际下一步与 MPPI 选中 Buffer 的对应点一致。

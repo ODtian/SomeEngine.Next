@@ -118,6 +118,10 @@ internal sealed partial class NavigationSaveResourceReader(NavigationSavedResour
             case SavedHeadingGraph value: return await RestoreHeadingGraph(value).ConfigureAwait(false);
             case SavedHeadingCosts value: return ((HeadingNavigationFlowGraph)await Get(value.Graph).ConfigureAwait(false)).Costs;
             case SavedHeadingGrid value: return ((HeadingNavigationFlowGraph)await Get(value.Graph).ConfigureAwait(false)).Costs.Grid;
+            case SavedHeadingCostValues value:
+                var costGraph = (HeadingNavigationFlowGraph)await Get(value.Graph).ConfigureAwait(false);
+                return new NavigationCosts(costGraph.Costs.Grid, (NavigationPolicy)await Get(value.Policy).ConfigureAwait(false),
+                    value.Cells, value.Edges, value.Version);
             case SavedCosts value:
                 result = RestoreCosts(value, (NavigationGrid)await Get(value.Grid).ConfigureAwait(false),
                     (NavigationPolicy)await Get(value.Policy).ConfigureAwait(false));
