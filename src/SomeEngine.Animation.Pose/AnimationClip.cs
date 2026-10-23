@@ -35,4 +35,11 @@ public sealed class AnimationClip
         Skeleton.ReferencePose.CopyTo(pose);
         _sampler.SampleLocal(Math.Clamp(time, 0, Duration), pose);
     }
+
+    internal void SampleLocal(ref ClipSamples samples)
+    {
+        for (int sample = 0; sample < samples.Count; sample++)
+            Skeleton.ReferencePose.CopyTo(samples.LocalPose(sample));
+        _sampler.SampleLocal(ref samples);
+    }
 }

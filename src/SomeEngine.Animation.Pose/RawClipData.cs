@@ -18,15 +18,29 @@ public readonly struct RawClipSampler : IClipSampler<RawClipData>
     public static void SampleLocal(RawClipData data, float time, Span<BoneTransform> destination)
     {
         foreach (RawClipChannel channel in data.Channels.AsSpan())
+            SampleChannel(channel, time, destination);
+    }
+
+    public static void SampleLocalBatch<TSampler>(RawClipData data, ref ClipSamples samples)
+        where TSampler : struct, IClipSampler<RawClipData>
+    {
+        foreach (RawClipChannel channel in data.Channels.AsSpan())
         {
-            Vector4 value = channel.Sample(time);
-            ref BoneTransform bone = ref destination[channel.Bone];
-            switch (channel.Property)
-            {
-                case BoneTransformProperty.Translation: bone.Translation = new(value.X, value.Y, value.Z); break;
-                case BoneTransformProperty.Rotation: bone.Rotation = new(value.X, value.Y, value.Z, value.W); break;
-                case BoneTransformProperty.Scale: bone.Scale = new(value.X, value.Y, value.Z); break;
-            }
+            if (samples.Bones.BinarySearch(channel.Bone) < 0) continue;
+            for (int sample = 0; sample < samples.Count; sample++)
+                SampleChannel(channel, samples.Times[sample], samples.LocalPose(sample));
+        }
+    }
+
+    private static void SampleChannel(RawClipChannel channel, float time, Span<BoneTransform> destination)
+    {
+        Vector4 value = channel.Sample(time);
+        ref BoneTransform bone = ref destination[channel.Bone];
+        switch (channel.Property)
+        {
+            case BoneTransformProperty.Translation: bone.Translation = new(value.X, value.Y, value.Z); break;
+            case BoneTransformProperty.Rotation: bone.Rotation = new(value.X, value.Y, value.Z, value.W); break;
+            case BoneTransformProperty.Scale: bone.Scale = new(value.X, value.Y, value.Z); break;
         }
     }
 }
