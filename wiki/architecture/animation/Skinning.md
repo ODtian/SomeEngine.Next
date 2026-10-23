@@ -8,21 +8,22 @@
 
 ## 数据路径
 
-`MeshSkin` 将一个网格的 `SkinBinding` 绑定到 `SkeletonInstance`。共同动画图先完成
-模型空间 G，`SkinRenderExtractor` 在既有提取读取窗口中复制这些矩阵。Rendering world
-的网格组件保存复制后的矩阵区段和 source joint 到区段内骨骼的映射。
+`MeshSkin` 将一个网格的 `SkinBinding` 绑定到 `SkeletonInstance`。`SkinRenderExtractor`
+在既有提取读取窗口中复制完成的 CPU 模型空间 G，或复制 [GPU 片段](GPU-Clips.md)的采样控制。
+Rendering world 的网格组件保存 source joint 到区段实体及区段内骨骼的映射。
 
 提取按 `ModelPose.GetSection().Instance` 识别产生矩阵的实例。共享父实例的网格引用同一份
-复制区段，`SkinningFeature` 在每个渲染帧中将它上传一次。上一帧使用该区段上次提取的
-当前矩阵；首次出现的区段以当前矩阵初始化上一帧。
+区段，父关系和 joint 映射在安装或重绑时解析。`SkinningFeature` 按版本上传改变的 CPU G，
+并在 GPU 插值片段、传播层级 G。GPU 历史按每个区段的新输入推进；首次出现的区段以当前矩阵
+初始化上一份矩阵，重复渲染同一输入保持原有矩阵对。
 
 渲染准备阶段生成每个网格的 `RenderSkinBinding`，其中两个 uint 分别是 joint 映射起点
 和逆绑定矩阵起点。`SkinInstanceProducer` 将它写入普通实例属性存储，与 Cluster 的
 空间、几何及材质属性组合。静态网格使用零值。
 
-`SkinningFeature` 将当前 G、上一帧 G、joint 索引和逆绑定矩阵通过 `RenderGraphFrame.Upload`
-复制到当帧上传区间。持久图使用四个 `GraphBufferInput` 绑定这些资源，其使用期由帧资源
-与 GPU 完成状态共同管理。
+`SkinningFeature` 在装配变化时将 joint 索引和逆绑定矩阵上传到持久资源。每帧输出当前 G
+和上一份 G，持久图通过四个 `GraphBufferInput` 绑定它们。用户 shader 的读取依赖于
+`CompletePass`，资源使用期由帧资源与 GPU 完成状态共同管理。
 
 ## 应用接入
 

@@ -25,6 +25,106 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class SkinningRenderingTests
 {
     [Fact]
+    public async Task UniformGpuClipMatchesInheritedCpuPosesAndVisibleGeometryThroughTheApplication()
+    {
+        using SkinContent content = await SkinContent.CreateAsync();
+        await content.WriteMeshesAsync(EncodeFloatInfluences);
+        (Skeleton parentDefinition, Skeleton childDefinition) = GpuPoseExamples.Definitions();
+        var storage = new PoseStorage();
+        using SkeletonInstance parent = storage.CreateInstance(parentDefinition);
+        using SkeletonInstance first = storage.CreateInstance(childDefinition, parent);
+        using SkeletonInstance second = storage.CreateInstance(childDefinition, parent);
+        AnimationClip parentClip = GpuPoseExamples.Clip(parentDefinition, 0);
+        AnimationClip childClip = GpuPoseExamples.Clip(childDefinition, 1);
+        QuantizedClipData parentData = QuantizedClipData.Encode(parentClip, 4), childData = QuantizedClipData.Encode(childClip, 4);
+        Entity[] targets = new Entity[3];
+        var repeat = new GpuPoseExamples.RepeatLastInput(targets);
+        var reads = new List<GpuPoseReadback>();
+        var application = new ApplicationScene(content.Project.RootPath)
+        {
+            Initialize = frame =>
+            {
+                GpuPoseAnimation.AddSystems(frame.Systems.Animation);
+                AnimationSystems.Add(frame.Systems.Animation, repeat, AnimationPhase.Completion);
+                targets[0] = GpuPoseAnimation.CreateTarget(frame.World, parent);
+                targets[1] = GpuPoseAnimation.CreateTarget(frame.World, first);
+                targets[2] = GpuPoseAnimation.CreateTarget(frame.World, second);
+                using var builder = new AnimationBuilder(frame.World);
+                builder.Leaf<GpuClipParameters, GpuClipLeaf>(targets[0], new(parentData));
+                builder.Play();
+                using var children = new AnimationBuilder(frame.World);
+                children.Leaf<GpuClipParameters, GpuClipLeaf>(Entity.Null, new(childData));
+                using CompiledGraph graph = children.Compile();
+                graph.Play(frame.World, targets[1]);
+                PropertyAnimation.SetSpeed(frame.World, graph.Play(frame.World, targets[2]), .5f);
+                foreach (Entity mesh in frame.Scene.MeshEntities)
+                {
+                    bool right = frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0;
+                    frame.World.Add(mesh, new MeshSkin(right ? second : first, GpuBinding(right)));
+                }
+            },
+            UpdateFrame = frame => repeat.Repeat = frame.Index == 5,
+        };
+        SceneImage? animated = null;
+        await SceneImages.RunAsync("d3d12", new SceneScript(application, 6,
+            [new(4, edit => { foreach (Entity target in targets) edit.ReadGpuPose(target, reads.Add); }),
+             new(5, edit => { foreach (Entity target in targets) edit.ReadGpuPose(target, reads.Add); edit.CaptureImage(image => animated = image); })]),
+            "--no-taa", "--no-vsm", "--fixed-step", "0.125");
+        Assert.Equal(6, reads.Count);
+        Matrix4x4[][] current = Reference(.625f), previous = Reference(.5f);
+        for (int index = 0; index < reads.Count; index++)
+        {
+            GpuPoseReadback result = reads[index];
+            int section = index % 3;
+            Assert.Equal(1u, result.Starts);
+            // The app evaluates the initial zero-delta input before its five timed updates.
+            Assert.Equal(6ul, result.InputNumber);
+            Assert.Equal(.625, result.CalculationTime);
+            Assert.Equal(section == 2 ? .3125f : .625f, result.SampleTime);
+            for (int bone = 0; bone < current[section].Length; bone++)
+            {
+                GpuPoseExamples.Near(current[section][bone], result.Current.Span[bone]);
+                GpuPoseExamples.Near(previous[section][bone], result.Previous.Span[bone]);
+            }
+        }
+        Matrix4x4[][] visibleCurrent = Reference(.625f, quantized: true), visiblePrevious = Reference(.5f, quantized: true);
+        await content.WriteReferenceMeshesAsync((prior, right) =>
+        {
+            Matrix4x4[][] poses = prior ? visiblePrevious : visibleCurrent;
+            SkinBinding binding = GpuBinding(right);
+            return (binding.InverseBindMatrices[0] * poses[0][0], binding.InverseBindMatrices[1] * poses[right ? 2 : 1][1]);
+        });
+        await content.SetReferenceShaderAsync();
+        SceneImage? reference = null;
+        await SceneImages.RunAsync("d3d12", new SceneScript(content.Project.RootPath, 6,
+            [new(5, edit => edit.CaptureImage(image => reference = image))]), "--no-taa", "--no-vsm", "--fixed-step", "0.125");
+        SceneImage expected = Assert.IsType<SceneImage>(reference);
+        int visible = 0;
+        foreach (byte value in expected.Pixels.Span) if (value > 32 && value < 255) visible++;
+        Assert.True(visible > 1000);
+        SceneImages.AssertEqual(expected, Assert.IsType<SceneImage>(animated), tolerance: 2);
+
+        Matrix4x4[][] Reference(float time, bool quantized = false)
+        {
+            AnimationClip parentSource = quantized ? parentData.CreateClip(parentDefinition) : parentClip;
+            AnimationClip childSource = quantized ? childData.CreateClip(childDefinition) : childClip;
+            using SkeletonInstance referenceParent = storage.CreateInstance(parentDefinition);
+            using SkeletonInstance referenceFirst = storage.CreateInstance(childDefinition, referenceParent);
+            using SkeletonInstance referenceSecond = storage.CreateInstance(childDefinition, referenceParent);
+            var parentLocal = new BoneTransform[1];
+            var childLocal = new BoneTransform[2];
+            parentSource.SampleLocal(time, parentLocal); referenceParent.Update(parentLocal, time);
+            childSource.SampleLocal(time, childLocal); referenceFirst.Update(childLocal, time);
+            childSource.SampleLocal(time * .5f, childLocal); referenceSecond.Update(childLocal, time);
+            return [referenceParent.ModelPose.GetSection(0).Transforms.ToArray(),
+                referenceFirst.ModelPose.GetSection(1).Transforms.ToArray(), referenceSecond.ModelPose.GetSection(1).Transforms.ToArray()];
+        }
+    }
+
+    private static SkinBinding GpuBinding(bool right) => new(
+        [Matrix4x4.CreateTranslation(right ? .2f : 0, 0, 0), Matrix4x4.CreateTranslation(0, right ? -.2f : 0, 0)], [0, 2]);
+
+    [Fact]
     public async Task Two_characters_current_and_previous_poses_match_cpu_geometry_with_two_user_encodings()
     {
         using SkinContent content = await SkinContent.CreateAsync();
@@ -173,6 +273,13 @@ public sealed class SkinningRenderingTests
             await File.WriteAllTextAsync(ShaderPath, shader);
             await project.BuildAsync(ShaderPath.Replace(".slang", ".shader"));
         }
+        public async Task SetReferenceShaderAsync()
+        {
+            await File.WriteAllTextAsync(ShaderPath, shader
+                .Replace("typedef StaticVertexEval VertexEvaluate;", ReferenceEvaluator + "\ntypedef PanelReference VertexEvaluate;")
+                .Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef PanelReference RasterVertexEvaluate;"));
+            await project.BuildAsync(ShaderPath.Replace(".slang", ".shader"));
+        }
         private string SkinShader(string reader, string encoding) => shader
             .Replace("typedef StaticVertexEval VertexEvaluate;", SkinEvaluator.Replace("USER_READER", reader) + "\ntypedef PanelSkin VertexEvaluate;")
             .Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef PanelSkin RasterVertexEvaluate;")
@@ -207,6 +314,20 @@ public sealed class SkinningRenderingTests
             }
             return ImportPanelAsync(index, positions);
         });
+
+        public Task WriteReferenceMeshesAsync(Func<bool, bool, (Matrix4x4 First, Matrix4x4 Second)> transforms) =>
+            WriteSceneAsync((index, previous, right) =>
+            {
+                (Matrix4x4 first, Matrix4x4 second) = transforms(previous, right);
+                var positions = new Vector3[4];
+                for (int vertex = 0; vertex < 4; vertex++)
+                {
+                    float weight = vertex < 2 ? .75f : .25f;
+                    positions[vertex] = Vector3.Transform(Positions[vertex], first) * weight
+                        + Vector3.Transform(Positions[vertex], second) * (1 - weight);
+                }
+                return ImportPanelAsync(index, positions);
+            });
 
         private async Task WriteSceneAsync(Func<int, bool, bool, Task<MeshAsset>> create)
         {
@@ -263,6 +384,23 @@ public sealed class SkinningRenderingTests
     private static readonly Vector3[] Positions = [new(-.5f,-.5f,0), new(.5f,-.5f,0), new(-.5f,.5f,0), new(.5f,.5f,0)];
     private const string FloatReader = "uint2 joints = ctx.pageHeap.Load2(address + ctx.localVertexIndex * 16u); float2 weights = asfloat(ctx.pageHeap.Load2(address + ctx.localVertexIndex * 16u + 8u));";
     private const string PackedReader = "uint2 packed = ctx.pageHeap.Load2(address + ctx.localVertexIndex * 8u); uint2 joints = uint2(packed.x & 65535u, packed.x >> 16u); float2 weights = float2(packed.y & 65535u, packed.y >> 16u) / 65536.0;";
+    // This example keeps the same full-Vertex raster specialization for the CPU-deformed reference geometry.
+    private const string ReferenceEvaluator = """
+        struct PanelReference : IVertexEvaluate
+        {
+            typedef StandardVertex Vertex;
+            Vertex evaluate(VertexEvalContext ctx)
+            {
+                StaticVertexEval source;
+                Vertex result = source.evaluate(ctx);
+                result.position = TransformInstanceLocalPosition(EvalObjectPosition(ctx), ctx.transform);
+                result.basePosition = result.position;
+                return result;
+            }
+            float3 getPosition(Vertex value) { return value.position; }
+            Vertex readLane(Vertex value, uint lane) { StaticVertexEval source; return source.readLane(value, lane); }
+        };
+        """;
     private const string SkinEvaluator = """
         #include "skin_pose.slang"
         struct PanelSkin : IVertexEvaluate

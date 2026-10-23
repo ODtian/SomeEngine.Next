@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Resources;
+using SomeEngine.Render.Features.Skinning;
 
 namespace SomeEngine.Runtime;
 
@@ -86,11 +87,13 @@ public sealed class SceneEdit
     private readonly RuntimeScene _scene;
     private readonly NativeWindow _window;
     private readonly List<Action<SceneImage>> _images = [];
+    private readonly List<(Entity Target, Action<GpuPoseReadback> Receive)> _poseReads = [];
     private bool _active;
 
     internal SceneEdit(RuntimeScene scene, NativeWindow window) => (_scene, _window) = (scene, window);
     internal IReadOnlyList<Action<SceneImage>> Images => _images;
-    internal void Begin(bool clearImages = true) { if (clearImages) _images.Clear(); _active = true; }
+    internal IReadOnlyList<(Entity Target, Action<GpuPoseReadback> Receive)> PoseReads => _poseReads;
+    internal void Begin(bool clearImages = true) { if (clearImages) { _images.Clear(); _poseReads.Clear(); } _active = true; }
     internal void End() => _active = false;
 
     public IReadOnlyList<Entity> MeshEntities { get { RequireAction(); return _scene.GetMeshEntities(); } }
@@ -138,6 +141,13 @@ public sealed class SceneEdit
         RequireAction();
         ArgumentNullException.ThrowIfNull(receive);
         _images.Add(receive);
+    }
+
+    /// <summary>Reads this frame's GPU model-space section after rendering has produced its history pair.</summary>
+    public void ReadGpuPose(Entity target, Action<GpuPoseReadback> receive)
+    {
+        RequireAction();
+        _poseReads.Add((target, receive));
     }
 
     private void RequireAction()

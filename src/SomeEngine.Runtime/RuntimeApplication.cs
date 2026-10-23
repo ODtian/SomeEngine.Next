@@ -613,7 +613,7 @@ internal static class RuntimeApplication
                 // frames. Match that count instead of rotating a third copy of graph data.
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
-        var skinning = new SkinningFeature(renderGraph);
+        using var skinning = new SkinningFeature(backend, device, renderGraph);
         _ = prepareSystems.Add(skinning);
         _ = prepareSystems.Add(instanceSystem);
         using SurfaceMaterial? surfaceMaterial = options.SurfacePanel || options.WorldNameplates || options.HudOverlay
@@ -944,6 +944,12 @@ internal static class RuntimeApplication
                     window,
                     reportMilestones);
                 double prepareMs = Stopwatch.GetElapsedTime(prepareStarted).TotalMilliseconds;
+                foreach (var request in sceneEdit.PoseReads)
+                {
+                    Entity target = extraction.RequireMirror(request.Target);
+                    Entity section = renderWorld.Read<RenderGpuPoseTarget>(target).Section;
+                    skinning.RequestReadback(renderWorld.Read<RenderPoseSection>(section), request.Receive);
+                }
                 long reconcileStarted = Stopwatch.GetTimestamp();
                 ClusterPipelineOutputs clusterOutputs;
                 using (EngineTrace.Begin(ApplicationTrace.Reconcile))
@@ -1028,6 +1034,7 @@ internal static class RuntimeApplication
                     options.TemporalAntialiasing,
                     viewFrame.JitterPixels);
                 double executeMs = Stopwatch.GetElapsedTime(executeStarted).TotalMilliseconds;
+                skinning.CompleteReadbacks();
                 if (sceneEdit.Images.Count > 0)
                 {
                     SceneImage captured = outputVerifier!.CopyImage(frameIndex);
