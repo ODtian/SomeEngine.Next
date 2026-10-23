@@ -37,6 +37,8 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 两个地形示例的 `Smooth(center, radius, neighborRadius, strength)` 与 `Flatten(center, radius, plane, strength)` 使用统一的米制半径和线性衰减；平滑的邻域半径以样本为单位，压平目标采用地形局部 `Plane`。方法返回 `TerrainEdit`，完成后可经公开字段读取采样；安装的地形系统更新对应空间块画面。固定版本邻域与自定义梯度笔刷用法见[地形邻域笔刷](../../wiki/architecture/terrain/Terrain-Brushes.md)。
 
+对应的 `SmoothGpu(shader, center, radius, neighborRadius, strength)` 与 `FlattenGpu(shader, center, radius, plane, strength)` 使用相同操作参数。高度示例传入 `terrain_height_neighborhood` Shader，体素示例传入 `terrain_voxel_neighborhood` Shader；平滑的两个计算阶段共用固定源版本，返回的 `TerrainEdit` 覆盖最终输出。资源录制与参数对象见 [GPU 邻域笔刷](../../wiki/architecture/terrain/Terrain-Gpu-Editing.md#邻域与多阶段计算)。
+
 `BlendTerrainExample` 从高度表面生成局部体素初值，以带渐变区域的 `BlendSurface` 组合两个源。`RaiseDetail` 继续编辑体素并更新共享表面；`Voxels.ReadCpuAsync` 读取相应样本版本。八米地表、一米采样间距、两米渐变和放置位置属于示例参数。完整接口与调用见[地形表面组合](../../wiki/architecture/terrain/Terrain-Surfaces.md)。
 
 `TerrainAssetExample.SaveAsync` 固定捕获地形，再将字段、表面图和材质引用保存到 TerrainAsset。`OpenAsync` 重开可编辑 Terrain，并调用应用提供的函数解析材料引用，返回可直接用于 Placement 的材料数组。字段采样绑定、Block 划分与完整调用见[地形资产与捕获](../../wiki/architecture/terrain/Terrain-Assets.md)。
