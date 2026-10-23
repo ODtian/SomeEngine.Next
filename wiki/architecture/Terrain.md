@@ -11,6 +11,6 @@
 | [资产与捕获](terrain/Terrain-Assets.md) | 固定版本 CPU 数据、字段和表面 Blocks、材料绑定、保存重开与来源生命周期 |
 | [放置与分块](terrain/Terrain-Scene.md) | 固定 LOD 空间块、共享放置、局部构建与应用呈现 |
 | [GPU 字段编辑](terrain/Terrain-Gpu-Editing.md) | 高度与体素 GPU 笔刷、实际完成点、局部 CPU 读取与后续几何 |
-| [GPU 地形几何](terrain/Terrain-Gpu-Geometry.md) | 固定字段版本的高度表面提取、用户属性、原生 Cluster 构建和完整批次切换 |
+| [GPU 地形几何](terrain/Terrain-Gpu-Geometry.md) | 固定字段版本的高度与体素表面提取、用户属性、原生 Cluster 构建和完整批次切换 |
 
 字段编辑使用现有 [Job 依赖与资源访问](ECS/Readiness-Admission.md)。领域阅读入口见[领域规则](../../docs/agents/domain.md)。
