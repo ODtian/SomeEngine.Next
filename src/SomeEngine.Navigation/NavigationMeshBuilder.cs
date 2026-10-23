@@ -39,6 +39,18 @@ public static class NavigationMeshBuilder
     }
 
     private static JobHandle ScheduleTiles(NavigationMeshBuildState state, Scheduler scheduler, JobHandle dependency)
+        => ScheduleTiles(state, scheduler, dependency, null, default);
+
+    internal static NavigationBuild<NavigationMeshBuildState> ScheduleRebuild(NavigationSurface surface,
+        NavigationProfile profile, NavigationPolicy policy, NavigationMeshSettings settings,
+        NavigationMeshBuildState? previous, ReadOnlyMemory<ulong> tileVersions, Scheduler scheduler)
+    {
+        var state = new NavigationMeshBuildState(profile, policy, settings) { Surface = surface };
+        return new(state, ScheduleTiles(state, scheduler, default, previous, tileVersions));
+    }
+
+    private static JobHandle ScheduleTiles(NavigationMeshBuildState state, Scheduler scheduler, JobHandle dependency,
+        NavigationMeshBuildState? previous, ReadOnlyMemory<ulong> tileVersions)
     {
         ReadOnlySpan<NavigationSurfaceTile> tiles = state.Surface.Tiles.Span;
         state.TileData = new NavigationMeshTileData[tiles.Length];
@@ -55,16 +67,27 @@ public static class NavigationMeshBuilder
         var accesses = new JobResourceAccess[reads.Count + 1];
         reads.CopyTo(accesses);
         var built = new JobHandle[tiles.Length];
+        var changed = new bool[tiles.Length];
         for (int index = 0; index < tiles.Length; index++)
         {
+            ulong version = tileVersions.IsEmpty ? state.Settings.ContentVersion : tileVersions.Span[index];
+            if (previous is not null && index < previous.TileData.Length &&
+                previous.Surface.Tiles.Span[index].Coordinate == tiles[index].Coordinate &&
+                previous.TileData[index].Mesh.ContentVersion == version)
+            {
+                state.TileData[index] = previous.TileData[index];
+                built[index] = dependency;
+                continue;
+            }
+            changed[index] = true;
             accesses[^1] = JobResourceAccess.Write(scheduler.GetResourceToken(state.TileData), index, 1);
-            built[index] = scheduler.Schedule(new BuildTile(state, index), accesses, dependency);
+            built[index] = scheduler.Schedule(new BuildTile(state, index, version), accesses, dependency);
         }
-        return ScheduleConnections(state, scheduler, built, reads);
+        return ScheduleConnections(state, scheduler, built, reads, previous?.Connections, changed);
     }
 
     internal static JobHandle ScheduleConnections(NavigationMeshBuildState state, Scheduler scheduler,
-        JobHandle[] built, List<JobResourceAccess> reads)
+        JobHandle[] built, List<JobResourceAccess> reads, TileConnection[][]? previous = null, bool[]? changed = null)
     {
         ReadOnlySpan<NavigationSurfaceTile> tiles = state.Surface.Tiles.Span;
         var pairs = new List<(int First, int Second)>();
@@ -76,6 +99,7 @@ public static class NavigationMeshBuilder
                 pairs.Add((first, second));
         }
         var connections = new TileConnection[pairs.Count][];
+        state.Connections = connections;
         var joined = new JobHandle[pairs.Count + built.Length];
         var joinAccesses = new JobResourceAccess[reads.Count + 3];
         reads.CopyTo(joinAccesses);
@@ -83,6 +107,11 @@ public static class NavigationMeshBuilder
         for (int index = 0; index < pairs.Count; index++)
         {
             (int first, int second) = pairs[index];
+            if (previous is not null && changed is not null && !changed[first] && !changed[second])
+            {
+                connections[index] = previous[index];
+                continue;
+            }
             joinAccesses[^3] = JobResourceAccess.Read(scheduler.GetResourceToken(state.TileData), first, 1);
             joinAccesses[^2] = JobResourceAccess.Read(scheduler.GetResourceToken(state.TileData), second, 1);
             joinAccesses[^1] = JobResourceAccess.Write(scheduler.GetResourceToken(connections), index, 1);
@@ -94,13 +123,13 @@ public static class NavigationMeshBuilder
              JobResourceAccess.Read(scheduler.GetResourceToken(connections))], scheduler.CombineDependencies(joined));
     }
 
-    private readonly struct BuildTile(NavigationMeshBuildState state, int index) : IJob
+    private readonly struct BuildTile(NavigationMeshBuildState state, int index, ulong version) : IJob
     {
         public void Execute() => state.TileData[index] = NavigationRecast.BuildTile(
-            state.Surface, state.Surface.Tiles.Span[index], state.Profile, state.Policy, state.Settings);
+            state.Surface, state.Surface.Tiles.Span[index], state.Profile, state.Policy, state.Settings with { ContentVersion = version });
     }
 
-    private readonly record struct TileConnection(int FirstTile, int FirstPolygon, int SecondTile, int SecondPolygon, Vector3 Start, Vector3 End);
+    internal readonly record struct TileConnection(int FirstTile, int FirstPolygon, int SecondTile, int SecondPolygon, Vector3 Start, Vector3 End);
 
     private readonly struct JoinTiles(NavigationMeshBuildState state, int first, int second, TileConnection[][] results, int index) : IJob
     {
@@ -246,11 +275,10 @@ public static class NavigationMeshBuilder
             state.Tiles = ranges;
             var tiles = new NavigationMeshTile[state.TileData.Length];
             for (int index = 0; index < tiles.Length; index++)
-                tiles[index] = new(ranges[index].Tile, state.TileData[index].Mesh);
+                tiles[index] = new(ranges[index].Tile, state.TileData[index].Mesh, state.Surface.Tiles.Span[index].InteriorBounds);
             state.Mesh = new(positions.ToArray(), vertices.ToArray(), polygons.ToArray(), combined.ToArray(),
                 details.ToArray(), triangles.ToArray(), state.Settings.ContentVersion, tiles: tiles,
                 bakedRadius: NavigationSurfaceTraversal.GetRotationRadius(state.Profile.Footprint.Span));
-            state.TileData = [];
         }
     }
 }

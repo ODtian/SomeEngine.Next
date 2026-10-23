@@ -83,7 +83,7 @@ public sealed partial class NavigationMesh
         }
         var tiles = new NavigationMeshTile[Tiles.Length];
         for (int index = 0; index < tiles.Length; index++)
-            tiles[index] = new(Tiles.Span[index].Tile, Tiles.Span[index].Mesh.Transform(transform));
+            tiles[index] = new(Tiles.Span[index].Tile, Tiles.Span[index].Mesh.Transform(transform), Tiles.Span[index].Bounds?.Transform(transform));
         // The smallest XZ singular value is the disk radius contained in the transformed clearance ellipse.
         Vector2 xAxis = new(transform.M11, transform.M13), zAxis = new(transform.M31, transform.M33);
         float xx = xAxis.LengthSquared(), zz = zAxis.LengthSquared(), xz = Vector2.Dot(xAxis, zAxis);

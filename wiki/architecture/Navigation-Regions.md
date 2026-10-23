@@ -48,4 +48,6 @@ navigation.AddAgent(entity, scene, profile, policy,
 
 粗图先就绪、详细前段分批取得的请求与独立后台组见[导航流送](Navigation-Streaming.md)。
 
+来源、实际变换与规格变化后的块版本、局部构建和依赖修正见[动态导航](Navigation-Dynamic.md)。
+
 实现入口：[入口图](../../src/SomeEngine.Navigation/NavigationRegionGraph.cs)、[局部成本构建](../../src/SomeEngine.Navigation/NavigationRegionBuilder.cs)、[场景与完成值](../../src/SomeEngine.Navigation/NavigationScene.cs)、[放置构建](../../src/SomeEngine.Navigation/NavigationSceneBuilder.cs)、[场景搜索](../../src/SomeEngine.Navigation/SceneNavigationSearch.cs)。公共行为入口：[NavigationSceneTests](../../tests/SomeEngine.Navigation.Tests/NavigationSceneTests.cs)。

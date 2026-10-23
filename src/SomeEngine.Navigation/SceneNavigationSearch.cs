@@ -8,18 +8,31 @@ public sealed class SceneSearchState
     private SceneSearchRun _run;
     private NavigationPath? _path;
     private long _version;
+    private long _contentVersion;
     private bool _replace;
 
     internal SceneSearchState(in NavigationSearchInput<NavigationScene> input)
     {
         _run = new(in input);
         _version = input.Space.Content.Version;
+        _contentVersion = input.Space.Content.ContentVersion;
     }
 
     internal bool Update(in NavigationSearchInput<NavigationScene> input)
     {
-        if (!_run.Waiting || _version == input.Space.Content.Version) return false;
-        _version = input.Space.Content.Version;
+        NavigationSceneContent current = input.Space.Content;
+        if (_version == current.Version) return false;
+        _version = current.Version;
+        bool contentChanged = _contentVersion != current.ContentVersion;
+        _contentVersion = current.ContentVersion;
+        if (contentChanged && (_run.Found ? !current.AreDependenciesCurrent(_path!) : _run.RequiresRepair(current)))
+        {
+            _run = new(in input);
+            _path = null;
+            _replace = true;
+            return true;
+        }
+        if (!_run.Waiting) return false;
         if (_run.StartMissing || (_run.GoalMissing && input.Space.Content.TryGetTile(_run.GoalTile, out _)))
         {
             _run = new(in input);
@@ -45,6 +58,7 @@ public sealed class SceneSearchState
 internal sealed class SceneSearchRun
 {
     private readonly NavigationSearchInput<NavigationScene> _input;
+    private readonly NavigationSceneContent _content;
     private readonly List<SceneNode> _nodes = [];
     private readonly List<List<RouteEdge>> _edges = [];
     private readonly List<RouteEdge> _connectors = [];
@@ -71,10 +85,29 @@ internal sealed class SceneSearchRun
     private NavigationPath? _path;
 
     internal bool Waiting => _status == NavigationSearchStatus.WaitingForTiles;
+    internal bool Found => _status == NavigationSearchStatus.Found;
     internal bool StartMissing { get; }
     internal bool GoalMissing { get; }
     internal NavigationSceneTileId GoalTile { get; }
     internal void Resume() => _status = NavigationSearchStatus.Searching;
+
+    internal bool RequiresRepair(NavigationSceneContent current)
+    {
+        if (_route.Count == 0) return true;
+        foreach (RouteEdge edge in _route)
+        {
+            foreach (int node in new[] { edge.From, edge.To })
+            {
+                SceneNode point = _nodes[node];
+                var id = new NavigationSceneTileId(point.Region, point.Tile);
+                if (!_content.TryGetContentVersion(id, out ulong before) ||
+                    !current.TryGetContentVersion(id, out ulong after) || before != after) return true;
+            }
+            if (edge.Connection >= 0 && (!current.TryGetConnectionVersion(edge.Connection, out ulong version) ||
+                version != edge.ConnectionVersion)) return true;
+        }
+        return false;
+    }
 
     internal SceneSearchRun(in NavigationSearchInput<NavigationScene> input)
     {
@@ -82,7 +115,7 @@ internal sealed class SceneSearchRun
         _minimumAreaCost = input.Policy.DefaultAreaCost;
         foreach (NavigationAreaCost cost in input.Policy.AreaCosts.Span)
             _minimumAreaCost = MathF.Min(_minimumAreaCost, cost.Multiplier);
-        NavigationSceneContent content = input.Space.Content;
+        NavigationSceneContent content = _content = input.Space.Content;
         NavigationSceneTile? start = content.FindTile(input.Start, out Vector3 startPoint);
         NavigationSceneTile? goal = content.FindTile(input.Goal, out Vector3 goalPoint);
         NavigationSceneTileId? startId = start?.Id ?? content.FindTileInDirectory(input.Start);
@@ -138,8 +171,12 @@ internal sealed class SceneSearchRun
         foreach (NavigationSceneConnection connection in content.Connections.Span)
         {
             if ((connection.RequiredCapabilities & capabilities) != connection.RequiredCapabilities) continue;
-            int from = offsets[connection.FromRegion] + content.GetRegion(connection.FromRegion).Graph.FindPort(connection.FromPort);
-            int to = offsets[connection.ToRegion] + content.GetRegion(connection.ToRegion).Graph.FindPort(connection.ToPort);
+            NavigationRegionGraph fromGraph = content.GetRegion(connection.FromRegion).Graph;
+            NavigationRegionGraph toGraph = content.GetRegion(connection.ToRegion).Graph;
+            int fromPort = fromGraph.FindPort(connection.FromPort), toPort = toGraph.FindPort(connection.ToPort);
+            if (fromPort < 0 || toPort < 0 || fromGraph.Entrances.Span[fromPort].Polygon < 0 || toGraph.Entrances.Span[toPort].Polygon < 0) continue;
+            int from = offsets[connection.FromRegion] + fromPort;
+            int to = offsets[connection.ToRegion] + toPort;
             float cost = Vector3.Distance(_nodes[from].Position, _nodes[to].Position) * input.Policy.DefaultAreaCost +
                 connection.Cost + input.Policy.GetActionCost(connection.Action);
             if (!float.IsFinite(cost)) continue;

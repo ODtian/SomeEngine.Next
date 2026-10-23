@@ -97,7 +97,7 @@ internal static class NavigationRecast
             (int)MathF.Round(settings.MaximumEdgeLength / surface.Settings.CellSize), RcBuildContoursFlags.RC_CONTOUR_TESS_WALL_EDGES);
         RcPolyMesh mesh = RcMeshs.BuildPolyMesh(context, contours, settings.MaximumPolygonVertices);
         polygonClasses = mesh.areas.AsSpan(0, mesh.npolys).ToArray();
-        if (mesh.npolys == 0) return new(new([], [], [], []), []);
+        if (mesh.npolys == 0) return new(new([], [], [], [], contentVersion: settings.ContentVersion), []);
         RcPolyMeshDetail detail = RcMeshDetails.BuildPolyMeshDetail(context, mesh, compact,
             settings.DetailSampleDistance, settings.DetailMaximumError);
         return Convert(surface, tile, mesh, detail, areas, settings.ContentVersion, bakedRadius);

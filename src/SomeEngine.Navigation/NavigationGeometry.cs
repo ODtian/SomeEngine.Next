@@ -6,6 +6,20 @@ public readonly record struct NavigationBounds(Vector3 Minimum, Vector3 Maximum)
 {
     public bool Contains(Vector2 point) => point.X >= Minimum.X && point.X < Maximum.X
         && point.Y >= Minimum.Z && point.Y < Maximum.Z;
+
+    public NavigationBounds Transform(Matrix4x4 transform)
+    {
+        Vector3 minimum = new(float.PositiveInfinity), maximum = new(float.NegativeInfinity);
+        for (int corner = 0; corner < 8; corner++)
+        {
+            Vector3 point = Vector3.Transform(new((corner & 1) == 0 ? Minimum.X : Maximum.X,
+                (corner & 2) == 0 ? Minimum.Y : Maximum.Y,
+                (corner & 4) == 0 ? Minimum.Z : Maximum.Z), transform);
+            minimum = Vector3.Min(minimum, point);
+            maximum = Vector3.Max(maximum, point);
+        }
+        return new(minimum, maximum);
+    }
 }
 
 public readonly record struct NavigationTriangle(int A, int B, int C, int Area);
