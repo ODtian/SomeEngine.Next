@@ -10,6 +10,7 @@ internal abstract class TerrainGpuRequest(long sequence, JobHandle dependency, T
 {
     internal abstract GraphPassId Record(RenderTerrainData data, ref RenderGraphFrame frame,
         ref RenderGraphFrameExtension extension);
+    internal virtual void CheckResult() { }
 }
 
 internal sealed class HeightGpuRequest<TBrush>(long sequence, JobHandle dependency, TerrainCompletion completion,
