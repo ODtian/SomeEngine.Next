@@ -7,6 +7,7 @@ using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Cluster.Pipeline;
+using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
 using SomeEngine.Render.Terrain;
 using SomeEngine.RenderGraph;
@@ -47,7 +48,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     public void OnCreate(ref RenderPrepareSystemContext context)
     {
         _requests = context.World.Query(new QueryDefinitionBuilder().Read<RenderTerrainRequests>());
-        _chunks = context.World.Query(new QueryDefinitionBuilder().Read<RenderTerrainChunk>());
+        _chunks = context.World.Query(new QueryDefinitionBuilder().Read<RenderTerrainChunk>().ReadBuffer<RenderMaterialBinding>());
     }
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
@@ -73,21 +74,29 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
                     Center = new Vec3 { X = center.X, Y = center.Y, Z = center.Z },
                     Radius = Vector3.Distance(chunk.Bounds.Min, chunk.Bounds.Max) * .5f,
                 };
-                ClusterGeometry geometry = _builder.Reserve(context, _adapter.Mesher.GetCapacity(chunk.Bounds),
+                ClusterGeometry geometry = _builder.Reserve(context, GetCapacity(chunk.Bounds),
                     request.Revision, bounds);
                 _geometries.Add((chunk.GeometryId, request.Revision), new(geometry));
             }
             _batches.Add(request, new(request));
         }
 
-        var chunks = new List<(Entity Entity, RenderTerrainChunk Chunk)>();
+        var world = context.World;
+        var materials = new List<long>();
+        var chunks = new List<(Entity Entity, RenderTerrainChunk Chunk, int FirstMaterial, int MaterialCount)>();
         context.World.ExecuteQuery(_chunks, query =>
         {
             foreach (QueryChunkView chunk in query.Chunks)
             {
                 var values = chunk.Read<RenderTerrainChunk>();
                 for (int row = 0; row < values.Length; row++)
-                    if (ReferenceEquals(values[row].Scene, _scene)) chunks.Add((chunk.Entities[row], values[row]));
+                {
+                    if (!ReferenceEquals(values[row].Scene, _scene)) continue;
+                    ReadOnlySpan<RenderMaterialBinding> bindings = chunk.ReadBuffer<RenderMaterialBinding>(row).AsSpan();
+                    int first = materials.Count;
+                    foreach (RenderMaterialBinding binding in bindings) materials.Add(binding.MaterialId);
+                    chunks.Add((chunk.Entities[row], values[row], first, bindings.Length));
+                }
             }
         });
         var visible = new Dictionary<int, ulong>();
@@ -97,7 +106,10 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             if (value.Chunk.Revision == 0) continue;
             GeometryData geometry = _geometries[(value.Chunk.GeometryId, value.Chunk.Revision)];
             geometry.HasBeenBound = true;
-            var binding = new RenderClusterGeometry(geometry.Geometry, 0);
+            float expansion = 0f;
+            for (int material = value.FirstMaterial; material < value.FirstMaterial + value.MaterialCount; material++)
+                expansion = Math.Max(expansion, world.ReadMaterial(materials[material]).BoundsExpansion);
+            var binding = new RenderClusterGeometry(geometry.Geometry, expansion);
             if (!context.World.Has<RenderClusterGeometry>(value.Entity)) context.World.Add(value.Entity, binding);
             else if (context.World.Read<RenderClusterGeometry>(value.Entity) != binding) context.World.Replace(value.Entity, binding);
         }
@@ -133,7 +145,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             GraphPassId previous = default;
             foreach (TerrainGpuChunkBuild chunk in request.Chunks)
             {
-                ClusterGpuMeshCapacity capacity = _adapter.Mesher.GetCapacity(chunk.Bounds);
+                ClusterGpuMeshCapacity capacity = GetCapacity(chunk.Bounds);
                 var parameters = new SurfaceParameters(chunk.Bounds.Min, chunk.Bounds.CellSize, chunk.Bounds.CellCount,
                     capacity.VertexCount, capacity.TriangleCount, chunk.Bounds.FinestCellSize, (uint)chunk.Bounds.TransitionFaces);
                 var bindings = new Dictionary<string, GraphParameterResourceBinding>(sourceBindings)
@@ -158,10 +170,21 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
                 bindings["TerrainIndices"] = ReadPrefix(frame.CreateBufferSrv(indices));
                 bindings["TerrainCounts"] = Read(frame.CreateBufferSrv(counts));
                 bindings["TerrainAttributes"] = WritePrefix(frame.CreateBufferUav(attributes.Buffer));
+                GraphBufferSlice materials = default;
+                if (_adapter.Attributes.MaterialEntryPoint is not null)
+                {
+                    materials = CreateBuffer(ref frame, capacity.TriangleCount * sizeof(uint), "Terrain triangle materials");
+                    bindings["TerrainTriangleMaterials"] = WritePrefix(frame.CreateBufferUav(materials.Buffer));
+                }
                 AddCompute(ref frame, _adapter.Attributes.Shader, _adapter.Attributes.EntryPoint, bindings,
                     new((capacity.VertexCount + 63) / 64, 1, 1));
+                if (_adapter.Attributes.MaterialEntryPoint is { } materialEntry)
+                {
+                    AddCompute(ref frame, _adapter.Attributes.Shader, materialEntry, bindings,
+                        new((capacity.TriangleCount + 63) / 64, 1, 1));
+                }
                 ClusterGeometry geometry = _geometries[(chunk.GeometryId, request.Revision)].Geometry;
-                GraphPassId pass = _builder.Record(ref context, geometry, new(positions, attributes, indices, counts),
+                GraphPassId pass = _builder.Record(ref context, geometry, new(positions, attributes, indices, counts, materials),
                     _adapter.Attributes.MaterialIndex);
                 if (previous != default) frame.OrderAfter(pass, previous);
                 previous = pass;
@@ -169,6 +192,9 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             batch.Pass = previous;
         }
     }
+
+    private ClusterGpuMeshCapacity GetCapacity(TerrainChunkBounds bounds) =>
+        _adapter.Mesher.GetCapacity(bounds) with { MaterialCount = _adapter.Attributes.MaterialCount };
 
     internal GraphPassId AddCompute(ref RenderGraphFrame frame, Shader shader, string entry,
         IReadOnlyDictionary<string, GraphParameterResourceBinding> bindings, DispatchArguments dispatch)

@@ -522,8 +522,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _scalarBytes = uploads.Declare(ref edit, scalars.Bytes, BufferUsages.ShaderRead, "Cluster material scalars");
                 _scalarOffsets = uploads.Declare(ref edit, scalars.Offsets,
                     BufferUsages.ShaderRead, "Cluster material scalar offsets");
-                _shadeScalarsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
-                _shadeScalarOffsetsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+                _materialScalarsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+                _materialScalarOffsetsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 using (SomeEngine.Diagnostics.EngineTrace.Begin(GraphInstallTrace))
                     InstallGraph(
                         ref edit,

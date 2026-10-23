@@ -283,6 +283,12 @@ public sealed partial class ClusterPipelineSystem
                 _ = pass.Bind(graph.CreateBufferSrv(frame.RasterSlots, structureStride: sizeof(uint),
                     label: "Cluster tessellation raster material slots"), sync);
                 return;
+            case ClusterTessellationCoreResource.MaterialScalars:
+                _ = pass.Bind(graph.CreateBufferSrv(_materialScalarsInput), sync);
+                return;
+            case ClusterTessellationCoreResource.MaterialScalarOffsets:
+                _ = pass.Bind(graph.CreateBufferSrv(_materialScalarOffsetsInput, structureStride: sizeof(uint)), sync);
+                return;
             case ClusterTessellationCoreResource.HiZ:
                 _ = pass.Bind(
                     graph.CreateTextureSrv(
@@ -880,8 +886,8 @@ public sealed partial class ClusterPipelineSystem
     {
         _materialInputsAreShade = true;
         _materialInputBin = invocation.BinIndex;
-        _shadeScalarOffsetsInput ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
-        _shadeScalarsInput ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
+        _materialScalarOffsetsInput ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
+        _materialScalarsInput ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
         PassDefinition pass = graph.GetPass(passId);
         pass.SetParameterBlock(invocation.Pipeline.ParameterLayout);
         GraphBufferInput uniformBuffer = UploadUniform(ref graph,
@@ -905,8 +911,8 @@ public sealed partial class ClusterPipelineSystem
                     ref pass,
                     coreResource,
                     uniformBuffer,
-                    _shadeScalarsInput,
-                    _shadeScalarOffsetsInput);
+                    _materialScalarsInput,
+                    _materialScalarOffsetsInput);
                 continue;
             }
             if (invocation.FeatureResourceBinders[resourceIndex] is { } featureBinder)
@@ -1208,8 +1214,8 @@ public sealed partial class ClusterPipelineSystem
         ImmutableDictionary<GraphPassId, ImmutableList<MaterialInput>>.Empty;
     private uint _materialInputBin;
     private bool _materialInputsAreShade;
-    private GraphBufferInput _shadeScalarOffsetsInput = null!;
-    private GraphBufferInput _shadeScalarsInput = null!;
+    private GraphBufferInput _materialScalarOffsetsInput = null!;
+    private GraphBufferInput _materialScalarsInput = null!;
 
     private ClusterMaterialScalars _materialScalars = ClusterMaterialScalars.Empty;
     private GraphBufferId _scalarBytes;
@@ -1248,9 +1254,9 @@ public sealed partial class ClusterPipelineSystem
             Math.Max(1u, (stages.BinCount + 127u) / 128u), 1, 1));
         graph.SetPassData(_shadeClearPass, binDispatch);
         graph.SetPassData(_shadeReservePass, binDispatch);
-        graph.SetBufferInput(_shadeScalarOffsetsInput, new GraphBufferSlice(_scalarOffsets,
+        graph.SetBufferInput(_materialScalarOffsetsInput, new GraphBufferSlice(_scalarOffsets,
             new BufferRange(0, checked((ulong)_materialScalars.Offsets.Length))));
-        graph.SetBufferInput(_shadeScalarsInput, new GraphBufferSlice(_scalarBytes,
+        graph.SetBufferInput(_materialScalarsInput, new GraphBufferSlice(_scalarBytes,
             new BufferRange(0, checked((ulong)_materialScalars.Bytes.Length))));
     }
 

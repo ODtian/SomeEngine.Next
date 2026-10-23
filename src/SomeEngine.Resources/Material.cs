@@ -41,6 +41,8 @@ public abstract partial class Material : IDisposable
     public abstract Guid MaterialTypeId { get; }
     public abstract IReadOnlyList<MaterialPropertyDefinition> Properties { get; }
     public int PropertyCount => Properties.Count;
+    /// <summary>Conservative world-space displacement distance, derived from this material's geometric parameters.</summary>
+    public virtual float BoundsExpansion => 0f;
 
     protected void SetProperty<T>(ref T field, T value, uint index)
     {

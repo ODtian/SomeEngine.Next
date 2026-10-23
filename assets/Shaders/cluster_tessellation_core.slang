@@ -116,7 +116,9 @@ TDomain.TriangleData LoadTessellationTriangle<TVE, TDomain>(
             context,
             visibleClusterIndex);
     }
-    return domain.makeTriangle(vertices[0], vertices[1], vertices[2]);
+    uint materialIndex = GetClusterMaterialSlotOffset(request.InstanceID) +
+        GetClusterLocalMaterial(PageHeap, request.PageOffset, DrawRequestClusterID(request), originalTriangle);
+    return domain.makeTriangle(vertices[0], vertices[1], vertices[2], materialIndex);
 }
 
 DomainEvaluate.TriangleData LoadTessellationTriangleWithVisibility(
@@ -173,7 +175,9 @@ DomainEvaluate.TriangleData LoadTessellationTriangleWithVisibility(
         visibilityInput.LocalVertexIndex = localVertex;
         varyings[corner] = visibility.makeVarying(vertices[corner], visibilityInput);
     }
-    return domain.makeTriangle(vertices[0], vertices[1], vertices[2]);
+    uint materialIndex = GetClusterMaterialSlotOffset(request.InstanceID) +
+        GetClusterLocalMaterial(PageHeap, request.PageOffset, DrawRequestClusterID(request), originalTriangle);
+    return domain.makeTriangle(vertices[0], vertices[1], vertices[2], materialIndex);
 }
 
 float2 TessellationScreenPosition(float4 clip, ClusterViewUniforms view)

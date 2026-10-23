@@ -8,12 +8,13 @@ using SomeEngine.Resources.Geometry;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
-/// <summary>Float3 positions, opaque user attributes, uint indices, and two uint counts (vertices, indices).</summary>
+/// <summary>Float3 positions, opaque attributes, uint indices/counts, and optional uint material indices per triangle.</summary>
 public readonly record struct ClusterGpuMeshInput(
-    GraphBufferSlice Positions, GraphBufferSlice Attributes, GraphBufferSlice Indices, GraphBufferSlice Counts);
+    GraphBufferSlice Positions, GraphBufferSlice Attributes, GraphBufferSlice Indices, GraphBufferSlice Counts,
+    GraphBufferSlice TriangleMaterials = default);
 
-/// <summary>Maximum source counts used to reserve device storage before generated counts are available.</summary>
-public readonly record struct ClusterGpuMeshCapacity(uint VertexCount, uint TriangleCount);
+/// <summary>Maximum source counts and the material-index range (1 to 256) used to reserve device storage.</summary>
+public readonly record struct ClusterGpuMeshCapacity(uint VertexCount, uint TriangleCount, uint MaterialCount = 1);
 
 /// <summary>The compute entry calls BuildCluster with the user's IClusterVertexEncode implementation.</summary>
 public sealed record ClusterGpuVertexEncoder(Shader Shader, string EntryPoint, string VertexEncoding,
@@ -58,7 +59,9 @@ public sealed class ClusterGpuBuilder : IDisposable
     {
         // A completed group contains at least 21 triangles when each triangle adds three vertices.
         uint trianglesPerPage = capacity.VertexCount <= MaximumVertices ? MaximumTriangles : MaximumVertices / 3;
-        uint pages = Math.Max(1u, checked((capacity.TriangleCount + trianglesPerPage - 1u) / trianglesPerPage));
+        uint groups = capacity.MaterialCount;
+        uint pages = Math.Max(1u, Math.Min(capacity.TriangleCount,
+            checked((capacity.TriangleCount + trianglesPerPage - 1u) / trianglesPerPage + groups - 1u)));
         uint nodes = pages;
         int depth = 1;
         for (uint count = pages; count > 1; depth++)
@@ -67,7 +70,7 @@ public sealed class ClusterGpuBuilder : IDisposable
             nodes = checked(nodes + count);
         }
         uint stride = PageHeap.AllocationSize(checked(144u + _encoder.MaximumVertexBlobBytes + MaximumTriangles * 3u + 3u));
-        var sizes = new ClusterGpuBufferSizes(stride, pages, nodes, Math.Max(1, depth - 1));
+        var sizes = new ClusterGpuBufferSizes(stride, pages, nodes, Math.Max(1, depth - 1), groups);
         return _resources.ReserveGpu(context, sizes, _encoder.VertexEncoding, revision, bounds);
     }
 
@@ -84,12 +87,14 @@ public sealed class ClusterGpuBuilder : IDisposable
         ClusterGpuAllocation allocation = _resources.GetGpu(geometry);
         ClusterGpuBufferSizes sizes = allocation.Sizes;
         var uniforms = new BuildUniforms(allocation.PageOffset, sizes.PageBytes, sizes.PageStride, sizes.PageCount,
-            geometry.RootBvh, sizes.BvhNodeCount, (uint)_encoding, (uint)(_encoding >> 32), materialIndex);
+            geometry.RootBvh, sizes.BvhNodeCount, (uint)_encoding, (uint)(_encoding >> 32), materialIndex,
+            sizes.MaterialCount, input.TriangleMaterials != default ? 1u : 0u);
         GraphBufferSlice parameters = graph.Upload(uniforms, BufferUsages.Constant);
         GraphBufferSrvId positions = graph.CreateBufferSrv(input.Positions);
         GraphBufferSrvId attributes = graph.CreateBufferSrv(input.Attributes);
         GraphBufferSrvId indices = graph.CreateBufferSrv(input.Indices);
         GraphBufferSrvId counts = graph.CreateBufferSrv(input.Counts);
+        GraphBufferSrvId materials = input.TriangleMaterials != default ? graph.CreateBufferSrv(input.TriangleMaterials) : counts;
         GraphBufferUavId outputPages = graph.CreateBufferUav(_pages,
             new BufferRange(allocation.PageOffset, sizes.PageBytes));
         GraphBufferUavId outputBvh = graph.CreateBufferUav(_bvh,
@@ -103,6 +108,7 @@ public sealed class ClusterGpuBuilder : IDisposable
                 "ClusterBuildAttributes" => Read(attributes),
                 "ClusterBuildIndices" => Read(indices),
                 "ClusterBuildCounts" => GraphParameterResourceBinding.ReadOnlyBuffer(counts, PipelineSync.ComputeShading),
+                "ClusterBuildMaterials" => Read(materials),
                 "ClusterBuildPages" => Write(outputPages),
                 "ClusterBuildBvh" => Write(outputBvh),
                 _ => throw new InvalidDataException($"Unknown Cluster build resource '{resource.Name}'."),
@@ -131,6 +137,7 @@ public sealed class ClusterGpuBuilder : IDisposable
 
     [StructLayout(LayoutKind.Sequential, Size = 48)]
     private readonly record struct BuildUniforms(uint PageOffset, uint PageBytes, uint PageStride, uint PageCount,
-        uint BvhRoot, uint BvhNodeCount, uint EncodingLow, uint EncodingHigh, uint MaterialIndex);
+        uint BvhRoot, uint BvhNodeCount, uint EncodingLow, uint EncodingHigh, uint MaterialIndex,
+        uint MaterialCount, uint HasTriangleMaterials);
     private sealed record BuildPass(ClusterComputePipeline Pipeline, GraphParameterResourceBinding[] Bindings);
 }

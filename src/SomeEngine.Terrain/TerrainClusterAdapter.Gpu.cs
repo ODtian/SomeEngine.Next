@@ -33,7 +33,7 @@ public sealed class TerrainClusterAdapter(ITerrainMesherGpu mesher, TerrainGpuAt
             TerrainBounds bounds = chunks[0].Bounds.Volume.Expand(ReadBorder * chunks[0].Bounds.CellSize);
             foreach (TerrainGpuChunkBuild chunk in chunks.AsSpan(1))
                 bounds = bounds.Union(chunk.Bounds.Volume.Expand(ReadBorder * chunk.Bounds.CellSize));
-            TerrainGpuSurfaceData input = TerrainGpuSurfaceData.Capture(terrain.Surface!, bounds);
+            TerrainGpuSurfaceData input = TerrainGpuSurfaceData.Capture(terrain.Surface!, bounds, Attributes.Fields);
             var completion = new TerrainCompletion(terrain.Editing.Scheduler);
             var visibility = new TerrainCompletion(terrain.Editing.Scheduler);
             var request = new TerrainGeometryRequest(terrain.NextRequestSequence(), input.Completion,

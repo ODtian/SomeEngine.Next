@@ -51,6 +51,8 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 `GpuLodTerrainExample` 采用相同的源数据、块范围、距离数组、相机操作和笔刷参数，通过 GPU 求值普通单元与六面过渡单元。`RaiseDetail` 返回设备编辑完成状态，`Scene.GetGpuBuild` 进一步区分整批几何完成与可见绑定完成；接口与示例见 [GPU 地形几何](../../wiki/architecture/terrain/Terrain-Gpu-Geometry.md)。
 
+`TerrainMaterialExample.CreateCpuAsync` 与 `CreateGpuAsync` 使用相同的 Lift 高度字段、Region 体素字段、自定义顶点字节和红绿材质分组。用户曲面沿地形 Y 轴施加世界空间二次位移；`TerrainDisplacementMaterial.Displacement` 同时决定细分曲面与保守实例包围。字段编辑更新属性，材质参数更新直接改变位移；`SaveAsync` 保存字段、表面和命名材料字段绑定。归一化 Lift、24 字节编码、区域边界和二次函数属于示例选择，完整调用见[地形材质](../../wiki/architecture/terrain/Terrain-Materials.md)。
+
 `TerrainAssetExample.SaveAsync` 固定捕获地形，再将字段、表面图和材质引用保存到 TerrainAsset。`OpenAsync` 重开可编辑 Terrain，并调用应用提供的函数解析材料引用，返回可直接用于 Placement 的材料数组。字段采样绑定、Block 划分与完整调用见[地形资产与捕获](../../wiki/architecture/terrain/Terrain-Assets.md)。
 
 重开的 Terrain 按字段读取区域取得文件页，并持有独立来源；使用结束时调用 `Dispose`。同一示例的 `EditHeightRegionAsync` 在关闭源 Asset 后修改指定高度区域，保留材料绑定并再次保存；返回的高度读取结果继续持有已完成样本。
