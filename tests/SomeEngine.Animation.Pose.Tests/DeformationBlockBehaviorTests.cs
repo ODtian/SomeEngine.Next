@@ -17,6 +17,21 @@ namespace SomeEngine.Animation.Pose.Tests;
 
 public sealed class DeformationBlockBehaviorTests
 {
+    [Fact]
+    public async Task ImportedSkinBindingKeepsItsJointDataAfterTheAssetCloses()
+    {
+        using var files = new DeformationFiles(false);
+        var project = new AssetProject(files.Directory, []);
+        await project.ImportAsync(files.Source, SourceImporter());
+        SkinBinding binding;
+        using (SkeletonAsset asset = await OpenSkeleton(project, files, "first"))
+            binding = (await asset.GetBlockAsync<SkinBindingBlock>()).CreateSkinBinding();
+
+        Assert.Equal(2, binding.JointCount);
+        Assert.Equal(new short[] { 2, 0 }, binding.JointBones.ToArray());
+        Assert.Equal(new[] { DeformationFiles.FirstMatrix, DeformationFiles.SecondMatrix }, binding.InverseBindMatrices.ToArray());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
