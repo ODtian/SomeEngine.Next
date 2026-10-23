@@ -9,6 +9,8 @@
     <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
     <ProjectReference Include="../SomeEngine.Render/SomeEngine.Render.csproj" />
     <ProjectReference Include="../SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
+    <ProjectReference Include="../SomeEngine.Render.Cluster.Pipeline/SomeEngine.Render.Cluster.Pipeline.csproj" />
+    <ProjectReference Include="../SomeEngine.Render.Cluster/SomeEngine.Render.Cluster.csproj" />
     <ProjectReference Include="../SomeEngine.Generators/SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>

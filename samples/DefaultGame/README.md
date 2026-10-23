@@ -31,11 +31,15 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 同一示例的 `AddHeightGpu(shader, delta)` 使用驻留的 `terrain_height_delta` Shader 提交 GPU 增量。字段读取和 CPU 网格构建共享 GPU 页的按需读回，完成后的几何同步到两个放置；调用路径见 [GPU 字段编辑](../../wiki/architecture/terrain/Terrain-Gpu-Editing.md)。
 
+`GpuHeightTerrainExample` 将高度编辑、表面提取、用户属性和 Cluster 构建放在 GPU 上执行。`CreateAsync` 取得示例 Shader，`Install` 复用 TerrainScene 的批次管理，`AddPlacements` 创建两个共享放置，`AddHeight` 提交高度增量。`Scene.GetGpuBuild` 提供几何完成与渲染绑定完成句柄；字段查询通过显式 `ReadCpuAsync` 取得。网格、放置和位置/法线/UV 编码属于示例选择，接口与数据职责见 [GPU 地形几何](../../wiki/architecture/terrain/Terrain-Gpu-Geometry.md)。
+
 `VoxelTerrainExample` 展示三维体素场的同一流程：`Install` 安装地形系统，`AddPlacement` 创建放置，`WriteSphere` 在 `SampleRegion` 内重新写入球体标量。每米一个采样点、一米半径、`[-3,4)` 的样本区域及初始球心 `(-1,0,0)` 属于示例参数。`Field.ReadCpuAsync` 取得固定版本的标量，`Scene` 的几何更新使用既有空间块及 Cluster 通路。
 
 同一示例的 `AddSphereDeltaGpu(shader, center, radius, delta)` 使用驻留的 `terrain_voxel_delta` Shader 提交球形增量。球心与半径采用地形局部米制坐标，增量按距离线性衰减；CPU 读取和空间块构建继续使用同一字段版本与完成依赖。
 
 两个地形示例的 `Smooth(center, radius, neighborRadius, strength)` 与 `Flatten(center, radius, plane, strength)` 使用统一的米制半径和线性衰减；平滑的邻域半径以样本为单位，压平目标采用地形局部 `Plane`。方法返回 `TerrainEdit`，完成后可经公开字段读取采样；安装的地形系统更新对应空间块画面。固定版本邻域与自定义梯度笔刷用法见[地形邻域笔刷](../../wiki/architecture/terrain/Terrain-Brushes.md)。
+
+对应的 `SmoothGpu(shader, center, radius, neighborRadius, strength)` 与 `FlattenGpu(shader, center, radius, plane, strength)` 使用相同操作参数。高度示例传入 `terrain_height_neighborhood` Shader，体素示例传入 `terrain_voxel_neighborhood` Shader；平滑的两个计算阶段共用固定源版本，返回的 `TerrainEdit` 覆盖最终输出。资源录制与参数对象见 [GPU 邻域笔刷](../../wiki/architecture/terrain/Terrain-Gpu-Editing.md#邻域与多阶段计算)。
 
 `BlendTerrainExample` 从高度表面生成局部体素初值，以带渐变区域的 `BlendSurface` 组合两个源。`RaiseDetail` 继续编辑体素并更新共享表面；`Voxels.ReadCpuAsync` 读取相应样本版本。八米地表、一米采样间距、两米渐变和放置位置属于示例参数。完整接口与调用见[地形表面组合](../../wiki/architecture/terrain/Terrain-Surfaces.md)。
 

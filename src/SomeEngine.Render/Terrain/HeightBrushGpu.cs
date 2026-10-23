@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
-using SomeEngine.Render.Assets;
 using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
 
@@ -73,34 +72,33 @@ public ref struct HeightBrushGpuContext
     public int SourcePageX { get; }
     public int SourcePageZ { get; }
     public int SourcePageWidth { get; }
+    public GraphBufferSlice SourceSamples => _source;
+    public GraphBufferSlice SourcePageOffsets => _pageTable;
+    public GraphBufferId Output => _output;
+    public RenderGraphFrame Graph => _frame;
     internal GraphPassId LastPass { get; private set; }
 
     /// <summary>Records a kernel with parameters, source samples, page offsets and the output page.</summary>
     public GraphPassId AddCompute<TParameters>(Shader shader, string entryPoint, TParameters parameters,
         DispatchArguments dispatch) where TParameters : unmanaged
+        => AddCompute(shader, entryPoint, parameters, dispatch,
+        [
+            GraphParameterResourceBinding.ReadOnlyBuffer(
+                _frame.CreateBufferSrv(_source, structureStride: sizeof(float)), PipelineSync.ComputeShading),
+            GraphParameterResourceBinding.ReadOnlyBuffer(
+                _frame.CreateBufferSrv(_pageTable, structureStride: sizeof(int)), PipelineSync.ComputeShading),
+            GraphParameterResourceBinding.WritableBuffer(
+                _frame.CreateBufferUav(_output, structureStride: sizeof(float)), PipelineSync.ComputeShading,
+                GraphAccessMode.Write, WriteCoverage.Complete),
+        ]);
+
+    /// <summary>Records a stage with explicit shader bindings after its parameter constants and previous stages.</summary>
+    public GraphPassId AddCompute<TParameters>(Shader shader, string entryPoint, TParameters parameters,
+        DispatchArguments dispatch, scoped ReadOnlySpan<GraphParameterResourceBinding> bindings) where TParameters : unmanaged
     {
-        LinkedComputePipeline pipeline = _data.GetPipeline(shader, entryPoint);
-        var state = new HeightComputeData(pipeline, _frame.Upload(parameters, BufferUsages.Constant),
-            _frame.CreateBufferSrv(_source, structureStride: sizeof(float)),
-            _frame.CreateBufferSrv(_pageTable, structureStride: sizeof(int)),
-            _frame.CreateBufferUav(_output, structureStride: sizeof(float)), dispatch);
-        GraphPassId pass = _extension.AddComputePass("Edit terrain height", PassQueueSelection.AnyCompatible(), state,
-            new PassOptions(Culling: PassCullingMode.NeverCull),
-            static (ref PassDefinition access, ref HeightComputeData data) =>
-            {
-                access.SetPipeline(data.Pipeline.Pipeline);
-                access.SetParameterBlock(data.Pipeline.ParameterLayout);
-                access.Bind(data.Parameters, PipelineSync.ComputeShading);
-                access.Bind(data.Source, PipelineSync.ComputeShading);
-                access.Bind(data.PageTable, PipelineSync.ComputeShading);
-                access.Bind(data.Output, PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete);
-            },
-            static (ref ComputePassCommandScope commands, in HeightComputeData data) => commands.Dispatch(data.Dispatch));
-        if (LastPass != default) _extension.OrderAfter(pass, LastPass);
+        GraphPassId pass = TerrainBrushCompute.Add(_data, ref _frame, ref _extension, LastPass,
+            shader, entryPoint, parameters, dispatch, bindings);
         LastPass = pass;
         return pass;
     }
-
-    private readonly record struct HeightComputeData(LinkedComputePipeline Pipeline, GraphBufferSlice Parameters,
-        GraphBufferSrvId Source, GraphBufferSrvId PageTable, GraphBufferUavId Output, DispatchArguments Dispatch);
 }

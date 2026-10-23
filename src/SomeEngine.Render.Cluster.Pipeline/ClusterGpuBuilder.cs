@@ -102,7 +102,7 @@ public sealed class ClusterGpuBuilder : IDisposable
                 "ClusterBuildPositions" => Read(positions),
                 "ClusterBuildAttributes" => Read(attributes),
                 "ClusterBuildIndices" => Read(indices),
-                "ClusterBuildCounts" => Read(counts),
+                "ClusterBuildCounts" => GraphParameterResourceBinding.ReadOnlyBuffer(counts, PipelineSync.ComputeShading),
                 "ClusterBuildPages" => Write(outputPages),
                 "ClusterBuildBvh" => Write(outputBvh),
                 _ => throw new InvalidDataException($"Unknown Cluster build resource '{resource.Name}'."),
@@ -121,7 +121,7 @@ public sealed class ClusterGpuBuilder : IDisposable
         return pass;
 
         static GraphParameterResourceBinding Read(GraphBufferSrvId view) =>
-            GraphParameterResourceBinding.ReadOnlyBuffer(view, PipelineSync.ComputeShading);
+            GraphParameterResourceBinding.ReadOnlyBuffer(view, PipelineSync.ComputeShading, BufferContentScope.CountBoundedPrefix);
         static GraphParameterResourceBinding Write(GraphBufferUavId view) =>
             GraphParameterResourceBinding.WritableBuffer(view, PipelineSync.ComputeShading,
                 GraphAccessMode.Write, WriteCoverage.Complete);
