@@ -88,19 +88,50 @@ internal static class NavigationRecast
     }
 
     internal static NavigationMeshTileData Polygonize(NavigationSurface surface, NavigationSurfaceTile tile,
-        NavigationRecastField field, List<int> areas, NavigationMeshSettings settings, out int[] polygonClasses, float bakedRadius = 0)
+        NavigationRecastField field, List<int> areas, NavigationMeshSettings settings, out int[] polygonClasses, float bakedRadius = 0,
+        bool preserveSingleCellRegions = false)
     {
         var context = new RcContext();
         RcCompactHeightfield compact = field.Compact;
         RcRegions.BuildRegionsMonotone(context, compact, settings.MinimumRegionCells, settings.MergeRegionCells);
         RcContourSet contours = RcContours.BuildContours(context, compact, settings.MaximumContourError,
             (int)MathF.Round(settings.MaximumEdgeLength / surface.Settings.CellSize), RcBuildContoursFlags.RC_CONTOUR_TESS_WALL_EDGES);
+        if (preserveSingleCellRegions) AddSingleCellContours(compact, contours);
         RcPolyMesh mesh = RcMeshs.BuildPolyMesh(context, contours, settings.MaximumPolygonVertices);
         polygonClasses = mesh.areas.AsSpan(0, mesh.npolys).ToArray();
         if (mesh.npolys == 0) return new(new([], [], [], [], contentVersion: settings.ContentVersion), []);
         RcPolyMeshDetail detail = RcMeshDetails.BuildPolyMeshDetail(context, mesh, compact,
             settings.DetailSampleDistance, settings.DetailMaximumError);
         return Convert(surface, tile, mesh, detail, areas, settings.ContentVersion, bakedRadius);
+    }
+
+    private static void AddSingleCellContours(RcCompactHeightfield compact, RcContourSet contours)
+    {
+        // RcContours skips flags == 0xf. A single heading-set cell can connect two larger feasible regions.
+        // https://github.com/ikpil/DotRecast/blob/2026.3.1/src/DotRecast.Recast/RcContours.cs
+        int border = compact.borderSize;
+        for (int z = border; z < compact.height - border; z++)
+        for (int x = border; x < compact.width - border; x++)
+        {
+            RcCompactCell cell = compact.cells[z * compact.width + x];
+            for (int index = cell.index; index < cell.index + cell.count; index++)
+            {
+                RcCompactSpan span = compact.spans[index];
+                if (span.reg == 0 || (span.reg & RC_BORDER_REG) != 0) continue;
+                bool adjacent = false;
+                for (int direction = 0; direction < 4; direction++)
+                    if (GetCon(span, direction) != RC_NOT_CONNECTED)
+                    {
+                        int nx = x + GetDirOffsetX(direction), nz = z + GetDirOffsetY(direction);
+                        int other = compact.cells[nz * compact.width + nx].index + GetCon(span, direction);
+                        adjacent |= compact.spans[other].reg == span.reg;
+                    }
+                if (adjacent) continue;
+                int px = x - border, pz = z - border, y = span.y;
+                int[] vertices = [px, y, pz, 0, px, y, pz + 1, 0, px + 1, y, pz + 1, 0, px + 1, y, pz, 0];
+                contours.conts.Add(new RcContour { reg = span.reg, area = compact.areas[index], nverts = 4, verts = vertices, nrverts = 4, rverts = vertices });
+            }
+        }
     }
 
     private static (NavigationSurfaceSpan[], float[]) MapSupports(RcCompactHeightfield compact,

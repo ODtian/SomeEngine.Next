@@ -29,6 +29,12 @@ internal partial struct NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(
                 agent.Profile, agent.DesiredSpeed, _deltaTime, result.RequestVersion);
             return;
         }
+        if (result.Path is { Poses.IsEmpty: false } posePath)
+        {
+            guidance = NavigationPoseGuidance.Sample(posePath, ref request.Data.CornerIndex, motion,
+                agent.Profile, agent.DesiredSpeed, _deltaTime, result.RequestVersion);
+            return;
+        }
         float regionDistance = MathF.Max(0, Vector3.Distance(motion.Position, result.TargetPosition) - goal.ArrivalRange);
         if (regionDistance <= 0.0001f)
         {

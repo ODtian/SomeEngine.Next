@@ -29,12 +29,13 @@ public sealed class HeadingNavigationGraph(ReadOnlyMemory<HeadingNavigationNode>
 }
 
 /// <summary>Completed convex regions, continuous heading permissions and their own navigation graph.</summary>
-public sealed class HeadingNavigationMesh : INavigationSpace<HeadingNavigationMesh>
+public sealed partial class HeadingNavigationMesh : INavigationSpace<HeadingNavigationMesh>
 {
     public HeadingNavigationMesh(NavigationMesh geometry, int channelCount,
         ReadOnlyMemory<HeadingNavigationRegion> regions, ReadOnlyMemory<HeadingNavigationInterval> headings,
         ReadOnlyMemory<HeadingNavigationTranslation> translations, ReadOnlyMemory<HeadingNavigationRotation> rotations,
-        HeadingNavigationGraph graph)
+        HeadingNavigationGraph graph, HeadingNavigationRegionGraph? regionGraph = null,
+        ReadOnlyMemory<HeadingNavigationMeshTile> tiles = default)
     {
         Geometry = geometry;
         ChannelCount = channelCount;
@@ -43,6 +44,8 @@ public sealed class HeadingNavigationMesh : INavigationSpace<HeadingNavigationMe
         Translations = translations;
         Rotations = rotations;
         Graph = graph;
+        RegionGraph = regionGraph;
+        Tiles = tiles;
     }
 
     public NavigationMesh Geometry { get; }
@@ -52,6 +55,8 @@ public sealed class HeadingNavigationMesh : INavigationSpace<HeadingNavigationMe
     public ReadOnlyMemory<HeadingNavigationTranslation> Translations { get; }
     public ReadOnlyMemory<HeadingNavigationRotation> Rotations { get; }
     public HeadingNavigationGraph Graph { get; }
+    public HeadingNavigationRegionGraph? RegionGraph { get; }
+    public ReadOnlyMemory<HeadingNavigationMeshTile> Tiles { get; }
     public ulong ContentVersion => Geometry.ContentVersion;
 
     public HeadingNavigationInterval GetChannel(int channel)
@@ -68,8 +73,31 @@ public sealed class HeadingNavigationMesh : INavigationSpace<HeadingNavigationMe
 
     public ReadOnlyMemory<HeadingNavigationInterval> GetAllowedHeadings(Vector3 position)
     {
-        int region = Geometry.FindPolygon(position);
-        return region < 0 ? ReadOnlyMemory<HeadingNavigationInterval>.Empty : GetAllowedHeadings(region);
+        int nearest = Geometry.FindPolygon(position);
+        if (nearest < 0) return ReadOnlyMemory<HeadingNavigationInterval>.Empty;
+        Geometry.TrySampleHeight(nearest, position, out float support);
+        var allowed = new Dictionary<int, HeadingNavigationInterval>();
+        for (int region = 0; region < Regions.Length; region++)
+            if (Geometry.TrySampleHeight(region, position, out float height) && MathF.Abs(height - support) <= 0.0001f)
+                foreach (HeadingNavigationInterval interval in GetAllowedHeadings(region).Span) allowed[interval.Channel] = interval;
+        return allowed.Values.ToArray();
+    }
+
+    /// <summary>Queries a containing convex region on the closest support layer with the requested heading.</summary>
+    public int FindRegion(Vector3 position, float? heading = null)
+    {
+        int nearest = Geometry.FindPolygon(position);
+        if (nearest < 0) return -1;
+        Geometry.TrySampleHeight(nearest, position, out float support);
+        for (int region = 0; region < Regions.Length; region++)
+        {
+            if (!Geometry.TrySampleHeight(region, position, out float height) || MathF.Abs(height - support) > 0.0001f) continue;
+            bool feasible = !heading.HasValue;
+            foreach (HeadingNavigationInterval interval in GetAllowedHeadings(region).Span)
+                feasible |= heading.HasValue && interval.Contains(heading.Value);
+            if (feasible) return region;
+        }
+        return -1;
     }
 
     public bool IsPoseFeasible(Vector3 position, float heading)
@@ -105,7 +133,7 @@ public sealed class HeadingNavigationMesh : INavigationSpace<HeadingNavigationMe
 
     public HeadingNavigationTranslation[] GetTranslationConnections(Vector3 position, float heading)
     {
-        int index = Geometry.FindPolygon(position);
+        int index = FindRegion(position, heading);
         if (index < 0) return [];
         HeadingNavigationRegion region = Regions.Span[index];
         var result = new List<HeadingNavigationTranslation>();
@@ -116,7 +144,7 @@ public sealed class HeadingNavigationMesh : INavigationSpace<HeadingNavigationMe
 
     public HeadingNavigationRotation[] GetRotationConnections(Vector3 position, float heading)
     {
-        int index = Geometry.FindPolygon(position);
+        int index = FindRegion(position, heading);
         if (index < 0) return [];
         HeadingNavigationRegion region = Regions.Span[index];
         var result = new List<HeadingNavigationRotation>();
