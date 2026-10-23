@@ -77,6 +77,15 @@ public sealed class NavigationMotionSet(NavigationVehicleModel model, float reso
 
         void AddPrimitive(int heading, NavigationVehicleControl control)
         {
+            if (control.Curvature != 0)
+            {
+                float turnSpeed = MathF.Min(MathF.Abs(control.Speed), profile.MaximumAngularSpeed / MathF.Abs(control.Curvature));
+                control = control with
+                {
+                    Speed = MathF.CopySign(turnSpeed, control.Speed),
+                    Duration = control.Duration * MathF.Abs(control.Speed) / turnSpeed,
+                };
+            }
             var start = new NavigationPose(Vector3.Zero, headings[heading]);
             NavigationPose end = model.Integrate(start, control, control.Duration);
             int endHeading = (int)MathF.Round(end.Heading / (MathF.PI / 2));
