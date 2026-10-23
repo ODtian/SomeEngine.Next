@@ -24,6 +24,24 @@
 
 字段编辑通过 `HeightFieldChange` 或 `VoxelFieldChange` 传播。混合节点沿输入关系判断所引用的字段；空间块根据写入范围、相邻插值单元及算法读取距离选择需要更新的几何。源码为 [TerrainChange](../../../src/SomeEngine.Resources/Terrain/TerrainChange.cs)、[VoxelFieldChange](../../../src/SomeEngine.Resources/Terrain/VoxelFieldChange.cs) 和 [TerrainScene](../../../src/SomeEngine.Terrain/TerrainScene.cs)。
 
+## 附加字段
+
+`TerrainFieldInputs` 分别列出 `HeightFieldIds` 和 `VoxelFieldIds`，默认值表示空声明。`ReadCpuAsync(bounds, fields)` 与 `ScheduleRead(bounds, fields, work, length, batchSize)` 在同一次 Terrain 捕获中取得表面字段和声明字段，收集它们的页面完成依赖与 Job 读取访问。每个字段使用自己的网格间距换算米制范围，并包含插值所需的相邻样本。
+
+返回的 `TerrainSurfaceRead.GetHeightField(id)` 和 `GetVoxelField(id)` 提供该批次的固定字段读取；`FieldVersions` 包含表面字段与附加字段的并集。组合节点及重复声明共用对应来源记录。属性生成器通过这些读取生成顶点属性和材质编号，后续材料字段编辑形成新的读取版本。源码为 [附加字段捕获](../../../src/SomeEngine.Resources/Terrain/TerrainSurface.Fields.cs)；版本与查询结果见[查询与碰撞几何](Terrain-Queries.md)。
+
+以下是已有地形上的字段读取示例。`paint`、`density` 表示该 Terrain 的两个材料字段，采样位置与米制区域均为示例参数。
+
+```csharp
+var inputs = new TerrainFieldInputs([paint.Id], [density.Id]);
+TerrainSurfaceRead read = await terrain.Surface!.ReadCpuAsync(
+    new TerrainBounds(new(0, -1, 0), new(4, 2, 4)), inputs);
+float paintValue = read.GetHeightField(paint.Id).Sample(new(1.5f, 1.5f));
+float densityValue = read.GetVoxelField(density.Id).Sample(new(1.5f, .5f, 1.5f));
+```
+
+公开行为检查 [TerrainMaterialFieldTests](../../../tests/SomeEngine.Resources.Tests/TerrainMaterialFieldTests.cs) 覆盖异步读取与调度工作取得同批次字段、不同网格间距的读取范围，以及后续材料编辑后的固定版本。
+
 ## 从高度生成局部体素
 
 `TerrainSurface.WriteVoxelsCpu(destination, range, dependency)` 捕获源表面，在目标体素网格的样本位置求值，并把结果写入属于同一 Terrain 的目标字段。返回的 `TerrainEdit` 采用字段的版本和完成语义；源页读取与目标页写入共同交给 Scheduler。后续体素编辑使用该写入结果。

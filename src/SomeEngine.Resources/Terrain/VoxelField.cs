@@ -54,6 +54,18 @@ public sealed class VoxelField
             return CompleteReadAsync(CaptureCpuRead(range));
     }
 
+    internal VoxelFieldCpuRead CaptureCpuRead(TerrainBounds bounds)
+    {
+        float spacing = Grid.SampleSpacing;
+        int minX = (int)MathF.Floor(bounds.Min.X / spacing);
+        int minY = (int)MathF.Floor(bounds.Min.Y / spacing);
+        int minZ = (int)MathF.Floor(bounds.Min.Z / spacing);
+        int maxX = (int)MathF.Floor(bounds.Max.X / spacing) + 2;
+        int maxY = (int)MathF.Floor(bounds.Max.Y / spacing) + 2;
+        int maxZ = (int)MathF.Floor(bounds.Max.Z / spacing) + 2;
+        return CaptureCpuRead(new VoxelRegion(minX, minY, minZ, maxX - minX, maxY - minY, maxZ - minZ));
+    }
+
     internal VoxelFieldCpuRead CaptureCpuRead(VoxelRegion range)
     {
         VoxelFieldData data = Data;

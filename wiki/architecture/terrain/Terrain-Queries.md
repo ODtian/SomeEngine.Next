@@ -21,6 +21,8 @@
 
 `TerrainFieldVersion` 记录 `Kind`、Terrain 内对应字段集合的 `Id` 和该字段的 `Revision`。字段读取直接提供 `FieldId` 与 `Version`。表面读取提供 `Bounds`、捕获时的 Terrain `Revision` 和参与字段的 `FieldVersions`；Blend 按来源顺序合并字段记录。查询结果持有固定读取，后续字段编辑继续形成新版本。
 
+表面读取也可按 `TerrainFieldInputs` 捕获材料使用的附加字段，访问入口与批次范围见[附加字段](Terrain-Surfaces.md#附加字段)。
+
 ## 区域与分辨率
 
 `TerrainCollisionGrid(Bounds, CellsX, CellsY, CellsZ)` 表达局部米制长方体和三条轴的单元数。`CellSize` 为 `(Bounds.Max - Bounds.Min) / (CellsX, CellsY, CellsZ)`，调用方分别选择区域起点、区域大小与每轴分辨率。单元数为正，区域的每轴长度为正。

@@ -56,5 +56,10 @@ public sealed class BlendSurface(TerrainSurface first, TerrainSurface second, fl
 
         public override JobResourceAccess[] GetReadAccesses(Scheduler scheduler) =>
             [.. first.GetReadAccesses(scheduler), .. second.GetReadAccesses(scheduler)];
+
+        public override HeightFieldRead GetHeightField(int id) => first.ContainsField(TerrainFieldKind.Height, id)
+            ? first.GetHeightField(id) : second.GetHeightField(id);
+        public override VoxelFieldRead GetVoxelField(int id) => first.ContainsField(TerrainFieldKind.Voxel, id)
+            ? first.GetVoxelField(id) : second.GetVoxelField(id);
     }
 }

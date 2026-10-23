@@ -22,7 +22,7 @@ public sealed partial class Terrain
                 var pages = ImmutableArray.CreateBuilder<HeightPageValues>();
                 foreach (var entry in data.Pages)
                 {
-                    dependencies.Add(field.CaptureCpuRead(new(entry.Key.X * size, entry.Key.Z * size, size, size)).Completion);
+                    dependencies.Add(field.CaptureCpuRead(new HeightRegion(entry.Key.X * size, entry.Key.Z * size, size, size)).Completion);
                     pages.Add(new(entry.Key.X, entry.Key.Z, entry.Value.Samples!, entry.Value.Revision, entry.Value.Id));
                 }
                 heights.Add(new(field.Id, field.Name, field.Grid, field.InitialHeight, data.Edit.Revision, pages.ToImmutable()));
@@ -35,7 +35,7 @@ public sealed partial class Terrain
                 var pages = ImmutableArray.CreateBuilder<VoxelPageValues>();
                 foreach (var entry in data.Pages)
                 {
-                    dependencies.Add(field.CaptureCpuRead(new(entry.Key.X * size, entry.Key.Y * size,
+                    dependencies.Add(field.CaptureCpuRead(new VoxelRegion(entry.Key.X * size, entry.Key.Y * size,
                         entry.Key.Z * size, size, size, size)).Completion);
                     pages.Add(new(entry.Key.X, entry.Key.Y, entry.Key.Z, entry.Value.Samples!, entry.Value.Revision, entry.Value.Id));
                 }

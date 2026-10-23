@@ -26,7 +26,7 @@ public static class TerrainClusterCache
             TerrainBounds volume = bounds[0].Volume.Expand(border * bounds[0].CellSize);
             foreach (TerrainChunkBounds chunk in bounds.AsSpan(1))
                 volume = volume.Union(chunk.Volume.Expand(border * chunk.CellSize));
-            TerrainSurfaceJob work = surface.ScheduleRead(volume, new CacheWork(bounds, meshes, mesher, adapter), bounds.Length);
+            TerrainSurfaceJob work = surface.ScheduleRead(volume, fields, new CacheWork(bounds, meshes, mesher, adapter), bounds.Length);
             await work.WaitAsync().ConfigureAwait(false);
         }
         var result = new TerrainClusterBlock

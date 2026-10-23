@@ -169,7 +169,7 @@ public sealed class TerrainScene
             TerrainChunkBounds bounds = Grid.GetBounds(geometry.Key.Coordinates, geometry.Key.Lod);
             float border = ReadBorder * bounds.CellSize;
             TerrainSurface? surface = change.Terrain.Surface;
-            TerrainFieldInputs fields = _adapter?.Fields ?? default;
+            TerrainFieldInputs fields = GpuAdapter?.Attributes.Fields ?? _adapter?.Fields ?? default;
             bool attributeChanged = change switch
             {
                 HeightFieldChange height => fields.HeightFieldIds.AsSpan().Contains(height.Field.Id) && height.Affects(bounds.Volume, border),
@@ -373,7 +373,7 @@ public sealed class TerrainScene
                 TerrainBounds bounds = chunks[0].Bounds.Volume.Expand(border * chunks[0].Bounds.CellSize);
                 foreach (ChunkBuild chunk in chunks.AsSpan(1))
                     bounds = bounds.Union(chunk.Bounds.Volume.Expand(border * chunk.Bounds.CellSize));
-                work = surface.ScheduleRead(bounds, new MeshWork(chunks, _mesher!, _adapter!), chunks.Length);
+                work = surface.ScheduleRead(bounds, _adapter!.Fields, new MeshWork(chunks, _mesher!, _adapter), chunks.Length);
             }
             else
                 work = new(terrain.Revision, default);
