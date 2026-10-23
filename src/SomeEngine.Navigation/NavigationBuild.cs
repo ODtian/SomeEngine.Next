@@ -30,10 +30,14 @@ public sealed class NavigationBuildInput(
 }
 
 /// <summary>Retains a request's inputs, workspace and output until its completion is consumed.</summary>
-public sealed class NavigationBuild<TState>(TState state, JobHandle completion)
+public sealed class NavigationBuild<TState>
 {
-    public TState State { get; } = state;
-    public JobHandle Completion { get; } = completion;
+    private readonly TState _state = default!;
+    private readonly Func<TState>? _currentState;
+    public NavigationBuild(TState state, JobHandle completion) => (_state, Completion) = (state, completion);
+    internal NavigationBuild(Func<TState> currentState, JobHandle completion) => (_currentState, Completion) = (currentState, completion);
+    public TState State => _currentState is null ? _state : _currentState();
+    public JobHandle Completion { get; }
     public bool IsCompleted => Completion.IsCompleted;
     public TState Complete()
     {

@@ -11,6 +11,7 @@ public sealed class ReverseDijkstraFlowState(NavigationFlowInput input) : Naviga
     internal int[] Successors { get; } = new int[input.Costs.Grid.Cells.Length];
     internal int[] Goals { get; } = new int[input.Costs.Grid.Cells.Length];
     internal Vector3[] Directions { get; } = new Vector3[input.Costs.Grid.Cells.Length];
+    internal NavigationTileFlowState<DijkstraTileWork>? Tiles;
 }
 
 /// <summary>Dijkstra's minimum-cost expansion over incoming edges, seeded by every accepted goal cell.</summary>
@@ -23,6 +24,11 @@ public readonly struct ReverseDijkstraFlow : INavigationFlowSolver<ReverseDijkst
     {
         NavigationFlowInput input = state.Input;
         NavigationGrid grid = input.Costs.Grid;
+        if (!grid.TileRanges.IsEmpty)
+        {
+            state.Tiles ??= new(state, state.Values, state.Successors, state.Goals, state.Directions);
+            return NavigationTileFlow<DijkstraTileSolver, DijkstraTileWork>.Schedule(scheduler, state.Tiles, budget, dependency);
+        }
         return scheduler.Schedule(new Integrate(state, budget),
             [JobResourceAccess.Exclusive(scheduler.GetResourceToken(state)),
              NavigationJobAccess.Read(scheduler, grid.Cells), NavigationJobAccess.Read(scheduler, grid.Edges),
