@@ -42,6 +42,7 @@ internal sealed class ClusterMeshData
             throw new InvalidDataException("Cluster geometry and attributes must describe the same vertices.");
         string encoding = geometry.PositionEncoding + "+" + attributes.Encoding;
         List<ClusterInfo> infos = [];
+        List<uint> sourceClusters = [];
         List<ReadOnlyMemory<byte>> pages = [];
         List<PackedCluster> clusters = [];
         List<ReadOnlyMemory<byte>> positions = [], attributeBytes = [];
@@ -139,6 +140,7 @@ internal sealed class ClusterMeshData
                     ParentGroupId = input.ParentGroup
                 });
                 clusters.Add(packed);
+                sourceClusters.Add((uint)index);
                 positions.Add(position);
                 attributeBytes.Add(attribute);
                 materialNumbers.Add(Enumerable.Range(0, 3).Select(range => (uint)Math.Max(0, selectedMaterials[Math.Min(range, selectedMaterials.Length - 1)])).ToArray());
@@ -166,7 +168,8 @@ internal sealed class ClusterMeshData
         uint[] lowest = infos.Where(info => info.LODError >= (float)Half.MaxValue).Select(info => info.PageIndex).Distinct().Order().ToArray();
         if (lowest.Length == 0) lowest = [(uint)(pages.Count - 1)];
         var bounds = new Bounds { Center = new() { X = (min.X + max.X) * .5f, Y = (min.Y + max.Y) * .5f, Z = (min.Z + max.Z) * .5f }, Radius = Vector3.Distance(min, max) * .5f };
-        return new(Mesh.Create("Cluster geometry", encoding, descriptions, bvh, pages, bounds, lowestDetailPageIndices: lowest), geometry, attributes);
+        return new(Mesh.Create("Cluster geometry", encoding, descriptions, bvh, pages, bounds,
+            lowestDetailPageIndices: lowest, clusterGeometryIndices: sourceClusters), geometry, attributes);
 
         void Flush()
         {
@@ -179,6 +182,7 @@ internal sealed class ClusterMeshData
             MeshPageHeader header = new()
             {
                 ClusterCount = (uint)clusters.Count,
+                FirstCluster = (uint)(infos.Count - clusters.Count),
                 TotalVertexCount = (uint)clusters.Sum(cluster => (int)(cluster.PackedCounts & 255)),
                 TotalTriangleCount = (uint)(indices.Count / 3),
                 VertexBlobBytes = (uint)positionSize,

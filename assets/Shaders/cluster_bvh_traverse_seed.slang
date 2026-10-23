@@ -115,6 +115,7 @@ uint ClusterSeedBoundsState(
 StructuredBuffer<uint> SceneInstances;
 StructuredBuffer<float4> SceneChunks;
 StructuredBuffer<float4> InstanceWorldBounds;
+#include "cluster_deform_bounds.slang"
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -198,6 +199,7 @@ void SeedHierarchyRoots(
     if (valid)
     {
         root = GlobalBVH[rootIndex];
+        ApplyClusterNodeBounds(root, rootIndex, instanceID, false);
         transform = LoadRenderTransform(
             InstanceData,
             LoadRenderInstanceMetadata(
@@ -238,8 +240,8 @@ void SeedHierarchyRoots(
             uint boundsState = (occludedGroupViews & (1u << bit)) != 0u
                 ? (ClusterSeedTargetAccepts(projectedBounds, view) ? 2u : 0u)
                 : ClusterSeedBoundsState(
-                    instanceWorldMin,
-                    instanceWorldMax,
+                    InstanceWorldBounds[instanceID * 4u + 2u].xyz,
+                    InstanceWorldBounds[instanceID * 4u + 3u].xyz,
                     projectedBounds,
                     viewIndex,
                     view);
