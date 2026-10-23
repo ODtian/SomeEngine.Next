@@ -69,4 +69,3 @@ JobHandle progress = navigation.ScheduleProgress(moved);
 FIM 的具体调用使用 `NavigationFlowSystem<FastIterativeFlow, FastIterativeFlowState>`；资产取得使用 `CreateAsync<FastIterativeFlow, FastIterativeFlowState>`。预计算场一并保存 `Sampling`、块范围、边界依赖、详细块需求和完成轮次，重开后继续按相应方向方式采样。取得完整 Grid 时，保存的部分详细场通过当前完整输入重新求解。
 
 公共行为检查位于 [NavigationFlowTests](../../tests/SomeEngine.Navigation.Tests/NavigationFlowTests.cs)、[FastIterativeFlowTests](../../tests/SomeEngine.Navigation.Tests/FastIterativeFlowTests.cs) 和 [NavigationFlowAssetTests](../../tests/SomeEngine.Assets.Tests/NavigationFlowAssetTests.cs)。FIM 检查使用均匀区域及一片高成本地形作为输入例子，观察几何方向、预算续算以及角色绕行后的实际到达。
-
