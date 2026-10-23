@@ -614,7 +614,7 @@ internal static class RuntimeApplication
         stageResources.Add(virtualShadows);
         var frameSystems = new RenderFrameSystems(renderWorld, instances);
         var geometry = new ApplicationGeometryContext(backend, device, renderDevice, cluster, renderGraph,
-            mainWorld, renderWorld, extraction, prepareSystems, frameSystems);
+            mainWorld, renderWorld, extraction, prepareSystems, frameSystems, () => scene.Camera.Position);
         var graphCompletionSlots = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         var graphCompletions = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         FrameOutputVerifier? outputVerifier = null;

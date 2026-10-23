@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Numerics;
 using SomeEngine.Core.ECS.Components;
+using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -127,6 +129,7 @@ public sealed class TerrainScene
                 geometry.Revision = batch.Work.Revision;
                 completed.Add(geometry.Id);
             }
+            ApplyPlacements(batch.Placements);
             _batches.Remove(terrain);
         }
         ApplyGeometry(completed);
@@ -177,7 +180,7 @@ public sealed class TerrainScene
         }
     }
 
-    internal void SynchronizePlacements()
+    internal void SynchronizePlacements(Vector3 cameraPosition)
     {
         if (_placementsChanged)
         {
@@ -186,14 +189,6 @@ public sealed class TerrainScene
                 {
                     _world!.DestroyEntity(chunk.Entity);
                     _chunks.Remove(key);
-                }
-            HashSet<int> used = _chunks.Values.Select(static chunk => chunk.GeometryId).ToHashSet();
-            foreach ((GeometryKey key, GeometryData geometry) in _geometryByKey.ToArray())
-                if (!used.Contains(geometry.Id))
-                {
-                    _geometryByKey.Remove(key);
-                    _geometryById.Remove(geometry.Id);
-                    _dirtyGeometry.Remove(geometry.Id);
                 }
             foreach (Resources.Terrain terrain in _subscriptions.ToArray())
                 if (!_placements.Values.Any(placement => ReferenceEquals(placement.Value.Terrain, terrain)))
@@ -207,33 +202,36 @@ public sealed class TerrainScene
         foreach ((int id, PlacementData data) in _placements)
         {
             TerrainPlacement placement = data.Value;
+            if (_subscriptions.Add(placement.Terrain)) placement.Terrain.Changed += CollectChange;
+            data.Selection = TerrainLodSelection.Select(placement, Grid, cameraPosition).Select(bounds =>
+                GetGeometry(placement.Terrain, bounds)).ToArray();
             if (!data.Created)
             {
-                if (_subscriptions.Add(placement.Terrain)) placement.Terrain.Changed += CollectChange;
-                TerrainChunkRange range = placement.Chunks;
-                for (int z = range.MinZ; z < range.MaxZ; z++)
-                for (int y = range.MinY; y < range.MaxY; y++)
-                for (int x = range.MinX; x < range.MaxX; x++)
-                    CreateChunk(id, placement, new(x, y, z));
+                foreach (GeometryData geometry in data.Selection)
+                    CreateChunk(id, geometry, placement.Transform, placement.Materials);
                 data.Created = true;
                 data.AppliedRevision = placement.Revision;
             }
-            else if (data.AppliedRevision != placement.Revision)
-            {
-                foreach ((ChunkKey key, ChunkData chunk) in _chunks)
-                    if (key.PlacementId == id)
-                    {
-                        _world!.Replace(chunk.Entity, new WorldTransform { Qvvs = placement.Transform });
-                        SetMaterials(chunk.Entity, placement.Materials);
-                    }
-                data.AppliedRevision = placement.Revision;
-            }
         }
+
+        HashSet<int> used = _chunks.Values.Select(static chunk => chunk.GeometryId).ToHashSet();
+        foreach (PlacementData placement in _placements.Values)
+        foreach (GeometryData geometry in placement.Selection) used.Add(geometry.Id);
+        foreach (MeshBatch batch in _batches.Values)
+        foreach (PlacementBuild placement in batch.Placements)
+        foreach (GeometryData geometry in placement.Selection) used.Add(geometry.Id);
+        foreach ((GeometryKey key, GeometryData geometry) in _geometryByKey.ToArray())
+            if (!used.Contains(geometry.Id))
+            {
+                _geometryByKey.Remove(key);
+                _geometryById.Remove(geometry.Id);
+                _dirtyGeometry.Remove(geometry.Id);
+            }
     }
 
-    private void CreateChunk(int placementId, TerrainPlacement placement, TerrainChunkCoordinate coordinates)
+    private GeometryData GetGeometry(Resources.Terrain terrain, TerrainChunkBounds bounds)
     {
-        var key = new GeometryKey(placement.Terrain, coordinates, placement.Lod);
+        var key = new GeometryKey(terrain, bounds.Coordinates, bounds.Lod, bounds.TransitionFaces);
         if (!_geometryByKey.TryGetValue(key, out GeometryData? geometry))
         {
             geometry = new GeometryData(++_nextGeometryId, key);
@@ -241,15 +239,69 @@ public sealed class TerrainScene
             _geometryById.Add(geometry.Id, geometry);
             _dirtyGeometry.Add(geometry.Id);
         }
-        Entity entity = _world!.CreateEntity(new TerrainChunk(placementId, coordinates, placement.Lod,
-            geometry.Revision, geometry.Id));
-        _world.Add(entity, new TerrainSource(placement.Terrain));
+        return geometry;
+    }
+
+    private void CreateChunk(int placementId, GeometryData geometry, TransformQvvs transform, IReadOnlyList<Material> materials)
+    {
+        GeometryKey key = geometry.Key;
+        Entity entity = _world!.CreateEntity(new TerrainChunk(placementId, key.Coordinates, key.Lod,
+            geometry.Revision, geometry.Id, key.TransitionFaces));
+        _world.Add(entity, new TerrainSource(key.Terrain));
         if (GpuAdapter is not null) _world.Add(entity, new TerrainGpuSource(RenderKey));
-        _world.Add(entity, new WorldTransform { Qvvs = placement.Transform });
+        _world.Add(entity, new WorldTransform { Qvvs = transform });
         _world.AddBuffer<MeshMaterialBinding>(entity);
-        SetMaterials(entity, placement.Materials);
+        SetMaterials(entity, materials);
         if (geometry.Mesh is { } mesh) _world.Add(entity, new MeshInstance { Mesh = mesh });
-        _chunks.Add(new(placementId, coordinates, placement.Lod), new(entity, geometry.Id));
+        _chunks.Add(new(placementId, key.Coordinates, key.Lod), new(entity, geometry.Id));
+    }
+
+    private bool MatchesSelection(int placementId, GeometryData[] selection)
+    {
+        if (_chunks.Keys.Count(key => key.PlacementId == placementId) != selection.Length) return false;
+        foreach (GeometryData geometry in selection)
+            if (!_chunks.TryGetValue(new(placementId, geometry.Key.Coordinates, geometry.Key.Lod), out ChunkData chunk)
+                || chunk.GeometryId != geometry.Id) return false;
+        return true;
+    }
+
+    private void ApplyPlacements(PlacementBuild[] placements)
+    {
+        foreach (PlacementBuild placement in placements)
+        {
+            if (!_placements.TryGetValue(placement.Id, out PlacementData? data)) continue;
+            var selected = placement.Selection.Select(geometry => new ChunkKey(placement.Id,
+                geometry.Key.Coordinates, geometry.Key.Lod)).ToHashSet();
+            foreach ((ChunkKey key, ChunkData chunk) in _chunks.ToArray())
+                if (key.PlacementId == placement.Id && !selected.Contains(key))
+                {
+                    _world!.DestroyEntity(chunk.Entity);
+                    _chunks.Remove(key);
+                }
+            foreach (GeometryData geometry in placement.Selection)
+            {
+                GeometryKey key = geometry.Key;
+                var chunkKey = new ChunkKey(placement.Id, key.Coordinates, key.Lod);
+                if (!_chunks.TryGetValue(chunkKey, out ChunkData chunk))
+                    CreateChunk(placement.Id, geometry, placement.Transform, placement.Materials);
+                else
+                {
+                    _chunks[chunkKey] = chunk with { GeometryId = geometry.Id };
+                    _world!.Replace(chunk.Entity, new TerrainChunk(placement.Id, key.Coordinates, key.Lod,
+                        geometry.Revision, geometry.Id, key.TransitionFaces));
+                    _world.Replace(chunk.Entity, new WorldTransform { Qvvs = placement.Transform });
+                    SetMaterials(chunk.Entity, placement.Materials);
+                    if (geometry.Mesh is { } mesh)
+                    {
+                        if (_world.Has<MeshInstance>(chunk.Entity))
+                            _world.Replace(chunk.Entity, new MeshInstance { Mesh = mesh });
+                        else _world.Add(chunk.Entity, new MeshInstance { Mesh = mesh });
+                    }
+                    else if (_world.Has<MeshInstance>(chunk.Entity)) _world.Remove<MeshInstance>(chunk.Entity);
+                }
+            }
+            data.AppliedRevision = placement.Revision;
+        }
     }
 
     private void SetMaterials(Entity entity, IReadOnlyList<Material> materials) =>
@@ -261,15 +313,20 @@ public sealed class TerrainScene
 
     internal void ScheduleBuilds()
     {
-        foreach (var group in _dirtyGeometry.Select(id => _geometryById[id])
-            .GroupBy(static geometry => geometry.Key.Terrain).ToArray())
+        foreach (var group in _placements.GroupBy(static pair => pair.Value.Value.Terrain))
         {
             Resources.Terrain terrain = group.Key;
             if (_batches.ContainsKey(terrain)) continue;
-            ChunkBuild[] chunks = group.Select(geometry => new ChunkBuild(geometry,
-                Grid.GetBounds(geometry.Key.Coordinates, geometry.Key.Lod))).ToArray();
+            ChunkBuild[] chunks = group.SelectMany(static pair => pair.Value.Selection).Distinct()
+                .Where(geometry => _dirtyGeometry.Contains(geometry.Id)).Select(geometry => new ChunkBuild(geometry,
+                    Grid.GetBounds(geometry.Key.Coordinates, geometry.Key.Lod) with { TransitionFaces = geometry.Key.TransitionFaces })).ToArray();
+            if (chunks.Length == 0 && group.All(pair => pair.Value.AppliedRevision == pair.Value.Value.Revision
+                && MatchesSelection(pair.Key, pair.Value.Selection))) continue;
+            PlacementBuild[] placements = group.Select(pair => new PlacementBuild(pair.Key, pair.Value.Value.Revision,
+                pair.Value.Value.Transform, pair.Value.Value.Materials.ToArray(), pair.Value.Selection)).ToArray();
             TerrainSurfaceJob work;
-            if (GpuAdapter is { } gpu)
+            if (chunks.Length == 0) work = new(terrain.Revision, default);
+            else if (GpuAdapter is { } gpu)
             {
                 TerrainGeometryRequest request = gpu.Capture(RenderKey, terrain,
                     chunks.Select(static chunk => new TerrainGpuChunkBuild(chunk.Geometry.Id, chunk.Bounds)).ToArray());
@@ -286,7 +343,7 @@ public sealed class TerrainScene
             }
             else
                 work = new(terrain.Revision, default);
-            _batches.Add(terrain, new MeshBatch(work, chunks));
+            _batches.Add(terrain, new MeshBatch(work, chunks, placements));
             foreach (ChunkBuild chunk in chunks) _dirtyGeometry.Remove(chunk.Geometry.Id);
         }
     }
@@ -295,7 +352,8 @@ public sealed class TerrainScene
     private int ReadBorder => GpuAdapter is { } gpu ? gpu.ReadBorder : _mesher!.ReadBorder + _adapter!.ReadBorder;
 
     private readonly record struct ChunkKey(int PlacementId, TerrainChunkCoordinate Coordinates, int Lod);
-    private readonly record struct GeometryKey(Resources.Terrain Terrain, TerrainChunkCoordinate Coordinates, int Lod);
+    private readonly record struct GeometryKey(Resources.Terrain Terrain, TerrainChunkCoordinate Coordinates, int Lod,
+        TerrainTransitionFaces TransitionFaces);
     private readonly record struct ChunkData(Entity Entity, int GeometryId);
 
     private sealed class PlacementData(TerrainPlacement value)
@@ -303,6 +361,7 @@ public sealed class TerrainScene
         public TerrainPlacement Value { get; } = value;
         public bool Created;
         public uint AppliedRevision;
+        public GeometryData[] Selection = [];
     }
 
     private sealed class GeometryData(int id, GeometryKey key)
@@ -320,10 +379,14 @@ public sealed class TerrainScene
         public Mesh? Mesh;
     }
 
-    private sealed class MeshBatch(TerrainSurfaceJob work, ChunkBuild[] chunks)
+    private sealed record PlacementBuild(int Id, uint Revision, TransformQvvs Transform,
+        Material[] Materials, GeometryData[] Selection);
+
+    private sealed class MeshBatch(TerrainSurfaceJob work, ChunkBuild[] chunks, PlacementBuild[] placements)
     {
         public TerrainSurfaceJob Work { get; } = work;
         public ChunkBuild[] Chunks { get; } = chunks;
+        public PlacementBuild[] Placements { get; } = placements;
         public HashSet<int> GeometryIds { get; } = chunks.Select(static chunk => chunk.Geometry.Id).ToHashSet();
     }
 
