@@ -67,6 +67,7 @@ public sealed class ClipSampleBatch
         {
             group.SampleLocal(times, group.ModelBones);
             ReadOnlySpan<short> parents = group.Clip.Skeleton.Parents;
+            ReadOnlySpan<short> inherited = group.Clip.Skeleton.InheritedParents;
             int count = group.Clip.Skeleton.BoneCount;
             for (int row = 0; row < group.Requests.Length; row++)
             {
@@ -74,8 +75,9 @@ public sealed class ClipSampleBatch
                 foreach (short bone in group.ModelBones)
                 {
                     Matrix4x4 local = group.Local[start + bone].ToMatrix();
-                    group.Model[start + bone] = parents[bone] < 0
-                        ? local : local * group.Model[start + parents[bone]];
+                    group.Model[start + bone] = parents[bone] >= 0
+                        ? local * group.Model[start + parents[bone]]
+                        : inherited[bone] >= 0 ? local * group.InheritedParents[start + bone].Transform : local;
                 }
                 int sample = group.Requests[row];
                 ReadOnlySpan<short> bones = _selections[sample].Bones;
@@ -94,6 +96,7 @@ public sealed class ClipSampleBatch
         internal readonly short[] ModelBones;
         internal readonly BoneTransform[] Local;
         internal readonly Matrix4x4[] Model;
+        internal readonly BonePose[] InheritedParents;
         private readonly float[] _times;
 
         internal ClipGroup(AnimationClip clip, int[] requests, ClipSampleSelection[] selections)
@@ -112,6 +115,16 @@ public sealed class ClipSampleBatch
             _times = new float[requests.Length];
             Local = new BoneTransform[count * requests.Length];
             Model = new Matrix4x4[count * requests.Length];
+            InheritedParents = clip.Skeleton.Parent is null ? [] : new BonePose[count * requests.Length];
+            for (int row = 0; row < requests.Length; row++)
+            {
+                if (selections[requests[row]].ParentPose is not { } parentPose) continue;
+                foreach (short bone in ModelBones)
+                {
+                    int inherited = clip.Skeleton.InheritedParents[bone];
+                    if (inherited >= 0) InheritedParents[row * count + bone] = parentPose.GetBone(inherited);
+                }
+            }
         }
 
         internal void SampleLocal(ReadOnlySpan<float> times, ReadOnlySpan<short> bones)

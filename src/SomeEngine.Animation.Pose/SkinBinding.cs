@@ -15,6 +15,9 @@ public sealed class SkinBinding
     public ReadOnlySpan<Matrix4x4> InverseBindMatrices => _inverseBindMatrices;
     public ReadOnlySpan<short> JointBones => _jointBones;
 
+    /// <summary>Resolves source joints to the instance's shared model-pose sections.</summary>
+    public SkinBindingInstance Bind(SkeletonInstance instance) => new(this, instance);
+
     public SkinBinding(ReadOnlySpan<Matrix4x4> inverseBindMatrices, ReadOnlySpan<short> jointBones)
         : this(inverseBindMatrices.ToArray(), jointBones.ToArray()) { }
 

@@ -20,9 +20,11 @@ var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(
 PoseAnimation.AddSystems(systems);
 ```
 
-对多个目标调用同一 `CompiledGraph.Play` 可以共享定义，并分别使用 `PropertyAnimation.SetSpeed`、`Pause`、`Resume` 和 `Stop` 控制时间。系统更新完成后，`SkeletonInstance.ModelPose` 提供本次模型空间姿势、版本和采样时刻。
+对多个目标调用同一 `CompiledGraph.Play` 可以共享定义，并分别使用 `PropertyAnimation.SetSpeed`、`Pause`、`Resume` 和 `Stop` 控制时间。系统更新完成后，`SkeletonInstance.ModelPose` 提供本次模型空间姿势、版本、计算时刻 `Time` 和局部输入采样时刻 `SampleTime`。
 
 `ClipParameters.Loop` 选择持续循环；默认播放一次并以片段时长结束。`PoseResult.Time` 记录叶节点的采样时间，循环片段使用累计时间。跨越阶段终点的更新会先向前一阶段的叶节点提供终点及剩余增量，再向后一阶段提供本阶段时间；最终姿势发布后，共同完成阶段处理节点结束。
+
+`PoseCompositionSystem` 从零开始累加 `ImmediateSystemContext.DeltaTime`，作为该动画执行组合的共同计算时钟。模型姿势的 `Time` 记录本次 FK 计算时刻，`SampleTime` 保留所选 `PoseResult.Time`。不同播放速度和阶段分别影响来源采样时刻；父姿势驱动子骨架重新计算时，子骨架取得本次计算时刻并保留已有局部输入的采样时刻。区段读取与继承关系见 [Skeleton Inheritance](Skeleton-Inheritance.md)。
 
 ## 事件与根运动
 
@@ -62,6 +64,6 @@ PoseAnimation.AddSystems(systems, static composition =>
 });
 ```
 
-回调在创建执行组合时调用，保留各系统的具体类型和注册顺序。每帧依次执行 `PoseFrameSystem`、`ClipSystem`、调用方注册的节点和 `PoseCompositionSystem`。最终系统将所选局部姿势交给 `SkeletonInstance.Update`，随后共同图和时间线处理完成。
+回调在创建执行组合时调用，保留各系统的具体类型和注册顺序。每帧依次执行 `PoseFrameSystem`、`ClipSystem`、调用方注册的节点和 `PoseCompositionSystem`。最终系统先将变化的局部结果交给对应骨架实例，再沿已绑定父实例完成父先子后的 FK；父结果版本变化也会更新保持原局部输入的子实例。随后共同图和时间线处理完成。
 
 片段采样 Job 显式声明就绪片段的读取和工作区数组的写入，完成句柄在结果复制进 ECS buffer 前收敛。每个目标实体持有自身的结果 buffer；调用方持有并释放 `SkeletonInstance`。

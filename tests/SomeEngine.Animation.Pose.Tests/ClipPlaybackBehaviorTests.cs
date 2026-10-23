@@ -33,7 +33,8 @@ public sealed class ClipPlaybackBehaviorTests
         Assert.Equal(new Vector3(1, 1, 0), first.ModelPose.Transforms[1].Translation);
         Assert.Equal(new Vector3(0.5f, 1, 0), second.ModelPose.Transforms[1].Translation);
         Assert.Equal(0.5, first.ModelPose.Time);
-        Assert.Equal(0.25, second.ModelPose.Time);
+        Assert.Equal(0.25, second.ModelPose.SampleTime);
+        Assert.Equal(0.5, second.ModelPose.Time);
         Tick(systems, world, 0.5);
         Assert.Equal(new Vector3(2, 1, 0), first.ModelPose.Transforms[1].Translation);
         Assert.Equal(new Vector3(1, 1, 0), second.ModelPose.Transforms[1].Translation);
@@ -101,11 +102,13 @@ public sealed class ClipPlaybackBehaviorTests
         Tick(systems, world, 0.75);
         Tick(systems, world, 0.5);
         Assert.Equal(new Vector3(3, 2, 0), instance.ModelPose.Transforms[1].Translation);
-        Assert.Equal(0.25, instance.ModelPose.Time);
+        Assert.Equal(0.25, instance.ModelPose.SampleTime);
+        Assert.Equal(1.25, instance.ModelPose.Time);
         Assert.True(world.IsEnabled<Timeline>(animation));
         Tick(systems, world, 0.25);
         Assert.Equal(new Vector3(3, 3, 0), instance.ModelPose.Transforms[1].Translation);
-        Assert.Equal(0.5, instance.ModelPose.Time);
+        Assert.Equal(0.5, instance.ModelPose.SampleTime);
+        Assert.Equal(1.5, instance.ModelPose.Time);
         Assert.Equal(1u, world.Read<Timeline>(animation).Completions);
     }
 
