@@ -30,6 +30,16 @@
 
 `CreateTileSource(selection)` 返回独立保持文件来源的 `NavigationMeshTileSource`，公开 `Graph` 与 `Directory`。`ScheduleRead(tile, scheduler)` 在 I/O 完成后经外部 fence 提交解码 Job；Job 声明实际已取得的字节数组，`Completion` 覆盖来源释放，`Complete()` 返回详细 Mesh。资产关闭后 TileSource 继续取得后续块，已交付资源由普通引用保持数组有效。场景的兴趣、驻留与请求续行见[导航流送](../Navigation-Streaming.md)。
 
+## 共享朝向流场
+
+`NavigationFlowAsset` 中的 `HeadingNavigationFlowBlock` 保存具体朝向表示的来源与共享目标。`HeadingNavigationFlowSource` 持有 Profile、Policy、Links 的强类型资产引用和来源版本；每个 `HeadingNavigationFlowRegionSource` 持有区域 Id、NavigationAsset 引用、`NavigationMeshSelection` 和来源版本。`SetFlow(source, flow)` 从 `flow.Input.HeadingGraph.Regions` 保存各区域端口，同时保存目标、图版本、目标版本和输入版本。
+
+`CreateAsync(loader, scheduler)` 显式取得 `HeadingNavigationMeshBlock`、`NavigationLinkBlock`、Profile 和 Policy，调用 `HeadingNavigationFlowBuilder` 重建有向图，再运行 `ReverseDijkstraFlow` 返回完整 `NavigationFlow`。来源版本变化时，重建的图版本和输入版本一同推进。`Source`、`Goals` 和 `GetPorts(regionId)` 提供重建数据；`Create(graph, profile, scheduler)` 使用调用方已经恢复的共享资源积分保存目标，让多个角色继续引用同一 Flow、Graph、Profile 和 Costs。取得的普通资源在资产关闭后继续支持采样与移动。
+
+实现：[Heading Flow Block](../../../src/SomeEngine.Assets/Schema/HeadingNavigationFlowBlock.cs)。行为入口：[朝向流场资产往返](../../../tests/SomeEngine.Assets.Tests/HeadingNavigationFlowAssetTests.cs)。
+
+## 网格资产调用
+
 下面是从资产选择网格的调用例子：
 
 ```csharp
