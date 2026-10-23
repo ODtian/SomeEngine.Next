@@ -14,6 +14,8 @@
 
 `NavigationPolicyBlock.SetPolicy` 接收区域成本、动作成本、默认区域成本和允许能力。区域与动作成本分别保存为独立数据块。创建后的 `NavigationPolicy.GetAreaCost` 与 `GetActionCost` 直接读取资源持有的数据。
 
+策略的可选 `Crowd` 配置一并保存 Directional/Scalar 采样方式、自由与最低速度、密度阈值，以及距离、时间和拥堵不适权重，供[人流成本反馈](../Navigation-Crowds.md) 创建共享 Costs。
+
 两个 Asset 的 `OpenAsync` 取得身份和目录；`GetBlockAsync` 显式取得 Block 的完整数据。Block 的 `Create` 或 `CreateAsync` 返回已就绪资源。
 
 ## 网格变体

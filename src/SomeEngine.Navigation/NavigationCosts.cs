@@ -23,7 +23,7 @@ public sealed class NavigationCostBuildState(NavigationGrid grid, NavigationPoli
     internal float[] Edges { get; } = new float[grid.Edges.Length];
 }
 
-public static class NavigationCostSystem
+public static partial class NavigationCostSystem
 {
     internal static NavigationCosts Create(NavigationGrid grid, NavigationPolicy policy, ulong version)
     {
