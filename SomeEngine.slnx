@@ -21,6 +21,8 @@
   <Project Path="tools\SomeEngine.ECS.AotSmoke\SomeEngine.ECS.AotSmoke.csproj" />
   <Project Path="tools\SomeEngine.Views.AotSmoke\SomeEngine.Views.AotSmoke.csproj" />
   <Project Path="src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
+  <Project Path="src\SomeEngine.ECS.Relations\SomeEngine.ECS.Relations.csproj" />
+  <Project Path="src\SomeEngine.Physics\SomeEngine.Physics.csproj" />
   <Project Path="src\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
   <Project Path="src/SomeEngine.Animation/SomeEngine.Animation.csproj" />
   <Project Path="tests/SomeEngine.Animation.Tests/SomeEngine.Animation.Tests.csproj" />
@@ -50,6 +52,8 @@
   <Project Path="src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" />
   <Project Path="tests\SomeEngine.Runtime.Tests\SomeEngine.Runtime.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Tests\SomeEngine.ECS.Tests.csproj" />
+  <Project Path="tests\SomeEngine.ECS.Relations.Tests\SomeEngine.ECS.Relations.Tests.csproj" />
+  <Project Path="tests\SomeEngine.Physics.Tests\SomeEngine.Physics.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Systems.Tests\SomeEngine.ECS.Systems.Tests.csproj" />
   <Project Path="tests\SomeEngine.Views.Tests\SomeEngine.Views.Tests.csproj" />
   <Project Path="tests\SomeEngine.Views.Solid.Tests\SomeEngine.Views.Solid.Tests.csproj" />

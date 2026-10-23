@@ -15,8 +15,8 @@ glTF 网格导入的顺序与算法，目标是符合 glTF 规范，并让从 Bl
 | 1 准备 | `VertexStreamsBlock`（仅导入进程内） | 解压 meshopt 扩展；按解码库支持情况处理 Draco；反量化（`KHR_mesh_quantization`）与展开稀疏 accessor；三角带、三角扇转为三角形列表；线、点图元单独跳过并报告；无索引时生成顺序索引；缺 NORMAL 时生成平面法线（规范要求）；材质有法线贴图且缺 TANGENT 时用 MikkTSpace 生成，UV 集取材质 `normalTexture.texCoord`；颜色统一为线性 RGBA；其余属性保持来源数值 |
 | 2 几何 | `ClusterGeometryBlock` | 合并图元为材质区段；对所有存在的顶点流（含蒙皮与形变增量）逐位比较后焊接，保留硬边与 UV 接缝；按 Deform 分区（静态、蒙皮、形变、蒙皮加形变），分区后才建 cluster；LOD 简化时锁住 UV 接缝、材质边界与法线不连续处，并保护蒙皮影响与形变增量的变化 |
 | 3 顶点属性 | `ClusterVertexAttributesBlock` | 全部法线、切线、UV 集、颜色与自定义属性，按 cluster 编码，记录兼容性标识 |
-| 4 蒙皮 | `SkinBindingBlock` + 管线蒙皮影响 | 逆绑定矩阵与关节到骨架的映射归属 skin 的 `SkeletonAsset`；每个顶点的全部 `JOINTS_n`/`WEIGHTS_n`，数量与数值照搬来源；规范要求权重和为 1，只检查并报告，不修改 |
-| 5 形变 | `MorphTargetSetBlock` + 管线形变增量 | 网格目标名称取 `mesh.extras.targetNames`，默认权重取 `mesh.weights`；逐目标增量 |
+| 4 蒙皮 | `SkinBindingBlock` + `ClusterSkinInfluencesBlock` | 逆绑定矩阵与关节到骨架的映射归属 skin 的 `SkeletonAsset`；每个顶点的全部 `JOINTS_n`/`WEIGHTS_n`，数量与数值照搬来源；规范要求权重和为 1，只检查并报告，不修改 |
+| 5 形变 | `MorphTargetSetBlock` + `ClusterMorphDeltasBlock` | 网格目标名称取 `mesh.extras.targetNames`，默认权重取 `mesh.weights`；逐目标全部属性增量与来源切线增量 |
 
 ## Invariants
 - 引擎不设阈值：骨骼影响数量、UV 集、颜色集照搬来源；如何使用由着色器决定。
@@ -73,7 +73,7 @@ public sealed partial class VertexStreamsBlock : AssetBlock
 
 ## Cluster geometry and attributes
 
-中立组合包含 `GltfVertexStreamsImporter`；Cluster 组合包含 `ClusterGeometryImporter` 与 `ClusterVertexAttributesImporter`。Importer 通过无参构造与生成的能力描述注册，算法由 Importer 的实现持有。
+中立组合包含 `GltfVertexStreamsImporter`；Cluster 组合包含 `ClusterGeometryImporter`、`ClusterVertexAttributesImporter`、`ClusterSkinInfluencesImporter` 与 `ClusterMorphDeltasImporter`。Importer 通过无参构造与生成的能力描述注册，算法由 Importer 的实现持有。
 
 几何焊接逐位比较 double 中保存的全部基础属性、来源切线、各形变目标及来源形变切线，同时区分材质、属性名称与分量数、形变目标数量和 Deform 类别。只为被三角形引用的行建立顶点身份。三角形的材质与区域来源独立于焊接顶点持有；现有 Cluster/LOD 流程使用区域对应的工作拓扑保护区段边界，持久顶点身份继续共享。`Vertices` 中每一项包含来源图元号、准备流的行号和原 accessor 行号，所有逐顶点 Importer 可使用这份映射。
 
@@ -83,9 +83,7 @@ cluster 构建按四种 Deform 类别分区。复用现有 meshoptimizer cluster
 
 公开行为验收见 `ClusterGeometryImportTests`：位置解码与来源对照、全部属性与保存重读、逐流位比较焊接、四种分区、LOD 接缝及材质、混合属性形状、包组合交付两份独立的 Cluster Block。
 
-## 当前代码与目标的差异
-
-- 蒙皮影响编码与形变增量编码由后续管线表示 Importer 实现。
+蒙皮影响与形变增量通过同一几何映射保存所有来源分量，并提供可由材质 Importer 选择的编码字节；公开读取、来源切线和保存行为见 [Deformation Import](../cluster/Deformation-Import.md)。
 
 ## Relations
 [[architecture/Assets/Block-Division|Block Division]] · [[architecture/Assets/Asset-Meshes|Mesh]] · [[architecture/ECS/Coordinate-System|Coordinate System]] · ADR 0016 · ADR 0017

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialCollisionExample.cs"
+             Link="SpatialCollisionExample.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialCollision.cs"
+             Link="HandwrittenSpatialCollision.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialGroups.cs"
+             Link="HandwrittenSpatialGroups.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialMaintenance.cs"
+             Link="HandwrittenSpatialMaintenance.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialCollisionConsumption.cs"
+             Link="SpatialCollisionConsumption.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialCollisionFrames.cs"
+             Link="SpatialCollisionFrames.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialPartitions.cs"
+             Link="HandwrittenSpatialPartitions.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialParallelFrames.cs"
+             Link="SpatialParallelFrames.cs" />
+    <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

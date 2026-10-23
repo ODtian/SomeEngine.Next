@@ -34,10 +34,12 @@
 | `VertexStreamsBlock` | 每个图元的材质、三角形索引、全部顶点流、形变目标与诊断，见 [[architecture/Assets/Gltf-Mesh-Import|glTF Mesh Import]] | 中立，仅导入进程内 |
 | `ClusterGeometryBlock` | 顶点身份与来源顶点映射、逐 cluster 量化位置、局部三角形、材质编号、Deform 分区与 LOD DAG | Cluster 管线表示 |
 | `ClusterVertexAttributesBlock` | 法线、切线、全部 UV 与颜色、自定义属性，按几何 Block 的 cluster 与顶点顺序编码，携带编码兼容性标识 | Cluster 管线表示 |
-| 蒙皮影响 | 每个顶点的全部关节与权重，按该管线的顶点顺序 | 管线表示 |
-| 形变增量 | 逐目标、逐顶点增量，按该管线的顶点顺序 | 管线表示 |
+| `ClusterSkinInfluencesBlock` | 每个顶点的全部关节与权重，按 Cluster 的顶点顺序 | Cluster 管线表示 |
+| `ClusterMorphDeltasBlock` | 逐目标、逐顶点增量与来源切线增量，按 Cluster 的顶点顺序 | Cluster 管线表示 |
 
 `SomeEngine.Animation.Pose` 的 `SkinBindingBlock` 由 `SkinBindingImporter` 在每个 skin 的骨架资产上产出，通过 `context.GetBlockAsync<SkeletonBlock>` 消费所选骨架生产者的 `JointBones`。来源逆绑定矩阵通过共享的 `GltfAccessorReader` 读取 meshopt 解压、稀疏和分量展开后的 MAT4，保持关节顺序与数值，省略时每个关节使用单位矩阵。同一 mesh 被多个 skin 的节点复用时，节点的 `SkeletonSource` 指向各自的绑定与骨架；网格资产继续共用。
+
+`SkinBindingBlock.CreateSkinBinding()` 返回同步可读的 `SkinBinding` 使用对象，公开 `JointCount`、`InverseBindMatrices` 和 `JointBones`。使用对象集中持有不可变数组，Block 的副本与调用方通过普通引用共享；资产关闭后，已取得的使用对象继续保持数据有效。程序创建使用相同的 span 构造函数，输入数组在创建时复制。
 
 `SomeEngine.Assets.Schema.MorphTargetSetBlock` 由 `MorphTargetSetImporter` 在网格资产上产出。`Names` 来自 `mesh.extras.targetNames`，省略时为每个目标保留空名称；`DefaultWeights` 来自 `mesh.weights`，省略时为零。节点权重属于实例数据，网格 Block 保留 mesh 默认值。静态网格通过可选读取入口表达特性缺失。两个 Importer 随各自包的中立组合启用。
 
@@ -47,7 +49,9 @@ Cluster 组合产出 `ClusterGeometryBlock` 与 `ClusterVertexAttributesBlock`�
 
 渲染加载明确取得两份 Block，通过 `ClusterGeometryBlock.CreateAsync(shape, attributes, name)` 创建渲染 Mesh。位置与拓扑、属性字节分别进入 GPU 页的两段数据；用户 Vertex 接口取得各自的地址与长度。默认材质的深度与阴影入口选取 `StaticPositionEval`，着色入口选取完整顶点。属性的数值与 Shader 编码见 [Vertex Encoding](../cluster/Vertex-Encoding.md)。
 
-当前代码与目标的差异：普通管线的表示 Block、管线蒙皮影响与形变增量由后续任务交付。
+Cluster 蒙皮影响与形变增量的来源映射、公开数值与编码入口见 [Deformation Import](../cluster/Deformation-Import.md)。
+
+当前代码与目标的差异：普通管线的表示 Block 由后续任务交付。
 
 ## Relations
 [[architecture/Assets/Asset-Meshes|Mesh]] · [[architecture/Assets/Gltf-Mesh-Import|glTF Mesh Import]] · [[architecture/Assets/Importer-Sets|Importer Sets]] · ADR 0016
