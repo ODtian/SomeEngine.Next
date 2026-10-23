@@ -6,6 +6,8 @@
 
 ## 兴趣、接入与驻留
 
+Heading 表示的专用区域图、TileSource、ASA 局部查询与相同兴趣/完成句柄接缝见[朝向导航的显式流送](Heading-Navigation.md#朝向区域摘要与显式流送)。
+
 `NavigationStreaming(scene, scheduler)` 保持区域对应的来源。`AddSource(region, source)` 取得自己的来源引用，`Interests` 接受普通 `NavigationInterest`。应用更新兴趣的实际 `Position`、`Radius`、可选 `Direction`、`LookAheadDistance` 和当前 `Path`。附近范围、前方位置、路线前方入口和 `Path.RequiredTiles` 共同产生详细需求。`ResidentTileBudget` 按块数限制目录驻留，当前需求按实际距离排序，已有数据以最近使用顺序保留。
 
 `SetSource(region, source)` 安装该区域后续读取使用的来源引用。动态构建完成后，可取得 `NavigationRegionSources.CreateTileSource()` 并传入此入口；完整流程见[动态导航](Navigation-Dynamic.md)。已经提交的读取继续持有自己的实际来源。
