@@ -10,6 +10,7 @@
 | [查询与碰撞几何](terrain/Terrain-Queries.md) | 高度、距离与法线查询，固定字段版本，以及按区域和三轴分辨率生成的三角形几何 |
 | [表面组合](terrain/Terrain-Surfaces.md) | 高度与体素标量源、权重混合、固定版本读取和局部体素初始化 |
 | [资产与捕获](terrain/Terrain-Assets.md) | 固定版本 CPU 数据、字段和表面 Blocks、材料绑定、保存重开与来源生命周期 |
+| [离线 Cluster 缓存](terrain/Terrain-Cache.md) | 完整离线构建、来源关联、缓存重开、普通 Mesh 驻留与局部替换 |
 | [放置与分块](terrain/Terrain-Scene.md) | 空间块、共享放置、局部构建与应用呈现 |
 | [LOD 与过渡接缝](terrain/Terrain-Lod.md) | 相机距离选择、2∶1 邻接、CPU Transvoxel 单元与完整批次切换 |
 | [GPU 字段编辑](terrain/Terrain-Gpu-Editing.md) | 高度与体素 GPU 笔刷、实际完成点、局部 CPU 读取与后续几何 |
