@@ -1,10 +1,14 @@
+#ifndef CLUSTER_VERTEX_ENCODING
+#define CLUSTER_VERTEX_ENCODING "someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1"
+#endif
+
 #ifndef CLUSTER_TESSELLATION_ENTRIES_SLANG
 #define CLUSTER_TESSELLATION_ENTRIES_SLANG
 
 #include "cluster_tessellation_core.slang"
 #include "cluster_policy_raster_output.slang"
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -16,7 +20,7 @@ void ClusterTessellationSeed(
     SeedTessellationRasterBin(vertex, groupId, groupThreadIndex);
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -29,7 +33,7 @@ void ClusterTessellationSplit(
     SplitTessellationPatches(vertex, domain, groupId, groupThreadIndex);
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -51,7 +55,7 @@ void ClusterTessellationDiceImageAtomic64(
         groupThreadIndex);
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -69,7 +73,7 @@ void ClusterTessellationDiceBufferAtomic64(
     DiceTessellationPatches(vertex, domain, visibility, output, groupId, groupThreadIndex);
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("unbounded")]
 [shader("vertex")]
 ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareVertex(
@@ -138,7 +142,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
     return output;
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("unbounded")]
 [shader("mesh")]
 [outputtopology("triangle")]

@@ -5,6 +5,10 @@ public static class Application
     public static async Task<int> RunAsync(string[] args, Func<SomeEngine.Resources.Material, float, bool>? animateMaterial = null, SceneTestPlatform? platform = null)
         => (await RunCoreAsync(args, animateMaterial, platform, null).ConfigureAwait(false)).Succeeded ? 0 : 1;
 
+    /// <summary>Loads application content and runs its game-world callbacks in the normal frame loop.</summary>
+    public static Task<ApplicationResult> RunAsync(string[] args, ApplicationScene application) =>
+        RunCoreAsync(args, null, null, null, application);
+
     /// <summary>Runs a script through the application frame loop with a software adapter and deterministic frames by default.</summary>
     public static Task<ApplicationResult> RunAsync(string[] args, SceneScript script,
         Func<SomeEngine.Resources.Material, float, bool>? animateMaterial = null)
@@ -19,7 +23,8 @@ public static class Application
     }
 
     private static async Task<ApplicationResult> RunCoreAsync(string[] args,
-        Func<SomeEngine.Resources.Material, float, bool>? animateMaterial, SceneTestPlatform? platform, SceneScript? script)
+        Func<SomeEngine.Resources.Material, float, bool>? animateMaterial, SceneTestPlatform? platform, SceneScript? script,
+        ApplicationScene? application = null)
     {
         try
         {
@@ -56,7 +61,8 @@ public static class Application
 
             bool useWarp = (script is not null && !args.Contains("--hardware-adapter", StringComparer.OrdinalIgnoreCase)) || args.Any(static value =>
                 string.Equals(value, "--warp", StringComparison.OrdinalIgnoreCase));
-            int frames = await RuntimeApplication.RunAsync(options, useWarp, animateMaterial, platform, script).ConfigureAwait(false);
+            int frames = await RuntimeApplication.RunAsync(options, useWarp, animateMaterial, platform, script,
+                application ?? script?.Application).ConfigureAwait(false);
             return new(ApplicationFailure.None, frames);
         }
         catch (Exception failure)

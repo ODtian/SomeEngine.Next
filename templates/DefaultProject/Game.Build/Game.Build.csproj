@@ -5,6 +5,7 @@
     <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Render/SomeEngine.Render.csproj" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Render.Cluster/SomeEngine.Render.Cluster.csproj" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Render.Features/SomeEngine.Render.Features.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="$(SomeEnginePath)/external/dxc/bin/x64/dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" />

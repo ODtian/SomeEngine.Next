@@ -9,11 +9,14 @@ namespace SomeEngine.Runtime;
 public sealed class SceneScript
 {
     public SceneScript(string contentDirectory, int frameCount, IEnumerable<SceneAction> actions)
+        : this(new ApplicationScene(contentDirectory), frameCount, actions) { }
+
+    public SceneScript(ApplicationScene application, int frameCount, IEnumerable<SceneAction> actions)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentDirectory);
+        ArgumentNullException.ThrowIfNull(application);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(frameCount);
         ArgumentNullException.ThrowIfNull(actions);
-        ContentDirectory = Path.GetFullPath(contentDirectory);
+        Application = application;
         FrameCount = frameCount;
         SceneAction[] ordered = actions.OrderBy(action => action.Frame).ToArray();
         foreach (SceneAction action in ordered)
@@ -28,7 +31,8 @@ public sealed class SceneScript
     public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
     public bool WaitForFrames { get; init; } = true;
 
-    public string ContentDirectory { get; }
+    public ApplicationScene Application { get; }
+    public string ContentDirectory => Application.ContentDirectory;
     public int FrameCount { get; }
     public IReadOnlyList<SceneAction> Actions { get; }
 }
@@ -86,7 +90,7 @@ public sealed class SceneEdit
 
     internal SceneEdit(RuntimeScene scene, NativeWindow window) => (_scene, _window) = (scene, window);
     internal IReadOnlyList<Action<SceneImage>> Images => _images;
-    internal void Begin() { _images.Clear(); _active = true; }
+    internal void Begin(bool clearImages = true) { if (clearImages) _images.Clear(); _active = true; }
     internal void End() => _active = false;
 
     public IReadOnlyList<Entity> MeshEntities { get { RequireAction(); return _scene.GetMeshEntities(); } }
