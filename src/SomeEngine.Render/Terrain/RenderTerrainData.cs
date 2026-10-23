@@ -130,7 +130,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
     {
         DevicePage devicePage = GetPage(page);
         GraphBufferId buffer = ImportPage(ref frame, devicePage);
-        if (!devicePage.HasContents && devicePage.UploadFrame != frame.FrameIdentity && page.Samples is { } samples)
+        if (!devicePage.HasContents && devicePage.UploadFrame != frame.FrameIdentity && page.CpuContents is { } samples)
         {
             GraphBufferSlice upload = frame.Upload<float>(samples, BufferUsages.CopySource, "Terrain CPU page");
             Copy(ref extension, "Upload terrain page", upload, buffer, 0, (ulong)page.SampleCount * sizeof(float));
@@ -267,9 +267,62 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
     {
         Task.WhenAll(_completions).GetAwaiter().GetResult();
         foreach (TerrainGpuRequest request in _requests) request.Cancel();
-        foreach (ReadbackData readback in _readbacks.Values) readback.Buffer.Dispose();
-        foreach (DevicePage page in _pages) page.Buffer.Dispose();
-        foreach (LinkedComputePipeline pipeline in _pipelines.Values) pipeline.Dispose();
+        try { PreserveCpuContents(); }
+        finally
+        {
+            foreach (ReadbackData readback in _readbacks.Values) readback.Buffer.Dispose();
+            foreach (DevicePage page in _pages) page.Buffer.Dispose();
+            foreach (LinkedComputePipeline pipeline in _pipelines.Values) pipeline.Dispose();
+        }
+    }
+
+    private void PreserveCpuContents()
+    {
+        var pages = new List<(TerrainFieldPage Source, DevicePage Device, ulong Offset)>();
+        ulong bytes = 0;
+        foreach (DevicePage page in _pages)
+            if (page.HasContents && page.Source.TryGetTarget(out TerrainFieldPage? source) && source.CpuContents is null)
+            {
+                pages.Add((source, page, bytes));
+                bytes += (ulong)source.SampleCount * sizeof(float);
+            }
+        if (pages.Count == 0) return;
+
+        using Buffer readback = _backend.CreateBuffer(_device,
+            new BufferDesc(bytes, BufferUsages.CopyDestination, "Terrain retained samples"), MemoryType.Readback);
+        using var graph = new global::SomeEngine.RenderGraph.RenderGraph(_backend, _device,
+            [_backend.GetQueue(_device, QueueType.Graphics)], new RenderGraphDesc(MaximumFramesInFlight: 1));
+        GraphExtensionPointId point;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            point = edit.AddExtensionPoint("Retain terrain samples");
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        using (RenderGraphFrame frame = graph.BeginFrame())
+        {
+            RenderGraphFrameExtension extension = frame.BeginExtension(point);
+            GraphBufferId destination = frame.Import(readback,
+                [new(BufferRange.Whole, readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
+            foreach (var page in pages)
+            {
+                GraphBufferId source = frame.Import(page.Device.Buffer, page.Device.States);
+                Copy(ref extension, "Retain terrain page", new(source, BufferRange.Whole), destination,
+                    page.Offset, (ulong)page.Source.SampleCount * sizeof(float));
+            }
+            extension.Dispose();
+            int count = frame.Execute(completions);
+            foreach (QueueCompletion completion in completions.AsSpan(0, count))
+            {
+                WaitStatus status = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);
+                if (status != WaitStatus.Completed) throw new InvalidOperationException($"Terrain sample readback ended with {status}.");
+            }
+        }
+        using MappedBuffer mapping = _backend.Map(readback, MapType.Read, BufferRange.Whole);
+        mapping.Invalidate(mapping.Range);
+        foreach (var page in pages)
+            page.Source.SetCpuContents(MemoryMarshal.Cast<byte, float>(mapping.Bytes)
+                .Slice((int)(page.Offset / sizeof(float)), page.Source.SampleCount).ToArray());
     }
 
     private sealed class DevicePage(TerrainFieldPage source, Buffer buffer)

@@ -51,15 +51,18 @@ internal sealed class TerrainGeometryRequest(long sequence, JobHandle dependency
     TerrainCompletion visibility, object scene, ulong revision, TerrainGpuSurfaceData surface, TerrainGpuChunkBuild[] chunks)
     : TerrainDataRequest(sequence, dependency, completion)
 {
+    private int _withdrawn;
     internal object Scene { get; } = scene;
     internal ulong Revision { get; } = revision;
     internal TerrainGpuSurfaceData? Surface { get; private set; } = surface;
     internal TerrainGpuChunkBuild[] Chunks { get; } = chunks;
     internal TerrainCompletion Visibility { get; } = visibility;
+    internal bool IsWithdrawn => Volatile.Read(ref _withdrawn) != 0;
     internal void ReleaseInput() => Surface = null;
     internal override void Cancel() => Withdraw();
     internal void Withdraw()
     {
+        Volatile.Write(ref _withdrawn, 1);
         if (!IsSubmitted)
         {
             AcceptSubmission();

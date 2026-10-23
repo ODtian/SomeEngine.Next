@@ -44,6 +44,7 @@ internal sealed class TerrainPageReadRequest(long sequence, TerrainFieldPage pag
     internal float[] Samples { get; } = samples;
     internal override GraphPassId Record(RenderTerrainData data, ref RenderGraphFrame frame,
         ref RenderGraphFrameExtension extension) => data.RecordReadback(this, ref frame, ref extension);
+    internal override void CheckResult() => Page.CompleteCpuRead();
 }
 
 internal readonly record struct HeightGpuInput(GraphBufferSlice Samples, GraphBufferSlice PageTable,

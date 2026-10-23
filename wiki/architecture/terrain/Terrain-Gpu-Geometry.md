@@ -36,6 +36,8 @@ GPU 提取参数保存当前单元间距、最细格距和六面 `TransitionFace
 | GPU 几何 | `TerrainScene.GetGpuBuild(terrain).Revision`、`Completion` | 已提交批次的表面、属性、Cluster 页面和 BVH 完成，或提交前的构建请求已撤销 |
 | 可见绑定 | 同一 `TerrainGpuBuild.Visibility` | 渲染世界已应用本批次的当前选择；移除全部放置后的空选择也完成此句柄 |
 
+几何请求持有本批次的撤销结果。游戏侧先消费该结果，再处理构建完成；撤销的块重新进入构建集合，重加相同 Terrain 和块时重新捕获当前字段并生成几何。选中的整批版本绑定或空选择撤销得到确认后，渲染侧回收退出选择的其余范围。
+
 `TerrainScene.WaitForBuildsAsync` 等待已提交的几何工作。游戏侧 `TerrainCommitSystem` 在整批构建完成后一起推进对应 `TerrainChunk.Revision`；`GetChunks` 读取这些提交版本。随后提取器传递块版本、变换、材质和场景当前及构建中的几何选择，渲染准备按版本绑定共享 `ClusterGeometry`。生成期间保留当前画面；新批次绑定后或放置移除后，通过 `ClusterGpuBuilder.Release` 归还退出选择的范围，实际复用由最后使用完成点决定。当前选择仍包含的 LOD 新结果保持到首次绑定；已退出选择的结果按照相同完成点回收。
 
 应用停止先终结游戏侧最新批次和渲染侧已接收批次的选择状态，再排空系统 Job。已提交构建继续等待 GPU 完成点，提交前撤销的构建释放固定输入。字段写入与读回的停止结果见 [GPU 字段编辑](Terrain-Gpu-Editing.md)。
