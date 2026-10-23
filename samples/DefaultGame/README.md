@@ -41,6 +41,8 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 `TerrainAssetExample.SaveAsync` 固定捕获地形，再将字段、表面图和材质引用保存到 TerrainAsset。`OpenAsync` 重开可编辑 Terrain，并调用应用提供的函数解析材料引用，返回可直接用于 Placement 的材料数组。字段采样绑定、Block 划分与完整调用见[地形资产与捕获](../../wiki/architecture/terrain/Terrain-Assets.md)。
 
+重开的 Terrain 按字段读取区域取得文件页，并持有独立来源；使用结束时调用 `Dispose`。同一示例的 `EditHeightRegionAsync` 在关闭源 Asset 后修改指定高度区域，保留材料绑定并再次保存；返回的高度读取结果继续持有已完成样本。
+
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
 ```powershell

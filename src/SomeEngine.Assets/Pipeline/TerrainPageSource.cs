@@ -3,7 +3,7 @@ using SomeEngine.Serialization;
 namespace SomeEngine.Assets.Pipeline;
 
 /// <summary>Independent field-page file access; returned CPU samples have ordinary managed lifetimes.</summary>
-public sealed class TerrainPageSource : IDisposable
+public sealed class TerrainPageSource : IDisposable, ITerrainFileSource
 {
     private readonly AssetBlockSource? _source;
     private readonly IReadOnlyDictionary<ulong, ReadOnlyMemory<byte>> _chunks;
@@ -26,6 +26,18 @@ public sealed class TerrainPageSource : IDisposable
     }
 
     public TerrainPageSource Retain() => new(this);
+    ITerrainFileSource ITerrainFileSource.Retain() => Retain();
+
+    async ValueTask ITerrainFileSource.ReadPageIntoAsync(ulong key, Memory<float> samples)
+    {
+        ReadOnlyMemory<byte> bytes = _chunks.TryGetValue(key, out ReadOnlyMemory<byte> local)
+            ? local : await _source!.ReadBytesAsync(key).ConfigureAwait(false);
+        var reader = new BinaryDataReader(bytes.Span);
+        int count = reader.ReadCollectionCount("terrain samples", sizeof(float), 24);
+        if (count != samples.Length) throw new InvalidDataException("Terrain page sample count differs from its field grid.");
+        for (int index = 0; index < count; index++) samples.Span[index] = reader.ReadSingle();
+        reader.EnsureFullyConsumed("terrain samples");
+    }
 
     public async ValueTask<ReadOnlyMemory<float>> ReadPageAsync(ulong chunkKey, CancellationToken cancellationToken = default)
     {

@@ -39,7 +39,7 @@ public sealed partial class TerrainAsset : Asset
                 field.Grid.SampleSpacing, field.InitialHeight, field.Revision));
             foreach (HeightPageValues page in field.Pages)
             {
-                heights.Pages.Add(new(field.Id, page.X, page.Z, key));
+                heights.Pages.Add(new(field.Id, page.X, page.Z, key, page.Revision, page.Id));
                 heights.SetBytes(key++, TerrainPageSource.Encode(page.Samples));
             }
         }
@@ -50,7 +50,7 @@ public sealed partial class TerrainAsset : Asset
                 field.InitialValue, field.Revision));
             foreach (VoxelPageValues page in field.Pages)
             {
-                voxels.Pages.Add(new(field.Id, page.X, page.Y, page.Z, key));
+                voxels.Pages.Add(new(field.Id, page.X, page.Y, page.Z, key, page.Revision, page.Id));
                 voxels.SetBytes(key++, TerrainPageSource.Encode(page.Samples));
             }
         }
@@ -59,34 +59,48 @@ public sealed partial class TerrainAsset : Asset
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Creates independent editable fields and reconstructs the saved shared surface graph.</summary>
+    /// <summary>Creates editable fields with independently retained file access and demand-driven page reads.</summary>
     public async ValueTask<Terrain> CreateTerrainAsync(TerrainEditing editing, CancellationToken cancellationToken = default)
     {
         using TerrainAsset copy = Duplicate();
         TerrainLayoutBlock layout = await copy.GetBlockAsync<TerrainLayoutBlock>(cancellationToken).ConfigureAwait(false);
         HeightFieldsBlock heights = await copy.GetBlockAsync<HeightFieldsBlock>(cancellationToken).ConfigureAwait(false);
         VoxelFieldsBlock voxels = await copy.GetBlockAsync<VoxelFieldsBlock>(cancellationToken).ConfigureAwait(false);
-        using TerrainPageSource heightSource = heights.OpenPageSource();
-        using TerrainPageSource voxelSource = voxels.OpenPageSource();
         var heightValues = ImmutableArray.CreateBuilder<HeightFieldValues>();
         var voxelValues = ImmutableArray.CreateBuilder<VoxelFieldValues>();
         foreach (TerrainHeightField field in heights.Fields)
         {
-            var pages = ImmutableArray.CreateBuilder<HeightPageValues>();
-            foreach (TerrainHeightPage page in heights.Pages.Where(page => page.FieldId == field.Id))
-                pages.Add(new(page.X, page.Z, await heightSource.ReadPageAsync(page.ChunkKey, cancellationToken).ConfigureAwait(false)));
             heightValues.Add(new(field.Id, field.Name, new(field.Width, field.Depth, field.PageSize, field.Spacing),
-                field.InitialHeight, field.Revision, pages.ToImmutable()));
+                field.InitialHeight, field.Revision, []));
         }
         foreach (TerrainVoxelField field in voxels.Fields)
         {
-            var pages = ImmutableArray.CreateBuilder<VoxelPageValues>();
-            foreach (TerrainVoxelPage page in voxels.Pages.Where(page => page.FieldId == field.Id))
-                pages.Add(new(page.X, page.Y, page.Z, await voxelSource.ReadPageAsync(page.ChunkKey, cancellationToken).ConfigureAwait(false)));
             voxelValues.Add(new(field.Id, field.Name, new(field.PageSize, field.Spacing), field.InitialValue,
-                field.Revision, pages.ToImmutable()));
+                field.Revision, []));
         }
         var values = new TerrainCpuData(layout.Revision, heightValues.ToImmutable(), voxelValues.ToImmutable(), layout.GetSurface());
-        return values.CreateTerrain(editing);
+        Terrain terrain = values.CreateTerrain(editing);
+        try
+        {
+            using TerrainPageSource heightSource = heights.OpenPageSource();
+            using TerrainPageSource voxelSource = voxels.OpenPageSource();
+            int heightReader = terrain.AddFileSource(heightSource), voxelReader = terrain.AddFileSource(voxelSource);
+            foreach (TerrainHeightPage page in heights.Pages)
+            {
+                HeightField field = terrain.HeightFields[page.FieldId];
+                int size = field.Grid.PageSize;
+                field.Data.Pages.Add((page.X, page.Z), new TerrainFieldPage(size * size,
+                    new TerrainFilePage(heightReader, page.ChunkKey), page.Revision, page.Id));
+            }
+            foreach (TerrainVoxelPage page in voxels.Pages)
+            {
+                VoxelField field = terrain.VoxelFields[page.FieldId];
+                int size = field.Grid.PageSize;
+                field.Data.Pages.Add((page.X, page.Y, page.Z), new TerrainFieldPage(size * size * size,
+                    new TerrainFilePage(voxelReader, page.ChunkKey), page.Revision, page.Id));
+            }
+            return terrain;
+        }
+        catch { terrain.Dispose(); throw; }
     }
 }

@@ -20,6 +20,7 @@ public sealed partial class TerrainEditing(Scheduler scheduler)
             var jobs = new List<JobHandle>();
             HeightFieldCpuRead inputData = field.CaptureCpuRead(range.Expand(brush.ReadBorder));
             JobHandle input = Scheduler.CombineDependencies([inputData.Completion, dependency]);
+            ulong revision = field.Terrain.NextRevision();
 
             for (int pageZ = range.MinZ / size; pageZ * size < range.MaxZ; pageZ++)
             for (int pageX = range.MinX / size; pageX * size < range.MaxX; pageX++)
@@ -41,10 +42,10 @@ public sealed partial class TerrainEditing(Scheduler scheduler)
                     new HeightPageJob<TBrush>(brush, read, writeRange, previous?.Samples, destination, field.InitialHeight),
                     CollectionsMarshal.AsSpan(accesses), input);
                 jobs.Add(job);
-                pages[(pageX, pageZ)] = new TerrainFieldPage(destination, job);
+                pages[(pageX, pageZ)] = new TerrainFieldPage(destination, job, revision);
             }
 
-            var edit = new TerrainEdit(field.Terrain.NextRevision(), Scheduler.CombineDependencies(CollectionsMarshal.AsSpan(jobs)));
+            var edit = new TerrainEdit(revision, Scheduler.CombineDependencies(CollectionsMarshal.AsSpan(jobs)));
             field.Data = new HeightFieldData(pages, edit);
             return edit;
         }

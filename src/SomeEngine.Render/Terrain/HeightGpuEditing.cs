@@ -16,6 +16,7 @@ public static class HeightGpuEditing
         {
             HeightFieldData source = field.Data;
             range = brush.Range.Intersect(field.Grid.Range);
+            JobHandle input = field.PrepareGpuRead(range.Expand(brush.ReadBorder));
             var completion = new TerrainCompletion(terrain.Editing.Scheduler);
             edit = new TerrainEdit(terrain.NextRevision(), completion.Handle);
             var pages = new Dictionary<(int X, int Z), TerrainFieldPage>(source.Pages);
@@ -24,12 +25,12 @@ public static class HeightGpuEditing
             for (int z = range.MinZ / size; z * size < range.MaxZ; z++)
             for (int x = range.MinX / size; x * size < range.MaxX; x++)
             {
-                var page = new TerrainFieldPage(size * size, new TerrainGpuPageSource(), completion.Handle);
+                var page = new TerrainFieldPage(size * size, new TerrainGpuPageSource(), completion.Handle, edit.Revision);
                 pages[(x, z)] = page;
                 outputs.Add(new(x, z, page));
             }
             var request = new HeightGpuRequest<TBrush>(terrain.NextRequestSequence(),
-                terrain.Editing.Scheduler.CombineDependencies([source.Edit.Completion, dependency]), completion,
+                terrain.Editing.Scheduler.CombineDependencies([input, dependency]), completion,
                 field.Grid, field.InitialHeight, source, range, outputs.ToArray(), brush);
             terrain.RetainRequest(request);
             field.Data = new HeightFieldData(pages, edit);

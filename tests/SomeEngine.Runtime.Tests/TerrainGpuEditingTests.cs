@@ -1,6 +1,7 @@
 using System.Numerics;
 using DefaultGame;
 using SlangShaderSharp;
+using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.ECS.Systems;
@@ -17,6 +18,55 @@ namespace SomeEngine.Runtime.Tests;
 [Collection("Scene content")]
 public sealed class TerrainGpuEditingTests(SceneContentFixture content)
 {
+    [Fact]
+    public async Task SavedHeightAndVoxelPagesFeedTheFirstGpuEdits()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Terrain-Gpu-Read-{Guid.NewGuid():N}.terrain.asset");
+        try
+        {
+            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            var editing = new TerrainEditing(scheduler);
+            var original = new Terrain(editing);
+            HeightField heights = original.CreateHeightField("ground", new HeightGrid(8, 4, 4), 2f);
+            VoxelField voxels = original.CreateVoxelField("detail", new VoxelGrid(4), 2f);
+            original.Surface = new HeightSurface(heights);
+            heights.EditCpu(new HeightDeltaBrush(heights.Grid.Range, 1f));
+            voxels.EditCpu(new ScaleVoxelBrush(new(0, 0, 0, 8, 4, 4), 2f));
+            using (var asset = new TerrainAsset())
+            {
+                await asset.UpdateAsync(await original.CaptureCpuAsync(), Array.Empty<AssetId<MaterialAsset>>());
+                await asset.SaveAsync(path);
+            }
+            using var opened = await TerrainAsset.OpenAsync(path);
+            using Terrain terrain = await opened.CreateTerrainAsync(editing);
+            opened.Dispose();
+            Shader heightShader = await LoadHeightShaderAsync();
+            Shader voxelShader = await LoadVoxelShaderAsync();
+            HeightField height = terrain.HeightFields[0];
+            VoxelField voxel = terrain.VoxelFields[0];
+            TerrainEdit heightEdit = height.EditGpu(new HeightDeltaBrushGpu(heightShader, new(1, 1, 1, 1), 2f));
+            TerrainEdit voxelEdit = voxel.EditGpu(new VoxelSphereDeltaBrushGpu(voxelShader, voxel.Grid, new(1, 1, 1), 1f, -3f));
+            Task<HeightFieldRead> heightRead = height.ReadCpuAsync(new(1, 1, 1, 1)).AsTask();
+            Task<VoxelFieldRead> voxelRead = voxel.ReadCpuAsync(new(0, 1, 1, 2, 1, 1)).AsTask();
+            var application = new ApplicationScene(content.DirectoryPath)
+            {
+                Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                    "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
+            };
+            application.InstallGeometry(new FieldFeature(terrain));
+
+            Assert.Equal(0, await Application.RunAsync([], application: application));
+            HeightFieldRead actualHeight = await heightRead;
+            VoxelFieldRead actualVoxel = await voxelRead;
+            Assert.Equal(5f, actualHeight[1, 1]);
+            Assert.Equal(4f, actualVoxel[0, 1, 1]);
+            Assert.Equal(1f, actualVoxel[1, 1, 1]);
+            Assert.Equal(heightEdit.Revision, actualHeight.Revision);
+            Assert.Equal(voxelEdit.Revision, actualVoxel.Revision);
+        }
+        finally { File.Delete(path); }
+    }
+
     [Fact]
     public async Task GpuVoxelSphereDeltaMatchesCpuSamplesAfterTheEditCompletes()
     {

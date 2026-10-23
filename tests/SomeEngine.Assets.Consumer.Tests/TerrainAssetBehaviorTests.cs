@@ -44,7 +44,7 @@ public sealed class TerrainAssetBehaviorTests
             }
 
             using var opened = await TerrainAsset.OpenAsync(path);
-            Terrain restored = await opened.CreateTerrainAsync(editing);
+            using Terrain restored = await opened.CreateTerrainAsync(editing);
             TerrainMaterialBlock materials = await opened.GetBlockAsync<TerrainMaterialBlock>();
             Assert.Equal(material, Assert.Single(materials.Materials));
             Assert.Equal(new TerrainMaterialHeightSource(0, "height", heights.Id), Assert.Single(materials.HeightSources));

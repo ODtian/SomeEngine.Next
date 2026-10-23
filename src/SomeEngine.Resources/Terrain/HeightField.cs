@@ -73,6 +73,18 @@ public sealed class HeightField
             accesses.ToArray());
     }
 
+    internal JobHandle PrepareGpuRead(HeightRegion range)
+    {
+        range = range.Intersect(Grid.Range);
+        var dependencies = new List<JobHandle> { Data.Edit.Completion };
+        int size = Grid.PageSize;
+        for (int z = range.MinZ / size; z * size < range.MaxZ; z++)
+        for (int x = range.MinX / size; x * size < range.MaxX; x++)
+            if (Data.Pages.TryGetValue((x, z), out TerrainFieldPage? page))
+                dependencies.Add(page.PrepareGpuRead(Terrain));
+        return Terrain.Editing.Scheduler.CombineDependencies(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(dependencies));
+    }
+
     private static async ValueTask<HeightFieldRead> CompleteReadAsync(HeightFieldCpuRead read)
     {
         await read.Completion.WaitAsync().ConfigureAwait(false);
