@@ -18,6 +18,102 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class TerrainGpuEditingTests(SceneContentFixture content)
 {
     [Fact]
+    public async Task GpuVoxelNeighborhoodEditsMatchTheCpuVersions()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        var cpuTerrain = new Terrain(new TerrainEditing(scheduler));
+        var gpuTerrain = new Terrain(new TerrainEditing(scheduler));
+        var grid = new VoxelGrid(3);
+        VoxelField cpu = cpuTerrain.CreateVoxelField("cave", grid, 0f);
+        VoxelField gpu = gpuTerrain.CreateVoxelField("cave", grid, 0f);
+        var center = new Vector3(-1, 0, 0);
+        var impulse = new VoxelSphereDeltaBrush(grid, center, .5f, 27f);
+        await cpu.EditCpu(impulse).WaitAsync();
+        await gpu.EditCpu(impulse).WaitAsync();
+        Shader shader = await LoadNeighborhoodShaderAsync("terrain_voxel_neighborhood.slang");
+        var smooth = new VoxelSmoothBrush(grid, center, 3f, 1, .5f);
+        var flatten = new VoxelFlattenBrush(grid, center, 3f, new Plane(new Vector3(.25f, 1, .5f), -1f), .5f);
+        VoxelRegion range = smooth.Range.Expand(1);
+        await cpu.EditCpu(smooth).WaitAsync();
+        VoxelFieldRead expectedSmooth = await cpu.ReadCpuAsync(range);
+        await cpu.EditCpu(flatten).WaitAsync();
+        VoxelFieldRead expectedFlatten = await cpu.ReadCpuAsync(range);
+        TerrainEdit smoothEdit = gpu.EditGpu(new VoxelSmoothBrushGpu(shader, smooth));
+        Task<VoxelFieldRead> smoothRead = gpu.ReadCpuAsync(range).AsTask();
+        TerrainEdit flattenEdit = gpu.EditGpu(new VoxelFlattenBrushGpu(shader, flatten));
+        Task<VoxelFieldRead> flattenRead = gpu.ReadCpuAsync(range).AsTask();
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
+        };
+        application.InstallGeometry(new FieldFeature(gpuTerrain));
+
+        Assert.Equal(0, await Application.RunAsync([], application: application));
+        await flattenEdit.WaitAsync();
+        VoxelFieldRead actualSmooth = await smoothRead;
+        VoxelFieldRead actualFlatten = await flattenRead;
+
+        for (int z = range.MinZ; z < range.MaxZ; z++)
+        for (int y = range.MinY; y < range.MaxY; y++)
+        for (int x = range.MinX; x < range.MaxX; x++)
+        {
+            Assert.Equal(expectedSmooth[x, y, z], actualSmooth[x, y, z], tolerance: 1e-5f);
+            Assert.Equal(expectedFlatten[x, y, z], actualFlatten[x, y, z], tolerance: 1e-5f);
+        }
+        Assert.Equal(14f, actualSmooth[-1, 0, 0]);
+        Assert.Equal(smoothEdit.Revision, actualSmooth.Revision);
+        Assert.Equal(flattenEdit.Revision, actualFlatten.Revision);
+    }
+
+    [Fact]
+    public async Task GpuHeightNeighborhoodEditsMatchTheCpuVersions()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        var cpuTerrain = new Terrain(new TerrainEditing(scheduler));
+        var gpuTerrain = new Terrain(new TerrainEditing(scheduler));
+        var grid = new HeightGrid(7, 7, 3);
+        HeightField cpu = cpuTerrain.CreateHeightField("ground", grid);
+        HeightField gpu = gpuTerrain.CreateHeightField("ground", grid);
+        var impulse = new HeightDeltaBrush(new HeightRegion(3, 3, 1, 1), 9f);
+        await cpu.EditCpu(impulse).WaitAsync();
+        await gpu.EditCpu(impulse).WaitAsync();
+        Shader shader = await LoadNeighborhoodShaderAsync("terrain_height_neighborhood.slang");
+        var smooth = new HeightSmoothBrush(grid, new Vector2(3, 3), 3f, 1, .5f);
+        var flatten = new HeightFlattenBrush(grid, new Vector2(3, 3), 3f, new Plane(new Vector3(-.25f, 1, 0), -1f), .5f);
+        await cpu.EditCpu(smooth).WaitAsync();
+        HeightFieldRead expectedSmooth = await cpu.ReadCpuAsync(grid.Range);
+        await cpu.EditCpu(flatten).WaitAsync();
+        HeightFieldRead expectedFlatten = await cpu.ReadCpuAsync(grid.Range);
+        TerrainEdit smoothEdit = gpu.EditGpu(new HeightSmoothBrushGpu(shader, smooth));
+        Task<HeightFieldRead> smoothRead = gpu.ReadCpuAsync(grid.Range).AsTask();
+        TerrainEdit flattenEdit = gpu.EditGpu(new HeightFlattenBrushGpu(shader, flatten));
+        Task<HeightFieldRead> flattenRead = gpu.ReadCpuAsync(grid.Range).AsTask();
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
+        };
+        application.InstallGeometry(new FieldFeature(gpuTerrain));
+
+        Assert.Equal(0, await Application.RunAsync([], application: application));
+        await flattenEdit.WaitAsync();
+        HeightFieldRead actualSmooth = await smoothRead;
+        HeightFieldRead actualFlatten = await flattenRead;
+
+        for (int z = 0; z < grid.Depth; z++)
+        for (int x = 0; x < grid.Width; x++)
+        {
+            Assert.Equal(expectedSmooth[x, z], actualSmooth[x, z], tolerance: 1e-5f);
+            Assert.Equal(expectedFlatten[x, z], actualFlatten[x, z], tolerance: 1e-5f);
+        }
+        Assert.Equal(5f, actualSmooth[3, 3]);
+        Assert.Equal(3.375f, actualFlatten[3, 3], tolerance: 1e-5f);
+        Assert.Equal(smoothEdit.Revision, actualSmooth.Revision);
+        Assert.Equal(flattenEdit.Revision, actualFlatten.Revision);
+    }
+
+    [Fact]
     public async Task GpuVoxelSphereDeltaMatchesCpuSamplesAfterTheEditCompletes()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
@@ -313,6 +409,20 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
             Targets = [new TargetDesc { Format = SlangCompileTarget.Dxil, Profile = slang.FindProfile("sm_6_6") }],
             SearchPaths = [Path.Combine(source!.FullName, "assets/Shaders")],
         }, "terrain voxel delta");
+    }
+
+    internal static async ValueTask<Shader> LoadNeighborhoodShaderAsync(string sourceName)
+    {
+        DirectoryInfo? source = new(AppContext.BaseDirectory);
+        while (source is not null && !File.Exists(Path.Combine(source.FullName, "SomeEngine.slnx")))
+            source = source.Parent;
+        using var block = new ShaderSourceBlock { SourceNames = [sourceName] };
+        IGlobalSession slang = SlangShaderImporter.GlobalSession;
+        return await block.CreateAsync(slang, new SessionDesc
+        {
+            Targets = [new TargetDesc { Format = SlangCompileTarget.Dxil, Profile = slang.FindProfile("sm_6_6") }],
+            SearchPaths = [Path.Combine(source!.FullName, "assets/Shaders")],
+        }, "terrain neighborhood brush");
     }
 
     private sealed class FieldFeature(Terrain terrain) : IApplicationGeometryFeature

@@ -25,6 +25,8 @@
 
 两者的 `ReadBorder` 均为 `NeighborRadius`。字段服务一次捕获所需邻域；平滑过程中每个样本使用这份固定输入。
 
+`HeightSmoothBrushGpu` 与 `VoxelSmoothBrushGpu` 接受相同参数对象，并把邻域均值和混合输出拆成两个 compute 阶段。GPU 压平也复用对应 CPU 参数对象；GPU 资源绑定、阶段顺序与调用方法由 [GPU 字段编辑](Terrain-Gpu-Editing.md#邻域与多阶段计算)维护。
+
 ## 压平
 
 `HeightFlattenBrush(grid, center, radius, plane, strength)` 和 `VoxelFlattenBrush(grid, center, radius, plane, strength)` 在构造时归一化目标平面。平面采用 `dot(normal, position) + D = 0`。

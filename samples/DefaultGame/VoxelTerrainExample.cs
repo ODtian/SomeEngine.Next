@@ -47,9 +47,17 @@ public sealed class VoxelTerrainExample
     public TerrainEdit Smooth(Vector3 center, float radius, int neighborRadius, float strength = 1f) =>
         Field.EditCpu(new VoxelSmoothBrush(Field.Grid, center, radius, neighborRadius, strength));
 
+    /// <summary>Smooths the fixed source neighborhood with two GPU compute stages.</summary>
+    public TerrainEdit SmoothGpu(Shader shader, Vector3 center, float radius, int neighborRadius, float strength = 1f) =>
+        Field.EditGpu(new VoxelSmoothBrushGpu(shader, Field.Grid, center, radius, neighborRadius, strength));
+
     /// <summary>Flattens the spherical brush region toward a terrain-local signed plane.</summary>
     public TerrainEdit Flatten(Vector3 center, float radius, Plane plane, float strength = 1f) =>
         Field.EditCpu(new VoxelFlattenBrush(Field.Grid, center, radius, plane, strength));
+
+    /// <summary>Flattens the spherical brush region toward a terrain-local signed plane on the GPU.</summary>
+    public TerrainEdit FlattenGpu(Shader shader, Vector3 center, float radius, Plane plane, float strength = 1f) =>
+        Field.EditGpu(new VoxelFlattenBrushGpu(shader, Field.Grid, center, radius, plane, strength));
 
     private readonly record struct SphereSamples(VoxelRegion Range, Vector3 Center) : IVoxelBrushCpu
     {
