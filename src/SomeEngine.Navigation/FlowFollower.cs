@@ -39,6 +39,7 @@ public readonly struct FlowFollowerResources : IJobComponentResources<FlowFollow
         resources.Read(current.Goals);
         if (!component.Flow.TileStates.IsEmpty) resources.Read(component.Flow.TileStates);
         if (component.Flow.Field is not { } field) return;
+        if (field.Input.HeadingGraph is { } heading) HeadingNavigationFlowGraph.CollectResources(heading, ref resources);
         NavigationGrid grid = field.Input.Costs.Grid;
         resources.Read(grid.Cells);
         resources.Read(grid.Edges);

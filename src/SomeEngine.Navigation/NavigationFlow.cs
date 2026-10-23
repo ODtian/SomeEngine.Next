@@ -16,13 +16,15 @@ public readonly record struct NavigationFlowBoundaryDependency(NavigationTileCoo
 public enum NavigationFlowSampling : byte { Successor, Gradient }
 
 public sealed class NavigationFlowInput(NavigationCosts costs, NavigationProfile profile,
-    ReadOnlyMemory<NavigationFlowGoal> goals, ulong goalVersion = 1, ulong version = 1)
+    ReadOnlyMemory<NavigationFlowGoal> goals, ulong goalVersion = 1, ulong version = 1,
+    HeadingNavigationFlowGraph? headingGraph = null)
 {
     public NavigationCosts Costs { get; } = costs;
     public NavigationProfile Profile { get; } = profile;
     public ReadOnlyMemory<NavigationFlowGoal> Goals { get; } = goals;
     public ulong GoalVersion { get; } = goalVersion;
     public ulong Version { get; } = version;
+    public HeadingNavigationFlowGraph? HeadingGraph { get; } = headingGraph;
 }
 
 /// <summary>One complete integration result. SuccessorEdges retain forward transition and action identity.</summary>
@@ -55,6 +57,36 @@ public sealed class NavigationFlowField(NavigationFlowInput input, ReadOnlyMemor
         int cell = Input.Costs.Grid.FindCell(position);
         return cell >= 0 ? NavigationFlowSampler.Direction(this, cell, position) : Vector3.Zero;
     }
+
+    /// <summary>Returns the concrete movement, rotation or action selected by this completed field.</summary>
+    public NavigationFlowSample Sample(NavigationPose pose)
+    {
+        if (Input.HeadingGraph is { } heading)
+        {
+            int state = heading.FindState(this, pose);
+            return heading.Sample(this, pose, ref state);
+        }
+        NavigationGrid grid = Input.Costs.Grid;
+        int cell = grid.FindCell(pose.Position);
+        if (cell < 0 || GoalIndices.Span[cell] < 0) return new(NavigationFlowAction.Unreachable, pose);
+        int edge = SuccessorEdges.Span[cell];
+        if (edge >= 0)
+        {
+            NavigationGridEdge transition = grid.Edges.Span[edge];
+            var next = new NavigationPose(grid.Cells.Span[transition.ToCell].Position, pose.Heading);
+            NavigationPathTraversal? traversal = transition.Action != 0
+                ? new(edge, transition.Action, 0, 0, grid.Cells.Span[cell].Position, next.Position,
+                    default, 0.05f, 0.1f, Input.Costs.Version) : null;
+            return new(traversal.HasValue ? NavigationFlowAction.Traversal : NavigationFlowAction.Move, next, cell, edge, traversal);
+        }
+        NavigationFlowGoal goal = Input.Goals.Span[GoalIndices.Span[cell]];
+        bool arrived = Vector3.Distance(pose.Position, goal.Position) <= goal.ArrivalRange + 0.0001f;
+        NavigationFlowAction action = arrived
+            ? MathF.Abs(NavigationHeading.Difference(goal.Heading ?? pose.Heading, pose.Heading)) <= goal.HeadingTolerance
+                ? NavigationFlowAction.Arrived : NavigationFlowAction.Rotate
+            : NavigationFlowAction.Move;
+        return new(action, new(goal.Position, goal.Heading ?? pose.Heading), cell);
+    }
 }
 
 /// <summary>The game's shared target and its most recently completed field.</summary>
@@ -71,6 +103,9 @@ public sealed class NavigationFlow
         _input = new(costs, profile, goals);
 
     public NavigationFlow(NavigationFlowInput input) => _input = input;
+
+    public NavigationFlow(HeadingNavigationFlowGraph graph, NavigationProfile profile, ReadOnlyMemory<NavigationFlowGoal> goals) =>
+        _input = new(graph.Costs, profile, goals, headingGraph: graph);
 
     public NavigationFlow(NavigationFlowField field)
     {
@@ -96,6 +131,13 @@ public sealed class NavigationFlow
         NavigationFlowData data = Volatile.Read(ref _data);
         if (ReferenceEquals(data.Field?.Input, input)) return NavigationFlowStatus.Ready;
         if (!ReferenceEquals(data.Input, input) || data.TileStates.IsEmpty) return NavigationFlowStatus.Searching;
+        if (input.HeadingGraph is { } heading)
+        {
+            NavigationTileCoordinate? tile = heading.FindTile(position);
+            foreach (NavigationFlowTileState current in data.TileStates.Span)
+                if (current.Tile == tile) return current.Status;
+            return NavigationFlowStatus.Searching;
+        }
         NavigationGrid grid = input.Costs.Grid;
         int cell = grid.FindCell(position);
         if (cell < 0) return NavigationFlowStatus.Searching;
@@ -109,7 +151,7 @@ public sealed class NavigationFlow
         lock (_gate)
         {
             NavigationFlowInput current = _input;
-            SetInput(new(current.Costs, current.Profile, goals, current.GoalVersion + 1, current.Version + 1));
+            SetInput(new(current.Costs, current.Profile, goals, current.GoalVersion + 1, current.Version + 1, current.HeadingGraph));
         }
     }
 
@@ -118,7 +160,7 @@ public sealed class NavigationFlow
         lock (_gate)
         {
             NavigationFlowInput current = _input;
-            SetInput(new(costs, current.Profile, current.Goals, current.GoalVersion, current.Version + 1));
+            SetInput(new(costs, current.Profile, current.Goals, current.GoalVersion, current.Version + 1, current.HeadingGraph));
         }
     }
 
@@ -127,7 +169,17 @@ public sealed class NavigationFlow
         lock (_gate)
         {
             NavigationFlowInput current = _input;
-            SetInput(new(current.Costs, profile, current.Goals, current.GoalVersion, current.Version + 1));
+            SetInput(new(current.Costs, profile, current.Goals, current.GoalVersion, current.Version + 1, current.HeadingGraph));
+        }
+    }
+
+    public void SetGraph(HeadingNavigationFlowGraph graph)
+    {
+        lock (_gate)
+        {
+            NavigationFlowInput current = _input;
+            graph = graph.SharePassages(current.HeadingGraph);
+            SetInput(new(graph.Costs, current.Profile, current.Goals, current.GoalVersion, current.Version + 1, graph));
         }
     }
 
@@ -137,7 +189,7 @@ public sealed class NavigationFlow
         {
             NavigationFlowInput current = _input;
             if (ReferenceEquals(current.Costs, costs) && ReferenceEquals(current.Profile, profile)) return;
-            SetInput(new(costs, profile, current.Goals, current.GoalVersion, current.Version + 1));
+            SetInput(new(costs, profile, current.Goals, current.GoalVersion, current.Version + 1, current.HeadingGraph));
         }
     }
 
@@ -157,7 +209,7 @@ public sealed class NavigationFlow
         lock (_gate)
         {
             if (!ReferenceEquals(_input, input)) return false;
-            SetInput(new(costs, input.Profile, input.Goals, input.GoalVersion, input.Version + 1));
+            SetInput(new(costs, input.Profile, input.Goals, input.GoalVersion, input.Version + 1, input.HeadingGraph));
             return true;
         }
     }

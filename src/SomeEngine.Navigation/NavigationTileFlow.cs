@@ -14,6 +14,7 @@ internal class NavigationTileFlowData(NavigationFlowBuildState result, float[] v
     internal int[] Goals { get; set; } = goals;
     internal Vector3[] Directions { get; set; } = directions;
     internal int[] Targets { get; set; } = new int[values.Length];
+    internal float[] TargetCosts { get; set; } = new float[values.Length];
     internal float[] BoundaryValues { get; set; } = new float[values.Length];
     internal int[] BoundaryGoals { get; set; } = new int[values.Length];
     internal bool[] Active { get; set; } = new bool[result.Input.Costs.Grid.FlowRanges.Length];
@@ -32,6 +33,7 @@ internal class NavigationTileFlowData(NavigationFlowBuildState result, float[] v
         accesses.Add(NavigationJobAccess.Read<int>(scheduler, Goals));
         accesses.Add(NavigationJobAccess.Read<Vector3>(scheduler, Directions));
         accesses.Add(NavigationJobAccess.Read<int>(scheduler, Targets));
+        accesses.Add(NavigationJobAccess.Read<float>(scheduler, TargetCosts));
     }
 }
 
@@ -82,6 +84,7 @@ internal static partial class NavigationTileFlow<TSolver, TWork>
             NavigationJobAccess.Read(scheduler, state.Input.Goals),
         };
         state.Input.Costs.Grid.AddReadAccesses(scheduler, accesses);
+        state.Input.HeadingGraph?.AddReadAccesses(scheduler, accesses);
         return accesses;
     }
 
@@ -102,7 +105,8 @@ internal static partial class NavigationTileFlow<TSolver, TWork>
         Array.Fill(state.Values, float.PositiveInfinity);
         Array.Fill(state.Goals, -1);
         Array.Fill(state.Successors, -1);
-        state.Targets = FindTargets(state.Input);
+        state.Targets = FindTargets(state.Input, out float[] targetCosts);
+        state.TargetCosts = targetCosts;
         Array.Fill(state.ChangedTiles, true);
         state.Work = new TWork[grid.FlowRanges.Length];
         for (int tile = 0; tile < state.Work.Length; tile++) state.Work[tile] = TSolver.Create(grid.FlowRanges.Span[tile]);
@@ -110,7 +114,7 @@ internal static partial class NavigationTileFlow<TSolver, TWork>
         {
             int goal = state.Targets[cell];
             if (goal < 0) continue;
-            state.Values[cell] = 0;
+            state.Values[cell] = state.TargetCosts[cell];
             state.Goals[cell] = goal;
             state.Active[grid.CellTiles.Span[cell]] = true;
         }
@@ -305,7 +309,7 @@ internal readonly struct DijkstraTileSolver : INavigationTileFlowSolver<Dijkstra
         ulong capabilities = state.Input.Profile.Capabilities & state.Input.Costs.Policy.AllowedCapabilities;
         for (int cell = work.Range.CellStart; cell < work.Range.CellStart + work.Range.CellCount; cell++)
         {
-            if (!work.Started && state.Values[cell] == 0) work.Open.Enqueue(cell, 0);
+            if (!work.Started && state.Targets[cell] >= 0) work.Open.Enqueue(cell, state.Values[cell]);
             NavigationGridCell from = grid.Cells.Span[cell];
             for (int edge = from.EdgeStart; edge < from.EdgeStart + from.EdgeCount; edge++)
             {
@@ -319,7 +323,7 @@ internal readonly struct DijkstraTileSolver : INavigationTileFlowSolver<Dijkstra
         while (used < budget && work.Changed.TryDequeue(out int cell))
         {
             used++;
-            if (state.Values[cell] == 0) work.Open.Enqueue(cell, 0);
+            if (state.Targets[cell] >= 0) work.Open.Enqueue(cell, state.Values[cell]);
             NavigationGridCell from = grid.Cells.Span[cell];
             for (int edge = from.EdgeStart; edge < from.EdgeStart + from.EdgeCount; edge++)
             {
