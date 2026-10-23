@@ -36,7 +36,7 @@ public sealed partial class RenderTerrainData
             ulong bytesPerPage = (ulong)size * (ulong)size * (ulong)size * sizeof(float);
             ulong bytes = (ulong)pages.Count * bytesPerPage;
             GraphBufferId packed = frame.CreateBuffer(new BufferDesc(bytes,
-                BufferUsages.CopySource | BufferUsages.CopyDestination | BufferUsages.ShaderRead, "Terrain voxel brush input"));
+                BufferUsages.CopyDestination | BufferUsages.CopySource | BufferUsages.ShaderRead, "Terrain voxel brush input"));
             for (int index = 0; index < pages.Count; index++)
             {
                 GraphBufferId page = GetInput(ref frame, ref extension, pages[index]);
@@ -45,7 +45,8 @@ public sealed partial class RenderTerrainData
             }
             samples = new(packed, new(0, bytes));
         }
-        return new(samples, frame.Upload<int>(offsets, BufferUsages.ShaderRead | BufferUsages.CopySource, "Terrain voxel source page table"),
+        return new(samples, frame.Upload<int>(offsets, BufferUsages.ShaderRead | BufferUsages.CopySource,
+            "Terrain voxel source page table"),
             minX, minY, minZ, width, height);
     }
 }

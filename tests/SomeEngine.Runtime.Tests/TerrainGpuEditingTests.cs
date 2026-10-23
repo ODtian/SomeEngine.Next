@@ -585,7 +585,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         }, "terrain neighborhood brush");
     }
 
-    private sealed class FieldFeature(Terrain terrain) : IApplicationGeometryFeature
+    internal sealed class FieldFeature(Terrain terrain) : IApplicationGeometryFeature
     {
         public IDisposable Install(ApplicationGeometryContext context)
         {
