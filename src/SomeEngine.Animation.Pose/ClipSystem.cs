@@ -68,12 +68,14 @@ public struct ClipSystem : ISystem<ImmediateSystemContext>
                     world.ExecuteBufferWrite<LocalPose, (BoneTransform[] Values, PoseRange Range)>(instance.Output.Entity,
                         ref sample, static (values, ref sample) =>
                             sample.Values.AsSpan().CopyTo(LocalPose.Transforms(values.AsSpan().Slice(sample.Range.Start, sample.Range.Count))));
-                    var output = (Index: instance.Output.Index, Time: elapsed, Weight: weight, Starts: time.Starts, Motion: rootMotion);
-                    world.ExecuteBufferWrite<PoseResult, (int Index, float Time, float Weight, uint Starts, RootMotionDelta Motion)>(instance.Output.Entity,
+                    var output = (Index: instance.Output.Index, Time: elapsed, Phase: (double)elapsed / clip.Duration,
+                        Weight: weight, Starts: time.Starts, Motion: rootMotion);
+                    world.ExecuteBufferWrite<PoseResult, (int Index, float Time, double Phase, float Weight, uint Starts, RootMotionDelta Motion)>(instance.Output.Entity,
                         ref output, static (results, ref output) =>
                         {
                             ref PoseResult result = ref results[output.Index];
                             result.Time = output.Time;
+                            result.Phase = output.Phase;
                             result.Weight = output.Weight;
                             result.Starts = output.Starts;
                             result.RootMotion = new(output.Motion.Transform * result.RootMotion.Transform);

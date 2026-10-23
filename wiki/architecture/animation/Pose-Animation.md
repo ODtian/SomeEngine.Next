@@ -11,6 +11,7 @@
 - 每种片段方案由 Importer 与 `AnimationClipBlock` 子类组成，来源 `.meta` 选择具体组合。`RawClipBlock`、`AclClipBlock` 和用户 Block 经同一 `Sampler` 提供采样函数及共享数据；公共 glTF 曲线读取由普通库函数提供。
 - 原始片段已经通过 `RawClipImporter`、`RawClipBlock` 与同步 `AnimationClip.SampleLocal` 接入；公开入口、来源插值及用户编码扩展见 [Clip Assets](Clip-Assets.md)。
 - 片段通过共同 Leaf、Timeline 和 Composition 播放，具名结果 buffer 支持用户节点交接、事件与根运动；公开调用见 [Pose Graphs](Pose-Graphs.md)。
+- 权重混合通过 `BoneTransformOps` 的具体批量运算和 `PoseBlendLeaf` 接入；1D/2D Blend Space 保存插值范围和片段相位，数据与调用见 [Pose Blending](Pose-Blending.md)。
 - 骨骼按数组存储，挂点按需成为实体。`PoseStorage` 持有连续的局部姿势和模型空间 G，`SkeletonInstance` 通过 `PoseRange` 引用自身区段；对应求值阶段通过公开 `Update` 写入结果。
 - `SkeletonInstance.ModelPose` 提供只读模型空间 G、求值版本和计算时刻；创建、更新与使用期见 [[architecture/animation/Skeleton-Instances|Skeleton Instances]]。
 - 单父骨架继承通过独立创建或挂接直接共享父实例 G，模型区段分别保存计算时刻与采样时刻；连接、拆卸和蒙皮绑定见 [Skeleton Inheritance](Skeleton-Inheritance.md)。

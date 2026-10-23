@@ -24,12 +24,13 @@ public struct LocalPose : IBufferElement
         MemoryMarshal.Cast<LocalPose, BoneTransform>(values);
 }
 
-/// <summary>The bone section, sample time and graph weight produced by one node result.</summary>
+/// <summary>The bone section, sample time, cumulative cycle phase and graph weight produced by one node result.</summary>
 [BufferCapacity(4)]
 public struct PoseResult : IBufferElement
 {
     public PoseRange Range;
     public double Time;
+    public double Phase;
     public float Weight;
     public uint Starts;
     public ulong Version;
@@ -87,7 +88,7 @@ public static partial class PoseAnimation
         return new(target, result.Value, binding.Range);
     }
 
-    /// <summary>Reads a produced result's time, weight and version.</summary>
+    /// <summary>Reads a produced result's timing, weight, motion and version.</summary>
     public static PoseResult ReadResult(World world, in PoseResultReference result)
     {
         var read = (Index: result.Index, Result: default(PoseResult));
