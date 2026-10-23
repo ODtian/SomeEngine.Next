@@ -4,6 +4,8 @@
 
 带放置变换的多区域组合使用 `NavigationScene`、`SceneNavigationSearch` 和 `SceneSearchState`。入口图、详细路径分段与区域依赖见[区域入口图与场景放置](Navigation-Regions.md)。
 
+持续目标下按连接变化修复入口路线使用 `DStarLiteNavigationSearch` 与 `DStarLiteSearchState`，接口与[增量路线](Navigation-Incremental.md)说明相同的目标、调度、流送和实际运动链。
+
 ## 角色输入与结果
 
 `NavigationComponents.AddPath<TSpace,TState>` 添加公共输入、输出与每个实体独占的搜索工作区。组合对象的 `AddAgent` 调用同一入口。`NavigationAgent` 引用共享的 `NavigationProfile`、`NavigationPolicy`，并提供期望速度；`PathNavigation<TSpace>` 引用导航表示。
