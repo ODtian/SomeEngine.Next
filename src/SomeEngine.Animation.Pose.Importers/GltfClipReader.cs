@@ -10,10 +10,9 @@ namespace SomeEngine.Animation.Pose.Importers;
 /// <summary>Reads source TRS curves for the selected skeleton, shared by clip encoding importers.</summary>
 public static class GltfClipReader
 {
-    public static RawClipData Read(GltfAnimation source, Skin skin, Skeleton skeleton,
-        int rootMotionNode = -1, CancellationToken cancellationToken = default)
+    /// <summary>Maps source node identities to the selected skeleton's joint and ancestor indices.</summary>
+    public static Dictionary<Node, short> GetBoneIndices(Skin skin, Skeleton skeleton)
     {
-        ModelRoot model = source.LogicalParent;
         var bones = new Dictionary<Node, short>();
         int jointIndex = 0;
         foreach (Node joint in skin.Joints)
@@ -22,6 +21,14 @@ public static class GltfClipReader
             for (Node? node = joint; node is not null && bone >= 0 && bones.TryAdd(node, bone); node = node.VisualParent)
                 bone = skeleton.Parents[bone];
         }
+        return bones;
+    }
+
+    public static RawClipData Read(GltfAnimation source, Skin skin, Skeleton skeleton,
+        int rootMotionNode = -1, CancellationToken cancellationToken = default)
+    {
+        ModelRoot model = source.LogicalParent;
+        Dictionary<Node, short> bones = GetBoneIndices(skin, skeleton);
 
         JsonNode animation = JsonNode.Parse(model.GetJsonPreview())!["animations"]![source.LogicalIndex]!;
         JsonArray sourceSamplers = animation["samplers"]!.AsArray();

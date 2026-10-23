@@ -17,9 +17,11 @@ public sealed class RootMotionPath
     public ReadOnlySpan<RootMotionKey> Keys => _keys;
     public float Duration => _keys[^1].Time;
 
-    public RootMotionPath(ReadOnlySpan<RootMotionKey> keys)
+    public RootMotionPath(ReadOnlySpan<RootMotionKey> keys) : this(keys.ToArray()) { }
+
+    internal RootMotionPath(RootMotionKey[] keys)
     {
-        _keys = keys.ToArray();
+        _keys = keys;
         Matrix4x4.Invert(_keys[0].ToMatrix(), out _inverseInitial);
     }
 
