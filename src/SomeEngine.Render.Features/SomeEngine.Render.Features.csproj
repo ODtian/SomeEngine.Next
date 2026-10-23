@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\SomeEngine.Animation.Pose\SomeEngine.Animation.Pose.csproj" />
     <ProjectReference Include="..\SomeEngine.Assets\SomeEngine.Assets.csproj" />
     <ProjectReference Include="..\SomeEngine.Graphics\SomeEngine.Graphics.csproj" />
     <ProjectReference Include="..\SomeEngine.Render\SomeEngine.Render.csproj" />

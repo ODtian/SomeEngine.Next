@@ -41,20 +41,23 @@ public sealed class GameFrameSystems : IDisposable
     private static readonly TraceSite LayoutTrace = new("someui", "Views.Layout");
     private static readonly TraceSite AnimationTrace = new("someui", "Views.Animation");
 
-    public GameFrameSystems(World world)
+    public GameFrameSystems(World world, bool includeInterface = true)
     {
         _world = world;
         _stages = Enum.GetValues<FrameStage>().Select(stage => (stage,
-            stage is FrameStage.PlatformInput or FrameStage.GameInputAndSimulation or FrameStage.Extraction
+            stage is FrameStage.PlatformInput or FrameStage.Extraction
                 ? null : new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world)))).ToArray();
-        Group(FrameStage.InterfaceInput).Add(new HitTestSystem());
-        Group(FrameStage.InterfaceInput).Add(new FocusNavigationSystem());
-        Group(FrameStage.ViewRebuild).Add(_rebuild);
         AnimationSystems.AddDefaults(Group(FrameStage.Animation));
-        var shaping = new TextShapingSystem();
-        Group(FrameStage.TextMeasurement).Add(shaping);
-        Group(FrameStage.Layout).Add(new LayoutSystem(shaping));
-        Group(FrameStage.Flip).Add(new FlipSystem());
+        if (includeInterface)
+        {
+            Group(FrameStage.InterfaceInput).Add(new HitTestSystem());
+            Group(FrameStage.InterfaceInput).Add(new FocusNavigationSystem());
+            Group(FrameStage.ViewRebuild).Add(_rebuild);
+            var shaping = new TextShapingSystem();
+            Group(FrameStage.TextMeasurement).Add(shaping);
+            Group(FrameStage.Layout).Add(new LayoutSystem(shaping));
+            Group(FrameStage.Flip).Add(new FlipSystem());
+        }
     }
 
     /// <summary>Describes actual registration and the surrounding application boundaries.</summary>
@@ -79,7 +82,7 @@ public sealed class GameFrameSystems : IDisposable
         var context = new ImmediateSystemContext(_world, 0, 0, deltaSeconds);
         foreach (var stage in _stages)
         {
-            if (stage.Stage < FrameStage.ViewRebuild || stage.Systems is null) continue;
+            if (stage.Stage < FrameStage.GameInputAndSimulation || stage.Systems is null) continue;
             if (measure && stage.Stage == FrameStage.ViewRebuild)
                 rebuildMs = Measure(stage.Systems, RebuildTrace, ref context);
             else if (measure && stage.Stage == FrameStage.Animation)
@@ -105,6 +108,11 @@ public sealed class GameFrameSystems : IDisposable
 
     public int AddInterfaceSystem<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> =>
         Group(FrameStage.InterfaceUpdate).Add(system);
+
+    public int AddGameSystem<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> =>
+        Group(FrameStage.GameInputAndSimulation).Add(system);
+
+    public SystemGroup<ImmediateSystemContext> Animation => Group(FrameStage.Animation);
 
     public int AddFlipSystem<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> =>
         Group(FrameStage.Flip).Add(system);
