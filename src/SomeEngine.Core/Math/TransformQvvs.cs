@@ -149,7 +149,7 @@ public struct TransformQvvs(Vector3 position, Quaternion rotation, float scale =
     /// Reconstructs a QVVS only when the affine matrix contains no shear or other
     /// information that the QVVS representation would discard.
     /// </summary>
-    internal static bool TryCreateFromMatrix(
+    public static bool TryCreateFromMatrix(
         in Matrix4x4 matrix,
         out TransformQvvs transform)
     {
