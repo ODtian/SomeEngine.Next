@@ -1,3 +1,4 @@
+using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
@@ -23,13 +24,14 @@ public sealed class ApplicationGeometryContext
     private readonly RenderExtractionSystems _extraction;
     private readonly SystemGroup<ImmediateSystemContext> _gameSystems;
     private readonly World _gameWorld;
+    private readonly Func<Vector3> _cameraPosition;
     private readonly List<IRenderGraphFrameExecutionObserver> _observers = [];
     private readonly List<IDisposable> _resources = [];
 
     internal ApplicationGeometryContext(IGraphicsBackend backend, Device device, RenderDevice renderDevice,
         ClusterRenderResources cluster, global::SomeEngine.RenderGraph.RenderGraph graph, World gameWorld,
         RenderWorld renderingWorld, RenderExtractionSystems extraction, RenderPrepareSystems preparation,
-        RenderFrameSystems frames)
+        RenderFrameSystems frames, Func<Vector3> cameraPosition)
     {
         Backend = backend;
         Device = device;
@@ -42,6 +44,7 @@ public sealed class ApplicationGeometryContext
         _extraction = extraction;
         _preparation = preparation;
         _frames = frames;
+        _cameraPosition = cameraPosition;
     }
 
     public IGraphicsBackend Backend { get; }
@@ -50,6 +53,8 @@ public sealed class ApplicationGeometryContext
     public ClusterRenderResources Cluster { get; }
     public global::SomeEngine.RenderGraph.RenderGraph Graph { get; }
     public RenderWorld RenderingWorld { get; }
+    /// <summary>The active application's game-side camera position, read during game system updates.</summary>
+    public Vector3 CameraPosition => _cameraPosition();
 
     /// <summary>Runs on the game world before each extraction.</summary>
     public int AddGameSystem<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> =>

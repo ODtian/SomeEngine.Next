@@ -10,7 +10,7 @@ public sealed class TerrainGeometryFeature(TerrainScene scene) : IApplicationGeo
     {
         var data = new RenderTerrainData(context.Backend, context.Device, context.Graph);
         context.AddGameSystem(new TerrainCommitSystem(scene));
-        context.AddGameSystem(new TerrainLodSystem(scene));
+        context.AddGameSystem(new TerrainLodSystem(scene, () => context.CameraPosition));
         context.AddGameSystem(new TerrainMeshSystem(scene));
         context.AddExtractor(new TerrainRenderExtractor());
         context.AddPrepareSystem(data);
