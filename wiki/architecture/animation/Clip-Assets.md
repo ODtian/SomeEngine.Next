@@ -91,6 +91,8 @@ For a generated Block codec, mark computed metadata overrides with `[BinaryIgnor
 
 The [ACL implementation](ACL-Clips.md) supplies `AclClipImporter`, `AclClipBlock`, an upstream compression adapter and a concrete batch decoder through these same entries. Its import settings hold the sampling rate, precision and shell distance; its ready data remains usable after the asset closes.
 
+The [uniform quantized implementation](GPU-Clips.md) supplies `QuantizedClipImporter`, `QuantizedClipBlock` and `QuantizedClipData`. It resamples complete TRS at uniform times and exposes the encoded data to both the common CPU sampler and the GPU clip leaf.
+
 Sources: [AnimationClip](../../../src/SomeEngine.Animation.Pose/AnimationClip.cs), [ClipSampler](../../../src/SomeEngine.Animation.Pose/ClipSampler.cs), [ClipSampleBatch](../../../src/SomeEngine.Animation.Pose/ClipSampleBatch.cs), [ClipSampleSelection](../../../src/SomeEngine.Animation.Pose/ClipSampleSelection.cs), [ClipSamples](../../../src/SomeEngine.Animation.Pose/ClipSamples.cs), [AnimationClipBlock](../../../src/SomeEngine.Animation.Pose/AnimationClipBlock.cs), [RawClipBlock](../../../src/SomeEngine.Animation.Pose/RawClipBlock.cs), [RawClipChannel](../../../src/SomeEngine.Animation.Pose/RawClipChannel.cs), [RawClipImporter](../../../src/SomeEngine.Animation.Pose.Importers/RawClipImporter.cs), [GltfClipReader](../../../src/SomeEngine.Animation.Pose.Importers/GltfClipReader.cs).
 
 Public behavior entry: `tests/SomeEngine.Animation.Pose.Tests/RawClipBehaviorTests.cs` imports and reopens clips, reads source interpolation and metadata, and selects a consumer codec through source metadata before using the common sampler.

@@ -21,6 +21,8 @@ public sealed class SkeletonInstance : IDisposable
     public SkeletonInstance? ParentInstance { get; private set; }
     public bool IsDisposed => _storage is null;
     public PoseRange Range { get; }
+    /// <summary>Changes when this instance's parent-section correspondence is rebound.</summary>
+    public ulong BindingVersion { get; private set; } = 1;
     public ReadOnlySpan<BoneTransform> LocalPose => _storage!.Local(Range);
     public ModelPose ModelPose => new(this);
     internal ReadOnlySpan<Matrix4x4> ModelTransforms => _storage!.Model(Range);
@@ -116,6 +118,7 @@ public sealed class SkeletonInstance : IDisposable
 
     private void RefreshSources(double time)
     {
+        BindingVersion++;
         ParentInstance!.BoneSources.CopyTo(_boneSources, 0);
         ParentInstance.Sections.CopyTo(_sections);
         Evaluate(time);

@@ -1,4 +1,3 @@
-using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -120,16 +119,7 @@ public struct PoseLayerSystem : ISystem<PoseNodeContext>
             }
             ReadOnlySpan<BoneTransform> reference = Samples.Skeleton.ReferencePose;
             for (int bone = 0; bone < output.Length; bone++)
-            {
-                float weight = Weight * mask[bone];
-                Quaternion delta = source[bone].Rotation * Quaternion.Inverse(reference[bone].Rotation);
-                output[bone] = new BoneTransform
-                {
-                    Translation = basis[bone].Translation + (source[bone].Translation - reference[bone].Translation) * weight,
-                    Rotation = Quaternion.Normalize(Quaternion.Slerp(Quaternion.Identity, delta, weight) * basis[bone].Rotation),
-                    Scale = basis[bone].Scale * Vector3.Lerp(Vector3.One, source[bone].Scale / reference[bone].Scale, weight),
-                };
-            }
+                output[bone] = BoneTransformOps.Additive(in basis[bone], in source[bone], in reference[bone], Weight * mask[bone]);
         }
     }
 }

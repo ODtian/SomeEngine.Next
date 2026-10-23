@@ -100,6 +100,54 @@ public sealed class RawClipBehaviorTests
         Assert.Equal(new ClipEvent[] { new(0.5f, 7), new(1.5f, 9) }, clip.Events.ToArray());
     }
 
+    [Fact]
+    public async Task UniformQuantizedClipKeepsTrsSamplesAndInterpolatesAdjacentTimesAfterReopening()
+    {
+        using var files = new ClipFiles();
+        JsonNode animation = files.Document["animations"]![0]!;
+        JsonArray channels = animation["channels"]!.AsArray();
+        JsonArray samplers = animation["samplers"]!.AsArray();
+        while (channels.Count > 3) channels.RemoveAt(channels.Count - 1);
+        while (samplers.Count > 3) samplers.RemoveAt(samplers.Count - 1);
+        samplers[2]!["interpolation"] = "LINEAR";
+        files.WriteSource();
+        SourceMeta metadata = SourceMeta.Load(files.Source);
+        metadata.Importers.RemoveAll(value => value.ImporterId == RawClipImporter.Id);
+        metadata.Importers.Add(new(QuantizedClipImporter.Id, JsonSerializer.SerializeToElement(
+            new QuantizedClipSettings(SampleRate: 4, RootMotionNode: 1), QuantizedClipSettingsJson.Default.QuantizedClipSettings)));
+        SourceMeta.Save(files.Source, metadata);
+        var project = new AssetProject(files.Directory, []);
+        await project.ImportAsync(files.Source, SourceImporter());
+        AssetEntry skeletonEntry = Assert.Single(project.Manifest.Assets.Values, value => value.AssetType == SkeletonAsset.FileType);
+        AssetEntry clipEntry = Assert.Single(project.Manifest.Assets.Values, value => value.AssetType == AnimationClipAsset.FileType);
+        Skeleton skeleton;
+        using (SkeletonAsset asset = await SkeletonAsset.OpenAsync(Path.Combine(files.Directory, skeletonEntry.Path)))
+            skeleton = (await asset.GetBlockAsync<SkeletonBlock>()).CreateSkeleton();
+        AnimationClip clip;
+        using (AnimationClipAsset asset = await AnimationClipAsset.OpenAsync(Path.Combine(files.Directory, clipEntry.Path)))
+        {
+            QuantizedClipBlock block = await asset.GetBlockAsync<QuantizedClipBlock>();
+            Assert.Equal(9, block.Data.SampleCount);
+            Assert.Equal(skeletonEntry.AssetGuid, block.Skeleton.Value);
+            clip = block.CreateClip(skeleton);
+        }
+        var pose = new BoneTransform[skeleton.BoneCount];
+        foreach (float time in new float[] { .375f, 1.375f })
+        {
+            clip.SampleLocal(time, pose);
+            Assert.InRange(Vector3.Distance(new(time, 0, 0), pose[0].Translation), 0, .0001f);
+            float angle = MathF.PI * .5f * time;
+            Assert.InRange(Vector3.Distance(new(MathF.Cos(angle), MathF.Sin(angle), 0),
+                Vector3.Transform(Vector3.UnitX, pose[0].Rotation)), 0, .0002f);
+            float scale = time < 1 ? 1 + time : 2 * time;
+            Assert.InRange(Vector3.Distance(new(scale), pose[0].Scale), 0, .0001f);
+            Assert.InRange(Vector3.Distance(Vector3.UnitY, pose[1].Translation), 0, .0001f);
+        }
+        Assert.Equal(2, clip.Duration);
+        Assert.Equal(0, clip.RootMotionBone);
+        Assert.Equal(new ClipEvent[] { new(.5f, 7), new(1.5f, 9) }, clip.Events.ToArray());
+    }
+
     private static GltfSourceImporter SourceImporter()
         => new(services => PoseTestAssets.AddAssetCapabilities(services), PoseTestAssets.BuildVersion, PoseSceneImporter.Id);
 
