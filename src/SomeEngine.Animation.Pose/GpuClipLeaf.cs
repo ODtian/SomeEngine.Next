@@ -6,11 +6,15 @@ using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Pose;
 
-/// <summary>A GPU clip's instance controls, copied through normal render extraction.</summary>
+/// <summary>A GPU pose producer's controls, copied through normal render extraction.</summary>
 public struct GpuPoseTarget : IComponent
 {
     public SkeletonInstance Skeleton;
     public QuantizedClipData? Clip;
+    public GpuPoseStateMachine? StateMachine;
+    public float[]? Controls;
+    public float PlaybackTime;
+    public bool Playing;
     public float SampleTime;
     public double CalculationTime;
     public uint Starts;
@@ -49,6 +53,7 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
             });
         GpuPoseTarget output = world.Read<GpuPoseTarget>(target);
         output.Clip = definitions.Parameters[index].Clip;
+        output.StateMachine = null;
         output.SampleTime = 0;
         output.Starts = placement.Starts;
         world.Replace(target, output);
@@ -67,6 +72,7 @@ public static class GpuPoseAnimation
     {
         AnimationSystems.Add(systems, new GpuPoseFrameSystem(), AnimationPhase.Composition);
         AnimationSystems.Add(systems, new GpuClipSystem(), AnimationPhase.Composition);
+        AnimationSystems.Add(systems, new GpuStateSystem(), AnimationPhase.Composition);
     }
 }
 
@@ -87,6 +93,7 @@ internal struct GpuPoseFrameSystem : ISystem<ImmediateSystemContext>
                 ref GpuPoseTarget target = ref row.ReadWrite<GpuPoseTarget>();
                 target.CalculationTime = time;
                 target.InputNumber++;
+                target.Playing = false;
             }
         });
     }
@@ -116,6 +123,7 @@ internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
                 float elapsed = parameters.Loop ? time.Time.Time : Math.Min(time.Time.Time, parameters.Clip.Duration);
                 GpuPoseTarget output = world.Read<GpuPoseTarget>(instance.Target);
                 output.Clip = parameters.Clip;
+                output.StateMachine = null;
                 output.SampleTime = parameters.Loop ? elapsed % parameters.Clip.Duration : elapsed;
                 output.Starts = time.Starts;
                 world.Replace(instance.Target, output);

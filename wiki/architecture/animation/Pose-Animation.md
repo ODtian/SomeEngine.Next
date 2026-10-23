@@ -24,6 +24,7 @@
 - 选定片段、序列与带曲线的混合/遮罩路径通过显式时间基准批量预测根和骨骼，结果带播放条件与计算时刻，见 [Pose Prediction](Pose-Prediction.md)。
 - FABRIK 通过共同叶节点消费来源姿势，按实例目标进行定长链投影与关节圆锥限制，见 [FABRIK](FABRIK.md)。
 - PBIK 将骨盆、躯干和四肢放在同一全身约束求解中，按多末端目标、骨骼刚度、优先角度与关节限制生成姿势，见 [PBIK](PBIK.md)。
+- GPU 状态机共享紧凑状态与过渡表，各实例独立推进播放时间和交叉过渡，实际播放结果随 G 一起读回，见 [GPU State Machines](GPU-State-Machines.md)。
 
 ## Non-goals
 - 不把每根骨骼表示为一条属性动画轨道。
