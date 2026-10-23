@@ -18,13 +18,13 @@
 2. `TerrainLodSystem` 根据根块范围、相机距离和相邻层级关系选择替换块。
 3. `TerrainMeshSystem` 捕获受影响块需要的表面版本，提交对应几何构建。
 
-该功能同时安装地形请求提取、GPU 准备、帧录制与完成观察。块实体的 `TerrainSource` 引用使请求进入同一条 Game world 到 Rendering world 的提取路径，GPU 页的按需 CPU 读取为后续网格任务提供样本，详见 [GPU 编辑](Terrain-Gpu-Editing.md)。
+该功能同时安装地形请求提取、GPU 准备、帧录制与完成观察。每个 Scene 为使用的 Terrain 持有独立的 `TerrainSource` 实体，请求沿同一条 Game world 到 Rendering world 的提取路径传递；最后一个放置移除后，来源实体继续保持到构建和请求消费完成。GPU 页的按需 CPU 读取为后续网格任务提供样本，详见 [GPU 编辑](Terrain-Gpu-Editing.md)。
 
 高度编辑提交产生 `HeightFieldChange`。场景结合写入范围和采样邻域选择需要更新的块；一次共享 Terrain 的构建完成后，所有引用对应几何的放置一起取得该版本。构建期间保留当前块实体和几何，完成时共同应用所捕获的块选择、放置变换和材质。相机输入、2∶1 邻接和接缝规则见[地形 LOD](Terrain-Lod.md)。
 
 体素编辑提交产生 [VoxelFieldChange](../../../src/SomeEngine.Resources/Terrain/VoxelFieldChange.cs)，按三维写入范围和采样邻域选择空间块。表面提取在对应三维单元中生成零等值面；提交和提取继续使用相同的三个游戏系统。
 
-CPU 路径的块实体使用 `WorldTransform`、`MeshInstance` 和 `MeshMaterialBinding`，由现有 [Mesh 提取](../rendering/Extraction.md) 进入 Rendering world。`GetChunks` 返回游戏世界当前提交的块版本。`WaitForBuildsAsync` 等待当前已提交的构建任务；接着运行的提交系统应用结果。
+CPU 路径的块实体使用 `WorldTransform`、`MeshInstance` 和 `MeshMaterialBinding`，由现有 [Mesh 提取](../rendering/Extraction.md) 进入 Rendering world。每个 Scene 通过自己持有的块实体索引应用几何与版本；`GetChunks` 返回该 Scene 当前提交的块版本，同一 World 中的多个 Scene 分别维护各自的局部编号。`WaitForBuildsAsync` 等待当前已提交的构建任务；接着运行的提交系统应用结果。
 
 ## 表面与属性
 

@@ -491,9 +491,12 @@ public sealed class RenderExtractionContext : IDisposable
 
     public RenderWorld World => _world;
 
-    /// <summary>Transfers material references used by this extractor to the rendering world.</summary>
-    public void UpdateMaterials(IEnumerable<Material> materials, IEnumerable<long> removed) =>
-        _world.UpdateMaterials(materials, removed);
+    /// <summary>Sets a mirror's material bindings and retains their shared rendering-world references.</summary>
+    public void SetMaterials(Entity entity, ReadOnlySpan<Material> materials) =>
+        _world.SetMaterials(entity, materials);
+
+    /// <summary>Removes a mirror's bindings and releases its shared material references.</summary>
+    public void RemoveMaterials(Entity entity) => _world.RemoveMaterials(entity);
 
     public ReadOnlySpan<RenderMirror> Mirrors => System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_mirrors);
 
@@ -824,6 +827,7 @@ public sealed class RenderExtractionContext : IDisposable
             RenderMirror mirror = _mirrors[index];
             if (!_retainedSources.Contains(mirror.Source))
             {
+                _world.RemoveMaterials(mirror.RenderEntity);
                 _world.DestroyEntity(mirror.RenderEntity);
                 _previousMirrors.TryAdd(mirror.Source, mirror.RenderEntity);
                 _mirrorBySource.Remove(mirror.Source);

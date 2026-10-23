@@ -5,6 +5,7 @@ using SomeEngine.Graphics;
 using SomeEngine.Render;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Systems;
+using SomeEngine.Render.Terrain;
 using SomeEngine.RenderGraph;
 
 namespace SomeEngine.Runtime;
@@ -27,6 +28,8 @@ public sealed class ApplicationGeometryContext
     private readonly Func<Vector3> _cameraPosition;
     private readonly List<IRenderGraphFrameExecutionObserver> _observers = [];
     private readonly List<IDisposable> _resources = [];
+    private readonly List<Action> _gameShutdown = [];
+    private RenderTerrainData? _terrainData;
 
     internal ApplicationGeometryContext(IGraphicsBackend backend, Device device, RenderDevice renderDevice,
         ClusterRenderResources cluster, global::SomeEngine.RenderGraph.RenderGraph graph, World gameWorld,
@@ -71,6 +74,21 @@ public sealed class ApplicationGeometryContext
 
     public void AddCompletionObserver(IRenderGraphFrameExecutionObserver observer) => _observers.Add(observer);
 
+    /// <summary>Runs after submitted GPU work finishes and before game-system jobs are drained.</summary>
+    public void AddGameShutdown(Action shutdown) => _gameShutdown.Add(shutdown);
+
+    internal RenderTerrainData GetTerrainData()
+    {
+        if (_terrainData is not null) return _terrainData;
+        _terrainData = new(Backend, Device, Graph);
+        AddExtractor(new TerrainRenderExtractor());
+        AddPrepareSystem(_terrainData);
+        AddFrameSystem(_terrainData);
+        AddCompletionObserver(_terrainData);
+        _resources.Add(_terrainData);
+        return _terrainData;
+    }
+
     internal void Install(IEnumerable<IApplicationGeometryFeature> features)
     {
         foreach (IApplicationGeometryFeature feature in features)
@@ -82,6 +100,12 @@ public sealed class ApplicationGeometryContext
         _gameSystems.Dispose();
         for (int index = _resources.Count - 1; index >= 0; index--) _resources[index].Dispose();
         _resources.Clear();
+    }
+
+    internal void FinishGame()
+    {
+        foreach (Action shutdown in _gameShutdown) shutdown();
+        _gameShutdown.Clear();
     }
 
     internal void UpdateGame(double deltaTime)

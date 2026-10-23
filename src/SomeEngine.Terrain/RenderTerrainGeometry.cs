@@ -29,7 +29,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     private readonly Dictionary<(int Geometry, ulong Revision), GeometryData> _geometries = [];
     private readonly Dictionary<(Shader Shader, string Entry), ComputeData> _pipelines = [];
     private readonly List<Task> _completions = [];
-    private QueryHandle _requests, _chunks;
+    private QueryHandle _requests, _chunks, _selection;
 
     internal RenderTerrainGeometry(IGraphicsBackend backend, Device device, ClusterRenderResources cluster,
         global::SomeEngine.RenderGraph.RenderGraph graph, RenderTerrainData fields, TerrainScene scene)
@@ -49,10 +49,18 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     {
         _requests = context.World.Query(new QueryDefinitionBuilder().Read<RenderTerrainRequests>());
         _chunks = context.World.Query(new QueryDefinitionBuilder().Read<RenderTerrainChunk>().ReadBuffer<RenderMaterialBinding>());
+        _selection = context.World.Query(new QueryDefinitionBuilder().Read<RenderTerrainSelection>());
     }
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
+        var selected = new HashSet<int>();
+        context.World.ExecuteQuery(_selection, query =>
+        {
+            foreach (QueryChunkView chunk in query.Chunks)
+            foreach (RenderTerrainSelection value in chunk.Read<RenderTerrainSelection>())
+                if (ReferenceEquals(value.Scene, _scene)) selected.UnionWith(value.GeometryIds);
+        });
         var requests = new HashSet<TerrainGeometryRequest>();
         context.World.ExecuteQuery(_requests, query =>
         {
@@ -63,8 +71,16 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
                     && !geometry.IsSubmitted) requests.Add(geometry);
         });
         foreach (TerrainGeometryRequest request in requests)
+            _batches.TryAdd(request, new(request));
+        foreach (Batch batch in _batches.Values)
         {
-            if (_batches.ContainsKey(request) || !request.Dependency.IsCompleted) continue;
+            TerrainGeometryRequest request = batch.Request;
+            if (!request.Chunks.Any(chunk => selected.Contains(chunk.GeometryId)))
+            {
+                request.Withdraw();
+                continue;
+            }
+            if (batch.Reserved || request.IsSubmitted || !request.Dependency.IsCompleted) continue;
             request.Dependency.Complete();
             foreach (TerrainGpuChunkBuild chunk in request.Chunks)
             {
@@ -78,7 +94,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
                     request.Revision, bounds);
                 _geometries.Add((chunk.GeometryId, request.Revision), new(geometry));
             }
-            _batches.Add(request, new(request));
+            batch.Reserved = true;
         }
 
         var world = context.World;
@@ -114,13 +130,17 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             else if (context.World.Read<RenderClusterGeometry>(value.Entity) != binding) context.World.Replace(value.Entity, binding);
         }
         foreach (TerrainGeometryRequest request in _batches.Keys)
-            if (request.Chunks.All(chunk => visible.GetValueOrDefault(chunk.GeometryId) == request.Revision))
+            if (request.Chunks.All(chunk => !selected.Contains(chunk.GeometryId)
+                || visible.GetValueOrDefault(chunk.GeometryId) == request.Revision))
                 request.Visibility.Complete();
-        foreach (var pair in _geometries.ToArray())
-            if (pair.Value.HasBeenBound && visible.GetValueOrDefault(pair.Key.Geometry) != pair.Key.Revision)
+        foreach (TerrainGeometryRequest request in _batches.Keys)
+        foreach (TerrainGpuChunkBuild chunk in request.Chunks)
+            if (_geometries.TryGetValue((chunk.GeometryId, request.Revision), out GeometryData? geometry)
+                && ((geometry.HasBeenBound && visible.GetValueOrDefault(chunk.GeometryId) != request.Revision)
+                    || (request.IsSubmitted && !selected.Contains(chunk.GeometryId))))
             {
-                _builder.Release(context, pair.Value.Geometry);
-                _geometries.Remove(pair.Key);
+                _builder.Release(context, geometry.Geometry);
+                _geometries.Remove((chunk.GeometryId, request.Revision));
             }
         foreach (TerrainGeometryRequest request in _batches.Keys.ToArray())
             if (request.IsSubmitted && request.Chunks.All(chunk => !_geometries.ContainsKey((chunk.GeometryId, request.Revision))))
@@ -135,7 +155,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         foreach (Batch batch in _batches.Values)
         {
             TerrainGeometryRequest request = batch.Request;
-            if (request.IsSubmitted || batch.Pass != default || !request.Dependency.IsCompleted) continue;
+            if (request.IsSubmitted || batch.Pass != default || !batch.Reserved) continue;
             request.Dependency.Complete();
             var inputExtension = extension;
             var sourceBindings = new Dictionary<string, GraphParameterResourceBinding>();
@@ -244,9 +264,12 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
 
     public void OnDestroy(ref RenderPrepareSystemContext context)
     {
+        Task.WhenAll(_completions).GetAwaiter().GetResult();
+        foreach (TerrainGeometryRequest request in _batches.Keys) request.Withdraw();
         foreach (GeometryData geometry in _geometries.Values) _builder.Release(context, geometry.Geometry);
         context.World.ReleaseQuery(_requests);
         context.World.ReleaseQuery(_chunks);
+        context.World.ReleaseQuery(_selection);
     }
 
     public void Dispose()
@@ -255,8 +278,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         foreach (TerrainGeometryRequest request in _batches.Keys)
         {
             request.ReleaseInput();
-            if (!request.IsSubmitted) request.Completion.Fail(new OperationCanceledException("Terrain graphics finished."));
-            if (!request.Visibility.IsSignaled) request.Visibility.Fail(new OperationCanceledException("Terrain graphics finished."));
+            request.Withdraw();
         }
         foreach (ComputeData pipeline in _pipelines.Values) pipeline.Pipeline.Dispose();
         _builder.Dispose();
@@ -293,6 +315,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     private sealed class Batch(TerrainGeometryRequest request)
     {
         internal TerrainGeometryRequest Request { get; } = request;
+        internal bool Reserved;
         internal GraphPassId Pass;
     }
 

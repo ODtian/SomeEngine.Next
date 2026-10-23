@@ -18,18 +18,14 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
     private readonly HashSet<Entity> _meshSources = [];
     private readonly Dictionary<Entity, Material[]> _sourceMaterials = [];
     private readonly Dictionary<Material, HashSet<Entity>> _materialSources = [];
-    private readonly HashSet<Material> _addedMaterials = [];
-    private readonly HashSet<long> _removedMaterials = [];
     private readonly HashSet<Entity> _collectedMaterialSources = [];
     private readonly object _assetChangesGate = new();
-    private readonly HashSet<Material> _referencedMaterials = [];
     private readonly Dictionary<Entity, MeshInstance> _sourceMeshes = [];
     private readonly Dictionary<Mesh, HashSet<Entity>> _meshAssetSources = [];
     private readonly HashSet<Entity> _changedMeshSources = [];
     private readonly HashSet<Entity> _collectedMeshSources = [];
 
-    public bool CanApplyChangesDirect =>
-        _snapshots.Count == 0 && _removedMaterials.Count == 0;
+    public bool CanApplyChangesDirect => _snapshots.Count == 0;
 
     public void DeclareReads(RenderExtractionQuery query)
     {
@@ -47,14 +43,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         _materials.Clear();
         _meshSources.Clear();
         _collectedMaterialSources.Clear();
-        _referencedMaterials.Clear();
         _collectedMeshSources.Clear();
-    }
-
-    private Material CollectMaterial(Material material)
-    {
-        _referencedMaterials.Add(material);
-        return material;
     }
 
     private Mesh TrackMesh(Entity source, in MeshInstance instance)
@@ -125,8 +114,6 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 {
                     _materialSources.Add(material, sources = []);
                     material.Changed += CollectMaterialChange;
-                    _addedMaterials.Add(material);
-                    _removedMaterials.Remove(material.MaterialId);
                 }
                 sources.Add(source);
             }
@@ -145,8 +132,6 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             if (sources.Count != 0) continue;
             material.Changed -= CollectMaterialChange;
             _materialSources.Remove(material);
-            _addedMaterials.Remove(material);
-            _removedMaterials.Add(material.MaterialId);
         }
     }
 
@@ -182,18 +167,6 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 _meshSources.Add(source);
                 changed = true;
             }
-            foreach (Material material in _addedMaterials.ToArray())
-            {
-                Material data = CollectMaterial(material);
-                if (context.World.TryReadMaterial(data.MaterialId, out Material? current) &&
-                    ReferenceEquals(current, data))
-                    _addedMaterials.Remove(material);
-                else
-                    changed = true;
-            }
-            foreach (long id in _removedMaterials.ToArray())
-                if (context.World.TryReadMaterial(id, out _)) changed = true;
-                else _removedMaterials.Remove(id);
             return changed;
         }
     }
@@ -206,8 +179,6 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             foreach (Material material in _materialSources.Keys) material.Changed -= CollectMaterialChange;
             _materialSources.Clear();
             _sourceMaterials.Clear();
-            _addedMaterials.Clear();
-            _removedMaterials.Clear();
             foreach (Mesh mesh in _meshAssetSources.Keys) mesh.Changed -= CollectMeshChange;
             _meshAssetSources.Clear();
             _sourceMeshes.Clear();
@@ -237,7 +208,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 materialCount = bindings.Length;
                 TrackMaterials(entities[row], bindings);
                 for (int index = 0; index < bindings.Length; index++)
-                    _materials.Add(CollectMaterial(bindings[index].Material));
+                    _materials.Add(bindings[index].Material);
             }
 
             _snapshots.Add(new MeshSnapshot(
@@ -295,7 +266,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     materialCount = bindings.Length;
                     TrackMaterials(entities[row], bindings);
                     for (int index = 0; index < bindings.Length; index++)
-                        _materials.Add(CollectMaterial(bindings[index].Material));
+                        _materials.Add(bindings[index].Material);
                 }
 
                 MeshInstance mesh = meshes[row];
@@ -319,7 +290,6 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
     public void Apply(RenderExtractionContext context)
     {
-        context.World.UpdateMaterials(_referencedMaterials, _removedMaterials);
         for (int index = 0; index < _snapshots.Count; index++)
         {
             MeshSnapshot snapshot = _snapshots[index];
@@ -338,19 +308,17 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         {
             RenderMirror mirror = mirrors[index];
             bool retainedMesh = _meshSources.Contains(mirror.Source);
-            if (!retainedMesh)
+            if (!retainedMesh && context.World.Has<RenderMesh>(mirror.RenderEntity))
             {
                 context.RemoveIfExists<RenderInstance>(mirror.RenderEntity);
                 context.RemoveIfExists<RenderMesh>(mirror.RenderEntity);
-                if (context.World.HasBuffer<RenderMaterialBinding>(mirror.RenderEntity))
-                    context.World.RemoveBuffer<RenderMaterialBinding>(mirror.RenderEntity);
+                context.RemoveMaterials(mirror.RenderEntity);
             }
         }
     }
 
     public void ApplyChanges(RenderExtractionContext context)
     {
-        context.World.UpdateMaterials(_referencedMaterials, _removedMaterials);
         for (int index = 0; index < _snapshots.Count; index++)
         {
             MeshSnapshot snapshot = _snapshots[index];
@@ -377,9 +345,6 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
     public void ValidateChanges(RenderExtractionContext context)
     {
-        foreach (Material data in _referencedMaterials)
-            if (!context.World.TryReadMaterial(data.MaterialId, out _))
-                throw new InvalidOperationException($"The rendering world has no material {data.MaterialId} to update.");
         for (int index = 0; index < _snapshots.Count; index++)
         {
             MeshSnapshot snapshot = _snapshots[index];
@@ -409,66 +374,12 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 throw new InvalidOperationException(
                     $"A changed material row for {snapshot.Source} no longer has its source buffer.");
             }
-            if (world.HasBuffer<RenderMaterialBinding>(renderEntity))
-                world.RemoveBuffer<RenderMaterialBinding>(renderEntity);
+            world.RemoveMaterials(renderEntity);
             return;
         }
 
-        if (!world.HasBuffer<RenderMaterialBinding>(renderEntity))
-        {
-            if (!allowStructuralChanges)
-            {
-                throw new InvalidOperationException(
-                    $"Render mirror {renderEntity} has no material buffer for changed source " +
-                    $"{snapshot.Source}.");
-            }
-            world.AddBuffer<RenderMaterialBinding>(renderEntity);
-        }
-        else
-        {
-            MaterialSliceComparison comparison = new(
-                _materials,
-                snapshot.MaterialOffset,
-                snapshot.MaterialCount);
-            world.ExecuteBufferRead<RenderMaterialBinding, MaterialSliceComparison>(
-                renderEntity,
-                ref comparison,
-                CompareMaterials);
-            if (comparison.Equal)
-                return;
-        }
-
-        MaterialSlice write = new(_materials, snapshot.MaterialOffset, snapshot.MaterialCount);
-        world.ExecuteBufferWrite<RenderMaterialBinding, MaterialSlice>(
-            renderEntity,
-            ref write,
-            static (DynamicBuffer<RenderMaterialBinding> buffer, ref MaterialSlice source) =>
-            {
-                buffer.Clear();
-                buffer.EnsureCapacity(source.Count);
-                for (int index = 0; index < source.Count; index++)
-                {
-                    buffer.Add(
-                        new RenderMaterialBinding(source.Values[source.Offset + index].MaterialId));
-                }
-            });
-    }
-
-    private static void CompareMaterials(
-        BufferView<RenderMaterialBinding> buffer, ref MaterialSliceComparison state)
-    {
-        ReadOnlySpan<RenderMaterialBinding> current = buffer.AsSpan();
-        if (current.Length != state.Count)
-        {
-            state.Equal = false;
-            return;
-        }
-        for (int index = 0; index < current.Length; index++)
-            if (current[index].MaterialId != state.Values[state.Offset + index].MaterialId)
-            {
-                state.Equal = false;
-                return;
-            }
+        world.SetMaterials(renderEntity, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_materials)
+            .Slice(snapshot.MaterialOffset, snapshot.MaterialCount));
     }
 
     private readonly record struct MeshSnapshot(
@@ -482,20 +393,4 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         bool MeshChanged,
         bool MaterialsChanged,
         SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource);
-
-    private readonly record struct MaterialSlice(
-        List<Material> Values,
-        int Offset,
-        int Count);
-
-    private struct MaterialSliceComparison(
-        List<Material> values,
-        int offset,
-        int count)
-    {
-        internal List<Material> Values = values;
-        internal int Offset = offset;
-        internal int Count = count;
-        internal bool Equal = true;
-    }
 }

@@ -23,4 +23,10 @@ public sealed partial class Terrain
             return _requestData ??= _requests.ToArray();
         }
     }
+
+    internal void CancelRequests()
+    {
+        TerrainDataRequest[] requests = CaptureRequests();
+        foreach (TerrainDataRequest request in requests) request.Cancel();
+    }
 }

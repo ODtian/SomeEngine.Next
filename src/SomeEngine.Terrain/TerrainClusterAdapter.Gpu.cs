@@ -5,7 +5,10 @@ using SomeEngine.Resources;
 
 namespace SomeEngine.Terrains;
 
-/// <summary>Device geometry completion and the later rendering-world batch binding.</summary>
+/// <summary>
+/// Geometry work completion and the rendering world's application of the batch selection.
+/// Removing all placements completes an empty selection; shutdown also finishes work withdrawn before submission.
+/// </summary>
 public readonly record struct TerrainGpuBuild(ulong Revision, JobHandle Completion, JobHandle Visibility);
 
 /// <summary>The user's attribute kernel, fixed field inputs and optional triangle-material kernel.</summary>
@@ -54,7 +57,19 @@ internal sealed class TerrainGeometryRequest(long sequence, JobHandle dependency
     internal TerrainGpuChunkBuild[] Chunks { get; } = chunks;
     internal TerrainCompletion Visibility { get; } = visibility;
     internal void ReleaseInput() => Surface = null;
+    internal override void Cancel() => Withdraw();
+    internal void Withdraw()
+    {
+        if (!IsSubmitted)
+        {
+            AcceptSubmission();
+            ReleaseInput();
+            Completion.Complete();
+        }
+        Visibility.Complete();
+    }
 }
 
 internal readonly record struct TerrainGpuChunkBuild(int GeometryId, TerrainChunkBounds Bounds);
 internal readonly record struct TerrainGpuSource(object Scene) : IComponent;
+internal readonly record struct TerrainGpuSelection(object Scene, int[] GeometryIds) : IComponent;

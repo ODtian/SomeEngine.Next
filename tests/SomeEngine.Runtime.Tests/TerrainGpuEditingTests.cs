@@ -19,6 +19,55 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class TerrainGpuEditingTests(SceneContentFixture content)
 {
     [Fact]
+    public async Task MultipleTerrainFeaturesRecordEachFieldEditOnce()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        var first = new HeightTerrainExample(scheduler);
+        var second = new HeightTerrainExample(scheduler);
+        Shader shader = await LoadHeightShaderAsync();
+        int firstRecords = 0, secondRecords = 0;
+        Task<HeightFieldRead>? firstRead = null, secondRead = null;
+        var range = new HeightRegion(0, 0, 2, 2);
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "8"]),
+            UpdateFrame = frame =>
+            {
+                if (frame.Index == 0)
+                {
+                    Material red = frame.Scene.GetMaterial(frame.Scene.MeshEntities.First());
+                    first.AddPlacements(red, red);
+                    second.AddPlacements(red, red);
+                    first.Heights.EditGpu(new RecordedHeightBrush(new(shader, range, 1f), () => firstRecords++));
+                    second.Heights.EditGpu(new RecordedHeightBrush(new(shader, range, 2f), () => secondRecords++));
+                    firstRead = first.Heights.ReadCpuAsync(range).AsTask();
+                    secondRead = second.Heights.ReadCpuAsync(range).AsTask();
+                }
+            },
+        };
+        first.Install(application);
+        second.Install(application);
+
+        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.Equal(1f, (await firstRead!)[1, 1]);
+        Assert.Equal(2f, (await secondRead!)[1, 1]);
+        Assert.Equal(1, firstRecords);
+        Assert.Equal(1, secondRecords);
+    }
+
+    private readonly record struct RecordedHeightBrush(HeightDeltaBrushGpu Brush, Action Recorded) : IHeightBrushGpu
+    {
+        public HeightRegion Range => Brush.Range;
+        public int ReadBorder => Brush.ReadBorder;
+        public void Record(ref HeightBrushGpuContext context)
+        {
+            Recorded();
+            Brush.Record(ref context);
+        }
+    }
+
+    [Fact]
     public async Task SavedHeightAndVoxelPagesFeedTheFirstGpuEdits()
     {
         string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Terrain-Gpu-Read-{Guid.NewGuid():N}.terrain.asset");

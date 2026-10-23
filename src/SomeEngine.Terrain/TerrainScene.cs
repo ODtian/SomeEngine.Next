@@ -5,7 +5,6 @@ using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Job;
 using SomeEngine.Render.Components;
 using SomeEngine.Resources;
@@ -21,6 +20,7 @@ public sealed class TerrainScene
     internal TerrainClusterAdapter? GpuAdapter { get; }
     internal object RenderKey { get; } = new();
     private readonly Dictionary<int, PlacementData> _placements = [];
+    private readonly Dictionary<Resources.Terrain, Entity> _terrainSources = [];
     private readonly Dictionary<ChunkKey, ChunkData> _chunks = [];
     private readonly Dictionary<GeometryKey, GeometryData> _geometryByKey = [];
     private readonly Dictionary<int, GeometryData> _geometryById = [];
@@ -29,7 +29,7 @@ public sealed class TerrainScene
     private readonly HashSet<Resources.Terrain> _subscriptions = [];
     private readonly ConcurrentQueue<TerrainChange> _changes = new();
     private World? _world;
-    private QueryHandle _chunkQuery;
+    private Entity _selection;
     private int _nextPlacementId, _nextGeometryId;
     private bool _placementsChanged;
 
@@ -48,7 +48,7 @@ public sealed class TerrainScene
         Grid = grid;
     }
 
-    /// <summary>The latest GPU batch, with separate device and rendering-world binding completion.</summary>
+    /// <summary>The latest GPU work and rendering-world selection completion, including an empty selection after removal.</summary>
     public TerrainGpuBuild GetGpuBuild(Resources.Terrain terrain)
     {
         TerrainGeometryRequest build = _gpuBuilds[terrain];
@@ -74,12 +74,8 @@ public sealed class TerrainScene
     {
         if (_world is null) return [];
         var result = new List<TerrainChunk>();
-        _world.ExecuteQuery(_chunkQuery, query =>
-        {
-            foreach (QueryChunkView chunk in query.Chunks)
-            foreach (TerrainChunk value in chunk.Read<TerrainChunk>())
-                if (value.PlacementId == placementId) result.Add(value);
-        });
+        foreach ((ChunkKey key, ChunkData chunk) in _chunks)
+            if (key.PlacementId == placementId) result.Add(_world.Read<TerrainChunk>(chunk.Entity));
         return result.ToArray();
     }
 
@@ -117,8 +113,19 @@ public sealed class TerrainScene
     internal void Bind(World world)
     {
         _world = world;
-        _chunkQuery = world.Query(new QueryDefinitionBuilder().Read<TerrainChunk>());
+        if (GpuAdapter is not null) _selection = world.CreateEntity(new TerrainGpuSelection(RenderKey, []));
         _placementsChanged = true;
+    }
+
+    internal void FinishBuilds()
+    {
+        foreach (Resources.Terrain terrain in _terrainSources.Keys) terrain.CancelRequests();
+        foreach (TerrainGeometryRequest request in _gpuBuilds.Values) request.Withdraw();
+        foreach (MeshBatch batch in _batches.Values)
+        {
+            try { batch.Work.Completion.Complete(); }
+            catch (OperationCanceledException) { }
+        }
     }
 
     internal void Unbind()
@@ -126,9 +133,11 @@ public sealed class TerrainScene
         foreach (Resources.Terrain terrain in _subscriptions) terrain.Changed -= CollectChange;
         _subscriptions.Clear();
         foreach (ChunkData chunk in _chunks.Values) _world!.DestroyEntity(chunk.Entity);
-        _world!.ReleaseQuery(_chunkQuery);
+        foreach (Entity entity in _terrainSources.Values) _world!.DestroyEntity(entity);
+        if (GpuAdapter is not null) _world!.DestroyEntity(_selection);
         _world = null;
         _chunks.Clear();
+        _terrainSources.Clear();
         _geometryByKey.Clear();
         _geometryById.Clear();
         _batches.Clear();
@@ -183,33 +192,21 @@ public sealed class TerrainScene
     private void ApplyGeometry(HashSet<int> completed)
     {
         if (completed.Count == 0) return;
-        var updates = new List<(Entity Entity, TerrainChunk Chunk, Mesh? Mesh)>();
-        _world!.ExecuteQuery(_chunkQuery, query =>
+        foreach (ChunkData chunk in _chunks.Values)
         {
-            foreach (QueryChunkView chunk in query.Chunks)
+            if (!completed.Contains(chunk.GeometryId)) continue;
+            GeometryData geometry = _geometryById[chunk.GeometryId];
+            TerrainChunk value = _world!.Read<TerrainChunk>(chunk.Entity);
+            _world.Replace(chunk.Entity, value with { Revision = geometry.Revision });
+            if (geometry.Mesh is { } mesh)
             {
-                ReadOnlySpan<TerrainChunk> values = chunk.Read<TerrainChunk>();
-                for (int row = 0; row < values.Length; row++)
-                {
-                    TerrainChunk value = values[row];
-                    if (!completed.Contains(value.GeometryId)) continue;
-                    GeometryData geometry = _geometryById[value.GeometryId];
-                    updates.Add((chunk.Entities[row], value with { Revision = geometry.Revision }, geometry.Mesh));
-                }
+                if (!_world.Has<MeshInstance>(chunk.Entity))
+                    _world.Add(chunk.Entity, new MeshInstance { Mesh = mesh });
+                else if (!ReferenceEquals(_world.Read<MeshInstance>(chunk.Entity).Mesh, mesh))
+                    _world.Replace(chunk.Entity, new MeshInstance { Mesh = mesh });
             }
-        });
-        foreach (var update in updates)
-        {
-            _world.Replace(update.Entity, update.Chunk);
-            if (update.Mesh is { } mesh)
-            {
-                if (!_world.Has<MeshInstance>(update.Entity))
-                    _world.Add(update.Entity, new MeshInstance { Mesh = mesh });
-                else if (!ReferenceEquals(_world.Read<MeshInstance>(update.Entity).Mesh, mesh))
-                    _world.Replace(update.Entity, new MeshInstance { Mesh = mesh });
-            }
-            else if (_world.Has<MeshInstance>(update.Entity))
-                _world.Remove<MeshInstance>(update.Entity);
+            else if (_world.Has<MeshInstance>(chunk.Entity))
+                _world.Remove<MeshInstance>(chunk.Entity);
         }
     }
 
@@ -236,6 +233,8 @@ public sealed class TerrainScene
         foreach ((int id, PlacementData data) in _placements)
         {
             TerrainPlacement placement = data.Value;
+            if (!_terrainSources.ContainsKey(placement.Terrain))
+                _terrainSources.Add(placement.Terrain, _world!.CreateEntity(new TerrainSource(placement.Terrain)));
             if (_subscriptions.Add(placement.Terrain)) placement.Terrain.Changed += CollectChange;
             data.Selection = TerrainLodSelection.Select(placement, Grid, cameraPosition).Select(bounds =>
                 GetGeometry(placement.Terrain, bounds)).ToArray();
@@ -246,6 +245,28 @@ public sealed class TerrainScene
                 data.Created = true;
                 data.AppliedRevision = placement.Revision;
             }
+        }
+
+        foreach ((Resources.Terrain terrain, Entity source) in _terrainSources.ToArray())
+            if (!_placements.Values.Any(placement => ReferenceEquals(placement.Value.Terrain, terrain))
+                && !_batches.ContainsKey(terrain) && terrain.CaptureRequests().Length == 0)
+            {
+                _world!.DestroyEntity(source);
+                _terrainSources.Remove(terrain);
+            }
+
+        if (GpuAdapter is not null)
+        {
+            var selected = _chunks.Values.Select(static chunk => chunk.GeometryId).ToHashSet();
+            foreach (PlacementData placement in _placements.Values)
+            foreach (GeometryData geometry in placement.Selection) selected.Add(geometry.Id);
+            foreach (MeshBatch batch in _batches.Values)
+            foreach (PlacementBuild placement in batch.Placements)
+                if (_placements.ContainsKey(placement.Id))
+                    foreach (GeometryData geometry in placement.Selection) selected.Add(geometry.Id);
+            int[] ids = selected.Order().ToArray();
+            if (!_world!.Read<TerrainGpuSelection>(_selection).GeometryIds.AsSpan().SequenceEqual(ids))
+                _world.Replace(_selection, new TerrainGpuSelection(RenderKey, ids));
         }
 
         HashSet<int> used = _chunks.Values.Select(static chunk => chunk.GeometryId).ToHashSet();
@@ -281,7 +302,6 @@ public sealed class TerrainScene
         GeometryKey key = geometry.Key;
         Entity entity = _world!.CreateEntity(new TerrainChunk(placementId, key.Coordinates, key.Lod,
             geometry.Revision, geometry.Id, key.TransitionFaces));
-        _world.Add(entity, new TerrainSource(key.Terrain));
         if (GpuAdapter is not null) _world.Add(entity, new TerrainGpuSource(RenderKey));
         _world.Add(entity, new WorldTransform { Qvvs = transform });
         _world.AddBuffer<MeshMaterialBinding>(entity);
