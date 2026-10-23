@@ -10,11 +10,13 @@
 
 `VoxelSphereDeltaBrushGpu` 接受已驻留的 `Shader`、`VoxelGrid`、球心、半径和标量增量，调用 [terrain_voxel_delta.slang](../../../assets/Shaders/terrain_voxel_delta.slang) 的 `AddVoxelSphereDelta` 入口。球心和半径使用地形局部米制坐标，增量从球心到半径边界线性衰减。对应的 [Shader 定义](../../../assets/Shaders/terrain_voxel_delta.shader) 使用相同资产读取与编译路径。
 
-`Terrain` 持有请求序号和待提取的请求。`TerrainSource` 组件将地形请求纳入 Game world 到 Rendering world 的既有提取；同一 Terrain 的多个实体共用一份捕获请求。`TerrainGeometryFeature` 安装提取器、准备系统、帧系统和完成观察器，并保留原有三个游戏系统的执行顺序。
+`Terrain` 持有请求序号和待提取的请求。`TerrainSource` 组件将地形请求纳入 Game world 到 Rendering world 的既有提取；同一 Terrain 的多个实体共用一份捕获请求。一次应用运行的多个 `TerrainGeometryFeature` 共用同一 `TerrainRenderExtractor` 和 `RenderTerrainData`，设备字段页、准备、帧录制和完成观察由这份数据统一持有，各 Scene 保留各自的三个游戏系统。
 
 `RenderTerrainData` 持有设备页和管线。它按请求需要上传 CPU 页，建立源页表，并在持久图的扩展点录制当帧复制和 compute 工作。每次编辑使用捕获的输入页，写入新输出页。
 
 RenderGraph 提交回执使 Terrain 释放对应的待提取请求。实际队列完成经后端等待确认后，才通过现有外部 fence 完成 `TerrainEdit.Completion`。`TerrainEdit.WaitAsync` 因此等待本次 GPU 结果就绪。
+
+应用停止时先等待已提交 GPU 使用，随后由 Terrain 结束尚待图提交的字段请求，并在排空游戏系统 Job 前处理对应 CPU 网格依赖。撤销的字段编辑与页读回返回 `OperationCanceledException`；已提交字段工作保持真实队列完成结果。实现入口为 [TerrainDataRequest](../../../src/SomeEngine.Resources/Terrain/TerrainDataRequest.cs)、[TerrainScene](../../../src/SomeEngine.Terrain/TerrainScene.cs) 和 [ApplicationGeometry](../../../src/SomeEngine.Runtime/ApplicationGeometry.cs)。
 
 ## 局部读取与后续 CPU 工作
 

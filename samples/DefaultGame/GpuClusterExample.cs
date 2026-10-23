@@ -160,7 +160,6 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         }
         public void Apply(RenderExtractionContext context)
         {
-            context.UpdateMaterials(_values.Select(value => value.Geometry.Material), []);
             foreach (var value in _values)
             {
                 Entity entity = context.RetainMirror(value.Source);
@@ -168,11 +167,7 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
                 context.Upsert(entity, new RenderInstance());
                 // This placement and the quad dimensions below are example scene data.
                 context.RetainTransform(entity, new RenderTransform(new TransformQvvs(new Vector3(0, 0, 6), Quaternion.Identity)));
-                if (!context.World.HasBuffer<RenderMaterialBinding>(entity)) context.World.AddBuffer<RenderMaterialBinding>(entity);
-                long material = value.Geometry.Material.MaterialId;
-                context.World.ExecuteBufferWrite<RenderMaterialBinding, long>(entity, ref material,
-                    static (DynamicBuffer<RenderMaterialBinding> buffer, ref long id) =>
-                    { buffer.Clear(); buffer.Add(new(id)); });
+                context.SetMaterials(entity, [value.Geometry.Material]);
             }
         }
     }

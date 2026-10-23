@@ -11,16 +11,24 @@ internal abstract class TerrainDataRequest(long sequence, JobHandle dependency, 
     internal TerrainCompletion Completion { get; } = completion;
     internal bool IsSubmitted => Volatile.Read(ref _submitted) != 0;
     internal void AcceptSubmission() => Volatile.Write(ref _submitted, 1);
+    internal virtual void Cancel()
+    {
+        if (IsSubmitted) return;
+        AcceptSubmission();
+        Completion.Cancel();
+    }
 }
 
 /// <summary>Bridges an external completion and its result into the borrowed job scheduler.</summary>
 internal sealed class TerrainCompletion : IJobExternalFence
 {
     private readonly TaskCompletionSource _signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Scheduler _scheduler;
     private ExceptionDispatchInfo? _failure;
 
     internal TerrainCompletion(Scheduler scheduler, ReadOnlySpan<JobResourceAccess> accesses = default)
     {
+        _scheduler = scheduler;
         JobHandle fence = scheduler.CreateExternalFenceHandle(this, accesses);
         Handle = scheduler.Schedule(new CompleteWork(this), [], fence);
     }
@@ -40,6 +48,14 @@ internal sealed class TerrainCompletion : IJobExternalFence
     {
         _failure = ExceptionDispatchInfo.Capture(failure);
         _signal.TrySetResult();
+    }
+
+    internal void Cancel()
+    {
+        Fail(new OperationCanceledException("Terrain work ended before graphics submission."));
+        // Observe shutdown's result through a dependent handle, retaining cancellation on the caller's handle.
+        try { _scheduler.CombineDependencies([Handle]).Complete(); }
+        catch (OperationCanceledException) { }
     }
 
     private readonly struct CompleteWork(TerrainCompletion completion) : IJob

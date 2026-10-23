@@ -1,6 +1,5 @@
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Render.Components;
@@ -10,25 +9,36 @@ using SomeEngine.Resources;
 namespace SomeEngine.Terrains;
 
 internal readonly record struct RenderTerrainChunk(object Scene, int GeometryId, ulong Revision) : IComponent;
+internal readonly record struct RenderTerrainSelection(object Scene, int[] GeometryIds) : IComponent;
 
 internal sealed class TerrainGeometryExtractor(object scene) : IRenderExtractionSystem
 {
     private readonly List<ChunkData> _chunks = [];
+    private (Entity Entity, TerrainGpuSelection Value)? _selection;
 
     public void DeclareReads(RenderExtractionQuery query)
     {
         query.ReadOptional<TerrainGpuSource>();
+        query.ReadOptional<TerrainGpuSelection>();
         query.ReadOptional<TerrainChunk>();
         query.ReadOptional<WorldTransform>();
         query.ReadOptionalBuffer<MeshMaterialBinding>();
         query.Write<RenderTerrainChunk>();
+        query.Write<RenderTerrainSelection>();
         query.Write<RenderMaterialReference>();
     }
 
-    public void Reset() => _chunks.Clear();
+    public void Reset()
+    {
+        _chunks.Clear();
+        _selection = null;
+    }
 
     public void Collect(QueryChunkView chunk)
     {
+        if (chunk.TryRead<TerrainGpuSelection>(out var selections))
+            for (int row = 0; row < selections.Length; row++)
+                if (ReferenceEquals(selections[row].Scene, scene)) _selection = (chunk.Entities[row], selections[row]);
         if (!chunk.TryRead<TerrainGpuSource>(out var sources)) return;
         var values = chunk.Read<TerrainChunk>();
         var transforms = chunk.Read<WorldTransform>();
@@ -44,6 +54,11 @@ internal sealed class TerrainGeometryExtractor(object scene) : IRenderExtraction
 
     public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
+        if (chunk.Has<TerrainGpuSelection>() && chunk.HasChangedSinceLastSystemVersion<TerrainGpuSelection>())
+        {
+            Collect(chunk);
+            return true;
+        }
         if (!chunk.Has<TerrainGpuSource>()) return false;
         if (chunk.HasChangedSinceLastSystemVersion<WorldTransform>()) context.CollectTransformChanges(chunk);
         if (!chunk.HasChangedSinceLastSystemVersion<TerrainChunk>()
@@ -63,21 +78,15 @@ internal sealed class TerrainGeometryExtractor(object scene) : IRenderExtraction
 
     private void ApplyChunks(RenderExtractionContext context)
     {
+        if (_selection is { } selection)
+            context.Upsert(context.RetainMirror(selection.Entity), new RenderTerrainSelection(scene, selection.Value.GeometryIds));
         foreach (ChunkData chunk in _chunks)
         {
             Entity entity = context.RetainMirror(chunk.Entity);
             context.Upsert(entity, new RenderTerrainChunk(scene, chunk.Chunk.GeometryId, chunk.Chunk.Revision));
             context.Upsert(entity, new RenderInstance());
-            context.UpdateMaterials(chunk.Materials, []);
+            context.SetMaterials(entity, chunk.Materials);
             context.Upsert(entity, new RenderMaterialReference(chunk.Materials[0]));
-            if (!context.World.HasBuffer<RenderMaterialBinding>(entity)) context.World.AddBuffer<RenderMaterialBinding>(entity);
-            Material[] materials = chunk.Materials;
-            context.World.ExecuteBufferWrite<RenderMaterialBinding, Material[]>(entity, ref materials,
-                static (DynamicBuffer<RenderMaterialBinding> values, ref Material[] data) =>
-                {
-                    values.Clear();
-                    foreach (Material material in data) values.Add(new(material.MaterialId));
-                });
         }
     }
 

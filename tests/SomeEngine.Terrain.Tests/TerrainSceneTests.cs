@@ -12,6 +12,50 @@ namespace SomeEngine.Terrain.Tests;
 public sealed class TerrainSceneTests
 {
     [Fact]
+    public async Task ScenesInOneWorldKeepTheirChunksAndEditsSeparate()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var world = new World();
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        using var material = new UnlitMaterial();
+        using var firstTerrain = new Resources.Terrain(new TerrainEditing(scheduler));
+        using var secondTerrain = new Resources.Terrain(new TerrainEditing(scheduler));
+        HeightField firstHeight = firstTerrain.CreateHeightField("first", new(5, 5, 4), .5f);
+        HeightField secondHeight = secondTerrain.CreateHeightField("second", new(5, 5, 4), 2.5f);
+        firstTerrain.Surface = new HeightSurface(firstHeight);
+        secondTerrain.Surface = new HeightSurface(secondHeight);
+        var first = new TerrainScene(new TerrainClusterAdapter<StandardClusterAttributes>(new SurfaceAttributes(),
+            StandardClusterVertexEncoder.Instance, ClusterBuildStrategy.Realtime), new(4, 1f));
+        var second = new TerrainScene(new TerrainClusterAdapter<StandardClusterAttributes>(new SurfaceAttributes(),
+            StandardClusterVertexEncoder.Instance, ClusterBuildStrategy.Realtime), new(4, 1f));
+        int firstPlacement = first.Add(new(firstTerrain, new(0, 0, 0, 1, 1, 1), [material]));
+        int secondPlacement = second.Add(new(secondTerrain, new(0, 0, 0, 1, 1, 1), [material]));
+        systems.Add(new TerrainCommitSystem(first));
+        systems.Add(new TerrainLodSystem(first));
+        systems.Add(new TerrainMeshSystem(first));
+        systems.Add(new TerrainCommitSystem(second));
+        systems.Add(new TerrainLodSystem(second));
+        systems.Add(new TerrainMeshSystem(second));
+        systems.Update();
+        await first.WaitForBuildsAsync();
+        await second.WaitForBuildsAsync();
+        systems.Update();
+        Assert.Single(first.GetChunks(firstPlacement));
+        TerrainChunk secondBefore = Assert.Single(second.GetChunks(secondPlacement));
+
+        TerrainEdit edit = firstHeight.EditCpu(new HeightDeltaBrush(firstHeight.Grid.Range, 1f));
+        systems.Update();
+        await first.WaitForBuildsAsync();
+        systems.Update();
+
+        TerrainChunk firstAfter = Assert.Single(first.GetChunks(firstPlacement));
+        Assert.Equal(edit.Revision, firstAfter.Revision);
+        Assert.Equal(secondBefore, Assert.Single(second.GetChunks(secondPlacement)));
+        Assert.Equal(1.5f, first.GetGeometry(firstAfter.GeometryId)!.Bounds!.Center.Y);
+        Assert.Equal(2.5f, second.GetGeometry(secondBefore.GeometryId)!.Bounds!.Center.Y);
+    }
+
+    [Fact]
     public async Task BlendSourceEditsUpdateChunksWithinEachFieldsSamplingNeighborhood()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });

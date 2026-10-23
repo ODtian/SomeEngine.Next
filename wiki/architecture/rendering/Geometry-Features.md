@@ -11,12 +11,13 @@
 | `AddPrepareSystem` | 提取应用后、Cluster 驻留与实例准备前 | `RenderPrepareSystemContext.World` 中的渲染数据 |
 | `AddFrameSystem` | Cluster 管线录制前 | `RenderFrameSystemContext` 中的渲染数据与图 |
 | `AddCompletionObserver` | 图接受提交及结束当帧录制时 | `RenderGraphFrameResult` 中的提交完成点与资源状态 |
+| `AddGameShutdown` | 已提交 GPU 使用完成后、游戏系统 Job 排空前 | 功能持有的游戏侧请求及其完成状态 |
 
 `OnRenderGraphSubmitted` 提供已提交 pass 的 `QueueCompletion`。使用后端完成查询或外部 fence 确认 GPU 完成后读取结果；字段与任务使用对应完成点衔接后续工作。其语义见 [Range Completions](../render-graph/Range-Completions.md)。
 
 Mesh 准备将 `ClusterGeometry` 写入渲染实体的 `RenderClusterGeometry`。它包含根 BVH、版本、顶点编码、包围范围和驻留分配关联。Cluster 材质分配与实例生产消费该结果。原生页面与 BVH 由 Cluster 驻留系统持有，几何结果描述这组资源中的范围。
 
-`RenderExtractionContext.UpdateMaterials` 将功能使用的材质引用交给 Rendering world。提取器通过 `RenderMaterialBinding` 为实体记录材质编号，材质准备、实例字段与 Cluster 着色沿用同一条数据流。
+`RenderExtractionContext.SetMaterials(entity, materials)` 同时设置镜像实体的 `RenderMaterialBinding` 和 Rendering world 的共享材质引用。替换绑定、调用 `RemoveMaterials` 或删除镜像时，在同一 ECS 事务内释放原引用；最后一个实体解绑后移除对应材质索引。材质准备、实例字段与 Cluster 着色沿用同一条数据流。
 
 替换后的完整几何就绪并写入 Rendering world 后，最后一个引用结束的 Mesh 进入驻留回收。驻留系统按已接受提交的完成点归还页面和 BVH 空间，并在源读取结束后释放对应页面来源。页面编号继续递增，BVH 地址范围按完成情况复用；RenderGraph 声明当前有效的 BVH 范围。实现入口为 [ClusterMeshPreparation](../../../src/SomeEngine.Render.Cluster/ClusterMeshPreparation.cs)、[ClusterMeshes](../../../src/SomeEngine.Render.Cluster/ClusterMeshes.cs) 和 [ClusterBvh](../../../src/SomeEngine.Render.Cluster/ClusterBvh.cs)。应用可通过 `GeometryMemoryBytes` 与 `GeometryBvhMemoryBytes` 设置对应设备缓冲的容量。
 

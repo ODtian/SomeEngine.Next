@@ -1219,6 +1219,7 @@ internal static class RuntimeApplication
                 RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
             outputVerifier?.Dispose();
             coordinator.WaitForTrackedSubmissions();
+            geometry.FinishGame();
             ui?.Dispose();
             presentation?.Dispose();
             temporal?.Dispose();

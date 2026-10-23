@@ -53,7 +53,12 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
         _completions.RemoveAll(static task => task.IsCompletedSuccessfully);
     }
 
-    public void OnDestroy(ref RenderPrepareSystemContext context) => context.World.ReleaseQuery(_query);
+    public void OnDestroy(ref RenderPrepareSystemContext context)
+    {
+        Task.WhenAll(_completions).GetAwaiter().GetResult();
+        foreach (TerrainGpuRequest request in _requests) request.Cancel();
+        context.World.ReleaseQuery(_query);
+    }
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
@@ -261,12 +266,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
     public void Dispose()
     {
         Task.WhenAll(_completions).GetAwaiter().GetResult();
-        foreach (TerrainGpuRequest request in _requests)
-            if (!request.IsSubmitted)
-            {
-                request.AcceptSubmission();
-                request.Completion.Fail(new OperationCanceledException("The terrain graphics feature has finished."));
-            }
+        foreach (TerrainGpuRequest request in _requests) request.Cancel();
         foreach (ReadbackData readback in _readbacks.Values) readback.Buffer.Dispose();
         foreach (DevicePage page in _pages) page.Buffer.Dispose();
         foreach (LinkedComputePipeline pipeline in _pipelines.Values) pipeline.Dispose();
