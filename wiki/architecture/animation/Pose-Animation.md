@@ -22,6 +22,7 @@
 - 根运动输出 `RootMotionDelta`，由移动系统决定如何应用。
 - Motion Warping 通过共享来源轨迹与窗口、逐角色目标输入修正根运动，查询与播放共用累计轨迹，见 [Motion Warping](Motion-Warping.md)。
 - 选定片段、序列与带曲线的混合/遮罩路径通过显式时间基准批量预测根和骨骼，结果带播放条件与计算时刻，见 [Pose Prediction](Pose-Prediction.md)。
+- FABRIK 通过共同叶节点消费来源姿势，按实例目标进行定长链投影与关节圆锥限制，见 [FABRIK](FABRIK.md)。
 
 ## Non-goals
 - 不把每根骨骼表示为一条属性动画轨道。
