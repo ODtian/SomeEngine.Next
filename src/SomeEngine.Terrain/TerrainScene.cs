@@ -93,6 +93,7 @@ public sealed class TerrainScene
             || !cache.Fields.HeightFieldIds.AsSpan().SequenceEqual(_adapter.Fields.HeightFieldIds.AsSpan().ToArray().Distinct().Order().ToArray())
             || !cache.Fields.VoxelFieldIds.AsSpan().SequenceEqual(_adapter.Fields.VoxelFieldIds.AsSpan().ToArray().Distinct().Order().ToArray())) return 0;
         int count = 0;
+        if (_subscriptions.Add(terrain)) terrain.Changed += CollectChange;
         foreach (TerrainClusterMesh cached in cache.Meshes)
         {
             TerrainClusterEntry entry = cached.Entry;
@@ -106,7 +107,6 @@ public sealed class TerrainScene
             _dirtyGeometry.Remove(geometry.Id);
             count++;
         }
-        if (_subscriptions.Add(terrain)) terrain.Changed += CollectChange;
         return count;
     }
 
@@ -224,7 +224,8 @@ public sealed class TerrainScene
                     _chunks.Remove(key);
                 }
             foreach (Resources.Terrain terrain in _subscriptions.ToArray())
-                if (!_placements.Values.Any(placement => ReferenceEquals(placement.Value.Terrain, terrain)))
+                if (!_placements.Values.Any(placement => ReferenceEquals(placement.Value.Terrain, terrain))
+                    && !_geometryById.Values.Any(geometry => geometry.Cached && ReferenceEquals(geometry.Key.Terrain, terrain)))
                 {
                     terrain.Changed -= CollectChange;
                     _subscriptions.Remove(terrain);
