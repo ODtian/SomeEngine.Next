@@ -13,16 +13,19 @@ public readonly record struct TerrainBounds(Vector3 Min, Vector3 Max)
 public readonly record struct TerrainHeightRange(float Min, float Max);
 
 /// <summary>A scalar surface source belonging to a Terrain.</summary>
-public abstract class TerrainSurface
+public abstract partial class TerrainSurface
 {
     public abstract Terrain Terrain { get; }
     public abstract TerrainSurface Duplicate(Terrain terrain);
     public virtual bool Uses(HeightField field) => false;
     public virtual bool Uses(VoxelField field) => false;
 
-    public ValueTask<TerrainSurfaceRead> ReadCpuAsync(TerrainBounds bounds)
+    public ValueTask<TerrainSurfaceRead> ReadCpuAsync(TerrainBounds bounds) => ReadCpuAsync(bounds, default);
+
+    /// <summary>Captures the surface and declared fields together before awaiting their CPU samples.</summary>
+    public ValueTask<TerrainSurfaceRead> ReadCpuAsync(TerrainBounds bounds, TerrainFieldInputs fields)
     {
-        lock (Terrain.Gate) return CompleteReadAsync(CaptureCpu(bounds));
+        lock (Terrain.Gate) return CompleteReadAsync(CaptureCpu(bounds, fields));
     }
 
     /// <summary>Writes this captured scalar surface into a voxel field belonging to the same Terrain.</summary>
@@ -47,10 +50,15 @@ public abstract class TerrainSurface
     /// <summary>Captures one version and runs parallel work after its samples are ready.</summary>
     public TerrainSurfaceJob ScheduleRead<TWork>(TerrainBounds bounds, in TWork work, int length, int batchSize = 1)
         where TWork : struct, ITerrainSurfaceWork
+        => ScheduleRead(bounds, default, work, length, batchSize);
+
+    /// <summary>Schedules work over the surface and declared fields from one capture.</summary>
+    public TerrainSurfaceJob ScheduleRead<TWork>(TerrainBounds bounds, TerrainFieldInputs fields,
+        in TWork work, int length, int batchSize = 1) where TWork : struct, ITerrainSurfaceWork
     {
         lock (Terrain.Gate)
         {
-            CpuSurfaceData data = CaptureCpu(bounds);
+            CpuSurfaceData data = CaptureCpu(bounds, fields);
             Scheduler scheduler = Terrain.Editing.Scheduler;
             JobHandle completion = scheduler.ScheduleParallel(new SurfaceReadWork<TWork>(data.Samples, work),
                 length, batchSize, data.Samples.GetReadAccesses(scheduler), data.Completion);
@@ -102,6 +110,18 @@ public abstract class TerrainSurfaceRead(ulong revision, TerrainBounds bounds = 
     public virtual TerrainHeightRange? GetHeightRange(TerrainBounds bounds) => null;
     public virtual JobResourceAccess[] GetReadAccesses(Scheduler scheduler) => [];
 
+    public virtual HeightFieldRead GetHeightField(int id) =>
+        throw new KeyNotFoundException($"Height field {id} requires a declaration in TerrainFieldInputs.");
+    public virtual VoxelFieldRead GetVoxelField(int id) =>
+        throw new KeyNotFoundException($"Voxel field {id} requires a declaration in TerrainFieldInputs.");
+
+    internal bool ContainsField(TerrainFieldKind kind, int id)
+    {
+        foreach (TerrainFieldVersion field in FieldVersions.Span)
+            if (field.Kind == kind && field.Id == id) return true;
+        return false;
+    }
+
     public Vector3 GetNormal(Vector3 position, float distance)
     {
         Vector3 x = new(distance, 0, 0), y = new(0, distance, 0), z = new(0, 0, distance);
@@ -121,12 +141,7 @@ public sealed class HeightSurface(HeightField field) : TerrainSurface
 
     protected override CpuSurfaceData CaptureCpu(TerrainBounds bounds)
     {
-        float spacing = Field.Grid.SampleSpacing;
-        int minX = Math.Clamp((int)MathF.Floor(bounds.Min.X / spacing), 0, Field.Grid.Width - 1);
-        int minZ = Math.Clamp((int)MathF.Floor(bounds.Min.Z / spacing), 0, Field.Grid.Depth - 1);
-        int maxX = Math.Clamp((int)MathF.Floor(bounds.Max.X / spacing) + 2, 1, Field.Grid.Width);
-        int maxZ = Math.Clamp((int)MathF.Floor(bounds.Max.Z / spacing) + 2, 1, Field.Grid.Depth);
-        HeightFieldCpuRead read = Field.CaptureCpuRead(new(minX, minZ, maxX - minX, maxZ - minZ));
+        HeightFieldCpuRead read = Field.CaptureCpuRead(bounds);
         return new(new HeightSurfaceRead(read.Samples, Terrain.Revision, bounds), read.Completion);
     }
 
@@ -137,6 +152,7 @@ public sealed class HeightSurface(HeightField field) : TerrainSurface
     {
         public override float Sample(Vector3 position) => position.Y - heights.Sample(new(position.X, position.Z));
         public override JobResourceAccess[] GetReadAccesses(Scheduler scheduler) => heights.GetReadAccesses(scheduler);
+        public override HeightFieldRead GetHeightField(int id) => id == heights.FieldId ? heights : base.GetHeightField(id);
 
         public override TerrainHeightRange? GetHeightRange(TerrainBounds bounds)
         {

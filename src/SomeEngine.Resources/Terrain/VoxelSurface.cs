@@ -12,15 +12,7 @@ public sealed class VoxelSurface(VoxelField field) : TerrainSurface
 
     protected override CpuSurfaceData CaptureCpu(TerrainBounds bounds)
     {
-        float spacing = Field.Grid.SampleSpacing;
-        int minX = (int)MathF.Floor(bounds.Min.X / spacing);
-        int minY = (int)MathF.Floor(bounds.Min.Y / spacing);
-        int minZ = (int)MathF.Floor(bounds.Min.Z / spacing);
-        int maxX = (int)MathF.Floor(bounds.Max.X / spacing) + 2;
-        int maxY = (int)MathF.Floor(bounds.Max.Y / spacing) + 2;
-        int maxZ = (int)MathF.Floor(bounds.Max.Z / spacing) + 2;
-        VoxelFieldCpuRead read = Field.CaptureCpuRead(new VoxelRegion(minX, minY, minZ,
-            maxX - minX, maxY - minY, maxZ - minZ));
+        VoxelFieldCpuRead read = Field.CaptureCpuRead(bounds);
         return new(new VoxelSurfaceRead(read.Samples, Terrain.Revision, bounds), read.Completion);
     }
 
@@ -31,5 +23,6 @@ public sealed class VoxelSurface(VoxelField field) : TerrainSurface
     {
         public override float Sample(Vector3 position) => voxels.Sample(position);
         public override JobResourceAccess[] GetReadAccesses(Scheduler scheduler) => voxels.GetReadAccesses(scheduler);
+        public override VoxelFieldRead GetVoxelField(int id) => id == voxels.FieldId ? voxels : base.GetVoxelField(id);
     }
 }

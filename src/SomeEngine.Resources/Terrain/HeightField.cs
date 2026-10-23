@@ -53,6 +53,16 @@ public sealed class HeightField
             return CompleteReadAsync(CaptureCpuRead(range));
     }
 
+    internal HeightFieldCpuRead CaptureCpuRead(TerrainBounds bounds)
+    {
+        float spacing = Grid.SampleSpacing;
+        int minX = Math.Clamp((int)MathF.Floor(bounds.Min.X / spacing), 0, Grid.Width - 1);
+        int minZ = Math.Clamp((int)MathF.Floor(bounds.Min.Z / spacing), 0, Grid.Depth - 1);
+        int maxX = Math.Clamp((int)MathF.Floor(bounds.Max.X / spacing) + 2, 1, Grid.Width);
+        int maxZ = Math.Clamp((int)MathF.Floor(bounds.Max.Z / spacing) + 2, 1, Grid.Depth);
+        return CaptureCpuRead(new HeightRegion(minX, minZ, maxX - minX, maxZ - minZ));
+    }
+
     internal HeightFieldCpuRead CaptureCpuRead(HeightRegion range)
     {
         range = range.Intersect(Grid.Range);

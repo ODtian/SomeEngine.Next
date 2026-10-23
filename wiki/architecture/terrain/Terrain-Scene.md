@@ -30,7 +30,7 @@ CPU 路径的块实体使用 `WorldTransform`、`MeshInstance` 和 `MeshMaterial
 
 [MarchingCubesTerrainMesher](../../../src/SomeEngine.Terrain/Meshing/MarchingCubesTerrainMesher.cs) 配套生成普通 Marching Cubes 单元和 Transvoxel 过渡单元，表及许可保存在同目录。`ITerrainMesher` 接收已就绪的标量表面与带层级、过渡面的 `TerrainChunkBounds`，产出位置、索引及属性采样点；完整坐标规则见[地形 LOD](Terrain-Lod.md)。
 
-`TerrainClusterAdapter<TAttributes>` 将调用方的 `ITerrainAttributeGenerator<TAttributes>`、`IClusterVertexEncoder<TAttributes>` 与 `ClusterBuildStrategy` 连接到通用 CPU Cluster 构建器。属性生成器提供顶点属性、三角形材质编号和额外采样邻域。材质的顶点求值与调用方选用的编码相配套。
+`TerrainClusterAdapter<TAttributes>` 将调用方的 `ITerrainAttributeGenerator<TAttributes>`、`IClusterVertexEncoder<TAttributes>` 与 `ClusterBuildStrategy` 连接到通用 CPU Cluster 构建器。属性生成器提供顶点属性、三角形材质编号、额外采样邻域和 `Fields` 声明。场景构建与 [TerrainClusterCache](../../../src/SomeEngine.Terrain/TerrainClusterCache.cs) 离线构建将声明传给同一次[附加字段捕获](Terrain-Surfaces.md#附加字段)，属性回调通过固定表面读取取得所需字段。材质的顶点求值与调用方选用的编码相配套。
 
 GPU 构造入口接收 `TerrainClusterAdapter`，复用本页的放置、块编号、变化范围和完整构建批次。固定字段输入、GPU 表面与属性、原生 Cluster 构建和可见完成入口统一见 [GPU 地形几何](Terrain-Gpu-Geometry.md)。
 

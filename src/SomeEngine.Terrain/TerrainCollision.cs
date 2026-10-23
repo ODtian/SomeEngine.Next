@@ -63,6 +63,8 @@ public static class TerrainCollision
     {
         public override float Sample(Vector3 position) => source.Sample(grid.SamplePosition(position));
         public override JobResourceAccess[] GetReadAccesses(Scheduler scheduler) => source.GetReadAccesses(scheduler);
+        public override HeightFieldRead GetHeightField(int id) => source.GetHeightField(id);
+        public override VoxelFieldRead GetVoxelField(int id) => source.GetVoxelField(id);
     }
 
     private sealed class CollisionResult
