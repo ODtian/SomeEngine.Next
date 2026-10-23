@@ -12,10 +12,17 @@ internal partial struct NavigationFlowGuidanceJob<TMotion, TReader>(float deltaT
 
     public void Execute([JobResources<FlowFollowerResources>] in FlowFollower follower,
         [JobResources<NavigationAgentResources>] ref NavigationAgent agent,
-        in TMotion movement, ref NavigationFlowFollowState following, ref NavigationGuidance guidance)
+        in TMotion movement, in NavigationTraversalRequest traversal,
+        ref NavigationFlowFollowState following, ref NavigationGuidance guidance)
     {
         NavigationMotion motion = TReader.Read(in movement);
         NavigationFlowField? field = follower.Flow.Field;
+        if (traversal.Status is NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing ||
+            traversal.Status == NavigationTraversalStatus.Failed && traversal.PathVersion == field?.Input.Version)
+        {
+            guidance = new(default, motion.Heading, field?.Input.Version ?? 0, false);
+            return;
+        }
         if (follower.Flow.GetStatus(motion.Position) == NavigationFlowStatus.Searching)
         {
             guidance = new(default, motion.Heading, follower.Flow.Input.Version, false);
@@ -24,6 +31,12 @@ internal partial struct NavigationFlowGuidanceJob<TMotion, TReader>(float deltaT
         guidance = new(default, motion.Heading, field?.Input.Version ?? 0, false);
         if (field is null) return;
         agent = agent with { Profile = field.Input.Profile, Policy = field.Input.Costs.Policy };
+        if (field.Input.HeadingGraph is { } headingGraph)
+        {
+            guidance = HeadingNavigationFlowGuidance.Create(headingGraph, field, follower.Flow.FieldVersion, agent,
+                motion, _deltaTime, ref following);
+            return;
+        }
         NavigationGrid grid = field.Input.Costs.Grid;
         int cell = grid.FindCell(motion.Position);
         if (cell < 0 || !grid.IsDetailedCell(cell) || field.GoalIndices.Span[cell] < 0) return;
@@ -57,7 +70,8 @@ internal partial struct NavigationFlowGuidanceJob<TMotion, TReader>(float deltaT
         if (following.FieldVersion != follower.Flow.FieldVersion ||
             cell != following.Cell && cell != following.Destination)
         {
-            following = new() { Cell = cell, Destination = -1, FieldVersion = follower.Flow.FieldVersion };
+            following = new() { Cell = cell, Destination = -1, Edge = -1, FieldVersion = follower.Flow.FieldVersion,
+                TraversalSequence = following.TraversalSequence };
         }
         if (following.Destination >= 0 && Vector3.Distance(motion.Position, grid.Cells.Span[following.Destination].Position) <= 0.0001f)
         {
@@ -65,8 +79,20 @@ internal partial struct NavigationFlowGuidanceJob<TMotion, TReader>(float deltaT
             following.Destination = -1;
         }
         int edge = field.SuccessorEdges.Span[following.Cell];
+        following.Edge = edge;
         if (following.Destination < 0 && edge >= 0)
             following.Destination = grid.Edges.Span[edge].ToCell;
+        if (edge >= 0 && grid.Edges.Span[edge].Action != 0)
+        {
+            Vector3 entry = grid.Cells.Span[following.Cell].Position - motion.Position;
+            float length = entry.Length();
+            if (length > 0.0001f)
+            {
+                float distanceToEntry = MathF.Min(length, MathF.Min(agent.DesiredSpeed, agent.Profile.MaximumSpeed) * _deltaTime);
+                guidance = new(entry * (distanceToEntry / (length * _deltaTime)), NavigationHeading.FromDirection(entry), field.Input.Version, true);
+            }
+            return;
+        }
         goal = field.Input.Goals.Span[field.GoalIndices.Span[following.Cell]];
         Vector3 target = following.Destination >= 0 ? grid.Cells.Span[following.Destination].Position : goal.Position;
         Vector3 displacement = target - motion.Position;
@@ -103,15 +129,28 @@ internal partial struct NavigationFlowProgressJob<TMotion, TReader> : IJobEntity
     where TReader : struct, INavigationMotionReader<TMotion>
 {
     public void Execute([JobResources<FlowFollowerResources>] in FlowFollower follower,
-        in TMotion movement, ref NavigationProgress progress)
+        in TMotion movement, in NavigationTraversalRequest traversal, ref NavigationProgress progress)
     {
+        NavigationMotion motion = TReader.Read(in movement);
+        if (traversal.Status is NavigationTraversalStatus.Waiting or NavigationTraversalStatus.Requested or
+            NavigationTraversalStatus.Executing or NavigationTraversalStatus.Failed)
+        {
+            NavigationFlowTargets.Closest(follower.Flow.Goals.Span, motion.Position, out float remaining);
+            NavigationStatus actionStatus = traversal.Status switch
+            {
+                NavigationTraversalStatus.Waiting => NavigationStatus.WaitingForPassage,
+                NavigationTraversalStatus.Failed => NavigationStatus.TraversalFailed,
+                _ => NavigationStatus.Traversing,
+            };
+            progress = new(actionStatus, remaining, 0, traversal.PathVersion);
+            return;
+        }
         NavigationFlowField? field = follower.Flow.Field;
         if (field is null)
         {
             progress = new(NavigationStatus.Searching, float.PositiveInfinity, 0, follower.Flow.Input.Version);
             return;
         }
-        NavigationMotion motion = TReader.Read(in movement);
         if (follower.Flow.GetStatus(motion.Position) == NavigationFlowStatus.Searching)
         {
             NavigationFlowTargets.Closest(follower.Flow.Input.Goals.Span, motion.Position, out float remaining);
@@ -126,7 +165,8 @@ internal partial struct NavigationFlowProgressJob<TMotion, TReader> : IJobEntity
         }
         NavigationFlowGoal goal = field.Input.Goals.Span[goalIndex];
         float headingError = goal.Heading is { } heading ? MathF.Abs(NavigationHeading.Difference(heading, motion.Heading)) : 0;
-        int cell = field.Input.Costs.Grid.FindCell(motion.Position);
+        int cell = field.Input.HeadingGraph is { } headingGraph
+            ? headingGraph.FindState(field, new(motion.Position, motion.Heading)) : field.Input.Costs.Grid.FindCell(motion.Position);
         NavigationGrid grid = field.Input.Costs.Grid;
         int edge = cell >= 0 ? field.SuccessorEdges.Span[cell] : -1;
         bool waiting = cell >= 0 && (!grid.IsDetailedCell(cell) || edge >= 0 && !grid.IsDetailedCell(grid.Edges.Span[edge].ToCell) &&
@@ -142,11 +182,15 @@ internal partial struct NavigationFlowProgressJob<TMotion, TReader> : IJobEntity
 internal partial struct NavigationFlowStopJob : IJobEntity
 {
     public void Execute(ref NavigationFlowFollowState following, ref NavigationGuidance guidance,
-        ref NavigationSteering steering, ref NavigationProgress progress)
+        ref NavigationSteering steering, ref NavigationProgress progress, ref NavigationTraversalRequest traversal,
+        [JobResources<NavigationPassageReference>] ref NavigationPassageUse passage)
     {
-        following = default;
+        following = new() { TraversalSequence = following.TraversalSequence };
         guidance = default;
         steering = default;
         progress = new(NavigationStatus.Idle, 0, 0, 0);
+        if (traversal.Status is NavigationTraversalStatus.Waiting or NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing)
+            traversal = traversal with { Status = NavigationTraversalStatus.Cancelled };
+        passage = default;
     }
 }

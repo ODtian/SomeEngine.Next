@@ -12,15 +12,15 @@ internal static partial class NavigationTileFlow<TSolver, TWork>
         NavigationGrid oldGrid = before.Costs.Grid, grid = input.Costs.Grid;
         var mapping = new int[oldGrid.Cells.Length];
         Array.Fill(mapping, -1);
-        var indices = new Dictionary<(Vector3 Position, int Layer, NavigationTileCoordinate Tile, bool Detailed), int>();
-        for (int cell = 0; cell < grid.Cells.Length; cell++) indices[Key(grid, cell)] = cell;
+        var indices = new Dictionary<NodeKey, int>();
+        for (int cell = 0; cell < grid.Cells.Length; cell++) indices[Key(input, cell)] = cell;
         for (int cell = 0; cell < mapping.Length; cell++)
-            if (indices.TryGetValue(Key(oldGrid, cell), out int next)) mapping[cell] = next;
+            if (indices.TryGetValue(Key(before, cell), out int next)) mapping[cell] = next;
         var edges = new int[oldGrid.Edges.Length];
         Array.Fill(edges, -1);
         var goalMapping = new int[before.Goals.Length];
         for (int goal = 0; goal < goalMapping.Length; goal++) goalMapping[goal] = input.Goals.Span.IndexOf(before.Goals.Span[goal]);
-        int[] targets = FindTargets(input);
+        int[] targets = FindTargets(input, out float[] targetCosts);
         var changed = new bool[grid.Cells.Length];
         Array.Fill(changed, true);
         var invalid = new bool[mapping.Length];
@@ -38,7 +38,8 @@ internal static partial class NavigationTileFlow<TSolver, TWork>
             if (cost != oldCost) changed[next] = true;
             if (cost > oldCost || oldGrid.CellSize != grid.CellSize) Raise(cell);
             if (state.Started && state.Targets[cell] >= 0 &&
-                (goalMapping[state.Targets[cell]] < 0 || targets[next] != goalMapping[state.Targets[cell]])) Raise(cell);
+                (goalMapping[state.Targets[cell]] < 0 || targets[next] != goalMapping[state.Targets[cell]] ||
+                    targetCosts[next] > state.TargetCosts[cell])) Raise(cell);
             NavigationGridCell oldCell = oldGrid.Cells.Span[cell], nextCell = grid.Cells.Span[next];
             if (oldCell.EdgeCount != nextCell.EdgeCount) changed[next] = true;
             for (int edge = oldCell.EdgeStart; edge < oldCell.EdgeStart + oldCell.EdgeCount; edge++)
@@ -87,9 +88,9 @@ internal static partial class NavigationTileFlow<TSolver, TWork>
         }
         for (int cell = 0; cell < targets.Length; cell++)
         {
-            if (targets[cell] < 0) continue;
-            changed[cell] |= values[cell] != 0 || goals[cell] != targets[cell];
-            values[cell] = 0;
+            if (targets[cell] < 0 || values[cell] < targetCosts[cell]) continue;
+            changed[cell] |= values[cell] != targetCosts[cell] || goals[cell] != targets[cell];
+            values[cell] = targetCosts[cell];
             goals[cell] = targets[cell];
             successors[cell] = -1;
             directions[cell] = default;
@@ -115,6 +116,7 @@ internal static partial class NavigationTileFlow<TSolver, TWork>
         state.Goals = goals;
         state.Directions = directions;
         state.Targets = targets;
+        state.TargetCosts = targetCosts;
         state.BoundaryValues = new float[values.Length];
         state.BoundaryGoals = new int[values.Length];
         state.Active = new bool[grid.FlowRanges.Length];
@@ -150,10 +152,15 @@ internal static partial class NavigationTileFlow<TSolver, TWork>
         }
     }
 
-    private static (Vector3, int, NavigationTileCoordinate, bool) Key(NavigationGrid grid, int cell)
+    private readonly record struct NodeKey(Vector3 Position, int Layer, NavigationTileCoordinate Tile, bool Detailed,
+        int Region, int Polygon, float Heading);
+
+    private static NodeKey Key(NavigationFlowInput input, int cell)
     {
+        NavigationGrid grid = input.Costs.Grid;
         NavigationGridCell value = grid.Cells.Span[cell];
-        return (value.Position, value.Layer, value.Tile, grid.IsDetailedCell(cell));
+        HeadingNavigationFlowNode node = input.HeadingGraph is { } heading ? heading.Nodes.Span[cell] : default;
+        return new(value.Position, value.Layer, value.Tile, grid.IsDetailedCell(cell), node.Region, node.Polygon, node.Pose.Heading);
     }
 
     private static float EdgeCost(NavigationFlowInput input, int edge)
@@ -163,28 +170,41 @@ internal static partial class NavigationTileFlow<TSolver, TWork>
             ? input.Costs.EdgeCosts.Span[edge] : float.PositiveInfinity;
     }
 
-    private static int[] FindTargets(NavigationFlowInput input)
+    private static int[] FindTargets(NavigationFlowInput input, out float[] targetCosts)
     {
         NavigationGrid grid = input.Costs.Grid;
         var targets = new int[grid.Cells.Length];
+        var costs = new float[grid.Cells.Length];
+        targetCosts = costs;
         Array.Fill(targets, -1);
+        Array.Fill(costs, float.PositiveInfinity);
         for (int goal = 0; goal < input.Goals.Length; goal++)
         {
             NavigationFlowGoal target = input.Goals.Span[goal];
+            if (input.HeadingGraph is { } heading)
+            {
+                for (int cell = 0; cell < targets.Length; cell++)
+                    Seed(cell, goal, heading.TargetCost(cell, target, input.Profile, input.Costs.Policy));
+                continue;
+            }
             bool seeded = false;
             for (int cell = 0; cell < grid.Cells.Length; cell++)
                 if (Vector3.Distance(grid.Cells.Span[cell].Position, target.Position) <= target.ArrivalRange)
-                { Seed(cell, goal); seeded = true; }
+                { Seed(cell, goal, 0); seeded = true; }
             if (!seeded)
             {
                 int cell = grid.FindCell(target.Position);
-                if (cell >= 0) Seed(cell, goal);
+                if (cell >= 0) Seed(cell, goal, 0);
             }
         }
         return targets;
-        void Seed(int cell, int goal)
+        void Seed(int cell, int goal, float cost)
         {
-            if (float.IsFinite(input.Costs.CellCosts.Span[cell])) targets[cell] = goal;
+            if (float.IsFinite(input.Costs.CellCosts.Span[cell]) && cost < costs[cell])
+            {
+                targets[cell] = goal;
+                costs[cell] = cost;
+            }
         }
     }
 }

@@ -90,7 +90,7 @@ internal readonly struct FastIterativeTileSolver : INavigationTileFlowSolver<Fas
         {
             work.IsActive[cell - work.Range.CellStart] = false;
             used++;
-            if (state.Values[cell] == 0) continue;
+            if (state.Targets[cell] >= 0) continue;
             float candidate;
             int source, successor, upwindX = -1, upwindZ = -1;
             if (work.Range.Detailed)

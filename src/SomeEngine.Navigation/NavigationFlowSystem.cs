@@ -60,6 +60,7 @@ public sealed class NavigationFlowSystem<TSolver, TState>(NavigationFlow flow, S
             void AddInput(NavigationFlowInput value)
             {
                 value.Costs.Grid.AddReadAccesses(scheduler, accesses);
+                value.HeadingGraph?.AddReadAccesses(scheduler, accesses);
                 accesses.Add(NavigationJobAccess.Read(scheduler, value.Costs.CellCosts));
                 accesses.Add(NavigationJobAccess.Read(scheduler, value.Costs.EdgeCosts));
                 accesses.Add(NavigationJobAccess.Read(scheduler, value.Goals));

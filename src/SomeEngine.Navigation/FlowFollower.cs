@@ -16,6 +16,9 @@ public static partial class NavigationComponents
         world.Add(entity, default(NavigationGuidance));
         world.Add(entity, default(NavigationSteering));
         world.Add(entity, default(NavigationProgress));
+        world.Add(entity, default(NavigationTraversalRequest));
+        world.Add(entity, default(NavigationTraversalResult));
+        world.Add(entity, default(NavigationPassageUse));
     }
 }
 
@@ -23,7 +26,9 @@ internal struct NavigationFlowFollowState : IComponent
 {
     public int Cell;
     public int Destination;
+    public int Edge;
     public long FieldVersion;
+    public ulong TraversalSequence;
 }
 
 public readonly struct FlowFollowerResources : IJobComponentResources<FlowFollower>
@@ -39,6 +44,7 @@ public readonly struct FlowFollowerResources : IJobComponentResources<FlowFollow
         resources.Read(current.Goals);
         if (!component.Flow.TileStates.IsEmpty) resources.Read(component.Flow.TileStates);
         if (component.Flow.Field is not { } field) return;
+        if (field.Input.HeadingGraph is { } heading) HeadingNavigationFlowGraph.CollectResources(heading, ref resources);
         NavigationGrid grid = field.Input.Costs.Grid;
         resources.Read(grid.Cells);
         resources.Read(grid.Edges);
