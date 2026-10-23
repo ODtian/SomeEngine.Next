@@ -262,15 +262,15 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _uploadPass = edit.AddCopyFramePass("Upload pose definitions", PassQueueSelection.AnyOfType(QueueType.Graphics), upload,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
         _posePasses.Add(_uploadPass);
-        _advancePass = AddKernel(edit, _advancePipeline, Kernel.Advance, BufferRange.Whole, _sectionOrder.Length);
-        edit.OrderAfter(_advancePass, _uploadPass);
         _loadPass = AddKernel(edit, _loadPipeline, Kernel.Load, BufferRange.Whole, _boneCount);
-        edit.OrderAfter(_loadPass, _advancePass);
+        edit.OrderAfter(_loadPass, _uploadPass);
+        _advancePass = AddKernel(edit, _advancePipeline, Kernel.Advance, BufferRange.Whole, _sectionOrder.Length);
+        edit.OrderAfter(_advancePass, _loadPass);
         _cpuPass = edit.AddCopyFramePass("Copy CPU model sections", PassQueueSelection.AnyOfType(QueueType.Graphics),
             new CpuPoseCopy(_cpuUpload, _currentBones, _cpuCopies), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
             CpuPoseCopy.Declare, CpuPoseCopy.Record);
         _posePasses.Add(_cpuPass);
-        edit.OrderAfter(_cpuPass, _loadPass);
+        edit.OrderAfter(_cpuPass, _advancePass);
         GraphPassId predecessor = _cpuPass;
         foreach (BufferRange level in _workLevels)
         {
@@ -331,7 +331,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 case Resource.Clips: pass.Bind(edit.CreateBufferSrv(_clipsInput), PipelineSync.ComputeShading); break;
                 case Resource.Models:
                     pass.Bind(edit.CreateBufferUav(_currentBones, structureStride: 64), PipelineSync.ComputeShading,
-                        kernel == Kernel.Load ? GraphAccessMode.Write : kernel == Kernel.Store ? GraphAccessMode.Read : GraphAccessMode.ReadWrite,
+                        kernel == Kernel.Load ? GraphAccessMode.Write : kernel == Kernel.Sample ? GraphAccessMode.ReadWrite : GraphAccessMode.Read,
                         kernel == Kernel.Load ? WriteCoverage.Complete : WriteCoverage.Partial); break;
                 case Resource.Previous:
                     pass.Bind(edit.CreateBufferUav(_previousBones, structureStride: 64), PipelineSync.ComputeShading,

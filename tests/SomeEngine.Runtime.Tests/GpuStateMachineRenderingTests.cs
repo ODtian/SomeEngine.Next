@@ -163,9 +163,11 @@ public sealed partial class SkinningRenderingTests
         Assert.Equal(1f, reads[9].Playback.Time);
         Assert.Equal(0f, reads[9].SampleTime);
 
+        Matrix4x4[][] visibleCurrent = [ReferencePose(0, .25f, .5f), ReferencePose(0, 1, 1)];
+        Matrix4x4[][] visiblePrevious = [ReferencePose(.75f, 0, 0), ReferencePose(0, .75f, 1)];
         await content.WriteReferenceMeshesAsync((prior, right) =>
         {
-            Matrix4x4[] pose = (prior ? previous : current)[right ? 1 : 0];
+            Matrix4x4[] pose = (prior ? visiblePrevious : visibleCurrent)[right ? 1 : 0];
             return (pose[0], Matrix4x4.CreateTranslation(0, -1, 0) * pose[1]);
         });
         await content.SetReferenceShaderAsync();
@@ -177,5 +179,22 @@ public sealed partial class SkinningRenderingTests
         foreach (byte value in expected.Pixels.Span) if (value > 32 && value < 255) visible++;
         Assert.True(visible > 1000);
         SceneImages.AssertEqual(expected, Assert.IsType<SceneImage>(animated), tolerance: 2);
+
+        Matrix4x4[] ReferencePose(float sourceTime, float targetTime, float weight)
+        {
+            var source = new BoneTransform[2];
+            var target = new BoneTransform[2];
+            firstClip.CreateClip(skeleton).SampleLocal(sourceTime, source);
+            secondClip.CreateClip(skeleton).SampleLocal(targetTime, target);
+            for (int bone = 0; bone < source.Length; bone++)
+            {
+                source[bone].Translation = Vector3.Lerp(source[bone].Translation, target[bone].Translation, weight);
+                source[bone].Rotation = Quaternion.Slerp(source[bone].Rotation, target[bone].Rotation, weight);
+                source[bone].Scale = Vector3.Lerp(source[bone].Scale, target[bone].Scale, weight);
+            }
+            using SkeletonInstance referenceBody = storage.CreateInstance(skeleton);
+            referenceBody.Update(source, 0);
+            return referenceBody.ModelPose.GetSection(0).Transforms.ToArray();
+        }
     }
 }
