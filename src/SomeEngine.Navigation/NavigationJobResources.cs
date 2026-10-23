@@ -38,6 +38,12 @@ public readonly struct NavigationPathResources : IJobComponentResources<Navigati
         if (!path.RequiredTiles.IsEmpty) resources.Read(path.RequiredTiles);
         if (!path.Poses.IsEmpty) resources.Read(path.Poses);
         if (!path.MotionSegments.IsEmpty) resources.Read(path.MotionSegments);
+        if (!path.Traversals.IsEmpty)
+        {
+            resources.Read(path.Traversals);
+            foreach (NavigationPathTraversal traversal in path.Traversals.Span)
+                if (traversal.Links is { } links) resources.Read(links.Links);
+        }
         if (!path.Sections.IsEmpty)
         {
             resources.Read(path.Sections);

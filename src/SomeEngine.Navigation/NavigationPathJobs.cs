@@ -35,10 +35,12 @@ internal partial struct NavigationPathJob<TSpace, TSearch, TState, TMotion, TRea
         [JobResources<NavigationAgentResources>] in NavigationAgent agent,
         [JobResources(typeof(PathNavigationResources<>))] in PathNavigation<TSpace> navigation,
         in NavigationGoal goal,
+        in NavigationTraversalRequest traversal,
         in TMotion movement,
         [JobResources(typeof(NavigationRequestResources<,>))] ref NavigationRequest<TSpace, TState> request,
         [JobResources<NavigationPathAssignment>] ref NavigationPathResult result)
     {
+        if (traversal.Status is NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing) return;
         NavigationRequestData<TSpace, TState> data = request.Data;
         bool available = NavigationTargets<TMotion, TReader>.TryResolve(_world, in goal, out Vector3 target);
         bool changed = !data.Active || data.TargetAvailable != available || data.Goal != goal ||
@@ -55,6 +57,7 @@ internal partial struct NavigationPathJob<TSpace, TSearch, TState, TMotion, TRea
             data.Profile = agent.Profile;
             data.Policy = agent.Policy;
             data.CornerIndex = 0;
+            data.TraversalIndex = 0;
             data.Search = null;
             if (available)
             {
@@ -76,7 +79,11 @@ internal partial struct NavigationPathJob<TSpace, TSearch, TState, TMotion, TRea
                 NavigationSearchStep step = TSearch.Advance(search.State, _expansionBudget);
                 search.Status = step.Status;
                 search.Path = step.Path;
-                if (step.ResetPathProgress) data.CornerIndex = 0;
+                if (step.ResetPathProgress)
+                {
+                    data.CornerIndex = 0;
+                    data.TraversalIndex = 0;
+                }
             }
             result = new(search.Path, data.Version, search.Status, target, true);
         }
@@ -94,7 +101,8 @@ internal partial struct NavigationStopJob<TSpace, TState> : IJobEntity
     public void Execute(
         [JobResources(typeof(NavigationRequestResources<,>))] ref NavigationRequest<TSpace, TState> request,
         [JobResources<NavigationPathAssignment>] ref NavigationPathResult path,
-        ref NavigationGuidance guidance, ref NavigationSteering steering, ref NavigationProgress progress)
+        ref NavigationGuidance guidance, ref NavigationSteering steering, ref NavigationProgress progress,
+        ref NavigationTraversalRequest traversal)
     {
         NavigationRequestData<TSpace, TState> data = request.Data;
         if (data.Active)
@@ -107,5 +115,7 @@ internal partial struct NavigationStopJob<TSpace, TState> : IJobEntity
         guidance = new(default, 0, data.Version, false);
         steering = new(default, 0, data.Version, false);
         progress = new(NavigationStatus.Idle, 0, 0, data.Version);
+        if (traversal.Status is NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing or NavigationTraversalStatus.Waiting)
+            traversal = traversal with { Status = NavigationTraversalStatus.Cancelled };
     }
 }

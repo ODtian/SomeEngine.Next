@@ -15,7 +15,8 @@ public sealed class NavigationPath(
     ReadOnlyMemory<NavigationConnectionDependency> connectionDependencies = default,
     ReadOnlyMemory<NavigationSceneTileId> requiredTiles = default,
     ReadOnlyMemory<NavigationPose> poses = default,
-    ReadOnlyMemory<NavigationMotionSegment> motionSegments = default)
+    ReadOnlyMemory<NavigationMotionSegment> motionSegments = default,
+    ReadOnlyMemory<NavigationPathTraversal> traversals = default)
 {
     public ReadOnlyMemory<int> Corridor { get; } = corridor;
     public ReadOnlyMemory<Vector3> Corners { get; } = corners;
@@ -27,6 +28,7 @@ public sealed class NavigationPath(
     public ReadOnlyMemory<NavigationSceneTileId> RequiredTiles { get; } = requiredTiles;
     public ReadOnlyMemory<NavigationPose> Poses { get; } = poses;
     public ReadOnlyMemory<NavigationMotionSegment> MotionSegments { get; } = motionSegments;
+    public ReadOnlyMemory<NavigationPathTraversal> Traversals { get; } = traversals;
 
     public bool TrySampleHeight(Vector3 position, out float height)
     {

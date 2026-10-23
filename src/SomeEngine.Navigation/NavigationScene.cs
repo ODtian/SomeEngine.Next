@@ -18,7 +18,8 @@ public sealed record NavigationSceneTile(int Region, NavigationTileCoordinate Ti
 }
 
 public readonly record struct NavigationSceneConnection(int Id, int FromRegion, int FromPort, int ToRegion, int ToPort,
-    float Cost = 0, ulong RequiredCapabilities = 0, int Action = 0, bool Bidirectional = true, ulong ContentVersion = 1);
+    float Cost = 0, ulong RequiredCapabilities = 0, int Action = 0, bool Bidirectional = true, ulong ContentVersion = 1,
+    NavigationLinkSet? Links = null);
 
 /// <summary>One complete set of placed graphs, connections and resident detailed references.</summary>
 public sealed class NavigationSceneContent
@@ -171,6 +172,8 @@ public sealed partial class NavigationScene(NavigationSceneContent content) : IN
         resources.Read(current.Connections);
         resources.Read(current.Tiles);
         resources.Read(current.PolygonStarts);
+        foreach (NavigationSceneConnection connection in current.Connections.Span)
+            if (connection.Links is { } links) resources.Read(links.Links);
         foreach (NavigationSceneRegion region in current.Regions.Span)
             NavigationRegionGraph.CollectResources(region.Graph, ref resources);
         foreach (NavigationSceneTile tile in current.Tiles.Span)
