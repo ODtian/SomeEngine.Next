@@ -5,20 +5,23 @@ namespace SomeEngine.Animation.Pose;
 /// <summary>A caller-selected deterministic pose path backed by ready clip sampling.</summary>
 public sealed partial class PosePath
 {
+    private readonly object? _definition;
+    private readonly FootMotion? _footMotion;
     internal AnimationClip Clip { get; }
     public Skeleton Skeleton => Clip.Skeleton;
     public float Duration => Clip.Duration;
 
-    private PosePath(AnimationClip clip) => Clip = clip;
+    private PosePath(AnimationClip clip, object? definition = null, FootMotion? footMotion = null)
+        => (Clip, _definition, _footMotion) = (clip, definition, footMotion);
 
-    public static PosePath FromClip(AnimationClip clip) => new(clip);
+    public static PosePath FromClip(AnimationClip clip, FootMotion? footMotion = null) => new(clip, footMotion: footMotion);
 
     /// <summary>Joins selected paths in order, each using its own elapsed time.</summary>
     public static PosePath Sequence(ReadOnlySpan<PosePath> parts)
     {
         var sequence = new SequenceData(parts);
         return new(new AnimationClip(parts[0].Skeleton, sequence.Duration,
-            ClipSampler.Create<SequenceData, SequenceSampler>(sequence)));
+            ClipSampler.Create<SequenceData, SequenceSampler>(sequence)), sequence);
     }
 
     private sealed class SequenceData

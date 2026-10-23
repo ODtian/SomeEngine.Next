@@ -55,7 +55,7 @@ internal readonly record struct ClipRootMotion(Matrix4x4 InverseInitial, Matrix4
         return Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(translation);
     }
 
-    private static Matrix4x4 Power(Matrix4x4 value, int count)
+    internal static Matrix4x4 Power(Matrix4x4 value, int count)
     {
         Matrix4x4 result = Matrix4x4.Identity;
         while (count > 0)
