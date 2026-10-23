@@ -49,7 +49,9 @@ resources = restored.Resources;
 
 ## 世界修改与动作交接
 
-Costs 保存按实际支持位置、层和有向连接标识的当前成本输入，恢复先通过 `NavigationCostSystem` 建立当前基线，再应用保存的成本。Flow 根据恢复的 Costs、目标及对应求解方法建立完成场。
+分块 Grid 的资产登记、来源区域登记和恢复登记共同使用其 `NavigationGridRegionGraph` 表达来源关系；流送、目标更新和部分驻留 Apply 生成的 Grid 继续引用这一图。资产身份与选择项由 `NavigationSaveResources` 持有，完整数据由对应 Block 或来源区域重建。
+
+成本捕获沿 `NavigationCosts.Source` 取得完整输入，并在分配保存记录前合并同一输入的引用。记录包含已退出驻留范围的通行修改，多个 Flow 在恢复后共享对应的同一 Costs。普通 Grid 的单元位置、支撑层和有向连接标识用于应用保存值；恢复先通过 `NavigationCostSystem` 建立当前基线，再应用保存的完整成本。Flow 根据恢复的 Costs、目标及对应求解方法建立完成场，后续驻留投影继续持有该完整输入。
 
 来源驱动的区域使用 `resources.RegisterRegion(region, gridBuildSystem)` 登记重建配置。保存表包含来源/障碍的几何引用、版本、启用状态、参与方式和区域构建参数；实际 Transform 由游戏 registry 保存。恢复时用 `new NavigationSaveOptions().UseSources<TTransform,TReader>()` 提供强类型读取器，经过 Source → Build → Apply，再通过 `NavigationGridBuildSystem` 形成 Grid/Costs。`restored.Resources.Regions` 提供完成的区域对象，供游戏继续创建更新系统。
 

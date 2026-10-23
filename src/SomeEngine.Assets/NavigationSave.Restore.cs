@@ -153,7 +153,7 @@ internal sealed partial class NavigationSaveResourceReader(NavigationSavedResour
             default: throw new InvalidDataException($"Unknown navigation save resource {record.GetType().Name}.");
         }
         if (record is SavedProfile or SavedPolicy or SavedMesh or SavedHeadingMesh or SavedGrid or SavedMotions or SavedGeometry or SavedLinks)
-            restored.Sources[result] = record;
+            restored.Sources[result is NavigationGrid grid ? NavigationSaveResources.GetGridSource(grid) : result] = record;
         return result;
     }
 

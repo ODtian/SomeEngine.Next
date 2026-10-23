@@ -11,7 +11,8 @@ public sealed class NavigationCosts(NavigationGrid grid, NavigationPolicy policy
     public ReadOnlyMemory<float> CellCosts { get; } = cellCosts;
     public ReadOnlyMemory<float> EdgeCosts { get; } = edgeCosts;
     public ulong Version { get; } = version;
-    internal NavigationCosts? Source { get; init; }
+    /// <summary>The complete cost input shared by this residence projection; null for a complete input.</summary>
+    public NavigationCosts? Source { get; internal init; }
 
     internal void AddReadAccesses(Scheduler scheduler, List<JobResourceAccess> accesses)
     {

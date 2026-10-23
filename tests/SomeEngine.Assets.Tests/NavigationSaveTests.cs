@@ -176,7 +176,8 @@ public sealed partial class NavigationSaveTests : IDisposable
             var collect = new NavigationSourceSystem<SaveMotion, SaveSourceReader>(world, region, scheduler);
             var grids = new NavigationGridBuildSystem(region, scheduler: scheduler);
             NavigationBuild<NavigationRegionUpdate> build = NavigationBuildSystem.Schedule(collect.Schedule(), scheduler);
-            NavigationGridUpdate updated = grids.Schedule(build, NavigationApplySystem.Schedule(build, scheduler)).Complete();
+            NavigationBuild<NavigationGridUpdate> gridBuild = grids.Schedule(build, NavigationApplySystem.Schedule(build, scheduler));
+            NavigationGridUpdate updated = gridBuild.Complete();
             resources.RegisterRegion(region, grids);
             var flow = new NavigationFlow(updated.Costs, profile, [new(new(10.25f, 0, 1.25f), 0.05f)]);
             independent = world.CreateEntity(new SaveMotion(new(1.25f, 0, 1.25f), default, 0));
@@ -184,6 +185,12 @@ public sealed partial class NavigationSaveTests : IDisposable
             NavigationComponents.AddPath<NavigationScene, DStarLiteSearchState>(world, independent, scene, profile, policy,
                 new(new Vector3(10.25f, 0, 1.25f), 0.05f), 2);
             NavigationComponents.AddFlow(world, follower, flow, 2);
+            using var source = grids.CreateTileSource();
+            using var streaming = new NavigationGridStreaming(flow, source, scheduler) { ResidentTileBudget = 1 };
+            streaming.Interests.Add(new(new(1.25f, 0, 1.25f), 0.1f));
+            streaming.Update(); streaming.Applied.Complete();
+            NavigationGridApplySystem.Schedule(gridBuild, new NavigationFlow[] { flow }, scheduler).Complete();
+            Assert.Single(flow.Costs.Grid.Tiles.ToArray());
             NavigationSave.Write(stream, world, registry, resources);
         }
         stream.Position = 0;
@@ -209,6 +216,9 @@ public sealed partial class NavigationSaveTests : IDisposable
         }
         Assert.Contains(positions, position => position.X > 5 && position.X < 6 && position.Z > 2.5f);
         Assert.All(new[] { independent, follower }, actor => Assert.Equal(NavigationStatus.Arrived, loaded.Read<NavigationProgress>(actor).Status));
+        using var savedAgain = new MemoryStream();
+        NavigationSave.Write(savedAgain, loaded, registry, restored.Resources);
+        Assert.True(savedAgain.Length > 0);
 
         void Add(AssetEntry entry) => manifest.AddAsset(entry.AssetGuid, entry.Name, Path.GetFileName(entry.Path), entry.AssetType,
             entry.SchemaFingerprint, version: entry.Version);

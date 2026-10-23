@@ -13,11 +13,13 @@ public sealed partial class NavigationSaveResources
     public void Register(NavigationPolicy value, AssetId<NavigationPolicyAsset> asset) => Sources[value] = new SavedPolicy(asset);
     public void Register(NavigationMesh value, AssetId<NavigationAsset> asset, NavigationMeshSelection selection) => Sources[value] = new SavedMesh(asset, selection);
     public void Register(HeadingNavigationMesh value, AssetId<NavigationAsset> asset, NavigationMeshSelection selection) => Sources[value] = new SavedHeadingMesh(asset, selection);
-    public void Register(NavigationGrid value, AssetId<NavigationAsset> asset, NavigationGridSelection selection) => Sources[value] = new SavedGrid(asset, selection);
+    public void Register(NavigationGrid value, AssetId<NavigationAsset> asset, NavigationGridSelection selection) => Sources[GetGridSource(value)] = new SavedGrid(asset, selection);
     public void Register(NavigationMotionSet value, AssetId<NavigationProfileAsset> asset) => Sources[value] = new SavedMotions(asset);
     public void Register(NavigationGeometry value, AssetId<MeshAsset> asset) => Sources[value] = new SavedGeometry(asset);
     public void Register(NavigationLinkSet value, AssetId<NavigationAsset> asset) => Sources[value] = new SavedLinks(asset);
     public void Register(NavigationFlow value, AssetId<NavigationFlowAsset> asset) => Sources[value] = new SavedFlowAsset(asset, false);
+
+    internal static object GetGridSource(NavigationGrid grid) => (object?)grid.RegionGraph ?? grid;
 }
 
 internal abstract record NavigationSavedResource;
@@ -46,20 +48,22 @@ internal sealed partial class NavigationSaveResourceCapture(NavigationSaveResour
     internal int Add(object? value)
     {
         if (value is null) return -1;
-        if (_indices.TryGetValue(value, out int known)) return known;
+        if (value is NavigationCosts costs) value = costs.Source ?? costs;
+        object source = value is NavigationGrid grid ? NavigationSaveResources.GetGridSource(grid) : value;
+        if (_indices.TryGetValue(source, out int known)) return known;
         int index = Records.Count;
-        _indices.Add(value, index);
+        _indices.Add(source, index);
         Records.Add(null!);
-        Records[index] = _derived.TryGetValue(value, out NavigationSavedResource? derived) ? derived : value switch
+        Records[index] = _derived.TryGetValue(source, out NavigationSavedResource? derived) ? derived : value switch
         {
-            NavigationCosts costs => CaptureCosts(costs),
+            NavigationCosts values => CaptureCosts(values),
             NavigationVehicleSpace vehicle => new SavedVehicleSpace(Add(vehicle.Grid), Add(vehicle.Motions), Add(vehicle.Costs), vehicle.HybridSettings),
             NavigationFlow flow => CaptureFlow(flow),
             NavigationScene scene => CaptureScene(scene),
             HeadingNavigationScene scene => new SavedHeadingScene(Add(((HeadingSceneSaveSource)sources.Sources[scene]).Mesh)),
             NavigationLinkSet links => new SavedLinks(sources.Sources.TryGetValue(links, out NavigationSavedResource? origin)
                 ? ((SavedLinks)origin).Asset : default, links.Links.ToArray()),
-            _ => sources.Sources[value],
+            _ => sources.Sources[source],
         };
         return index;
     }
