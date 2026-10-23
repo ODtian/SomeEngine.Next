@@ -11,6 +11,9 @@ namespace SomeEngine.Navigation;
 /// <summary>A sample in the caller's time coordinates, beginning at actual movement feedback.</summary>
 public readonly record struct NavigationTrajectoryPoint(float Time, Vector3 Position, Vector3 Velocity, float Heading) : IBufferElement;
 
+public enum NavigationTrajectoryKind : byte { ModelPrediction, Mppi }
+public readonly record struct NavigationTrajectorySource(NavigationTrajectoryKind Kind) : IComponent;
+
 public interface INavigationPredictionModel
 {
     static abstract NavigationMotion Integrate(in NavigationMotion initial, in NavigationSteering steering,
@@ -42,7 +45,15 @@ public static partial class NavigationComponents
         where TModel : struct, INavigationPredictionModel
     {
         world.Add(entity, new NavigationPrediction<TModel>(horizon, interval));
-        world.AddBuffer<NavigationTrajectoryPoint>(entity);
+        SetTrajectorySource(world, entity, NavigationTrajectoryKind.ModelPrediction);
+    }
+
+    internal static void SetTrajectorySource(World world, Entity entity, NavigationTrajectoryKind kind)
+    {
+        var source = new NavigationTrajectorySource(kind);
+        if (world.Has<NavigationTrajectorySource>(entity)) world.Replace(entity, source);
+        else world.Add(entity, source);
+        if (!world.HasBuffer<NavigationTrajectoryPoint>(entity)) world.AddBuffer<NavigationTrajectoryPoint>(entity);
     }
 }
 
@@ -71,10 +82,11 @@ internal partial struct NavigationPredictionJob<TModel, TMotion, TReader>(float 
 {
     private readonly float _time = time;
 
-    public void Execute(in NavigationPrediction<TModel> settings,
+    public void Execute(in NavigationPrediction<TModel> settings, in NavigationTrajectorySource source,
         [JobResources<NavigationAgentResources>] in NavigationAgent agent,
         in NavigationSteering steering, in TMotion movement, DynamicBuffer<NavigationTrajectoryPoint> trajectory)
     {
+        if (source.Kind != NavigationTrajectoryKind.ModelPrediction) return;
         NavigationMotion initial = TReader.Read(in movement);
         trajectory.Clear();
         trajectory.Add(new(_time, initial.Position, initial.Velocity, initial.Heading));

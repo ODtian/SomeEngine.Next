@@ -18,7 +18,7 @@ public sealed class NavigationLinkAssetTests : IDisposable
     {
         string path = Path.Combine(_directory, "crossing.navigation.asset");
         var definition = new NavigationLink(71, new(10, 1), new(20, 2), 9,
-            Cost: 0.25f, RequiredCapabilities: 1, Parameters: new(0.3f, 2, 0, 0));
+            Cost: 0.25f, RequiredCapabilities: 1, Parameters: new(0.3f, 2, 0, 0), Capacity: 1);
         using (var asset = new NavigationAsset())
         using (var block = new NavigationLinkBlock())
         {

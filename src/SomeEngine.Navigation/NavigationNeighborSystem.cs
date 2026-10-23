@@ -1,6 +1,7 @@
 using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -13,6 +14,8 @@ public sealed class NavigationNeighbors(float cellSize = 2)
     private int[] _next = [];
     private int[][] _neighbors = [];
     private int[] _neighborCounts = [];
+    private NavigationTrajectoryPoint[][] _predictions = [];
+    private int[] _predictionCounts = [];
     private readonly Dictionary<(int X, int Z, int Layer), int> _heads = [];
     private readonly Dictionary<Entity, int> _indices = [];
     private int _count;
@@ -32,6 +35,8 @@ public sealed class NavigationNeighbors(float cellSize = 2)
             Array.Resize(ref _next, capacity);
             Array.Resize(ref _neighbors, capacity);
             Array.Resize(ref _neighborCounts, capacity);
+            Array.Resize(ref _predictions, capacity);
+            Array.Resize(ref _predictionCounts, capacity);
         }
         _agents[_count++] = agent;
     }
@@ -45,9 +50,49 @@ public sealed class NavigationNeighbors(float cellSize = 2)
             _next[index] = _heads.GetValueOrDefault(cell, -1);
             _heads[cell] = index;
             _indices.Add(agent.Entity, index);
+            _predictionCounts[index] = 0;
             if (_neighbors[index] is null || _neighbors[index].Length < agent.Avoidance.MaximumNeighbors)
                 _neighbors[index] = new int[agent.Avoidance.MaximumNeighbors];
         }
+    }
+
+    internal void SetPrediction(Entity entity, ReadOnlySpan<NavigationTrajectoryPoint> points)
+    {
+        if (!_indices.TryGetValue(entity, out int index)) return;
+        if (_predictions[index] is null || _predictions[index].Length < points.Length)
+            _predictions[index] = new NavigationTrajectoryPoint[points.Length];
+        points.CopyTo(_predictions[index]);
+        _predictionCounts[index] = points.Length;
+    }
+
+    /// <summary>Uses the acquired forecast in its time coordinates, aligned to current actual feedback.</summary>
+    public NavigationMotion Predict(int index, float time, float actualTime)
+    {
+        NavigationMotion actual = _agents[index].Motion;
+        if (_predictionCounts[index] < 2)
+            return actual with { Position = actual.Position + actual.Velocity * (time - actualTime) };
+        ReadOnlySpan<NavigationTrajectoryPoint> points = _predictions[index].AsSpan(0, _predictionCounts[index]);
+        NavigationTrajectoryPoint baseline = Interpolate(points, actualTime), future = Interpolate(points, time);
+        return actual with
+        {
+            Position = actual.Position + future.Position - baseline.Position,
+            Velocity = future.Velocity,
+            Heading = actual.Heading + NavigationHeading.Difference(future.Heading, baseline.Heading),
+        };
+    }
+
+    private static NavigationTrajectoryPoint Interpolate(ReadOnlySpan<NavigationTrajectoryPoint> points, float time)
+    {
+        for (int index = 1; index < points.Length; index++)
+        {
+            if (points[index].Time < time) continue;
+            NavigationTrajectoryPoint first = points[index - 1], second = points[index];
+            float fraction = Math.Clamp((time - first.Time) / (second.Time - first.Time), 0, 1);
+            return new(time, Vector3.Lerp(first.Position, second.Position, fraction), Vector3.Lerp(first.Velocity, second.Velocity, fraction),
+                first.Heading + NavigationHeading.Difference(second.Heading, first.Heading) * fraction);
+        }
+        NavigationTrajectoryPoint last = points[^1];
+        return last with { Time = time, Position = last.Position + last.Velocity * (time - last.Time) };
     }
 
     internal void Query(int index)
@@ -94,10 +139,12 @@ public sealed class NavigationNeighborSystem<TMotion, TReader>
     where TReader : struct, INavigationMotionReader<TMotion>
 {
     private readonly World _world;
+    private readonly QueryDefinition _actors;
     private JobHandle _completion;
     public NavigationNeighborSystem(World world, Scheduler scheduler, float cellSize = 2)
     {
         _world = world;
+        _actors = world.QueryDefinition().All<NavigationAgent>().All<AvoidanceAgent>().All<TMotion>().Build();
         Scheduler = scheduler;
         Data = new(cellSize);
     }
@@ -105,13 +152,15 @@ public sealed class NavigationNeighborSystem<TMotion, TReader>
     public Scheduler Scheduler { get; }
     public NavigationNeighbors Data { get; }
 
-    public JobHandle Schedule(JobHandle motionReady = default)
+    public JobHandle Schedule(JobHandle motionReady = default, JobHandle predictionReady = default)
     {
         JobResourceAccess access = JobResourceAccess.Write(Scheduler.GetResourceToken(Data));
         JobHandle cleared = Scheduler.Schedule(new ClearNeighbors(Data), [access],
-            Scheduler.CombineDependencies([_completion, motionReady]));
+            Scheduler.CombineDependencies([_completion, motionReady, predictionReady]));
         JobHandle collected = new CollectNavigationNeighbors<TMotion, TReader>(Data).Schedule(_world, [access], cleared);
-        _completion = Scheduler.Schedule(new BuildNeighbors(Data, Scheduler), [access], collected);
+        JobHandle built = Scheduler.Schedule(new BuildNeighbors(Data, Scheduler), [access], collected);
+        _completion = new CollectNavigationNeighborPredictions(Data).Schedule(_world, [access],
+            new JobEntityScheduleOptions(filter: _actors), built);
         return _completion;
     }
 
@@ -134,6 +183,13 @@ public sealed class NavigationNeighborSystem<TMotion, TReader>
     {
         public void Execute(int index) => data.Query(index);
     }
+}
+
+internal partial struct CollectNavigationNeighborPredictions(NavigationNeighbors data) : IJobEntity
+{
+    private readonly NavigationNeighbors _data = data;
+    public void Execute(Entity entity, BufferView<NavigationTrajectoryPoint> prediction) =>
+        _data.SetPrediction(entity, prediction.AsSpan());
 }
 
 internal partial struct CollectNavigationNeighbors<TMotion, TReader>(NavigationNeighbors data) : IJobEntity

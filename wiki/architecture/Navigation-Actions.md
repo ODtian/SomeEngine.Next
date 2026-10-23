@@ -20,6 +20,16 @@
 
 `NavigationProgress` 在实际运动完成后更新。动作交接与执行期间为 Traversing，动作失败为 TraversalFailed，完成后继续按实际位置计算移动与到达状态。动作执行数据与进度由游戏动作系统持有。
 
+## 通道容量与等待顺序
+
+`NavigationLink.Capacity` 规定连接容量，默认值为 `int.MaxValue`。`NavigationLinkSet.GetPassage(connection)` 返回该连接的 `NavigationPassage`，其 `Waiting`、`InUse` 和 `Capacity` 表达共享等待顺序、当前通行者与容量。场景安装新连接定义时，按连接标识沿用 Passage；`scene.Content.Links` 提供当前集合。LinkBlock 持久化连接容量。
+
+`NavigationPassageSystem` 收集角色的 Waiting、Requested 和 Executing 请求，每条连接由一个 Job 更新等待顺序和通行者，独立连接并行执行。既有等待顺序持续保留，同轮新到达角色按 Entity.Index 排序。完成、失败、取消、改选路线或销毁角色使对应请求释放容量；后续等待者获得 Requested 状态。角色的公开请求及实际运动反馈继续沿用动作交接接口。
+
+`NavigationSystems` 默认创建 PassageSystem。应用组合多个导航系统时，把同一个 `NavigationPassageSystem(world)` 传入各系统构造器；共享阶段通过完成句柄串接各轮收集与授予，统一处理该 World 中各导航组合的连接请求。`NavigationStep.Traversal` 和 `Guidance` 均包含容量授予完成，动作消费者在其后读取请求。等待时 `NavigationProgress.Status` 为 WaitingForPassage。
+
+公开验收 [NavigationPassageTests](../../tests/SomeEngine.Navigation.Tests/NavigationPassageTests.cs) 中的三个角色与容量一是排队例子；连接对象与分组更新适用于各自容量和独立队列。
+
 ## 资产与使用期
 
 `NavigationLinkBlock.SetLinks` 把完成连接写入 NavigationAsset。`GetBlockAsync<NavigationLinkBlock>` 显式取得连接数据，`Create/CreateAsync` 返回普通 LinkSet。连接数组的编码与解码使用导航 Job 编解码入口；已创建对象随使用者引用持续有效。

@@ -6,6 +6,8 @@
 
 `NavigationComponents.AddPrediction<TModel>(world, entity, horizon, interval)` 安装角色的模型选择、采样配置与结果 Buffer。`NavigationPrediction<TModel>` 由游戏维护；对应 `NavigationPredictionSystem<TModel, TMotion, TReader>` 是该组合的结果写入方。每个角色的 Buffer 由生成式 Job 的角色范围独占写入。
 
+`NavigationTrajectorySource.Kind` 明确选择本角色的完成轨迹来源。`AddPrediction` 选择 `ModelPrediction`；[`AddMppi`](Navigation-Mppi.md) 选择 `Mppi`，由局部控制器把选中控制序列的展开结果写入同一 Buffer。邻居系统的 `Schedule(motionReady, predictionReady)` 在依赖完成后采集这些轨迹，供局部控制评价未来相对运动。
+
 调用链为：
 
 1. 路径或流场生成 Guidance，选定避让阶段生成 Steering。
