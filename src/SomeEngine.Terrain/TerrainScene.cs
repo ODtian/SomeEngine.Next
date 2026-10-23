@@ -152,6 +152,16 @@ public sealed class TerrainScene
         var completed = new HashSet<int>();
         foreach ((Resources.Terrain terrain, MeshBatch batch) in _batches.ToArray())
         {
+            if (GpuAdapter is not null && batch.Chunks.Length != 0 && _gpuBuilds[terrain].IsWithdrawn)
+            {
+                foreach (ChunkBuild build in batch.Chunks)
+                {
+                    build.Geometry.Revision = 0;
+                    _dirtyGeometry.Add(build.Geometry.Id);
+                }
+                _batches.Remove(terrain);
+                continue;
+            }
             if (!batch.Work.Completion.IsCompleted) continue;
             batch.Work.Completion.Complete();
             foreach (ChunkBuild build in batch.Chunks)

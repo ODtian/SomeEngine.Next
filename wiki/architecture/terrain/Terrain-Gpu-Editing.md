@@ -18,6 +18,8 @@ RenderGraph 提交回执使 Terrain 释放对应的待提取请求。实际队�
 
 应用停止时先等待已提交 GPU 使用，随后由 Terrain 结束尚待图提交的字段请求，并在排空游戏系统 Job 前处理对应 CPU 网格依赖。撤销的字段编辑与页读回返回 `OperationCanceledException`；已提交字段工作保持真实队列完成结果。实现入口为 [TerrainDataRequest](../../../src/SomeEngine.Resources/Terrain/TerrainDataRequest.cs)、[TerrainScene](../../../src/SomeEngine.Terrain/TerrainScene.cs) 和 [ApplicationGeometry](../../../src/SomeEngine.Runtime/ApplicationGeometry.cs)。
 
+`RenderTerrainData` 释放设备页前，通过 RenderGraph 复制仍存活 GPU 版本的内容，等待对应队列完成点，再保存到原 `TerrainFieldPage` 的 CPU 副本。字段页分别记录读回目标数组和已经填充的 CPU 内容；后续安装的设备缓冲从完成的内容上传。`ApplicationScene.Reload` 后，调用方保留的 Terrain 继续提供相同版本的样本和几何输入。已撤销读回任务保留调用时的取消结果，此后新发起的读取取得保存后的内容。对应实现为 [TerrainFieldPage](../../../src/SomeEngine.Resources/Terrain/TerrainFieldPage.cs) 和 [RenderTerrainData](../../../src/SomeEngine.Render/Terrain/RenderTerrainData.cs)。
+
 ## 局部读取与后续 CPU 工作
 
 `HeightField.ReadCpuAsync(range)` 与 `VoxelField.ReadCpuAsync(range)` 在调用时捕获字段版本，并为所需 GPU 页请求 CPU 物化。读回保存该页的原版本；同一页版本的后续读取共用 CPU 数组及其完成依赖。返回的 `HeightFieldRead` 或 `VoxelFieldRead` 继续保持调用时的样本版本。

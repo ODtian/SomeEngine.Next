@@ -137,7 +137,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         foreach (TerrainGpuChunkBuild chunk in request.Chunks)
             if (_geometries.TryGetValue((chunk.GeometryId, request.Revision), out GeometryData? geometry)
                 && ((geometry.HasBeenBound && visible.GetValueOrDefault(chunk.GeometryId) != request.Revision)
-                    || (request.IsSubmitted && !selected.Contains(chunk.GeometryId))))
+                    || (request.Visibility.IsSignaled && !selected.Contains(chunk.GeometryId))))
             {
                 _builder.Release(context, geometry.Geometry);
                 _geometries.Remove((chunk.GeometryId, request.Revision));

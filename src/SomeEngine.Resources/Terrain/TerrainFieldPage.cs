@@ -8,6 +8,7 @@ internal sealed class TerrainFieldPage
     private readonly object _gate = new();
     private TerrainDataRequest? _readRequest;
     private JobHandle _cpuCompletion;
+    private bool _hasCpuContents;
 
     internal TerrainFieldPage(float[] samples, JobHandle completion, ulong revision)
         : this(samples, completion, revision, Guid.NewGuid()) { }
@@ -15,6 +16,7 @@ internal sealed class TerrainFieldPage
     internal TerrainFieldPage(float[] samples, JobHandle completion, ulong revision, Guid id)
     {
         Samples = samples;
+        _hasCpuContents = true;
         SampleCount = samples.Length;
         Completion = _cpuCompletion = completion;
         Revision = revision;
@@ -45,6 +47,23 @@ internal sealed class TerrainFieldPage
     internal ITerrainPageSource? Source { get; }
     private TerrainFilePage? FilePage { get; }
     internal float[]? Samples { get; private set; }
+    internal float[]? CpuContents => _hasCpuContents ? Samples : null;
+
+    internal void CompleteCpuRead()
+    {
+        lock (_gate) _hasCpuContents = true;
+    }
+
+    internal void SetCpuContents(float[] samples)
+    {
+        lock (_gate)
+        {
+            Samples = samples;
+            _cpuCompletion = default;
+            _readRequest = null;
+            _hasCpuContents = true;
+        }
+    }
 
     internal TerrainPageRead ReadCpu(Terrain terrain)
     {
@@ -69,11 +88,12 @@ internal sealed class TerrainFieldPage
 
     internal JobHandle PrepareGpuRead(Terrain terrain) => Source is null ? ReadCpu(terrain).Completion : Completion;
 
-    private static async Task ReadFileAsync(ITerrainFileSource source, ulong key, float[] samples, TerrainCompletion completion)
+    private async Task ReadFileAsync(ITerrainFileSource source, ulong key, float[] samples, TerrainCompletion completion)
     {
         try
         {
             using (source) await source.ReadPageIntoAsync(key, samples).ConfigureAwait(false);
+            CompleteCpuRead();
             completion.Complete();
         }
         catch (Exception error) { completion.Fail(error); }
