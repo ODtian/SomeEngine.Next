@@ -22,7 +22,7 @@ PoseAnimation.AddSystems(systems);
 
 对多个目标调用同一 `CompiledGraph.Play` 可以共享定义，并分别使用 `PropertyAnimation.SetSpeed`、`Pause`、`Resume` 和 `Stop` 控制时间。系统更新完成后，`SkeletonInstance.ModelPose` 提供本次模型空间姿势、版本、计算时刻 `Time` 和局部输入采样时刻 `SampleTime`。
 
-`ClipParameters.Loop` 选择持续循环；默认播放一次并以片段时长结束。`PoseResult.Time` 记录叶节点的采样时间，循环片段使用累计时间。跨越阶段终点的更新会先向前一阶段的叶节点提供终点及剩余增量，再向后一阶段提供本阶段时间；最终姿势发布后，共同完成阶段处理节点结束。
+`ClipParameters.Loop` 选择持续循环；默认播放一次并以片段时长结束。`PoseResult.Time` 记录叶节点的采样时间，循环片段使用累计时间；片段的 `PoseResult.Phase` 是该时间除以片段时长得到的累计循环数。跨越阶段终点的更新会先向前一阶段的叶节点提供终点及剩余增量，再向后一阶段提供本阶段时间；最终姿势发布后，共同完成阶段处理节点结束。
 
 `PoseCompositionSystem` 从零开始累加 `ImmediateSystemContext.DeltaTime`，作为该动画执行组合的共同计算时钟。模型姿势的 `Time` 记录本次 FK 计算时刻，`SampleTime` 保留所选 `PoseResult.Time`。不同播放速度和阶段分别影响来源采样时刻；父姿势驱动子骨架重新计算时，子骨架取得本次计算时刻并保留已有局部输入的采样时刻。区段读取与继承关系见 [Skeleton Inheritance](Skeleton-Inheritance.md)。
 
@@ -48,7 +48,7 @@ actorTransform = frame.RootMotion.Transform * actorTransform;
 
 ## 结果交接
 
-`PoseResultId` 表达图内的结果编号。`PoseAnimation.CreateTarget` 的 `resultCount` 分配连续的 `LocalPose` buffer 区段；`output` 选择骨架最终消费的编号。`PoseResult` buffer 保存各区段的采样时刻、启动标记、当前贡献权重、运动增量和版本。片段贡献权重采用共同图权重乘目标上的动画层权重。
+`PoseResultId` 表达图内的结果编号。`PoseAnimation.CreateTarget` 的 `resultCount` 分配连续的 `LocalPose` buffer 区段；`output` 选择骨架最终消费的编号。`PoseResult` buffer 保存各区段的采样时刻、累计相位、启动标记、当前贡献权重、运动增量和版本。片段贡献权重采用共同图权重乘目标上的动画层权重。
 
 自定义叶节点在 `Install` 中调用 `PoseAnimation.Resolve(world, target, id)`，将定义中的编号解析成 `PoseResultReference`，并随自身的定义、参数索引和 Placement 保存在算法实例 buffer 中。引用中的 `Entity`、`Index` 和 `Range` 直接定位已经安装的结果。
 
