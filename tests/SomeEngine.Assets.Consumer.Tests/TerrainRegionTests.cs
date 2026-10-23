@@ -9,6 +9,58 @@ namespace SomeEngine.Assets.Consumer.Tests;
 public sealed class TerrainRegionTests
 {
     [Fact]
+    public async Task FilePagesCanBeReadAgainAfterTheirSourceRecovers()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Terrain-Retry-{Guid.NewGuid():N}.terrain.asset");
+        try
+        {
+            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            var editing = new TerrainEditing(scheduler);
+            using var initial = new Terrain(editing);
+            HeightField heights = initial.CreateHeightField("ground", new HeightGrid(4, 4, 4));
+            TerrainEdit edit = heights.EditCpu(new HeightDeltaBrush(heights.Grid.Range, 2f));
+            TerrainCpuData data = await initial.CaptureCpuAsync();
+            AssetEntry entry;
+            using (var asset = new TerrainAsset())
+            {
+                await asset.UpdateAsync(data, Array.Empty<AssetId<MaterialAsset>>());
+                entry = await asset.SaveAsync(path);
+            }
+
+            var reads = new FileReads();
+            using (var description = await TerrainAsset.OpenAsync(path))
+            await using (var file = await AssetFile.OpenAsync(path, TerrainAsset.WireType))
+            {
+                HeightFieldsBlock fields = await description.GetBlockAsync<HeightFieldsBlock>();
+                AssetBlockDescription block = description.BlockDescriptions.Single(block => block.BlockTypeId == HeightFieldsBlock.BlockTypeId);
+                TerrainHeightPage page = fields.Pages.Single();
+                BinaryChunkEntry chunk = await file.DescribeChunkAsync(block.GetStorageKey(page.ChunkKey));
+                reads.Ranges.Add((chunk.Offset, chunk.Offset + chunk.StoredLength, page.X));
+            }
+            await using var loader = new AssetLoader(new TerrainStorage(entry, path, reads));
+            using var opened = await TerrainAsset.OpenAsync(loader, new(entry.AssetGuid));
+            using Terrain terrain = await opened.CreateTerrainAsync(editing);
+            using Terrain branch = terrain.Duplicate();
+            var range = new HeightRegion(1, 1, 1, 1);
+
+            reads.Failure = new IOException();
+            await Assert.ThrowsAsync<IOException>(() => terrain.HeightFields[0].ReadCpuAsync(range).AsTask());
+
+            reads.Failure = null;
+            HeightFieldRead recovered = await branch.HeightFields[0].ReadCpuAsync(range);
+            HeightFieldRead shared = await terrain.HeightFields[0].ReadCpuAsync(range);
+            Assert.Equal(2f, recovered[1, 1]);
+            Assert.Equal(edit.Revision, recovered.Revision);
+            Assert.Equal(2f, shared[1, 1]);
+            Assert.Equal(edit.Revision, shared.Revision);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task RegionalEditsKeepTheirFileDataAfterTheOriginalTerrainCloses()
     {
         string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Terrain-Region-{Guid.NewGuid():N}.terrain.asset");
@@ -104,6 +156,7 @@ public sealed class TerrainRegionTests
         internal List<(long Min, long Max, int Page)> Ranges { get; } = [];
         internal HashSet<int> Pages { get; } = [];
         internal int PausePage { get; set; } = -1;
+        internal IOException? Failure { get; set; }
         internal bool Closed { get; set; }
         internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -111,13 +164,16 @@ public sealed class TerrainRegionTests
         internal async ValueTask ObserveAsync(long offset, int length)
         {
             bool pause = false;
+            bool pageRead = false;
             lock (Pages)
                 foreach (var range in Ranges)
                     if (offset < range.Max && offset + length > range.Min)
                     {
                         Pages.Add(range.Page);
+                        pageRead = true;
                         pause |= range.Page == PausePage;
                     }
+            if (pageRead && Failure is { } failure) throw failure;
             if (pause)
             {
                 Started.TrySetResult();

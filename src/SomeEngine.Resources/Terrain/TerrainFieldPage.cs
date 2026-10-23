@@ -69,7 +69,8 @@ internal sealed class TerrainFieldPage
     {
         lock (_gate)
         {
-            if (Samples is null)
+            if (Samples is null
+                || (FilePage is not null && !_hasCpuContents && _cpuCompletion.IsCompleted))
             {
                 ITerrainFileSource? file = FilePage is { } stored ? terrain.RetainFileSource(stored.SourceIndex) : null;
                 Samples = new float[SampleCount];
