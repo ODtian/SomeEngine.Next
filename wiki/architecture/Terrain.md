@@ -15,5 +15,6 @@
 | [LOD 与过渡接缝](terrain/Terrain-Lod.md) | 相机距离选择、2∶1 邻接、CPU Transvoxel 单元与完整批次切换 |
 | [GPU 字段编辑](terrain/Terrain-Gpu-Editing.md) | 高度与体素 GPU 笔刷、实际完成点、局部 CPU 读取与后续几何 |
 | [GPU 地形几何](terrain/Terrain-Gpu-Geometry.md) | 固定字段版本的高度与体素表面提取、用户属性、原生 Cluster 构建和完整批次切换 |
+| [材质、属性与细分](terrain/Terrain-Materials.md) | 材料字段、CPU/GPU 属性与材料分组、用户编码、位移曲面及保守包围 |
 
 字段编辑使用现有 [Job 依赖与资源访问](ECS/Readiness-Admission.md)。领域阅读入口见[领域规则](../../docs/agents/domain.md)。
