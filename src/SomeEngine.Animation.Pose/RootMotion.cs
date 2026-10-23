@@ -45,7 +45,7 @@ internal readonly record struct ClipRootMotion(Matrix4x4 InverseInitial, Matrix4
         return delta;
     }
 
-    private static Matrix4x4 RigidModel(AnimationClip clip, ReadOnlySpan<BoneTransform> pose)
+    internal static Matrix4x4 RigidModel(AnimationClip clip, ReadOnlySpan<BoneTransform> pose)
     {
         int bone = clip.RootMotionBone;
         Matrix4x4 model = pose[bone].ToMatrix();
