@@ -1,4 +1,4 @@
-# 地形放置与 CPU 分块
+# 地形放置与分块
 
 本页维护已实现的架构、公开接口与调用方法。源码入口为 [TerrainScene](../../../src/SomeEngine.Terrain/TerrainScene.cs)、[TerrainSurface](../../../src/SomeEngine.Resources/Terrain/TerrainSurface.cs) 和 [TerrainGeometryFeature](../../../src/SomeEngine.Runtime/TerrainGeometryFeature.cs)。字段创建与编辑见 [CPU 字段](Terrain-Fields.md)。
 
@@ -16,7 +16,7 @@
 
 1. `TerrainCommitSystem` 收集字段范围变化，并把已完成构建更新到块版本及 Mesh。
 2. `TerrainLodSystem` 根据各放置指定的固定 LOD 和块范围维护实体。
-3. `TerrainMeshSystem` 捕获受影响块需要的表面版本，通过 Scheduler 构建几何。
+3. `TerrainMeshSystem` 捕获受影响块需要的表面版本，提交对应几何构建。
 
 该功能同时安装地形请求提取、GPU 准备、帧录制与完成观察。块实体的 `TerrainSource` 引用使请求进入同一条 Game world 到 Rendering world 的提取路径，GPU 页的按需 CPU 读取为后续网格任务提供样本，详见 [GPU 编辑](Terrain-Gpu-Editing.md)。
 
@@ -24,13 +24,15 @@
 
 体素编辑提交产生 [VoxelFieldChange](../../../src/SomeEngine.Resources/Terrain/VoxelFieldChange.cs)，按三维写入范围和采样邻域选择空间块。表面提取在对应三维单元中生成零等值面；提交和提取继续使用相同的三个游戏系统。
 
-块实体使用 `WorldTransform`、`MeshInstance` 和 `MeshMaterialBinding`，由现有 [Mesh 提取](../rendering/Extraction.md) 进入 Rendering world。`GetChunks` 返回游戏世界当前提交的块版本。`WaitForBuildsAsync` 等待当前已提交的构建任务；接着运行的提交系统应用结果。
+CPU 路径的块实体使用 `WorldTransform`、`MeshInstance` 和 `MeshMaterialBinding`，由现有 [Mesh 提取](../rendering/Extraction.md) 进入 Rendering world。`GetChunks` 返回游戏世界当前提交的块版本。`WaitForBuildsAsync` 等待当前已提交的构建任务；接着运行的提交系统应用结果。
 
 ## 表面与属性
 
 [MarchingCubesTerrainMesher](../../../src/SomeEngine.Terrain/Meshing/MarchingCubesTerrainMesher.cs) 使用 Transvoxel 的普通 Marching Cubes 表，表及许可保存在同目录。`ITerrainMesher` 接收已就绪的标量表面，产出位置、索引及属性采样点。
 
 `TerrainClusterAdapter<TAttributes>` 将调用方的 `ITerrainAttributeGenerator<TAttributes>`、`IClusterVertexEncoder<TAttributes>` 与 `ClusterBuildStrategy` 连接到通用 CPU Cluster 构建器。属性生成器提供顶点属性、三角形材质编号和额外采样邻域。材质的顶点求值与调用方选用的编码相配套。
+
+GPU 构造入口接收 `TerrainClusterAdapter`，复用本页的放置、块编号、变化范围和完整构建批次。固定字段输入、GPU 表面与属性、原生 Cluster 构建和可见完成入口统一见 [GPU 地形几何](Terrain-Gpu-Geometry.md)。
 
 ## 公开调用示例
 

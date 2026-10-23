@@ -9,10 +9,14 @@ using SomeEngine.Resources;
 
 namespace SomeEngine.Terrains;
 
-/// <summary>Placement identities, spatial chunk entities and CPU geometry builds for a game world.</summary>
-public sealed class TerrainScene(ITerrainClusterAdapter adapter, TerrainChunkGrid grid, ITerrainMesher? mesher = null)
+/// <summary>Placement identities, spatial chunk entities and geometry build batches for a game world.</summary>
+public sealed class TerrainScene
 {
-    private readonly ITerrainMesher _mesher = mesher ?? new MarchingCubesTerrainMesher();
+    private readonly ITerrainMesher? _mesher;
+    private readonly ITerrainClusterAdapter? _adapter;
+    private readonly Dictionary<Resources.Terrain, TerrainGeometryRequest> _gpuBuilds = [];
+    internal TerrainClusterAdapter? GpuAdapter { get; }
+    internal object RenderKey { get; } = new();
     private readonly Dictionary<int, PlacementData> _placements = [];
     private readonly Dictionary<ChunkKey, ChunkData> _chunks = [];
     private readonly Dictionary<GeometryKey, GeometryData> _geometryByKey = [];
@@ -26,7 +30,27 @@ public sealed class TerrainScene(ITerrainClusterAdapter adapter, TerrainChunkGri
     private int _nextPlacementId, _nextGeometryId;
     private bool _placementsChanged;
 
-    public TerrainChunkGrid Grid { get; } = grid;
+    public TerrainChunkGrid Grid { get; }
+
+    public TerrainScene(ITerrainClusterAdapter adapter, TerrainChunkGrid grid, ITerrainMesher? mesher = null)
+    {
+        _adapter = adapter;
+        _mesher = mesher ?? new MarchingCubesTerrainMesher();
+        Grid = grid;
+    }
+
+    public TerrainScene(TerrainClusterAdapter adapter, TerrainChunkGrid grid)
+    {
+        GpuAdapter = adapter;
+        Grid = grid;
+    }
+
+    /// <summary>The latest GPU batch, with separate device and rendering-world binding completion.</summary>
+    public TerrainGpuBuild GetGpuBuild(Resources.Terrain terrain)
+    {
+        TerrainGeometryRequest build = _gpuBuilds[terrain];
+        return new(build.Revision, build.Completion.Handle, build.Visibility.Handle);
+    }
 
     public int Add(TerrainPlacement placement)
     {
@@ -80,6 +104,7 @@ public sealed class TerrainScene(ITerrainClusterAdapter adapter, TerrainChunkGri
         _geometryByKey.Clear();
         _geometryById.Clear();
         _batches.Clear();
+        _gpuBuilds.Clear();
         _dirtyGeometry.Clear();
         _changes.Clear();
         foreach (PlacementData placement in _placements.Values) placement.Created = false;
@@ -113,7 +138,7 @@ public sealed class TerrainScene(ITerrainClusterAdapter adapter, TerrainChunkGri
             if (_batches.TryGetValue(change.Terrain, out MeshBatch? batch)
                 && batch.Work.Revision >= change.Revision && batch.GeometryIds.Contains(geometry.Id)) continue;
             TerrainChunkBounds bounds = Grid.GetBounds(geometry.Key.Coordinates, geometry.Key.Lod);
-            float border = (_mesher.ReadBorder + adapter.ReadBorder) * bounds.CellSize;
+            float border = ReadBorder * bounds.CellSize;
             TerrainSurface? surface = change.Terrain.Surface;
             if (surface is null || change.Affects(surface, bounds.Volume, border)) _dirtyGeometry.Add(geometry.Id);
         }
@@ -219,6 +244,7 @@ public sealed class TerrainScene(ITerrainClusterAdapter adapter, TerrainChunkGri
         Entity entity = _world!.CreateEntity(new TerrainChunk(placementId, coordinates, placement.Lod,
             geometry.Revision, geometry.Id));
         _world.Add(entity, new TerrainSource(placement.Terrain));
+        if (GpuAdapter is not null) _world.Add(entity, new TerrainGpuSource(RenderKey));
         _world.Add(entity, new WorldTransform { Qvvs = placement.Transform });
         _world.AddBuffer<MeshMaterialBinding>(entity);
         SetMaterials(entity, placement.Materials);
@@ -243,13 +269,20 @@ public sealed class TerrainScene(ITerrainClusterAdapter adapter, TerrainChunkGri
             ChunkBuild[] chunks = group.Select(geometry => new ChunkBuild(geometry,
                 Grid.GetBounds(geometry.Key.Coordinates, geometry.Key.Lod))).ToArray();
             TerrainSurfaceJob work;
-            if (terrain.Surface is { } surface)
+            if (GpuAdapter is { } gpu)
             {
-                int border = _mesher.ReadBorder + adapter.ReadBorder;
+                TerrainGeometryRequest request = gpu.Capture(RenderKey, terrain,
+                    chunks.Select(static chunk => new TerrainGpuChunkBuild(chunk.Geometry.Id, chunk.Bounds)).ToArray());
+                _gpuBuilds[terrain] = request;
+                work = new(request.Revision, request.Completion.Handle);
+            }
+            else if (terrain.Surface is { } surface)
+            {
+                int border = ReadBorder;
                 TerrainBounds bounds = chunks[0].Bounds.Volume.Expand(border * chunks[0].Bounds.CellSize);
                 foreach (ChunkBuild chunk in chunks.AsSpan(1))
                     bounds = bounds.Union(chunk.Bounds.Volume.Expand(border * chunk.Bounds.CellSize));
-                work = surface.ScheduleRead(bounds, new MeshWork(chunks, _mesher, adapter), chunks.Length);
+                work = surface.ScheduleRead(bounds, new MeshWork(chunks, _mesher!, _adapter!), chunks.Length);
             }
             else
                 work = new(terrain.Revision, default);
@@ -259,6 +292,7 @@ public sealed class TerrainScene(ITerrainClusterAdapter adapter, TerrainChunkGri
     }
 
     private void CollectChange(TerrainChange change) => _changes.Enqueue(change);
+    private int ReadBorder => GpuAdapter is { } gpu ? gpu.ReadBorder : _mesher!.ReadBorder + _adapter!.ReadBorder;
 
     private readonly record struct ChunkKey(int PlacementId, TerrainChunkCoordinate Coordinates, int Lod);
     private readonly record struct GeometryKey(Resources.Terrain Terrain, TerrainChunkCoordinate Coordinates, int Lod);
