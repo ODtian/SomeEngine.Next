@@ -47,13 +47,15 @@ public sealed class NavigationFlowTests
         var navigation = new NavigationSystems<TestMotion, TestMotionReader>(world);
         Entity lower = world.CreateEntity(new TestMotion { Position = new(0.5f, 0, 0.5f) });
         Entity upper = world.CreateEntity(new TestMotion { Position = new(0.5f, 3, 1.5f) });
+        world.Add(lower, new TestActionMotion());
+        world.Add(upper, new TestActionMotion());
         navigation.AddFlowAgent(lower, flow, desiredSpeed: 2);
         navigation.AddFlowAgent(upper, flow, desiredSpeed: 2);
 
         for (int step = 0; step < 100; step++)
         {
             NavigationFlowStep scheduled = navigation.Schedule(0.1f);
-            JobHandle moved = new ConsumeSteering(0.1f).ScheduleParallel(world, scheduled.Steering);
+            JobHandle moved = new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, scheduled.Steering);
             navigation.ScheduleProgress(moved).Complete();
             if (world.Read<NavigationProgress>(lower).Status == NavigationStatus.Arrived &&
                 world.Read<NavigationProgress>(upper).Status == NavigationStatus.Arrived)
@@ -63,6 +65,7 @@ public sealed class NavigationFlowTests
         Assert.Same(world.Read<FlowFollower>(lower).Flow, world.Read<FlowFollower>(upper).Flow);
         Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(lower).Status);
         Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(upper).Status);
+        Assert.Equal(4, world.Read<TestActionMotion>(upper).Action);
     }
 
     [Fact]

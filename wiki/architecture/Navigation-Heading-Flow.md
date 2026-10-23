@@ -38,4 +38,6 @@ JobHandle integrated = solver.Schedule(expansionBudget).Completion;
 
 动作边使用 [导航动作连接](Navigation-Actions.md) 的 `NavigationTraversalRequest`、`NavigationTraversalResult` 和共享 `NavigationPassageSystem`。消费者在 `NavigationFlowStep.Traversal` 或 `Guidance` 完成后取得请求，写回实际运动和动作结果。完成反馈与实际出口位置共同推进后续采样。多个路径或 Flow 组合可向构造器传入同一个 PassageSystem。
 
+普通 Grid 的非零 `NavigationGridEdge.Action` 同样通过该动作消费者交接，入口与出口取有向边两侧单元位置；零动作边继续消费普通 Steering。该约定把已有动作成本标识接入实际游戏动作。
+
 公开行为入口为 [HeadingNavigationFlowTests](../../tests/SomeEngine.Navigation.Tests/HeadingNavigationFlowTests.cs)。宽转向区域、单向窄通道、两个角色及容量一的动作连接属于验收例子；区域、通道、方向、容量和目标通过公共数据表达。
