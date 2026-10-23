@@ -8,7 +8,7 @@ using SomeEngine.Job;
 namespace SomeEngine.Animation.Pose;
 
 /// <summary>Completes concrete weighted bone jobs before publishing their dependent pose results.</summary>
-public struct PoseBlendSystem : ISystem<ImmediateSystemContext>
+public struct PoseBlendSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNodeContext>
 {
     private QueryHandle _blends;
     private List<JobHandle> _jobs;
@@ -27,52 +27,69 @@ public struct PoseBlendSystem : ISystem<ImmediateSystemContext>
         var frame = new BlendFrame { World = context.World, Jobs = _jobs };
         do
         {
-            _jobs.Clear();
-            frame.NextLevel = int.MaxValue;
-            context.World.ExecuteQuery(_blends, ref frame, static (QueryCursor rows, ref BlendFrame frame) =>
-            {
-                foreach (QueryRow row in rows.Rows)
-                    foreach (ref PoseBlendInstance blend in row.Buffer<PoseBlendInstance>().AsSpan())
-                    {
-                        if (blend.Level > frame.Level) frame.NextLevel = Math.Min(frame.NextLevel, blend.Level);
-                        if (blend.Level == frame.Level) Gather(frame.World, row.Entity, ref blend, frame.Jobs);
-                    }
-            });
-            foreach (JobHandle job in _jobs) job.Complete();
-            context.World.ExecuteQuery(_blends, ref frame, static (QueryCursor rows, ref BlendFrame frame) =>
-            {
-                World world = frame.World;
-                foreach (QueryRow row in rows.Rows)
-                    foreach (ref PoseBlendInstance blend in row.Buffer<PoseBlendInstance>().AsSpan())
-                    {
-                        if (!blend.Active || blend.Level != frame.Level) continue;
-                        if (blend.Sampled)
-                        {
-                            var copy = (Values: blend.Samples.Output, Range: blend.Output.Range);
-                            world.ExecuteBufferWrite<LocalPose, (BoneTransform[] Values, PoseRange Range)>(blend.Output.Entity,
-                                ref copy, static (poses, ref copy) => copy.Values.AsSpan(0, copy.Range.Count)
-                                    .CopyTo(LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count))));
-                        }
-                        var value = (Index: blend.Output.Index, Time: blend.Time, Phase: blend.Phase, Weight: blend.Weight,
-                            Starts: blend.Starts, Sampled: blend.Sampled, Motion: blend.Samples.Output[^1]);
-                        world.ExecuteBufferWrite<PoseResult, (int Index, double Time, double Phase, float Weight,
-                            uint Starts, bool Sampled, BoneTransform Motion)>(blend.Output.Entity, ref value,
-                            static (results, ref value) =>
-                            {
-                                ref PoseResult result = ref results[value.Index];
-                                result.Weight = value.Weight;
-                                if (!value.Sampled) return;
-                                result.Time = value.Time;
-                                result.Phase = value.Phase;
-                                result.Starts = value.Starts;
-                                result.RootMotion = new(value.Motion.ToMatrix() * result.RootMotion.Transform);
-                                result.Version++;
-                            });
-                        AnimationGraph.Submit(world, row.Entity, in blend.Placement, blend.Running);
-                    }
-            });
+            Evaluate(ref frame);
             frame.Level = frame.NextLevel;
         } while (frame.Level != int.MaxValue);
+    }
+
+    public void OnCreate(ref PoseNodeContext context)
+    {
+        ImmediateSystemContext frame = context.Frame;
+        OnCreate(ref frame);
+    }
+
+    public void OnUpdate(ref PoseNodeContext context)
+    {
+        var frame = new BlendFrame { World = context.Frame.World, Jobs = _jobs, Level = context.Level };
+        Evaluate(ref frame);
+    }
+
+    private void Evaluate(ref BlendFrame frame)
+    {
+        _jobs.Clear();
+        frame.NextLevel = int.MaxValue;
+        frame.World.ExecuteQuery(_blends, ref frame, static (QueryCursor rows, ref BlendFrame frame) =>
+        {
+            foreach (QueryRow row in rows.Rows)
+                foreach (ref PoseBlendInstance blend in row.Buffer<PoseBlendInstance>().AsSpan())
+                {
+                    if (blend.Node.Level > frame.Level) frame.NextLevel = Math.Min(frame.NextLevel, blend.Node.Level);
+                    if (blend.Node.Level == frame.Level) Gather(frame.World, row.Entity, ref blend, frame.Jobs);
+                }
+        });
+        foreach (JobHandle job in _jobs) job.Complete();
+        frame.World.ExecuteQuery(_blends, ref frame, static (QueryCursor rows, ref BlendFrame frame) =>
+        {
+            World world = frame.World;
+            foreach (QueryRow row in rows.Rows)
+                foreach (ref PoseBlendInstance blend in row.Buffer<PoseBlendInstance>().AsSpan())
+                {
+                    if (!blend.Active || blend.Node.Level != frame.Level) continue;
+                    if (blend.Sampled)
+                    {
+                        var copy = (Values: blend.Samples.Output, Range: blend.Output.Range);
+                        world.ExecuteBufferWrite<LocalPose, (BoneTransform[] Values, PoseRange Range)>(blend.Output.Entity,
+                            ref copy, static (poses, ref copy) => copy.Values.AsSpan(0, copy.Range.Count)
+                                .CopyTo(LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count))));
+                    }
+                    var value = (Index: blend.Output.Index, Time: blend.Time, Phase: blend.Phase, Weight: blend.Weight,
+                        Starts: blend.Starts, Sampled: blend.Sampled, Motion: blend.Samples.Output[^1]);
+                    world.ExecuteBufferWrite<PoseResult, (int Index, double Time, double Phase, float Weight,
+                        uint Starts, bool Sampled, BoneTransform Motion)>(blend.Output.Entity, ref value,
+                        static (results, ref value) =>
+                        {
+                            ref PoseResult result = ref results[value.Index];
+                            result.Weight = value.Weight;
+                            if (!value.Sampled) return;
+                            result.Time = value.Time;
+                            result.Phase = value.Phase;
+                            result.Starts = value.Starts;
+                            result.RootMotion = new(value.Motion.ToMatrix() * result.RootMotion.Transform);
+                            result.Version++;
+                        });
+                    AnimationGraph.Submit(world, row.Entity, in blend.Placement, blend.Running);
+                }
+        });
     }
 
     private static void Gather(World world, Entity animation, ref PoseBlendInstance blend, List<JobHandle> jobs)
@@ -136,6 +153,8 @@ public struct PoseBlendSystem : ISystem<ImmediateSystemContext>
     }
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_blends);
+
+    public void OnDestroy(ref PoseNodeContext context) => context.Frame.World.ReleaseQuery(_blends);
 
     private struct BlendFrame
     {

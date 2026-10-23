@@ -55,14 +55,13 @@ MotionWarpInput input = warp.Bind(actorTransform, interactionTransform);
 world.ExecuteBufferWrite<MotionWarpInstance, MotionWarpInput>(animation, ref input,
     static (instances, ref input) => instances[0].Input = input);
 
-PoseAnimation.AddSystems(systems, static composition =>
-    AnimationSystems.Add(composition, new MotionWarpSystem(), AnimationPhase.Composition));
+PoseAnimation.AddSystems(systems, nodes: static nodes => nodes.Add(new MotionWarpSystem()));
 Matrix4x4 predictedActor = input.SampleWorld(futureSourceTime);
 ```
 
 安装时的初始 `Input` 对应来源轨迹。调用者在每次 `Play` 后配置角色输入，再推进系统。多个安装实例可以共享同一个图与 Warp，并分别绑定不同的起点和交互目标。
 
-`MotionWarpLeaf` 安装时解析来源和输出 `PoseResultReference`。同类 Warp 之间的结果依赖在 `Complete` 中确定层级；`MotionWarpSystem` 按层级完成同步计算与 buffer 写入。其它类型的生产系统在 Warp 系统之前注册，例如先注册 `PoseBlendSystem`，再注册 `MotionWarpSystem`。
+`MotionWarpLeaf` 安装时解析来源和输出 `PoseResultReference` 并登记连接。Warp、Blend 与 Layer 的共同结果依赖在 `Complete` 中确定层级；`PoseNodeContext` 向具体系统提供当前层级，`MotionWarpSystem` 完成该层的同步计算与 buffer 写入，后续消费者读取本帧结果。混合登记例子见 [Pose Layers](Pose-Layers.md)。
 
 系统按来源 `PoseResult.Time` 查询累计运动，逐帧产生 `W(current) * inverse(W(previous))`，并复制来源的局部姿势、时间、相位和启动标记。输出贡献权重采用 Warp 叶节点及目标动画层的权重，来源当前权重为零时输出贡献为零。来源版本推进时更新姿势与根运动；启动标记变化时重新开始累计历史。节点以来源路径时长作为共同时间线的时长边界。
 

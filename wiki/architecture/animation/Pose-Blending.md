@@ -20,11 +20,10 @@ var blend = new PoseBlend([
 builder.BlendPose(target, new PoseBlendParameters(blend, new PoseResultId(2),
     new MotionBoundary(StageEnd.Duration, 2)));
 
-PoseAnimation.AddSystems(systems, static composition =>
-    AnimationSystems.Add(composition, new PoseBlendSystem(), AnimationPhase.Composition));
+PoseAnimation.AddSystems(systems, nodes: static nodes => nodes.Add(new PoseBlendSystem()));
 ```
 
-同一 `CompiledGraph` 可以安装到多个目标。每个实例持有解析后的引用、连续工作区及自己的时间和输入参数。同类混合节点的结果引用构成有向无环的生产关系，`PoseBlendLeaf.Complete` 按已解析的输入与输出计算依赖层级。系统逐层为各实例提交具体混合 Job，声明输入、权重与输出数组的访问；该层完成句柄收敛并写入公开结果 buffer 后，再求值下一层。生产者与消费者按这组结果依赖求值，最终 Composition 消费所选结果。
+同一 `CompiledGraph` 可以安装到多个目标。每个实例持有解析后的引用、连续工作区及自己的时间和输入参数。Blend、[Layer](Pose-Layers.md) 与 [Warp](Motion-Warping.md) 的结果引用构成有向无环的生产关系，叶节点在安装时登记连接，在 `Complete` 中计算共同依赖层级。系统逐层为各实例提交具体混合 Job，声明输入、权重与输出数组的访问；该层完成句柄收敛并写入公开结果 buffer 后，再求值下一层。生产者与消费者按这组结果依赖求值，最终 Composition 消费所选结果。
 
 ## Blend Space 与相位
 

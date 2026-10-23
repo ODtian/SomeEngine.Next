@@ -37,13 +37,15 @@ public struct PoseCompositionSystem : ISystem<ImmediateSystemContext>
 
 public static partial class PoseAnimation
 {
-    /// <summary>Adds frame setup, clip production, caller-selected nodes, then final skeleton output.</summary>
+    /// <summary>Adds frame setup, clip production, frame producers, dependency-ordered nodes, then skeleton output.</summary>
     public static void AddSystems(SystemGroup<ImmediateSystemContext> systems,
-        Action<SystemGroup<ImmediateSystemContext>>? addNodes = null)
+        Action<SystemGroup<ImmediateSystemContext>>? addNodes = null,
+        Action<SystemGroup<PoseNodeContext>>? nodes = null)
     {
         AnimationSystems.Add(systems, new PoseFrameSystem(), AnimationPhase.Composition);
         AnimationSystems.Add(systems, new ClipSystem(), AnimationPhase.Composition);
         addNodes?.Invoke(systems);
+        if (nodes is not null) AnimationSystems.Add(systems, new PoseNodeSystem(nodes), AnimationPhase.Composition);
         AnimationSystems.Add(systems, new PoseCompositionSystem(), AnimationPhase.Composition);
     }
 }

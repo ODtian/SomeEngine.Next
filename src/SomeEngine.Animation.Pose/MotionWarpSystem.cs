@@ -7,7 +7,7 @@ using SomeEngine.ECS.Systems;
 namespace SomeEngine.Animation.Pose;
 
 /// <summary>Copies the selected pose and publishes movement from its bound corrected trajectory.</summary>
-public struct MotionWarpSystem : ISystem<ImmediateSystemContext>
+public struct MotionWarpSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNodeContext>
 {
     private QueryHandle _warps;
 
@@ -22,18 +22,35 @@ public struct MotionWarpSystem : ISystem<ImmediateSystemContext>
         var frame = new WarpFrame { World = context.World };
         do
         {
-            frame.NextLevel = int.MaxValue;
-            context.World.ExecuteQuery(_warps, ref frame, static (QueryCursor rows, ref WarpFrame frame) =>
-            {
-                foreach (QueryRow row in rows.Rows)
-                    foreach (ref MotionWarpInstance instance in row.Buffer<MotionWarpInstance>().AsSpan())
-                    {
-                        if (instance.Level > frame.Level) frame.NextLevel = Math.Min(frame.NextLevel, instance.Level);
-                        if (instance.Level == frame.Level) Evaluate(frame.World, row.Entity, ref instance);
-                    }
-            });
+            Evaluate(ref frame);
             frame.Level = frame.NextLevel;
         } while (frame.Level != int.MaxValue);
+    }
+
+    public void OnCreate(ref PoseNodeContext context)
+    {
+        ImmediateSystemContext frame = context.Frame;
+        OnCreate(ref frame);
+    }
+
+    public void OnUpdate(ref PoseNodeContext context)
+    {
+        var frame = new WarpFrame { World = context.Frame.World, Level = context.Level };
+        Evaluate(ref frame);
+    }
+
+    private void Evaluate(ref WarpFrame frame)
+    {
+        frame.NextLevel = int.MaxValue;
+        frame.World.ExecuteQuery(_warps, ref frame, static (QueryCursor rows, ref WarpFrame frame) =>
+        {
+            foreach (QueryRow row in rows.Rows)
+                foreach (ref MotionWarpInstance instance in row.Buffer<MotionWarpInstance>().AsSpan())
+                {
+                    if (instance.Node.Level > frame.Level) frame.NextLevel = Math.Min(frame.NextLevel, instance.Node.Level);
+                    if (instance.Node.Level == frame.Level) Evaluate(frame.World, row.Entity, ref instance);
+                }
+        });
     }
 
     private static void Evaluate(World world, Entity animation, ref MotionWarpInstance instance)
@@ -96,6 +113,8 @@ public struct MotionWarpSystem : ISystem<ImmediateSystemContext>
     }
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_warps);
+
+    public void OnDestroy(ref PoseNodeContext context) => context.Frame.World.ReleaseQuery(_warps);
 
     private struct WarpFrame
     {

@@ -24,7 +24,7 @@ public struct PoseBlendInstance : IBufferElement
     public AnimationLeafPlacement Placement;
     public PoseResultReference Output;
     internal PoseResultReference[] Inputs;
-    internal int Level;
+    internal PoseNode Node;
     internal PoseBlendSamples Samples;
     internal uint Starts;
     internal bool Active, Sampled, Finished, Running;
@@ -57,33 +57,21 @@ public readonly struct PoseBlendLeaf : IAnimationLeaf<PoseBlendParameters>
         var instance = new PoseBlendInstance
         {
             Definition = definitions, Index = index, Placement = placement, Output = output, Inputs = inputs,
+            Node = PoseAnimation.RegisterNode(world, animation, output, inputs, in placement),
             Samples = new PoseBlendSamples(output.Range.Count, inputs.Length),
         };
         world.ExecuteBufferWrite<PoseBlendInstance, PoseBlendInstance>(animation, ref instance,
             static (instances, ref instance) => instances.Add(instance));
     }
 
-    public static void Release(World world, Entity animation) =>
+    public static void Release(World world, Entity animation)
+    {
         world.ExecuteBufferWrite<PoseBlendInstance>(animation, static instances => instances.Clear());
+        PoseAnimation.ReleaseNodes(world, animation);
+    }
 
     public static void Complete(World world, Entity animation) =>
-        world.ExecuteBufferWrite<PoseBlendInstance>(animation, static instances =>
-        {
-            Span<PoseBlendInstance> blends = instances.AsSpan();
-            foreach (ref PoseBlendInstance blend in blends) blend.Level = -1;
-            for (int index = 0; index < blends.Length; index++) AssignLevel(blends, index);
-        });
-
-    private static int AssignLevel(Span<PoseBlendInstance> blends, int index)
-    {
-        if (blends[index].Level >= 0) return blends[index].Level;
-        int level = 0;
-        foreach (PoseResultReference source in blends[index].Inputs)
-            for (int producer = 0; producer < blends.Length; producer++)
-                if (producer != index && blends[producer].Output == source)
-                    level = Math.Max(level, AssignLevel(blends, producer) + 1);
-        return blends[index].Level = level;
-    }
+        PoseAnimation.CompleteNodes(world, animation);
 }
 
 public static partial class PoseGraphExtensions
