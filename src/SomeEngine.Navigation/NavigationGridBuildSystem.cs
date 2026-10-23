@@ -19,6 +19,8 @@ public sealed class NavigationGridBuildSystem(NavigationRegionSources region,
     private JobHandle _completion;
     private NavigationGridUpdate? _completed;
     public NavigationGridUpdate? Completed => Volatile.Read(ref _completed);
+    public ReadOnlyMemory<NavigationGridConnection> Connections => connections;
+    public NavigationGridFootprintMode FootprintMode => footprintMode;
 
     public NavigationBuild<NavigationGridUpdate> Schedule(NavigationBuild<NavigationRegionUpdate> build, JobHandle regionApplied)
     {
