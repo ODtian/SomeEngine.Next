@@ -33,6 +33,15 @@ public sealed class HeightFieldRead
         return accesses.ToArray();
     }
 
+    /// <summary>Height derivatives along terrain-local X/Z, using captured adjacent samples and metre spacing.</summary>
+    public Vector2 GetGradient(int x, int z)
+    {
+        int left = Math.Max(0, x - 1), right = Math.Min(Grid.Width - 1, x + 1);
+        int back = Math.Max(0, z - 1), front = Math.Min(Grid.Depth - 1, z + 1);
+        return new((this[right, z] - this[left, z]) / ((right - left) * Grid.SampleSpacing),
+            (this[x, front] - this[x, back]) / ((front - back) * Grid.SampleSpacing));
+    }
+
     /// <summary>Bilinear height in terrain-local metres, clamped to the field's sample extent.</summary>
     public float Sample(Vector2 position)
     {
