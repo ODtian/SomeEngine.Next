@@ -21,6 +21,7 @@
 - 单父骨架继承通过独立创建或挂接直接共享父实例 G，模型区段分别保存计算时刻与采样时刻；连接、拆卸和蒙皮绑定见 [Skeleton Inheritance](Skeleton-Inheritance.md)。
 - 根运动输出 `RootMotionDelta`，由移动系统决定如何应用。
 - Motion Warping 通过共享来源轨迹与窗口、逐角色目标输入修正根运动，查询与播放共用累计轨迹，见 [Motion Warping](Motion-Warping.md)。
+- FABRIK 通过共同叶节点消费来源姿势，按实例目标进行定长链投影与关节圆锥限制，见 [FABRIK](FABRIK.md)。
 
 ## Non-goals
 - 不把每根骨骼表示为一条属性动画轨道。
