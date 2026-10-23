@@ -11,6 +11,15 @@ public sealed class NavigationCosts(NavigationGrid grid, NavigationPolicy policy
     public ReadOnlyMemory<float> CellCosts { get; } = cellCosts;
     public ReadOnlyMemory<float> EdgeCosts { get; } = edgeCosts;
     public ulong Version { get; } = version;
+    internal NavigationCosts? Source { get; init; }
+
+    internal void AddReadAccesses(Scheduler scheduler, List<JobResourceAccess> accesses)
+    {
+        Grid.AddReadAccesses(scheduler, accesses);
+        accesses.Add(NavigationJobAccess.Read(scheduler, CellCosts));
+        accesses.Add(NavigationJobAccess.Read(scheduler, EdgeCosts));
+        Source?.AddReadAccesses(scheduler, accesses);
+    }
 }
 
 public sealed class NavigationCostBuildState(NavigationGrid grid, NavigationPolicy policy, ulong version)

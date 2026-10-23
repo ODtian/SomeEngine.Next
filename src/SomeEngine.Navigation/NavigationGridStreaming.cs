@@ -141,7 +141,7 @@ public sealed class NavigationGridStreaming : IDisposable
                 NavigationJobAccess.Read(scheduler, input.Costs.Policy.AreaCosts), NavigationJobAccess.Read(scheduler, input.Costs.Policy.ActionCosts),
                 NavigationJobAccess.Read(scheduler, input.Costs.Grid.Tiles),
             };
-            input.Costs.Grid.RegionGraph!.AddReadAccesses(scheduler, accesses);
+            input.Costs.AddReadAccesses(scheduler, accesses);
             foreach (NavigationGridTile tile in input.Costs.Grid.Tiles.Span) tile.Grid.AddReadAccesses(scheduler, accesses);
             foreach (NavigationGridTile tile in loaded) tile.Grid.AddReadAccesses(scheduler, accesses);
             scheduler.Schedule(new ApplyTiles(flow, input, loaded, removed, scheduler), accesses.ToArray());
@@ -161,7 +161,7 @@ public sealed class NavigationGridStreaming : IDisposable
                 if (graph.Tiles.Span.Find(tile.Tile).ContentVersion == tile.Grid.ContentVersion) tiles[tile.Tile] = tile;
             NavigationGrid grid = NavigationGrid.Compose(graph, tiles.Values.ToArray(), input.Goals, input.Costs.Policy,
                 input.Costs.Grid.ResidenceVersion + 1);
-            if (!flow.ApplyCosts(input, NavigationCostSystem.Create(grid, input.Costs.Policy, input.Costs.Version))) Retry();
+            if (!flow.ApplyCosts(input, NavigationCostSystem.Regrid(input.Costs, grid))) Retry();
         }
         private void Retry() => scheduler.Schedule(new ScheduleApply(flow, loaded, removed, scheduler),
             JobResourceAccess.Write(scheduler.GetResourceToken(flow)));
