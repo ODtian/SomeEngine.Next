@@ -35,13 +35,13 @@ public sealed partial class NavigationGrid : INavigationSpace<NavigationGrid>
     public NavigationGrid(NavigationBounds bounds, float cellSize,
         NavigationGridCell[] cells, NavigationGridEdge[] edges, NavigationGridShape shape = default, ulong contentVersion = 1,
         NavigationGridRegionGraph? regionGraph = null, ReadOnlyMemory<NavigationGridTile> tiles = default,
-        ReadOnlyMemory<NavigationGridTileRange> tileRanges = default)
-        : this(bounds, cellSize, (ReadOnlyMemory<NavigationGridCell>)cells, edges, shape, contentVersion, regionGraph, tiles, tileRanges) { }
+        ReadOnlyMemory<NavigationGridTileRange> tileRanges = default, ulong residenceVersion = 1)
+        : this(bounds, cellSize, (ReadOnlyMemory<NavigationGridCell>)cells, edges, shape, contentVersion, regionGraph, tiles, tileRanges, residenceVersion) { }
 
     public NavigationGrid(NavigationBounds bounds, float cellSize,
         ReadOnlyMemory<NavigationGridCell> cells, ReadOnlyMemory<NavigationGridEdge> edges,
         NavigationGridShape shape = default, ulong contentVersion = 1, NavigationGridRegionGraph? regionGraph = null,
-        ReadOnlyMemory<NavigationGridTile> tiles = default, ReadOnlyMemory<NavigationGridTileRange> tileRanges = default)
+        ReadOnlyMemory<NavigationGridTile> tiles = default, ReadOnlyMemory<NavigationGridTileRange> tileRanges = default, ulong residenceVersion = 1)
     {
         Bounds = bounds;
         CellSize = cellSize;
@@ -49,9 +49,11 @@ public sealed partial class NavigationGrid : INavigationSpace<NavigationGrid>
         Edges = edges;
         Shape = shape;
         ContentVersion = contentVersion;
+        ResidenceVersion = residenceVersion;
         RegionGraph = regionGraph;
         Tiles = tiles;
         TileRanges = tileRanges;
+        FlowRanges = tileRanges.IsEmpty ? new NavigationGridTileRange[] { new(default, 0, cells.Length, contentVersion, true) } : tileRanges;
         _cellTiles = new int[cells.Length];
         for (int tile = 0; tile < tileRanges.Length; tile++)
         {
@@ -97,6 +99,7 @@ public sealed partial class NavigationGrid : INavigationSpace<NavigationGrid>
     public float CellSize { get; }
     public NavigationGridShape Shape { get; }
     public ulong ContentVersion { get; }
+    public ulong ResidenceVersion { get; }
     public ReadOnlyMemory<NavigationGridCell> Cells { get; }
     public ReadOnlyMemory<NavigationGridEdge> Edges { get; }
     public ReadOnlyMemory<NavigationGridRange> IncomingRanges { get; }
@@ -104,6 +107,15 @@ public sealed partial class NavigationGrid : INavigationSpace<NavigationGrid>
     public NavigationGridRegionGraph? RegionGraph { get; }
     public ReadOnlyMemory<NavigationGridTile> Tiles { get; }
     public ReadOnlyMemory<NavigationGridTileRange> TileRanges { get; }
+    internal ReadOnlyMemory<NavigationGridTileRange> FlowRanges { get; }
+    internal bool HasCoarseTiles
+    {
+        get
+        {
+            foreach (NavigationGridTileRange range in TileRanges.Span) if (!range.Detailed) return true;
+            return false;
+        }
+    }
     internal ReadOnlyMemory<int> CellTiles => _cellTiles;
     public bool IsDetailedCell(int cell) => TileRanges.IsEmpty || TileRanges.Span[_cellTiles[cell]].Detailed;
 

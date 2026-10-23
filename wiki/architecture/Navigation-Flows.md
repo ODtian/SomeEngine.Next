@@ -24,7 +24,7 @@ Grid 同时实现 `INavigationSpace<NavigationGrid>`，提供静态资源描述�
 
 `FastIterativeFlow` 与 `FastIterativeFlowState` 实现 [Jeong、Whitaker 的 Fast Iterative Method](https://epubs.siam.org/doi/abs/10.1137/060670298)。它用于各向同性正标量地形：`CellCosts` 表示 XZ 平面单位距离的成本，求解 `|grad T| = cost`，正无穷表示阻断。X/Z 邻居来自能力和策略允许的双向普通通行边，每个方向使用最近高度层。普通边给出可走表面连接，单元标量给出此求解器的通行权重；有向动作与逐边权重由 `ReverseDijkstraFlow` 表达。
 
-FIM 工作区持有累计值、固定目标边界值、活动单元以及本轮候选值。一次 `Schedule` 的预算按单元更新次数计数；预算结束时，已处理的活动单元和候选值留待后续调用继续。每轮读取同一份累计值，多个 Job 按活动索引区间写各自候选输出；本轮全部完成后，合并 Job 写入改进值并激活受影响邻居。相邻轴的最小上风值为 `a`、`b`，`d = CellSize * cost`：`|a-b| >= d` 时使用 `min(a,b)+d`，其余使用 `(a+b+sqrt(2*d*d-(a-b)*(a-b)))/2`。目标种子保持零值，活动集在浮点值收敛后结束。
+FIM 工作区持有累计值、固定目标约束、逐块活动队列和实际使用的上风依赖。一次 `Schedule` 的预算按单元更新次数计数；预算结束时，当前队列与边界轮次留待后续调用继续。每块读取本轮固定的外部边界和自己的本地值，Job 写各自单元范围；轮次交换阶段将变化传播到上游块。相邻轴的最小上风值为 `a`、`b`，`d = CellSize * cost`：`|a-b| >= d` 时使用 `min(a,b)+d`，其余使用 `(a+b+sqrt(2*d*d-(a-b)*(a-b)))/2`。目标种子保持零值，活动集在浮点值收敛后结束。
 
 收敛后的独立输出阶段按单元区间并行计算负梯度、后继及目标关系，然后安装完整的 `NavigationFlowField`。`Sampling` 保存方向消费方式；`SampleDirection(position)` 在实际支撑层上查询方向。Gradient 方式对同一目标和有效表面邻域内的方向作双线性插值，普通轴边约束移动方向，完整的两个轴通路共同确定对角穿越。每次 Guidance 的位移限制在 0.45 格内，再结合当前目标区域调整终段移动。高度由实际通过的支撑层给出。
 
@@ -32,7 +32,7 @@ FIM 工作区持有累计值、固定目标边界值、活动单元以及本轮�
 
 成本、积分、方向和块依赖的分工沿用 [Emerson 的 Flow Field Tiles 组织](https://www.gameaipro.com/GameAIPro/GameAIPro_Chapter23_Crowd_Pathfinding_and_Steering_Using_Flow_Field_Tiles.pdf)，具体存储采用普通共享数组。
 
-Grid 自身的区域入口图、确定边界轮次、活动块传播和分批角色移动见[跨块流场](Navigation-Flow-Tiles.md)。
+Grid 自身的区域入口图、确定边界轮次、活动块传播和分批角色移动见[跨块流场](Navigation-Flow-Tiles.md)。成本、规格、目标和来源变化的保留状态、局部可用性与应用链见[流场增量更新](Navigation-Flow-Updates.md)。
 
 ## 角色调用链
 
@@ -69,3 +69,4 @@ JobHandle progress = navigation.ScheduleProgress(moved);
 FIM 的具体调用使用 `NavigationFlowSystem<FastIterativeFlow, FastIterativeFlowState>`；资产取得使用 `CreateAsync<FastIterativeFlow, FastIterativeFlowState>`。预计算场一并保存 `Sampling`、块范围、边界依赖、详细块需求和完成轮次，重开后继续按相应方向方式采样。取得完整 Grid 时，保存的部分详细场通过当前完整输入重新求解。
 
 公共行为检查位于 [NavigationFlowTests](../../tests/SomeEngine.Navigation.Tests/NavigationFlowTests.cs)、[FastIterativeFlowTests](../../tests/SomeEngine.Navigation.Tests/FastIterativeFlowTests.cs) 和 [NavigationFlowAssetTests](../../tests/SomeEngine.Assets.Tests/NavigationFlowAssetTests.cs)。FIM 检查使用均匀区域及一片高成本地形作为输入例子，观察几何方向、预算续算以及角色绕行后的实际到达。
+

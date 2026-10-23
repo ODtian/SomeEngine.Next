@@ -48,3 +48,4 @@ NavigationFlowStep step = navigation.Schedule(deltaTime, fieldReady);
 Grid 资产的变体目录和入口图先取得，每块单元与边分别存储；`NavigationGridTileSource` 独立保持文件来源。完整 `CreateAsync` 将独立块和原始跨块边重组为 Grid。预计算 Flow 资产保存完成的块范围与边界依赖，资产重开后的实际移动继续消费这些数据。
 
 实现入口：[Grid 入口图](../../src/SomeEngine.Navigation/NavigationGridRegion.cs)、[边界轮次](../../src/SomeEngine.Navigation/NavigationTileFlow.cs)、[FIM 块内计算](../../src/SomeEngine.Navigation/FastIterativeTileFlow.cs)、[Grid 流送](../../src/SomeEngine.Navigation/NavigationGridStreaming.cs)。公共行为入口：[资产与分批通行选择](../../tests/SomeEngine.Assets.Tests/NavigationGridStreamingTests.cs)、[Eikonal 边界与移动](../../tests/SomeEngine.Navigation.Tests/NavigationTiledFlowTests.cs)、[完成场资产往返](../../tests/SomeEngine.Assets.Tests/NavigationFlowAssetTests.cs)。
+`NavigationGrid.ResidenceVersion` 随详细块接入和移除推进，`ContentVersion` 随内容构建推进。输入替换后，两种具体求解器通过[增量更新](Navigation-Flow-Updates.md)保留工作状态和有效值；`Flow.TileStates` 与 `GetStatus(position)` 表达当前输入的局部完成状态。

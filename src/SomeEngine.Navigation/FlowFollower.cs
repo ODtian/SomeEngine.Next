@@ -33,6 +33,11 @@ public readonly struct FlowFollowerResources : IJobComponentResources<FlowFollow
     public static void Collect(in FlowFollower component, ref JobResourceAccessBuilder resources)
     {
         resources.Read(component.Flow);
+        NavigationFlowInput current = component.Flow.Input;
+        resources.Read(current.Costs.Grid.Cells);
+        resources.Read(current.Costs.Grid.CellTiles);
+        resources.Read(current.Goals);
+        if (!component.Flow.TileStates.IsEmpty) resources.Read(component.Flow.TileStates);
         if (component.Flow.Field is not { } field) return;
         NavigationGrid grid = field.Input.Costs.Grid;
         resources.Read(grid.Cells);
@@ -47,6 +52,7 @@ public readonly struct FlowFollowerResources : IJobComponentResources<FlowFollow
         resources.Read(field.GoalIndices);
         resources.Read(field.Dependencies);
         resources.Read(field.Input.Goals);
+        if (!field.Input.Profile.Footprint.IsEmpty) resources.Read(field.Input.Profile.Footprint);
         if (!field.Tiles.IsEmpty) resources.Read(field.Tiles);
         if (!field.BoundaryDependencies.IsEmpty) resources.Read(field.BoundaryDependencies);
         if (!field.RequiredTiles.IsEmpty) resources.Read(field.RequiredTiles);

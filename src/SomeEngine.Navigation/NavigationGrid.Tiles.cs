@@ -9,7 +9,7 @@ public sealed partial class NavigationGrid
         Compose(graph, tiles, default, new NavigationPolicy());
 
     internal static NavigationGrid Compose(NavigationGridRegionGraph graph, ReadOnlyMemory<NavigationGridTile> tiles,
-        ReadOnlyMemory<NavigationFlowGoal> goals, NavigationPolicy policy)
+        ReadOnlyMemory<NavigationFlowGoal> goals, NavigationPolicy policy, ulong residenceVersion = 1)
     {
         var resident = tiles.ToArray().ToDictionary(tile => tile.Tile, tile => tile.Grid);
         var cells = new List<NavigationGridCell>();
@@ -97,7 +97,7 @@ public sealed partial class NavigationGrid
             allEdges.AddRange(outgoing[cell]);
         }
         return new(graph.Bounds, graph.CellSize, cells.ToArray(), allEdges.ToArray(), graph.Shape,
-            graph.ContentVersion, graph, tiles, ranges.ToArray());
+            graph.ContentVersion, graph, tiles, ranges.ToArray(), residenceVersion);
     }
 
     internal void AddReadAccesses(Scheduler scheduler, List<JobResourceAccess> accesses)
@@ -109,6 +109,7 @@ public sealed partial class NavigationGrid
         accesses.Add(NavigationJobAccess.Read(scheduler, Shape.Footprint));
         accesses.Add(NavigationJobAccess.Read(scheduler, CellTiles));
         accesses.Add(NavigationJobAccess.Read(scheduler, TileRanges));
+        if (TileRanges.IsEmpty) accesses.Add(NavigationJobAccess.Read(scheduler, FlowRanges));
         RegionGraph?.AddReadAccesses(scheduler, accesses);
     }
 }
