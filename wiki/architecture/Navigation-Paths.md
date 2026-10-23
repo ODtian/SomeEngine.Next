@@ -68,6 +68,8 @@ var navigation = new NavigationSystems<NavigationMesh, PolyanyaNavigationSearch,
 
 ## 数据访问
 
+路径中的动作段通过 `NavigationPath.Traversals` 进入共同交接阶段，角色动作消费者提供执行结果与实际出口位置。资源、版本和调度入口见[导航动作连接](Navigation-Actions.md)。
+
 组件列访问与组件引用指向的数据访问分别声明。规格轮廓、策略成本、网格和完成路径数组作为实际只读资源共享；每个请求的可变搜索对象作为独占资源使用。生成式 Job 在语义依赖完成后收集实际引用，按完整访问集合调度角色范围。组件、Job 字段和请求引用保持计算数据有效。
 
 资产创建入口及共享数组寿命见[导航规格、策略与网格资产](Assets/Asset-Navigation.md)，几何和表面构建见[导航几何与多层表面](Navigation-Surfaces.md)。公共行为检查位于 [NavigationMovementTests](../../tests/SomeEngine.Navigation.Tests/NavigationMovementTests.cs)、[PolygonPathTests](../../tests/SomeEngine.Navigation.Tests/PolygonPathTests.cs) 和 [PolyanyaPathTests](../../tests/SomeEngine.Navigation.Tests/PolyanyaPathTests.cs)。

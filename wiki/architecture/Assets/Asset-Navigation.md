@@ -2,6 +2,8 @@
 
 分层 Grid 变体和共享目标 Flow 的资产入口见[分层栅格与共享目标流场](../Navigation-Flows.md#资产创建)。
 
+`NavigationLinkBlock` 保存动作端点、方向、能力、成本和参数，并创建普通 `NavigationLinkSet`。场景安装、路径选择和动作反馈入口见[导航动作连接](../Navigation-Actions.md)。
+
 `NavigationProfileAsset`、`NavigationPolicyAsset` 和 `NavigationAsset` 分别持有规格、策略和导航表示的身份。对应 Block 返回普通 Navigation 资源，由角色、路径和应用直接共享。
 
 ## 规格与策略

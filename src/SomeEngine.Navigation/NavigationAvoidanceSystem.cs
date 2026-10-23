@@ -92,6 +92,11 @@ internal partial struct NavigationAvoidanceJob<TSolver>(NavigationNeighbors neig
     {
         int index = _neighbors.Find(entity);
         NavigationNeighborAgent self = _neighbors.Agents.Span[index];
+        if (!guidance.Active)
+        {
+            steering = new(default, self.Motion.Heading, guidance.RequestVersion, false);
+            return;
+        }
         var input = new NavigationAvoidanceInput(self, _neighbors.Agents.Span, _neighbors.GetNeighbors(index).Span,
             CollectionsMarshal.AsSpan(work.Workspace.Boundaries), new(guidance.Velocity.X, guidance.Velocity.Z), _deltaTime);
         Vector2 velocity = TSolver.Solve(in input, work.Workspace);
