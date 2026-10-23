@@ -16,6 +16,7 @@
 - 动作状态、用户条件与交叉淡入沿共同 `StateMachine` 和姿势结果组合，调用与数据归属见 [Pose State Machines](Pose-State-Machines.md)。
 - 逐骨 Override 与参考姿势 Additive 使用就绪 `BoneMask` 和共同层权重，Layer、Blend 与 Warp 按图内结果依赖求值；资源与调用见 [Pose Layers](Pose-Layers.md)。
 - 骨骼按数组存储，挂点按需成为实体。`PoseStorage` 持有连续的局部姿势和模型空间 G，`SkeletonInstance` 通过 `PoseRange` 引用自身区段；对应求值阶段通过公开 `Update` 写入结果。
+- 挂点通过实时骨骼视图、调用方偏移和普通角色父关系更新实体变换；绑定、消费顺序与释放规则见 [Bone Attachments](Bone-Attachments.md)。
 - `SkeletonInstance.ModelPose` 提供只读模型空间 G、求值版本和计算时刻；创建、更新与使用期见 [[architecture/animation/Skeleton-Instances|Skeleton Instances]]。
 - 单父骨架继承通过独立创建或挂接直接共享父实例 G，模型区段分别保存计算时刻与采样时刻；连接、拆卸和蒙皮绑定见 [Skeleton Inheritance](Skeleton-Inheritance.md)。
 - 根运动输出 `RootMotionDelta`，由移动系统决定如何应用。
