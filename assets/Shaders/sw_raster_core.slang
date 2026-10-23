@@ -220,6 +220,7 @@ void SWRasterKernel<
             {
                 VertexEvalContext ctx = MakeSWRasterVertexEvalContext(
                     vertexBlobAddress, vertexBlobSize, localVertex, realInstanceID, transform);
+                ctx.visibleClusterIndex = originalIndex;
                 TVE.Vertex vertex = evaluator.evaluate(ctx);
                 float4 clip = mul(float4(evaluator.getPosition(vertex), 1.0), view.ViewProj);
                 VisibilityVertexInput input;
@@ -306,6 +307,7 @@ void SWRasterKernel<
             producerLocalVertex,
             realInstanceID,
             transform);
+        ctx.visibleClusterIndex = originalIndex;
         TVE.Vertex vertex = evaluator.evaluate(ctx);
         producerClip = mul(float4(evaluator.getPosition(vertex), 1.0), view.ViewProj);
         VisibilityVertexInput visibilityInput;

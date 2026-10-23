@@ -159,6 +159,8 @@ public sealed partial class ClusterPipelineSystem
         foreach (RasterEpoch epoch in _rasterEpochs.Values)
         {
             bool enabled = epoch.PolicyTarget ? hasTargetGeometry : hasGeometry;
+            foreach (GraphPassId pass in epoch.Deformation.Passes)
+                graph.SetPassEnabled(pass, enabled);
             if (epoch.PolicyTarget)
                 foreach (GraphPassId pass in epoch.Work.Passes)
                     graph.SetPassEnabled(pass, enabled);

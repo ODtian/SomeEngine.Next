@@ -18,6 +18,12 @@ public delegate void QueryExecution(QueryCursor cursor);
 public delegate void QueryExecution<TState>(QueryCursor cursor, ref TState state)
     where TState : allows ref struct;
 
+/// <summary>Executes a query within its callback-scoped component access.</summary>
+public interface IQueryExecution
+{
+    void Execute(QueryCursor query);
+}
+
 public readonly ref struct QueryCursor
 {
     private readonly World _world;
@@ -39,6 +45,7 @@ public readonly ref struct QueryCursor
     public uint CurrentSystemVersion { get; }
 
     internal World Owner => _world;
+    internal QueryState State => _plan;
 
     /// <summary>Finds one entity within this query, applying the same filters and access rules as row iteration.</summary>
     public bool TryGetRow(Entity entity, out QueryRow row) =>

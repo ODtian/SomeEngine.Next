@@ -138,6 +138,20 @@ public sealed partial class ClusterPipelineSystem
             shadeStages.BinIndices,
             BufferUsages.ShaderRead,
             "Cluster shade stage slots");
+        frame.DeformCache = frame.AddBuffer(ref graph, _options.MaxDeformCacheBytes,
+            BufferUsages.None, "Cluster user deformation bytes");
+        frame.DeformRegions = frame.AddBuffer(ref graph, candidates * 8,
+            BufferUsages.None, "Cluster user deformation regions");
+        frame.DeformRequests = frame.AddBuffer(ref graph, candidates * 8,
+            BufferUsages.None, "Cluster deformation byte requests");
+        frame.DeformPrefixOffsets = frame.AddBuffer(ref graph, candidates * 4,
+            BufferUsages.None, "Cluster deformation prefix offsets");
+        frame.DeformPrefixGroups = frame.AddBuffer(ref graph, ((candidates + 255) / 256) * 8,
+            BufferUsages.None, "Cluster deformation prefix groups");
+        frame.DeformAllocation = frame.AddBuffer(ref graph, 4,
+            BufferUsages.None, "Cluster deformation allocated bytes");
+        frame.DeformArguments = frame.AddBuffer(ref graph, 24,
+            BufferUsages.Indirect, "Cluster deformation dispatch arguments");
         if (_options.EnableFrameMetricsReadback)
         {
             frame.FrameMetricsReadback = DeclareExternalBuffer(
@@ -1278,6 +1292,13 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId PackedViews;
         internal GraphBufferId RasterSlots;
         internal GraphBufferId ShadeSlots;
+        internal GraphBufferId DeformCache;
+        internal GraphBufferId DeformRegions;
+        internal GraphBufferId DeformRequests;
+        internal GraphBufferId DeformPrefixOffsets;
+        internal GraphBufferId DeformPrefixGroups;
+        internal GraphBufferId DeformAllocation;
+        internal GraphBufferId DeformArguments;
         internal GraphBufferId ReadOffsetZero;
         internal GraphBufferId CandidateArgs;
         internal GraphBufferId NeutralPolicyValue;

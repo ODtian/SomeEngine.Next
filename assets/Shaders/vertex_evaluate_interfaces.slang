@@ -12,6 +12,7 @@ struct VertexEvalContext
     uint attributeBlobAddress;
     uint attributeBlobSize;
     uint localVertexIndex;
+    uint visibleClusterIndex;
     uint instanceID;
     RenderInstanceTransform transform;
     uint IsPreviousFrame;
