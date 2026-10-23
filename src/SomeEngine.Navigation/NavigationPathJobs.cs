@@ -102,7 +102,7 @@ internal partial struct NavigationStopJob<TSpace, TState> : IJobEntity
         [JobResources(typeof(NavigationRequestResources<,>))] ref NavigationRequest<TSpace, TState> request,
         [JobResources<NavigationPathAssignment>] ref NavigationPathResult path,
         ref NavigationGuidance guidance, ref NavigationSteering steering, ref NavigationProgress progress,
-        ref NavigationTraversalRequest traversal)
+        ref NavigationTraversalRequest traversal, [JobResources<NavigationPassageReference>] ref NavigationPassageUse passage)
     {
         NavigationRequestData<TSpace, TState> data = request.Data;
         if (data.Active)
@@ -117,5 +117,6 @@ internal partial struct NavigationStopJob<TSpace, TState> : IJobEntity
         progress = new(NavigationStatus.Idle, 0, 0, data.Version);
         if (traversal.Status is NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing or NavigationTraversalStatus.Waiting)
             traversal = traversal with { Status = NavigationTraversalStatus.Cancelled };
+        passage = default;
     }
 }
