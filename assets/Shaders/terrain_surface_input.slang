@@ -8,6 +8,8 @@ struct TerrainSurfaceParameters
     int CellCount;
     uint VertexCapacity;
     uint TriangleCapacity;
+    float FinestCellSize;
+    uint TransitionFaces;
 };
 
 ConstantBuffer<TerrainSurfaceParameters> TerrainParameters;

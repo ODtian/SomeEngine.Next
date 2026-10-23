@@ -25,7 +25,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     private readonly ClusterGpuBuilder _builder;
     private readonly GraphExtensionPointId _extensionPoint;
     private readonly Dictionary<TerrainGeometryRequest, Batch> _batches = [];
-    private readonly Dictionary<(int Geometry, ulong Revision), ClusterGeometry> _geometries = [];
+    private readonly Dictionary<(int Geometry, ulong Revision), GeometryData> _geometries = [];
     private readonly Dictionary<(Shader Shader, string Entry), ComputeData> _pipelines = [];
     private readonly List<Task> _completions = [];
     private QueryHandle _requests, _chunks;
@@ -75,7 +75,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
                 };
                 ClusterGeometry geometry = _builder.Reserve(context, _adapter.Mesher.GetCapacity(chunk.Bounds),
                     request.Revision, bounds);
-                _geometries.Add((chunk.GeometryId, request.Revision), geometry);
+                _geometries.Add((chunk.GeometryId, request.Revision), new(geometry));
             }
             _batches.Add(request, new(request));
         }
@@ -95,8 +95,9 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         {
             visible[value.Chunk.GeometryId] = value.Chunk.Revision;
             if (value.Chunk.Revision == 0) continue;
-            ClusterGeometry geometry = _geometries[(value.Chunk.GeometryId, value.Chunk.Revision)];
-            var binding = new RenderClusterGeometry(geometry, 0);
+            GeometryData geometry = _geometries[(value.Chunk.GeometryId, value.Chunk.Revision)];
+            geometry.HasBeenBound = true;
+            var binding = new RenderClusterGeometry(geometry.Geometry, 0);
             if (!context.World.Has<RenderClusterGeometry>(value.Entity)) context.World.Add(value.Entity, binding);
             else if (context.World.Read<RenderClusterGeometry>(value.Entity) != binding) context.World.Replace(value.Entity, binding);
         }
@@ -104,9 +105,9 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             if (request.Chunks.All(chunk => visible.GetValueOrDefault(chunk.GeometryId) == request.Revision))
                 request.Visibility.Complete();
         foreach (var pair in _geometries.ToArray())
-            if (visible.TryGetValue(pair.Key.Geometry, out ulong revision) && pair.Key.Revision < revision)
+            if (pair.Value.HasBeenBound && visible.GetValueOrDefault(pair.Key.Geometry) != pair.Key.Revision)
             {
-                _builder.Release(context, pair.Value);
+                _builder.Release(context, pair.Value.Geometry);
                 _geometries.Remove(pair.Key);
             }
         foreach (TerrainGeometryRequest request in _batches.Keys.ToArray())
@@ -128,16 +129,18 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             var sourceBindings = new Dictionary<string, GraphParameterResourceBinding>();
             request.Surface!.AddBindings(_fields, ref frame, ref inputExtension, sourceBindings);
             GraphBufferSlice tables = frame.Upload<uint>(RegularCells(), BufferUsages.ShaderRead, "Terrain regular cells");
+            GraphBufferSlice transitions = frame.Upload<uint>(TransitionCells(), BufferUsages.ShaderRead, "Terrain transition cells");
             GraphPassId previous = default;
             foreach (TerrainGpuChunkBuild chunk in request.Chunks)
             {
                 ClusterGpuMeshCapacity capacity = _adapter.Mesher.GetCapacity(chunk.Bounds);
                 var parameters = new SurfaceParameters(chunk.Bounds.Min, chunk.Bounds.CellSize, chunk.Bounds.CellCount,
-                    capacity.VertexCount, capacity.TriangleCount);
+                    capacity.VertexCount, capacity.TriangleCount, chunk.Bounds.FinestCellSize, (uint)chunk.Bounds.TransitionFaces);
                 var bindings = new Dictionary<string, GraphParameterResourceBinding>(sourceBindings)
                 {
                     ["TerrainParameters"] = GraphParameterResourceBinding.ConstantBuffer(frame.Upload(parameters, BufferUsages.Constant), PipelineSync.ComputeShading),
                     ["TerrainRegularCells"] = Read(frame.CreateBufferSrv(tables, structureStride: sizeof(uint))),
+                    ["TerrainTransitionCells"] = Read(frame.CreateBufferSrv(transitions, structureStride: sizeof(uint))),
                 };
                 GraphBufferSlice positions = CreateBuffer(ref frame, capacity.VertexCount * 12u, "Terrain positions");
                 GraphBufferSlice samples = CreateBuffer(ref frame, capacity.VertexCount * 24u, "Terrain sampling points");
@@ -157,7 +160,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
                 bindings["TerrainAttributes"] = WritePrefix(frame.CreateBufferUav(attributes.Buffer));
                 AddCompute(ref frame, _adapter.Attributes.Shader, _adapter.Attributes.EntryPoint, bindings,
                     new((capacity.VertexCount + 63) / 64, 1, 1));
-                ClusterGeometry geometry = _geometries[(chunk.GeometryId, request.Revision)];
+                ClusterGeometry geometry = _geometries[(chunk.GeometryId, request.Revision)].Geometry;
                 GraphPassId pass = _builder.Record(ref context, geometry, new(positions, attributes, indices, counts),
                     _adapter.Attributes.MaterialIndex);
                 if (previous != default) frame.OrderAfter(pass, previous);
@@ -215,7 +218,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
 
     public void OnDestroy(ref RenderPrepareSystemContext context)
     {
-        foreach (ClusterGeometry geometry in _geometries.Values) _builder.Release(context, geometry);
+        foreach (GeometryData geometry in _geometries.Values) _builder.Release(context, geometry.Geometry);
         context.World.ReleaseQuery(_requests);
         context.World.ReleaseQuery(_chunks);
     }
@@ -250,15 +253,26 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         .. TransvoxelTables.RegularIndices.ToArray().Select(static value => (uint)value),
         .. TransvoxelTables.RegularEdges.ToArray().Select(static value => (uint)value)];
 
+    private static uint[] TransitionCells() => [.. TransvoxelTables.TransitionClasses.ToArray().Select(static value => (uint)value),
+        .. TransvoxelTables.TransitionCounts.ToArray().Select(static value => (uint)value),
+        .. TransvoxelTables.TransitionIndices.ToArray().Select(static value => (uint)value),
+        .. TransvoxelTables.TransitionEdges.ToArray().Select(static value => (uint)value)];
+
+    private sealed class GeometryData(ClusterGeometry geometry)
+    {
+        internal ClusterGeometry Geometry { get; } = geometry;
+        internal bool HasBeenBound;
+    }
+
     private sealed class Batch(TerrainGeometryRequest request)
     {
         internal TerrainGeometryRequest Request { get; } = request;
         internal GraphPassId Pass;
     }
 
-    [StructLayout(LayoutKind.Sequential, Size = 32)]
+    [StructLayout(LayoutKind.Sequential, Size = 48)]
     private readonly record struct SurfaceParameters(Vector3 Min, float CellSize, int CellCount,
-        uint VertexCapacity, uint TriangleCapacity);
+        uint VertexCapacity, uint TriangleCapacity, float FinestCellSize, uint TransitionFaces);
     private sealed record ComputeData(LinkedComputePipeline Pipeline, ClusterLinkedStageLayout Layout);
     private sealed record ComputePass(LinkedComputePipeline Pipeline, GraphParameterResourceBinding[] Bindings, DispatchArguments Dispatch);
 }
