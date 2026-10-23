@@ -9,6 +9,51 @@ namespace SomeEngine.Navigation.Tests;
 public sealed class HeadingNavigationFlowTests
 {
     [Fact]
+    public void ChangedConnectionsAndGoalsUpdateTheSharedFieldFromActualPose()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)], 1);
+        var policy = new NavigationPolicy();
+        HeadingNavigationFlowRegion[] regions = Regions();
+        var link = new NavigationLink(71, new(10, 1), new(20, 2), 9, Parameters: new(0.3f, 0, 0, 0), Enabled: false, Capacity: 1);
+        var links = new NavigationLinkSet(new[] { link });
+        HeadingNavigationFlowGraph graph = HeadingNavigationFlowBuilder.Schedule(regions, links, profile, policy,
+            scheduler: scheduler).Complete().Graph;
+        var flow = new NavigationFlow(graph, profile, new NavigationFlowGoal[] { new(new(2, 0, 12), 0.05f, 0) });
+        var solver = new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler);
+        var navigation = new NavigationSystems<TestMotion, TestMotionReader>(world);
+        Entity actor = world.CreateEntity(new TestMotion { Position = new(2, 0, 5) });
+        world.Add(actor, new TestActionMotion());
+        navigation.AddFlowAgent(actor, flow, 2);
+        NavigationFlowStep first = navigation.Schedule(0.1f, solver.Schedule().Completion);
+        navigation.ScheduleProgress(new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, first.Steering)).Complete();
+        Assert.Equal(NavigationStatus.Unreachable, world.Read<NavigationProgress>(actor).Status);
+        ReverseDijkstraFlowState retained = solver.State;
+
+        graph = HeadingNavigationFlowBuilder.Schedule(regions, new(new[] { link with { Enabled = true } }), profile, policy,
+            version: 2, scheduler: scheduler).Complete().Graph;
+        flow.SetGraph(graph);
+        for (int frame = 0; frame < 100 && world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
+        {
+            NavigationFlowStep step = navigation.Schedule(0.1f, solver.Schedule(16).Completion);
+            navigation.ScheduleProgress(new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, step.Steering)).Complete();
+        }
+        Assert.Same(retained, solver.State);
+        Assert.Same(links.GetPassage(71), flow.Input.HeadingGraph!.Links.GetPassage(71));
+        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+
+        Vector3 reached = world.Read<TestMotion>(actor).Position;
+        flow.SetGoals(new[] { new NavigationFlowGoal(new(2, 0, 2), 0.05f, 0) });
+        NavigationFlowStep changed = navigation.Schedule(0.1f, solver.Schedule().Completion);
+        navigation.ScheduleProgress(new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, changed.Steering)).Complete();
+        Assert.Same(retained, solver.State);
+        Assert.Equal(NavigationFlowAction.Unreachable, flow.Field!.Sample(new(new(2, 0, 5), 0)).Action);
+        Assert.Equal(NavigationStatus.Unreachable, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(reached, world.Read<TestMotion>(actor).Position);
+    }
+
+    [Fact]
     public void SharedFollowersTurnThroughAOneWayPassageAndHandOffTheSelectedAction()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });

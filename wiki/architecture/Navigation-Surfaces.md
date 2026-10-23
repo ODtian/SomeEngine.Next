@@ -5,6 +5,7 @@
 角色输入与网格变体的资产入口见[导航规格、策略与网格资产](Assets/Asset-Navigation.md)。
 目标组件、路径求解、运动消费和实际进度见[目标、路径与实际运动](Navigation-Paths.md)。
 分层栅格、共享目标积分和群体运动见[分层栅格与共享目标流场](Navigation-Flows.md)。
+朝向状态、单向通行及共享动作选择见[朝向与动作共享流场](Navigation-Heading-Flow.md)。
 角色规格筛选、Recast 网格阶段与导入入口见[按角色规格烘焙导航网格](Navigation-Baking.md)。
 
 ## 几何输入
