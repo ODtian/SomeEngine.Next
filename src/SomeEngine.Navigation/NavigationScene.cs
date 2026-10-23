@@ -32,7 +32,7 @@ public sealed class NavigationSceneContent
 
     public NavigationSceneContent(ReadOnlyMemory<NavigationSceneRegion> regions,
         ReadOnlyMemory<NavigationSceneConnection> connections, ReadOnlyMemory<NavigationSceneTile> tiles, long version = 1,
-        long contentVersion = 1, long residenceVersion = 1)
+        long contentVersion = 1, long residenceVersion = 1, NavigationLinkSet? links = null)
     {
         Regions = regions;
         Connections = connections;
@@ -40,6 +40,7 @@ public sealed class NavigationSceneContent
         Version = version;
         ContentVersion = contentVersion;
         ResidenceVersion = residenceVersion;
+        Links = links;
         _regionIndices = new Dictionary<int, int>();
         _tileIndices = new Dictionary<NavigationSceneTileId, int>();
         _polygonStarts = new int[tiles.Length + 1];
@@ -65,6 +66,7 @@ public sealed class NavigationSceneContent
     public long Version { get; }
     public long ContentVersion { get; }
     public long ResidenceVersion { get; }
+    public NavigationLinkSet? Links { get; }
     internal ReadOnlyMemory<int> PolygonStarts => _polygonStarts;
     internal int GetPolygonId(NavigationSceneTileId tile, int polygon) => _polygonStarts[_tileIndices[tile]] + polygon;
     internal NavigationSceneTile GetPolygon(int id, out int polygon)
@@ -161,7 +163,8 @@ public sealed partial class NavigationScene(NavigationSceneContent content) : IN
         foreach (NavigationSceneTile tile in content.Tiles.Span)
             residenceChanged |= !previous.TryGetTile(tile.Id, out _);
         Volatile.Write(ref _content, new(content.Regions, content.Connections, content.Tiles, previous.Version + 1,
-            previous.ContentVersion + (residenceOnly ? 0 : 1), previous.ResidenceVersion + (residenceChanged ? 1 : 0)));
+            previous.ContentVersion + (residenceOnly ? 0 : 1), previous.ResidenceVersion + (residenceChanged ? 1 : 0),
+            content.Links ?? previous.Links));
     }
 
     public static void CollectResources(NavigationScene scene, ref JobResourceAccessBuilder resources)
