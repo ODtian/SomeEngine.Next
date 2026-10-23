@@ -8,6 +8,79 @@ namespace SomeEngine.Navigation.Tests;
 public sealed class NavigationTiledFlowTests
 {
     [Fact]
+    public void ResidenceAndGoalChangesKeepInstalledPassageCostsAndTheirRouteChoice()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
+        var policy = new NavigationPolicy();
+        NavigationGrid tiled = NavigationGridRegionBuilder.Schedule(OpenGrid(), profile, policy, scheduler: scheduler).Complete().Grid;
+        NavigationFlow flow = NavigationGridFlowBuilder.Schedule(tiled.RegionGraph!, tiled.Tiles.Slice(0, 1),
+            profile, policy, new NavigationFlowGoal[] { new(new(8.5f, 0, 2.5f)) }, scheduler: scheduler).Complete().Flow;
+        NavigationCosts original = flow.Costs;
+        float[] cells = original.CellCosts.ToArray(), edges = original.EdgeCosts.ToArray();
+        Vector3 start = new(0.5f, 0, 2.5f), blockedPosition = new(1.5f, 0, 2.5f), costlyPosition = new(0.5f, 0, 1.5f);
+        int blocked = original.Grid.FindCell(blockedPosition);
+        int startCell = original.Grid.FindCell(start), costly = original.Grid.FindCell(costlyPosition);
+        cells[blocked] = float.PositiveInfinity;
+        for (int cell = 0; cell < original.Grid.Cells.Length; cell++)
+        {
+            NavigationGridCell from = original.Grid.Cells.Span[cell];
+            for (int edge = from.EdgeStart; edge < from.EdgeStart + from.EdgeCount; edge++)
+            {
+                int to = original.Grid.Edges.Span[edge].ToCell;
+                if (cell == blocked || to == blocked) edges[edge] = float.PositiveInfinity;
+                if (cell == startCell && to == costly) edges[edge] = 40;
+            }
+        }
+        flow.SetCosts(new(original.Grid, policy, cells, edges, version: 7));
+        var solver = new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler);
+        solver.Schedule().Complete();
+        var fields = new List<NavigationFlowField> { flow.Field! };
+        using var source = new GridSource(tiled);
+        using var streaming = new NavigationGridStreaming(flow, source, scheduler) { ResidentTileBudget = 2 };
+        var interest = new NavigationInterest(new(4.5f, 0, 2.5f), 0.1f);
+        streaming.Interests.Add(interest);
+
+        streaming.Update();
+        foreach (NavigationGridStreamingRead read in streaming.Reads) read.Completion.Complete();
+        streaming.Update();
+        solver.Schedule(dependency: streaming.Applied).Complete();
+        fields.Add(flow.Field!);
+        Assert.Equal(2, flow.Costs.Grid.Tiles.Length);
+
+        flow.SetGoals(new NavigationFlowGoal[] { new(new(8.5f, 0, 3.5f)) });
+        solver.Schedule().Complete();
+        fields.Add(flow.Field!);
+        Assert.Equal(2ul, flow.Input.GoalVersion);
+
+        streaming.ResidentTileBudget = 1;
+        streaming.Update();
+        streaming.Applied.Complete();
+        Assert.Equal(new NavigationTileCoordinate(1, 0), Assert.Single(flow.Costs.Grid.Tiles.ToArray()).Tile);
+        streaming.ResidentTileBudget = 2;
+        interest.Position = start;
+        streaming.Update();
+        foreach (NavigationGridStreamingRead read in streaming.Reads) read.Completion.Complete();
+        streaming.Update();
+        solver.Schedule(dependency: streaming.Applied).Complete();
+        fields.Add(flow.Field!);
+
+        Assert.All(fields, field =>
+        {
+            NavigationCosts costs = field.Input.Costs;
+            Assert.Equal(7ul, costs.Version);
+            Assert.Equal(float.PositiveInfinity, costs.CellCosts.Span[costs.Grid.FindCell(blockedPosition)]);
+            NavigationGridCell from = costs.Grid.Cells.Span[costs.Grid.FindCell(start)];
+            int target = costs.Grid.FindCell(costlyPosition);
+            int edge = Enumerable.Range(from.EdgeStart, from.EdgeCount).Single(index => costs.Grid.Edges.Span[index].ToCell == target);
+            Assert.Equal(40, costs.EdgeCosts.Span[edge]);
+            Assert.Equal(new Vector3(0.5f, 0, 3.5f), field.Sample(new(start, 0)).Target.Position);
+        });
+        Assert.Equal(original.Grid.ContentVersion, flow.Costs.Grid.ContentVersion);
+        Assert.True(flow.Costs.Grid.ResidenceVersion > original.Grid.ResidenceVersion);
+    }
+
+    [Fact]
     public void EikonalFieldCrossesSuccessiveDetailedTilesAndMatchesTheWholeGridAtTheirBoundaries()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
@@ -74,6 +147,15 @@ public sealed class NavigationTiledFlowTests
         return new(new(new(0, 0, 0), new(9, 1, 5)), 1, cells.ToArray(), edges.ToArray());
     }
     private readonly record struct Motion(Vector3 Position, Vector3 Velocity, float Heading) : IComponent;
+    private sealed class GridSource(NavigationGrid grid) : NavigationTileSource<NavigationGrid>
+    {
+        public override ReadOnlyMemory<NavigationRegionTile> Directory => grid.RegionGraph!.Tiles;
+        public override NavigationTileSource<NavigationGrid> Retain() => new GridSource(grid);
+        public override ValueTask<NavigationTileBytes> ReadAsync(NavigationTileCoordinate tile, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new NavigationTileBytes([]));
+        public override NavigationGrid Decode(NavigationTileCoordinate tile, NavigationTileBytes bytes) => grid.Tiles.ToArray().Single(value => value.Tile == tile).Grid;
+        public override void Dispose() { }
+    }
     private readonly struct MotionReader : INavigationMotionReader<Motion>
     {
         public static NavigationMotion Read(in Motion value) => new(value.Position, value.Velocity, value.Heading, true);

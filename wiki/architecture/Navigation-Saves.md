@@ -14,7 +14,7 @@
 | HeadingMesh | `AssetId<NavigationAsset>` + `NavigationMeshSelection` | `HeadingNavigationMeshBlock.CreateAsync` |
 | Grid | `AssetId<NavigationAsset>` + `NavigationGridSelection` | `NavigationGridBlock.CreateAsync` |
 | MotionSet | `AssetId<NavigationProfileAsset>` | `NavigationMotionBlock.CreateAsync` |
-| 来源几何 | `AssetId<NavigationAsset>` | `NavigationGeometryBlock.CreateAsync` |
+| 来源几何 | `AssetId<MeshAsset>` | `NavigationGeometryBlock.CreateAsync` |
 | 动作连接 | `AssetId<NavigationAsset>` 与当前连接定义 | `NavigationLinkBlock.Create`，随后恢复当前定义 |
 
 普通 Flow 通过 `Register(flow, flowAssetId)` 记录具体 `NavigationFlowBlock` 来源，Heading Flow 通过 `RegisterHeadingFlow` 记录 `HeadingNavigationFlowBlock` 来源。程序创建的 Flow 由其已登记的输入资源和当前共享目标重建。Heading Flow 保存区域、朝向网格、端口和连接，重建 Graph 后把同一 `graph.Costs` 接回 Flow。

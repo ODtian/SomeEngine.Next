@@ -5,6 +5,24 @@ internal static class NavigationVehiclePath
     internal static NavigationPath Create(in NavigationSearchInput<NavigationVehicleSpace> input,
         NavigationMotionSegment[] segments, float cost)
     {
+        var followable = new List<NavigationMotionSegment>();
+        foreach (NavigationMotionSegment segment in segments)
+        {
+            float turn = MathF.Abs(segment.Control.Speed * segment.Control.Curvature * segment.Control.Duration);
+            int count = Math.Max(1, (int)MathF.Ceiling(turn / (MathF.PI / 2)));
+            NavigationPose start = segment.Start;
+            NavigationVehicleControl control = segment.Control with { Duration = segment.Control.Duration / count };
+            for (int part = 1; part <= count; part++)
+            {
+                NavigationPose end = part == count ? segment.End : input.Space.Motions.Model.Integrate(
+                    segment.Start, segment.Control, segment.Control.Duration * part / count);
+                int cell = input.Space.Grid.FindCell(end.Position);
+                end = end with { Position = end.Position with { Y = input.Space.Grid.Cells.Span[cell].Position.Y } };
+                followable.Add(new(start, end, control));
+                start = end;
+            }
+        }
+        segments = followable.ToArray();
         var poses = new List<NavigationPose> { new(input.Start, input.StartHeading) };
         var tiles = new HashSet<NavigationTileCoordinate>();
         foreach (NavigationMotionSegment segment in segments)

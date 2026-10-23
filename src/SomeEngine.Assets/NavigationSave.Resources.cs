@@ -15,7 +15,7 @@ public sealed partial class NavigationSaveResources
     public void Register(HeadingNavigationMesh value, AssetId<NavigationAsset> asset, NavigationMeshSelection selection) => Sources[value] = new SavedHeadingMesh(asset, selection);
     public void Register(NavigationGrid value, AssetId<NavigationAsset> asset, NavigationGridSelection selection) => Sources[value] = new SavedGrid(asset, selection);
     public void Register(NavigationMotionSet value, AssetId<NavigationProfileAsset> asset) => Sources[value] = new SavedMotions(asset);
-    public void Register(NavigationGeometry value, AssetId<NavigationAsset> asset) => Sources[value] = new SavedGeometry(asset);
+    public void Register(NavigationGeometry value, AssetId<MeshAsset> asset) => Sources[value] = new SavedGeometry(asset);
     public void Register(NavigationLinkSet value, AssetId<NavigationAsset> asset) => Sources[value] = new SavedLinks(asset);
     public void Register(NavigationFlow value, AssetId<NavigationFlowAsset> asset) => Sources[value] = new SavedFlowAsset(asset, false);
 }
@@ -27,7 +27,7 @@ internal sealed record SavedMesh(AssetId<NavigationAsset> Asset, NavigationMeshS
 internal sealed record SavedHeadingMesh(AssetId<NavigationAsset> Asset, NavigationMeshSelection Selection) : NavigationSavedResource;
 internal sealed record SavedGrid(AssetId<NavigationAsset> Asset, NavigationGridSelection Selection) : NavigationSavedResource;
 internal sealed record SavedMotions(AssetId<NavigationProfileAsset> Asset) : NavigationSavedResource;
-internal sealed record SavedGeometry(AssetId<NavigationAsset> Asset) : NavigationSavedResource;
+internal sealed record SavedGeometry(AssetId<MeshAsset> Asset) : NavigationSavedResource;
 internal sealed record SavedLinks(AssetId<NavigationAsset> Asset, NavigationLink[]? Definitions = null) : NavigationSavedResource;
 internal sealed record SavedFlowAsset(AssetId<NavigationFlowAsset> Asset, bool Heading) : NavigationSavedResource;
 internal readonly record struct SavedCell(Vector3 Position, int Layer);

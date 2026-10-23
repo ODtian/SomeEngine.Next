@@ -59,10 +59,8 @@ public sealed class NavigationFlowSystem<TSolver, TState>(NavigationFlow flow, S
             system._scheduler.Schedule(new Solve(system, result, input, budget), accesses.ToArray());
             void AddInput(NavigationFlowInput value)
             {
-                value.Costs.Grid.AddReadAccesses(scheduler, accesses);
+                value.Costs.AddReadAccesses(scheduler, accesses);
                 value.HeadingGraph?.AddReadAccesses(scheduler, accesses);
-                accesses.Add(NavigationJobAccess.Read(scheduler, value.Costs.CellCosts));
-                accesses.Add(NavigationJobAccess.Read(scheduler, value.Costs.EdgeCosts));
                 accesses.Add(NavigationJobAccess.Read(scheduler, value.Goals));
                 accesses.Add(NavigationJobAccess.Read(scheduler, value.Costs.Policy.AreaCosts));
                 accesses.Add(NavigationJobAccess.Read(scheduler, value.Costs.Policy.ActionCosts));
@@ -82,7 +80,7 @@ public sealed class NavigationFlowSystem<TSolver, TState>(NavigationFlow flow, S
                 grid.HasCoarseTiles)
             {
                 NavigationGrid updated = NavigationGrid.Compose(graph, grid.Tiles, input.Goals, input.Costs.Policy, grid.ResidenceVersion);
-                if (system.Flow.ApplyCosts(input, NavigationCostSystem.Create(updated, input.Costs.Policy, input.Costs.Version)))
+                if (system.Flow.ApplyCosts(input, NavigationCostSystem.Regrid(input.Costs, updated)))
                     input = system.Flow.Input;
             }
             if (!ReferenceEquals(system.State.Input, input)) system.State = TSolver.Update(system.State, input) ?? TSolver.Create(input);

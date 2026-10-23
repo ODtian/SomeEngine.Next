@@ -9,6 +9,54 @@ namespace SomeEngine.Navigation.Tests;
 public sealed class NavigationVehicleTests
 {
     [Fact]
+    public void StateLatticeExecutesACompleteLongTurnFromItsSuppliedMotionControl()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var model = new NavigationVehicleModel(1);
+        var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)],
+            1, maximumSpeed: 1, vehicleModel: model);
+        // This three-quarter circle is an example of a general signed, multi-radian motion control.
+        var control = new NavigationVehicleControl(1, 1, 3 * MathF.PI / 2);
+        var relativeStart = new NavigationPose(Vector3.Zero, 0);
+        NavigationPose relativeEnd = model.Integrate(relativeStart, control, control.Duration);
+        var motions = new NavigationMotionSet(model, 0.5f, new float[] { 0, relativeEnd.Heading },
+            new NavigationMotionPrimitive[] { new(0, 1, relativeStart, relativeEnd, 0, 1, 0, 0, 0, 0) },
+            new NavigationVehicleControl[] { control }, default, default);
+        var cells = new List<NavigationGridCell>();
+        var edges = new List<NavigationGridEdge>();
+        for (int x = 0; x < 12; x++)
+        for (int z = 0; z < 12; z++)
+        {
+            int first = edges.Count;
+            if (x > 0) edges.Add(new((x - 1) * 12 + z, 0.5f));
+            if (x < 11) edges.Add(new((x + 1) * 12 + z, 0.5f));
+            if (z > 0) edges.Add(new(x * 12 + z - 1, 0.5f));
+            if (z < 11) edges.Add(new(x * 12 + z + 1, 0.5f));
+            cells.Add(new(new((x + 0.5f) * 0.5f, 0, (z + 0.5f) * 0.5f), first, edges.Count - first));
+        }
+        var grid = new NavigationGrid(new(Vector3.Zero, new(6, 2, 6)), 0.5f, cells.ToArray(), edges.ToArray(),
+            NavigationGridShape.FromProfile(profile, NavigationGridFootprintMode.Point));
+        var space = new NavigationVehicleSpace(grid, motions);
+        var navigation = new NavigationSystems<NavigationVehicleSpace, StateLatticeSearch, StateLatticeSearchState, TestMotion, TestMotionReader>(world);
+        var start = new NavigationPose(new(2.25f, 0, 2.25f), 0);
+        NavigationPose goal = model.Integrate(start, control, control.Duration);
+        Entity actor = world.CreateEntity(new TestMotion { Position = start.Position });
+        navigation.AddAgent(actor, space, profile, new NavigationPolicy(), new(goal.Position, 0.001f, goal.Heading, 0.001f), 1);
+        float traveled = 0;
+        for (int frame = 0; frame < 60 && world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
+        {
+            Vector3 previous = world.Read<TestMotion>(actor).Position;
+            navigation.ScheduleProgress(new ConsumeVehicleMotion(0.1f, model).ScheduleParallel(world, navigation.Schedule(0.1f, 8).Steering)).Complete();
+            traveled += Vector3.Distance(previous, world.Read<TestMotion>(actor).Position);
+        }
+        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.InRange(traveled, 4.7f, 4.72f);
+        Assert.InRange(Vector3.Distance(goal.Position, world.Read<TestMotion>(actor).Position), 0, 0.001f);
+        Assert.InRange(MathF.Abs(NavigationHeading.Difference(goal.Heading, world.Read<TestMotion>(actor).Heading)), 0, 0.001f);
+    }
+
+    [Fact]
     public void HybridAStarDrivesFromAnArbitraryHeadingToTheDockingPoseUsingContinuousControls()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });

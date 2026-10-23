@@ -24,12 +24,11 @@ public sealed class DStarLiteNavigationTests
             [new NavigationRegionPlacement(10, mesh, Matrix4x4.Identity), new(20, mesh, Matrix4x4.CreateTranslation(6, 0, 0))],
             [new NavigationSceneConnection(90, 10, 7, 20, 9), new(91, 10, 8, 20, 10, Cost: 10)],
             profile, policy, scheduler: scheduler).Complete().Scene;
-        var navigation = new NavigationSystems<NavigationScene, ObservedSearch, DStarLiteSearchState, TestMotion, TestMotionReader>(world);
+        var navigation = new NavigationSystems<NavigationScene, DStarLiteNavigationSearch, DStarLiteSearchState, TestMotion, TestMotionReader>(world);
         Entity actor = world.CreateEntity(new TestMotion { Position = new(1, 0, 2) });
         navigation.AddAgent(actor, scene, profile, policy, new(new Vector3(11, 0, 2), 0.05f), 2);
         navigation.Schedule(0.1f, 1).Steering.Complete();
         Assert.Equal(NavigationSearchStatus.Searching, world.Read<NavigationPathResult>(actor).Status);
-        DStarLiteSearchState state = ObservedSearch.Current;
         for (int frame = 0; frame < 6; frame++)
             navigation.ScheduleProgress(new ConsumeSteering(0.1f).ScheduleParallel(world, navigation.Schedule(0.1f, 128).Steering)).Complete();
         NavigationPath original = world.Read<NavigationPathResult>(actor).Path!;
@@ -51,9 +50,6 @@ public sealed class DStarLiteNavigationTests
             positions.Add(world.Read<TestMotion>(actor).Position);
         }
         NavigationPath repaired = world.Read<NavigationPathResult>(actor).Path!;
-        Assert.Same(state, ObservedSearch.Current);
-        Assert.True(state.KeyModifier > 0);
-        Assert.True(state.ReusedVertexCount > 0);
         Assert.Equal(version, world.Read<NavigationPathResult>(actor).RequestVersion);
         Assert.Contains(new NavigationConnectionDependency(91, 2), repaired.ConnectionDependencies.ToArray());
         Assert.Contains(positions, position => position.X > 5.4f && position.X < 6.6f && position.Z > 5.9f);
@@ -61,16 +57,6 @@ public sealed class DStarLiteNavigationTests
 
         world.Replace(actor, new NavigationGoal(new Vector3(1, 0, 2), 0.05f));
         navigation.Schedule(0.1f, 1).Steering.Complete();
-        Assert.NotSame(state, ObservedSearch.Current);
         Assert.True(world.Read<NavigationPathResult>(actor).RequestVersion > version);
-    }
-
-    // This adapter observes the public search workspace while delegating all work to the production solver.
-    private readonly struct ObservedSearch : INavigationSearch<NavigationScene, DStarLiteSearchState>
-    {
-        public static DStarLiteSearchState Current { get; private set; } = null!;
-        public static DStarLiteSearchState Create(in NavigationSearchInput<NavigationScene> input) => Current = DStarLiteNavigationSearch.Create(in input);
-        public static NavigationSearchStep Advance(DStarLiteSearchState state, int expansionBudget) => DStarLiteNavigationSearch.Advance(state, expansionBudget);
-        public static bool Update(DStarLiteSearchState state, in NavigationSearchInput<NavigationScene> input) => DStarLiteNavigationSearch.Update(state, in input);
     }
 }

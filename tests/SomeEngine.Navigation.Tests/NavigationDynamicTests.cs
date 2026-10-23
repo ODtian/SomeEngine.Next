@@ -19,7 +19,7 @@ public sealed class NavigationDynamicTests
             profile, new NavigationPolicy(), new() { CellSize = 0.25f, CellHeight = 0.05f, TileSize = 24 });
         var source = world.CreateEntity(new NavigationSource(Floor(0, 0, 6, 6)));
         world.Add(source, new SourcePlacement(Matrix4x4.Identity));
-        var sources = new NavigationSourceSystem<SourcePlacement, SourcePlacementReader>(world, region, scheduler);
+        var sources = new NavigationSourceSystem<SourcePlacement, SourcePlacementReader>(world, region);
 
         JobHandle transformed = new TranslateSources(new(6, 0, 0)).ScheduleParallel(world);
         NavigationBuild<NavigationSourceChanges> collected = sources.Schedule(transformed);

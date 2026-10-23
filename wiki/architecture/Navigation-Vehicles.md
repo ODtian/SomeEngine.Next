@@ -56,7 +56,7 @@ var navigation = new NavigationSystems<NavigationVehicleSpace, HybridAStarSearch
     HybridAStarSearchState, Movement, MovementReader>(world);
 ```
 
-两种车辆搜索共用 `NavigationVehiclePath` 生成模型采样位姿、控制段和块依赖。Hybrid A* 方法依据 [Smac Planner 的连续位姿搜索](https://arxiv.org/html/2401.13078v2#S3.SS4.SSS2)，解析连接采用 [OMPL 的 Dubins 方程](https://github.com/ompl/ompl/blob/main/src/ompl/base/spaces/src/DubinsStateSpace.cpp)，对应来源声明保留在实现文件中。
+两种车辆搜索共用 `NavigationVehiclePath` 生成模型采样位姿、控制段和块依赖。该入口按控制的有符号速度、曲率和完整持续时间，把长转弯划为至多四分之一圆的连续执行段；段的总时长、曲率和完整行驶方向保持一致。实际反馈据这些段端点推进，调用方提供的大角度基元也沿完整圆弧执行。Hybrid A* 方法依据 [Smac Planner 的连续位姿搜索](https://arxiv.org/html/2401.13078v2#S3.SS4.SSS2)，解析连接采用 [OMPL 的 Dubins 方程](https://github.com/ompl/ompl/blob/main/src/ompl/base/spaces/src/DubinsStateSpace.cpp)，对应来源声明保留在实现文件中。
 
 ## 引导与实际消费
 

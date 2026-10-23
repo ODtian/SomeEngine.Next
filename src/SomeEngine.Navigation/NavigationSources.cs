@@ -129,7 +129,7 @@ public sealed class NavigationSourceSystem<TTransform, TReader>
     {
         _world = world;
         _region = region;
-        _scheduler = scheduler ?? JobSystem.Default;
+        _scheduler = scheduler ?? WorldJobs.GetScheduler(world);
         _sources = world.QueryDefinition().All<TTransform>().Enabled<NavigationSource>().Build();
         _obstacles = world.QueryDefinition().All<TTransform>().Enabled<NavigationObstacle>().Build();
     }
