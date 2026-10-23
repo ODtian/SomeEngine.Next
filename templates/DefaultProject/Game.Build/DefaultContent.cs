@@ -14,6 +14,7 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Instances;
+using SomeEngine.Render.Features.Skinning;
 using SomeEngine.Serialization.Containers;
 
 namespace Game.Build;
@@ -31,7 +32,8 @@ public static class DefaultContent
             throw new DirectoryNotFoundException("Select the copied project and its engine shader library explicitly.");
         MaterialTypes.Register();
         WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"),
-            BuildRenderInstanceLayoutSource(ClusterRenderFeature.InstanceLayout));
+            BuildRenderInstanceLayoutSource(RenderInstancePropertyLayout.Compose(
+                ClusterRenderFeature.InstanceLayout, SkinInstanceProducer.Layout)));
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
             sourceFormats: [new ShaderSourceFormat([engineShaders])]);
         foreach (string source in Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal))
@@ -78,6 +80,7 @@ public static class DefaultContent
         int previousTransform = FindMetadataWordOffset(
             layout,
             RenderInstanceTransformProperties.PreviousTransformKey);
+        int skinBinding = layout.Resolve<RenderSkinBinding>(SkinInstanceProducer.BindingKey).Descriptor.MetadataWordOffset;
 
         return $$"""
             #ifndef SOMEENGINE_RENDER_INSTANCE_LAYOUT_INCLUDED
@@ -108,6 +111,7 @@ public static class DefaultContent
             static const uint CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD = {{materialSlotOffset}}u;
             static const uint RENDER_CURRENT_TRANSFORM_METADATA_WORD = {{currentTransform}}u;
             static const uint RENDER_PREVIOUS_TRANSFORM_METADATA_WORD = {{previousTransform}}u;
+            static const uint SKIN_BINDING_METADATA_WORD = {{skinBinding}}u;
 
             #endif
             """;
