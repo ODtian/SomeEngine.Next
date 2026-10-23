@@ -4,7 +4,7 @@
 
 namespace SomeEngine.Terrains;
 
-internal static class TransvoxelTables
+internal static partial class TransvoxelTables
 {
     internal static ReadOnlySpan<byte> RegularClasses =>
     [
