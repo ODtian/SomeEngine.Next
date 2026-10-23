@@ -106,8 +106,8 @@ public sealed class NavigationGridStreaming : IDisposable
         foreach (var pair in _reads.ToArray())
             if (pair.Value.Completion.IsCompleted)
             {
-                loaded.Add(new(pair.Key, pair.Value.Complete()));
                 _reads.Remove(pair.Key);
+                loaded.Add(new(pair.Key, pair.Value.Complete()));
             }
         HashSet<NavigationTileCoordinate> keep = resident.Concat(loaded.Select(tile => tile.Tile)).Distinct()
             .OrderByDescending(selected.Contains).ThenBy(Near).Take(ResidentTileBudget).ToHashSet();
@@ -123,10 +123,8 @@ public sealed class NavigationGridStreaming : IDisposable
 
     public void Dispose()
     {
-        foreach (NavigationTileRead<NavigationGrid> read in _reads.Values) read.Completion.Complete();
-        Applied.Complete();
-        _source.Dispose();
-        _reads.Clear();
+        try { NavigationTileRead<NavigationGrid>.CompleteAll(_reads.Values, Applied); }
+        finally { _source.Dispose(); _reads.Clear(); }
     }
 
     private readonly struct ScheduleApply(NavigationFlow flow, NavigationGridTile[] loaded,
