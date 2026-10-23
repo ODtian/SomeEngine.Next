@@ -6,7 +6,7 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Navigation;
 
-public readonly record struct NavigationFlowStep(JobHandle Integration, JobHandle Guidance, JobHandle Steering);
+public readonly record struct NavigationFlowStep(JobHandle Integration, JobHandle Guidance, JobHandle Steering, JobHandle Traversal = default);
 
 /// <summary>Connects shared flow guidance to the same steering and actual-motion progress components.</summary>
 public sealed class NavigationSystems<TMotion, TReader>
@@ -16,11 +16,13 @@ public sealed class NavigationSystems<TMotion, TReader>
     private readonly World _world;
     private readonly QueryDefinition _enabledFlow;
     private readonly QueryDefinition _disabledFlow;
+    private readonly NavigationPassageSystem _passages;
     private JobHandle _completion;
 
-    public NavigationSystems(World world)
+    public NavigationSystems(World world, NavigationPassageSystem? passages = null)
     {
         _world = world;
+        _passages = passages ?? new(world);
         _enabledFlow = world.QueryDefinition().All<TMotion>().Enabled<FlowFollower>().Build();
         _disabledFlow = world.QueryDefinition().All<TMotion>().Disabled<FlowFollower>().Build();
     }
@@ -45,8 +47,10 @@ public sealed class NavigationSystems<TMotion, TReader>
             new JobEntityScheduleOptions(filter: _disabledFlow), ready);
         JobHandle guidance = new NavigationFlowGuidanceJob<TMotion, TReader>(deltaTime).ScheduleParallel(_world,
             new JobEntityScheduleOptions(filter: _enabledFlow), stopped);
-        _completion = guidance;
-        return new(flowReady, guidance, default);
+        JobHandle traversal = new NavigationFlowTraversalJob<TMotion, TReader>().ScheduleParallel(_world,
+            new JobEntityScheduleOptions(filter: _enabledFlow), guidance);
+        _completion = _passages.Schedule(traversal);
+        return new(flowReady, _completion, default, _completion);
     }
 
     public JobHandle ScheduleProgress(JobHandle motionCompletion)
