@@ -73,49 +73,68 @@ internal partial struct NavigationMppiPrepare<TSpace, TModel, TMotion, TReader>(
             return;
         }
         NavigationMppiReference<TSpace, TModel>.Prepare(data, path);
+        JobHandle previous = default;
+        for (int iteration = 0; iteration < settings.Iterations; iteration++)
+            previous = NavigationMppiIteration<TSpace, TModel>.Schedule(_scheduler, data, iteration, previous);
+    }
+}
+
+internal static class NavigationMppiIteration<TSpace, TModel>
+    where TSpace : class, INavigationSpace<TSpace>
+    where TModel : struct, INavigationMppiModel<TSpace>
+{
+    internal static JobHandle Schedule(Scheduler scheduler, NavigationMppiData<TSpace> data, int iteration, JobHandle dependency = default)
+    {
+        NavigationMppiFrame<TSpace> frame = data.Frame;
+        NavigationMppiSettings settings = frame.Settings;
+        long version = TSpace.GetVersion(frame.Space);
         var modelAccesses = new List<JobResourceAccess>();
-        var resources = new JobResourceAccessBuilder(_scheduler, modelAccesses);
-        TSpace.CollectResources(mppi.Space, ref resources);
+        var resources = new JobResourceAccessBuilder(scheduler, modelAccesses);
+        TSpace.CollectResources(frame.Space, ref resources);
+        var agent = new NavigationAgent(frame.Profile, frame.Policy, frame.DesiredSpeed);
         NavigationAgentResources.Collect(in agent, ref resources);
         var handles = new JobHandle[settings.CandidateCount];
-        JobHandle previous = default;
-        // Each evaluation holds its own model inputs while its work executes.
-        for (int iteration = 0; iteration < settings.Iterations; iteration++)
+        for (int candidate = 0; candidate < settings.CandidateCount; candidate++)
         {
-            for (int candidate = 0; candidate < settings.CandidateCount; candidate++)
-            {
-                int start = candidate * settings.HorizonSteps;
-                handles[candidate] = _scheduler.Schedule(new NavigationMppiCandidate<TSpace, TModel>(data, candidate, iteration),
-                    [.. modelAccesses, Read(data), Read(data.Controls), Read(data.Reference), Read(data.ReferenceSpeeds), Read(_neighbors),
-                     Write(data.Noise, start, settings.HorizonSteps), Write(data.CandidateControls, start, settings.HorizonSteps),
-                     Write(data.CandidateMotions, candidate * (settings.HorizonSteps + 1), settings.HorizonSteps + 1),
-                     Write(data.Scores, candidate, 1)], previous);
-            }
-            previous = _scheduler.Schedule(new NavigationMppiImprove<TSpace, TModel>(data),
-                [.. modelAccesses, JobResourceAccess.Write(_scheduler.GetResourceToken(data)), Read(data.Noise), Read(data.Scores),
-                 Read(data.CandidateControls), Read(data.CandidateMotions), Read(data.Reference), Read(data.ReferenceSpeeds), Read(_neighbors),
-                 Write(data.Controls, 0, settings.HorizonSteps), Write(data.UpdatedControls, 0, settings.HorizonSteps),
-                 Write(data.SelectedControls, 0, settings.HorizonSteps), Write(data.SelectedMotions, 0, settings.HorizonSteps + 1),
-                 Write(data.Weights, 0, settings.CandidateCount)], _scheduler.CombineDependencies(handles));
+            int start = candidate * settings.HorizonSteps;
+            handles[candidate] = scheduler.Schedule(new NavigationMppiCandidate<TSpace, TModel>(data, candidate, iteration, version),
+                [.. modelAccesses, Read(data), Read(data.Controls), Read(data.Reference), Read(data.ReferenceSpeeds), Read(frame.Neighbors),
+                 Write(data.Noise, start, settings.HorizonSteps), Write(data.CandidateControls, start, settings.HorizonSteps),
+                 Write(data.CandidateMotions, candidate * (settings.HorizonSteps + 1), settings.HorizonSteps + 1),
+                 Write(data.Scores, candidate, 1)], dependency);
         }
+        return scheduler.Schedule(new NavigationMppiImprove<TSpace, TModel>(data, scheduler, iteration, version),
+            [.. modelAccesses, JobResourceAccess.Write(scheduler.GetResourceToken(data)), Read(data.Noise), Read(data.Scores),
+             Read(data.CandidateControls), Read(data.CandidateMotions), Read(data.Reference), Read(data.ReferenceSpeeds), Read(frame.Neighbors),
+             Write(data.Controls, 0, settings.HorizonSteps), Write(data.UpdatedControls, 0, settings.HorizonSteps),
+             Write(data.SelectedControls, 0, settings.HorizonSteps), Write(data.SelectedMotions, 0, settings.HorizonSteps + 1),
+             Write(data.Weights, 0, settings.CandidateCount)], scheduler.CombineDependencies(handles));
+
+        JobResourceAccess Read(object value) => JobResourceAccess.Read(scheduler.GetResourceToken(value));
+        JobResourceAccess Write(object value, int start, int length) => JobResourceAccess.Write(scheduler.GetResourceToken(value), start, length);
     }
-
-    private JobResourceAccess Read(object value) => JobResourceAccess.Read(_scheduler.GetResourceToken(value));
-    private JobResourceAccess Write(object value, int start, int length) => JobResourceAccess.Write(_scheduler.GetResourceToken(value), start, length);
 }
 
-internal readonly struct NavigationMppiCandidate<TSpace, TModel>(NavigationMppiData<TSpace> data, int candidate, int iteration) : IJob
+internal readonly struct NavigationMppiCandidate<TSpace, TModel>(NavigationMppiData<TSpace> data, int candidate, int iteration, long version) : IJob
     where TSpace : class, INavigationSpace<TSpace>
     where TModel : struct, INavigationMppiModel<TSpace>
 {
-    public void Execute() => NavigationMppiSampling<TSpace, TModel>.Candidate(data, candidate, iteration);
+    public void Execute()
+    {
+        if (TSpace.GetVersion(data.Frame.Space) == version)
+            NavigationMppiSampling<TSpace, TModel>.Candidate(data, candidate, iteration);
+    }
 }
 
-internal readonly struct NavigationMppiImprove<TSpace, TModel>(NavigationMppiData<TSpace> data) : IJob
+internal readonly struct NavigationMppiImprove<TSpace, TModel>(NavigationMppiData<TSpace> data, Scheduler scheduler, int iteration, long version) : IJob
     where TSpace : class, INavigationSpace<TSpace>
     where TModel : struct, INavigationMppiModel<TSpace>
 {
-    public void Execute() => NavigationMppiSampling<TSpace, TModel>.Improve(data);
+    public void Execute()
+    {
+        if (TSpace.GetVersion(data.Frame.Space) == version) NavigationMppiSampling<TSpace, TModel>.Improve(data);
+        else NavigationMppiIteration<TSpace, TModel>.Schedule(scheduler, data, iteration);
+    }
 }
 
 internal partial struct NavigationMppiOutput<TSpace, TModel> : IJobEntity
