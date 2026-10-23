@@ -92,9 +92,12 @@ public readonly record struct TerrainSurfaceJob(ulong Revision, JobHandle Comple
 }
 
 /// <summary>Ready, fixed-version scalar data. Negative values are solid and zero is the surface.</summary>
-public abstract class TerrainSurfaceRead(ulong revision)
+public abstract class TerrainSurfaceRead(ulong revision, TerrainBounds bounds = default,
+    ReadOnlyMemory<TerrainFieldVersion> fieldVersions = default)
 {
     public ulong Revision { get; } = revision;
+    public TerrainBounds Bounds { get; } = bounds;
+    public ReadOnlyMemory<TerrainFieldVersion> FieldVersions { get; } = fieldVersions;
     public abstract float Sample(Vector3 position);
     public virtual TerrainHeightRange? GetHeightRange(TerrainBounds bounds) => null;
     public virtual JobResourceAccess[] GetReadAccesses(Scheduler scheduler) => [];
@@ -124,12 +127,13 @@ public sealed class HeightSurface(HeightField field) : TerrainSurface
         int maxX = Math.Clamp((int)MathF.Floor(bounds.Max.X / spacing) + 2, 1, Field.Grid.Width);
         int maxZ = Math.Clamp((int)MathF.Floor(bounds.Max.Z / spacing) + 2, 1, Field.Grid.Depth);
         HeightFieldCpuRead read = Field.CaptureCpuRead(new(minX, minZ, maxX - minX, maxZ - minZ));
-        return new(new HeightSurfaceRead(read.Samples, Terrain.Revision), read.Completion);
+        return new(new HeightSurfaceRead(read.Samples, Terrain.Revision, bounds), read.Completion);
     }
 
     public override TerrainSurface Duplicate(Terrain terrain) => new HeightSurface(terrain.HeightFields[Field.Id]);
 
-    private sealed class HeightSurfaceRead(HeightFieldRead heights, ulong revision) : TerrainSurfaceRead(revision)
+    private sealed class HeightSurfaceRead(HeightFieldRead heights, ulong revision, TerrainBounds bounds)
+        : TerrainSurfaceRead(revision, bounds, new[] { heights.Version })
     {
         public override float Sample(Vector3 position) => position.Y - heights.Sample(new(position.X, position.Z));
         public override JobResourceAccess[] GetReadAccesses(Scheduler scheduler) => heights.GetReadAccesses(scheduler);

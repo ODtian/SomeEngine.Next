@@ -94,6 +94,8 @@ float currentHeight = current[2, 1]; // 7
 
 体素场使用相同的调用时捕获与等待顺序。两个入口分别见 [HeightField.ReadCpuAsync](../../../src/SomeEngine.Resources/Terrain/HeightField.cs) 和 [VoxelField.ReadCpuAsync](../../../src/SomeEngine.Resources/Terrain/VoxelField.cs)。
 
+读取上的字段标识、版本查询与带来源的法线结果见[查询与碰撞几何](Terrain-Queries.md)。
+
 ## 共享与复制
 
 多个引用指向同一个 `Terrain` 时，共同观察该对象后续提交的字段数据。`Duplicate()` 创建另一组字段对象，并保留复制时的字段版本；两个 Terrain 最初共享页面数据，各自的后续编辑建立自己的页面值。已有 CPU 读取对象继续持有原版本的数据。
