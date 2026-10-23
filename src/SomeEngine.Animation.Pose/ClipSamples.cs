@@ -10,6 +10,9 @@ public readonly ref struct ClipSamples
     /// <summary>Requested skeleton bone indices, in increasing order.</summary>
     public ReadOnlySpan<short> Bones { get; }
     public int Count => Times.Length;
+    public int BoneCount => _boneCount;
+    /// <summary>Contiguous full local rows, with one <see cref="BoneCount"/> row per time.</summary>
+    public Span<BoneTransform> LocalPoses => _local;
 
     internal ClipSamples(ReadOnlySpan<float> times, ReadOnlySpan<short> bones,
         Span<BoneTransform> local, int boneCount)
