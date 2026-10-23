@@ -104,29 +104,8 @@ public sealed class StateLatticeSearchState
         var route = new List<int>();
         for (int current = index; _nodes[current].Parent >= 0; current = _nodes[current].Parent) route.Add(current);
         route.Reverse();
-        var segments = new List<NavigationMotionSegment>();
-        var poses = new List<NavigationPose> { new(_input.Start, _input.StartHeading) };
-        var tiles = new HashSet<NavigationTileCoordinate>();
-        foreach (int current in route)
-        foreach (NavigationMotionSegment segment in _nodes[current].Segments)
-        {
-            segments.Add(segment);
-            int count = Math.Max(1, (int)MathF.Ceiling(MathF.Abs(segment.Control.Speed) * segment.Control.Duration /
-                (_input.Space.Grid.CellSize / 4)));
-            for (int sample = 1; sample <= count; sample++)
-            {
-                NavigationPose pose = _input.Space.Motions.Model.Integrate(segment.Start, segment.Control,
-                    segment.Control.Duration * sample / count);
-                int cell = _input.Space.Grid.FindCell(pose.Position);
-                NavigationGridCell ground = _input.Space.Grid.Cells.Span[cell];
-                poses.Add(pose with { Position = pose.Position with { Y = ground.Position.Y } });
-                tiles.Add(ground.Tile);
-            }
-        }
-        NavigationPathDependency[] dependencies = tiles.Select(tile => new NavigationPathDependency(tile,
-            _input.Space.Grid.ContentVersion)).ToArray();
-        _path = new(Array.Empty<int>(), poses.Select(pose => pose.Position).ToArray(), dependencies, cost,
-            poses: poses.ToArray(), motionSegments: segments.ToArray());
+        NavigationMotionSegment[] segments = route.SelectMany(current => _nodes[current].Segments).ToArray();
+        _path = NavigationVehiclePath.Create(_input, segments, cost);
         _status = NavigationSearchStatus.Found;
     }
 
