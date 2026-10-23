@@ -46,7 +46,16 @@ public sealed class NavigationStreamingTests
     }
 
     [Fact]
-    public async Task OneRequestWalksEachAvailableSectionWhileFollowingTilesLoadOutsideTheMainGroup()
+    public Task OneRequestWalksEachAvailableSectionWhileFollowingTilesLoadOutsideTheMainGroup() =>
+        WalkStreamedRoute<SceneNavigationSearch, SceneSearchState>();
+
+    [Fact]
+    public Task IncrementalRequestWalksEachAvailableSectionWhileFollowingTilesLoadOutsideTheMainGroup() =>
+        WalkStreamedRoute<DStarLiteNavigationSearch, DStarLiteSearchState>();
+
+    private async Task WalkStreamedRoute<TSearch, TState>()
+        where TSearch : struct, INavigationSearch<NavigationScene, TState>
+        where TState : class
     {
         string directory = Path.Combine(Path.GetTempPath(), "SomeEngine-NavigationStreaming-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -79,13 +88,13 @@ public sealed class NavigationStreamingTests
             var interest = new NavigationInterest(new(1, 0, 1), 0.1f) { LookAheadDistance = 5f };
             streaming.Interests.Add(interest);
             using World world = WorldJobs.CreateWorld(scheduler: scheduler);
-            var navigation = new NavigationSystems<NavigationScene, SceneNavigationSearch, SceneSearchState, Motion, MotionReader>(world);
+            var navigation = new NavigationSystems<NavigationScene, TSearch, TState, Motion, MotionReader>(world);
             var actor = world.CreateEntity(new Motion(new(1, 0, 1), default, 0));
             navigation.AddAgent(actor, scene, profile, policy, new NavigationGoal(new Vector3(11, 0, 1), 0.05f), 2f);
             using var background = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
             using var main = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
             background.Add(new NavigationStreamingSystem(streaming));
-            main.Add(new MainNavigation(navigation, streaming));
+            main.Add(new MainNavigation<TSearch, TState>(navigation, streaming));
             ulong version = 0;
             try
             {
@@ -188,8 +197,10 @@ public sealed class NavigationStreamingTests
     {
         public static NavigationMotion Read(in Motion value) => new(value.Position, value.Velocity, value.Heading, true);
     }
-    private sealed class MainNavigation(NavigationSystems<NavigationScene, SceneNavigationSearch, SceneSearchState, Motion, MotionReader> navigation,
+    private sealed class MainNavigation<TSearch, TState>(NavigationSystems<NavigationScene, TSearch, TState, Motion, MotionReader> navigation,
         NavigationStreaming streaming) : ISystem<ImmediateSystemContext>
+        where TSearch : struct, INavigationSearch<NavigationScene, TState>
+        where TState : class
     {
         public void OnUpdate(ref ImmediateSystemContext context) => navigation.Schedule(0.1f, 4, streaming.Applied);
     }

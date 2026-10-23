@@ -20,6 +20,8 @@ Heading 表示的专用区域图、TileSource、ASA 局部查询与相同兴趣/
 
 `SceneNavigationSearch` 使用粗图定位远处目标所属 Tile，并先完成当前驻留部分的详细路线。`NavigationSearchStatus.WaitingForTiles` 与 `NavigationPath.RequiredTiles` 公开后续需求，`Corners`、`Sections` 和 `Dependencies` 同时给出可消费的详细前段。运动进度在前段内报告 `Moving`，走到末端后报告 `WaitingForTiles`。
 
+`DStarLiteNavigationSearch` 共用该端点与详细路径流水线，并在同一请求内保留入口图的增量累计值与队列，具体状态见[持续目标的增量路线](Navigation-Incremental.md)。
+
 每帧搜索入口收到当前实际运动输入。新块接入后，已有粗路线继续细化；目标块取得后，搜索从实际位置验证最终详细连接。等待期间的目标块连接采用直线成本下界，`Path.Cost` 记录已完成详细前段的实际成本；最终请求重新计算目标的局部连接。新的前段交付时重置拐点进度，角色的请求版本持续保持。`INavigationSearch.Update` 与 `NavigationSearchStep.ResetPathProgress` 是该续行入口。
 
 `NavigationScene.CollectBoundaries` 从实际驻留的起点多边形遍历可通行邻接。块内 portal、粗图中的驻留跨块入口，以及两个已放置区域的共同边界连接共同裁剪开放区间；其余边段进入[统一避障](Navigation-Avoidance.md)。边段携带来源 Mesh 的已烘焙半径。
