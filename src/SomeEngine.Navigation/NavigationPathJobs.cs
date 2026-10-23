@@ -60,7 +60,7 @@ internal partial struct NavigationPathJob<TSpace, TSearch, TState, TMotion, TRea
             {
                 NavigationMotion motion = TReader.Read(in movement);
                 var input = new NavigationSearchInput<TSpace>(navigation.Space, agent.Profile, agent.Policy,
-                    motion.Position, target, goal.ArrivalRange, motion.Heading, goal.Heading);
+                    motion.Position, target, goal.ArrivalRange, motion.Heading, goal.Heading, goal.HeadingTolerance);
                 data.Search = new(TSearch.Create(in input), data.Version);
             }
         }
@@ -69,7 +69,7 @@ internal partial struct NavigationPathJob<TSpace, TSearch, TState, TMotion, TRea
         {
             NavigationMotion motion = TReader.Read(in movement);
             var input = new NavigationSearchInput<TSpace>(navigation.Space, agent.Profile, agent.Policy,
-                motion.Position, target, goal.ArrivalRange, motion.Heading, goal.Heading);
+                motion.Position, target, goal.ArrivalRange, motion.Heading, goal.Heading, goal.HeadingTolerance);
             bool resumed = TSearch.Update(search.State, in input);
             if (search.Status == NavigationSearchStatus.Searching || resumed)
             {
