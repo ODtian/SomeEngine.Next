@@ -142,7 +142,7 @@ public sealed class HeadingNavigationFlowAssetTests : IDisposable
     }
 
     // These completed polygons and heading channels are a fixture example for the asset roundtrip.
-    private static HeadingNavigationFlowRegion[] ExampleRegions()
+    internal static HeadingNavigationFlowRegion[] ExampleRegions()
     {
         var entryGeometry = new NavigationMesh(
             [new(0, 0, 0), new(4, 0, 0), new(4, 0, 4), new(0, 0, 4),

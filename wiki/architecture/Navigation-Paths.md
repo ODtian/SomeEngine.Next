@@ -1,5 +1,7 @@
 # 目标、路径与实际运动
 
+目标、所选算法、共享资源及动作交接的持久恢复见[导航持久存档与恢复](Navigation-Saves.md)。
+
 `NavigationSystems<TSpace,TSearch,TState,TMotion,TReader>` 将目标求解、路径引导、运动建议与实际运动反馈连接起来。`TSpace` 指定导航表示，`TSearch` 使用静态接口推进 `TState`，`TMotion` 与 `TReader` 接入游戏已有的运动数据。多边形网格通过 `NavigationMesh` 接入，搜索类型决定求解方法。
 
 带放置变换的多区域组合使用 `NavigationScene`、`SceneNavigationSearch` 和 `SceneSearchState`。入口图、详细路径分段与区域依赖见[区域入口图与场景放置](Navigation-Regions.md)。

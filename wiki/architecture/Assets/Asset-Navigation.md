@@ -1,5 +1,7 @@
 # 导航规格、策略与网格资产
 
+资源资产身份、共享关系及游戏导航意图的保存入口见[导航持久存档与恢复](../Navigation-Saves.md)。
+
 分层 Grid 变体和共享目标 Flow 的资产入口见[分层栅格与共享目标流场](../Navigation-Flows.md#资产创建)。
 
 `NavigationLinkBlock` 保存动作端点、方向、能力、成本和参数，并创建普通 `NavigationLinkSet`。场景安装、路径选择和动作反馈入口见[导航动作连接](../Navigation-Actions.md)。

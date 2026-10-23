@@ -64,6 +64,14 @@ public sealed partial class HeadingNavigationFlowBlock : AssetBlock, IAssetBlock
         return copy.CreateFlow(graph, profile, scheduler);
     }
 
+    /// <summary>Creates the current saved intent after its ordinary resource references have been restored.</summary>
+    public NavigationFlow Create(NavigationFlowInput restoredInput, Scheduler? scheduler = null)
+    {
+        var flow = new NavigationFlow(restoredInput);
+        new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler).Schedule().Complete();
+        return flow;
+    }
+
     /// <summary>Acquires typed region meshes, links, profile and policy, then returns a completed shared field.</summary>
     public async ValueTask<NavigationFlow> CreateAsync(AssetLoader loader, Scheduler? scheduler = null,
         CancellationToken cancellationToken = default)

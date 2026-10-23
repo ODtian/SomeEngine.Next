@@ -73,6 +73,11 @@ public readonly record struct NavigationProgress(
 /// <summary>Adds an entity's navigation inputs, outputs and its private search workspace.</summary>
 public static partial class NavigationComponents
 {
+    /// <summary>Identifies the selected path composition while its mutable search state stays request-owned.</summary>
+    public static bool HasPath<TSpace, TState>(World world, Entity entity)
+        where TSpace : class, INavigationSpace<TSpace>
+        where TState : class => world.Has<NavigationRequest<TSpace, TState>>(entity);
+
     public static void AddPath<TSpace, TState>(World world, Entity entity, TSpace space,
         NavigationProfile profile, NavigationPolicy policy, NavigationGoal goal, float desiredSpeed)
         where TSpace : class, INavigationSpace<TSpace>
@@ -86,7 +91,7 @@ public static partial class NavigationComponents
         world.Add(entity, default(NavigationSteering));
         world.Add(entity, default(NavigationProgress));
         world.Add(entity, default(NavigationTraversalRequest));
-        world.Add(entity, default(NavigationTraversalResult));
+        if (!world.Has<NavigationTraversalResult>(entity)) world.Add(entity, default(NavigationTraversalResult));
         world.Add(entity, default(NavigationPassageUse));
         world.Add(entity, new NavigationRequest<TSpace, TState>(new()));
     }
