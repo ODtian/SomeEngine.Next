@@ -3,7 +3,8 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Navigation;
 
-public readonly record struct NavigationGeometrySource(NavigationGeometry Geometry, Matrix4x4 Transform, ulong Version);
+public readonly record struct NavigationGeometrySource(NavigationGeometry Geometry, Matrix4x4 Transform, ulong Version,
+    bool Walkable = true, bool Solid = false);
 
 public sealed record NavigationSurfaceSettings
 {
@@ -48,12 +49,14 @@ public sealed class NavigationSurfaceBuildState
     /// <summary>The complete surface is available after the build's completion handle succeeds.</summary>
     public NavigationSurface Surface { get; internal set; } = null!;
     internal NavigationSurfaceTile[] Tiles { get; }
+    internal ReadOnlyMemory<NavigationTileCoordinate> Coordinates { get; }
     internal List<NavigationSurfaceSpan>?[][] Columns { get; }
 
-    internal NavigationSurfaceBuildState(NavigationBuildInput input, int tileCount)
+    internal NavigationSurfaceBuildState(NavigationBuildInput input, ReadOnlyMemory<NavigationTileCoordinate> coordinates)
     {
         Input = input;
-        Tiles = new NavigationSurfaceTile[tileCount];
-        Columns = new List<NavigationSurfaceSpan>?[tileCount][];
+        Coordinates = coordinates;
+        Tiles = new NavigationSurfaceTile[coordinates.Length];
+        Columns = new List<NavigationSurfaceSpan>?[coordinates.Length][];
     }
 }

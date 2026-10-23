@@ -13,9 +13,19 @@ public static class NavigationSurfaceBuilder
         float tileWidth = input.Settings.TileSize * input.Settings.CellSize;
         int width = (int)MathF.Ceiling((input.Region.Maximum.X - input.Region.Minimum.X) / tileWidth);
         int depth = (int)MathF.Ceiling((input.Region.Maximum.Z - input.Region.Minimum.Z) / tileWidth);
-        var state = new NavigationSurfaceBuildState(input, width * depth);
+        var coordinates = new NavigationTileCoordinate[width * depth];
+        for (int index = 0; index < coordinates.Length; index++) coordinates[index] = new(index % width, index / width);
+        return Schedule(input, coordinates, dependency, scheduler);
+    }
+
+    /// <summary>Builds selected tiles while retaining the region's coordinate origin and border samples.</summary>
+    public static NavigationBuild<NavigationSurfaceBuildState> Schedule(NavigationBuildInput input,
+        ReadOnlyMemory<NavigationTileCoordinate> coordinates, JobHandle dependency = default, Scheduler? scheduler = null)
+    {
+        scheduler ??= JobSystem.Default;
+        var state = new NavigationSurfaceBuildState(input, coordinates);
         var handles = new JobHandle[state.Tiles.Length];
-        var reads = new List<JobResourceAccess> { NavigationJobAccess.Read(scheduler, input.Sources) };
+        var reads = new List<JobResourceAccess> { NavigationJobAccess.Read(scheduler, input.Sources), NavigationJobAccess.Read(scheduler, coordinates) };
         foreach (NavigationGeometrySource source in input.Sources.Span)
         {
             reads.Add(NavigationJobAccess.Read(scheduler, source.Geometry.Positions));
@@ -27,7 +37,7 @@ public static class NavigationSurfaceBuilder
         {
             accesses[^2] = JobResourceAccess.Write(scheduler.GetResourceToken(state.Tiles), index, 1);
             accesses[^1] = JobResourceAccess.Write(scheduler.GetResourceToken(state.Columns), index, 1);
-            handles[index] = scheduler.Schedule(new BuildTile(state, index, width), accesses, dependency);
+            handles[index] = scheduler.Schedule(new BuildTile(state, index), accesses, dependency);
         }
         JobHandle complete = scheduler.Schedule(new CreateSurface(state),
             JobResourceAccess.Read(scheduler.GetResourceToken(state.Tiles)), scheduler.CombineDependencies(handles));
@@ -39,13 +49,13 @@ public static class NavigationSurfaceBuilder
         public void Execute() => state.Surface = new(state.Input.Region, state.Input.Settings, state.Tiles);
     }
 
-    private readonly struct BuildTile(NavigationSurfaceBuildState state, int index, int tileColumns) : IJob
+    private readonly struct BuildTile(NavigationSurfaceBuildState state, int index) : IJob
     {
         public void Execute()
         {
             NavigationBuildInput input = state.Input;
             NavigationSurfaceSettings settings = input.Settings;
-            var coordinate = new NavigationTileCoordinate(index % tileColumns, index / tileColumns);
+            NavigationTileCoordinate coordinate = state.Coordinates.Span[index];
             float tileWidth = settings.TileSize * settings.CellSize;
             Vector3 minimum = input.Region.Minimum + new Vector3(coordinate.X * tileWidth, 0, coordinate.Z * tileWidth);
             Vector3 maximum = Vector3.Min(minimum + new Vector3(tileWidth,
@@ -58,6 +68,7 @@ public static class NavigationSurfaceBuilder
             state.Columns[index] = columns;
             foreach (NavigationGeometrySource source in input.Sources.Span)
             {
+                List<NavigationSurfaceSpan>?[] sourceColumns = source.Solid ? new List<NavigationSurfaceSpan>?[columns.Length] : columns;
                 ReadOnlySpan<Vector3> positions = source.Geometry.Positions.Span;
                 bool mirrored = source.Transform.GetDeterminant() < 0;
                 foreach (NavigationTriangle triangle in source.Geometry.Triangles.Span)
@@ -66,8 +77,10 @@ public static class NavigationSurfaceBuilder
                     Vector3 b = Vector3.Transform(positions[triangle.B], source.Transform);
                     Vector3 c = Vector3.Transform(positions[triangle.C], source.Transform);
                     if (mirrored) (b, c) = (c, b);
-                    Rasterize(columns, width, depth, origin, settings, input.Region, a, b, c, triangle.Area);
+                    Rasterize(sourceColumns, width, depth, origin, settings, input.Region, a, b, c, triangle.Area,
+                        source.Solid || source.Walkable);
                 }
+                if (source.Solid) AddSolidColumns(sourceColumns, columns, source.Walkable);
             }
             var descriptions = new NavigationSurfaceColumn[columns.Length];
             var spans = new List<NavigationSurfaceSpan>();
@@ -101,9 +114,42 @@ public static class NavigationSurfaceBuilder
         }
     }
 
+    private static void AddSolidColumns(List<NavigationSurfaceSpan>?[] source, List<NavigationSurfaceSpan>?[] destination,
+        bool walkable)
+    {
+        for (int column = 0; column < source.Length; column++)
+        {
+            if (source[column] is not { } spans) continue;
+            spans.Sort(static (left, right) => left.MinimumHeight.CompareTo(right.MinimumHeight));
+            List<NavigationSurfaceSpan> output = destination[column] ??= [];
+            int winding = 0;
+            float solidStart = 0;
+            for (int index = 0; index < spans.Count;)
+            {
+                NavigationSurfaceSpan top = spans[index];
+                float minimum = top.MinimumHeight, maximum = top.MaximumHeight;
+                bool enters = false, exits = false;
+                do
+                {
+                    NavigationSurfaceSpan span = spans[index++];
+                    enters |= span.Normal.Y < 0;
+                    exits |= span.Normal.Y > 0;
+                    maximum = MathF.Max(maximum, span.MaximumHeight);
+                    if (span.Height > top.Height || span.Height == top.Height && span.Normal.Y > top.Normal.Y) top = span;
+                } while (index < spans.Count && spans[index].MinimumHeight <= maximum);
+                Vector3 normal = walkable ? top.Normal : Vector3.Zero;
+                output.Add(top with { MinimumHeight = minimum, MaximumHeight = maximum, Normal = normal });
+                if (enters && winding == 0) solidStart = minimum;
+                winding += (enters ? 1 : 0) - (exits ? 1 : 0);
+                if (exits && winding == 0)
+                    output.Add(top with { MinimumHeight = solidStart, MaximumHeight = maximum, Normal = normal });
+            }
+        }
+    }
+
     private static void Rasterize(List<NavigationSurfaceSpan>?[] columns, int width, int depth,
         Vector2 origin, NavigationSurfaceSettings settings, NavigationBounds region,
-        Vector3 a, Vector3 b, Vector3 c, int area)
+        Vector3 a, Vector3 b, Vector3 c, int area, bool walkable)
     {
         Vector3 lower = Vector3.Min(a, Vector3.Min(b, c));
         Vector3 upper = Vector3.Max(a, Vector3.Max(b, c));
@@ -113,7 +159,7 @@ public static class NavigationSurfaceBuilder
         int minZ = Math.Max(0, (int)MathF.Floor((lower.Z - origin.Y) / settings.CellSize));
         int maxZ = Math.Min(depth - 1, (int)MathF.Floor((upper.Z - origin.Y) / settings.CellSize));
         Vector3 cross = Vector3.Cross(b - a, c - a);
-        Vector3 normal = cross.LengthSquared() > 0 ? Vector3.Normalize(cross) : Vector3.Zero;
+        Vector3 normal = walkable && cross.LengthSquared() > 0 ? Vector3.Normalize(cross) : Vector3.Zero;
         Span<Vector3> first = stackalloc Vector3[12];
         Span<Vector3> second = stackalloc Vector3[12];
         for (int z = minZ; z <= maxZ; z++)

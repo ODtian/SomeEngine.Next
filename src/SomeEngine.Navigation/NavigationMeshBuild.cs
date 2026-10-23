@@ -24,6 +24,7 @@ public sealed class NavigationMeshBuildState
     public NavigationMesh Mesh { get; internal set; } = null!;
     public ReadOnlyMemory<NavigationMeshTileRange> Tiles { get; internal set; }
     internal NavigationMeshTileData[] TileData { get; set; } = [];
+    internal NavigationMeshBuilder.TileConnection[][] Connections { get; set; } = [];
 
     internal NavigationMeshBuildState(NavigationProfile profile, NavigationPolicy policy, NavigationMeshSettings settings)
         => (Profile, Policy, Settings) = (profile, policy, settings);

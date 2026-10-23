@@ -46,7 +46,7 @@ public sealed class NavigationRegionGraph(ReadOnlyMemory<NavigationRegionTile> t
 }
 
 /// <summary>One independently held detailed tile in mesh-local coordinates.</summary>
-public sealed record NavigationMeshTile(NavigationTileCoordinate Tile, NavigationMesh Mesh);
+public sealed record NavigationMeshTile(NavigationTileCoordinate Tile, NavigationMesh Mesh, NavigationBounds? Bounds = null);
 
 public readonly record struct NavigationRouteEntrance(int Region, NavigationTileCoordinate Tile,
     int Entrance, Vector3 Position);

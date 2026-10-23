@@ -32,6 +32,13 @@ public sealed class NavigationStreaming(NavigationScene scene, Scheduler? schedu
 
     public void AddSource(int region, NavigationTileSource<NavigationMesh> source) => _sources.Add(region, source.Retain());
 
+    public void SetSource(int region, NavigationTileSource<NavigationMesh> source)
+    {
+        NavigationTileSource<NavigationMesh> retained = source.Retain();
+        if (_sources.TryGetValue(region, out NavigationTileSource<NavigationMesh>? previous)) previous.Dispose();
+        _sources[region] = retained;
+    }
+
     public void Update()
     {
         if (!Applied.IsCompleted) return;
@@ -131,15 +138,21 @@ public sealed class NavigationStreaming(NavigationScene scene, Scheduler? schedu
             foreach (NavigationSceneRegion region in current.Regions.Span)
                 accesses.Add(NavigationJobAccess.Read(scheduler, region.Graph.Tiles));
             foreach (NavigationSceneTile tile in loaded) tile.Mesh.AddReadAccesses(scheduler, accesses);
-            scheduler.Schedule(new ApplyTiles(scene, current, loaded, removed), accesses.ToArray());
+            scheduler.Schedule(new ApplyTiles(scene, current, loaded, removed, scheduler), accesses.ToArray());
         }
     }
 
     private readonly struct ApplyTiles(NavigationScene scene, NavigationSceneContent current,
-        NavigationSceneTile[] loaded, NavigationSceneTileId[] removed) : IJob
+        NavigationSceneTile[] loaded, NavigationSceneTileId[] removed, Scheduler scheduler) : IJob
     {
         public void Execute()
         {
+            if (!ReferenceEquals(scene.Content, current))
+            {
+                scheduler.Schedule(new ScheduleApplyTiles(scene, loaded, removed, scheduler),
+                    JobResourceAccess.Write(scheduler.GetResourceToken(scene)));
+                return;
+            }
             var tiles = current.Tiles.ToArray().ToDictionary(tile => tile.Id);
             bool changed = false;
             foreach (NavigationSceneTileId tile in removed) changed |= tiles.Remove(tile);
