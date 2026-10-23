@@ -41,6 +41,8 @@ NavigationProgress result = world.Read<NavigationProgress>(entity);
 
 需要避让的组合使用 `ScheduleGuidance`，与 Flow 群体共同加入[邻居与 ORCA 阶段](Navigation-Avoidance.md)，再消费该阶段写出的 Steering。
 
+具有转弯限制的车辆使用[运动基元与状态格组合](Navigation-Vehicles.md)，路径结果保存位姿和控制序列，实际运动消费同一车辆模型。
+
 ## 多边形路径
 
 `NavigationMesh` 保存凸多边形的连续顶点索引、定向入口范围及可选细节三角形。入口的左右端点沿行进方向定义：在 XZ 中，行进方向与“入口中点到左端点”的叉积为正，反向入口交换端点。

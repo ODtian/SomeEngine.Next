@@ -92,4 +92,3 @@ public partial struct ConsumeVehicleMotion(float deltaTime, NavigationVehicleMod
         motion.Velocity = NavigationHeading.Direction(next.Heading) * control.Speed;
     }
 }
-

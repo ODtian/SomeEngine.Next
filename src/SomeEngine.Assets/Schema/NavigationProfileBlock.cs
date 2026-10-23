@@ -45,7 +45,8 @@ public sealed partial class NavigationProfileBlock : AssetBlock, IAssetBlockWrit
         ReadOnlyMemory<byte> footprint = await source.ReadBytesAsync(FootprintChunkKey, cancellationToken).ConfigureAwait(false);
         var result = new NavigationProfileBlock();
         result._profile = new(NavigationArrayData.Decode<Vector2>(footprint), data.Height, data.MaximumSlopeRadians,
-            data.MaximumStepHeight, data.MaximumSpeed, data.MaximumAcceleration, data.MaximumAngularSpeed, data.Capabilities);
+            data.MaximumStepHeight, data.MaximumSpeed, data.MaximumAcceleration, data.MaximumAngularSpeed, data.Capabilities,
+            data.HasVehicleModel ? new NavigationVehicleModel(data.MinimumTurningRadius, data.AllowReverse) : null);
         result.AttachSource(source);
         return result;
     }
@@ -60,6 +61,9 @@ public sealed partial class NavigationProfileBlock : AssetBlock, IAssetBlockWrit
             MaximumStepHeight = profile.MaximumStepHeight, MaximumSpeed = profile.MaximumSpeed,
             MaximumAcceleration = profile.MaximumAcceleration, MaximumAngularSpeed = profile.MaximumAngularSpeed,
             Capabilities = profile.Capabilities,
+            HasVehicleModel = profile.VehicleModel.HasValue,
+            MinimumTurningRadius = profile.VehicleModel?.MinimumTurningRadius ?? 0,
+            AllowReverse = profile.VehicleModel?.AllowReverse ?? false,
         });
         writer.WriteChunk(FootprintChunkKey, NavigationArrayData.Encode(profile.Footprint));
         return ValueTask.CompletedTask;
@@ -82,4 +86,7 @@ internal sealed partial class NavigationProfileData
     public float MaximumAcceleration { get; set; }
     public float MaximumAngularSpeed { get; set; }
     public ulong Capabilities { get; set; }
+    public bool HasVehicleModel { get; set; }
+    public float MinimumTurningRadius { get; set; }
+    public bool AllowReverse { get; set; }
 }
