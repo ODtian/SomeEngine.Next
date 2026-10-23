@@ -9,6 +9,29 @@ namespace SomeEngine.Navigation.Tests;
 public sealed class NavigationMovementTests
 {
     [Fact]
+    public void MovingEntityTargetKeepsBudgetedSearchProgressAndActorMovement()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
+            PolygonSearchState, TestMotion, TestMotionReader>(world);
+        Entity target = world.CreateEntity(new TestMotion { Position = new(5, 0, 1) });
+        Entity actor = world.CreateEntity(new TestMotion { Position = new(1, 0, 1) });
+        navigation.AddAgent(actor, FlatMesh(), Profile(), new NavigationPolicy(), new NavigationGoal(target, 0.2f), 2);
+
+        for (int frame = 0; frame < 60; frame++)
+        {
+            world.Replace(target, new TestMotion { Position = new(5 + frame * 0.01f, 0, 1) });
+            navigation.ScheduleProgress(new ConsumeSteering(0.1f)
+                .ScheduleParallel(world, navigation.Schedule(0.1f, expansionBudget: 1).Steering)).Complete();
+        }
+
+        Assert.True(world.Read<TestMotion>(actor).Position.X > 4);
+        Assert.Equal(world.Read<TestMotion>(target).Position, world.Read<NavigationPathResult>(actor).TargetPosition);
+        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+    }
+
+    [Fact]
     public void MovementConsumerFollowsThePathAroundAnObstacleAndReportsArrival()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig

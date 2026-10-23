@@ -14,7 +14,7 @@
 
 `NavigationGoal` 支持世界坐标点目标与实体目标，实体目标的位置来自同一强类型运动读取器，并加上目标组件中的世界坐标偏移。`ArrivalRange` 给出目标区域半径；`Heading` 和 `HeadingTolerance` 给出到达朝向。`World.Replace` 修改目标或资源引用，`World.Disable<NavigationGoal>` 暂停导航，`World.Enable<NavigationGoal>` 从实际位置重新求解。
 
-目标、目标位置、规格、策略、表示或启用状态变化会推进请求版本。`NavigationPathResult` 保存路径、搜索状态、目标位置与请求版本。`NavigationGuidance` 保存当前期望速度和朝向，`NavigationSteering` 提供运动消费者使用的建议。每个输出携带对应的请求版本。
+目标、规格、策略、表示或启用状态变化会立即推进请求版本。实体目标移动时，正在预算推进或等待详细块的搜索保留本次目标位置和队列，完成后再从实际位置追踪最新目标并推进版本。`NavigationPathResult` 始终报告目标的当前实际位置，并保存路径、搜索状态与请求版本；最终进度同样使用当前目标位置。`NavigationGuidance` 保存当前期望速度和朝向，`NavigationSteering` 提供运动消费者使用的建议。每个输出携带对应的请求版本。
 
 `INavigationMotionReader<TMotion>.Read` 返回实际位置、速度、朝向和接地结果。朝向遵循 `NavigationHeading`：XZ 平面上的弧度，零朝 +Z，正向由 +Z 转向 +X。`Direction`、`FromDirection`、`Difference` 统一方向转换和角差。
 
@@ -23,6 +23,8 @@
 `Schedule(deltaTime, expansionBudget, motionReady)` 接收实际运动输入的就绪句柄，返回 `Paths`、`Guidance`、`Steering` 三个完成句柄。每个请求按本次预算继续自己的搜索队列，路径完成后引导角色逐段到达路径拐点，并在预测的下一位置采样表面高度。
 
 运动消费者依赖 `Steering`，写回实际位姿与速度；`ScheduleProgress(motionCompletion)` 等待运动完成后读取结果。进度距离使用 `max(0, distance(actualPosition, targetPosition) - arrivalRange)`；进入目标区域后按实际朝向报告 `Aligning` 或 `Arrived`。其它进度状态包括 `Idle`、`Searching`、`Moving`、`Unreachable` 和 `TargetUnavailable`。
+
+实际位置进入目标区域且朝向满足目标时，共同引导入口保持当前位姿并输出零平移速度。需要继续调整朝向的 ASA 和车辆请求沿各自可行位姿、转弯控制继续执行，满足区域与朝向两项条件后停止。
 
 `ScheduleGuidance` 返回路径与引导的完成句柄，供调用方将其与[共享流场](Navigation-Flows.md)和邻居工作汇合，再由所选避让阶段写入本步 Steering。
 

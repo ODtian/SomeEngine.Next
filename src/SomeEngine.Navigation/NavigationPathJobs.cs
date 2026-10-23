@@ -43,8 +43,10 @@ internal partial struct NavigationPathJob<TSpace, TSearch, TState, TMotion, TRea
         if (traversal.Status is NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing) return;
         NavigationRequestData<TSpace, TState> data = request.Data;
         bool available = NavigationTargets<TMotion, TReader>.TryResolve(_world, in goal, out Vector3 target);
+        bool targetMoved = data.TargetPosition != target &&
+            data.Search?.Status is NavigationSearchStatus.Found or NavigationSearchStatus.Unreachable;
         bool changed = !data.Active || data.TargetAvailable != available || data.Goal != goal ||
-            data.TargetPosition != target || !ReferenceEquals(data.Space, navigation.Space) ||
+            targetMoved || !ReferenceEquals(data.Space, navigation.Space) ||
             !ReferenceEquals(data.Profile, agent.Profile) || !ReferenceEquals(data.Policy, agent.Policy);
         if (changed)
         {
@@ -72,7 +74,7 @@ internal partial struct NavigationPathJob<TSpace, TSearch, TState, TMotion, TRea
         {
             NavigationMotion motion = TReader.Read(in movement);
             var input = new NavigationSearchInput<TSpace>(navigation.Space, agent.Profile, agent.Policy,
-                motion.Position, target, goal.ArrivalRange, motion.Heading, goal.Heading, goal.HeadingTolerance);
+                motion.Position, data.TargetPosition, goal.ArrivalRange, motion.Heading, goal.Heading, goal.HeadingTolerance);
             bool resumed = TSearch.Update(search.State, in input);
             if (search.Status == NavigationSearchStatus.Searching || resumed)
             {

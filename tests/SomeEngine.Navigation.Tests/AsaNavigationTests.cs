@@ -9,6 +9,30 @@ namespace SomeEngine.Navigation.Tests;
 public sealed class AsaNavigationTests
 {
     [Fact]
+    public void ActorInsideTheArrivalRegionAtItsGoalHeadingKeepsItsActualPose()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        NavigationProfile profile = Profile();
+        var policy = new NavigationPolicy();
+        HeadingNavigationMesh mesh = HeadingNavigationMeshBuilder.Schedule(Scene(), profile, policy,
+            new() { ChannelCount = 16 }, scheduler: scheduler).Complete().Mesh;
+        var navigation = new NavigationSystems<HeadingNavigationMesh, AsaNavigationSearch, AsaSearchState, TestMotion, TestMotionReader>(world);
+        var start = new NavigationPose(new(7, 0, 7), MathF.PI / 2);
+        Entity actor = world.CreateEntity(new TestMotion { Position = start.Position, Heading = start.Heading });
+        navigation.AddAgent(actor, mesh, profile, policy, new(new Vector3(9, 0, 7), 2.1f, start.Heading), 2);
+
+        navigation.ScheduleProgress(new ConsumeSteering(0.1f)
+            .ScheduleParallel(world, navigation.Schedule(0.1f, 2048).Steering)).Complete();
+
+        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(Vector3.Zero, world.Read<NavigationSteering>(actor).Velocity);
+        Assert.Equal(start.Position, world.Read<TestMotion>(actor).Position);
+        Assert.Equal(start.Heading, world.Read<TestMotion>(actor).Heading);
+        Assert.True(mesh.IsPoseFeasible(start.Position, start.Heading));
+    }
+
+    [Fact]
     public void LongActorTurnsInTheWideRegionAndArrivesThroughTheAlignedExit()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });

@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using SomeEngine.Job;
 
 namespace SomeEngine.Navigation;
@@ -26,17 +27,33 @@ public abstract class NavigationTileSource<TTile> : IDisposable where TTile : cl
 public sealed class NavigationTileRead<TTile> where TTile : class
 {
     private TTile _tile = null!;
+    private ExceptionDispatchInfo? _failure;
     public JobHandle Completion { get; }
-    public TTile Complete() { Completion.Complete(); return _tile; }
+    public TTile Complete() { Completion.Complete(); _failure?.Throw(); return _tile; }
 
     internal NavigationTileRead(NavigationTileSource<TTile> source, NavigationTileCoordinate coordinate,
         Scheduler scheduler, CancellationToken cancellationToken)
     {
-        Task<NavigationTileBytes> bytes = source.ReadAsync(coordinate, cancellationToken).AsTask();
+        Task<NavigationTileBytes> bytes;
+        try { bytes = source.ReadAsync(coordinate, cancellationToken).AsTask(); }
+        catch { source.Dispose(); throw; }
         JobHandle ready = scheduler.CreateExternalFenceHandle(new ReadFence(bytes));
         JobHandle decoded = scheduler.Schedule(new ScheduleDecode(this, source, coordinate, bytes, scheduler), ready);
         JobHandle released = scheduler.ScheduleFinally(new ReleaseSource(source), JobScheduleOptions.Default, decoded);
         Completion = scheduler.CombineDependencies([decoded, released]);
+    }
+
+    internal static void CompleteAll(IEnumerable<NavigationTileRead<TTile>> reads, JobHandle applied)
+    {
+        ExceptionDispatchInfo? failure = null;
+        foreach (NavigationTileRead<TTile> read in reads)
+        {
+            try { read.Complete(); }
+            catch (Exception error) { failure ??= ExceptionDispatchInfo.Capture(error); }
+        }
+        try { applied.Complete(); }
+        catch (Exception error) { failure ??= ExceptionDispatchInfo.Capture(error); }
+        failure?.Throw();
     }
 
     private sealed class ReadFence(Task task) : IJobExternalFence
@@ -54,7 +71,9 @@ public sealed class NavigationTileRead<TTile> where TTile : class
     {
         public void Execute()
         {
-            NavigationTileBytes acquired = bytes.GetAwaiter().GetResult();
+            NavigationTileBytes acquired;
+            try { acquired = bytes.GetAwaiter().GetResult(); }
+            catch (Exception error) { result._failure = ExceptionDispatchInfo.Capture(error); throw; }
             var accesses = new List<JobResourceAccess>();
             foreach (ReadOnlyMemory<byte> chunk in acquired.Chunks.Span)
                 accesses.Add(NavigationJobAccess.Read(scheduler, chunk));
@@ -65,7 +84,11 @@ public sealed class NavigationTileRead<TTile> where TTile : class
     private readonly struct DecodeTile(NavigationTileRead<TTile> result, NavigationTileSource<TTile> source,
         NavigationTileCoordinate coordinate, NavigationTileBytes bytes) : IJob
     {
-        public void Execute() => result._tile = source.Decode(coordinate, bytes);
+        public void Execute()
+        {
+            try { result._tile = source.Decode(coordinate, bytes); }
+            catch (Exception error) { result._failure = ExceptionDispatchInfo.Capture(error); throw; }
+        }
     }
 
     private readonly struct ReleaseSource(NavigationTileSource<TTile> source) : IJob

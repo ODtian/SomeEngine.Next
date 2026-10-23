@@ -14,6 +14,8 @@ Heading 表示的专用区域图、TileSource、ASA 局部查询与相同兴趣/
 
 `Update` 提交所需读取，并接入当次已经完成的结果。`Reads` 公开各块的后台完成句柄。`Applied` 只覆盖本次已经取得数据的短接入 Job；运动调度把该句柄作为就绪依赖。接入 Job 在 Scene 写访问内取得当前目录，并声明该值的实际数组，按目录块内容版本匹配完成数据。接入一次交换完整 `NavigationSceneContent`，推进绑定 `Version` 和 `ResidenceVersion`，内容重建使用独立的 `ContentVersion`。预算移除目录引用后，已提交 Job 与路径分段继续持有实际数组。
 
+普通网格、朝向网格和 Grid 流送都在消费完成结果前移除对应在途项。读取或解码失败经 `Update` 交给调用方，下一次仍有需求时重新取得；`NavigationTileRead.Complete` 保留该次失败结果。释放 Streaming 时完成所有在途读取与接入工作，再释放持有的来源，最后传播完成错误。同步启动读取失败也释放本次保留的来源。
+
 应用将 `NavigationStreamingSystem` 放入单独的 `SystemGroup<ImmediateSystemContext>`，自行跨帧调用后台组的 `Update`。主组 `Complete` 覆盖主组的运动工作；应用退出或切换场景时完成后台组，再释放 Streaming 与来源。
 
 ## 同一请求的详细前段

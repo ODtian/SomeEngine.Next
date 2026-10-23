@@ -13,6 +13,7 @@ internal readonly record struct SavedHeadingRegion(int Id, int Mesh, HeadingNavi
 internal sealed record SavedHeadingGraph(int Profile, int Policy, int Links, ulong Version, SavedHeadingRegion[] Regions) : NavigationSavedResource;
 internal sealed record SavedHeadingCosts(int Graph) : NavigationSavedResource;
 internal sealed record SavedHeadingGrid(int Graph) : NavigationSavedResource;
+internal sealed record SavedHeadingCostValues(int Graph, int Policy, ulong Version, float[] Cells, float[] Edges) : NavigationSavedResource;
 
 internal sealed partial class NavigationSaveResourceCapture
 {
@@ -63,6 +64,13 @@ internal readonly partial struct NavigationSaveCodec
                 break;
             case SavedHeadingCosts costs: writer.WriteByte(16); writer.WriteInt32(costs.Graph); break;
             case SavedHeadingGrid grid: writer.WriteByte(17); writer.WriteInt32(grid.Graph); break;
+            case SavedHeadingCostValues values:
+                writer.WriteByte(18); writer.WriteInt32(values.Graph); writer.WriteInt32(values.Policy); writer.WriteUInt64(values.Version);
+                writer.WriteInt32(values.Cells.Length);
+                foreach (float cost in values.Cells) writer.WriteSingle(cost);
+                writer.WriteInt32(values.Edges.Length);
+                foreach (float cost in values.Edges) writer.WriteSingle(cost);
+                break;
             default: throw new InvalidOperationException($"Unknown navigation save resource {resource.GetType().Name}.");
         }
     }
@@ -85,6 +93,14 @@ internal readonly partial struct NavigationSaveCodec
                 return new SavedHeadingGraph(profile, policy, links, version, regions);
             case 16: return new SavedHeadingCosts(reader.ReadInt32());
             case 17: return new SavedHeadingGrid(reader.ReadInt32());
+            case 18:
+                int costGraph = reader.ReadInt32(), costPolicy = reader.ReadInt32();
+                ulong costVersion = reader.ReadUInt64();
+                var cells = new float[reader.ReadInt32()];
+                for (int index = 0; index < cells.Length; index++) cells[index] = reader.ReadSingle();
+                var edges = new float[reader.ReadInt32()];
+                for (int index = 0; index < edges.Length; index++) edges[index] = reader.ReadSingle();
+                return new SavedHeadingCostValues(costGraph, costPolicy, costVersion, cells, edges);
             default: throw new InvalidDataException($"Unknown navigation save resource kind {kind}.");
         }
     }

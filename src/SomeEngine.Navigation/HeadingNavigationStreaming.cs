@@ -59,9 +59,9 @@ public sealed class HeadingNavigationStreaming(HeadingNavigationScene scene, Nav
         foreach (var pair in _reads.ToArray())
         {
             if (!pair.Value.Completion.IsCompleted) continue;
+            _reads.Remove(pair.Key);
             HeadingNavigationMesh mesh = pair.Value.Complete();
             ready.Add(new(pair.Key, mesh, directory.First(tile => tile.Tile == pair.Key).Bounds));
-            _reads.Remove(pair.Key);
         }
         var keep = current.Tiles.ToArray().Concat(ready).Select(tile => tile.Tile).Distinct()
             .OrderByDescending(selected.Contains).ThenBy(DemandDistance).Take(ResidentTileBudget).ToHashSet();
@@ -76,8 +76,8 @@ public sealed class HeadingNavigationStreaming(HeadingNavigationScene scene, Nav
     private static float Distance(Vector3 point, NavigationBounds bounds) => Vector3.Distance(point, Vector3.Clamp(point, bounds.Minimum, bounds.Maximum));
     public void Dispose()
     {
-        foreach (NavigationTileRead<HeadingNavigationMesh> read in _reads.Values) read.Completion.Complete();
-        Applied.Complete(); _source.Dispose(); _reads.Clear();
+        try { NavigationTileRead<HeadingNavigationMesh>.CompleteAll(_reads.Values, Applied); }
+        finally { _source.Dispose(); _reads.Clear(); }
     }
 
     private readonly struct ApplyTiles(HeadingNavigationScene scene, HeadingNavigationMeshTile[] loaded, NavigationTileCoordinate[] removed) : IJob

@@ -25,6 +25,13 @@ internal partial struct NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(
             return;
         if (!result.HasTarget)
             return;
+        float regionDistance = MathF.Max(0, Vector3.Distance(motion.Position, result.TargetPosition) - goal.ArrivalRange);
+        if (regionDistance <= 0.0001f && (goal.Heading is not { } heading ||
+            MathF.Abs(NavigationHeading.Difference(heading, motion.Heading)) <= goal.HeadingTolerance))
+        {
+            guidance = new(default, motion.Heading, result.RequestVersion, true);
+            return;
+        }
         if (result.Path is { MotionSegments.IsEmpty: false } vehiclePath)
         {
             guidance = NavigationVehicleGuidance.Sample(vehiclePath, ref request.Data.CornerIndex, motion,
@@ -37,7 +44,6 @@ internal partial struct NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(
                 agent.Profile, agent.DesiredSpeed, _deltaTime, result.RequestVersion);
             return;
         }
-        float regionDistance = MathF.Max(0, Vector3.Distance(motion.Position, result.TargetPosition) - goal.ArrivalRange);
         if (regionDistance <= 0.0001f)
         {
             guidance = new(default, goal.Heading ?? motion.Heading, result.RequestVersion, true);

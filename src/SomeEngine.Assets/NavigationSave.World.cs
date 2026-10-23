@@ -65,7 +65,7 @@ internal sealed partial class NavigationSaveResourceCapture
         foreach (NavigationSaveRegion registration in sources.RegionEntries)
         {
             NavigationRegionSources region = registration.Region;
-            if (registration.Grids is { Completed: { } update }) _derived[update.Grid] = new SavedBuiltGrid(Regions.Count);
+            if (registration.Grids is { Completed: { } update }) _derived[NavigationSaveResources.GetGridSource(update.Grid)] = new SavedBuiltGrid(Regions.Count);
             NavigationRegionSettings settings = region.Settings;
             Regions.Add(new(Add(region.Scene), region.Region, region.Bounds, Add(settings.Profile), Add(settings.Policy),
                 settings.Surface, settings.Mesh, settings.Ports.ToArray(), registration.TransformReader, registration.Grids is not null,

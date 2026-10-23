@@ -87,8 +87,8 @@ public sealed class NavigationStreaming(NavigationScene scene, Scheduler? schedu
         foreach (var pair in _reads.ToArray())
         {
             if (!pair.Value.Completion.IsCompleted) continue;
-            completed.Add(new(pair.Key.Region, pair.Key.Tile, pair.Value.Complete()));
             _reads.Remove(pair.Key);
+            completed.Add(new(pair.Key.Region, pair.Key.Tile, pair.Value.Complete()));
         }
         HashSet<NavigationSceneTileId> keep = content.Tiles.ToArray().Select(tile => tile.Id).Concat(completed.Select(tile => tile.Id))
             .Distinct().OrderByDescending(selected.Contains).ThenBy(tile => DemandDistance(content, tile))
@@ -116,11 +116,13 @@ public sealed class NavigationStreaming(NavigationScene scene, Scheduler? schedu
 
     public void Dispose()
     {
-        foreach (NavigationTileRead<NavigationMesh> read in _reads.Values) read.Completion.Complete();
-        Applied.Complete();
-        foreach (NavigationTileSource<NavigationMesh> source in _sources.Values) source.Dispose();
-        _sources.Clear();
-        _reads.Clear();
+        try { NavigationTileRead<NavigationMesh>.CompleteAll(_reads.Values, Applied); }
+        finally
+        {
+            foreach (NavigationTileSource<NavigationMesh> source in _sources.Values) source.Dispose();
+            _sources.Clear();
+            _reads.Clear();
+        }
     }
 
     private readonly struct ScheduleApplyTiles(NavigationScene scene, NavigationSceneTile[] loaded,
