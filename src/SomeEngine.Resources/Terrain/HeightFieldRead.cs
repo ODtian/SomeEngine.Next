@@ -9,8 +9,9 @@ public sealed class HeightFieldRead
     private readonly HeightFieldData _data;
     private readonly float _initialHeight;
 
-    internal HeightFieldRead(HeightGrid grid, float initialHeight, HeightFieldData data, HeightRegion range)
+    internal HeightFieldRead(int fieldId, HeightGrid grid, float initialHeight, HeightFieldData data, HeightRegion range)
     {
+        FieldId = fieldId;
         Grid = grid;
         _initialHeight = initialHeight;
         _data = data;
@@ -18,8 +19,10 @@ public sealed class HeightFieldRead
     }
 
     public HeightGrid Grid { get; }
+    public int FieldId { get; }
     public HeightRegion Range { get; }
     public ulong Revision => _data.Edit.Revision;
+    public TerrainFieldVersion Version => new(TerrainFieldKind.Height, FieldId, Revision);
 
     /// <summary>Declares reads of this version's pages in the requested range.</summary>
     public JobResourceAccess[] GetReadAccesses(Scheduler scheduler)

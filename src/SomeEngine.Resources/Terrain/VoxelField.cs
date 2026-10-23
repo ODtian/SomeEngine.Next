@@ -69,7 +69,7 @@ public sealed class VoxelField
                 dependencies.Add(read.Completion);
                 accesses.Add(JobResourceAccess.Read(Terrain.Editing.Scheduler, read.Samples));
             }
-        return new(new VoxelFieldRead(Grid, InitialValue, data, range),
+        return new(new VoxelFieldRead(Id, Grid, InitialValue, data, range),
             Terrain.Editing.Scheduler.CombineDependencies(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(dependencies)),
             accesses.ToArray());
     }

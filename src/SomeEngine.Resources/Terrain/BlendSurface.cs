@@ -29,7 +29,7 @@ public sealed class BlendSurface(TerrainSurface first, TerrainSurface second, fl
         CpuSurfaceData first = First.CaptureCpuRead(bounds);
         CpuSurfaceData second = Second.CaptureCpuRead(bounds);
         JobHandle completion = Terrain.Editing.Scheduler.CombineDependencies([first.Completion, second.Completion]);
-        return new(new BlendSurfaceRead(first.Samples, second.Samples, Weight, Region, FadeDistance, Terrain.Revision), completion);
+        return new(new BlendSurfaceRead(first.Samples, second.Samples, Weight, Region, FadeDistance, Terrain.Revision, bounds), completion);
     }
 
     public override TerrainSurface Duplicate(Terrain terrain) => Region is { } region
@@ -37,7 +37,9 @@ public sealed class BlendSurface(TerrainSurface first, TerrainSurface second, fl
         : new BlendSurface(First.Duplicate(terrain), Second.Duplicate(terrain), Weight);
 
     private sealed class BlendSurfaceRead(TerrainSurfaceRead first, TerrainSurfaceRead second,
-        float weight, TerrainBounds? region, float fadeDistance, ulong revision) : TerrainSurfaceRead(revision)
+        float weight, TerrainBounds? region, float fadeDistance, ulong revision, TerrainBounds bounds)
+        : TerrainSurfaceRead(revision, bounds,
+            first.FieldVersions.ToArray().Concat(second.FieldVersions.ToArray()).Distinct().ToArray())
     {
         public override float Sample(Vector3 position)
         {

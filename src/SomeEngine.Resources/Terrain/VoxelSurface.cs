@@ -21,12 +21,13 @@ public sealed class VoxelSurface(VoxelField field) : TerrainSurface
         int maxZ = (int)MathF.Floor(bounds.Max.Z / spacing) + 2;
         VoxelFieldCpuRead read = Field.CaptureCpuRead(new VoxelRegion(minX, minY, minZ,
             maxX - minX, maxY - minY, maxZ - minZ));
-        return new(new VoxelSurfaceRead(read.Samples, Terrain.Revision), read.Completion);
+        return new(new VoxelSurfaceRead(read.Samples, Terrain.Revision, bounds), read.Completion);
     }
 
     public override TerrainSurface Duplicate(Terrain terrain) => new VoxelSurface(terrain.VoxelFields[Field.Id]);
 
-    private sealed class VoxelSurfaceRead(VoxelFieldRead voxels, ulong revision) : TerrainSurfaceRead(revision)
+    private sealed class VoxelSurfaceRead(VoxelFieldRead voxels, ulong revision, TerrainBounds bounds)
+        : TerrainSurfaceRead(revision, bounds, new[] { voxels.Version })
     {
         public override float Sample(Vector3 position) => voxels.Sample(position);
         public override JobResourceAccess[] GetReadAccesses(Scheduler scheduler) => voxels.GetReadAccesses(scheduler);

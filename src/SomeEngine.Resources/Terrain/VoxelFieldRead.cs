@@ -9,8 +9,9 @@ public sealed class VoxelFieldRead
     private readonly VoxelFieldData _data;
     private readonly float _initialValue;
 
-    internal VoxelFieldRead(VoxelGrid grid, float initialValue, VoxelFieldData data, VoxelRegion range)
+    internal VoxelFieldRead(int fieldId, VoxelGrid grid, float initialValue, VoxelFieldData data, VoxelRegion range)
     {
+        FieldId = fieldId;
         Grid = grid;
         _initialValue = initialValue;
         _data = data;
@@ -18,8 +19,10 @@ public sealed class VoxelFieldRead
     }
 
     public VoxelGrid Grid { get; }
+    public int FieldId { get; }
     public VoxelRegion Range { get; }
     public ulong Revision => _data.Edit.Revision;
+    public TerrainFieldVersion Version => new(TerrainFieldKind.Voxel, FieldId, Revision);
 
     /// <summary>Declares reads of this version's pages in the requested region.</summary>
     public JobResourceAccess[] GetReadAccesses(Scheduler scheduler)
