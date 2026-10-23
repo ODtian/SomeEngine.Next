@@ -4,12 +4,14 @@ using SomeEngine.ECS.Systems;
 namespace SomeEngine.Navigation;
 
 /// <summary>A grid and shared motion primitives, with car-model footprint sweep queries.</summary>
-public sealed class NavigationVehicleSpace(NavigationGrid grid, NavigationMotionSet motions, NavigationCosts? costs = null)
+public sealed class NavigationVehicleSpace(NavigationGrid grid, NavigationMotionSet motions, NavigationCosts? costs = null,
+    HybridAStarSettings? hybridSettings = null)
     : INavigationSpace<NavigationVehicleSpace>
 {
     public NavigationGrid Grid { get; } = grid;
     public NavigationMotionSet Motions { get; } = motions;
     public NavigationCosts? Costs { get; } = costs;
+    public HybridAStarSettings HybridSettings { get; } = hybridSettings ?? new();
 
     public static void CollectResources(NavigationVehicleSpace space, ref JobResourceAccessBuilder resources)
     {

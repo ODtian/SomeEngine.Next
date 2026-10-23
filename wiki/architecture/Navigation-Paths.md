@@ -43,7 +43,7 @@ NavigationProgress result = world.Read<NavigationProgress>(entity);
 
 需要避让的组合使用 `ScheduleGuidance`，与 Flow 群体共同加入[邻居与 ORCA 阶段](Navigation-Avoidance.md)，再消费该阶段写出的 Steering。
 
-具有转弯限制的车辆使用[运动基元与状态格组合](Navigation-Vehicles.md)，路径结果保存位姿和控制序列，实际运动消费同一车辆模型。
+具有转弯限制的车辆使用[状态格或 Hybrid A* 组合](Navigation-Vehicles.md)，路径结果保存位姿和控制序列，实际运动消费同一车辆模型。
 
 ## 多边形路径
 

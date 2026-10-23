@@ -1,4 +1,4 @@
-# 车辆运动基元与状态格路径
+# 车辆运动模型、状态格与 Hybrid A* 路径
 
 车辆使用 `NavigationProfile.VehicleModel` 描述最小转弯半径和倒车能力。`NavigationVehicleControl` 保存有符号速度、曲率及持续时间，`NavigationVehicleModel.Integrate` 按项目的 XZ 朝向约定积分：零朝向沿 +Z，正曲率转向 +X。搜索、引导和实际运动消费使用同一积分入口。
 
@@ -37,6 +37,27 @@ NavigationMotionSet restoredMotions = await (await reopened.GetBlockAsync<Naviga
 
 `NavigationPath.Poses` 保存世界位姿序列，`MotionSegments` 保存被选中的实际控制和段端点。状态格搜索的算法背景见 [Macenski 等人的 State Lattice 说明](https://arxiv.org/html/2401.13078v2#S3.SS4.SSS3)。
 
+## Hybrid A* 连续位姿搜索
+
+`HybridAStarSearch` 与 `HybridAStarSearchState` 使用相同的 `NavigationVehicleSpace`、目标和运动消费接口。节点保存从实际起始位姿积分得到的连续位置与朝向；空间格、支撑层、朝向分箱及行驶方向组成最佳状态索引。每个请求独占开放队列、累计成本、前驱控制和结果，按 `expansionBudget` 继续出队扩展。
+
+扩展从当前位姿生成直行和多个曲率档位的控制。曲率范围来自同一模型的 `MaximumCurvature`，有符号速度同时满足 Profile 的线速度与角速度限制。模型允许倒车时扩展相应反向控制。每条完整控制段都调用 `VehicleSpace.TryTraverse`，费用使用它采集的实际地形成本，再应用转弯、倒车与换向成本。启发下界取剩余平面距离与达到目标朝向所需弧长下界的较大值，再乘最小地形成本。
+
+临近目标时检查六类 Dubins 圆弧/直线连接；允许倒车时也检查反向同向行驶连接。每段继续通过相同模型和完整轮廓扫掠查询，再将可行连接作为带实际成本的目标候选加入队列。搜索扩展可在前进与倒车间换向。较长圆弧分成至多四分之一圆的执行段，共同引导入口据实际反馈逐段执行。
+
+`HybridAStarSettings` 经 `NavigationVehicleSpace` 的可选 `hybridSettings` 参数传入。默认使用 72 个朝向分箱，每侧两档曲率；空间分辨率默认取 Grid 单元大小，步长至少为该分辨率的 `sqrt(2)` 倍与一个朝向分箱对应弧长的较大值，解析连接范围默认取四倍最小转弯半径。`SpatialResolution`、`StepLength`、`AnalyticExpansionDistance` 可显式给出米数。`TurningPenalty`、`ReversePenalty` 是至少为一的成本乘数，`DirectionChangeCost` 是换向时累加的成本。
+
+以下是选择 Hybrid A* 的调用例子，其余目标和调度入口沿用下节：
+
+```csharp
+var space = new NavigationVehicleSpace(grid, restoredMotions,
+    hybridSettings: new HybridAStarSettings { HeadingBins = 72, CurvatureSteps = 2 });
+var navigation = new NavigationSystems<NavigationVehicleSpace, HybridAStarSearch,
+    HybridAStarSearchState, Movement, MovementReader>(world);
+```
+
+两种车辆搜索共用 `NavigationVehiclePath` 生成模型采样位姿、控制段和块依赖。Hybrid A* 方法依据 [Smac Planner 的连续位姿搜索](https://arxiv.org/html/2401.13078v2#S3.SS4.SSS2)，解析连接采用 [OMPL 的 Dubins 方程](https://github.com/ompl/ompl/blob/main/src/ompl/base/spaces/src/DubinsStateSpace.cpp)，对应来源声明保留在实现文件中。
+
 ## 引导与实际消费
 
 以下是公开组合的例子：
@@ -54,4 +75,4 @@ JobHandle progress = navigation.ScheduleProgress(moved);
 
 车辆引导使用实际位置和朝向推进控制段，把本步控制写入 `Guidance.VehicleControl` 和 `Steering.VehicleControl`。移动消费者按 `min(deltaTime, control.Duration)` 调用模型积分，并写回实际位姿与速度；进度使用实际位置和目标朝向判定到达。`Steering.Response` 同时保留其它已选择的速度响应数据，业务按自身运动模型消费对应控制。
 
-公开行为检查见 [NavigationVehicleTests](../../tests/SomeEngine.Navigation.Tests/NavigationVehicleTests.cs) 和 [NavigationMotionAssetTests](../../tests/SomeEngine.Assets.Tests/NavigationMotionAssetTests.cs)。它们分别观察车体通过弯道时的曲率与通行范围，以及重开规格和完整运动基元后继续按角速度限制到达目标。
+公开行为检查见 [NavigationVehicleTests](../../tests/SomeEngine.Navigation.Tests/NavigationVehicleTests.cs) 和 [NavigationMotionAssetTests](../../tests/SomeEngine.Assets.Tests/NavigationMotionAssetTests.cs)。它们观察两种搜索通过弯道时的实际车体范围与曲率、任意起始朝向到目标停靠朝向，以及重开规格和完整运动基元后继续按角速度限制到达目标。实现入口为 [Hybrid A*](../../src/SomeEngine.Navigation/HybridAStarSearch.cs)、[解析连接](../../src/SomeEngine.Navigation/NavigationDubinsConnection.cs) 和 [共同控制路径](../../src/SomeEngine.Navigation/NavigationVehiclePath.cs)。
