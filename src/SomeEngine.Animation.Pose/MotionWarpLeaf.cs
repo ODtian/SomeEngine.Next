@@ -19,7 +19,7 @@ public struct MotionWarpInstance : IBufferElement
     internal Matrix4x4 PreviousMotion;
     internal uint Starts, SourceStarts;
     internal ulong SourceVersion;
-    internal int Level;
+    internal PoseNode Node;
     internal bool Finished;
 }
 
@@ -40,30 +40,19 @@ public readonly struct MotionWarpLeaf : IAnimationLeaf<MotionWarpParameters>
             Input = parameters.Warp.Bind(Matrix4x4.Identity, parameters.Warp.Source.Sample(parameters.Warp.Window.End)),
             PreviousMotion = Matrix4x4.Identity,
         };
+        instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement);
         world.ExecuteBufferWrite<MotionWarpInstance, MotionWarpInstance>(animation, ref instance,
             static (instances, ref instance) => instances.Add(instance));
     }
 
     public static void Complete(World world, Entity animation) =>
-        world.ExecuteBufferWrite<MotionWarpInstance>(animation, static instances =>
-        {
-            Span<MotionWarpInstance> warps = instances.AsSpan();
-            foreach (ref MotionWarpInstance warp in warps) warp.Level = -1;
-            for (int index = 0; index < warps.Length; index++) AssignLevel(warps, index);
-        });
+        PoseAnimation.CompleteNodes(world, animation);
 
-    private static int AssignLevel(Span<MotionWarpInstance> warps, int index)
+    public static void Release(World world, Entity animation)
     {
-        if (warps[index].Level >= 0) return warps[index].Level;
-        int level = 0;
-        for (int producer = 0; producer < warps.Length; producer++)
-            if (producer != index && warps[producer].Output == warps[index].Source)
-                level = Math.Max(level, AssignLevel(warps, producer) + 1);
-        return warps[index].Level = level;
-    }
-
-    public static void Release(World world, Entity animation) =>
         world.ExecuteBufferWrite<MotionWarpInstance>(animation, static instances => instances.Clear());
+        PoseAnimation.ReleaseNodes(world, animation);
+    }
 }
 
 public static partial class PoseGraphExtensions

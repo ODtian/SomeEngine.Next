@@ -6,7 +6,7 @@
 
 Asset 是身份、引用和生命周期单位。`MeshAsset`、`SkeletonAsset`、`AnimationClipAsset`、`TextureAsset`、`ShaderAsset`、`MaterialAsset` 和 `WorldAsset` 是独立资产类型，不绑定某一种使用对象，也不从使用对象逐字段生成资产镜像。同一身份可以有多个独立打开的对象及内容分支。
 
-`SkeletonAsset` 与 `AnimationClipAsset` 只声明身份和 Block 目录，通过资产生成器取得类型化引用、复制、保存和打开 API。骨架与片段的内容 Block 由动画程序集提供，导入扩展按来源 `.meta` 选择。
+`SkeletonAsset`、`AnimationClipAsset` 与 `BoneMaskAsset` 声明身份和 Block 目录，通过资产生成器取得类型化引用、复制、保存和打开 API。骨架、片段与逐骨遮罩的内容 Block 由动画程序集提供，骨架和片段的导入扩展按来源 `.meta` 选择。`BoneMaskBlock` 编码其持有的就绪 `BoneMask`，`CreateMask` 返回同一对象，层叠图通过普通引用持有其使用期，见 [Pose Layers](../animation/Pose-Layers.md)。
 
 Block 是 Asset 内部开放、强类型的数据单位。一个 MeshAsset 可同时包含 `MeshBlock`、`MeshMaterialsBlock`、`ClusterGeometryBlock`、`ClusterVertexAttributesBlock`，以后也可加入其他管线的 Block。Scene 引用 `AssetId<MeshAsset>`，不引用某个管线的几何表示。添加一个 Block 不要求新增一个语义资产身份。
 
