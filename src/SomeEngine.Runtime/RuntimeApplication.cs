@@ -488,7 +488,7 @@ internal static class RuntimeApplication
         using SphereNameplates? nameplates = options.WorldNameplates ? new SphereNameplates(mainWorld) : null;
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor(),
-            new SurfaceRenderExtractor(), new SkinRenderExtractor());
+            new SurfaceRenderExtractor(), new SkinRenderExtractor(), new SkinBoundsRenderExtractor());
         if (screenText is not null) extraction.Add(new GlyphRenderExtractor(screenText.AtlasSource));
 
         RuntimeScene scene = RuntimeWait.Task(
@@ -614,7 +614,9 @@ internal static class RuntimeApplication
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
         using var skinning = new SkinningFeature(backend, device, renderGraph);
+        using var skinBounds = new SkinBoundsFeature(backend, device, renderGraph, skinning);
         _ = prepareSystems.Add(skinning);
+        _ = prepareSystems.Add(skinBounds);
         _ = prepareSystems.Add(instanceSystem);
         using SurfaceMaterial? surfaceMaterial = options.SurfacePanel || options.WorldNameplates || options.HudOverlay
             ? SurfaceMaterial.Create(device.Capabilities.CompileTarget) : null;
@@ -692,7 +694,7 @@ internal static class RuntimeApplication
                 ForceHardwareRaster = forceHardwareRaster,
                 UseInstanceGroups = options.UseInstanceGroups,
                 EnableFrameMetricsReadback = metrics,
-            });
+            }, skinBounds);
 
         void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
         {
@@ -708,6 +710,7 @@ internal static class RuntimeApplication
         {
             var systems = new RenderFrameSystems(renderWorld, instances);
             _ = systems.Add(skinning);
+            _ = systems.Add(skinBounds);
             _ = systems.Add(lightSystem);
             _ = systems.Add(new LightingFeatureSystem(
                 lighting,

@@ -8,6 +8,8 @@ Asset 是身份、引用和生命周期单位。`MeshAsset`、`SkeletonAsset`、
 
 `SkeletonAsset`、`AnimationClipAsset` 与 `BoneMaskAsset` 声明身份和 Block 目录，通过资产生成器取得类型化引用、复制、保存和打开 API。骨架、片段与逐骨遮罩的内容 Block 由动画程序集提供，骨架和片段的导入扩展按来源 `.meta` 选择。`BoneMaskBlock` 编码其持有的就绪 `BoneMask`，`CreateMask` 返回同一对象，层叠图通过普通引用持有其使用期，见 [Pose Layers](../animation/Pose-Layers.md)。
 
+`AnimationClipAsset` 可同时持有编码片段和 `FootMotionBlock`。足部 Block 编码其就绪 `FootMotion`，`CreateMotion` 返回同一对象，选定路径通过普通引用保持轨迹与接触数据，见 [Foot Motion](../animation/Foot-Motion.md)。
+
 Block 是 Asset 内部开放、强类型的数据单位。一个 MeshAsset 可同时包含 `MeshBlock`、`MeshMaterialsBlock`、`ClusterGeometryBlock`、`ClusterVertexAttributesBlock`，以后也可加入其他管线的 Block。Scene 引用 `AssetId<MeshAsset>`，不引用某个管线的几何表示。添加一个 Block 不要求新增一个语义资产身份。
 
 Asset 不分“文本资产”和“二进制资产”。Block 自己选择文本字段、二进制负载、外部来源、磁盘描述、延迟读取或仅在进程中存在的数据。一个逻辑资产可以组合多个不同存储方式的 Block；这不是“每个资产都有可读主文件，再引用二进制资产”的模型，也不要求每个资产都提供可读格式。现有文档容器可以同时包含文本编码元数据与二进制数据块，Block 的自定义读取也可以接入网络或生成内容。仅进程内 Block 不被伪装成可持久内容。

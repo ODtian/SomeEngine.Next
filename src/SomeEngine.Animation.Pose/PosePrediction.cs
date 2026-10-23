@@ -6,6 +6,7 @@ namespace SomeEngine.Animation.Pose;
 public readonly record struct PoseTimeOrigin(double Time, float PathTime = 0, float Speed = 1)
 {
     public float GetPathTime(double time) => (float)(PathTime + (time - Time) * Speed);
+    public double GetTime(float pathTime) => Time + (pathTime - PathTime) / Speed;
 }
 
 /// <summary>A selected path, its time mapping and the caller's identifier for the selected playback conditions.</summary>

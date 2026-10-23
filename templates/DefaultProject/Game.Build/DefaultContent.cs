@@ -81,6 +81,7 @@ public static class DefaultContent
             layout,
             RenderInstanceTransformProperties.PreviousTransformKey);
         int skinBinding = layout.Resolve<RenderSkinBinding>(SkinInstanceProducer.BindingKey).Descriptor.MetadataWordOffset;
+        int deformBounds = layout.Resolve<RenderDeformBounds>(ClusterRenderFeature.DeformBoundsKey).Descriptor.MetadataWordOffset;
 
         return $$"""
             #ifndef SOMEENGINE_RENDER_INSTANCE_LAYOUT_INCLUDED
@@ -108,6 +109,7 @@ public static class DefaultContent
 
             static const uint CLUSTER_BOUNDS_EXPANSION_METADATA_WORD = {{boundsExpansion}}u;
             static const uint CLUSTER_BVH_ROOT_METADATA_WORD = {{bvhRoot}}u;
+            static const uint CLUSTER_DEFORM_BOUNDS_METADATA_WORD = {{deformBounds}}u;
             static const uint CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD = {{materialSlotOffset}}u;
             static const uint RENDER_CURRENT_TRANSFORM_METADATA_WORD = {{currentTransform}}u;
             static const uint RENDER_PREVIOUS_TRANSFORM_METADATA_WORD = {{previousTransform}}u;

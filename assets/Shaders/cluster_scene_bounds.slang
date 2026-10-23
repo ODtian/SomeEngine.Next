@@ -20,6 +20,8 @@ RWStructuredBuffer<float4> SceneChunks;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
 RWStructuredBuffer<float4> InstanceWorldBounds;
 
+#include "cluster_deform_bounds.slang"
+
 groupshared float3 ChunkMin[64];
 groupshared float3 ChunkMax[64];
 
@@ -37,22 +39,26 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BVH_ROOT_METADATA_WORD), instance);
         float3 previousMin = worldMin;
         float3 previousMax = worldMax;
+        bool deformed = false;
         if (root != 0xFFFFFFFFu)
         {
             ClusterBVHNode node = GlobalBVH[root];
+            deformed = ApplyClusterNodeBounds(node, root, instance, false);
             RenderInstanceTransform current = LoadRenderTransform(InstanceData,
                 LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD), instance);
             float expansion = max(0.0, LoadClusterBoundsExpansion(InstanceData,
                 LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD), instance));
             ClusterNodeWorldBounds(node, current, expansion, worldMin, worldMax);
-            if (Scene.HasPreviousBounds == 0u)
+            if (deformed || Scene.HasPreviousBounds == 0u)
             {
+                ClusterBVHNode previousNode = GlobalBVH[root];
+                ApplyClusterNodeBounds(previousNode, root, instance, true);
                 RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
                     LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instance);
-                ClusterNodeWorldBounds(node, previous, expansion, previousMin, previousMax);
+                ClusterNodeWorldBounds(previousNode, previous, expansion, previousMin, previousMax);
             }
         }
-        if (Scene.HasPreviousBounds != 0u)
+        if (!deformed && Scene.HasPreviousBounds != 0u)
         {
             previousMin = InstanceWorldBounds[instance * 4u].xyz;
             previousMax = InstanceWorldBounds[instance * 4u + 1u].xyz;

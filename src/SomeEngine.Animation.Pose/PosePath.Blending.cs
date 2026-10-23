@@ -39,14 +39,18 @@ public sealed partial class PosePath
     {
         float duration = 0;
         foreach (PosePathInput input in inputs) duration = Math.Max(duration, input.Path.Duration);
+        var data = new BlendData(inputs.ToArray());
         return new(new AnimationClip(inputs[0].Path.Skeleton, duration,
-            ClipSampler.Create<BlendData, BlendSampler>(new(inputs.ToArray()))));
+            ClipSampler.Create<BlendData, BlendSampler>(data)), data);
     }
 
     /// <summary>Applies the common masked override or reference-relative additive operation.</summary>
-    public static PosePath Layer(PosePath basis, PosePath source, BoneMask mask, LayerMode mode, PoseWeightCurve weight) =>
-        new(new AnimationClip(basis.Skeleton, Math.Max(basis.Duration, source.Duration),
-            ClipSampler.Create<LayerData, LayerSampler>(new(basis, source, mask, mode, weight))));
+    public static PosePath Layer(PosePath basis, PosePath source, BoneMask mask, LayerMode mode, PoseWeightCurve weight)
+    {
+        var data = new LayerData(basis, source, mask, mode, weight);
+        return new(new AnimationClip(basis.Skeleton, Math.Max(basis.Duration, source.Duration),
+            ClipSampler.Create<LayerData, LayerSampler>(data)), data);
+    }
 
     private sealed record BlendData(PosePathInput[] Inputs);
     private sealed record LayerData(PosePath Base, PosePath Source, BoneMask Mask, LayerMode Mode, PoseWeightCurve Weight);

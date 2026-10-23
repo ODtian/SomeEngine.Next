@@ -18,7 +18,7 @@ public struct MeshPageHeader
     public uint ExtensionDataOffset; // 28
     public ulong VertexEncodingHash; // 32
     public uint ExtensionDataSize;   // 40
-    public uint Reserved;            // 44
+    public uint FirstCluster;        // 44 — first draw-cluster index in this mesh
 
     public const int Size = 48;
     public const int MaxPageSize = 131072;

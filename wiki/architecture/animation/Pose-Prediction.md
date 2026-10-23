@@ -2,6 +2,8 @@
 
 `PosePath` 表达调用者已选定的播放路径。`FromClip` 引用就绪片段，`Sequence` 按声明顺序拼接路径，各段使用自己的局部时间。路径保留共享资源的普通引用。
 
+`FromClip` 可同时绑定导入所得 `FootMotion`，供同一选定路径的足部轨迹和接触查询使用，见 [Foot Motion](Foot-Motion.md)。
+
 `PosePredictionRequest` 把路径、`PoseTimeOrigin` 和调用者的 `Conditions` 标识绑定在一起。时间映射为 `PathTime + (requestedTime - Time) * Speed`，结果采样时间落在路径持续时间内。重新选择动作或调整时间基准时，创建对应的新请求。
 
 `PosePredictionBatch` 把多条请求及其骨骼选择绑定到既有 `ClipSampleBatch`。根、脚链与其他骨骼按调用者指定的顺序返回；模型矩阵计算使用已有的祖先展开与父骨架结果。片段编解码器仍接收自己的批量时间和骨骼选择。
