@@ -6,6 +6,8 @@
 
 ## 兴趣、接入与驻留
 
+Heading 表示的专用区域图、TileSource、ASA 局部查询与相同兴趣/完成句柄接缝见[朝向导航的显式流送](Heading-Navigation.md#朝向区域摘要与显式流送)。
+
 `NavigationStreaming(scene, scheduler)` 保持区域对应的来源。`AddSource(region, source)` 取得自己的来源引用，`Interests` 接受普通 `NavigationInterest`。应用更新兴趣的实际 `Position`、`Radius`、可选 `Direction`、`LookAheadDistance` 和当前 `Path`。附近范围、前方位置、路线前方入口和 `Path.RequiredTiles` 共同产生详细需求。`ResidentTileBudget` 按块数限制目录驻留，当前需求按实际距离排序，已有数据以最近使用顺序保留。
 
 `SetSource(region, source)` 安装该区域后续读取使用的来源引用。动态构建完成后，可取得 `NavigationRegionSources.CreateTileSource()` 并传入此入口；完整流程见[动态导航](Navigation-Dynamic.md)。已经提交的读取继续持有自己的实际来源。
@@ -17,6 +19,8 @@
 ## 同一请求的详细前段
 
 `SceneNavigationSearch` 使用粗图定位远处目标所属 Tile，并先完成当前驻留部分的详细路线。`NavigationSearchStatus.WaitingForTiles` 与 `NavigationPath.RequiredTiles` 公开后续需求，`Corners`、`Sections` 和 `Dependencies` 同时给出可消费的详细前段。运动进度在前段内报告 `Moving`，走到末端后报告 `WaitingForTiles`。
+
+`DStarLiteNavigationSearch` 共用该端点与详细路径流水线，并在同一请求内保留入口图的增量累计值与队列，具体状态见[持续目标的增量路线](Navigation-Incremental.md)。
 
 每帧搜索入口收到当前实际运动输入。新块接入后，已有粗路线继续细化；目标块取得后，搜索从实际位置验证最终详细连接。等待期间的目标块连接采用直线成本下界，`Path.Cost` 记录已完成详细前段的实际成本；最终请求重新计算目标的局部连接。新的前段交付时重置拐点进度，角色的请求版本持续保持。`INavigationSearch.Update` 与 `NavigationSearchStep.ResetPathProgress` 是该续行入口。
 

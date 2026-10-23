@@ -22,10 +22,10 @@ public sealed class NavigationSystems<TSpace, TSearch, TState, TMotion, TReader>
     private readonly NavigationTraversalSystem<TSpace, TState, TMotion, TReader> _traversal;
     private JobHandle _completion;
 
-    public NavigationSystems(World world)
+    public NavigationSystems(World world, NavigationPassageSystem? passages = null)
     {
         _world = world;
-        _traversal = new(world);
+        _traversal = new(world, passages);
         _enabledGoal = world.QueryDefinition()
             .All<PathNavigation<TSpace>>().All<NavigationRequest<TSpace, TState>>().All<TMotion>()
             .Enabled<NavigationGoal>().Build();

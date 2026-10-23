@@ -145,7 +145,7 @@ public static class HeadingNavigationMeshBuilder
                 field.Compact.areas[span] = classification;
             }
             state.Geometry.TileData[tile] = NavigationRecast.Polygonize(state.Surface, state.Surface.Tiles.Span[tile],
-                field, areas, state.Geometry.Settings, out int[] polygonClasses);
+                field, areas, state.Geometry.Settings, out int[] polygonClasses, preserveSingleCellRegions: true);
             var headings = new BigInteger[polygonClasses.Length];
             for (int polygon = 0; polygon < headings.Length; polygon++) headings[polygon] = classHeadings[polygonClasses[polygon]];
             state.TileHeadings[tile] = headings;

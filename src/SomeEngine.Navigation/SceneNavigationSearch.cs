@@ -57,6 +57,7 @@ public sealed class SceneSearchState
 
 internal sealed class SceneSearchRun
 {
+    private readonly DStarLiteWorkspace? _incremental;
     private readonly NavigationSearchInput<NavigationScene> _input;
     private readonly NavigationSceneContent _content;
     private readonly List<SceneNode> _nodes = [];
@@ -110,8 +111,9 @@ internal sealed class SceneSearchRun
         return false;
     }
 
-    internal SceneSearchRun(in NavigationSearchInput<NavigationScene> input)
+    internal SceneSearchRun(in NavigationSearchInput<NavigationScene> input, DStarLiteWorkspace? incremental = null)
     {
+        _incremental = incremental;
         _input = input;
         _minimumAreaCost = input.Policy.DefaultAreaCost;
         foreach (NavigationAreaCost cost in input.Policy.AreaCosts.Span)
@@ -156,9 +158,12 @@ internal sealed class SceneSearchRun
         _nodes.Add(new(GoalTile.Region, GoalTile.Tile, -1, goalPoint));
         _edges.Add([]);
         _edges.Add([]);
-        _distances = new float[_nodes.Count];
-        _parents = new RouteEdge?[_nodes.Count];
-        Array.Fill(_distances, float.PositiveInfinity);
+        if (incremental is null)
+        {
+            _distances = new float[_nodes.Count];
+            _parents = new RouteEdge?[_nodes.Count];
+            Array.Fill(_distances, float.PositiveInfinity);
+        }
         ulong capabilities = input.Profile.Capabilities & input.Policy.AllowedCapabilities;
         foreach (NavigationSceneRegion region in content.Regions.Span)
         foreach (NavigationRegionEdge edge in region.Graph.Edges.Span)
@@ -225,8 +230,13 @@ internal sealed class SceneSearchRun
     {
         if (_connector == _connectors.Count)
         {
-            _distances[StartNode] = 0;
-            _open.Enqueue(new(StartNode, 0), Heuristic(StartNode));
+            if (_incremental is { } workspace)
+                workspace.ApplyGraph(_nodes, _edges, StartNode, GoalNode, _content);
+            else
+            {
+                _distances[StartNode] = 0;
+                _open.Enqueue(new(StartNode, 0), Heuristic(StartNode));
+            }
             _phase = SearchPhase.CoarseRoute;
             return;
         }
@@ -247,6 +257,17 @@ internal sealed class SceneSearchRun
 
     private void AdvanceCoarseRoute()
     {
+        if (_incremental is { } workspace)
+        {
+            NavigationSearchStatus status = workspace.Advance();
+            if (status == NavigationSearchStatus.Found)
+            {
+                _route = workspace.CreateRoute();
+                SetRegionRoute(workspace.Cost);
+            }
+            else if (status == NavigationSearchStatus.Unreachable) _status = status;
+            return;
+        }
         if (!_open.TryDequeue(out QueueEntry entry, out _))
         {
             _status = NavigationSearchStatus.Unreachable;
@@ -255,22 +276,10 @@ internal sealed class SceneSearchRun
         if (entry.Cost != _distances[entry.Node]) return;
         if (entry.Node == GoalNode)
         {
-            var nodes = new List<int> { GoalNode };
             for (int node = GoalNode; _parents[node] is { } edge; node = edge.From)
-            {
                 _route.Add(edge);
-                nodes.Add(edge.From);
-            }
             _route.Reverse();
-            nodes.Reverse();
-            var entrances = new List<NavigationRouteEntrance>();
-            foreach (int index in nodes)
-            {
-                SceneNode node = _nodes[index];
-                if (node.Entrance >= 0) entrances.Add(new(node.Region, node.Tile, node.Entrance, node.Position));
-            }
-            _regionRoute = new(entrances.ToArray(), entry.Cost);
-            _phase = SearchPhase.DetailedRoute;
+            SetRegionRoute(entry.Cost);
             return;
         }
         foreach (RouteEdge edge in _edges[entry.Node])
@@ -285,6 +294,18 @@ internal sealed class SceneSearchRun
 
     private float Heuristic(int node) =>
         Vector3.Distance(_nodes[node].Position, _nodes[GoalNode].Position) * _minimumAreaCost;
+
+    private void SetRegionRoute(float cost)
+    {
+        var entrances = new List<NavigationRouteEntrance>();
+        foreach (RouteEdge edge in _route)
+        {
+            SceneNode node = _nodes[edge.To];
+            if (node.Entrance >= 0) entrances.Add(new(node.Region, node.Tile, node.Entrance, node.Position));
+        }
+        _regionRoute = new(entrances.ToArray(), cost);
+        _phase = SearchPhase.DetailedRoute;
+    }
 
     private void AdvanceDetailedRoute()
     {
@@ -398,10 +419,10 @@ internal sealed class SceneSearchRun
     }
 
     private enum SearchPhase : byte { ConnectEndpoints, CoarseRoute, DetailedRoute }
-    private readonly record struct SceneNode(int Region, NavigationTileCoordinate Tile, int Entrance, Vector3 Position);
+    internal readonly record struct SceneNode(int Region, NavigationTileCoordinate Tile, int Entrance, Vector3 Position);
     private readonly record struct QueueEntry(int Node, float Cost);
 
-    private sealed class RouteEdge(int from, int to, float cost, NavigationSceneTileId? tile,
+    internal sealed class RouteEdge(int from, int to, float cost, NavigationSceneTileId? tile,
         int connection = -1, ulong connectionVersion = 0, int action = 0, NavigationLinkSet? links = null)
     {
         public int From { get; } = from;

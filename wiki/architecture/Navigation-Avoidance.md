@@ -16,6 +16,8 @@
 
 具有加速度限制的角色选择 [`AccelerationVelocityAvoidance`](Navigation-Acceleration.md)，它使用相同邻居、边界、Steering 和实际反馈链，并在完成的 Steering 中保存本步速度响应模型。
 
+具有完整轮廓及车辆控制约束的角色选择 [MPPI 局部运动轨迹](Navigation-Mppi.md)，使用相同实际运动、邻居、Guidance 和 Costs 输入，向运动与动画交付同一选中控制序列。
+
 ## 局部可走边界
 
 `INavigationSpace<TSpace>.CollectBoundaries` 提供表示特定的局部查询。`NavigationBoundarySegment` 沿线段右侧保留可走空间，并记录已经应用到数据中的 `BakedRadius`。
