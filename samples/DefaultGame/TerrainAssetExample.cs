@@ -1,12 +1,45 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Geometry.Cluster;
 using SomeEngine.Resources;
+using SomeEngine.Terrains;
 
 namespace DefaultGame;
 
 /// <summary>Public save/reopen flow; the application resolves saved material references into ordinary materials.</summary>
 public static class TerrainAssetExample
 {
+    /// <summary>Saves one field capture together with offline geometry built from that same data.</summary>
+    public static async ValueTask<TerrainClusterData> SaveCacheAsync<TAttributes>(string path, Terrain terrain, TerrainEditing editing,
+        IReadOnlyList<TerrainChunkBounds> chunks, ITerrainAttributeGenerator<TAttributes> attributes,
+        IClusterVertexEncoder<TAttributes> encoder, TerrainGeometryIdentity identity,
+        IReadOnlyList<AssetId<MaterialAsset>> materials, ITerrainMesher? mesher = null,
+        CancellationToken cancellationToken = default) where TAttributes : unmanaged
+    {
+        TerrainChunkBounds[] selection = chunks.ToArray();
+        AssetId<MaterialAsset>[] references = materials.ToArray();
+        TerrainCpuData values = await terrain.CaptureCpuAsync().ConfigureAwait(false);
+        using TerrainClusterBlock clusters = await TerrainClusterCache.BuildAsync(values, editing, selection,
+            attributes, encoder, identity, mesher).ConfigureAwait(false);
+        using var asset = new TerrainAsset { Name = "Cached editable terrain" };
+        await asset.UpdateAsync(values, references, cancellationToken).ConfigureAwait(false);
+        asset.SetBlock(clusters);
+        await asset.SaveAsync(path, cancellationToken).ConfigureAwait(false);
+        return await clusters.CreateAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Reopens editable fields, application materials and ready cached Mesh values.</summary>
+    public static async ValueTask<(Terrain Terrain, Material[] Materials, TerrainClusterData Cache)> OpenCacheAsync(
+        string path, TerrainEditing editing, Func<AssetId<MaterialAsset>, CancellationToken, ValueTask<Material>> loadMaterial,
+        CancellationToken cancellationToken = default)
+    {
+        using TerrainAsset asset = await TerrainAsset.OpenAsync(path, cancellationToken).ConfigureAwait(false);
+        TerrainClusterBlock clusters = await asset.GetBlockAsync<TerrainClusterBlock>(cancellationToken).ConfigureAwait(false);
+        TerrainClusterData cache = await clusters.CreateAsync(cancellationToken).ConfigureAwait(false);
+        var loaded = await ReadTerrainAsync(asset, editing, loadMaterial, cancellationToken).ConfigureAwait(false);
+        return (loaded.Terrain, loaded.Materials, cache);
+    }
+
     /// <summary>Edits a selected height region, preserves material bindings, and saves the resulting terrain.</summary>
     public static async ValueTask<HeightFieldRead> EditHeightRegionAsync(string sourcePath, string targetPath,
         TerrainEditing editing, int fieldId, HeightRegion range, float delta,
@@ -42,6 +75,13 @@ public static class TerrainAssetExample
         CancellationToken cancellationToken = default)
     {
         using TerrainAsset asset = await TerrainAsset.OpenAsync(path, cancellationToken).ConfigureAwait(false);
+        return await ReadTerrainAsync(asset, editing, loadMaterial, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async ValueTask<(Terrain Terrain, Material[] Materials)> ReadTerrainAsync(TerrainAsset asset,
+        TerrainEditing editing, Func<AssetId<MaterialAsset>, CancellationToken, ValueTask<Material>> loadMaterial,
+        CancellationToken cancellationToken)
+    {
         Terrain terrain = await asset.CreateTerrainAsync(editing, cancellationToken).ConfigureAwait(false);
         try
         {

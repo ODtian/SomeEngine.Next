@@ -51,6 +51,8 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 重开的 Terrain 按字段读取区域取得文件页，并持有独立来源；使用结束时调用 `Dispose`。同一示例的 `EditHeightRegionAsync` 在关闭源 Asset 后修改指定高度区域，保留材料绑定并再次保存；返回的高度读取结果继续持有已完成样本。
 
+`TerrainAssetExample.SaveCacheAsync` 将同一字段捕获交给完整 CPU Offline Cluster 构建，并把几何页与中立数据一起保存。`OpenCacheAsync` 返回可编辑 Terrain、应用材质和已读取的缓存几何；调用 `TerrainScene.UseCache` 后添加 Placement，匹配的块立即沿普通 Mesh 驻留路径显示，局部编辑继续按批次替换相关块。调用及身份配置见[离线 Cluster 缓存](../../wiki/architecture/terrain/Terrain-Cache.md)。
+
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
 ```powershell

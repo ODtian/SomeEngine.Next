@@ -13,7 +13,7 @@
 | `VoxelFieldsBlock` | 体素字段集合、网格、默认标量、字段版本、三维页坐标、页身份、页版本及 chunk key | 体素读取与编辑 |
 | `TerrainMaterialBlock` | 材质资产引用、材质编号、输入名称及采样字段 ID | 应用材质解析与用户属性生成器 |
 
-这四类 Block 保存中立数据。页面采样值通过现有 `BinaryDataWriter` 和 `BinaryDataReader` 编码为独立 chunk，字段元数据记录各页的局部 key。页坐标采用字段的全局样本页坐标，字段 ID 对应同类字段集合中的位置。源节点使用局部节点编号，重复引用在重开后保持为同一个节点对象。已编码 Cluster 几何属于独立的管线表示 Block。
+这四类 Block 保存中立数据。页面采样值通过现有 `BinaryDataWriter` 和 `BinaryDataReader` 编码为独立 chunk，字段元数据记录各页的局部 key。页坐标采用字段的全局样本页坐标，字段 ID 对应同类字段集合中的位置。源节点使用局部节点编号，重复引用在重开后保持为同一个节点对象。已编码 Cluster 几何属于独立的 `TerrainClusterBlock`，构建与使用方法见[离线 Cluster 缓存](Terrain-Cache.md)。
 
 `TerrainMaterialBlock.Materials` 的列表索引是局部材质编号。`HeightSources` 和 `VoxelSources` 分别保存 `MaterialIndex`、用户输入名称 `Input` 和相应字段集合的 `FieldId`。应用从重开的 Terrain 取得字段，为自己的属性生成器解释输入；材质资产引用由应用加载为普通 Material，并赋给 Placement。
 
