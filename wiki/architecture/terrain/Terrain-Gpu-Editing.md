@@ -74,3 +74,5 @@ TerrainEdit edit = ground.Heights.EditGpu(new HeightSmoothBrushGpu(heightNeighbo
 自定义 GPU 体素笔刷通过 `VoxelBrushGpuContext` 取得相同职责的三维数据。源页表按 X、Y、Z 顺序排列，X 变化最快；`SourcePageX/Y/Z` 为最小页坐标，`SourcePageWidth/Height` 为二维层内尺寸。每项记录源样本缓冲区中的元素偏移，值为 `-1` 时读取字段的 `InitialValue`。页内样本同样按 X、Y、Z 顺序排列。`Page` 表示完整输出页，笔刷写出完整页并保留 `Range` 外的原值。
 
 公开行为入口为 [TerrainGpuEditingTests](../../../tests/SomeEngine.Runtime.Tests/TerrainGpuEditingTests.cs)：同参数 CPU/GPU 采样、混合编辑的版本顺序，以及字段修改后的几何画面。[TerrainGpuBrushRenderingTests](../../../tests/SomeEngine.Runtime.Tests/TerrainGpuBrushRenderingTests.cs) 对照平滑和压平后的 CPU/GPU 表面。
+
+跨页的区域级距离求解、精度报告与算法替换见[体素距离重建](Terrain-Distance.md)。它复用本页的固定源、页持有与实际完成路径。

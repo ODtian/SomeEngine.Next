@@ -1,6 +1,6 @@
 # 地形 LOD 与过渡接缝
 
-本页维护已实现的空间选择、CPU 表面算法与公开调用方法。源码入口为 [TerrainLodSelection](../../../src/SomeEngine.Terrain/TerrainLodSelection.cs)、[TerrainScene](../../../src/SomeEngine.Terrain/TerrainScene.cs)、[MarchingCubesTerrainMesher](../../../src/SomeEngine.Terrain/Meshing/MarchingCubesTerrainMesher.cs) 和[过渡单元](../../../src/SomeEngine.Terrain/Meshing/MarchingCubesTerrainMesher.Transitions.cs)。放置、字段变化与提取通路由[放置与分块](Terrain-Scene.md)维护。
+本页维护已实现的空间选择、CPU/GPU 配套表面算法与公开调用方法。源码入口为 [TerrainLodSelection](../../../src/SomeEngine.Terrain/TerrainLodSelection.cs)、[TerrainScene](../../../src/SomeEngine.Terrain/TerrainScene.cs)、[MarchingCubesTerrainMesher](../../../src/SomeEngine.Terrain/Meshing/MarchingCubesTerrainMesher.cs)、[CPU 过渡单元](../../../src/SomeEngine.Terrain/Meshing/MarchingCubesTerrainMesher.Transitions.cs) 和 [GPU 过渡单元](../../../assets/Shaders/terrain_surface_transitions.slang)。放置、字段变化与提取通路由[放置与分块](Terrain-Scene.md)维护。
 
 ## 固定空间范围与相机输入
 
@@ -29,6 +29,8 @@
 每个 Terrain 的批次全部完成后，`TerrainCommitSystem` 在同一次游戏更新中应用 Mesh、版本、实体增加与移除，以及所捕获的放置数据。后续提取观察到这一完整结果。构建期间到达的新相机位置和字段编辑进入接续批次。首次放置的零版本块提供既有 `TerrainSource` 提取入口，完成后取得构建版本。
 
 `GetChunks` 读取已提交块；`WaitForBuildsAsync` 等待已提交的构建任务，下一次提交系统更新应用结果。`TerrainLodTests` 通过公开网格检查粗细球面闭合，通过公开块结果检查多级邻接、覆盖范围及延迟输入完成后的整体替换。
+
+GPU 路径由同一 `TerrainScene` 选择和提交批次，捕获的块输入携带相同最细格距与过渡面。普通单元、过渡单元、用户属性和 Cluster 页面/BVH 共用该批次的设备完成状态；完整选择提交后，Rendering world 统一绑定并回收退出选择的旧几何。公开完成入口与数据持有关系见 [GPU 地形几何](Terrain-Gpu-Geometry.md)。
 
 ## 公开示例
 

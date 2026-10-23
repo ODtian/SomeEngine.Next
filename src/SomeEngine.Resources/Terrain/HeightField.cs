@@ -68,7 +68,7 @@ public sealed class HeightField
                 dependencies.Add(read.Completion);
                 accesses.Add(JobResourceAccess.Read(Terrain.Editing.Scheduler, read.Samples));
             }
-        return new(new HeightFieldRead(Grid, InitialHeight, data, range),
+        return new(new HeightFieldRead(Id, Grid, InitialHeight, data, range),
             Terrain.Editing.Scheduler.CombineDependencies(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(dependencies)),
             accesses.ToArray());
     }

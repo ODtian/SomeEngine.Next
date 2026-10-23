@@ -28,7 +28,7 @@ public sealed partial class TerrainEditing
                 var pageRange = new VoxelRegion(pageX * size, pageY * size, pageZ * size, size, size, size);
                 VoxelRegion writeRange = pageRange.Intersect(range);
                 VoxelRegion readRange = writeRange.Expand(brush.ReadBorder);
-                var read = new VoxelFieldRead(grid, field.InitialValue, source, readRange);
+                var read = new VoxelFieldRead(field.Id, grid, field.InitialValue, source, readRange);
                 var destination = new float[size * size * size];
                 source.Pages.TryGetValue((pageX, pageY, pageZ), out TerrainFieldPage? previous);
 

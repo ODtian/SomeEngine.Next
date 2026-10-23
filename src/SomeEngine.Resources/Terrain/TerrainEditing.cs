@@ -28,7 +28,7 @@ public sealed partial class TerrainEditing(Scheduler scheduler)
                 var pageRange = new HeightRegion(pageX * size, pageZ * size, size, size);
                 HeightRegion writeRange = pageRange.Intersect(range);
                 HeightRegion readRange = writeRange.Expand(brush.ReadBorder).Intersect(field.Grid.Range);
-                var read = new HeightFieldRead(field.Grid, field.InitialHeight, source, readRange);
+                var read = new HeightFieldRead(field.Id, field.Grid, field.InitialHeight, source, readRange);
                 var destination = new float[size * size];
                 source.Pages.TryGetValue((pageX, pageZ), out TerrainFieldPage? previous);
 
