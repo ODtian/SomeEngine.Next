@@ -17,6 +17,7 @@ public sealed class TerrainAssetRenderingTests(SceneContentFixture content)
     public async Task ReopenedTerrainRendersItsSavedSurfaceAndAcceptsFurtherEdits()
     {
         string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Terrain-Scene-{Guid.NewGuid():N}.terrain.asset");
+        Terrain? restored = null;
         try
         {
             using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
@@ -29,7 +30,6 @@ public sealed class TerrainAssetRenderingTests(SceneContentFixture content)
             var adapter = new TerrainClusterAdapter<StandardClusterAttributes>(new GroundAttributes(),
                 StandardClusterVertexEncoder.Instance, ClusterBuildStrategy.Realtime);
             var scene = new TerrainScene(adapter, new TerrainChunkGrid(4, 1));
-            Terrain? restored = null;
             VoxelFieldRead? savedValues = null;
             TerrainEdit edit = default;
             SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
@@ -97,7 +97,7 @@ public sealed class TerrainAssetRenderingTests(SceneContentFixture content)
             SceneImages.AssertEqual(expectedAfter!, after!);
             SceneImages.AssertChanged(before!, after!);
         }
-        finally { File.Delete(path); }
+        finally { restored?.Dispose(); File.Delete(path); }
     }
 
     private sealed class GroundAttributes : ITerrainAttributeGenerator<StandardClusterAttributes>

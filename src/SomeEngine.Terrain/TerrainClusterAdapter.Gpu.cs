@@ -39,7 +39,7 @@ public sealed class TerrainClusterAdapter(ITerrainMesherGpu mesher, TerrainGpuAt
             int maxZ = Math.Clamp((int)MathF.Floor(bounds.Max.Z / spacing) + 2, 1, field.Grid.Depth);
             var input = new TerrainHeightGpuData(field.Grid, field.InitialHeight, field.Data,
                 new(minX, minZ, maxX - minX, maxZ - minZ));
-            var request = new TerrainGeometryRequest(terrain.NextRequestSequence(), field.Data.Edit.Completion,
+            var request = new TerrainGeometryRequest(terrain.NextRequestSequence(), field.PrepareGpuRead(input.Range),
                 completion, visibility, scene, terrain.Revision, input, chunks);
             terrain.RetainRequest(request);
             return request;

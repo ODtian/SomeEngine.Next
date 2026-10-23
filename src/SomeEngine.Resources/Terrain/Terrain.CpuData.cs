@@ -23,7 +23,7 @@ public sealed partial class Terrain
                 foreach (var entry in data.Pages)
                 {
                     dependencies.Add(field.CaptureCpuRead(new(entry.Key.X * size, entry.Key.Z * size, size, size)).Completion);
-                    pages.Add(new(entry.Key.X, entry.Key.Z, entry.Value.Samples!));
+                    pages.Add(new(entry.Key.X, entry.Key.Z, entry.Value.Samples!, entry.Value.Revision, entry.Value.Id));
                 }
                 heights.Add(new(field.Id, field.Name, field.Grid, field.InitialHeight, data.Edit.Revision, pages.ToImmutable()));
             }
@@ -37,7 +37,7 @@ public sealed partial class Terrain
                 {
                     dependencies.Add(field.CaptureCpuRead(new(entry.Key.X * size, entry.Key.Y * size,
                         entry.Key.Z * size, size, size, size)).Completion);
-                    pages.Add(new(entry.Key.X, entry.Key.Y, entry.Key.Z, entry.Value.Samples!));
+                    pages.Add(new(entry.Key.X, entry.Key.Y, entry.Key.Z, entry.Value.Samples!, entry.Value.Revision, entry.Value.Id));
                 }
                 voxels.Add(new(field.Id, field.Name, field.Grid, field.InitialValue, data.Edit.Revision, pages.ToImmutable()));
             }
@@ -77,14 +77,14 @@ public sealed partial class Terrain
         foreach (HeightFieldValues field in values.HeightFields)
         {
             var pages = field.Pages.ToDictionary(page => (page.X, page.Z),
-                page => new TerrainFieldPage(GetSamples(page.Samples), default));
+                page => new TerrainFieldPage(GetSamples(page.Samples), default, page.Revision, page.Id));
             terrain._heightFields.Add(new HeightField(terrain, field.Id, field.Name, field.Grid, field.InitialHeight,
                 new(pages, new(field.Revision, default))));
         }
         foreach (VoxelFieldValues field in values.VoxelFields)
         {
             var pages = field.Pages.ToDictionary(page => (page.X, page.Y, page.Z),
-                page => new TerrainFieldPage(GetSamples(page.Samples), default));
+                page => new TerrainFieldPage(GetSamples(page.Samples), default, page.Revision, page.Id));
             terrain._voxelFields.Add(new VoxelField(terrain, field.Id, field.Name, field.Grid, field.InitialValue,
                 new(pages, new(field.Revision, default))));
         }

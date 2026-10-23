@@ -13,8 +13,8 @@ public sealed record HeightFieldValues(int Id, string Name, HeightGrid Grid, flo
     ulong Revision, ImmutableArray<HeightPageValues> Pages);
 public sealed record VoxelFieldValues(int Id, string Name, VoxelGrid Grid, float InitialValue,
     ulong Revision, ImmutableArray<VoxelPageValues> Pages);
-public readonly record struct HeightPageValues(int X, int Z, ReadOnlyMemory<float> Samples);
-public readonly record struct VoxelPageValues(int X, int Y, int Z, ReadOnlyMemory<float> Samples);
+public readonly record struct HeightPageValues(int X, int Z, ReadOnlyMemory<float> Samples, ulong Revision, Guid Id);
+public readonly record struct VoxelPageValues(int X, int Y, int Z, ReadOnlyMemory<float> Samples, ulong Revision, Guid Id);
 
 /// <summary>Field references and immutable parameters of a captured surface.</summary>
 public abstract record TerrainSurfaceValues;

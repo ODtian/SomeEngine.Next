@@ -41,8 +41,8 @@ public readonly partial record struct TerrainHeightField(int Id, string Name, in
 public readonly partial record struct TerrainVoxelField(int Id, string Name, int PageSize, float Spacing,
     float InitialValue, ulong Revision);
 
-[BinarySerializable, BinaryValue, BinaryFields(nameof(FieldId), nameof(X), nameof(Z), nameof(ChunkKey))]
-public readonly partial record struct TerrainHeightPage(int FieldId, int X, int Z, ulong ChunkKey);
+[BinarySerializable, BinaryValue, BinaryFields(nameof(FieldId), nameof(X), nameof(Z), nameof(ChunkKey), nameof(Revision), nameof(Id))]
+public readonly partial record struct TerrainHeightPage(int FieldId, int X, int Z, ulong ChunkKey, ulong Revision, Guid Id);
 
-[BinarySerializable, BinaryValue, BinaryFields(nameof(FieldId), nameof(X), nameof(Y), nameof(Z), nameof(ChunkKey))]
-public readonly partial record struct TerrainVoxelPage(int FieldId, int X, int Y, int Z, ulong ChunkKey);
+[BinarySerializable, BinaryValue, BinaryFields(nameof(FieldId), nameof(X), nameof(Y), nameof(Z), nameof(ChunkKey), nameof(Revision), nameof(Id))]
+public readonly partial record struct TerrainVoxelPage(int FieldId, int X, int Y, int Z, ulong ChunkKey, ulong Revision, Guid Id);

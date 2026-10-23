@@ -19,6 +19,7 @@ public sealed partial class TerrainEditing
             var jobs = new List<JobHandle>();
             VoxelFieldCpuRead inputData = field.CaptureCpuRead(range.Expand(brush.ReadBorder));
             JobHandle input = Scheduler.CombineDependencies([inputData.Completion, dependency]);
+            ulong revision = field.Terrain.NextRevision();
 
             for (int pageZ = grid.PageCoordinate(range.MinZ); pageZ * size < range.MaxZ; pageZ++)
             for (int pageY = grid.PageCoordinate(range.MinY); pageY * size < range.MaxY; pageY++)
@@ -43,10 +44,10 @@ public sealed partial class TerrainEditing
                     new VoxelPageJob<TBrush>(brush, read, writeRange, pageRange, previous?.Samples, destination, field.InitialValue),
                     CollectionsMarshal.AsSpan(accesses), input);
                 jobs.Add(job);
-                pages[(pageX, pageY, pageZ)] = new TerrainFieldPage(destination, job);
+                pages[(pageX, pageY, pageZ)] = new TerrainFieldPage(destination, job, revision);
             }
 
-            var edit = new TerrainEdit(field.Terrain.NextRevision(), Scheduler.CombineDependencies(CollectionsMarshal.AsSpan(jobs)));
+            var edit = new TerrainEdit(revision, Scheduler.CombineDependencies(CollectionsMarshal.AsSpan(jobs)));
             field.Data = new VoxelFieldData(pages, edit);
             return edit;
         }

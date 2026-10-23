@@ -16,6 +16,7 @@ public static class VoxelGpuEditing
         {
             VoxelFieldData source = field.Data;
             VoxelRegion range = brush.Range;
+            JobHandle input = field.PrepareGpuRead(range.Expand(brush.ReadBorder));
             var completion = new TerrainCompletion(terrain.Editing.Scheduler);
             edit = new TerrainEdit(terrain.NextRevision(), completion.Handle);
             var pages = new Dictionary<(int X, int Y, int Z), TerrainFieldPage>(source.Pages);
@@ -26,12 +27,12 @@ public static class VoxelGpuEditing
             for (int y = grid.PageCoordinate(range.MinY); y * size < range.MaxY; y++)
             for (int x = grid.PageCoordinate(range.MinX); x * size < range.MaxX; x++)
             {
-                var page = new TerrainFieldPage(size * size * size, new TerrainGpuPageSource(), completion.Handle);
+                var page = new TerrainFieldPage(size * size * size, new TerrainGpuPageSource(), completion.Handle, edit.Revision);
                 pages[(x, y, z)] = page;
                 outputs.Add(new(x, y, z, page));
             }
             var request = new VoxelGpuRequest<TBrush>(terrain.NextRequestSequence(),
-                terrain.Editing.Scheduler.CombineDependencies([source.Edit.Completion, dependency]), completion,
+                terrain.Editing.Scheduler.CombineDependencies([input, dependency]), completion,
                 grid, field.InitialValue, source, range, outputs.ToArray(), brush);
             terrain.RetainRequest(request);
             field.Data = new VoxelFieldData(pages, edit);
