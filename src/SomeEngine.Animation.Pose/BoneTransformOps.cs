@@ -18,6 +18,19 @@ public readonly struct BoneTransformOps : IValueOps<BoneTransform>
         Translation = a.Translation + b.Translation, Rotation = a.Rotation + b.Rotation, Scale = a.Scale + b.Scale,
     };
 
+    /// <summary>Applies a weighted reference-relative translation, rotation delta and scale ratio.</summary>
+    public static BoneTransform Additive(in BoneTransform basis, in BoneTransform source,
+        in BoneTransform reference, float weight)
+    {
+        Quaternion delta = source.Rotation * Quaternion.Inverse(reference.Rotation);
+        return new BoneTransform
+        {
+            Translation = basis.Translation + (source.Translation - reference.Translation) * weight,
+            Rotation = Quaternion.Normalize(Quaternion.Slerp(Quaternion.Identity, delta, weight) * basis.Rotation),
+            Scale = basis.Scale * Vector3.Lerp(Vector3.One, source.Scale / reference.Scale, weight),
+        };
+    }
+
     public static BoneTransform Subtract(in BoneTransform a, in BoneTransform b) => new()
     {
         Translation = a.Translation - b.Translation, Rotation = a.Rotation - b.Rotation, Scale = a.Scale - b.Scale,
