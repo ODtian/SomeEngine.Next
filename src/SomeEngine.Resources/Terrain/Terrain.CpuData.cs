@@ -41,12 +41,18 @@ public sealed partial class Terrain
                 }
                 voxels.Add(new(field.Id, field.Name, field.Grid, field.InitialValue, data.Edit.Revision, pages.ToImmutable()));
             }
-            var nodes = new Dictionary<TerrainSurface, TerrainSurfaceValues>(ReferenceEqualityComparer.Instance);
-            TerrainSurfaceValues? surface = _surface is null ? null : CaptureSurface(_surface, nodes);
+            TerrainSurfaceValues? surface = CaptureSurfaceValues();
             var values = new TerrainCpuData(_revision, heights.ToImmutable(), voxels.ToImmutable(), surface);
             JobHandle completion = Editing.Scheduler.CombineDependencies(CollectionsMarshal.AsSpan(dependencies));
             return CompleteCaptureAsync(values, completion);
         }
+    }
+
+    internal TerrainSurfaceValues? CaptureSurfaceValues()
+    {
+        lock (Gate)
+            return _surface is null ? null : CaptureSurface(_surface,
+                new Dictionary<TerrainSurface, TerrainSurfaceValues>(ReferenceEqualityComparer.Instance));
     }
 
     private static async ValueTask<TerrainCpuData> CompleteCaptureAsync(TerrainCpuData data, JobHandle completion)

@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Resources/SomeEngine.Resources.csproj" />
+    <ProjectReference Include="../SomeEngine.Assets/SomeEngine.Assets.csproj" />
     <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
     <ProjectReference Include="../SomeEngine.Render/SomeEngine.Render.csproj" />
     <ProjectReference Include="../SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
