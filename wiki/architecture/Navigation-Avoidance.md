@@ -14,6 +14,8 @@
 
 每个角色的 `NavigationAvoidanceWorkspace` 保存本角色的边界、搜索队列、约束和投影数组。`INavigationAvoidanceSolver` 接收共同的 `NavigationAvoidanceInput` 和工作区，让其它具体求解器复用同一邻居集合与调度顺序。
 
+具有加速度限制的角色选择 [`AccelerationVelocityAvoidance`](Navigation-Acceleration.md)，它使用相同邻居、边界、Steering 和实际反馈链，并在完成的 Steering 中保存本步速度响应模型。
+
 ## 局部可走边界
 
 `INavigationSpace<TSpace>.CollectBoundaries` 提供表示特定的局部查询。`NavigationBoundarySegment` 沿线段右侧保留可走空间，并记录已经应用到数据中的 `BakedRadius`。

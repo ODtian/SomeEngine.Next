@@ -6,7 +6,9 @@
 
 ## 规格与策略
 
-`NavigationProfileBlock.SetProfile` 接收已完成的轮廓、高度、坡度、台阶、速度、加速度、角速度和能力数据。轮廓保存为独立数据块，标量保存在元数据中。
+`NavigationProfileBlock.SetProfile` 接收已完成的轮廓、高度、坡度、台阶、速度、加速度、角速度和能力数据，并保存可选车辆模型的最小转弯半径与倒车能力。轮廓保存为独立数据块，标量保存在元数据中。
+
+同一 ProfileAsset 中的 `NavigationMotionBlock.SetMotionSet` 保存运动基元的起止位姿、控制、时间采样及扫掠几何，`Create/CreateAsync` 返回共享的普通 `NavigationMotionSet`。资产创建与车辆执行入口见[车辆运动基元与状态格路径](../Navigation-Vehicles.md)。
 
 `NavigationPolicyBlock.SetPolicy` 接收区域成本、动作成本、默认区域成本和允许能力。区域与动作成本分别保存为独立数据块。创建后的 `NavigationPolicy.GetAreaCost` 与 `GetActionCost` 直接读取资源持有的数据。
 

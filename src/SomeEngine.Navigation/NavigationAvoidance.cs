@@ -9,10 +9,11 @@ namespace SomeEngine.Navigation;
 /// XZ disk model. Radius covers the profile's rotation footprint; Spacing expands this disk.
 /// Time horizons are seconds. Responsibility is the positive share of pair correction.
 /// Matching interaction masks and actual movement layers share a neighbor set.
+/// ResponseTime is the positive exponential time constant used by acceleration-velocity avoidance.
 /// </summary>
 public readonly record struct AvoidanceAgent(float Radius, float NeighborDistance = 5, int MaximumNeighbors = 32,
     float TimeHorizon = 2, float BoundaryTimeHorizon = 2, float Spacing = 0,
-    float Responsibility = 1, ulong InteractionMask = ulong.MaxValue) : IComponent;
+    float Responsibility = 1, ulong InteractionMask = ulong.MaxValue, float ResponseTime = 0.5f) : IComponent;
 
 public readonly record struct NavigationNeighborAgent(Entity Entity, NavigationMotion Motion,
     AvoidanceAgent Avoidance, NavigationProfile Profile)
@@ -44,6 +45,7 @@ public readonly ref struct NavigationAvoidanceInput(NavigationNeighborAgent self
 public interface INavigationAvoidanceSolver
 {
     static abstract Vector2 Solve(in NavigationAvoidanceInput input, NavigationAvoidanceWorkspace workspace);
+    static virtual NavigationVelocityResponse GetResponse(in NavigationNeighborAgent agent) => default;
 }
 
 /// <summary>Exclusive per-actor query and numerical workspace, reused by concrete avoidance solvers.</summary>
@@ -55,6 +57,10 @@ public sealed class NavigationAvoidanceWorkspace
     internal Queue<int> SearchQueue { get; } = [];
     internal HashSet<int> Visited { get; } = [];
     internal List<Vector2> Openings { get; } = [];
+    internal List<Vector2> VelocityPolygon { get; } = [];
+    internal List<Vector2> ClippedVelocityPolygon { get; } = [];
+    internal List<Vector2> VelocitySamples { get; } = [];
+    internal List<Vector2> VelocityHull { get; } = [];
 }
 
 internal readonly record struct NavigationAvoidanceWork(NavigationAvoidanceWorkspace Workspace) : IComponent;

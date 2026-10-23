@@ -26,6 +26,8 @@ public sealed class NavigationSceneContent
     private readonly Dictionary<int, int> _regionIndices;
     private readonly Dictionary<NavigationSceneTileId, int> _tileIndices;
     private readonly int[] _polygonStarts;
+    private readonly Dictionary<NavigationSceneTileId, ulong> _contentVersions = [];
+    private readonly Dictionary<int, ulong> _connectionVersions = [];
 
     public NavigationSceneContent(ReadOnlyMemory<NavigationSceneRegion> regions,
         ReadOnlyMemory<NavigationSceneConnection> connections, ReadOnlyMemory<NavigationSceneTile> tiles, long version = 1,
@@ -40,7 +42,15 @@ public sealed class NavigationSceneContent
         _regionIndices = new Dictionary<int, int>();
         _tileIndices = new Dictionary<NavigationSceneTileId, int>();
         _polygonStarts = new int[tiles.Length + 1];
-        for (int index = 0; index < regions.Length; index++) _regionIndices.Add(regions.Span[index].Id, index);
+        for (int index = 0; index < regions.Length; index++)
+        {
+            NavigationSceneRegion region = regions.Span[index];
+            _regionIndices.Add(region.Id, index);
+            foreach (NavigationRegionTile tile in region.Graph.Tiles.Span)
+                _contentVersions.Add(new(region.Id, tile.Tile), tile.ContentVersion);
+        }
+        foreach (NavigationSceneConnection connection in connections.Span)
+            _connectionVersions.Add(connection.Id, connection.ContentVersion);
         for (int index = 0; index < tiles.Length; index++)
         {
             _tileIndices.Add(tiles.Span[index].Id, index);
@@ -72,6 +82,18 @@ public sealed class NavigationSceneContent
 
     public NavigationSceneRegion GetRegion(int region) => Regions.Span[_regionIndices[region]];
     public NavigationSceneTile GetTile(NavigationSceneTileId tile) => Tiles.Span[_tileIndices[tile]];
+
+    public bool AreDependenciesCurrent(NavigationPath path)
+    {
+        foreach (NavigationPathDependency tile in path.Dependencies.Span)
+            if (!TryGetContentVersion(new(tile.Region, tile.Tile), out ulong version) || version != tile.ContentVersion) return false;
+        foreach (NavigationConnectionDependency connection in path.ConnectionDependencies.Span)
+            if (!TryGetConnectionVersion(connection.Connection, out ulong version) || version != connection.ContentVersion) return false;
+        return true;
+    }
+
+    internal bool TryGetContentVersion(NavigationSceneTileId tile, out ulong version) => _contentVersions.TryGetValue(tile, out version);
+    internal bool TryGetConnectionVersion(int connection, out ulong version) => _connectionVersions.TryGetValue(connection, out version);
 
     public bool TryGetTile(NavigationSceneTileId tile, out NavigationSceneTile? data)
     {
@@ -134,8 +156,11 @@ public sealed partial class NavigationScene(NavigationSceneContent content) : IN
     internal void ApplyCompleted(NavigationSceneContent content, bool residenceOnly = false)
     {
         NavigationSceneContent previous = Content;
+        bool residenceChanged = previous.Tiles.Length != content.Tiles.Length;
+        foreach (NavigationSceneTile tile in content.Tiles.Span)
+            residenceChanged |= !previous.TryGetTile(tile.Id, out _);
         Volatile.Write(ref _content, new(content.Regions, content.Connections, content.Tiles, previous.Version + 1,
-            previous.ContentVersion + (residenceOnly ? 0 : 1), previous.ResidenceVersion + (residenceOnly ? 1 : 0)));
+            previous.ContentVersion + (residenceOnly ? 0 : 1), previous.ResidenceVersion + (residenceChanged ? 1 : 0)));
     }
 
     public static void CollectResources(NavigationScene scene, ref JobResourceAccessBuilder resources)
