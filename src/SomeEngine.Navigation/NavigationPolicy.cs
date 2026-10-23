@@ -8,18 +8,20 @@ public sealed class NavigationPolicy(
     ReadOnlyMemory<NavigationAreaCost> areaCosts = default,
     ReadOnlyMemory<NavigationActionCost> actionCosts = default,
     float defaultAreaCost = 1f,
-    ulong allowedCapabilities = ulong.MaxValue)
+    ulong allowedCapabilities = ulong.MaxValue,
+    NavigationCrowdPolicy? crowd = null)
 {
     public NavigationPolicy(NavigationAreaCost[] areaCosts, NavigationActionCost[]? actionCosts = null,
-        float defaultAreaCost = 1f, ulong allowedCapabilities = ulong.MaxValue)
+        float defaultAreaCost = 1f, ulong allowedCapabilities = ulong.MaxValue, NavigationCrowdPolicy? crowd = null)
         : this((ReadOnlyMemory<NavigationAreaCost>)areaCosts,
             actionCosts is null ? ReadOnlyMemory<NavigationActionCost>.Empty : actionCosts,
-            defaultAreaCost, allowedCapabilities) { }
+            defaultAreaCost, allowedCapabilities, crowd) { }
 
     public ReadOnlyMemory<NavigationAreaCost> AreaCosts { get; } = areaCosts;
     public ReadOnlyMemory<NavigationActionCost> ActionCosts { get; } = actionCosts;
     public float DefaultAreaCost { get; } = defaultAreaCost;
     public ulong AllowedCapabilities { get; } = allowedCapabilities;
+    public NavigationCrowdPolicy? Crowd { get; } = crowd;
 
     public float GetAreaCost(int area)
     {

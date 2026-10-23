@@ -34,6 +34,8 @@ FIM 工作区持有累计值、固定目标约束、逐块活动队列和实际�
 
 Grid 自身的区域入口图、确定边界轮次、活动块传播和分批角色移动见[跨块流场](Navigation-Flow-Tiles.md)。成本、规格、目标和来源变化的保留状态、局部可用性与应用链见[流场增量更新](Navigation-Flow-Updates.md)。
 
+实际人群密度和速度可经 `NavigationCrowdSystem` 与 `NavigationPolicy.Crowd` 反馈为共享通行成本，配置与运动完成后的调用链见[人流成本反馈](Navigation-Crowds.md)。
+
 ## 角色调用链
 
 `NavigationComponents.AddFlow` 和 `NavigationSystems<TMotion,TReader>.AddFlowAgent` 添加 FlowFollower 与公共运动输出。`World.Enable/Disable<FlowFollower>` 控制采样。共享目标由游戏通过 Flow 修改，角色组件继续引用同一对象。
