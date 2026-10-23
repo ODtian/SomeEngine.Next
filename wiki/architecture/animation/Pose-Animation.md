@@ -10,7 +10,7 @@
 - 蒙皮输出作为一种 Deform 实现接入 cluster 渲染（[[architecture/cluster/Deform-Cache|Deform Cache]]）。
 - 骨骼通过既有提取进入 Rendering world，当前与上一帧 G 按产生结果的实例区段上传；应用回调、实例绑定和用户编码接口见 [Skinning](Skinning.md)。
 - 每种片段方案由 Importer 与 `AnimationClipBlock` 子类组成，来源 `.meta` 选择具体组合。`RawClipBlock`、`AclClipBlock` 和用户 Block 经同一 `Sampler` 提供采样函数及共享数据；公共 glTF 曲线读取由普通库函数提供。
-- 原始片段已经通过 `RawClipImporter`、`RawClipBlock` 与同步 `AnimationClip.SampleLocal` 接入；公开入口、来源插值及用户编码扩展见 [Clip Assets](Clip-Assets.md)。
+- 原始片段通过 `RawClipImporter` 与 `RawClipBlock` 接入；ACL 压缩片段通过 `AclClipImporter` 与 `AclClipBlock` 接入，导入设置持有采样率与误差参数。两者共用 `AnimationClip.SampleLocal`、批量采样和 `ClipLeaf` 播放入口；来源插值及用户编码扩展见 [Clip Assets](Clip-Assets.md)，压缩与原生分发见 [ACL Clips](ACL-Clips.md)。
 - 片段通过共同 Leaf、Timeline 和 Composition 播放，具名结果 buffer 支持用户节点交接、事件与根运动；公开调用见 [Pose Graphs](Pose-Graphs.md)。
 - 骨骼按数组存储，挂点按需成为实体。`PoseStorage` 持有连续的局部姿势和模型空间 G，`SkeletonInstance` 通过 `PoseRange` 引用自身区段；对应求值阶段通过公开 `Update` 写入结果。
 - `SkeletonInstance.ModelPose` 提供只读模型空间 G、求值版本和计算时刻；创建、更新与使用期见 [[architecture/animation/Skeleton-Instances|Skeleton Instances]]。
