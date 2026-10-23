@@ -24,6 +24,8 @@
 
 运动消费者依赖 `Steering`，写回实际位姿与速度；`ScheduleProgress(motionCompletion)` 等待运动完成后读取结果。进度距离使用 `max(0, distance(actualPosition, targetPosition) - arrivalRange)`；进入目标区域后按实际朝向报告 `Aligning` 或 `Arrived`。其它进度状态包括 `Idle`、`Searching`、`Moving`、`Unreachable` 和 `TargetUnavailable`。
 
+实际位置进入目标区域且朝向满足目标时，共同引导入口保持当前位姿并输出零平移速度。需要继续调整朝向的 ASA 和车辆请求沿各自可行位姿、转弯控制继续执行，满足区域与朝向两项条件后停止。
+
 `ScheduleGuidance` 返回路径与引导的完成句柄，供调用方将其与[共享流场](Navigation-Flows.md)和邻居工作汇合，再由所选避让阶段写入本步 Steering。
 
 以下是调用方式的例子，运动组件、资源与目标由游戏提供：
