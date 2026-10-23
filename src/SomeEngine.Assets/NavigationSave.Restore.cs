@@ -97,7 +97,7 @@ internal sealed partial class NavigationSaveResourceReader(NavigationSavedResour
                     result = await (await asset.GetBlockAsync<NavigationMotionBlock>(cancellationToken).ConfigureAwait(false)).CreateAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case SavedGeometry value:
-                using (NavigationAsset asset = await NavigationAsset.OpenAsync(loader, value.Asset, cancellationToken).ConfigureAwait(false))
+                using (MeshAsset asset = await MeshAsset.OpenAsync(loader, value.Asset, cancellationToken).ConfigureAwait(false))
                     result = await (await asset.GetBlockAsync<NavigationGeometryBlock>(cancellationToken).ConfigureAwait(false)).CreateAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case SavedLinks value:

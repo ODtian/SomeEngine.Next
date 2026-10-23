@@ -158,8 +158,8 @@ public sealed partial class NavigationSaveTests : IDisposable
             Add(await policyAsset.SaveAsync(Path.Combine(_directory, "dynamic.navigation-policy.asset")));
             resources.Register(profile, profileAsset.Reference); resources.Register(policy, policyAsset.Reference);
         }
-        await SaveGeometry(floorGeometry, "floor");
-        await SaveGeometry(obstacleGeometry, "obstacle");
+        floorGeometry = await SaveGeometry(floorGeometry, "floor");
+        obstacleGeometry = await SaveGeometry(obstacleGeometry, "obstacle");
         var registry = new SerializationRegistry().Register<SaveMotion, SaveMotionCodec>(
             new(Guid.Parse("f943af78-c106-4f68-a4a7-dc05d7008dcc"), "navigation-save-motion", 1));
         using var stream = new MemoryStream();
@@ -212,12 +212,14 @@ public sealed partial class NavigationSaveTests : IDisposable
 
         void Add(AssetEntry entry) => manifest.AddAsset(entry.AssetGuid, entry.Name, Path.GetFileName(entry.Path), entry.AssetType,
             entry.SchemaFingerprint, version: entry.Version);
-        async Task SaveGeometry(NavigationGeometry geometry, string name)
+        async Task<NavigationGeometry> SaveGeometry(NavigationGeometry geometry, string name)
         {
-            using var asset = new NavigationAsset(); using var block = new NavigationGeometryBlock();
+            using var asset = new MeshAsset(); using var block = new NavigationGeometryBlock();
             block.SetGeometry(geometry); asset.SetBlock(block);
-            Add(await asset.SaveAsync(Path.Combine(_directory, name + ".navigation.asset")));
-            resources.Register(geometry, asset.Reference);
+            Add(await asset.SaveAsync(Path.Combine(_directory, name + ".mesh.asset")));
+            NavigationGeometry source = await block.CreateAsync();
+            resources.Register(source, asset.Reference);
+            return source;
         }
     }
 
