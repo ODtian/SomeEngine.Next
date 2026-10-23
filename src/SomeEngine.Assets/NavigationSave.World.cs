@@ -48,6 +48,7 @@ internal sealed record SavedHeadingScene(int Mesh) : NavigationSavedResource;
 internal sealed record SavedBuiltGrid(int Region) : NavigationSavedResource;
 internal readonly record struct NavigationSavedSource(Entity Entity, int Geometry, bool Obstacle,
     NavigationObstacleParticipation Participation, ulong Version, bool Enabled);
+internal readonly record struct NavigationSavedCrowd(Entity Entity, float Weight, bool Enabled);
 internal sealed record NavigationSavedRegion(int Scene, int Region, NavigationBounds Bounds, int Profile, int Policy,
     NavigationSurfaceSettings Surface, NavigationMeshSettings Mesh, NavigationRegionPort[] Ports, string TransformReader,
     bool BuildGrid, NavigationGridConnection[] Connections, NavigationGridFootprintMode FootprintMode);
@@ -59,6 +60,8 @@ internal sealed partial class NavigationSaveResourceCapture
 
     internal void CaptureRegions()
     {
+        foreach (NavigationFlow flow in sources.Sources.Keys.OfType<NavigationFlow>())
+            if (flow.Input.HeadingGraph is { } graph) CaptureHeadingGraph(graph, flow.Profile);
         foreach (NavigationSaveRegion registration in sources.RegionEntries)
         {
             NavigationRegionSources region = registration.Region;
@@ -82,6 +85,22 @@ internal sealed partial class NavigationSaveResourceCapture
 
 public static partial class NavigationSave
 {
+    private static NavigationSavedCrowd[] CaptureCrowd(World world)
+    {
+        var result = new List<NavigationSavedCrowd>();
+        QueryHandle query = world.Query(world.QueryDefinition().Read<NavigationCrowdAgent>());
+        try
+        {
+            world.ExecuteReadSnapshot(query, cursor =>
+            {
+                foreach (QueryRow row in cursor.Rows)
+                    result.Add(new(row.Entity, row.Read<NavigationCrowdAgent>().Weight, world.IsEnabled<NavigationCrowdAgent>(row.Entity)));
+            });
+        }
+        finally { world.ReleaseQuery(query); }
+        return result.ToArray();
+    }
+
     private static NavigationSavedSource[] CaptureSources(World world, NavigationSaveResourceCapture capture)
     {
         var result = new List<NavigationSavedSource>();
@@ -117,6 +136,11 @@ internal sealed partial class NavigationSaveResourceReader
 
     internal async Task RestoreSources(World world, NavigationSavedTable table, NavigationSaveOptions options)
     {
+        foreach (NavigationSavedCrowd crowd in table.Crowd)
+        {
+            world.Add(crowd.Entity, new NavigationCrowdAgent(crowd.Weight));
+            if (!crowd.Enabled) world.Disable<NavigationCrowdAgent>(crowd.Entity);
+        }
         foreach (NavigationSavedSource source in table.Sources)
         {
             var geometry = (NavigationGeometry)await Get(source.Geometry).ConfigureAwait(false);

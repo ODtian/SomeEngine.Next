@@ -1,5 +1,7 @@
 # 分层栅格与共享目标流场
 
+共享 Flow、目标和世界通路修改的持久恢复见[导航持久存档与恢复](Navigation-Saves.md)。
+
 `NavigationGrid`、`NavigationCosts` 和 `NavigationFlow` 是由游戏持有的普通共享对象。角色通过 `FlowFollower` 引用场，采样阶段写入与路径角色共用的 `NavigationGuidance`；运动建议和实际反馈继续使用 `NavigationSteering` 与 `NavigationProgress`。
 
 ## 栅格与通行成本

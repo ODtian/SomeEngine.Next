@@ -17,7 +17,7 @@ public static partial class NavigationComponents
         world.Add(entity, default(NavigationSteering));
         world.Add(entity, default(NavigationProgress));
         world.Add(entity, default(NavigationTraversalRequest));
-        world.Add(entity, default(NavigationTraversalResult));
+        if (!world.Has<NavigationTraversalResult>(entity)) world.Add(entity, default(NavigationTraversalResult));
         world.Add(entity, default(NavigationPassageUse));
     }
 }

@@ -6,7 +6,7 @@ namespace SomeEngine.Assets;
 
 internal readonly partial struct NavigationSaveCodec
 {
-    private static void WriteWorld(ref DataWriter writer, NavigationSavedSource[] sources, NavigationSavedRegion[] regions)
+    private static void WriteWorld(ref DataWriter writer, NavigationSavedSource[] sources, NavigationSavedRegion[] regions, NavigationSavedCrowd[] crowd)
     {
         writer.WriteInt32(sources.Length);
         foreach (NavigationSavedSource source in sources)
@@ -34,9 +34,12 @@ internal readonly partial struct NavigationSaveCodec
                 writer.WriteUInt64(connection.RequiredCapabilities); writer.WriteInt32(connection.Action); writer.WriteBoolean(connection.Bidirectional);
             }
         }
+        writer.WriteInt32(crowd.Length);
+        foreach (NavigationSavedCrowd actor in crowd)
+        { writer.WriteEntity(actor.Entity); writer.WriteSingle(actor.Weight); writer.WriteBoolean(actor.Enabled); }
     }
 
-    private static void ReadWorld(ref DataReader reader, out NavigationSavedSource[] sources, out NavigationSavedRegion[] regions)
+    private static void ReadWorld(ref DataReader reader, out NavigationSavedSource[] sources, out NavigationSavedRegion[] regions, out NavigationSavedCrowd[] crowd)
     {
         sources = new NavigationSavedSource[reader.ReadInt32()];
         for (int index = 0; index < sources.Length; index++) sources[index] = new(reader.ReadEntity(), reader.ReadInt32(), reader.ReadBoolean(),
@@ -62,6 +65,8 @@ internal readonly partial struct NavigationSaveCodec
                 reader.ReadSingle(), reader.ReadUInt64(), reader.ReadInt32(), reader.ReadBoolean());
             regions[index] = new(scene, region, bounds, profile, policy, surface, mesh, ports, transform, grid, connections, mode);
         }
+        crowd = new NavigationSavedCrowd[reader.ReadInt32()];
+        for (int index = 0; index < crowd.Length; index++) crowd[index] = new(reader.ReadEntity(), reader.ReadSingle(), reader.ReadBoolean());
     }
 
     private static void WriteWorldResource(ref DataWriter writer, NavigationSavedResource resource)
@@ -84,7 +89,7 @@ internal readonly partial struct NavigationSaveCodec
                 break;
             case SavedHeadingScene value: writer.WriteByte(13); writer.WriteInt32(value.Mesh); break;
             case SavedBuiltGrid value: writer.WriteByte(14); writer.WriteInt32(value.Region); break;
-            default: throw new InvalidOperationException($"Unknown navigation resource {resource.GetType().Name}.");
+            default: WriteHeadingResource(ref writer, resource); break;
         }
     }
 
@@ -102,7 +107,7 @@ internal readonly partial struct NavigationSaveCodec
                 return new SavedScene(profile, policy, placements, connections, links);
             case 13: return new SavedHeadingScene(reader.ReadInt32());
             case 14: return new SavedBuiltGrid(reader.ReadInt32());
-            default: throw new InvalidDataException($"Unknown navigation save resource kind {kind}.");
+            default: return ReadHeadingResource(kind, ref reader);
         }
     }
 

@@ -74,8 +74,10 @@ public static partial class NavigationSave
             });
         }
         finally { world.ReleaseQuery(query); }
+        for (int index = 0; index < actors.Count; index++)
+            actors[index] = actors[index] with { Traversal = CaptureTraversal(world, actors[index]), Controls = CaptureControls(world, actors[index].Entity, capture) };
         NavigationSavedSource[] sourceBindings = CaptureSources(world, capture);
-        var table = new NavigationSavedTable(capture.Records.ToArray(), actors.ToArray(), sourceBindings, capture.Regions.ToArray());
+        var table = new NavigationSavedTable(capture.Records.ToArray(), actors.ToArray(), sourceBindings, capture.Regions.ToArray(), CaptureCrowd(world));
         WorldSerializer.WriteDurableComponent(stream, in table, TableRegistry);
         WorldSerializer.WriteDurableWorld(stream, world, gameRegistry, options);
     }
@@ -83,6 +85,7 @@ public static partial class NavigationSave
 
 internal enum SavedPathKind : byte { None, Flow, Polygon, Polyanya, Asa, StateLattice, HybridAStar, Scene, DStarLite, HeadingScene }
 internal readonly record struct NavigationSavedActor(Entity Entity, int Profile, int Policy, float DesiredSpeed,
-    SavedPathKind Kind, int Resource, NavigationGoal Goal, bool Enabled);
+    SavedPathKind Kind, int Resource, NavigationGoal Goal, bool Enabled, NavigationTraversalIntent Traversal = default,
+    NavigationSavedControls Controls = default);
 internal readonly record struct NavigationSavedTable(NavigationSavedResource[] Resources, NavigationSavedActor[] Actors,
-    NavigationSavedSource[] Sources, NavigationSavedRegion[] Regions) : IComponent;
+    NavigationSavedSource[] Sources, NavigationSavedRegion[] Regions, NavigationSavedCrowd[] Crowd) : IComponent;

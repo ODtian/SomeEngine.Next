@@ -36,7 +36,7 @@ internal readonly record struct SavedEdgeCost(SavedCell From, SavedCell To, int 
 internal sealed record SavedCosts(int Grid, int Policy, ulong Version, SavedCellCost[] Cells, SavedEdgeCost[] Edges) : NavigationSavedResource;
 internal sealed record SavedVehicleSpace(int Grid, int Motions, int Costs, HybridAStarSettings Settings) : NavigationSavedResource;
 internal sealed record SavedFlow(int Costs, int Profile, NavigationFlowGoal[] Goals, ulong GoalVersion, ulong Version,
-    string Solver, SavedFlowAsset? Source) : NavigationSavedResource;
+    string Solver, SavedFlowAsset? Source, int HeadingGraph = -1) : NavigationSavedResource;
 
 internal sealed partial class NavigationSaveResourceCapture(NavigationSaveResources sources)
 {
@@ -68,8 +68,9 @@ internal sealed partial class NavigationSaveResourceCapture(NavigationSaveResour
     {
         NavigationFlowInput input = flow.Input;
         sources.Sources.TryGetValue(flow, out NavigationSavedResource? source);
+        int heading = input.HeadingGraph is { } graph ? CaptureHeadingGraph(graph, input.Profile) : -1;
         return new(Add(input.Costs), Add(input.Profile), input.Goals.ToArray(), input.GoalVersion, input.Version,
-            flow.Field?.Solver ?? ReverseDijkstraFlow.Id, source as SavedFlowAsset);
+            flow.Field?.Solver ?? ReverseDijkstraFlow.Id, source as SavedFlowAsset, heading);
     }
 
     private SavedCosts CaptureCosts(NavigationCosts costs)

@@ -8,7 +8,7 @@ using SomeEngine.Navigation;
 
 namespace SomeEngine.Assets.Tests;
 
-public sealed class NavigationSaveTests : IDisposable
+public sealed partial class NavigationSaveTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "SomeEngine-NavigationSave-" + Guid.NewGuid().ToString("N"));
     public NavigationSaveTests() => Directory.CreateDirectory(_directory);
@@ -72,6 +72,9 @@ public sealed class NavigationSaveTests : IDisposable
             paths.AddAgent(independent, mesh, profile, policy, new(target, 0.1f), 1);
             followers.AddFlowAgent(first, flow, 1);
             followers.AddFlowAgent(second, flow, 1);
+            world.Add(target, new NavigationCrowdAgent(2));
+            world.Add(second, new NavigationCrowdAgent(1.5f));
+            world.Disable<NavigationCrowdAgent>(second);
             new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler).Schedule().Complete();
             for (int step = 0; step < 3; step++) Move(world, paths, followers);
             savedFirst = world.Read<SaveMotion>(first);
@@ -95,6 +98,10 @@ public sealed class NavigationSaveTests : IDisposable
         Assert.Same(loaded.Read<NavigationAgent>(independent).Policy, shared.Costs.Policy);
         Assert.Equal(savedFirst, loaded.Read<SaveMotion>(first));
         Assert.Equal(target, loaded.Read<NavigationGoal>(independent).Target);
+        NavigationCrowdField density = new NavigationCrowdSystem<SaveMotion, SaveMotionReader>(loaded, scheduler).Schedule(shared.Costs.Grid).Complete().Field;
+        Assert.True(density.Sample(loaded.Read<SaveMotion>(target).Position).Density > 0);
+        Assert.Equal(0, density.Sample(loaded.Read<SaveMotion>(second).Position).Density);
+        Assert.Equal(1.5f, loaded.Read<NavigationCrowdAgent>(second).Weight);
         Assert.Equal(0.15f, shared.Goals.Span[0].ArrivalRange);
         Assert.Equal(5UL, shared.Costs.Version);
         Assert.True(float.IsPositiveInfinity(shared.Costs.CellCosts.Span[7]));

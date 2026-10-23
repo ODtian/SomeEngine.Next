@@ -19,6 +19,12 @@ public sealed class NavigationPassage(int capacity)
 
     internal bool Contains(NavigationPassageUser user) => InUse.Span.Contains(user);
 
+    internal void RestoreUser(NavigationPassageUser user, int capacity, ulong version)
+    {
+        PassageData previous = _data;
+        Volatile.Write(ref _data, new(capacity, version, previous.Waiting, [.. previous.InUse, user]));
+    }
+
     internal void SetCapacity(int capacity, ulong version)
     {
         PassageData previous = _data;

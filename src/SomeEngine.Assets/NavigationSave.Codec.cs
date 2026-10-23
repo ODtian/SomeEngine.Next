@@ -17,8 +17,10 @@ internal readonly partial struct NavigationSaveCodec : IComponentCodec<Navigatio
             writer.WriteEntity(actor.Entity); writer.WriteInt32(actor.Profile); writer.WriteInt32(actor.Policy);
             writer.WriteSingle(actor.DesiredSpeed); writer.WriteByte((byte)actor.Kind); writer.WriteInt32(actor.Resource);
             WriteGoal(ref writer, actor.Goal); writer.WriteBoolean(actor.Enabled);
+            WriteTraversal(ref writer, actor.Traversal);
+            WriteControls(ref writer, actor.Controls);
         }
-        WriteWorld(ref writer, value.Sources, value.Regions);
+        WriteWorld(ref writer, value.Sources, value.Regions, value.Crowd);
     }
 
     public void Read(ref DataReader reader, out NavigationSavedTable value)
@@ -28,9 +30,9 @@ internal readonly partial struct NavigationSaveCodec : IComponentCodec<Navigatio
         var actors = new NavigationSavedActor[reader.ReadInt32()];
         for (int index = 0; index < actors.Length; index++)
             actors[index] = new(reader.ReadEntity(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadSingle(),
-                (SavedPathKind)reader.ReadByte(), reader.ReadInt32(), ReadGoal(ref reader), reader.ReadBoolean());
-        ReadWorld(ref reader, out NavigationSavedSource[] sources, out NavigationSavedRegion[] regions);
-        value = new(resources, actors, sources, regions);
+                (SavedPathKind)reader.ReadByte(), reader.ReadInt32(), ReadGoal(ref reader), reader.ReadBoolean(), ReadTraversal(ref reader), ReadControls(ref reader));
+        ReadWorld(ref reader, out NavigationSavedSource[] sources, out NavigationSavedRegion[] regions, out NavigationSavedCrowd[] crowd);
+        value = new(resources, actors, sources, regions, crowd);
     }
 
     private static void WriteResource(ref DataWriter writer, NavigationSavedResource resource)
@@ -71,6 +73,7 @@ internal readonly partial struct NavigationSaveCodec : IComponentCodec<Navigatio
                 writer.WriteUInt64(value.GoalVersion); writer.WriteUInt64(value.Version); writer.WriteString(value.Solver);
                 writer.WriteBoolean(value.Source is not null);
                 if (value.Source is { } source) { writer.WriteGuid(source.Asset.Value); writer.WriteBoolean(source.Heading); }
+                writer.WriteInt32(value.HeadingGraph);
                 writer.WriteInt32(value.Goals.Length);
                 foreach (NavigationFlowGoal goal in value.Goals)
                 {
@@ -112,9 +115,10 @@ internal readonly partial struct NavigationSaveCodec : IComponentCodec<Navigatio
                 ulong goalVersion = reader.ReadUInt64(), inputVersion = reader.ReadUInt64();
                 string solver = reader.ReadString()!;
                 SavedFlowAsset? source = reader.ReadBoolean() ? new(new(reader.ReadGuid()), reader.ReadBoolean()) : null;
+                int graph = reader.ReadInt32();
                 var goals = new NavigationFlowGoal[reader.ReadInt32()];
                 for (int index = 0; index < goals.Length; index++) goals[index] = new(ReadVector(ref reader), reader.ReadSingle(), ReadNullable(ref reader), reader.ReadSingle());
-                return new SavedFlow(costs, profile, goals, goalVersion, inputVersion, solver, source);
+                return new SavedFlow(costs, profile, goals, goalVersion, inputVersion, solver, source, graph);
             default: return ReadWorldResource(kind, ref reader);
         }
     }
