@@ -16,6 +16,8 @@ glTF 与 Raw 来源入口共用局部索引和 `StandardClusterPositionEncoder`�
 
 两份 Block 携带相同 `VertexIdentity`。渲染页组合复制 `Data`，以位置和属性两段字节交付给 Vertex 接口。材质入口的兼容性标识由位置与属性的标识组合而成，在管线建立时匹配。
 
+Cluster 蒙皮影响与逐目标形变增量各有自己的 Block 和编码标识，按几何 Block 的顶点映射保存完整数值。默认编码沿用流描述布局并保留 float64 值；材质 Importer 可在页组合之前将所需数据编入自己的属性字节。数据与入口见 [Deformation Import](Deformation-Import.md)。
+
 ## Invariants
 - 用户编码可以定义自己的 AoS、SoA、bit packing 或私有头部。
 - 更换属性编码通过替换 Importer 与对应 Shader 完成。
