@@ -1,6 +1,6 @@
 # 地形资产与固定版本捕获
 
-本页维护已实现的资产数据职责、保存格式与公开调用方法。源码入口为 [Terrain.CpuData](../../../src/SomeEngine.Resources/Terrain/Terrain.CpuData.cs)、[TerrainAsset](../../../src/SomeEngine.Assets/Schema/TerrainAsset.cs) 和 [TerrainPageSource](../../../src/SomeEngine.Assets/Pipeline/TerrainPageSource.cs)。资产遵循 [Asset 与使用对象](../Assets/Asset-Objects.md)、[数据共享](../Assets/Asset-Sharing-and-Writes.md) 和 [Block 划分](../Assets/Block-Division.md)。
+本页维护已实现的资产数据职责、保存格式与公开调用方法。源码入口为 [Terrain.CpuData](../../../src/SomeEngine.Resources/Terrain/Terrain.CpuData.cs)、[TerrainAsset](../../../src/SomeEngine.Assets/Schema/TerrainAsset.cs) 和 [TerrainPageSource](../../../src/SomeEngine.Assets/Pipeline/TerrainPageSource.cs)。资产遵循 [Asset 与使用对象](../Assets/Asset-Objects.md)及[数据共享](../Assets/Asset-Sharing-and-Writes.md)。
 
 ## 数据与 Block
 
@@ -45,6 +45,34 @@ using var asset = new TerrainAsset { Name = "ground" };
 await asset.UpdateAsync(await captured, materials);
 await asset.SaveAsync(path);
 ```
+
+## GPU 编辑后的保存
+
+GPU 编辑也使用同一个 `CaptureCpuAsync` 入口。调用时固定字段页版本和表面关系，所需 GPU 页通过字段的按需回读取得 CPU 数组；完成依赖对应实际 GPU 工作和复制完成。原 Terrain 在捕获之后继续提交编辑，每次编辑产生自己的字段版本。返回的 `TerrainCpuData` 保留捕获的页数组，可在应用帧结束后交给资产编码与保存。
+
+下面演示在应用的第 0 帧提交 GPU 编辑、捕获、继续编辑，然后在应用结束后保存捕获结果。高度增量、球心、半径和体素增量属于示例参数；`terrain`、`heights`、`voxels`、两个驻留 Shader 和材质引用由应用提供，应用已安装[地形 GPU 编辑](Terrain-Gpu-Editing.md)的请求处理系统。
+
+```csharp
+Task<TerrainCpuData>? captured = null;
+application.UpdateFrame = frame =>
+{
+    if (frame.Index == 0)
+    {
+        heights.EditGpu(new HeightDeltaBrushGpu(heightShader, heights.Grid.Range, 2f));
+        voxels.EditGpu(new VoxelSphereDeltaBrushGpu(voxelShader, voxels.Grid, new(1, 1, 1), 2f, -1f));
+        captured = terrain.CaptureCpuAsync().AsTask();
+
+        heights.EditGpu(new HeightDeltaBrushGpu(heightShader, heights.Grid.Range, 5f));
+        voxels.EditGpu(new VoxelSphereDeltaBrushGpu(voxelShader, voxels.Grid, new(1, 1, 1), 2f, 3f));
+    }
+};
+await Application.RunAsync(args, application: application);
+using var asset = new TerrainAsset { Name = "Captured GPU terrain" };
+await asset.UpdateAsync(await captured!, [groundMaterial]);
+await asset.SaveAsync(path);
+```
+
+保存数据的 Terrain 版本、各字段版本与表面图来自同一次捕获。重开的高度与体素按这些版本提供公开采样，Blend 的输入引用及区域参数也随捕获保存。后续编辑通过原 Terrain 的字段读取取得各自样本和版本。[TerrainGpuEditingTests](../../../tests/SomeEngine.Runtime.Tests/TerrainGpuEditingTests.cs) 中的 `GpuCaptureSavesItsFieldsAndBlendWhileTheOriginalContinuesEditing` 通过公开应用、字段和资产接口覆盖这条调用流程。
 
 ## 重开与来源生命周期
 
