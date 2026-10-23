@@ -124,23 +124,19 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             TerrainGeometryRequest request = batch.Request;
             if (request.IsSubmitted || batch.Pass != default || !request.Dependency.IsCompleted) continue;
             request.Dependency.Complete();
-            TerrainHeightGpuData height = request.Height;
             var inputExtension = extension;
-            HeightGpuInput input = _fields.CreateHeightInput(ref frame, ref inputExtension,
-                height.Grid, height.Data, height.Range);
+            var sourceBindings = new Dictionary<string, GraphParameterResourceBinding>();
+            request.Surface.AddBindings(_fields, ref frame, ref inputExtension, sourceBindings);
             GraphBufferSlice tables = frame.Upload<uint>(RegularCells(), BufferUsages.ShaderRead, "Terrain regular cells");
             GraphPassId previous = default;
             foreach (TerrainGpuChunkBuild chunk in request.Chunks)
             {
                 ClusterGpuMeshCapacity capacity = _adapter.Mesher.GetCapacity(chunk.Bounds);
                 var parameters = new SurfaceParameters(chunk.Bounds.Min, chunk.Bounds.CellSize, chunk.Bounds.CellCount,
-                    height.Grid.Width, height.Grid.Depth, height.Grid.SampleSpacing, height.Grid.PageSize,
-                    input.MinPageX, input.MinPageZ, input.PageWidth, height.InitialHeight, capacity.VertexCount, capacity.TriangleCount);
-                var bindings = new Dictionary<string, GraphParameterResourceBinding>
+                    capacity.VertexCount, capacity.TriangleCount);
+                var bindings = new Dictionary<string, GraphParameterResourceBinding>(sourceBindings)
                 {
                     ["TerrainParameters"] = GraphParameterResourceBinding.ConstantBuffer(frame.Upload(parameters, BufferUsages.Constant), PipelineSync.ComputeShading),
-                    ["TerrainHeights"] = Read(frame.CreateBufferSrv(input.Samples, structureStride: sizeof(float))),
-                    ["TerrainPageOffsets"] = Read(frame.CreateBufferSrv(input.PageTable, structureStride: sizeof(int))),
                     ["TerrainRegularCells"] = Read(frame.CreateBufferSrv(tables, structureStride: sizeof(uint))),
                 };
                 GraphBufferSlice positions = CreateBuffer(ref frame, capacity.VertexCount * 12u, "Terrain positions");
@@ -258,10 +254,9 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         internal GraphPassId Pass;
     }
 
-    [StructLayout(LayoutKind.Sequential, Size = 64)]
+    [StructLayout(LayoutKind.Sequential, Size = 32)]
     private readonly record struct SurfaceParameters(Vector3 Min, float CellSize, int CellCount,
-        int HeightWidth, int HeightDepth, float HeightSpacing, int PageSize, int SourcePageX, int SourcePageZ,
-        int SourcePageWidth, float InitialHeight, uint VertexCapacity, uint TriangleCapacity);
+        uint VertexCapacity, uint TriangleCapacity);
     private sealed record ComputeData(LinkedComputePipeline Pipeline, ClusterLinkedStageLayout Layout);
     private sealed record ComputePass(LinkedComputePipeline Pipeline, GraphParameterResourceBinding[] Bindings, DispatchArguments Dispatch);
 }

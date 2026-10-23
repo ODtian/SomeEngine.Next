@@ -13,8 +13,8 @@ public interface ITerrainMesherGpu
     GraphPassId Record(ref TerrainGpuMesherContext context);
 }
 
-/// <summary>Regular Transvoxel Marching Cubes cells using the terrain_height_surface shader.</summary>
-public sealed class MarchingCubesTerrainMesherGpu(Shader shader) : ITerrainMesherGpu
+/// <summary>Regular Transvoxel Marching Cubes cells with the selected scalar-source entry.</summary>
+public sealed class MarchingCubesTerrainMesherGpu(Shader shader, string entryPoint = "ExtractHeightSurface") : ITerrainMesherGpu
 {
     public int ReadBorder => 1;
     public ClusterGpuMeshCapacity GetCapacity(TerrainChunkBounds bounds)
@@ -24,7 +24,7 @@ public sealed class MarchingCubesTerrainMesherGpu(Shader shader) : ITerrainMeshe
     }
 
     public GraphPassId Record(ref TerrainGpuMesherContext context) =>
-        context.AddCompute(shader, "ExtractHeightSurface", new(1, 1, 1));
+        context.AddCompute(shader, entryPoint, new(1, 1, 1));
 }
 
 /// <summary>Records surface kernels over the captured source and common position/sample/index/count outputs.</summary>
