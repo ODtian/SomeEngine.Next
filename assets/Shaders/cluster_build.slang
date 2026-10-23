@@ -26,12 +26,15 @@ struct ClusterBuildUniforms
     uint EncodingLow;
     uint EncodingHigh;
     uint MaterialIndex;
+    uint MaterialCount;
+    uint HasTriangleMaterials;
 };
 ConstantBuffer<ClusterBuildUniforms> ClusterBuildParameters;
 ByteAddressBuffer ClusterBuildPositions;
 ByteAddressBuffer ClusterBuildAttributes;
 ByteAddressBuffer ClusterBuildIndices;
 ByteAddressBuffer ClusterBuildCounts;
+ByteAddressBuffer ClusterBuildMaterials;
 RWByteAddressBuffer ClusterBuildPages;
 RWByteAddressBuffer ClusterBuildBvh;
 
@@ -57,7 +60,7 @@ void StoreClusterBuildNode(uint index, float3 lower, float3 upper,
 }
 
 void StoreClusterBuildPage<T : IClusterVertexEncode>(T encoder, ClusterVertexInput vertices,
-    uint triangleIndices[372], uint triangleCount, uint pageIndex)
+    uint triangleIndices[372], uint triangleCount, uint pageIndex, uint materialIndex)
 {
     uint page = pageIndex * ClusterBuildParameters.PageStride;
     float3 lower = asfloat(vertices.Positions.Load3(vertices.SourceIndices[0] * 12u));
@@ -81,7 +84,7 @@ void StoreClusterBuildPage<T : IClusterVertexEncode>(T encoder, ClusterVertexInp
     ClusterBuildPages.Store3(page + 92u, asuint(upper));
     ClusterBuildPages.Store(page + 108u, vertices.Count | (triangleCount << 8u));
     ClusterBuildPages.Store(page + 112u, 0xFFFFu);
-    ClusterBuildPages.Store(page + 116u, ClusterBuildParameters.MaterialIndex);
+    ClusterBuildPages.Store(page + 116u, materialIndex);
     ClusterBuildPages.Store(page + 120u, triangleCount | (triangleCount << 8u));
     ClusterBuildPages.Store(page + 124u, 0xFFFFFFFFu);
 
@@ -165,45 +168,56 @@ void BuildCluster<T : IClusterVertexEncode>(T encoder)
     ClusterVertexInput vertices;
     vertices.Positions = ClusterBuildPositions;
     vertices.Attributes = ClusterBuildAttributes;
-    vertices.Count = 0u;
     uint triangleIndices[372];
-    uint pageCount = 0u, pageTriangles = 0u, triangle = 0u;
-    while (triangle < triangleCount)
+    uint pageCount = 0u;
+    uint materialCount = ClusterBuildParameters.HasTriangleMaterials != 0u ? ClusterBuildParameters.MaterialCount : 1u;
+    for (uint group = 0u; group < materialCount; group++)
     {
-        uint3 source = ClusterBuildIndices.Load3(triangle * 12u);
-        uint3 local;
-        uint added[3];
-        uint addedCount = 0u;
-        for (uint corner = 0u; corner < 3u; corner++)
+        uint material = ClusterBuildParameters.HasTriangleMaterials != 0u ? group : ClusterBuildParameters.MaterialIndex;
+        vertices.Count = 0u;
+        uint pageTriangles = 0u, triangle = 0u;
+        while (triangle < triangleCount)
         {
-            uint index = 0u;
-            while (index < vertices.Count && vertices.SourceIndices[index] != source[corner]) index++;
-            if (index == vertices.Count)
+            if (ClusterBuildParameters.HasTriangleMaterials != 0u && ClusterBuildMaterials.Load(triangle * 4u) != material)
             {
-                uint addition = 0u;
-                while (addition < addedCount && added[addition] != source[corner]) addition++;
-                if (addition == addedCount) added[addedCount++] = source[corner];
-                index += addition;
+                triangle++;
+                continue;
             }
-            local[corner] = index;
+            uint3 source = ClusterBuildIndices.Load3(triangle * 12u);
+            uint3 local;
+            uint added[3];
+            uint addedCount = 0u;
+            for (uint corner = 0u; corner < 3u; corner++)
+            {
+                uint index = 0u;
+                while (index < vertices.Count && vertices.SourceIndices[index] != source[corner]) index++;
+                if (index == vertices.Count)
+                {
+                    uint addition = 0u;
+                    while (addition < addedCount && added[addition] != source[corner]) addition++;
+                    if (addition == addedCount) added[addedCount++] = source[corner];
+                    index += addition;
+                }
+                local[corner] = index;
+            }
+            if (vertices.Count + addedCount > 64u || pageTriangles == 124u)
+            {
+                StoreClusterBuildPage(encoder, vertices, triangleIndices, pageTriangles, pageCount++, material);
+                vertices.Count = 0u;
+                pageTriangles = 0u;
+                continue;
+            }
+            for (uint addition = 0u; addition < addedCount; addition++)
+                vertices.SourceIndices[vertices.Count + addition] = added[addition];
+            vertices.Count += addedCount;
+            for (uint corner = 0u; corner < 3u; corner++)
+                triangleIndices[pageTriangles * 3u + corner] = local[corner];
+            pageTriangles++;
+            triangle++;
         }
-        if (vertices.Count + addedCount > 64u || pageTriangles == 124u)
-        {
-            StoreClusterBuildPage(encoder, vertices, triangleIndices, pageTriangles, pageCount++);
-            vertices.Count = 0u;
-            pageTriangles = 0u;
-            continue;
-        }
-        for (uint addition = 0u; addition < addedCount; addition++)
-            vertices.SourceIndices[vertices.Count + addition] = added[addition];
-        vertices.Count += addedCount;
-        for (uint corner = 0u; corner < 3u; corner++)
-            triangleIndices[pageTriangles * 3u + corner] = local[corner];
-        pageTriangles++;
-        triangle++;
+        if (pageTriangles != 0u)
+            StoreClusterBuildPage(encoder, vertices, triangleIndices, pageTriangles, pageCount++, material);
     }
-    if (pageTriangles != 0u)
-        StoreClusterBuildPage(encoder, vertices, triangleIndices, pageTriangles, pageCount++);
     BuildClusterHierarchy(pageCount);
 }
 #endif

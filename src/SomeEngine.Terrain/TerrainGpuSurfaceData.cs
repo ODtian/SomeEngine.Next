@@ -9,17 +9,29 @@ using SomeEngine.Resources;
 namespace SomeEngine.Terrains;
 
 /// <summary>The fixed surface graph and field pages shared by every chunk in one geometry batch.</summary>
-internal sealed record TerrainGpuSurfaceData(TerrainGpuSurfaceNode[] Nodes, TerrainGpuFieldData[] Fields, JobHandle Completion)
+internal sealed record TerrainGpuSurfaceData(TerrainGpuSurfaceNode[] Nodes, TerrainGpuFieldData[] Fields,
+    int[] AttributeHeightSources, int[] AttributeVoxelSources, JobHandle Completion)
 {
-    internal static TerrainGpuSurfaceData Capture(TerrainSurface surface, TerrainBounds bounds)
+    internal static TerrainGpuSurfaceData Capture(TerrainSurface surface, TerrainBounds bounds, TerrainFieldInputs inputs)
     {
         var nodes = new List<TerrainGpuSurfaceNode>();
         var fields = new List<TerrainGpuFieldData>();
         var fieldIndices = new Dictionary<object, int>();
         AddNode(surface, -1);
+        int[] heightSources = inputs.HeightFieldIds.AsSpan().ToArray().Select(id => AddField(surface.Terrain.HeightFields[id])).ToArray();
+        int[] voxelSources = inputs.VoxelFieldIds.AsSpan().ToArray().Select(id => AddField(surface.Terrain.VoxelFields[id])).ToArray();
         JobHandle completion = surface.Terrain.Editing.Scheduler.CombineDependencies(
             fields.Select(static field => field.Completion).ToArray());
-        return new(nodes.ToArray(), fields.ToArray(), completion);
+        return new(nodes.ToArray(), fields.ToArray(), heightSources, voxelSources, completion);
+
+        int AddField(object field)
+        {
+            if (fieldIndices.TryGetValue(field, out int source)) return source;
+            source = fields.Count;
+            fieldIndices.Add(field, source);
+            fields.Add(field is HeightField height ? CaptureHeight(height, bounds) : CaptureVoxels((VoxelField)field, bounds));
+            return source;
+        }
 
         int AddNode(TerrainSurface current, int parent)
         {
@@ -40,12 +52,7 @@ internal sealed record TerrainGpuSurfaceData(TerrainGpuSurfaceNode[] Nodes, Terr
                     VoxelSurface voxel => voxel.Field,
                     _ => throw new NotSupportedException($"GPU geometry requires a supported scalar source ({current.GetType().Name})."),
                 };
-                if (!fieldIndices.TryGetValue(field, out int source))
-                {
-                    source = fields.Count;
-                    fieldIndices.Add(field, source);
-                    fields.Add(field is HeightField height ? CaptureHeight(height, bounds) : CaptureVoxels((VoxelField)field, bounds));
-                }
+                int source = AddField(field);
                 nodes[index] = new(parent, source, -1, 0, default, 0, default, 0);
             }
             return index;
@@ -76,6 +83,12 @@ internal sealed record TerrainGpuSurfaceData(TerrainGpuSurfaceNode[] Nodes, Terr
         bindings["TerrainSurfaceNodes"] = ReadBuffer(ref frame, frame.Upload<TerrainGpuSurfaceNode>(Nodes, BufferUsages.ShaderRead), 48);
         bindings["TerrainSourceSamples"] = ReadBuffer(ref frame, Combine(ref frame, ref extension, samples, sampleBytes));
         bindings["TerrainSourcePageOffsets"] = ReadBuffer(ref frame, Combine(ref frame, ref extension, tables, tableBytes));
+        if (AttributeHeightSources.Length != 0)
+            bindings["TerrainAttributeHeightSources"] = ReadBuffer(ref frame,
+                frame.Upload<int>(AttributeHeightSources, BufferUsages.ShaderRead));
+        if (AttributeVoxelSources.Length != 0)
+            bindings["TerrainAttributeVoxelSources"] = ReadBuffer(ref frame,
+                frame.Upload<int>(AttributeVoxelSources, BufferUsages.ShaderRead));
     }
 
     private static GraphBufferSlice Combine(ref RenderGraphFrame frame, ref RenderGraphFrameExtension extension,

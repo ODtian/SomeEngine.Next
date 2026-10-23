@@ -1855,6 +1855,8 @@ internal enum ClusterTessellationCoreResource : byte
     RasterPatches,
     BinCounts,
     BinOffsets,
+    MaterialScalars,
+    MaterialScalarOffsets,
 }
 
 internal enum ClusterShadeCoreResource : byte
@@ -2590,7 +2592,9 @@ internal static class ClusterTessellationCoreResources
             ClusterTessellationCoreResource.GroupedPatchIndices or
             ClusterTessellationCoreResource.RasterPatches or
             ClusterTessellationCoreResource.BinCounts or
-            ClusterTessellationCoreResource.BinOffsets => ResourceBindingType.BufferSrv,
+            ClusterTessellationCoreResource.BinOffsets or
+            ClusterTessellationCoreResource.MaterialScalars or
+            ClusterTessellationCoreResource.MaterialScalarOffsets => ResourceBindingType.BufferSrv,
             ClusterTessellationCoreResource.HiZ or
             ClusterTessellationCoreResource.Depth => ResourceBindingType.TextureSrv,
             ClusterTessellationCoreResource.InstanceProperties or
@@ -2652,6 +2656,8 @@ internal static class ClusterTessellationCoreResources
         "TessellationRasterPatches" => ClusterTessellationCoreResource.RasterPatches,
         "TessellationBinCounts" => ClusterTessellationCoreResource.BinCounts,
         "TessellationBinOffsets" => ClusterTessellationCoreResource.BinOffsets,
+        "MaterialScalarRegion" => ClusterTessellationCoreResource.MaterialScalars,
+        "MaterialScalarOffsets" => ClusterTessellationCoreResource.MaterialScalarOffsets,
         _ => ClusterTessellationCoreResource.None,
     };
 }

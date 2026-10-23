@@ -20,7 +20,11 @@
 
 GPU 提取参数保存当前单元间距、最细格距和六面 `TransitionFaces`。普通边与过渡边共用最细格距交点细化和法线求值，普通粗块顶点与过渡粗侧顶点共用切平面位移；细侧交点保持原始位置。坐标、case 编号、边界位移和面朝向的规则统一由[地形 LOD](Terrain-Lod.md)维护，GPU 对应实现位于 [terrain_surface_cells.slang](../../../assets/Shaders/terrain_surface_cells.slang) 和 [terrain_surface_transitions.slang](../../../assets/Shaders/terrain_surface_transitions.slang)。
 
-`TerrainGpuAttributes` 指定属性 Shader、入口、每顶点字节数、额外读取邻域和本次构建的 `MaterialIndex`。属性入口以每组 64 个线程运行，读取 `TerrainSamples` 和 `TerrainCounts`，写入 `TerrainAttributes`。每个采样点依次存储 `float3` 来源位置与 `float3` 法线；位置和索引分别使用 `float3` 与 `uint`。属性字节由配套 `ClusterGpuVertexEncoder` 和材质 `IVertexEvaluate` 解释。
+`TerrainGpuAttributes` 指定属性 Shader、入口、每顶点字节数、额外读取邻域与 `TerrainFieldInputs Fields`。属性入口以每组 64 个线程运行，读取 `TerrainSamples` 和 `TerrainCounts`，写入 `TerrainAttributes`。每个采样点依次存储 `float3` 来源位置与 `float3` 法线；位置和索引分别使用 `float3` 与 `uint`。属性字节由配套 `ClusterGpuVertexEncoder` 和材质 `IVertexEvaluate` 解释。
+
+`Fields.HeightFieldIds` 和 `Fields.VoxelFieldIds` 与表面源共同捕获，同一字段在本批次共享一份固定输入。GPU 属性入口通过 `TerrainAttributeHeightSources` 和 `TerrainAttributeVoxelSources` 两个 `StructuredBuffer<int>` 取得源索引；每个数组的顺序与对应字段声明顺序一致，数组元素用于索引 `TerrainSources`。声明的字段变化进入 TerrainScene 的受影响块选择。CPU 属性的同批次读取见[表面组合](Terrain-Surfaces.md)。
+
+`MaterialEntryPoint` 指定同一 Shader 中可选的逐三角形材质入口，以每组 64 个线程运行，写入 `TerrainTriangleMaterials` 中的 `uint` 编号；有效三角形数量为 `TerrainCounts` 的索引数除以 3。`MaterialCount` 给出编号范围 `[0, MaterialCount)`，传入通用 GPU 构建器的预留容量。单材质调用通过 `MaterialIndex` 指定整批的材质编号。字段绑定、用户编码与细分示例见[地形材质](Terrain-Materials.md)。
 
 批次提交时，在 Terrain 的数据锁内固定字段页、源版本和所需范围；`PrepareGpuRead` 为选中的文件页取得 CPU 数据，并沿用设备页的完成依赖。几何请求与字段请求一起保留到图提交确认，并由现有 `TerrainRenderExtractor` 传到 Rendering world。`RenderTerrainData` 继续持有设备字段页和页表。`RenderTerrainGeometry` 在捕获输入就绪后预留原生范围，并在同帧图中依次录制表面提取、用户属性和通用 Cluster 构建。原生页堆与 BVH 由 Cluster 驻留系统持有。
 

@@ -4,7 +4,7 @@ using SomeEngine.Resources;
 namespace SomeEngine.Render.Cluster;
 
 internal readonly record struct ClusterGpuBufferSizes(
-    uint PageStride, uint PageCount, uint BvhNodeCount, int BvhLevels)
+    uint PageStride, uint PageCount, uint BvhNodeCount, int BvhLevels, uint MaterialCount)
 {
     internal uint PageBytes => checked(PageStride * PageCount);
 }

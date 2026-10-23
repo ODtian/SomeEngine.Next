@@ -96,6 +96,21 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 _changedMeshSources.UnionWith(sources);
     }
 
+    private void CollectMaterialChange(Material material)
+    {
+        lock (_assetChangesGate)
+            if (_materialSources.TryGetValue(material, out var sources))
+                _changedMeshSources.UnionWith(sources);
+    }
+
+    private float GetBoundsExpansion(Entity source, float meshExpansion)
+    {
+        float materialExpansion = 0f;
+        if (_sourceMaterials.TryGetValue(source, out Material[]? materials))
+            foreach (Material material in materials) materialExpansion = Math.Max(materialExpansion, material.BoundsExpansion);
+        return meshExpansion + materialExpansion;
+    }
+
     private void TrackMaterials(Entity source, ReadOnlySpan<MeshMaterialBinding> bindings)
     {
         lock (_assetChangesGate)
@@ -109,6 +124,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 if (!_materialSources.TryGetValue(material, out var sources))
                 {
                     _materialSources.Add(material, sources = []);
+                    material.Changed += CollectMaterialChange;
                     _addedMaterials.Add(material);
                     _removedMaterials.Remove(material.MaterialId);
                 }
@@ -127,6 +143,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             if (!_materialSources.TryGetValue(material, out var sources)) continue;
             sources.Remove(source);
             if (sources.Count != 0) continue;
+            material.Changed -= CollectMaterialChange;
             _materialSources.Remove(material);
             _addedMaterials.Remove(material);
             _removedMaterials.Add(material.MaterialId);
@@ -152,13 +169,15 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 if (_collectedMeshSources.Contains(source)) continue;
                 MeshInstance instance = _sourceMeshes[source];
                 Mesh data = instance.Mesh.CaptureData();
+                float expansion = GetBoundsExpansion(source, instance.BoundsExpansion);
                 Entity entity = context.RequireMirror(source);
-                if (ReferenceEquals(context.World.Read<RenderMesh>(entity).Mesh, data))
+                RenderMesh currentMesh = context.World.Read<RenderMesh>(entity);
+                if (ReferenceEquals(currentMesh.Mesh, data) && currentMesh.BoundsExpansion == expansion)
                 {
                     _changedMeshSources.Remove(source);
                     continue;
                 }
-                _snapshots.Add(new MeshSnapshot(source, default, data, instance.BoundsExpansion,
+                _snapshots.Add(new MeshSnapshot(source, default, data, expansion,
                     false, 0, 0, MeshChanged: true, MaterialsChanged: false, instance.PageSource));
                 _meshSources.Add(source);
                 changed = true;
@@ -184,6 +203,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         lock (_assetChangesGate)
         {
             Reset();
+            foreach (Material material in _materialSources.Keys) material.Changed -= CollectMaterialChange;
             _materialSources.Clear();
             _sourceMaterials.Clear();
             _addedMaterials.Clear();
@@ -224,7 +244,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 source,
                 new RenderTransform(transforms[row].Qvvs),
                 TrackMesh(source, meshes[row]),
-                meshes[row].BoundsExpansion,
+                GetBoundsExpansion(source, meshes[row].BoundsExpansion),
                 hasMaterialBuffer,
                 materialOffset,
                 materialCount,
@@ -279,15 +299,16 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 }
 
                 MeshInstance mesh = meshes[row];
+                bool geometryChanged = meshChanged || materialsChanged;
                 _snapshots.Add(new MeshSnapshot(
                     entities[row],
                     default,
-                    meshChanged ? TrackMesh(entities[row], mesh) : null!,
-                    mesh.BoundsExpansion,
+                    geometryChanged ? TrackMesh(entities[row], mesh) : null!,
+                    GetBoundsExpansion(entities[row], mesh.BoundsExpansion),
                     hasMaterialBuffer,
                     materialOffset,
                     materialCount,
-                    meshChanged,
+                    geometryChanged,
                     materialsChanged,
                     mesh.PageSource));
             }

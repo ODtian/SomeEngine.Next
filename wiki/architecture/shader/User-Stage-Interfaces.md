@@ -20,6 +20,10 @@ Deform、Raster、Shade 的执行兼容性由各 stage 自己的 Slang 类型与
 
 `IVertexEvaluate` 使用通用变换数据和用户顶点表示；Cluster 的实例布局及资源读取由 Cluster 实现持有。
 
+`IDomainEvaluate<TVertex>.makeTriangle(first, second, third, materialIndex)` 接收三个用户顶点和当前三角形对应的材质标量地址。Shade 与 Tessellation 都按实例材质绑定起点加上 Cluster 三角形的局部材质编号取得该地址。用户 `TriangleData` 可保存它，再通过 `LoadMaterialScalars<T>` 解释自己的参数结构；两个阶段共用 `MaterialScalarRegion` 和 `MaterialScalarOffsets`。曲面继续提供 `position`、`eval`、`reconstruct`、`bounds`、`patchBounds` 与 `errorBounds`，细分与着色使用同一数学定义。
+
+公共 Cluster 材质入口和细分入口都接受 `CLUSTER_VERTEX_ENCODING`，值与调用方编码器的身份一致。细分入口通过 `CLUSTER_TESSELLATION_BOUNDS` 声明有限包围或对应的裁剪配置。实现分别见 [domain_interfaces](../../../assets/Shaders/domain_interfaces.slang)、[cluster_tessellation_entries](../../../assets/Shaders/cluster_tessellation_entries.slang) 与 [ClusterPipelineSystem.Materials](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.Materials.cs)。
+
 ## Relations
 
 [[Shader-Composition]] · [[Conservative-Bounds]] · [[architecture/material/Stage-Compatibility]]

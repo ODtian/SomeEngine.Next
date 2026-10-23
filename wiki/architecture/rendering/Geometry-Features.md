@@ -41,9 +41,11 @@ scene.UpdateFrame = frame =>
 
 ## GPU 几何构建
 
-已实现入口为 [ClusterGpuBuilder](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterGpuBuilder.cs)，计算核心为 [cluster_build.slang](../../../assets/Shaders/cluster_build.slang)。构建器接收 Cluster 管线使用的持久 RenderGraph，并复用该图中页面与 BVH 缓冲的注册及内容状态。`Reserve` 在渲染准备阶段从现有 Cluster 页堆和 BVH 分配范围，返回描述该范围的 `ClusterGeometry`。`Record` 在首次绘制前录制生成工作，接收当帧 `ClusterGpuMeshInput` 中的四个 `GraphBufferSlice`：`float3` 位置、用户属性字节、`uint` 索引和计数。计数依次存储顶点数量与索引数量；每个 Cluster 支持至多 64 个顶点和 124 个三角形。
+已实现入口为 [ClusterGpuBuilder](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterGpuBuilder.cs)，计算核心为 [cluster_build.slang](../../../assets/Shaders/cluster_build.slang)。构建器接收 Cluster 管线使用的持久 RenderGraph，并复用该图中页面与 BVH 缓冲的注册及内容状态。`Reserve` 在渲染准备阶段从现有 Cluster 页堆和 BVH 分配范围，返回描述该范围的 `ClusterGeometry`。`Record` 在首次绘制前录制生成工作，接收当帧 `ClusterGpuMeshInput` 中的 `GraphBufferSlice`：`float3` 位置、用户属性字节、`uint` 索引、计数，以及可选的逐三角形 `uint` 材质编号。计数依次存储顶点数量与索引数量；每个 Cluster 支持至多 64 个顶点和 124 个三角形。
 
-`Reserve(context, capacity, revision, bounds)` 接收 `ClusterGpuMeshCapacity` 中的源顶点数量与三角形数量上限，按上限预留页面和 BVH 节点。GPU 按实际计数遍历三角形，收集局部顶点索引；达到一个 Cluster 的容量后写出页面，再处理余下三角形。每个 Cluster 写入一页，页面包围范围组成 16 路 BVH。`ClusterGeometry.Allocation` 描述预留容量，BVH 子链接限定实际生成的页面。简写 `Reserve(context, revision, bounds)` 使用一个 Cluster 的源容量。
+`Reserve(context, capacity, revision, bounds)` 接收 `ClusterGpuMeshCapacity` 中的源顶点数量、三角形数量上限与 `MaterialCount`，按这些上限预留页面和 BVH 节点。`MaterialCount` 默认值为 1，取值为 1 到 256；提供 `TriangleMaterials` 时，编号范围为 `[0, MaterialCount)`。GPU 按材质编号分组，在每组内按实际计数遍历三角形并收集局部顶点索引；达到一个 Cluster 的容量后写出页面，再处理余下三角形。预留页面数同时覆盖每个材质组末尾的部分页面。使用单材质输入时，`Record` 的 `materialIndex` 指定整份几何的材质编号。
+
+每个 Cluster 写入一页，页面包围范围组成 16 路 BVH。`ClusterGeometry.Allocation` 描述预留容量，BVH 子链接限定实际生成的页面。简写 `Reserve(context, revision, bounds)` 使用一个 Cluster 的单材质源容量。
 
 调用方通过 `ClusterGpuVertexEncoder` 提供 Slang Shader、计算入口、`VertexEncoding` 和每个 Cluster 的顶点字节容量。该计算入口调用 `BuildCluster`，由调用方的 `IClusterVertexEncode` 实现写入顶点字节。编码器收到的 `ClusterVertexInput` 包含位置缓冲、用户属性缓冲、局部顶点数量和 `SourceIndices`；通过这些来源索引读取对应属性。公共计算核心写入 Cluster 元数据、拓扑和 BVH。配套 `IVertexEvaluate` 解释相同编码的顶点字节；使用公共材质入口包含文件时，通过 `CLUSTER_VERTEX_ENCODING` 声明编码身份。
 
