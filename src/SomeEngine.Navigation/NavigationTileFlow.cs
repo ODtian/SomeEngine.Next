@@ -117,6 +117,9 @@ internal static partial class NavigationTileFlow<TSolver, TWork>
             state.Values[cell] = state.TargetCosts[cell];
             state.Goals[cell] = goal;
             state.Active[grid.CellTiles.Span[cell]] = true;
+            NavigationGridRange incoming = grid.IncomingRanges.Span[cell];
+            foreach (NavigationGridIncoming edge in grid.IncomingEdges.Span.Slice(incoming.Start, incoming.Count))
+                state.Active[grid.CellTiles.Span[edge.FromCell]] = true;
         }
         StartRound(state);
     }

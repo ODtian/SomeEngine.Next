@@ -16,6 +16,9 @@ public static partial class NavigationComponents
         world.Add(entity, default(NavigationGuidance));
         world.Add(entity, default(NavigationSteering));
         world.Add(entity, default(NavigationProgress));
+        world.Add(entity, default(NavigationTraversalRequest));
+        world.Add(entity, default(NavigationTraversalResult));
+        world.Add(entity, default(NavigationPassageUse));
     }
 }
 
@@ -23,7 +26,9 @@ internal struct NavigationFlowFollowState : IComponent
 {
     public int Cell;
     public int Destination;
+    public int Edge;
     public long FieldVersion;
+    public ulong TraversalSequence;
 }
 
 public readonly struct FlowFollowerResources : IJobComponentResources<FlowFollower>
