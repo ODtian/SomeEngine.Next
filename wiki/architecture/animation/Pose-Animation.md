@@ -13,6 +13,7 @@
 - 片段通过共同 Leaf、Timeline 和 Composition 播放，具名结果 buffer 支持用户节点交接、事件与根运动；公开调用见 [Pose Graphs](Pose-Graphs.md)。
 - 骨骼按数组存储，挂点按需成为实体。`PoseStorage` 持有连续的局部姿势和模型空间 G，`SkeletonInstance` 通过 `PoseRange` 引用自身区段；对应求值阶段通过公开 `Update` 写入结果。
 - `SkeletonInstance.ModelPose` 提供只读模型空间 G、求值版本和计算时刻；创建、更新与使用期见 [[architecture/animation/Skeleton-Instances|Skeleton Instances]]。
+- 单父骨架继承通过独立创建或挂接直接共享父实例 G，模型区段分别保存计算时刻与采样时刻；连接、拆卸和蒙皮绑定见 [Skeleton Inheritance](Skeleton-Inheritance.md)。
 - 根运动输出 `RootMotionDelta`，由移动系统决定如何应用。
 
 ## Non-goals

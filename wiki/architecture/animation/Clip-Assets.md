@@ -45,6 +45,8 @@ The source metadata field `animation.extras.someengine_events` contains objects 
 
 `ClipSampleSelection` binds a ready clip and copies the requested bone indices in caller order. Its single-argument constructor selects every bone. Indices follow the clip skeleton's own `BoneCount`, `Parents` and `ReferencePose` arrays.
 
+For model sampling of a derived skeleton, the selection supplies `parentPose`, such as `new ClipSampleSelection(clothingClip, [clothBone], parentPose: character.ModelPose)`. Binding resolves each required inherited root to that parent result's producing section. Local sampling continues to use own-bone rows; model sampling multiplies an attached root's sampled local matrix by the selected parent's current G. Different selections can use the same clip with different parent results. The caller chooses parent results corresponding to the requested sample times.
+
 `ClipSampleBatch` binds a fixed sequence of these selections. Reusing a selection supports several times or characters using the same clip. Each call accepts one time per selection and writes the corresponding output sections consecutively. `OutputCount` gives the required element count; `GetOutputRange(sample)` returns that selection's `PoseRange` relative to the supplied span.
 
 | Entry | Output element | Required local bones |

@@ -8,13 +8,16 @@ namespace SomeEngine.Animation.Pose;
 public struct PoseCompositionSystem : ISystem<ImmediateSystemContext>
 {
     private QueryHandle _targets;
+    private double _time;
 
     public void OnCreate(ref ImmediateSystemContext context) =>
         _targets = context.World.Query(context.World.QueryDefinition().ReadWrite<PoseTarget>()
             .ReadBuffer<LocalPose>().ReadBuffer<PoseResult>());
 
-    public void OnUpdate(ref ImmediateSystemContext context) =>
-        context.World.ExecuteQuery(_targets, static rows =>
+    public void OnUpdate(ref ImmediateSystemContext context)
+    {
+        _time += context.DeltaTime;
+        context.World.ExecuteQuery(_targets, ref _time, static (QueryCursor rows, ref double time) =>
         {
             foreach (QueryRow row in rows.Rows)
             {
@@ -22,10 +25,12 @@ public struct PoseCompositionSystem : ISystem<ImmediateSystemContext>
                 PoseResult result = row.ReadBuffer<PoseResult>()[target.Output.Index];
                 if (target.Version == result.Version) continue;
                 PoseRange range = target.Output.Range;
-                target.Skeleton.Update(LocalPose.Transforms(row.ReadBuffer<LocalPose>().AsSpan().Slice(range.Start, range.Count)), result.Time);
+                target.Skeleton.SetLocalPose(LocalPose.Transforms(row.ReadBuffer<LocalPose>().AsSpan().Slice(range.Start, range.Count)), result.Time);
                 target.Version = result.Version;
             }
+            foreach (QueryRow row in rows.Rows) row.Read<PoseTarget>().Skeleton.Compose(time);
         });
+    }
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_targets);
 }

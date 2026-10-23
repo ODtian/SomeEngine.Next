@@ -1,4 +1,5 @@
 using System.Numerics;
+using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Animation.Pose;
 
@@ -16,20 +17,29 @@ public sealed class PoseStorage
         _model = new Matrix4x4[boneCapacity];
     }
 
-    /// <summary>Creates an independent instance initialized from the shared skeleton's reference pose.</summary>
-    public SkeletonInstance CreateInstance(Skeleton skeleton)
+    /// <summary>Creates an instance, using the supplied parent or a private chain initialized from reference poses.</summary>
+    public SkeletonInstance CreateInstance(Skeleton skeleton, SkeletonInstance? parent = null)
+    {
+        if (parent is not null)
+            DevelopmentCheck.Require(ReferenceEquals(parent.Skeleton, skeleton.Parent), "The instance parent must use the skeleton's parent definition.");
+        bool privateParent = parent is null && skeleton.Parent is not null;
+        if (privateParent) parent = CreateInstance(skeleton.Parent!);
+        return new SkeletonInstance(this, skeleton, Allocate(skeleton.BoneCount), parent, privateParent);
+    }
+
+    private PoseRange Allocate(int count)
     {
         for (int index = 0; index < _available.Count; index++)
         {
             PoseRange available = _available[index];
-            if (available.Count < skeleton.BoneCount) continue;
-            var reused = new PoseRange(available.Start, skeleton.BoneCount);
+            if (available.Count < count) continue;
+            var reused = new PoseRange(available.Start, count);
             if (available.Count == reused.Count) _available.RemoveAt(index);
             else _available[index] = new(reused.Start + reused.Count, available.Count - reused.Count);
-            return new SkeletonInstance(this, skeleton, reused);
+            return reused;
         }
 
-        var range = new PoseRange(_count, skeleton.BoneCount);
+        var range = new PoseRange(_count, count);
         _count += range.Count;
         if (_count > _local.Length)
         {
@@ -37,7 +47,7 @@ public sealed class PoseStorage
             Array.Resize(ref _local, capacity);
             Array.Resize(ref _model, capacity);
         }
-        return new SkeletonInstance(this, skeleton, range);
+        return range;
     }
 
     internal Span<BoneTransform> Local(PoseRange range) => _local.AsSpan(range.Start, range.Count);

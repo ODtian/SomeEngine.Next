@@ -7,17 +7,21 @@ public sealed class ClipSampleSelection
 
     public AnimationClip Clip { get; }
     public ReadOnlySpan<short> Bones => _bones;
+    /// <summary>The explicitly selected parent result used by model sampling of a derived skeleton.</summary>
+    public ModelPose? ParentPose { get; }
 
-    public ClipSampleSelection(AnimationClip clip, ReadOnlySpan<short> bones)
+    public ClipSampleSelection(AnimationClip clip, ReadOnlySpan<short> bones, ModelPose? parentPose = null)
     {
         Clip = clip;
         _bones = bones.ToArray();
+        ParentPose = parentPose;
     }
 
     /// <summary>Selects the clip skeleton's complete local pose.</summary>
-    public ClipSampleSelection(AnimationClip clip)
+    public ClipSampleSelection(AnimationClip clip, ModelPose? parentPose = null)
     {
         Clip = clip;
+        ParentPose = parentPose;
         _bones = new short[clip.Skeleton.BoneCount];
         for (int bone = 0; bone < _bones.Length; bone++) _bones[bone] = (short)bone;
     }
