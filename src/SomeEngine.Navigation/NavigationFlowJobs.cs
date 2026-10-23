@@ -11,13 +11,19 @@ internal partial struct NavigationFlowGuidanceJob<TMotion, TReader>(float deltaT
     private readonly float _deltaTime = deltaTime;
 
     public void Execute([JobResources<FlowFollowerResources>] in FlowFollower follower,
-        [JobResources<NavigationAgentResources>] in NavigationAgent agent,
+        [JobResources<NavigationAgentResources>] ref NavigationAgent agent,
         in TMotion movement, ref NavigationFlowFollowState following, ref NavigationGuidance guidance)
     {
         NavigationMotion motion = TReader.Read(in movement);
         NavigationFlowField? field = follower.Flow.Field;
+        if (follower.Flow.GetStatus(motion.Position) == NavigationFlowStatus.Searching)
+        {
+            guidance = new(default, motion.Heading, follower.Flow.Input.Version, false);
+            return;
+        }
         guidance = new(default, motion.Heading, field?.Input.Version ?? 0, false);
         if (field is null) return;
+        agent = agent with { Profile = field.Input.Profile, Policy = field.Input.Costs.Policy };
         NavigationGrid grid = field.Input.Costs.Grid;
         int cell = grid.FindCell(motion.Position);
         if (cell < 0 || !grid.IsDetailedCell(cell) || field.GoalIndices.Span[cell] < 0) return;
@@ -102,10 +108,16 @@ internal partial struct NavigationFlowProgressJob<TMotion, TReader> : IJobEntity
         NavigationFlowField? field = follower.Flow.Field;
         if (field is null)
         {
-            progress = new(NavigationStatus.Searching, float.PositiveInfinity, 0, 0);
+            progress = new(NavigationStatus.Searching, float.PositiveInfinity, 0, follower.Flow.Input.Version);
             return;
         }
         NavigationMotion motion = TReader.Read(in movement);
+        if (follower.Flow.GetStatus(motion.Position) == NavigationFlowStatus.Searching)
+        {
+            NavigationFlowTargets.Closest(follower.Flow.Input.Goals.Span, motion.Position, out float remaining);
+            progress = new(NavigationStatus.Searching, remaining, 0, follower.Flow.Input.Version);
+            return;
+        }
         int goalIndex = NavigationFlowTargets.Closest(field.Input.Goals.Span, motion.Position, out float distance);
         if (goalIndex < 0)
         {

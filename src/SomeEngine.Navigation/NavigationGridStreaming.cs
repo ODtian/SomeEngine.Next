@@ -159,7 +159,8 @@ public sealed class NavigationGridStreaming : IDisposable
             foreach (NavigationTileCoordinate tile in removed) tiles.Remove(tile);
             foreach (NavigationGridTile tile in loaded)
                 if (graph.Tiles.Span.Find(tile.Tile).ContentVersion == tile.Grid.ContentVersion) tiles[tile.Tile] = tile;
-            NavigationGrid grid = NavigationGrid.Compose(graph, tiles.Values.ToArray(), input.Goals, input.Costs.Policy);
+            NavigationGrid grid = NavigationGrid.Compose(graph, tiles.Values.ToArray(), input.Goals, input.Costs.Policy,
+                input.Costs.Grid.ResidenceVersion + 1);
             if (!flow.ApplyCosts(input, NavigationCostSystem.Create(grid, input.Costs.Policy, input.Costs.Version))) Retry();
         }
         private void Retry() => scheduler.Schedule(new ScheduleApply(flow, loaded, removed, scheduler),

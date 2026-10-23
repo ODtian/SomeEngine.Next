@@ -46,6 +46,8 @@ public sealed class NavigationFlowField(NavigationFlowInput input, ReadOnlyMemor
     public ReadOnlyMemory<NavigationFlowBoundaryDependency> BoundaryDependencies { get; } = boundaryDependencies;
     public ReadOnlyMemory<NavigationTileCoordinate> RequiredTiles { get; } = requiredTiles;
     public ulong Round { get; } = round;
+    public ulong ContentVersion => Input.Costs.Grid.ContentVersion;
+    public ulong ResidenceVersion => Input.Costs.Grid.ResidenceVersion;
 
     /// <summary>Samples the installed direction on the position's support layer.</summary>
     public Vector3 SampleDirection(Vector3 position)
@@ -73,7 +75,11 @@ public sealed class NavigationFlow
     public NavigationFlow(NavigationFlowField field)
     {
         _input = field.Input;
-        _data = new(field, 1);
+        NavigationFlowInput input = field.Input;
+        NavigationFlowTileState[] tiles = input.Costs.Grid.FlowRanges.ToArray().Select(tile => new NavigationFlowTileState(
+            tile.Tile, NavigationFlowStatus.Ready, input.Version, input.GoalVersion, tile.Detailed,
+            tile.ContentVersion, input.Costs.Version, input.Costs.Grid.ResidenceVersion)).ToArray();
+        _data = new(field, 1, input, tiles);
     }
 
     public NavigationFlowInput Input => Volatile.Read(ref _input);
@@ -82,6 +88,19 @@ public sealed class NavigationFlow
     public NavigationCosts Costs => Input.Costs;
     public NavigationProfile Profile => Input.Profile;
     public ReadOnlyMemory<NavigationFlowGoal> Goals => Input.Goals;
+    public ReadOnlyMemory<NavigationFlowTileState> TileStates => Volatile.Read(ref _data).TileStates;
+
+    public NavigationFlowStatus GetStatus(Vector3 position)
+    {
+        NavigationFlowInput input = Input;
+        NavigationFlowData data = Volatile.Read(ref _data);
+        if (ReferenceEquals(data.Field?.Input, input)) return NavigationFlowStatus.Ready;
+        if (!ReferenceEquals(data.Input, input) || data.TileStates.IsEmpty) return NavigationFlowStatus.Searching;
+        NavigationGrid grid = input.Costs.Grid;
+        int cell = grid.FindCell(position);
+        if (cell < 0) return NavigationFlowStatus.Searching;
+        return data.TileStates.Span[grid.CellTiles.Span[cell]].Status;
+    }
 
     public void SetGoals(NavigationFlowGoal[] goals) => SetGoals((ReadOnlyMemory<NavigationFlowGoal>)goals);
 
@@ -90,7 +109,7 @@ public sealed class NavigationFlow
         lock (_gate)
         {
             NavigationFlowInput current = _input;
-            Volatile.Write(ref _input, new(current.Costs, current.Profile, goals, current.GoalVersion + 1, current.Version + 1));
+            SetInput(new(current.Costs, current.Profile, goals, current.GoalVersion + 1, current.Version + 1));
         }
     }
 
@@ -99,15 +118,38 @@ public sealed class NavigationFlow
         lock (_gate)
         {
             NavigationFlowInput current = _input;
-            Volatile.Write(ref _input, new(costs, current.Profile, current.Goals, current.GoalVersion, current.Version + 1));
+            SetInput(new(costs, current.Profile, current.Goals, current.GoalVersion, current.Version + 1));
         }
     }
 
-    internal void Apply(NavigationFlowField field)
+    public void SetProfile(NavigationProfile profile)
     {
         lock (_gate)
-            if (ReferenceEquals(_input, field.Input) && !ReferenceEquals(_data.Field, field))
-                Volatile.Write(ref _data, new(field, _data.Version + 1));
+        {
+            NavigationFlowInput current = _input;
+            SetInput(new(current.Costs, profile, current.Goals, current.GoalVersion, current.Version + 1));
+        }
+    }
+
+    internal void ApplyCosts(NavigationCosts costs, NavigationProfile profile)
+    {
+        lock (_gate)
+        {
+            NavigationFlowInput current = _input;
+            if (ReferenceEquals(current.Costs, costs) && ReferenceEquals(current.Profile, profile)) return;
+            SetInput(new(costs, profile, current.Goals, current.GoalVersion, current.Version + 1));
+        }
+    }
+
+    internal void Apply(NavigationFlowBuildState state)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_input, state.Input)) return;
+            NavigationFlowField? field = state.Status == NavigationFlowStatus.Ready ? state.Field : _data.Field;
+            if (ReferenceEquals(_data.Field, field) && _data.TileStates.Equals(state.TileStates)) return;
+            Volatile.Write(ref _data, new(field, _data.Version + 1, state.Input, state.TileStates));
+        }
     }
 
     internal bool ApplyCosts(NavigationFlowInput input, NavigationCosts costs)
@@ -115,10 +157,17 @@ public sealed class NavigationFlow
         lock (_gate)
         {
             if (!ReferenceEquals(_input, input)) return false;
-            Volatile.Write(ref _input, new(costs, input.Profile, input.Goals, input.GoalVersion, input.Version + 1));
+            SetInput(new(costs, input.Profile, input.Goals, input.GoalVersion, input.Version + 1));
             return true;
         }
     }
 
-    private sealed record NavigationFlowData(NavigationFlowField? Field, long Version);
+    private void SetInput(NavigationFlowInput input)
+    {
+        Volatile.Write(ref _input, input);
+        Volatile.Write(ref _data, _data with { Version = _data.Version + 1 });
+    }
+
+    private sealed record NavigationFlowData(NavigationFlowField? Field, long Version,
+        NavigationFlowInput? Input = null, ReadOnlyMemory<NavigationFlowTileState> TileStates = default);
 }
