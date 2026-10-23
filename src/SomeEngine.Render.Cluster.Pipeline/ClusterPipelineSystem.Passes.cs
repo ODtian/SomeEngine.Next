@@ -81,6 +81,8 @@ public sealed partial class ClusterPipelineSystem
             {
                 InstanceWorldBounds = _instanceWorldBounds,
                 BoundsReady = _sceneBoundsPass,
+                DeformCache = frame.DeformCache,
+                DeformRegions = frame.DeformRegions,
             },
             frame.Width,
             frame.Height,
@@ -1030,10 +1032,12 @@ public sealed partial class ClusterPipelineSystem
             RecordRasterWorkGeneration(ref graph, frame, drawArgs,
                 readOffsetArgs0, readOffsetArgs1, readOffsetArgs2, phaseOne, epoch);
             RecordTessellationReset(ref graph, frame, phaseOne);
+            if (epoch == 0) RecordDeformReset(ref graph, frame);
         }
         finally { _rasterGroup = null; }
         OrderRasterPasses(ref graph, work, cullBoundary);
-        _rasterEpochs = _rasterEpochs.SetItem(epoch, new RasterEpoch(work, patches,
+        _rasterEpochs = _rasterEpochs.SetItem(epoch, new RasterEpoch(work, new RasterPassGroup(),
+            new DeformDrawData(drawArgs, readOffsetArgs0, readOffsetArgs1, readOffsetArgs2), patches,
             System.Collections.Immutable.ImmutableDictionary<uint, RasterBin>.Empty,
             System.Collections.Immutable.ImmutableDictionary<TessellationSplitKey, TessellationGroup>.Empty,
             null, null, System.Collections.Immutable.ImmutableHashSet<GraphPassId>.Empty,

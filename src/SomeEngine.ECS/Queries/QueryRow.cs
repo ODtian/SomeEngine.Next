@@ -43,6 +43,12 @@ public readonly ref partial struct QueryRow
         return _chunk.ReadComponent<T>(column, _row);
     }
 
+    public ref readonly T ReadRef<T>() where T : struct
+    {
+        int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
+        return ref _chunk.ComponentRows<T>(column)[_row];
+    }
+
     public ref T Write<T>() where T : struct
     {
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: false, write: true);

@@ -7,6 +7,13 @@ internal static class StandardClusterAttributesEncoder
 {
     /// <summary>Creates the default material's opaque bytes while retaining every source value.</summary>
     internal static ClusterVertexAttributes Encode(IEnumerable<ClusterVertexAttribute> attributes)
+        => Encode(attributes, EncodeValues);
+
+    internal static ClusterVertexAttributes EncodeSourceValues(IEnumerable<ClusterVertexAttribute> attributes)
+        => Encode(attributes, static stream => (stream.Data.ToArray(), 0u));
+
+    private static ClusterVertexAttributes Encode(IEnumerable<ClusterVertexAttribute> attributes,
+        Func<ClusterVertexAttribute, (byte[] Bytes, uint Format)> encodeValues)
     {
         ClusterVertexAttribute[] streams = attributes.ToArray();
         byte[][] values = new byte[streams.Length][];
@@ -16,7 +23,7 @@ internal static class StandardClusterAttributesEncoder
         for (int index = 0; index < streams.Length; index++)
         {
             ClusterVertexAttribute stream = streams[index];
-            (values[index], formats[index]) = EncodeValues(stream);
+            (values[index], formats[index]) = encodeValues(stream);
             headerSize += (variableCounts[index] ? stream.VertexComponentCounts.Length * 4 : 0)
                 + ((System.Text.Encoding.UTF8.GetByteCount(stream.Name) + 3) & ~3);
         }

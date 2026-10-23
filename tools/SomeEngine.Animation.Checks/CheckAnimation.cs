@@ -10,6 +10,11 @@ internal static partial class CheckAnimation
 {
     public static int Main(string[] args)
     {
+        if (args.Contains("--pose-sampling-benchmark"))
+        {
+            PoseSamplingMeasurements.Run();
+            return 0;
+        }
         if (args.Contains("--view-switch-benchmark") || args.Contains("--view-switch-allocations"))
         {
             var measurement = global::SomeEngine.Views.Tests.TypedAnimationChecks.MeasureDeclaredMotionSwitches();

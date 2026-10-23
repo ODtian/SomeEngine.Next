@@ -8,6 +8,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.ECS/SomeEngine.ECS.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.Relations/SomeEngine.ECS.Relations.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Serialization/SomeEngine.ECS.Serialization.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Job/SomeEngine.Job.csproj" />
