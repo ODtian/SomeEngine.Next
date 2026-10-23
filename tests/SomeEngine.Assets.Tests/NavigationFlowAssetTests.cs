@@ -32,7 +32,7 @@ public sealed class NavigationFlowAssetTests : IDisposable
         {
             var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1.8f);
             var policy = new NavigationPolicy();
-            NavigationGrid grid = ExampleGrid(profile);
+            NavigationGrid grid = NavigationGridRegionBuilder.Schedule(ExampleGrid(profile), profile, policy, scheduler: scheduler).Complete().Grid;
             profileBlock.SetProfile(profile);
             policyBlock.SetPolicy(policy);
             gridBlock.SetGrid(new(profileAsset.Reference, "main"), grid);
@@ -81,14 +81,17 @@ public sealed class NavigationFlowAssetTests : IDisposable
         Assert.Equal(source, restoredSource);
         Assert.Equal(precomputed, storedField);
         Assert.Equal(new Vector3(3.5f, 0, 0.5f), restored.Goals.Span[0].Position);
+        Assert.Equal(2, restored.Field!.Tiles.Length);
+        Assert.Equal(2, restored.Field.BoundaryDependencies.Length);
+        Assert.All(restored.Field.BoundaryDependencies.ToArray(), boundary => Assert.Equal(restored.Field.Round, boundary.Round));
         Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(entity).Status);
     }
 
-    // These four cells are an asset roundtrip example of an ordinary completed graph.
+    // These four cells in two tiles are an asset roundtrip example of an ordinary completed field.
     private static NavigationGrid ExampleGrid(NavigationProfile profile) => new(
         new(new(0, 0, 0), new(4, 2, 1)), 1,
         [new(new(0.5f, 0, 0.5f), 0, 1), new(new(1.5f, 0, 0.5f), 1, 2),
-         new(new(2.5f, 0, 0.5f), 3, 2), new(new(3.5f, 0, 0.5f), 5, 1)],
+         new(new(2.5f, 0, 0.5f), 3, 2, Tile: new(1, 0)), new(new(3.5f, 0, 0.5f), 5, 1, Tile: new(1, 0))],
         [new(1, 1), new(0, 1), new(2, 1), new(1, 1), new(3, 1), new(2, 1)],
         NavigationGridShape.FromProfile(profile), contentVersion: 9);
 

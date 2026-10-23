@@ -18,7 +18,7 @@ Grid 同时实现 `INavigationSpace<NavigationGrid>`，提供静态资源描述�
 
 `NavigationFlow` 持有 Costs、Profile 与共享的 `NavigationFlowGoal` 数组。每项目标表示一个世界坐标区域及可选到达朝向。目标区域内的单元中心作为零成本种子；小于栅格采样的目标由其所在高度层单元承接。
 
-`NavigationFlowSystem<TSolver,TState>` 为一个 Flow 保存工作区。`Schedule(budget, dependency)` 继续同一输入的求解；`SetGoals` 或 `SetCosts` 更换输入后创建相应工作区。`INavigationFlowSolver<TState>` 使用静态 `Id`、`Create` 和 `Schedule`，具体求解器可将活动计算拆成多个 Job。
+`NavigationFlowSystem<TSolver,TState>` 为一个 Flow 保存工作区。`Schedule(budget, dependency)` 由前置依赖完成后的 Begin Job 取得实际 `Flow.Input`，继续同一输入的求解。输入变化时调用静态 `Update(state,input)`；返回工作区即可继续该状态，默认返回值使系统调用 `Create`。具体求解器通过静态 `Id`、`Create`、`Update` 和 `Schedule` 表达算法。完成句柄覆盖所排的解算与 Apply 子任务，`Complete()` 返回本次实际使用的状态。
 
 `ReverseDijkstraFlow` 将所有目标种子放入最小成本队列。取出单元 `v` 后，沿每条入边 `u → v` 计算 `edgeCost(u,v) + value[v]`；改进时保存该正向边作为 `u` 的后继并加入队列。一次预算限制本次扩展数量，后续调用保留队列和累计值。这是 [Dijkstra 最短路扩展](https://link.springer.com/article/10.1007/BF01386390) 在显式有向图上的反向多源应用。
 
@@ -31,6 +31,8 @@ FIM 工作区持有累计值、固定目标边界值、活动单元以及本轮�
 完成的 `NavigationFlowField` 同时保存累计成本、后继边、方向、目标索引、求解器标识，以及 Grid/Costs/Goal 版本对应的块依赖。Apply 只有在当前输入仍匹配时安装整份场，并将场引用与 `FieldVersion` 一并交换。角色采样使用一份已安装的完整结果；生成式组件资源描述器读取 Flow 对象及其实际数组，并以 `FieldVersion` 重建对应访问集合。
 
 成本、积分、方向和块依赖的分工沿用 [Emerson 的 Flow Field Tiles 组织](https://www.gameaipro.com/GameAIPro/GameAIPro_Chapter23_Crowd_Pathfinding_and_Steering_Using_Flow_Field_Tiles.pdf)，具体存储采用普通共享数组。
+
+Grid 自身的区域入口图、确定边界轮次、活动块传播和分批角色移动见[跨块流场](Navigation-Flow-Tiles.md)。
 
 ## 角色调用链
 
@@ -58,12 +60,12 @@ JobHandle progress = navigation.ScheduleProgress(moved);
 
 ## 资产创建
 
-`NavigationGridBlock` 按 `NavigationGridSelection(Profile, Variant)` 保存多层单元、通行边、形体范围和内容版本。`Build` 使用同一个 GridBuilder 并存入所选变体，`SetGrid` 接收程序化构建的完成对象，`Create/CreateAsync` 返回已取得的共享 Grid。
+`NavigationGridBlock` 按 `NavigationGridSelection(Profile, Variant)` 保存多层单元、通行边、形体范围和内容版本。`Build` 使用同一个 GridBuilder 并存入所选变体，`SetGrid` 接收程序化构建的完成对象。`GetBlockAsync` 取得变体目录、形体和已有入口图；`CreateAsync` 显式取得所选完整 Grid，`Create` 返回已经取得的资源。`CreateTileSource` 为带入口图的变体提供独立详细块来源。
 
 `NavigationFlowBlock.SetFlow` 接收 `NavigationFlowSource` 与 Flow。Source 保存导航数据集、规格、策略、Grid 变体和输入资产版本，Block 保存共享目标与输入版本；调用方可选择保存预计算场数组。
 
 `CreateAsync(loader, scheduler)` 通过强类型资产入口取得 Grid、Profile 和 Policy。输入资产版本、Grid 内容版本和求解器标识匹配时复用预计算场；其余创建过程在 Job 中求解当前输入。泛型重载允许指定其它流场求解器。返回的普通 Flow 保持实际输入与结果数组有效，业务可在资产和 Loader 关闭后继续同步采样。
 
-FIM 的具体调用使用 `NavigationFlowSystem<FastIterativeFlow, FastIterativeFlowState>`；资产取得使用 `CreateAsync<FastIterativeFlow, FastIterativeFlowState>`。预计算场一并保存 `Sampling`，重开后继续按相应方向方式采样。
+FIM 的具体调用使用 `NavigationFlowSystem<FastIterativeFlow, FastIterativeFlowState>`；资产取得使用 `CreateAsync<FastIterativeFlow, FastIterativeFlowState>`。预计算场一并保存 `Sampling`、块范围、边界依赖、详细块需求和完成轮次，重开后继续按相应方向方式采样。取得完整 Grid 时，保存的部分详细场通过当前完整输入重新求解。
 
 公共行为检查位于 [NavigationFlowTests](../../tests/SomeEngine.Navigation.Tests/NavigationFlowTests.cs)、[FastIterativeFlowTests](../../tests/SomeEngine.Navigation.Tests/FastIterativeFlowTests.cs) 和 [NavigationFlowAssetTests](../../tests/SomeEngine.Assets.Tests/NavigationFlowAssetTests.cs)。FIM 检查使用均匀区域及一片高成本地形作为输入例子，观察几何方向、预算续算以及角色绕行后的实际到达。

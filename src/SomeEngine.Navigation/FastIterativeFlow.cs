@@ -8,16 +8,17 @@ public sealed class FastIterativeFlowState(NavigationFlowInput input) : Navigati
     internal bool Started;
     internal int ActiveCount, Processed;
     internal float[] Values { get; } = new float[input.Costs.Grid.Cells.Length];
-    internal float[] BoundaryValues { get; } = new float[input.Costs.Grid.Cells.Length];
-    internal float[] Candidates { get; } = new float[input.Costs.Grid.Cells.Length];
+    internal float[] BoundaryValues { get; } = input.Costs.Grid.TileRanges.IsEmpty ? new float[input.Costs.Grid.Cells.Length] : [];
+    internal float[] Candidates { get; } = input.Costs.Grid.TileRanges.IsEmpty ? new float[input.Costs.Grid.Cells.Length] : [];
     internal int[] Goals { get; } = new int[input.Costs.Grid.Cells.Length];
-    internal int[] CandidateGoals { get; } = new int[input.Costs.Grid.Cells.Length];
-    internal int[] Axes { get; } = new int[input.Costs.Grid.Cells.Length * 4];
-    internal int[] Active { get; } = new int[input.Costs.Grid.Cells.Length];
-    internal int[] NextActive { get; } = new int[input.Costs.Grid.Cells.Length];
-    internal bool[] IsActive { get; } = new bool[input.Costs.Grid.Cells.Length];
+    internal int[] CandidateGoals { get; } = input.Costs.Grid.TileRanges.IsEmpty ? new int[input.Costs.Grid.Cells.Length] : [];
+    internal int[] Axes { get; } = input.Costs.Grid.TileRanges.IsEmpty ? new int[input.Costs.Grid.Cells.Length * 4] : [];
+    internal int[] Active { get; } = input.Costs.Grid.TileRanges.IsEmpty ? new int[input.Costs.Grid.Cells.Length] : [];
+    internal int[] NextActive { get; } = input.Costs.Grid.TileRanges.IsEmpty ? new int[input.Costs.Grid.Cells.Length] : [];
+    internal bool[] IsActive { get; } = input.Costs.Grid.TileRanges.IsEmpty ? new bool[input.Costs.Grid.Cells.Length] : [];
     internal int[] Successors { get; } = new int[input.Costs.Grid.Cells.Length];
     internal Vector3[] Directions { get; } = new Vector3[input.Costs.Grid.Cells.Length];
+    internal NavigationTileFlowState<FastIterativeTileWork>? Tiles;
 }
 
 /// <summary>Parallel active-set integration of |grad T| = positive scalar cell cost on reciprocal XZ support connections.</summary>
@@ -30,6 +31,11 @@ public readonly struct FastIterativeFlow : INavigationFlowSolver<FastIterativeFl
     public static JobHandle Schedule(Scheduler scheduler, FastIterativeFlowState state, int budget, JobHandle dependency)
     {
         NavigationFlowInput input = state.Input;
+        if (!input.Costs.Grid.TileRanges.IsEmpty)
+        {
+            state.Tiles ??= new(state, state.Values, state.Successors, state.Goals, state.Directions);
+            return NavigationTileFlow<FastIterativeTileSolver, FastIterativeTileWork>.Schedule(scheduler, state.Tiles, budget, dependency);
+        }
         return scheduler.Schedule(new Begin(scheduler, state, budget),
             [JobResourceAccess.Exclusive(scheduler.GetResourceToken(state)),
              NavigationJobAccess.Read(scheduler, input.Costs.Grid.Cells), NavigationJobAccess.Read(scheduler, input.Costs.Grid.Edges),
