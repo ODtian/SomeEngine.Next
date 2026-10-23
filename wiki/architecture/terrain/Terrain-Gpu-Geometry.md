@@ -29,6 +29,8 @@
 
 `TerrainScene.WaitForBuildsAsync` 等待已提交的几何工作。游戏侧 `TerrainCommitSystem` 在整批构建完成后一起推进对应 `TerrainChunk.Revision`；`GetChunks` 读取这些提交版本。随后提取器传递块版本、变换和材质，渲染准备按版本绑定共享 `ClusterGeometry`。生成期间保留当前画面，新批次绑定后通过 `ClusterGpuBuilder.Release` 归还旧范围，实际复用由最后使用完成点决定。
 
+GPU 构建完成点释放请求持有的字段输入引用，已完成记录保留批次版本、块范围及完成状态。设备页继续由 `RenderTerrainData` 根据来源引用与图完成点回收。
+
 [GpuHeightTerrainExample](../../../samples/DefaultGame/GpuHeightTerrainExample.cs) 是可编译示例。四米方形、每米一个采样点、两层竖向块、两个放置及 `float3` 位置、`float3` 法线、`float2` UV 编码都属于示例选择：
 
 ```csharp

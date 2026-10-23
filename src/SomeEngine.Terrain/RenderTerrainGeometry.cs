@@ -126,7 +126,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             request.Dependency.Complete();
             var inputExtension = extension;
             var sourceBindings = new Dictionary<string, GraphParameterResourceBinding>();
-            request.Surface.AddBindings(_fields, ref frame, ref inputExtension, sourceBindings);
+            request.Surface!.AddBindings(_fields, ref frame, ref inputExtension, sourceBindings);
             GraphBufferSlice tables = frame.Upload<uint>(RegularCells(), BufferUsages.ShaderRead, "Terrain regular cells");
             GraphPassId previous = default;
             foreach (TerrainGpuChunkBuild chunk in request.Chunks)
@@ -203,6 +203,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
                 {
                     WaitStatus status = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);
                     if (status != WaitStatus.Completed) throw new InvalidOperationException($"Terrain geometry ended with {status}.");
+                    request.ReleaseInput();
                     request.Completion.Complete();
                 }
                 catch (Exception failure) { request.Completion.Fail(failure); }
@@ -224,6 +225,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         Task.WhenAll(_completions).GetAwaiter().GetResult();
         foreach (TerrainGeometryRequest request in _batches.Keys)
         {
+            request.ReleaseInput();
             if (!request.IsSubmitted) request.Completion.Fail(new OperationCanceledException("Terrain graphics finished."));
             if (!request.Visibility.IsSignaled) request.Visibility.Fail(new OperationCanceledException("Terrain graphics finished."));
         }

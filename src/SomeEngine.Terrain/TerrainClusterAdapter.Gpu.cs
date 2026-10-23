@@ -45,9 +45,10 @@ internal sealed class TerrainGeometryRequest(long sequence, JobHandle dependency
 {
     internal object Scene { get; } = scene;
     internal ulong Revision { get; } = revision;
-    internal TerrainGpuSurfaceData Surface { get; } = surface;
+    internal TerrainGpuSurfaceData? Surface { get; private set; } = surface;
     internal TerrainGpuChunkBuild[] Chunks { get; } = chunks;
     internal TerrainCompletion Visibility { get; } = visibility;
+    internal void ReleaseInput() => Surface = null;
 }
 
 internal readonly record struct TerrainGpuChunkBuild(int GeometryId, TerrainChunkBounds Bounds);
