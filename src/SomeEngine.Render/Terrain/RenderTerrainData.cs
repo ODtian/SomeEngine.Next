@@ -153,13 +153,13 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
 
         GraphBufferSlice samples;
         if (pages.Count == 0)
-            samples = frame.Upload<float>([0f], BufferUsages.ShaderRead);
+            samples = frame.Upload<float>([0f], BufferUsages.ShaderRead | BufferUsages.CopySource);
         else
         {
             ulong bytesPerPage = (ulong)size * (ulong)size * sizeof(float);
             ulong bytes = (ulong)pages.Count * bytesPerPage;
             GraphBufferId packed = frame.CreateBuffer(new BufferDesc(bytes,
-                BufferUsages.CopyDestination | BufferUsages.ShaderRead, "Terrain brush input"));
+                BufferUsages.CopySource | BufferUsages.CopyDestination | BufferUsages.ShaderRead, "Terrain brush input"));
             for (int index = 0; index < pages.Count; index++)
             {
                 GraphBufferId page = GetInput(ref frame, ref extension, pages[index]);
@@ -168,7 +168,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
             }
             samples = new(packed, new(0, bytes));
         }
-        return new(samples, frame.Upload<int>(offsets, BufferUsages.ShaderRead, "Terrain source page table"), minX, minZ, width);
+        return new(samples, frame.Upload<int>(offsets, BufferUsages.ShaderRead | BufferUsages.CopySource, "Terrain source page table"), minX, minZ, width);
     }
 
     internal GraphPassId RecordReadback(TerrainPageReadRequest request, ref RenderGraphFrame frame,

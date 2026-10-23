@@ -2,7 +2,7 @@
 
 float SampleTerrainSurface(float3 position)
 {
-    return SampleTerrainVoxels(position);
+    return SampleTerrainVoxels(TerrainSources[0], position);
 }
 
 int2 TerrainColumnCells(int x, int z)

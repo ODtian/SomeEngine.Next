@@ -45,6 +45,8 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 `BlendTerrainExample` 从高度表面生成局部体素初值，以带渐变区域的 `BlendSurface` 组合两个源。`RaiseDetail` 继续编辑体素并更新共享表面；`Voxels.ReadCpuAsync` 读取相应样本版本。八米地表、一米采样间距、两米渐变和放置位置属于示例参数。完整接口与调用见[地形表面组合](../../wiki/architecture/terrain/Terrain-Surfaces.md)。
 
+`GpuBlendTerrainExample` 使用同一初始表面图，通过 `AddHeight` 与 `AddSphereDelta` 在 GPU 编辑高度和体素源，再沿 TerrainScene 批次生成混合地形。`Terrain.Surface` 可接入更多高度、体素及嵌套混合节点；每个源保留自己的网格与采样间距。八米地表、一米采样间距、两米渐变和位置/法线/UV 编码属于示例选择。固定图捕获与调用见 [GPU 地形几何](../../wiki/architecture/terrain/Terrain-Gpu-Geometry.md)。
+
 `TerrainAssetExample.SaveAsync` 固定捕获地形，再将字段、表面图和材质引用保存到 TerrainAsset。`OpenAsync` 重开可编辑 Terrain，并调用应用提供的函数解析材料引用，返回可直接用于 Placement 的材料数组。字段采样绑定、Block 划分与完整调用见[地形资产与捕获](../../wiki/architecture/terrain/Terrain-Assets.md)。
 
 重开的 Terrain 按字段读取区域取得文件页，并持有独立来源；使用结束时调用 `Dispose`。同一示例的 `EditHeightRegionAsync` 在关闭源 Asset 后修改指定高度区域，保留材料绑定并再次保存；返回的高度读取结果继续持有已完成样本。

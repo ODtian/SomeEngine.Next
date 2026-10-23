@@ -50,3 +50,5 @@ TerrainSurfaceRead surface = await terrain.Surface.ReadCpuAsync(new(new(0, -4, 0
 [BlendTerrainExample](../../../samples/DefaultGame/BlendTerrainExample.cs) 是可编译应用示例：构造时从高度源初始化体素，`Install` 安装地形功能，`AddPlacement` 设置材质与变换，`RaiseDetail` 通过自定义 CPU 笔刷修改体素标量。八米地表、一米采样间距、两米渐变及放置位置属于示例参数。
 
 公开行为入口为 `TerrainSurfaceTests` 的组合读取与初始化检查、`TerrainSceneTests` 的混合源块更新检查，以及 `BlendTerrainRenderingTests` 的应用与图像检查。后者将局部体素编辑与直接写入相同高度平台的场景比较。
+
+同一表面图可由 [GPU 地形几何](Terrain-Gpu-Geometry.md) 捕获并求值，字段页、节点参数和完成依赖使用对应提取版本。`GpuBlendTerrainExample` 展示高度与体素 GPU 编辑后生成混合地形画面的调用。
