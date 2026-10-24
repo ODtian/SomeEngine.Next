@@ -58,6 +58,8 @@ AnimationSystems.Add(schedule, path);
 
 用户系统可以通过 `AnimationSystems.Add(schedule, system, AnimationPhase.Properties)` 加入共同字段求值阶段；`Timeline`、`Graph`、`LayerWeights`、`LayerComposition`、`CompositionInputs`、`Composition`、`Completion` 也提供明确接入位置。`CompositionInputs` 位于属性最终合成之后、具体 Composition 系统之前，用于将当前参数与时钟形成组合输入；GPU 姿势系统在该阶段读取当前 `GraphParameters`，后续 CPU 依赖节点与同步骨骼消费同次输入。阶段展开时采用低频系统装配，热更新沿 ECS 的 managed 函数指针系统入口执行。
 
+GPU 结果驱动的具体叶在 Composition 消费匹配实例、实际叶启动标记、图安装标记和请求输入的反馈，再通过共同 `AnimationGraph.Submit` 提交 running。时长阶段继续采用共同时间语义；选定范围与使用期见 [GPU Pose Readback](GPU-Pose-Readback.md)。
+
 ```csharp
 var schedule = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
 schedule.Add(new TimelineSystem(time));

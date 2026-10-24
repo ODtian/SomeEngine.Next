@@ -1,4 +1,5 @@
 using System.Numerics;
+using SomeEngine.Animation.Pose;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Resources;

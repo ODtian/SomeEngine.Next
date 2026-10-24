@@ -22,8 +22,11 @@ public struct GpuPoseTarget : IComponent
     public float SampleTime;
     public double CalculationTime;
     public uint Starts;
+    /// <summary>The graph installation's start marker, retained across nested motion entries.</summary>
+    public uint AnimationStarts;
     public ulong InputNumber;
     public CpuBoneDemand? CpuBones;
+    public ReadOnlyMemory<GpuPoseReadbackRequest> Readbacks { get; internal set; }
 }
 
 public readonly record struct GpuClipParameters(QuantizedClipData Clip, bool Loop = false);
@@ -63,6 +66,7 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
         output.Rig = null;
         output.SampleTime = 0;
         output.Starts = placement.Starts;
+        output.AnimationStarts = placement.Starts;
         world.Replace(target, output);
     }
 

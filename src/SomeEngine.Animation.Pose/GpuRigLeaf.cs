@@ -87,6 +87,7 @@ internal static class GpuRigPlayback
         output.Blend = rig.Source; output.Rig = rig;
         output.Controls = instance.Controls;
         output.PlaybackTime = 0; output.Playing = false; output.Starts = placement.Starts;
+        output.AnimationStarts = placement.Starts;
         world.Replace(target, output);
     }
 
