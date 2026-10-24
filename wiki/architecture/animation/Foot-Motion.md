@@ -71,4 +71,6 @@ var feet = new FootPrediction(request, lookAhead: 1.1f);
 
 源码：[FootMotion](../../../src/SomeEngine.Animation.Pose/FootMotion.cs)、[FootMotionBlock](../../../src/SomeEngine.Animation.Pose/FootMotionBlock.cs)、[FootMotionImporter](../../../src/SomeEngine.Animation.Pose.Importers/FootMotionImporter.cs)、[FootPrediction](../../../src/SomeEngine.Animation.Pose/FootPrediction.cs)。
 
+选定足部轨迹与真实场景几何之间的支撑目标转换见 [Foot Support](Foot-Support.md)。
+
 高度、速度筛选与多种足部接触意图参考 Ubisoft 的 [Fitting the World](https://media.gdcvault.com/gdc2016/Presentations/Roche_Clifford_Fitting%20the%20World.pdf)；本页的资源、时间与查询接口由当前实现定义。

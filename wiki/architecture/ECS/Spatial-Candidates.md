@@ -89,3 +89,5 @@ public struct PairList(List<(Entity, Entity)> pairs) : IRelationOutput<(Entity, 
 这个夹具作为后续成对测量的输入：初建计入各自的 `Build`，持续成本计入各自的维护、查询准备、宽相、筛选与输出，接触消费使用同一步骤。性能证据按 [性能证据](../../harness/Harness-Performance-Evidence.md) 的公共队列形成。
 
 成员、范围及具体摘要的持续帧更新见 [碰撞树维护](Spatial-Maintenance.md)。
+
+真实三角形的最近命中、球形扫掠与支撑变换读取见 [场景表面查询](Scene-Surface-Queries.md)。
