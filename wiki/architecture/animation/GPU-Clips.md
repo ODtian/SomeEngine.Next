@@ -37,6 +37,8 @@
 | `SampleTime` | 当前源样本时间，已应用播放速度和循环 |
 | `StateMachine` | 共享 GPU 状态与过渡定义 |
 | `Blend` | 共享 GPU 片段、Blend Space 与逐骨层组合 |
+| `Rig` | 已连接来源与模型空间 IK/Aim 的共享步骤 |
+| `ModelOffset` | 配置骨骼及其后代的共同模型空间平移 |
 | `Controls` | 各实例的浮点控制值 |
 | `PlaybackTime` | 共同 GPU 叶节点的时间 |
 | `Playing` | 本次更新是否推进 GPU 状态或混合相位 |
@@ -86,6 +88,8 @@ prepare 后解析提取映射，并在帧提交后交付结果。
 共享状态机、逐实例控制值与交叉过渡通过 `GpuStateLeaf` 接入，实际状态、来源时间和过渡权重见 [GPU State Machines](GPU-State-Machines.md)。
 
 1D/2D Blend Space、遮罩和参考姿势差叠加通过 `GpuBlendLeaf` 接入，实例参数及相位规则见 [GPU Blending](GPU-Blending.md)。
+
+解析双骨骼、末端朝向和带权重与角度限制的注视链通过具体叶节点接入，目标输入、骨盆平移与最终 G 历史见 [GPU IK](GPU-IK.md)。
 
 公共应用示例位于 [SkinningRenderingTests](../../../tests/SomeEngine.Runtime.Tests/SkinningRenderingTests.cs)。
 示例使用共享父实例、两个播放速度及每顶点两个影响；数值读取和可见几何都经过普通 App、

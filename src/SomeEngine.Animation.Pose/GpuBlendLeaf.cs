@@ -47,6 +47,7 @@ public readonly struct GpuBlendLeaf : IAnimationLeaf<GpuBlendParameters>
         output.Clip = null;
         output.StateMachine = null;
         output.Blend = blend;
+        output.Rig = null;
         output.Controls = instance.Controls;
         output.PlaybackTime = 0;
         output.Playing = false;
@@ -86,6 +87,7 @@ internal struct GpuBlendSystem : ISystem<ImmediateSystemContext>
                     output.Clip = null;
                     output.StateMachine = null;
                     output.Blend = parameters.Blend;
+                    output.Rig = null;
                     output.Controls = instance.Controls;
                     output.PlaybackTime = elapsed;
                     output.Playing = true;
