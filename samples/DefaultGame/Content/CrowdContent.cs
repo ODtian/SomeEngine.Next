@@ -79,7 +79,7 @@ public static class CrowdContent
         string evaluate = SkinEvaluator;
         if (cached) evaluate = "#include \"vertex_deform_cache.slang\"\n" + evaluate
             .Replace("struct CrowdSkin : IVertexEvaluate", "struct CrowdSkin : IVertexDeformCache")
-            .Replace("float3 getPosition(Vertex value)", CacheEncoding + "\nfloat3 getPosition(Vertex value)");
+            .Replace("precise float3 getPosition(Vertex value)", CacheEncoding + "\nprecise float3 getPosition(Vertex value)");
         string shader = $"#define CLUSTER_VERTEX_ENCODING \"someengine.cluster.positions.uint16.v1+{CrowdExample.VertexEncoding}\"\n"
             + (cached ? "#define CLUSTER_DEFORM_VERTEX_ENCODING CLUSTER_VERTEX_ENCODING\n" : "")
             + template.Replace("typedef StaticVertexEval VertexEvaluate;", evaluate + (cached
@@ -222,7 +222,7 @@ public static class CrowdContent
                 float3 tangent = normalize(abs(normal.y) < .9 ? cross(float3(0,1,0), normal) : cross(float3(1,0,0), normal));
                 result.worldTangent = float4(tangent, 1);
             }
-            Vertex evaluate(VertexEvalContext ctx)
+            precise Vertex evaluate(VertexEvalContext ctx)
             {
                 uint footer = ctx.pageHeap.Load(ctx.attributeBlobAddress + ctx.attributeBlobSize - 4u);
                 uint address = ctx.attributeBlobAddress + footer + ctx.localVertexIndex * 12u;
@@ -245,14 +245,14 @@ public static class CrowdContent
                     localNormal += transformedNormal * weights[influence];
                 }
                 StaticVertexEval source;
-                Vertex result = source.evaluate(ctx);
+                precise Vertex result = source.evaluate(ctx);
                 precise float3 worldPosition = TransformInstanceLocalPosition(localPosition, ctx.transform);
                 precise float3 worldNormal = normalize(RotateByTransform(localNormal, ctx.transform));
                 setSurface(result, worldPosition, worldNormal);
                 return result;
             }
-            float3 getPosition(Vertex value) { return value.position; }
-            Vertex readLane(Vertex value, uint lane) { StaticVertexEval source; return source.readLane(value, lane); }
+            precise float3 getPosition(Vertex value) { return value.position; }
+            precise Vertex readLane(Vertex value, uint lane) { StaticVertexEval source; return source.readLane(value, lane); }
         };
         """;
 
@@ -268,10 +268,10 @@ public static class CrowdContent
             cache.Store3(address + 24u, asuint(previous.position));
             cache.Store3(address + 36u, asuint(previous.worldNormal));
         }
-        Vertex readCache(ByteAddressBuffer cache, uint address, uint count, VertexEvalContext context)
+        precise Vertex readCache(ByteAddressBuffer cache, uint address, uint count, VertexEvalContext context)
         {
             StaticVertexEval source;
-            Vertex result = source.evaluate(context);
+            precise Vertex result = source.evaluate(context);
             address += context.localVertexIndex * 48u + context.IsPreviousFrame * 24u;
             setSurface(result, asfloat(cache.Load3(address)), asfloat(cache.Load3(address + 12u)));
             return result;
