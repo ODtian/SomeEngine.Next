@@ -67,6 +67,42 @@ internal static class SceneImages
         }
     }
 
+    // CPU/GPU floating-point transforms can place a silhouette on adjacent raster samples.
+    internal static void AssertEqualWithinPixel(SceneImage expected, SceneImage actual, int tolerance = 2,
+        [CallerMemberName] string test = "")
+    {
+        try
+        {
+            Assert.Equal(expected.Width, actual.Width);
+            Assert.Equal(expected.Height, actual.Height);
+            Assert.Equal(expected.Pixels.Length, actual.Pixels.Length);
+            for (int y = 0; y < actual.Height; y++)
+            for (int x = 0; x < actual.Width; x++)
+                if (!(MatchesPixel(expected, actual, x, y, tolerance) && MatchesPixel(actual, expected, x, y, tolerance)))
+                    Assert.Fail($"Frame {actual.Frame}: pixel ({x}, {y}) differs beyond one pixel and RGBA8 tolerance {tolerance}.");
+        }
+        catch (XunitException)
+        {
+            SaveFailure(expected, actual, test);
+            throw;
+        }
+
+        static bool MatchesPixel(SceneImage source, SceneImage target, int x, int y, int tolerance)
+        {
+            int sourceIndex = (y * source.Width + x) * 4;
+            for (int dy = Math.Max(0, y - 1); dy <= Math.Min(target.Height - 1, y + 1); dy++)
+            for (int dx = Math.Max(0, x - 1); dx <= Math.Min(target.Width - 1, x + 1); dx++)
+            {
+                int targetIndex = (dy * target.Width + dx) * 4;
+                int error = 0;
+                for (int channel = 0; channel < 4; channel++)
+                    error = Math.Max(error, Math.Abs(source.Pixels.Span[sourceIndex + channel] - target.Pixels.Span[targetIndex + channel]));
+                if (error <= tolerance) return true;
+            }
+            return false;
+        }
+    }
+
     internal static void AssertColorRegion(SceneImage image, int left, int top, int width, int height,
         byte red, byte green, byte blue, int tolerance = 2, [CallerMemberName] string test = "")
     {
