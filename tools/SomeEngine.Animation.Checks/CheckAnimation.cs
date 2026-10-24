@@ -96,6 +96,7 @@ internal static partial class CheckAnimation
         CheckFunction();
         CheckClocksAndCompletion();
         GraphConsumerChecks.Check();
+        GpuStateChecks.Check();
         Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields query-members bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graph");
         return 0;
     }
