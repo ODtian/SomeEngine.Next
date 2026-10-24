@@ -27,9 +27,14 @@ public struct GpuPoseTarget : IComponent
     public ulong InputNumber;
     public CpuBoneDemand? CpuBones;
     public ReadOnlyMemory<GpuPoseReadbackRequest> Readbacks { get; internal set; }
+    public GpuPoseEvaluation? Evaluation;
+    public RootMotionDelta RootMotion;
+    public bool ExtractRootMotion;
+    public BoneTransform RootCorrection;
 }
 
-public readonly record struct GpuClipParameters(QuantizedClipData Clip, bool Loop = false);
+public readonly record struct GpuClipParameters(QuantizedClipData Clip, bool Loop = false,
+    RootMotionMode RootMotion = RootMotionMode.SourcePose);
 
 [BufferCapacity(1)]
 public struct GpuClipInstance : IBufferElement
@@ -40,11 +45,18 @@ public struct GpuClipInstance : IBufferElement
     public Entity Target;
     public uint Starts;
     public bool Finished;
+    internal GpuClipSignals Signals;
 }
 
 /// <summary>Uses the common graph clock to select GPU samples for one skeleton section.</summary>
 public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
 {
+    public static object Prepare(ReadOnlySpan<GpuClipParameters> parameters)
+    {
+        var signals = new GpuClipSignalDefinition[parameters.Length];
+        for (int index = 0; index < signals.Length; index++) signals[index] = new(parameters[index]);
+        return signals;
+    }
     public static MotionBoundary Describe(in GpuClipParameters parameters) => parameters.Loop
         ? new(StageEnd.Settled) : new(StageEnd.Duration, parameters.Clip.Duration);
 
@@ -52,7 +64,19 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
         AnimationLeafBatch<GpuClipParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
         if (!world.HasBuffer<GpuClipInstance>(animation)) world.AddBuffer<GpuClipInstance>(animation);
-        var instance = new GpuClipInstance { Definition = definitions, Index = index, Placement = placement, Target = target };
+        var instance = new GpuClipInstance { Definition = definitions, Index = index, Placement = placement, Target = target,
+            Signals = ((GpuClipSignalDefinition[])definitions.Data!)[index].Bind(world.Read<GpuPoseTarget>(target).Skeleton.Skeleton) };
+        if (!world.HasBuffer<TimelineEvent>(animation)) world.AddBuffer<TimelineEvent>(animation);
+        AnimationClip signalClip = instance.Signals.Definition.Clip;
+        world.ExecuteBufferWrite<TimelineEvent, AnimationClip>(animation, ref signalClip, static (events, ref clip) =>
+        {
+            foreach (ClipEvent marker in clip.Events)
+            {
+                bool found = false;
+                foreach (TimelineEvent current in events.AsSpan()) found |= current.Id == marker.Id;
+                if (!found) events.Add(new TimelineEvent { Id = marker.Id });
+            }
+        });
         world.ExecuteBufferWrite<GpuClipInstance, GpuClipInstance>(animation, ref instance,
             static (instances, ref instance) =>
             {
@@ -112,6 +136,7 @@ internal struct GpuPoseFrameSystem : ISystem<ImmediateSystemContext>
                 target.CalculationTime = time;
                 target.InputNumber++;
                 target.Playing = false;
+                target.RootMotion = RootMotionDelta.Identity;
             }
         });
     }
@@ -124,7 +149,7 @@ internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
     public void OnCreate(ref ImmediateSystemContext context) =>
         _clips = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
             .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<GpuClipInstance>()
-            .Optional<GpuPoseTarget>(QueryAccess.ReadWrite)));
+            .Optional<GpuPoseTarget>(QueryAccess.ReadWrite).OptionalBuffer<TimelineEvent>(QueryAccess.ReadWrite)));
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
@@ -135,7 +160,7 @@ internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
             foreach (ref GpuClipInstance instance in row.Buffer<GpuClipInstance>().AsSpan())
             {
                 AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in instance.Placement);
-                if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; }
+                if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; instance.Signals.Reset(); }
                 if (!time.Active || instance.Finished) continue;
                 GpuClipParameters parameters = instance.Definition.Parameters[instance.Index];
                 float elapsed = parameters.Loop ? time.Time.Time : Math.Min(time.Time.Time, parameters.Clip.Duration);
@@ -146,6 +171,7 @@ internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
                 output.Rig = null;
                 output.SampleTime = parameters.Loop ? elapsed % parameters.Clip.Duration : elapsed;
                 output.Starts = time.Starts;
+                instance.Signals.Update(world, row.Entity, in parameters, elapsed, ref output);
                 world.Replace(instance.Target, output);
                 instance.Finished = !parameters.Loop && elapsed >= parameters.Clip.Duration;
                 AnimationGraph.Submit(world, row.Entity, in instance.Placement, !instance.Finished);

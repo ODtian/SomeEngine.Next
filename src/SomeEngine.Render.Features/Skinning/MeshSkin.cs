@@ -30,7 +30,8 @@ internal readonly record struct RenderBoneSectionData(Skeleton Skeleton, RenderB
     GpuPoseStateMachine? StateMachine, GpuPoseBlend? Blend, float[] Controls, float PlaybackTime, bool Playing,
     GpuPoseRig? Rig, GpuPoseGoal[] Goals, Vector3 ModelOffset,
     ReadOnlyMemory<short> CpuBones, PoseCalculation[] Calculations, GpuPoseIdentity Identity,
-    ReadOnlyMemory<GpuPoseReadbackRequest> Readbacks) : IComponent
+    ReadOnlyMemory<GpuPoseReadbackRequest> Readbacks, GpuPoseEvaluation? Evaluation,
+    bool ExtractRootMotion, BoneTransform RootCorrection) : IComponent
 {
     internal bool IsGpu => Clip is not null || StateMachine is not null || Blend is not null;
 }
@@ -152,7 +153,8 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                 isGpu ? gpu.SampleTime : (float)model.SampleTime,
                 gpu.StateMachine, gpu.Blend, section.ControlValues, gpu.PlaybackTime, gpu.Playing,
                 gpu.Rig, section.GoalValues, gpu.ModelOffset, source.CpuBones, section.CalculationValues,
-                new(section.Target, source, gpu.Starts, gpu.InputNumber, gpu.AnimationStarts), gpu.Readbacks);
+                new(section.Target, source, gpu.Starts, gpu.InputNumber, gpu.AnimationStarts), gpu.Readbacks,
+                gpu.Evaluation, gpu.ExtractRootMotion, gpu.RootCorrection);
         }
         _removedMeshes.Clear();
         foreach (Entity source in _meshes.Keys) if (!_meshSources.Contains(source)) _removedMeshes.Add(source);
