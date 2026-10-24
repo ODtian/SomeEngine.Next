@@ -87,6 +87,6 @@ Game 时钟达到 `8/60` 秒后，动画 Completion 阶段通过 `GpuPoseAnimati
 
 行为入口见 [`CrowdRenderingTests`](../../../tests/SomeEngine.Runtime.Tests/CrowdRenderingTests.cs)，
 选择器回调入口见 [`SceneSelectionRenderingTests`](../../../tests/SomeEngine.Runtime.Tests/SceneSelectionRenderingTests.cs)。
-公开图像检查可通过 `SOMEENGINE_TEST_COOKED_CONTENT` 指向已经构建的 DefaultGame 根目录，
-沿用共同管线产物并在该目录生成两个 Crowd 子目录。
+公开图像检查可通过 `SOMEENGINE_TEST_COOKED_CONTENT` 指向已经完成 `sample-crowd` 的 DefaultGame 根目录，
+直接沿用共同管线、角色网格和两个 Crowd 子目录的材质产物。
 计时边界与采集开销见 [GPU Timing](../render-graph/GPU-Timing.md)。
