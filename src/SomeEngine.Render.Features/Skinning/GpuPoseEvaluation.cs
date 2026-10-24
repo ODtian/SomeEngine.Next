@@ -77,7 +77,7 @@ public sealed partial class SkinningFeature
 
     private static void PrepareSampling(Section section, double time)
     {
-        RenderBoneSectionData data = section.Data;
+        ref readonly RenderBoneSectionData data = ref section.Data;
         if (!data.IsGpu)
         {
             section.Presentation = new(data.CalculationTime, data.CalculationTime, data.CalculationTime, 1);
