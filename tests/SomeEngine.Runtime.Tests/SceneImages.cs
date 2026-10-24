@@ -67,6 +67,43 @@ internal static class SceneImages
         }
     }
 
+    internal static void AssertWithinPixelError(SceneImage expected, SceneImage actual, int pixelRadius, int colorTolerance,
+        [CallerMemberName] string test = "")
+    {
+        try
+        {
+            Assert.Equal(expected.Width, actual.Width);
+            Assert.Equal(expected.Height, actual.Height);
+            Compare(expected, actual);
+            Compare(actual, expected);
+        }
+        catch (XunitException)
+        {
+            SaveFailure(expected, actual, test);
+            throw;
+        }
+
+        void Compare(SceneImage source, SceneImage destination)
+        {
+            for (int y = 0; y < source.Height; y++)
+            for (int x = 0; x < source.Width; x++)
+            {
+                int pixel = (y * source.Width + x) * 4;
+                bool matched = false;
+                for (int dy = Math.Max(0, y - pixelRadius); dy <= Math.Min(source.Height - 1, y + pixelRadius) && !matched; dy++)
+                for (int dx = Math.Max(0, x - pixelRadius); dx <= Math.Min(source.Width - 1, x + pixelRadius) && !matched; dx++)
+                {
+                    int other = (dy * source.Width + dx) * 4;
+                    int difference = 0;
+                    for (int channel = 0; channel < 4; channel++)
+                        difference = Math.Max(difference, Math.Abs(source.Pixels.Span[pixel + channel] - destination.Pixels.Span[other + channel]));
+                    matched = difference <= colorTolerance;
+                }
+                Assert.True(matched, $"Frame {actual.Frame}: pixel ({x}, {y}) exceeds {pixelRadius} pixels and RGBA8 tolerance {colorTolerance}.");
+            }
+        }
+    }
+
     internal static void AssertColorRegion(SceneImage image, int left, int top, int width, int height,
         byte red, byte green, byte blue, int tolerance = 2, [CallerMemberName] string test = "")
     {

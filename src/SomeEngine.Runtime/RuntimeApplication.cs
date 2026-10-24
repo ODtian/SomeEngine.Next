@@ -693,7 +693,8 @@ internal static class RuntimeApplication
                 EnableAsyncCompute = options.AsyncCompute,
                 ForceHardwareRaster = forceHardwareRaster,
                 UseInstanceGroups = options.UseInstanceGroups,
-                EnableFrameMetricsReadback = metrics,
+                EnableFrameMetricsReadback = metrics || application?.FrameRendered is not null,
+                LodThreshold = application?.LodThreshold ?? 1,
             }, skinBounds);
 
         void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
@@ -1033,11 +1034,13 @@ internal static class RuntimeApplication
                     viewEntity,
                     outputVerifier,
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
-                    options.SynchronousFrames,
+                    options.SynchronousFrames || application?.FrameRendered is not null,
                     options.TemporalAntialiasing,
                     viewFrame.JitterPixels);
                 double executeMs = Stopwatch.GetElapsedTime(executeStarted).TotalMilliseconds;
                 skinning.CompleteReadbacks();
+                if (application?.FrameRendered is { } frameRendered)
+                    frameRendered(pipeline.CaptureFrameMetrics());
                 if (sceneEdit.Images.Count > 0)
                 {
                     SceneImage captured = outputVerifier!.CopyImage(frameIndex);

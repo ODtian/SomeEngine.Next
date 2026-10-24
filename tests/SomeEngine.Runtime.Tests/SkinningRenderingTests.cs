@@ -22,7 +22,7 @@ using GltfMesh = SharpGLTF.Schema2.Mesh;
 
 namespace SomeEngine.Runtime.Tests;
 
-public sealed class SkinningRenderingTests
+public sealed partial class SkinningRenderingTests
 {
     [Fact]
     public async Task PosesOutsideBindBoundsRemainVisibleForTwoInstancesOfTheSameMesh()
@@ -292,7 +292,7 @@ public sealed class SkinningRenderingTests
         return bytes;
     }
 
-    private sealed class SkinContent(AssetProject project, string shader) : IDisposable
+    private sealed partial class SkinContent(AssetProject project, string shader) : IDisposable
     {
         private readonly SourceMeta _source = new() { SourceGuid = SourceGuid.New() };
         public AssetProject Project => project;
