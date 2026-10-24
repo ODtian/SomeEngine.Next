@@ -17,6 +17,12 @@ Rendering world 的网格组件保存 source joint 到区段实体及区段内�
 并在 GPU 插值片段、传播层级 G。GPU 历史按每个区段的新输入推进；首次出现的区段以当前矩阵
 初始化上一份矩阵，重复渲染同一输入保持原有矩阵对。
 
+提取直接从同一 `QueryChunkView` 读取 `MeshSkin` 与 `GpuPoseTarget` 列，来源成员在完整
+结构协调时核对。网格的 joint 映射与 distinct 依赖区段一起保存在绑定持有者中，普通帧按
+依赖区段标记模型来源。目标持有者保存已发布的区段映射，实际重绑时更新 Rendering 组件。
+已有区段的逐帧值更新通过 `IRenderExtractionSystem.CanApplyChangesDirect` 进入共同值更新
+边界；创建、移除及重绑沿原有结构事务发布，组件 hook 仍由共同提取调度选择事务路径。
+
 渲染准备阶段生成每个网格的 `RenderSkinBinding`，其中两个 uint 分别是 joint 映射起点
 和逆绑定矩阵起点。`SkinInstanceProducer` 将它写入普通实例属性存储，与 Cluster 的
 空间、几何及材质属性组合。静态网格使用零值。

@@ -36,9 +36,10 @@ internal static class SkinBoundsShaders
             IModule? module = session.LoadModuleFromSource("skin_bounds", "skin_bounds.slang", Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
             if (module is null) throw new InvalidDataException(diagnostics?.AsString);
             Require(module.FindEntryPointByName("TransformSkinBounds", out IEntryPoint entry), null);
-            Require(session.CreateCompositeComponentType([module, entry], out IComponentType combined, out diagnostics), diagnostics);
+            Require(module.FindEntryPointByName("TransformSkinJoints", out IEntryPoint joints), null);
+            Require(session.CreateCompositeComponentType([module, entry, joints], out IComponentType combined, out diagnostics), diagnostics);
             Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
-            shader = Shader.CreateFromSlang("Skin bounds", s_global, session, [module], [entry], linked, [output]);
+            shader = Shader.CreateFromSlang("Skin bounds", s_global, session, [module], [entry, joints], linked, [output]);
             s_shaders.Add(target, shader);
             return shader;
         }

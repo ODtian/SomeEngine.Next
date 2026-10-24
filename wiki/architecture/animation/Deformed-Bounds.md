@@ -36,6 +36,8 @@ world.Add(meshEntity, new MeshSkin(skeletonInstance, skinBinding));
 
 `SkinBoundsFeature` 在装配时解析每个节点和 draw cluster 对应的影响盒，按共享几何复用定义。
 实例保存自己的骨骼绑定、输入标记和输出范围。定义变化上传工作表；姿势输入变化更新对应实例的值。
+边界更新直接读取同一 `SkinningFeature` section 已持有的启动编号、输入编号、姿势版本和 GPU 标志，
+各网格继续在自己的 `MeshBounds.Inputs` 中比较前后输入。
 当前和上一姿势分别读取 `SkinningFeature` 提供的两份 G。实际提交后接受输入标记，重复输入保留结果。
 
 当前几何变化同时写入 `RenderDeformBounds` 的 ECS 版本，范围值保持原有对应关系。
@@ -52,7 +54,10 @@ CPU 几何按模型姿势版本观察，GPU 几何按输入编号观察；逐帧
 `ClusterRenderFeature.GeometryLayout` 持有这一实例属性，普通实例存储负责传输。
 Cluster 的读取只依赖共同包围体和节点对应关系。LBS 的权重、关节和盒子变换由具体 feature 持有。
 
-骨骼完成点先于边界计算，边界完成点先于场景边界、根节点筛选、层级遍历和叶级剔除。
+骨骼完成点先于关节变换预计算。`TransformSkinJoints` 为变化实例的每个绑定关节计算
+当前／上一 `InverseBind * G` 和线性伸长上界，保存在 `SkinBoundsFeature` 的持久缓冲中。
+`TransformSkinBounds` 的原有剔除盒与 LOD 盒循环共享这些结果，保持原来的实例与输出范围。
+边界完成点先于场景边界、根节点筛选、层级遍历和叶级剔除。
 场景 pass 按边界版本更新实例及空间组范围，既有边界消费者继续读取同一场景输出。
 上一姿势的层级和 cluster 盒子配合上一实例变换用于历史深度判断。
 
