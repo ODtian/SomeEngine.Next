@@ -271,7 +271,7 @@ public class SharedComponentTests
     private static int CountSceneRows(World world, QueryHandle query)
     {
         int count = 0;
-        world.ExecuteQuery(query, ref count, static (QueryCursor cursor, ref int state) =>
+        world.ExecuteQuery(query, ref count, static (scoped QueryCursor cursor, ref int state) =>
         {
             foreach (var _ in cursor.RowsWithShared(new SceneId { Value = 10 }))
                 state++;

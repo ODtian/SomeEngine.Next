@@ -31,44 +31,39 @@ public readonly struct DistinctEdgeEndpoints<TEnumerable, TPayload>(TEnumerable 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>
         RelationEdgeEndpoints<TPayload>.AddReads(enumerable.AddReads(definition, position));
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        var projected = new EdgeEndpointOutput<TPayload, TOutput>(queries.Access, unordered, output);
-        try
-        {
-            return enumerable.Enumerate(queries, ref projected);
-        }
-        finally
-        {
-            output = projected.Output;
-        }
+        var projected = new EdgeEndpointOutput<TPayload, TOutput>(queries.Access, unordered, new(ref output));
+        return enumerable.Enumerate(queries, ref projected);
     }
 }
 
-internal ref struct EdgeEndpointOutput<TPayload, TOutput> : IRelationOutput<RelationEdge<TPayload>>
+internal ref struct EdgeEndpointOutput<TPayload, TOutput> : IQueryRelationOutput<RelationEdge<TPayload>>
     where TPayload : struct, IComponent
-    where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+    where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
 {
     private readonly QueryCursor _query;
     private readonly bool _unordered;
     private readonly HashSet<(Entity, Entity)> _pairs;
 
-    internal EdgeEndpointOutput(QueryCursor query, bool unordered, TOutput output)
+    internal EdgeEndpointOutput(QueryCursor query, bool unordered, RelationOutputReference<TOutput> output)
     {
         _query = query;
         _unordered = unordered;
         _pairs = new HashSet<(Entity, Entity)>();
-        Output = output;
+        _output = output;
     }
 
-    internal TOutput Output;
+    private readonly RelationOutputReference<TOutput> _output;
 
     public bool Add(in RelationEdge<TPayload> edge)
     {
         var pair = RelationEdgeEndpoints<TPayload>.Read(_query, in edge);
         if (_unordered)
             pair = EntityOrder.OrderPair(pair.Item1, pair.Item2);
-        return !_pairs.Add(pair) || Output.Add(in pair);
+        return !_pairs.Add(pair) || _output.Value.Add(in pair);
     }
+
+    public bool Add(in RelationEdge<TPayload> edge, scoped QueryRow first, scoped QueryRow second) => Add(in edge);
 }

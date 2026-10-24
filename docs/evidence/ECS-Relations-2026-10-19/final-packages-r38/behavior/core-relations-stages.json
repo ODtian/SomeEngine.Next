@@ -1,0 +1,53 @@
+[
+  {
+    "Name": "CorePointRead",
+    "Expected": 1,
+    "FileName": "dotnet",
+    "Arguments": [
+      "test",
+      "tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj",
+      "-c",
+      "Release",
+      "--no-restore",
+      "--filter",
+      "FullyQualifiedName~PointReadsBorrowOptionalManagedComponentsFromChangedMembers"
+    ],
+    "StartedAtUtc": "2026-10-19T21:28:51.0294196Z",
+    "FinishedAtUtc": "2026-10-19T21:29:16.0293355Z",
+    "ExitCode": 0
+  },
+  {
+    "Name": "RelationOutputs",
+    "Expected": 6,
+    "FileName": "dotnet",
+    "Arguments": [
+      "test",
+      "tests/SomeEngine.ECS.Relations.Tests/SomeEngine.ECS.Relations.Tests.csproj",
+      "-c",
+      "Release",
+      "--no-restore",
+      "--filter",
+      "FullyQualifiedName~ChainedRulesForwardRefStructOutputAndStopState|FullyQualifiedName~BinaryFiltersForwardRefStructOutputAndEarlyStop|FullyQualifiedName~BitmapFiltersForwardCountExistenceAndRefStructEarlyStop|FullyQualifiedName~KeyBucketsForwardRefStructOutputAndEarlyStop|FullyQualifiedName~EndpointRulesKeepEdgeRowsAndForwardEarlyOutputState|FullyQualifiedName~EightPositionsReturnTheEighthEntityAndForwardEarlyStopState"
+    ],
+    "StartedAtUtc": "2026-10-19T21:29:16.0767240Z",
+    "FinishedAtUtc": "2026-10-19T21:29:36.9469206Z",
+    "ExitCode": 0
+  },
+  {
+    "Name": "ParallelComponentInput",
+    "Expected": 1,
+    "FileName": "dotnet",
+    "Arguments": [
+      "test",
+      "tests/SomeEngine.Physics.Tests/SomeEngine.Physics.Tests.csproj",
+      "-c",
+      "Release",
+      "--no-restore",
+      "--filter",
+      "FullyQualifiedName~CountAndFillKeepTheirComponentInputUntilEveryPartitionCompletes"
+    ],
+    "StartedAtUtc": "2026-10-19T21:29:36.9526023Z",
+    "FinishedAtUtc": "2026-10-19T21:29:55.8755971Z",
+    "ExitCode": 1
+  }
+]

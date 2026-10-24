@@ -24,10 +24,10 @@ internal sealed class RuntimeScene : IDisposable
     private readonly record struct RegionMaterial(int Region, AssetId<MaterialAsset> Material);
 
     private readonly World _world;
-    private (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings, ClusterSkinBounds? SkinBounds)[] _meshes = [];
+    private readonly Entity _worldOriginEntity;
+    private (Guid Asset, Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings, ClusterSkinBounds? SkinBounds)[] _meshes = [];
     private readonly (Entity Entity, PointLight Value)[] _playbackLights;
-    private readonly Material[] _playbackMaterials;
-    private Texture[] _textures = [];
+    private Material[] _playbackMaterials;
     private readonly Vector3 _initialCameraPosition;
     private readonly Vector3 _cameraOrbitTarget;
     private static readonly SomeEngine.Diagnostics.TraceSite MovingMeshesTrace = new("scene", "MovingMeshes");
@@ -48,11 +48,16 @@ internal sealed class RuntimeScene : IDisposable
         float verticalFieldOfView,
         float nearPlane,
         float farPlane,
+        CameraDepthOfField? depthOfField,
+        uint playerId,
+        FirstPersonCamera? firstPerson,
         int meshInstanceCount,
         Vector3 meshPositionMin,
         Vector3 meshPositionMax)
     {
         _world = world;
+        Entity[] origins = Entities(world, new QueryDefinitionBuilder().Read<WorldOrigin>());
+        _worldOriginEntity = origins.Length == 0 ? world.CreateEntity(default(WorldOrigin)) : origins.Single();
         _playbackLights = playbackLights;
         _playbackMaterials = playbackMaterials;
         _initialCameraPosition = camera.Position;
@@ -64,12 +69,18 @@ internal sealed class RuntimeScene : IDisposable
         _verticalFieldOfView = verticalFieldOfView;
         _nearPlane = nearPlane;
         _farPlane = farPlane;
+        DepthOfField = depthOfField;
+        PlayerId = playerId;
+        FirstPerson = firstPerson;
         MeshInstanceCount = meshInstanceCount;
         MeshPositionMin = meshPositionMin;
         MeshPositionMax = meshPositionMax;
     }
 
     internal RuntimeCamera Camera { get; private set; }
+    internal CameraDepthOfField? DepthOfField { get; }
+    internal uint PlayerId { get; }
+    internal FirstPersonCamera? FirstPerson { get; }
 
     internal int MeshInstanceCount { get; }
 
@@ -77,19 +88,19 @@ internal sealed class RuntimeScene : IDisposable
 
     internal Vector3 MeshPositionMax { get; }
 
-    internal static async ValueTask<RuntimeScene> CreateAsync(
+    internal IReadOnlyList<Material> Materials => _playbackMaterials;
+
+    internal static async ValueTask<RuntimeScene> CreateAsync<TMaterials>(
         World world,
-        AssetLoader assets,
-        Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>> loadShader)
+        ApplicationContent content) where TMaterials : ISceneMaterials
     {
-        ArgumentNullException.ThrowIfNull(loadShader);
+        AssetLoader assets = content.Files;
         Entity[] instances = Entities(world, new QueryDefinitionBuilder().Read<MeshSource>().Read<WorldTransform>());
         Entity[] cameras = Entities(world, new QueryDefinitionBuilder().Read<SceneCamera>());
         if (cameras.Length != 1) throw new InvalidDataException("The Game world must contain one scene camera.");
         SceneCamera camera = world.Read<SceneCamera>(cameras[0]);
         var meshes = new Dictionary<Guid, (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings, ClusterSkinBounds? SkinBounds)>();
         var materials = new Dictionary<Guid, Material>();
-        var textureReads = new Dictionary<Guid, Lazy<Task<Texture>>>();
         Vector3 meshPositionMin = new(float.PositiveInfinity);
         Vector3 meshPositionMax = new(float.NegativeInfinity);
         AssetId<MeshAsset>[] meshIds = instances
@@ -109,19 +120,27 @@ internal sealed class RuntimeScene : IDisposable
                         .ConfigureAwait(false);
                     MeshBlock geometry = await file.GetBlockAsync<MeshBlock>(cancellationToken).ConfigureAwait(false);
                     ClusterGeometryBlock? clusters = await file.TryGetBlockAsync<ClusterGeometryBlock>(cancellationToken).ConfigureAwait(false);
-                    if (clusters is null) return;
+                    ClusterMeshBlock? packed = clusters is null
+                        ? await file.TryGetBlockAsync<ClusterMeshBlock>(cancellationToken).ConfigureAwait(false) : null;
+                    if (clusters is null && packed is null) return;
                     MeshMaterialsBlock references = await file.GetBlockAsync<MeshMaterialsBlock>(cancellationToken)
                         .ConfigureAwait(false);
-                    ClusterVertexAttributesBlock attributes = await file.GetBlockAsync<ClusterVertexAttributesBlock>(cancellationToken).ConfigureAwait(false);
-                    Mesh mesh = await clusters.CreateAsync(geometry, attributes, file.Name, cancellationToken).ConfigureAwait(false);
+                    ClusterVertexAttributesBlock? attributes = clusters is not null
+                        ? await file.GetBlockAsync<ClusterVertexAttributesBlock>(cancellationToken).ConfigureAwait(false) : null;
+                    Mesh mesh = clusters is not null
+                        ? await clusters.CreateAsync(geometry, attributes!, file.Name, cancellationToken).ConfigureAwait(false)
+                        : await packed!.CreateAsync(geometry, file.Name, cancellationToken).ConfigureAwait(false);
                     ClusterSkinBoundsBlock? skinBounds = await file.TryGetBlockAsync<ClusterSkinBoundsBlock>(cancellationToken).ConfigureAwait(false);
                     MeshPayloadSource? pages = null;
                     try
                     {
-                        pages = await clusters.OpenPayloadSourceAsync(attributes, cancellationToken).ConfigureAwait(false);
-                        int[] regions = clusters.Clusters.SelectMany(cluster => cluster.TriangleRegions.IsEmpty
+                        pages = clusters is not null
+                            ? await clusters.OpenPayloadSourceAsync(attributes!, cancellationToken).ConfigureAwait(false)
+                            : await packed!.OpenPayloadSourceAsync(cancellationToken).ConfigureAwait(false);
+                        int[] regions = clusters is not null ? clusters.Clusters.SelectMany(cluster => cluster.TriangleRegions.IsEmpty
                                 ? cluster.TriangleMaterials : cluster.TriangleRegions)
-                            .Select(region => Math.Max(0, region)).Distinct().Order().ToArray();
+                            .Select(region => Math.Max(0, region)).Distinct().Order().ToArray()
+                            : Enumerable.Range(0, geometry.Regions.Count).ToArray();
                         RegionMaterial[] regionMaterials = regions
                             .Select(region => new RegionMaterial(region, references.Materials[region])).ToArray();
                         foreach (RegionMaterial value in regionMaterials)
@@ -144,8 +163,19 @@ internal sealed class RuntimeScene : IDisposable
                 {
                     using MaterialAsset file = await MaterialAsset.OpenAsync(assets, materialIds[index], cancellationToken)
                         .ConfigureAwait(false);
-                    loadedMaterials[index] = await file.CreateAsync(assets, loadShader, LoadTextureAsync,
-                        cancellationToken, loadTexturesConcurrently: true).ConfigureAwait(false);
+                    using MaterialBlock material = await file.ResolveAsync(assets, cancellationToken).ConfigureAwait(false);
+                    var shaders = new Dictionary<AssetId<ShaderAsset>, Shader>();
+                    var textures = new Dictionary<AssetId<TextureAsset>, Texture>();
+                    if (!material.Shader.IsEmpty)
+                        shaders.Add(material.Shader, await ShaderAsset.GetAsync(assets, material.Shader,
+                            content.ShaderValues, content.Slang, content.ShaderSettings, cancellationToken).ConfigureAwait(false));
+                    foreach (MaterialParameter parameter in material.Parameters)
+                        if (parameter.Kind == MaterialParameterKind.Texture && !parameter.Texture.IsEmpty &&
+                            !textures.ContainsKey(parameter.Texture))
+                            textures.Add(parameter.Texture, await TextureAsset.GetAsync(assets, parameter.Texture,
+                                content.TextureValues, cancellationToken).ConfigureAwait(false));
+                    loadedMaterials[index] = await TMaterials.CreateAsync(file, assets, shaders, textures,
+                        cancellationToken).ConfigureAwait(false);
                 }).ConfigureAwait(false);
             for (int index = 0; index < materialIds.Length; index++)
             {
@@ -171,15 +201,15 @@ internal sealed class RuntimeScene : IDisposable
             foreach (Entity entity in instances)
             {
                 MeshSource source = world.Read<MeshSource>(entity);
-                var content = meshes[source.Mesh.Value];
+                var meshData = meshes[source.Mesh.Value];
                 TransformQvvs transform = world.Read<WorldTransform>(entity).Qvvs;
                 meshPositionMin = Vector3.Min(meshPositionMin, transform.Position);
                 meshPositionMax = Vector3.Max(meshPositionMax, transform.Position);
-                world.Add(entity, new MeshInstance { Mesh = content.Mesh, PageSource = content.Source,
-                    BoundsExpansion = source.BoundsExpansion });
-                if (content.SkinBounds is { } skinBounds) world.Add(entity, new MeshSkinBounds(skinBounds));
+                world.Add(entity, new MeshInstance { Mesh = meshData.Mesh, PageSource = meshData.Source,
+                    BoundsExpansion = source.BoundsExpansion, DepthCacheClass = source.DepthCacheClass, FirstPerson = source.FirstPerson });
+                if (meshData.SkinBounds is { } skinBounds) world.Add(entity, new MeshSkinBounds(skinBounds));
                 world.AddBuffer<MeshMaterialBinding>(entity);
-                MeshMaterialBinding[] bindings = content.Bindings;
+                MeshMaterialBinding[] bindings = meshData.Bindings;
                 world.ExecuteBufferWrite<MeshMaterialBinding, MeshMaterialBinding[]>(entity, ref bindings,
                     static (DynamicBuffer<MeshMaterialBinding> buffer, ref MeshMaterialBinding[] values) =>
                     {
@@ -204,61 +234,28 @@ internal sealed class RuntimeScene : IDisposable
             {
                 return new RuntimeScene(world, playbackLights, [.. materials.Values], motionQuery,
                     runtimeCamera, camera.VerticalFieldOfView, camera.NearPlane,
-                    camera.FarPlane, instances.Length, meshPositionMin, meshPositionMax)
-                    { _meshes = [.. meshes.Values],
-                        _textures = [.. textureReads.Values.Select(read => read.Value.Result)] };
+                    camera.FarPlane, camera.DepthOfField, camera.PlayerId, camera.FirstPerson,
+                    instances.Length, meshPositionMin, meshPositionMax)
+                    { _meshes = meshes.Select(pair => (pair.Key, pair.Value.Mesh, pair.Value.Source, pair.Value.Bindings, pair.Value.SkinBounds)).ToArray() };
             }
             catch { world.ReleaseQuery(motionQuery); throw; }
         }
         catch (Exception failure)
         {
             var errors = new List<Exception> { failure };
-            foreach (Material material in materials.Values)
-                try { material.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
-            foreach (Material? material in loadedMaterials)
-                if (material is not null)
-                    try { material.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
-            foreach (Lazy<Task<Texture>> read in textureReads.Values)
-            {
-                if (!read.IsValueCreated) continue;
-                try { (await read.Value.ConfigureAwait(false)).Dispose(); }
-                catch (Exception cleanup) { errors.Add(cleanup); }
-            }
             foreach (var mesh in meshes.Values)
             {
-                try { } catch (Exception cleanup) { errors.Add(cleanup); }
                 try { mesh.Source.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
             }
             foreach (SceneMeshData? mesh in loadedMeshes)
             {
                 if (mesh is null) continue;
-                try { } catch (Exception cleanup) { errors.Add(cleanup); }
                 try { mesh.PageSource.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
             }
             if (errors.Count != 1) throw new AggregateException("Scene loading and cleanup failed.", errors);
             throw;
         }
 
-        async ValueTask<Texture> LoadTextureAsync(AssetId<TextureAsset> id, CancellationToken cancellationToken)
-        {
-            Lazy<Task<Texture>> read;
-            lock (textureReads)
-            {
-                if (!textureReads.TryGetValue(id.Value, out read!))
-                {
-                    read = new Lazy<Task<Texture>>(() => ReadTextureAsync(id, cancellationToken));
-                    textureReads.Add(id.Value, read);
-                }
-            }
-            return await read.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        async Task<Texture> ReadTextureAsync(AssetId<TextureAsset> id, CancellationToken cancellationToken)
-        {
-            using TextureAsset file = await TextureAsset.OpenAsync(assets, id, cancellationToken).ConfigureAwait(false);
-            TextureBlock pixels = await file.GetBlockAsync<TextureBlock>(cancellationToken).ConfigureAwait(false);
-            return await pixels.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false);
-        }
     }
 
     private static Entity[] Entities(World world, QueryDefinitionBuilder definition)
@@ -267,7 +264,7 @@ internal sealed class RuntimeScene : IDisposable
         var entities = new List<Entity>();
         try
         {
-            world.ExecuteQuery(query, ref entities, static (QueryCursor rows, ref List<Entity> values) =>
+            world.ExecuteQuery(query, ref entities, static (scoped QueryCursor rows, ref List<Entity> values) =>
             {
                 foreach (var row in rows.Rows) values.Add(row.Entity);
             });
@@ -277,6 +274,54 @@ internal sealed class RuntimeScene : IDisposable
     }
 
     internal Entity[] GetMeshEntities() => Entities(_world, new QueryDefinitionBuilder().Read<MeshInstance>());
+
+    internal Entity[] GetMovingMeshEntities() => Entities(_world,
+        new QueryDefinitionBuilder().Read<SceneMotion>().Read<WorldTransform>());
+
+    internal void SetWorldOrigin(WorldOrigin origin) => _world.Replace(_worldOriginEntity, origin);
+
+    internal SceneFrame CaptureFrame(SceneFrame frame)
+    {
+        var lights = new List<SceneLight>();
+        foreach (Entity entity in Entities(_world, new QueryDefinitionBuilder().Read<DirectionalLight>()))
+        {
+            DirectionalLight light = _world.Read<DirectionalLight>(entity);
+            lights.Add(new(SceneLightKind.Directional, Vector3.Zero, light.Direction, 0, 0, 0,
+                light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
+        }
+        foreach (Entity entity in GetPointLights())
+        {
+            PointLight light = _world.Read<PointLight>(entity);
+            lights.Add(new(SceneLightKind.Point, light.Position, Vector3.Zero, light.Range, 0, 0,
+                light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
+        }
+        foreach (Entity entity in Entities(_world, new QueryDefinitionBuilder().Read<SpotLight>()))
+        {
+            SpotLight light = _world.Read<SpotLight>(entity);
+            lights.Add(new(SceneLightKind.Spot, light.Position, light.Direction, light.Range,
+                light.InnerConeCos, light.OuterConeCos, light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
+        }
+        return frame with
+        {
+            NearPlane = _nearPlane, FarPlane = _farPlane, Lights = lights.ToArray(),
+            Meshes = GetMeshEntities().Select(entity =>
+            {
+                Mesh mesh = _world.Read<MeshInstance>(entity).Mesh;
+                Guid asset = _meshes.FirstOrDefault(value => ReferenceEquals(value.Mesh, mesh)).Asset;
+                return new SceneMeshTransform(asset, _world.Read<WorldTransform>(entity).Qvvs.ToMatrix());
+            }).ToArray(),
+        };
+    }
+
+    internal Mesh GetMesh(Entity entity) => _world.Read<MeshInstance>(entity).Mesh;
+
+    internal void ReplaceMesh(Entity entity, Mesh mesh)
+    {
+        MeshInstance instance = _world.Read<MeshInstance>(entity);
+        instance.Mesh = mesh;
+        instance.PageSource = null;
+        _world.Replace(entity, instance);
+    }
 
     internal void SetCameraTransform(Vector3 position, Quaternion rotation) =>
         Camera = new RuntimeCamera(position, position + Vector3.Transform(Vector3.UnitZ, rotation),
@@ -296,10 +341,22 @@ internal sealed class RuntimeScene : IDisposable
     {
         MeshMaterialBinding[] bindings = [];
         _world.ExecuteBufferRead<MeshMaterialBinding>(source, values => bindings = values.AsSpan().ToArray());
+        return AddMeshEntity(_world.Read<MeshInstance>(source), bindings, transform);
+    }
+
+    internal Entity AddEntity(Mesh mesh, IReadOnlyList<Material> materials, TransformQvvs transform, float boundsExpansion)
+    {
+        var bindings = new MeshMaterialBinding[materials.Count];
+        for (int index = 0; index < materials.Count; index++) bindings[index] = new(materials[index]);
+        return AddMeshEntity(new MeshInstance { Mesh = mesh, BoundsExpansion = boundsExpansion }, bindings, transform);
+    }
+
+    private Entity AddMeshEntity(MeshInstance instance, MeshMaterialBinding[] bindings, TransformQvvs transform)
+    {
         Entity entity = _world.CreateEntity(new WorldTransform { Qvvs = transform });
         try
         {
-            _world.Add(entity, _world.Read<MeshInstance>(source));
+            _world.Add(entity, instance);
             _world.AddBuffer<MeshMaterialBinding>(entity);
             _world.ExecuteBufferWrite<MeshMaterialBinding>(entity, values =>
             {
@@ -308,6 +365,39 @@ internal sealed class RuntimeScene : IDisposable
             return entity;
         }
         catch { _world.DestroyEntity(entity); throw; }
+    }
+
+    internal Entity AddMaterialDecal(Material material, TransformQvvs transform, int order)
+    {
+        Entity entity = _world.CreateEntity(new WorldTransform { Qvvs = transform });
+        _world.Add(entity, new MaterialDecal(material, order));
+        return entity;
+    }
+
+    internal void SetMaterialDecal(Entity entity, Material material, int order) =>
+        _world.Replace(entity, new MaterialDecal(material, order));
+
+    internal void SetEntityTransform(Entity entity, TransformQvvs transform) =>
+        _world.Replace(entity, new WorldTransform { Qvvs = transform });
+
+    internal void SetXray(Entity entity, Xray effect)
+    {
+        if (_world.Has<Xray>(entity)) _world.Replace(entity, effect);
+        else _world.Add(entity, effect);
+    }
+
+    internal void RemoveXray(Entity entity) => _world.Remove<Xray>(entity);
+    internal Entity[] GetPointLights() => Entities(_world, new QueryDefinitionBuilder().Read<PointLight>());
+    internal void SetPointLight(Entity entity, PointLight light) => _world.Replace(entity, light);
+
+    internal void SetDirectionalLight(Entity entity, DirectionalLight light)
+    {
+        if (_world.Has<DirectionalLight>(entity)) _world.Replace(entity, light);
+        else
+        {
+            _world.Remove<PointLight>(entity);
+            _world.Add(entity, light);
+        }
     }
 
     internal void DeleteEntity(Entity entity) => _world.DestroyEntity(entity);
@@ -366,7 +456,7 @@ internal sealed class RuntimeScene : IDisposable
         // avoids a second entity index and lets each chunk publish its writes once.
         var state = (Seconds: seconds, Count: 0);
         _world.ExecuteQuery(_motionQuery, ref state,
-            static (QueryCursor query, ref (float Seconds, int Count) motionState) =>
+            static (scoped QueryCursor query, ref (float Seconds, int Count) motionState) =>
             {
                 foreach (QueryChunkView chunk in query.Chunks)
                 {
@@ -397,13 +487,9 @@ internal sealed class RuntimeScene : IDisposable
         var errors = new List<Exception>();
         try { _world.ReleaseQuery(_motionQuery); }
         catch (Exception error) { errors.Add(error); }
-        foreach (Material material in _playbackMaterials)
-            try { material.Dispose(); } catch (Exception error) { errors.Add(error); }
-        foreach (Texture texture in _textures)
-            try { texture.Dispose(); } catch (Exception error) { errors.Add(error); }
+        _playbackMaterials = [];
         foreach (var mesh in _meshes)
         {
-            try { } catch (Exception error) { errors.Add(error); }
             try { mesh.Source.Dispose(); } catch (Exception error) { errors.Add(error); }
         }
         _meshes = [];

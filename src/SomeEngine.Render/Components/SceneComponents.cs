@@ -12,6 +12,8 @@ public struct MeshSource : IComponent
 {
     public AssetId<MeshAsset> Mesh;
     public float BoundsExpansion;
+    public DepthCacheClass DepthCacheClass;
+    public FirstPersonMeshData FirstPerson;
 }
 
 /// <summary>Skeleton identity for a skinned mesh node in a saved Game world.</summary>
@@ -26,6 +28,15 @@ public struct MeshMotion : IComponent
     public uint Seed;
 }
 
+public readonly record struct CameraDepthOfField(
+    float FocusDistance,
+    float InfinityCircleRadiusPixels,
+    float MinCircleRadiusPixels,
+    float MaxCircleRadiusPixels,
+    float DepthBlurRadiusPixels = 0f,
+    float DepthBlurExponent = 0f,
+    float ShadowResolutionBiasStrength = 0f);
+
 public struct SceneCamera : IComponent
 {
     public Vector3 Position;
@@ -34,4 +45,7 @@ public struct SceneCamera : IComponent
     public float VerticalFieldOfView;
     public float NearPlane;
     public float FarPlane;
+    public CameraDepthOfField? DepthOfField;
+    public uint PlayerId;
+    public FirstPersonCamera? FirstPerson;
 }

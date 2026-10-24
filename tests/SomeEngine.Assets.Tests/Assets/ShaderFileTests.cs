@@ -9,8 +9,8 @@ public sealed class ShaderFileTests
     [Fact]
     public async Task ShaderRemainsUsableAfterAssetAndFileReferencesDisappear()
     {
-        string path = SomeEngine.Tests.TestProjectPaths.BuiltShaderPath(
-            "hello_triangle.shader.asset");
+        using var files = new AssetTestDirectory();
+        string path = await WriteShaderFileAsync(files);
         Shader shader;
         await using (ShaderAsset asset = await ShaderAsset.OpenAsync(path))
             shader = await ShaderTestCompilation.CreateAsync(asset);
@@ -31,16 +31,12 @@ public sealed class ShaderFileTests
     [Fact]
     public async Task NewVersionCreatesAnotherShaderAndLeavesOldReadersUnchanged()
     {
-        string path = SomeEngine.Tests.TestProjectPaths.BuiltShaderPath(
-            "hello_triangle.shader.asset");
+        using var files = new AssetTestDirectory();
+        string path = await WriteShaderFileAsync(files);
         await using ShaderAsset asset = await ShaderAsset.OpenAsync(path);
 
         SessionDesc spirv = OneTarget(SlangCompileTarget.Spirv);
-        Shader oldShader = await asset.GetBlock<ShaderBlock>().CreateAsync(
-            asset.GetBlock<ShaderSourceBlock>(),
-            ShaderTestCompilation.Slang,
-            spirv,
-            asset.Name);
+        Shader oldShader = await asset.CreateAsync(ShaderTestCompilation.Slang, spirv);
         Shader newShader = await ShaderTestCompilation.CreateAsync(asset);
 
         Assert.NotSame(oldShader, newShader);
@@ -54,8 +50,7 @@ public sealed class ShaderFileTests
     public async Task FailedReplacementBuildLeavesPreviouslyPublishedShaderUsable()
     {
         using var files = new AssetTestDirectory();
-        string source = SomeEngine.Tests.TestProjectPaths.BuiltShaderPath(
-            "hello_triangle.shader.asset");
+        string source = await WriteShaderFileAsync(files);
         await using ShaderAsset original = await ShaderAsset.OpenAsync(source);
         Shader published = await ShaderTestCompilation.CreateAsync(original);
         SessionDesc sessionDescription = ShaderTestCompilation.CreateSessionDescription();
@@ -74,16 +69,24 @@ public sealed class ShaderFileTests
         await File.WriteAllBytesAsync(broken, bytes);
         await using ShaderAsset replacement = await ShaderAsset.OpenAsync(broken);
 
-        await Assert.ThrowsAnyAsync<InvalidDataException>(() => replacement.GetBlock<ShaderBlock>()
-            .CreateAsync(
-                replacement.GetBlock<ShaderSourceBlock>(),
-                ShaderTestCompilation.Slang,
-                sessionDescription,
-                replacement.Name)
+        await Assert.ThrowsAnyAsync<InvalidDataException>(() => replacement
+            .CreateAsync(ShaderTestCompilation.Slang, sessionDescription)
             .AsTask());
 
         Assert.True(published.TryGetSlangTarget(SlangCompileTarget.Dxil, out _));
         Assert.True(published.TryGetSlangTarget(SlangCompileTarget.Spirv, out _));
+    }
+
+    private static async Task<string> WriteShaderFileAsync(AssetTestDirectory files)
+    {
+        using var asset = new ShaderAsset { Name = "triangle" };
+        asset.GetBlock<ShaderSourceBlock>().SourceNames = ["hello_triangle.slang"];
+        SessionDesc settings = ShaderTestCompilation.CreateSessionDescription();
+        settings.SearchPaths = [SomeEngine.Tests.TestProjectPaths.ShaderDirectory()];
+        await asset.CompileAsync(ShaderTestCompilation.Slang, settings);
+        string path = files.File("triangle.shader.asset");
+        await asset.SaveAsync(path);
+        return path;
     }
 
     private static SessionDesc OneTarget(SlangCompileTarget format)

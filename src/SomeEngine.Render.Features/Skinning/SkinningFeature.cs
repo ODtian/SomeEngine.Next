@@ -189,7 +189,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 data.Blend is null ? section.MachineOffset : section.BlendOffset, inputOffset, data.PlaybackTime,
                 (uint)section.BlendStart, section.ReferenceOffset, section.Presentation.Amount, 0, 0));
             if ((!data.IsGpu || data.CpuBones.Length != 0) && (!section.HasResult || section.CpuVersion != data.Version
-                || !section.AcceptedCpuBones.Equals(data.CpuBones)))
+                || !section.AcceptedCpuBones.Equals(data.CpuBones)
+                || !data.IsGpu && (section.AcceptedInput.Clip is not null
+                    || section.AcceptedInput.StateMachine is not null || section.AcceptedInput.Blend is not null)))
             {
                 if (!data.IsGpu)
                 {
@@ -406,7 +408,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             static (ref PassDefinition _, ref DispatchArguments _) => { },
             static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch));
         PassDefinition pass = edit.GetPass(id);
-        Resource[] resources = FeatureResourceLayout.Resolve<Resource>(pipeline.ParameterLayout, static (name, _) => name switch
+        Resource[] resources = ShaderResourceLayout.Resolve<Resource>(pipeline.ParameterLayout, static (name, _) => name switch
         {
             "GpuPoseControls" => Resource.Controls, "GpuPoseSections" => Resource.Sections,
             "GpuPoseWork" => Resource.Work, "GpuPoseClips" => Resource.Clips,
@@ -599,7 +601,11 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     public void Dispose()
     {
         CompleteReadbacks(wait: true);
-        foreach (Readback readback in _readbacks) readback.Buffer?.Dispose();
+        foreach (Readback readback in _readbacks)
+        {
+            readback.Buffer?.Dispose();
+            readback.Request?.Cancel();
+        }
         _readbacks.Clear();
         _advancePipeline.Dispose(); _loadPipeline.Dispose(); _samplePipeline.Dispose(); _storePipeline.Dispose();
         _translatePipeline.Dispose(); _twoBonePipeline.Dispose(); _aimPipeline.Dispose();

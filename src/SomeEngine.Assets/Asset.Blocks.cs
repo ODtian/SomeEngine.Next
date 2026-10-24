@@ -76,6 +76,16 @@ public abstract partial class Asset
         lock (SyncRoot) { RequireIdle(); return _blocks.ContainsKey(T.BlockTypeId); }
     }
 
+    protected AssetBlock? GetBlock(Guid blockTypeId)
+    {
+        lock (SyncRoot) { RequireIdle(); return _blocks[blockTypeId].Content; }
+    }
+
+    protected AssetBlockSource OpenBlockSource(Guid blockTypeId)
+    {
+        lock (SyncRoot) { RequireIdle(); return new(_file!, _blocks[blockTypeId].Description!); }
+    }
+
     public T GetBlock<T>() where T : AssetBlock, IAssetBlock<T>
     {
         lock (SyncRoot)

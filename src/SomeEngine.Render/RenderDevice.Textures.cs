@@ -12,10 +12,20 @@ namespace SomeEngine.Render;
 
 public sealed partial class RenderDevice
 {
-    private readonly HashSet<EngineTexture> _textures =
-        new(ReferenceEqualityComparer.Instance);
+    private readonly object _textureGate = new();
+    private readonly HashSet<TextureRealization> _textures = [];
+    private readonly Queue<TextureRealization> _textureReleases = new();
+    private bool _texturesClosed;
     private readonly Dictionary<(RenderGraph.RenderGraph Graph, ulong Frame), TextureTransfers> _textureTransfers = [];
     private TextureRealization? _missingTexture;
+
+    /// <summary>Orders an end-of-frame consumer after texture upload completion for this frame.</summary>
+    public void OrderTextureUploadsBefore(ref RenderGraphFrame frame, GraphPassId consumer)
+    {
+        ThrowIfDisposed();
+        if (_textureTransfers.TryGetValue((frame.Owner, frame.FrameIdentity), out TextureTransfers? transfers))
+            frame.OrderAfter(consumer, transfers.CompletionPass);
+    }
 
     public RhiTexture MissingTexture
     {
@@ -58,12 +68,10 @@ public sealed partial class RenderDevice
         TextureShape shape = realization.Shape;
         TextureSubresourceRange resolved = range ?? shape.ResidentRange(realization.FirstResidentMip);
         ValidateResidentRange(realization, resolved);
-        return GetTextureSrv(
-            realization,
-            resolved,
-            format ?? shape.SampledFormat,
-            dimension ?? shape.SampledDimension,
-            label);
+        TextureSrv view = GetTextureSrv(realization, resolved, format ?? shape.SampledFormat,
+            dimension ?? shape.SampledDimension, label);
+        if (range is null && format is null && dimension is null) UpdateSampledDescriptor(realization, view);
+        return view;
     }
 
     public TextureUav GetTextureUav(
@@ -130,13 +138,12 @@ public sealed partial class RenderDevice
             realization = CreateTexture(TextureShape.From(content, _device), content.Name);
             try
             {
+                EnsureImported(ref frame, realization, asset);
                 UploadCurrentResident(ref frame, content, realization, replaceContents: true);
                 realization.Revision = content.Revision;
                 realization.Initialized = true;
                 if (!ReferenceEquals(content, asset)) realization.ReplacedAsset = asset;
                 asset.SetDeviceData(_device, realization);
-                _textures.Add(asset);
-                realization.TextureObject = asset;
             }
             catch
             {
@@ -158,6 +165,7 @@ public sealed partial class RenderDevice
                 TextureRealization replacement = CreateTexture(nextShape, content.Name);
                 try
                 {
+                    EnsureImported(ref frame, replacement, asset);
                     UploadCurrentResident(ref frame, content, replacement, replaceContents: true);
                     replacement.Revision = content.Revision;
                     replacement.Initialized = true;
@@ -172,7 +180,6 @@ public sealed partial class RenderDevice
                 replacement.ReplacedAsset = asset;
                 replacement.ReplacedRealization = realization;
                 asset.SetDeviceData(_device, replacement);
-                replacement.TextureObject = asset;
                 realization = replacement;
             }
         }
@@ -181,7 +188,7 @@ public sealed partial class RenderDevice
             UploadCurrentResident(ref frame, content, realization, replaceContents: false);
         }
 
-        EnsureImported(ref frame, realization);
+        EnsureImported(ref frame, realization, asset);
         OrderTextureConsumers(ref frame, realization, consumers);
         return realization.Resource;
     }
@@ -263,8 +270,6 @@ public sealed partial class RenderDevice
             return realization;
         realization = CreateTexture(TextureShape.From(asset, _device), asset.Name);
         asset.SetDeviceData(_device, realization);
-                _textures.Add(asset);
-                realization.TextureObject = asset;
         return realization;
     }
 
@@ -285,7 +290,13 @@ public sealed partial class RenderDevice
             shape.Usages,
             permittedFormats,
             label ?? "RenderDevice Texture realization");
-        return new TextureRealization(this, shape, _backend.CreateTexture(_device, description));
+        lock (_textureGate)
+        {
+            ObjectDisposedException.ThrowIf(_texturesClosed, this);
+            var realization = new TextureRealization(this, shape, _backend.CreateTexture(_device, description));
+            _textures.Add(realization);
+            return realization;
+        }
     }
 
     private TextureSrv GetTextureSrv(
@@ -312,7 +323,7 @@ public sealed partial class RenderDevice
         bool replaceContents)
     {
         EnsureNoOtherUploadFrame(ref frame, realization);
-        EnsureImported(ref frame, realization);
+        EnsureImported(ref frame, realization, asset);
         // Fully uploaded content cannot acquire another tile without a new content
         // revision. Keep frame synchronization, but skip repeated pixel discovery.
         if (!replaceContents && realization.UploadedChunks.Count == asset.MipTiles.Count)
@@ -434,13 +445,13 @@ public sealed partial class RenderDevice
         throw new InvalidDataException("A Texture has no copyable aspect.");
     }
 
-    private void EnsureImported(ref RenderGraphFrame frame, TextureRealization realization)
+    private void EnsureImported(ref RenderGraphFrame frame, TextureRealization realization, EngineTexture? texture = null)
     {
         if (ReferenceEquals(realization.FrameGraph, frame.Owner) &&
             realization.FrameIdentity == frame.FrameIdentity)
             return;
         realization.AddFrame();
-        frame.RetireAfterFrame(new TextureFrameCompletion(realization));
+        frame.RetireAfterFrame(new TextureFrameCompletion(realization, texture));
         realization.FrameGraph = frame.Owner;
         realization.FrameIdentity = frame.FrameIdentity;
         realization.UploadPasses.Clear();
@@ -644,7 +655,6 @@ public sealed partial class RenderDevice
     {
         if (texture.RemoveDeviceData(_device) is TextureRealization data)
         {
-            ConfirmTextureUpdate(data);
             ReleaseTexture(data);
         }
     }
@@ -652,8 +662,6 @@ public sealed partial class RenderDevice
     private void ReleaseTexture(TextureRealization data)
     {
         ConfirmTextureUpdate(data);
-        if (data.TextureObject is { } texture)
-            _textures.Remove(texture);
         if (data.PendingFrameGraph is not null)
         {
             data.ReleaseAfterUpload = true;
@@ -664,16 +672,61 @@ public sealed partial class RenderDevice
 
     private void DisposeTextures()
     {
-        foreach (EngineTexture texture in _textures.ToArray())
-            if (texture.RemoveDeviceData(_device) is TextureRealization data)
+        TextureRealization[] textures;
+        var references = new List<(EngineTexture Texture, TextureRealization Data)>();
+        lock (_textureGate)
+        {
+            _texturesClosed = true;
+            textures = [.. _textures];
+            foreach (TextureRealization data in textures)
             {
-                ConfirmTextureUpdate(data);
-                data.Dispose();
+                data.Invalidate();
+                if (data.UpdateTexture is { } updating)
+                    references.Add((updating, data));
+                else if (data.TextureReference?.TryGetTarget(out EngineTexture? texture) == true)
+                    references.Add((texture, data));
+                data.ClearUpdateReferences();
             }
-        _textures.Clear();
+            _textureReleases.Clear();
+        }
+        foreach ((EngineTexture texture, TextureRealization data) in references)
+            texture.RemoveDeviceData(_device, data);
+        foreach (TextureRealization data in textures)
+        {
+            data.ClearUploadTransaction();
+            data.ReplacedAsset = null;
+            data.ReplacedRealization = null;
+            data.Dispose();
+        }
         _textureTransfers.Clear();
-        _missingTexture?.Dispose();
         _missingTexture = null;
+    }
+
+    private void EnqueueTextureRelease(TextureRealization data)
+    {
+        lock (_textureGate)
+        {
+            if (_texturesClosed || data.ReleaseQueued || data.RetirementQueued) return;
+            data.Invalidate();
+            data.ReleaseQueued = true;
+            _textureReleases.Enqueue(data);
+        }
+    }
+
+    private void CollectTextureReleases()
+    {
+        while (true)
+        {
+            TextureRealization data;
+            lock (_textureGate)
+            {
+                if (!_textureReleases.TryDequeue(out data!)) return;
+                data.ReleaseQueued = false;
+                if (data.ActiveFrames != 0) continue;
+                data.RetirementQueued = true;
+            }
+            Retire(data);
+        }
     }
 
     private static void BeginUpload(
@@ -797,6 +850,7 @@ public sealed partial class RenderDevice
         TextureRealization? previous = data.ReplacedRealization;
         data.ReplacedRealization = null;
         data.ReplacedAsset = null;
+        data.ClearUpdateReferences();
         if (previous is not null) previous.RequestRelease();
     }
 
@@ -804,6 +858,7 @@ public sealed partial class RenderDevice
     {
         try
         {
+            if (!realization.IsValid) return;
             ReadOnlySpan<TextureBoundaryState> states = result.GetTextureStates(realization.GraphResource);
             if (!states.IsEmpty) realization.BoundaryStates = states.ToArray();
             bool wroteContents = false;
@@ -827,16 +882,16 @@ public sealed partial class RenderDevice
     {
         EngineTexture? texture = data.ReplacedAsset;
         TextureRealization? previous = data.ReplacedRealization;
+        data.ClearUpdateReferences();
         if (texture is null) return;
         if (previous is not null)
         {
-            if (!texture.IsDisposed) texture.SetDeviceData(_device, previous);
+            if (previous.IsValid) texture.SetDeviceData(_device, previous);
             else previous.RequestRelease();
         }
         else
         {
             texture.RemoveDeviceData(_device);
-            _textures.Remove(texture);
         }
         data.ReplacedRealization = null;
         data.ReplacedAsset = null;
@@ -844,10 +899,16 @@ public sealed partial class RenderDevice
         else data.RequestRelease();
     }
 
-    private sealed class TextureFrameCompletion(TextureRealization texture) : IDisposable
+    private sealed class TextureFrameCompletion(TextureRealization texture, EngineTexture? textureObject) : IDisposable
     {
         private TextureRealization? _texture = texture;
-        public void Dispose() => Interlocked.Exchange(ref _texture, null)?.CompleteFrame();
+        private EngineTexture? _textureObject = textureObject;
+        public void Dispose()
+        {
+            Interlocked.Exchange(ref _texture, null)?.CompleteFrame();
+            GC.KeepAlive(_textureObject);
+            _textureObject = null;
+        }
     }
 
     private sealed class TextureTransfers
@@ -881,44 +942,60 @@ public sealed partial class RenderDevice
             FirstResidentMip = shape.MipLevelCount;
         }
 
-        internal EngineTexture? TextureObject { get; set; }
+        internal WeakReference<EngineTexture>? TextureReference { get; private set; }
+        internal EngineTexture? UpdateTexture { get; private set; }
+        internal EngineTexture? UpdateContent { get; private set; }
         internal TextureBoundaryState[] BoundaryStates { get; set; } = [];
         SomeEngine.Graphics.Texture ITextureDeviceData.Texture => Resource;
         uint ITextureDeviceData.FirstAvailableMip => FirstResidentMip;
-        void ITextureDeviceData.Release() => _owner.ReleaseTexture(this);
+        void ITextureDeviceData.Release() => RequestRelease();
         void ITextureDeviceData.ConfirmUpdate() => _owner.ConfirmTextureUpdate(this);
         void ITextureDeviceData.CancelUpdate() => _owner.CancelTextureUpdate(this);
-        private readonly object _framesGate = new();
-        private int _activeFrames;
-        private bool _releaseRequested;
-        private bool _retirementQueued;
-        internal void AddFrame() { lock (_framesGate) _activeFrames++; }
+        bool ITextureDeviceData.TryAttach(EngineTexture texture, EngineTexture? replacement)
+        {
+            lock (_owner._textureGate)
+            {
+                if (!_valid) return false;
+                TextureReference ??= new(texture);
+                if (replacement is not null)
+                {
+                    UpdateTexture = texture;
+                    UpdateContent = replacement;
+                }
+                return true;
+            }
+        }
+        public void ClearUpdateReferences()
+        {
+            lock (_owner._textureGate)
+            {
+                UpdateTexture = null;
+                UpdateContent = null;
+            }
+        }
+        private bool _valid = true;
+        public bool IsValid { get { lock (_owner._textureGate) return _valid; } }
+        internal void Invalidate() => _valid = false;
+        internal int ActiveFrames { get; private set; }
+        internal bool ReleaseQueued { get; set; }
+        internal bool RetirementQueued { get; set; }
+        internal void AddFrame() { lock (_owner._textureGate) ActiveFrames++; }
         internal void CompleteFrame()
         {
-            lock (_framesGate)
+            lock (_owner._textureGate)
             {
-                _activeFrames--;
-                QueueRelease();
+                ActiveFrames--;
+                if (!_valid && ActiveFrames == 0) _owner.EnqueueTextureRelease(this);
             }
         }
-        internal void RequestRelease()
-        {
-            lock (_framesGate)
-            {
-                _releaseRequested = true;
-                QueueRelease();
-            }
-        }
-        private void QueueRelease()
-        {
-            if (!_releaseRequested || _activeFrames != 0 || _retirementQueued) return;
-            _retirementQueued = true;
-            _owner.Retire(this);
-        }
+        internal void RequestRelease() => _owner.EnqueueTextureRelease(this);
         private bool _released;
 
         internal TextureShape Shape { get; }
         internal RhiTexture Resource { get; }
+        internal DescriptorTable? SampledDescriptor { get; set; }
+        internal TextureSrv? SampledView { get; set; }
+        internal uint SampledIndex { get; set; }
         internal Dictionary<TextureViewKey, DeviceResource> Views { get; } = [];
         internal ulong Revision { get; set; }
         internal bool Initialized { get; set; }
@@ -965,9 +1042,16 @@ public sealed partial class RenderDevice
         {
             if (_released) return;
             _released = true;
+            lock (_owner._textureGate)
+            {
+                Invalidate();
+                _owner._textures.Remove(this);
+                ClearUpdateReferences();
+            }
             foreach (DeviceResource view in Views.Values)
                 view.Dispose();
             Views.Clear();
+            SampledDescriptor?.Dispose();
             Resource.Dispose();
         }
     }

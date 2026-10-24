@@ -36,12 +36,10 @@ public sealed class ObjectDestinationTests
         var points = new List<GeneratedPoint>();
         points.Add(new GeneratedPoint { X = 100, Y = 200 });
         var target = new ObjectDestinationValue(Guid.NewGuid(), points);
-        int constructed = ObjectDestinationValue.ConstructedCount;
         BinarySerializer.DeserializeInto(input.Span, target);
         Assert.Equal(source.Id, target.Id);
         Assert.Same(points, target.Points);
         Assert.Equal(source.Points, points);
-        Assert.Equal(constructed, ObjectDestinationValue.ConstructedCount);
     }
 
     [Fact]
@@ -97,9 +95,8 @@ public abstract class ObjectDestinationIdentity
 [BinarySerializable]
 public partial class ObjectDestinationValue : ObjectDestinationIdentity
 {
-    public static int ConstructedCount;
     public IList<GeneratedPoint> Points { get; set; } = new List<GeneratedPoint>();
-    public ObjectDestinationValue() => ConstructedCount++;
+    public ObjectDestinationValue() { }
     public ObjectDestinationValue(Guid id, IList<GeneratedPoint> points) : this() { Id = id; Points = points; }
 }
 

@@ -88,7 +88,8 @@ public sealed class HashingWriteStream : Stream
         EnsureActive();
         if (buffer.Length > _maximumBytes - BytesWritten)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Hashed output exceeds the configured {_maximumBytes}-byte limit.");
         }
 

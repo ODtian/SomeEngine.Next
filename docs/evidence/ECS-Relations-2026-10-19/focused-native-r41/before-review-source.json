@@ -1,0 +1,52 @@
+{
+  "SourceCommit": "d6f61521d61471082ced5e45eff2b3ff9e227d9b",
+  "ChangedFiles": [
+    "src/SomeEngine.ECS/Archetypes/Chunk.cs",
+    "src/SomeEngine.ECS/Entities/EntityStore.Changes.cs",
+    "src/SomeEngine.ECS/Entities/EntityStore.cs",
+    "src/SomeEngine.ECS/Entities/EntityTableChanges.cs",
+    "src/SomeEngine.ECS/Owners.Components.cs",
+    "src/SomeEngine.ECS/Queries/QueryChunkView.cs",
+    "src/SomeEngine.ECS/Queries/QueryRow.cs",
+    "src/SomeEngine.ECS/World.EntityTableChanges.cs",
+    "src/SomeEngine.ECS.SourceGen/BitmapRelationGenerator.cs",
+    "src/SomeEngine.ECS.SourceGen/RelationEdgeGenerator.cs",
+    "src/SomeEngine.ECS.SourceGen/RelationGenerator.cs",
+    "src/SomeEngine.ECS.SourceGen/RelationImplementationGenerator.cs",
+    "src/SomeEngine.ECS.SourceGen/SpatialRelationGenerator.cs",
+    "src/SomeEngine.ECS.SourceGen/RelationTypeSyntax.cs",
+    "tests/SomeEngine.ECS.Relations.Tests/GeneratedMetadataTests.cs",
+    "tests/SomeEngine.Physics.Tests/CollisionMaintenanceTests.cs",
+    "tests/SomeEngine.Physics.Tests/SpatialParallelTests.cs"
+  ],
+  "BehaviorQueueId": "81722effa0b94a66a23069a90e9b13ce",
+  "BehaviorExitCode": 0,
+  "PushExitCode": 0,
+  "PublishArguments": [
+    "publish",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+    "-c",
+    "Release",
+    "-r",
+    "win-x64",
+    "-p:PublishAot=true",
+    "-p:SelfContained=true",
+    "-p:SourceRevisionId=d6f61521d61471082ced5e45eff2b3ff9e227d9b",
+    "-o",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish"
+  ],
+  "PublishStartedAtUtc": "2026-10-19T23:39:52.7956837Z",
+  "PublishFinishedAtUtc": "2026-10-19T23:40:31.3366445Z",
+  "PublishExitCode": 0,
+  "SourceCheckExitCode": 0,
+  "Object": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.Benchmarks.obj",
+    "LastWriteTimeUtc": "2026-10-19T23:40:29.9762229Z",
+    "Length": 26042222
+  },
+  "Executable": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+    "LastWriteTimeUtc": "2026-10-19T23:40:30.8152256Z",
+    "Length": 4939264
+  }
+}

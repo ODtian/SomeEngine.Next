@@ -1,0 +1,861 @@
+FILE src/SomeEngine.ECS.Relations/IQueryRelationOutput.cs
+   1: using SomeEngine.ECS.Queries;
+   2: using System.Runtime.CompilerServices;
+   3: 
+   4: namespace SomeEngine.ECS.Relations;
+   5: 
+   6: /// <summary>Callback-scoped pair rows forwarded between ECS bindings before emitting public identities.</summary>
+   7: public interface IQueryRelationOutput<TRow> : IRelationOutput<TRow>
+   8: {
+   9:     static virtual bool ReadsComponentRows => true;
+  10: 
+  11:     bool Add(in TRow row, scoped QueryRow first, scoped QueryRow second);
+  12: }
+  13: 
+  14: /// <summary>A component binding that can reuse the pair rows supplied by a query source.</summary>
+  15: public interface IQueryRelation<TRow> : IRelation<TRow>
+  16: {
+  17:     bool Matches(in TRow row, scoped QueryRow first, scoped QueryRow second);
+  18: }
+  19: 
+  20: internal ref struct QueryIdentityOutput<TOutput, TRow>(TOutput output) : IQueryRelationOutput<TRow>
+  21:     where TOutput : struct, IRelationOutput<TRow>, allows ref struct
+  22: {
+  23:     public static bool ReadsComponentRows => false;
+  24: 
+  25:     public TOutput Value = output;
+  26: 
+  27:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  28:     public bool Add(in TRow row) => Value.Add(in row);
+  29: 
+  30:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  31:     public bool Add(in TRow row, scoped QueryRow first, scoped QueryRow second) => Value.Add(in row);
+  32: }
+FILE src/SomeEngine.ECS.Relations/RelationQuery.cs
+   1: using SomeEngine.ECS.Queries;
+   2: using System.Runtime.CompilerServices;
+   3: 
+   4: namespace SomeEngine.ECS.Relations;
+   5: 
+   6: public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
+   7:     where TEnumerable : struct, IQueryRelationEnumerable<TRow>
+   8: {
+   9:     private TEnumerable _enumerable;
+  10: 
+  11:     public RelationQuery(TEnumerable enumerable) => _enumerable = enumerable;
+  12: 
+  13:     public readonly TEnumerable Enumerable => _enumerable;
+  14: 
+  15:     public bool Enumerate<TOutput>(ref TOutput output)
+  16:         where TOutput : struct, IRelationOutput<TRow>, allows ref struct
+  17:         => EnumerateQuery(ref output, null);
+  18: 
+  19:     public bool Enumerate<TOutput>(uint lastSystemVersion, ref TOutput output)
+  20:         where TOutput : struct, IRelationOutput<TRow>, allows ref struct
+  21:         => EnumerateQuery(ref output, lastSystemVersion);
+  22: 
+  23:     private bool EnumerateQuery<TOutput>(ref TOutput output, uint? lastSystemVersion)
+  24:         where TOutput : struct, IRelationOutput<TRow>, allows ref struct
+  25:     {
+  26:         var identities = new QueryIdentityOutput<TOutput, TRow>(output);
+  27:         try
+  28:         {
+  29:             return EnumerateBoundQuery(ref identities, lastSystemVersion);
+  30:         }
+  31:         finally
+  32:         {
+  33:             output = identities.Value;
+  34:         }
+  35:     }
+  36: 
+  37:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  38:     private bool EnumerateBoundQuery<TOutput>(ref TOutput output, uint? lastSystemVersion)
+  39:         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
+  40:     {
+  41:         World world = _enumerable.World;
+  42:         int queryCount = _enumerable.QueryCount;
+  43:         if (queryCount == 1 && TEnumerable.ReadsFromSingleQuery)
+  44:         {
+  45:             QueryHandle members = _enumerable.GetQuery(0);
+  46:             QueryDefinition original = world.GetQueryDefinition(members);
+  47:             QueryDefinition definition = _enumerable.AddReads(original, 0);
+  48:             if (!definition.CanWrite)
+  49:                 return EnumerateSingle(world, members, definition, !ReferenceEquals(original, definition),
+  50:                     ref output, lastSystemVersion);
+  51:         }
+  52:         return EnumerateQueries(world, queryCount, ref output, lastSystemVersion);
+  53:     }
+  54: 
+  55:     [MethodImpl(MethodImplOptions.NoInlining)]
+  56:     private bool EnumerateQueries<TOutput>(World world, int queryCount, ref TOutput output, uint? lastSystemVersion)
+  57:         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
+  58:     {
+  59:         RelationQueryHandles queries = default;
+  60:         int acquired = 0;
+  61:         var execution = new RelationExecution<TOutput>(Enumerable, queries, queryCount,
+  62:             -1, default, lastSystemVersion, new(ref output));
+  63:         try
+  64:         {
+  65:             QueryDefinition access = QueryDefinition.Empty;
+  66:             if (queryCount == 0)
+  67:                 access = Enumerable.AddReads(access, 0);
+  68:             for (int position = 0; position < queryCount; position++)
+  69:             {
+  70:                 QueryDefinition definition = world.GetQueryDefinition(Enumerable.GetQuery(position));
+  71:                 if (queryCount == 1 && TEnumerable.ReadsFromSingleQuery)
+  72:                     definition = Enumerable.AddReads(definition, position);
+  73:                 queries[acquired++] = world.Query(definition);
+  74:                 access = access.WithAccessFrom(definition);
+  75:                 access = Enumerable.AddReads(access, position);
+  76:             }
+  77:             QueryHandle query = world.Query(access);
+  78:             queries[acquired++] = query;
+  79:             execution = new RelationExecution<TOutput>(Enumerable, queries, queryCount,
+  80:                 -1, default, lastSystemVersion, new(ref output));
+  81:             if (lastSystemVersion is { } baseline)
+  82:                 world.ExecuteQuery(query, baseline, ref execution);
+  83:             else
+  84:                 world.ExecuteQuery(query, ref execution);
+  85:             return execution.Completed;
+  86:         }
+  87:         finally
+  88:         {
+  89:             for (int index = acquired - 1; index >= 0; index--)
+  90:                 world.ReleaseQuery(queries[index]);
+  91:         }
+  92:     }
+  93: 
+  94:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  95:     private bool EnumerateSingle<TOutput>(World world, QueryHandle members, QueryDefinition definition,
+  96:         bool temporaryQuery, ref TOutput output, uint? lastSystemVersion)
+  97:         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
+  98:     {
+  99:         QueryHandle query = temporaryQuery ? world.Query(definition) : members;
+ 100:         var execution = new SingleExecution<TOutput>
+ 101:         {
+ 102:             Enumerable = _enumerable,
+ 103:             Output = new(ref output),
+ 104:             Completed = false
+ 105:         };
+ 106:         try
+ 107:         {
+ 108:             if (lastSystemVersion is { } baseline)
+ 109:                 world.ExecuteQuery(query, baseline, ref execution);
+ 110:             else
+ 111:                 world.ExecuteQuery(query, ref execution);
+ 112:             return execution.Completed;
+ 113:         }
+ 114:         finally
+ 115:         {
+ 116:             if (temporaryQuery)
+ 117:                 world.ReleaseQuery(query);
+ 118:         }
+ 119:     }
+ 120: 
+ 121:     private ref struct SingleExecution<TOutput> : IQueryExecution
+ 122:         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
+ 123:     {
+ 124:         public TEnumerable Enumerable;
+ 125:         public RelationOutputReference<TOutput> Output;
+ 126:         public bool Completed;
+ 127: 
+ 128:         public void Execute(scoped QueryCursor query) => Completed = Enumerable.Enumerate(new RelationQueryViews(query), ref Output.Value);
+ 129:     }
+ 130: 
+ 131:     public int Count() => CountRows(null);
+ 132: 
+ 133:     public int Count(uint lastSystemVersion) => CountRows(lastSystemVersion);
+ 134: 
+ 135:     private int CountRows(uint? lastSystemVersion)
+ 136:     {
+ 137:         var output = new RelationCount<TRow>();
+ 138:         EnumerateQuery(ref output, lastSystemVersion);
+ 139:         return output.Count;
+ 140:     }
+ 141: 
+ 142:     public bool Any() => HasRows(null);
+ 143: 
+ 144:     public bool Any(uint lastSystemVersion) => HasRows(lastSystemVersion);
+ 145: 
+ 146:     private bool HasRows(uint? lastSystemVersion)
+ 147:     {
+ 148:         var output = new RelationAny<TRow>();
+ 149:         EnumerateQuery(ref output, lastSystemVersion);
+ 150:         return output.Found;
+ 151:     }
+ 152: 
+ 153:     private ref struct RelationExecution<TOutput> : IQueryExecution
+ 154:         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
+ 155:     {
+ 156:         private TEnumerable _enumerable;
+ 157:         private readonly RelationQueryHandles _queries;
+ 158:         private readonly int _queryCount;
+ 159:         private readonly int _position;
+ 160:         private readonly RelationQueryViews _views;
+ 161:         private readonly uint? _lastSystemVersion;
+ 162: 
+ 163:         public RelationExecution(TEnumerable enumerable, RelationQueryHandles queries,
+ 164:             int queryCount, int position, RelationQueryViews views, uint? lastSystemVersion, RelationOutputReference<TOutput> output)
+ 165:         {
+ 166:             _enumerable = enumerable;
+ 167:             _queries = queries;
+ 168:             _queryCount = queryCount;
+ 169:             _position = position;
+ 170:             _views = views;
+ 171:             _lastSystemVersion = lastSystemVersion;
+ 172:             Output = output;
+ 173:             Completed = false;
+ 174:         }
+ 175: 
+ 176:         public bool Completed { get; private set; }
+ 177: 
+ 178:         public RelationOutputReference<TOutput> Output;
+ 179: 
+ 180:         public void Execute(scoped QueryCursor query)
+ 181:         {
+ 182:             RelationQueryViews views = _position < 0
+ 183:                 ? new RelationQueryViews(query, default, default)
+ 184:                 : _views.WithQuery(_position, query);
+ 185:             int nextPosition = _position + 1;
+ 186:             if (nextPosition == _queryCount)
+ 187:             {
+ 188:                 Completed = _enumerable.Enumerate(views, ref Output.Value);
+ 189:                 return;
+ 190:             }
+ 191: 
+ 192:             var execution = new RelationExecution<TOutput>(_enumerable, _queries, _queryCount,
+ 193:                 nextPosition, views, _lastSystemVersion, Output);
+ 194:             if (_lastSystemVersion is { } baseline)
+ 195:                 _enumerable.World.ExecuteQuery(_queries[nextPosition], baseline, ref execution);
+ 196:             else
+ 197:                 _enumerable.World.ExecuteQuery(_queries[nextPosition], ref execution);
+ 198:             Completed = execution.Completed;
+ 199:         }
+ 200:     }
+ 201: }
+ 202: 
+ 203: // Eight participant queries and their encompassing access query.
+ 204: [InlineArray(9)]
+ 205: internal struct RelationQueryHandles
+ 206: {
+ 207:     private QueryHandle _first;
+ 208: }
+ 209: 
+ 210: internal struct RelationCount<TRow> : IRelationOutput<TRow>
+ 211: {
+ 212:     internal int Count;
+ 213: 
+ 214:     public bool Add(in TRow row)
+ 215:     {
+ 216:         Count++;
+ 217:         return true;
+ 218:     }
+ 219: }
+ 220: 
+ 221: internal struct RelationAny<TRow> : IRelationOutput<TRow>
+ 222: {
+ 223:     internal bool Found;
+ 224: 
+ 225:     public bool Add(in TRow row)
+ 226:     {
+ 227:         Found = true;
+ 228:         return false;
+ 229:     }
+ 230: }
+FILE src/SomeEngine.ECS.Relations/ComponentPairsWithin.cs
+   1: using SomeEngine.ECS.Entities;
+   2: using SomeEngine.ECS.Queries;
+   3: using System.Runtime.CompilerServices;
+   4: 
+   5: namespace SomeEngine.ECS.Relations;
+   6: 
+   7: /// <summary>Within-query pairing that binds its existing component rows before emitting identities.</summary>
+   8: public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond, TSelection>(
+   9:     EntityPairsWithin source, TRelation relation) : IQueryRelationEnumerable<(Entity, Entity)>
+  10:     where TRelation : struct, IRelation<TFirst, TSecond>
+  11:     where TFirst : struct
+  12:     where TSecond : struct
+  13:     where TSelection : struct, IRelationSelection
+  14: {
+  15:     private readonly bool _componentsRequired = ReadComponentRequirements(source);
+  16: 
+  17:     public World World => source.World;
+  18:     public int QueryCount => 1;
+  19:     public static bool ReadsFromSingleQuery => true;
+  20:     public QueryHandle GetQuery(int position) => source.GetQuery(position);
+  21:     public QueryDefinition AddReads(QueryDefinition definition, int position)
+  22:     {
+  23:         QueryDefinition reads = definition.WithOptionalRead<TFirst>();
+  24:         return typeof(TFirst) == typeof(TSecond) ? reads : reads.WithOptionalRead<TSecond>();
+  25:     }
+  26: 
+  27:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  28:     public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+  29:         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+  30:     {
+  31:         QueryCursor members = queries.First;
+  32:         return _componentsRequired ? Enumerate<RequiredRelationComponents, TOutput>(members, relation, ref output)
+  33:             : Enumerate<OptionalRelationComponents, TOutput>(members, relation, ref output);
+  34:     }
+  35: 
+  36:     private static bool ReadComponentRequirements(EntityPairsWithin source)
+  37:     {
+  38:         QueryDefinition definition = source.World.GetQueryDefinition(source.GetQuery(0));
+  39:         return definition.Requires<TFirst>() &&
+  40:             (typeof(TFirst) == typeof(TSecond) || definition.Requires<TSecond>());
+  41:     }
+  42: 
+  43:     private static bool Enumerate<TPresence, TOutput>(scoped QueryCursor members, TRelation predicate, ref TOutput output)
+  44:         where TPresence : struct, IRelationComponentPresence
+  45:         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+  46:     {
+  47:         var firstRows = members.ReadRows<TFirst, TSecond>();
+  48:         while (firstRows.MoveNext(out var first, out var firstValue, out var secondValue))
+  49:         {
+  50:             Entity firstEntity = first.Entity;
+  51:             var secondRows = firstRows;
+  52:             while (secondRows.MoveNext(out var second, out var startValue, out var lastValue))
+  53:             {
+  54:                 Entity secondEntity = default;
+  55:                 bool ascending = false;
+  56:                 ComponentReference<TFirst> relationFirst = firstValue;
+  57:                 ComponentReference<TSecond> relationSecond = lastValue;
+  58:                 if (typeof(TFirst) != typeof(TSecond) || !TRelation.IsSymmetric)
+  59:                 {
+  60:                     secondEntity = second.Entity;
+  61:                     ascending = EntityOrder.Precedes(firstEntity, secondEntity);
+  62:                     relationFirst = ascending ? firstValue : startValue;
+  63:                     relationSecond = ascending ? lastValue : secondValue;
+  64:                 }
+  65:                 if (TSelection.RequiresMatch)
+  66:                 {
+  67:                     if (!TPresence.IsRequired && (!relationFirst.HasValue || !relationSecond.HasValue))
+  68:                         continue;
+  69:                     if (!predicate.Matches(in relationFirst.Value, in relationSecond.Value))
+  70:                         continue;
+  71:                 }
+  72:                 else if ((TPresence.IsRequired || (relationFirst.HasValue && relationSecond.HasValue)) &&
+  73:                     predicate.Matches(in relationFirst.Value, in relationSecond.Value))
+  74:                     continue;
+  75:                 if (typeof(TFirst) == typeof(TSecond) && TRelation.IsSymmetric)
+  76:                 {
+  77:                     secondEntity = second.Entity;
+  78:                     ascending = EntityOrder.Precedes(firstEntity, secondEntity);
+  79:                 }
+  80:                 var pair = ascending ? (firstEntity, secondEntity) : (secondEntity, firstEntity);
+  81:                 bool continued = TOutput.ReadsComponentRows
+  82:                     ? ascending ? output.Add(in pair, first, second) : output.Add(in pair, second, first)
+  83:                     : output.Add(in pair);
+  84:                 if (!continued)
+  85:                     return false;
+  86:             }
+  87:         }
+  88:         return true;
+  89:     }
+  90: }
+FILE src/SomeEngine.ECS.Relations/KeyPairs.cs
+   1: using SomeEngine.ECS.Components;
+   2: using SomeEngine.ECS.Entities;
+   3: using SomeEngine.ECS.Queries;
+   4: using System.Runtime.CompilerServices;
+   5: 
+   6: namespace SomeEngine.ECS.Relations;
+   7: 
+   8: public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent, TKey>
+   9:     : IQueryRelationEnumerable<(Entity, Entity)>
+  10:     where TPairing : struct, IKeyPairing
+  11:     where TRelation : struct, IRelation<TComponent, TComponent>
+  12:     where TImplementation : struct, IKeyRelation<TRelation, TComponent, TKey>
+  13:     where TComponent : struct, IIndexedComponent<TKey>
+  14:     where TKey : notnull, IEquatable<TKey>
+  15: {
+  16:     private readonly QueryHandle _first;
+  17:     private readonly QueryHandle _second;
+  18:     private readonly TRelation _relation;
+  19:     private readonly TImplementation _implementation;
+  20:     private readonly bool _exclude;
+  21: 
+  22:     public KeyPairs(World world, QueryHandle first, QueryHandle second, TRelation relation,
+  23:         TImplementation implementation, bool exclude)
+  24:     {
+  25:         World = world;
+  26:         _first = first;
+  27:         _second = second;
+  28:         _relation = relation;
+  29:         _implementation = implementation;
+  30:         _exclude = exclude;
+  31:     }
+  32: 
+  33:     public World World { get; }
+  34: 
+  35:     public int QueryCount => TPairing.QueryCount;
+  36: 
+  37:     public static bool ReadsFromSingleQuery => TPairing.ReadsFromSingleQuery;
+  38: 
+  39:     public QueryHandle GetQuery(int position) => position == 0 ? _first : _second;
+  40: 
+  41:     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition.WithOptionalRead<TComponent>();
+  42: 
+  43:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  44:     public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+  45:         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+  46:     {
+  47:         QueryCursor first = queries.First;
+  48:         if (TPairing.QueryCount == 1 && TPairing.ReadsFromSingleQuery)
+  49:             return Enumerate(World, _exclude, in _relation, in _implementation, first, first, first, ref output);
+  50:         QueryCursor second = queries.Second;
+  51:         QueryCursor access = queries.Access;
+  52:         return Enumerate(World, _exclude, in _relation, in _implementation, first, second, access, ref output);
+  53:     }
+  54: 
+  55:     private static bool Enumerate<TOutput>(World world, bool exclude, scoped in TRelation relation,
+  56:         scoped in TImplementation implementation, scoped QueryCursor first, scoped QueryCursor second,
+  57:         scoped QueryCursor access, ref TOutput output)
+  58:         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+  59:     {
+  60:         var firstGroups = TPairing.ReadsFromSingleQuery ? new KeyGroups<TComponent, TKey>(world, in first)
+  61:             : new KeyGroups<TComponent, TKey>(world, in first, in access);
+  62:         var secondGroups = TPairing.QueryCount == 1 ? firstGroups : new KeyGroups<TComponent, TKey>(world, in second, in access);
+  63:         var firstValues = firstGroups.GetEnumerator();
+  64:         while (firstValues.MoveNext(out var firstGroup))
+  65:         {
+  66:             var secondValues = secondGroups.GetEnumerator();
+  67:             while (secondValues.MoveNext(out var secondGroup))
+  68:             {
+  69:                 bool hasKeys = firstGroup.HasKey && secondGroup.HasKey;
+  70:                 bool forwardMatch = hasKeys && implementation.Matches(in relation, in firstGroup.Key, in secondGroup.Key);
+  71:                 bool reverseMatch = TPairing.ReordersPairs
+  72:                     ? hasKeys && implementation.Matches(in relation, in secondGroup.Key, in firstGroup.Key)
+  73:                     : forwardMatch;
+  74:                 bool forwardAccepted = forwardMatch != exclude;
+  75:                 bool reverseAccepted = reverseMatch != exclude;
+  76:                 if (!forwardAccepted && !reverseAccepted)
+  77:                     continue;
+  78:                 foreach (Entity firstEntity in firstGroup.Entities)
+  79:                 {
+  80:                     scoped QueryRow firstRow = default;
+  81:                     bool firstMember = TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows
+  82:                         ? first.TryGetRow(firstEntity, out firstRow)
+  83:                         : first.Contains(firstEntity);
+  84:                     if (!firstMember)
+  85:                         continue;
+  86:                     foreach (Entity secondEntity in secondGroup.Entities)
+  87:                     {
+  88:                         if (!TPairing.TryPair(in first, in second, firstEntity, secondEntity, out var pair))
+  89:                             continue;
+  90:                         scoped QueryRow secondRow = default;
+  91:                         bool secondMember;
+  92:                         if (TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows)
+  93:                             secondMember = first.TryGetRow(secondEntity, out secondRow);
+  94:                         else
+  95:                             secondMember = TPairing.QueryCount == 1
+  96:                                 ? first.Contains(secondEntity) : second.Contains(secondEntity);
+  97:                         if (!secondMember)
+  98:                             continue;
+  99:                         bool accepted = TPairing.ReordersPairs && pair.Item1 != firstEntity
+ 100:                             ? reverseAccepted : forwardAccepted;
+ 101:                         if (!accepted)
+ 102:                             continue;
+ 103:                         bool continued = TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows
+ 104:                             ? output.Add(in pair, firstRow, secondRow) : output.Add(in pair);
+ 105:                         if (!continued)
+ 106:                             return false;
+ 107:                     }
+ 108:                 }
+ 109:             }
+ 110:         }
+ 111:         return true;
+ 112:     }
+ 113: }
+FILE benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCandidatePairs.cs
+   1: using SomeEngine.ECS.Entities;
+   2: using SomeEngine.ECS.Queries;
+   3: using SomeEngine.ECS.Relations;
+   4: using System.Runtime.CompilerServices;
+   5: 
+   6: namespace SomeEngine.ECS.Benchmarks.Relations.Bitmap;
+   7: 
+   8: /// <summary>A fixed ordered candidate list whose endpoints belong to the participating query.</summary>
+   9: public readonly struct FixedCandidatePairs : IQueryRelationEnumerable<(Entity, Entity)>
+  10: {
+  11:     private readonly QueryHandle _members;
+  12:     private readonly (Entity, Entity)[] _pairs;
+  13: 
+  14:     public FixedCandidatePairs(World world, QueryHandle members, (Entity, Entity)[] pairs)
+  15:     {
+  16:         World = world;
+  17:         _members = members;
+  18:         _pairs = pairs;
+  19:     }
+  20: 
+  21:     public World World { get; }
+  22:     public int QueryCount => 1;
+  23:     public static bool ReadsFromSingleQuery => true;
+  24:     public QueryHandle GetQuery(int position) => _members;
+  25:     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
+  26: 
+  27:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  28:     public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+  29:         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+  30:     {
+  31:         foreach (ref readonly var pair in _pairs.AsSpan())
+  32:         {
+  33:             if (!output.Add(in pair))
+  34:                 return false;
+  35:         }
+  36:         return true;
+  37:     }
+  38: }
+FILE src/SomeEngine.ECS/Queries/ComponentRowEnumerator.cs
+   1: using SomeEngine.ECS.Archetypes;
+   2: using System.Runtime.CompilerServices;
+   3: using System.Runtime.InteropServices;
+   4: 
+   5: namespace SomeEngine.ECS.Queries;
+   6: 
+   7: /// <summary>Member-row traversal with callback-scoped optional component columns.</summary>
+   8: public ref struct ComponentRowEnumerator<TFirst, TSecond>
+   9:     where TFirst : struct
+  10:     where TSecond : struct
+  11: {
+  12:     private QueryRowEnumerator<NoSharedFilter> _rows;
+  13:     private ReadOnlySpan<TFirst> _firstComponents;
+  14:     private ReadOnlySpan<TSecond> _secondComponents;
+  15: 
+  16:     internal ComponentRowEnumerator(QueryRowEnumerator<NoSharedFilter> rows)
+  17:     {
+  18:         _rows = rows;
+  19:         _firstComponents = default;
+  20:         _secondComponents = default;
+  21:     }
+  22: 
+  23:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  24:     public bool MoveNext(out QueryRow row, out ComponentReference<TFirst> first, out ComponentReference<TSecond> second)
+  25:     {
+  26:         Chunk? previous = _rows.CurrentChunk;
+  27:         if (!_rows.MoveNext(out row))
+  28:         {
+  29:             first = default;
+  30:             second = default;
+  31:             return false;
+  32:         }
+  33:         if (!ReferenceEquals(previous, _rows.CurrentChunk))
+  34:             BindColumns(_rows.CurrentMatch, _rows.CurrentChunk!);
+  35: 
+  36:         // RowIndex and both nonempty columns come from the same chunk.
+  37:         first = _firstComponents.IsEmpty ? default
+  38:             : new(in Unsafe.Add(ref MemoryMarshal.GetReference(_firstComponents), row.RowIndex));
+  39:         // Repeated positions borrow the same component type, which proves this reference cast.
+  40:         second = typeof(TFirst) == typeof(TSecond)
+  41:             ? new(in Unsafe.As<TFirst, TSecond>(ref Unsafe.AsRef(in first.Value)))
+  42:             : _secondComponents.IsEmpty ? default
+  43:                 : new(in Unsafe.Add(ref MemoryMarshal.GetReference(_secondComponents), row.RowIndex));
+  44:         return true;
+  45:     }
+  46: 
+  47:     [MethodImpl(MethodImplOptions.NoInlining)]
+  48:     private void BindColumns(QueryArchetypeMatch match, Chunk chunk)
+  49:     {
+  50:         _firstComponents = QueryAccessGuards.TryRequireReadAccess<TFirst>(match, out int firstColumn)
+  51:             ? chunk.ComponentRows<TFirst>(firstColumn) : default;
+  52:         if (typeof(TFirst) != typeof(TSecond))
+  53:             _secondComponents = QueryAccessGuards.TryRequireReadAccess<TSecond>(match, out int secondColumn)
+  54:                 ? chunk.ComponentRows<TSecond>(secondColumn) : default;
+  55:     }
+  56: }
+FILE src/SomeEngine.ECS.Systems/ReadOnlyQueryPairJobs.cs
+   1: using System.Buffers;
+   2: using SomeEngine.ECS.Queries;
+   3: using SomeEngine.Job;
+   4: 
+   5: namespace SomeEngine.ECS.Systems;
+   6: 
+   7: /// <summary>Reads two callback-scoped queries while executing one output partition.</summary>
+   8: public interface IReadOnlyQueryPairJob
+   9: {
+  10:     void Execute(int index, scoped QueryCursor first, scoped QueryCursor second);
+  11: }
+  12: 
+  13: public static class ReadOnlyQueryPairJobs
+  14: {
+  15:     /// <summary>Runs partitions inside the two surrounding query callbacks.</summary>
+  16:     public static void ExecuteInline<TJob>(scoped QueryCursor first, scoped QueryCursor second, in TJob job, int count)
+  17:         where TJob : struct, IReadOnlyQueryPairJob
+  18:     {
+  19:         for (int index = 0; index < count; index++)
+  20:         {
+  21:             TJob local = job;
+  22:             local.Execute(index, first, second);
+  23:         }
+  24:     }
+  25: 
+  26:     /// <summary>
+  27:     /// Submits one work item per partition with its external accesses, and joins all work before the
+  28:     /// borrowed queries return. ECS reads remain held by the surrounding callbacks.
+  29:     /// </summary>
+  30:     public static JobHandle ExecuteParallel<TJob>(scoped QueryCursor first, scoped QueryCursor second, in TJob job, int count,
+  31:         ReadOnlySpan<JobResourceAccess> accesses, int accessesPerWork, JobHandle dependency = default)
+  32:         where TJob : struct, IReadOnlyQueryPairJob
+  33:     {
+  34:         if (count == 0)
+  35:         {
+  36:             dependency.Complete();
+  37:             return dependency;
+  38:         }
+  39:         if (first.State.Definition.CanWrite || second.State.Definition.CanWrite)
+  40:             throw new InvalidOperationException("Parallel query-pair work requires read-only queries.");
+  41:         Scheduler scheduler = WorldStorageJobResources.RequireJobs(first.Owner).Scheduler;
+  42:         JobHandle[] work = ArrayPool<JobHandle>.Shared.Rent(count);
+  43:         int submitted = 0;
+  44:         JobHandle completed = dependency;
+  45:         try
+  46:         {
+  47:             var data = new PairJobData<TJob>(first.Data, second.Data, job);
+  48:             for (int index = 0; index < count; index++)
+  49:             {
+  50:                 var adapter = new PairJob<TJob>(index, data);
+  51:                 work[submitted] = scheduler.Schedule(adapter,
+  52:                     accesses.Slice(index * accessesPerWork, accessesPerWork), dependency);
+  53:                 submitted++;
+  54:             }
+  55:         }
+  56:         finally
+  57:         {
+  58:             try
+  59:             {
+  60:                 completed = scheduler.CombineDependencies(work.AsSpan(0, submitted));
+  61:                 completed.Complete();
+  62:             }
+  63:             finally
+  64:             {
+  65:                 Array.Clear(work, 0, submitted);
+  66:                 ArrayPool<JobHandle>.Shared.Return(work);
+  67:             }
+  68:         }
+  69:         return completed;
+  70:     }
+  71: 
+  72:     private sealed class PairJobData<TJob>(QueryData first, QueryData second, TJob job)
+  73:         where TJob : struct, IReadOnlyQueryPairJob
+  74:     {
+  75:         private readonly QueryData _first = first;
+  76:         private readonly QueryData _second = second;
+  77:         private readonly TJob _job = job;
+  78: 
+  79:         public void Execute(int index)
+  80:         {
+  81:             TJob local = _job;
+  82:             local.Execute(index, new QueryCursor(in _first), new QueryCursor(in _second));
+  83:         }
+  84:     }
+  85: 
+  86:     private readonly struct PairJob<TJob>(int index, PairJobData<TJob> data) : IJob
+  87:         where TJob : struct, IReadOnlyQueryPairJob
+  88:     {
+  89:         public void Execute() => data.Execute(index);
+  90:     }
+  91: }
+FILE src/SomeEngine.Physics/CollisionPairBuffer.cs
+   1: using SomeEngine.ECS;
+   2: using SomeEngine.ECS.Entities;
+   3: using SomeEngine.ECS.Queries;
+   4: using SomeEngine.ECS.Relations;
+   5: using SomeEngine.ECS.Systems;
+   6: using SomeEngine.Job;
+   7: 
+   8: namespace SomeEngine.Physics;
+   9: 
+  10: public static class CollisionPairQueries
+  11: {
+  12:     public static void FillPairs<TEnumerable>(this RelationQuery<TEnumerable, (Entity, Entity)> query,
+  13:         CollisionPairBuffer pairs)
+  14:         where TEnumerable : struct, ICollisionPartitionEnumerable => Fill(query, pairs, false, null);
+  15: 
+  16:     public static void FillPairs<TEnumerable>(this RelationQuery<TEnumerable, (Entity, Entity)> query,
+  17:         uint lastSystemVersion, CollisionPairBuffer pairs)
+  18:         where TEnumerable : struct, ICollisionPartitionEnumerable => Fill(query, pairs, false, lastSystemVersion);
+  19: 
+  20:     public static void FillPairsParallel<TEnumerable>(this RelationQuery<TEnumerable, (Entity, Entity)> query,
+  21:         CollisionPairBuffer pairs)
+  22:         where TEnumerable : struct, ICollisionPartitionEnumerable => Fill(query, pairs, true, null);
+  23: 
+  24:     public static void FillPairsParallel<TEnumerable>(this RelationQuery<TEnumerable, (Entity, Entity)> query,
+  25:         uint lastSystemVersion, CollisionPairBuffer pairs)
+  26:         where TEnumerable : struct, ICollisionPartitionEnumerable => Fill(query, pairs, true, lastSystemVersion);
+  27: 
+  28:     private static void Fill<TEnumerable>(RelationQuery<TEnumerable, (Entity, Entity)> query,
+  29:         CollisionPairBuffer pairs, bool parallel, uint? lastSystemVersion)
+  30:         where TEnumerable : struct, ICollisionPartitionEnumerable
+  31:     {
+  32:         var fill = new RelationQuery<PairFill<TEnumerable>, (Entity, Entity)>(new(query.Enumerable, pairs, parallel));
+  33:         var output = new PairCount();
+  34:         if (lastSystemVersion is { } baseline)
+  35:             fill.Enumerate(baseline, ref output);
+  36:         else
+  37:             fill.Enumerate(ref output);
+  38:     }
+  39: 
+  40:     private readonly struct PairFill<TEnumerable>(TEnumerable source, CollisionPairBuffer pairs, bool parallel)
+  41:         : IQueryRelationEnumerable<(Entity, Entity)>
+  42:         where TEnumerable : struct, ICollisionPartitionEnumerable
+  43:     {
+  44:         public World World => source.World;
+  45:         public int QueryCount => source.QueryCount;
+  46:         public static bool ReadsFromSingleQuery => TEnumerable.ReadsFromSingleQuery;
+  47:         public QueryHandle GetQuery(int position) => source.GetQuery(position);
+  48:         public QueryDefinition AddReads(QueryDefinition definition, int position) => source.AddReads(definition, position);
+  49: 
+  50:         public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+  51:             where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+  52:         {
+  53:             pairs.Fill(source, queries, parallel);
+  54:             return true;
+  55:         }
+  56:     }
+  57: 
+  58:     internal struct PairCount : IQueryRelationOutput<(Entity, Entity)>
+  59:     {
+  60:         internal int Count;
+  61:         public bool Add(in (Entity, Entity) pair)
+  62:         {
+  63:             Count++;
+  64:             return true;
+  65:         }
+  66: 
+  67:         public bool Add(in (Entity, Entity) pair, scoped QueryRow first, scoped QueryRow second) => Add(in pair);
+  68:     }
+  69: }
+  70: 
+  71: /// <summary>Persistent partition data and an output range sized from the actual relation count.</summary>
+  72: public sealed class CollisionPairBuffer : IDisposable
+  73: {
+  74:     private readonly Scheduler _scheduler;
+  75:     private readonly CollisionNodePair[] _partitions;
+  76:     private readonly int[] _counts;
+  77:     private readonly int[] _offsets;
+  78:     private readonly int[] _fillPartitions;
+  79:     private readonly JobResourceAccess[] _countAccesses;
+  80:     private readonly JobResourceAccess[] _fillAccesses;
+  81:     private readonly JobResourceToken _pairRangesResource;
+  82:     private readonly JobResourceToken _countResource;
+  83:     private readonly JobResourceToken _offsetResource;
+  84:     private readonly JobResourceToken _pairResource;
+  85:     private (Entity, Entity)[] _pairs = [];
+  86: 
+  87:     public CollisionPairBuffer(Scheduler scheduler, int partitionCapacity)
+  88:     {
+  89:         _scheduler = scheduler;
+  90:         _partitions = new CollisionNodePair[partitionCapacity];
+  91:         _counts = new int[partitionCapacity];
+  92:         _offsets = new int[partitionCapacity + 1];
+  93:         _fillPartitions = new int[partitionCapacity];
+  94:         _countAccesses = new JobResourceAccess[partitionCapacity];
+  95:         _fillAccesses = new JobResourceAccess[2 * partitionCapacity];
+  96:         _pairRangesResource = scheduler.CreateResourceToken("Collision pair write ranges");
+  97:         _countResource = scheduler.CreateResourceToken("Collision partition counts");
+  98:         _offsetResource = scheduler.CreateResourceToken("Collision output offsets");
+  99:         _pairResource = scheduler.CreateResourceToken("Collision pair output");
+ 100:     }
+ 101: 
+ 102:     public int Count { get; private set; }
+ 103:     public int PairCapacity => _pairs.Length;
+ 104:     public int PartitionCapacity => _partitions.Length;
+ 105:     public int PartitionCount { get; private set; }
+ 106:     public int FilledPartitionCount { get; private set; }
+ 107:     public ReadOnlySpan<(Entity, Entity)> Pairs => _pairs.AsSpan(0, Count);
+ 108:     public JobResourceAccess FillAccess => JobResourceAccess.Write(_pairResource);
+ 109:     public JobResourceAccess ReadAccess => JobResourceAccess.Read(_pairResource);
+ 110: 
+ 111:     internal void Fill<TEnumerable>(TEnumerable source, scoped RelationQueryViews queries, bool parallel)
+ 112:         where TEnumerable : struct, ICollisionPartitionEnumerable
+ 113:     {
+ 114:         source.Prepare(queries);
+ 115:         int partitionCount = source.Tree.CreatePartitions(_partitions);
+ 116:         PartitionCount = partitionCount;
+ 117:         for (int index = 0; index < partitionCount; index++)
+ 118:             _countAccesses[index] = JobResourceAccess.Write(_countResource, index, 1);
+ 119:         var countJob = new CountJob<TEnumerable>(source, this);
+ 120:         if (parallel)
+ 121:             ReadOnlyQueryPairJobs.ExecuteParallel(queries.Access, queries.First, in countJob,
+ 122:                 partitionCount, _countAccesses.AsSpan(0, partitionCount), 1);
+ 123:         else
+ 124:             ReadOnlyQueryPairJobs.ExecuteInline(queries.Access, queries.First, in countJob, partitionCount);
+ 125: 
+ 126:         BuildOffsets(partitionCount);
+ 127: 
+ 128:         int fillCount = 0;
+ 129:         for (int index = 0; index < partitionCount; index++)
+ 130:         {
+ 131:             int count = _offsets[index + 1] - _offsets[index];
+ 132:             if (count == 0)
+ 133:                 continue;
+ 134:             _fillPartitions[fillCount] = index;
+ 135:             _fillAccesses[2 * fillCount] = JobResourceAccess.Read(_offsetResource, index, 2);
+ 136:             _fillAccesses[2 * fillCount + 1] = JobResourceAccess.Write(_pairRangesResource, _offsets[index], count);
+ 137:             fillCount++;
+ 138:         }
+ 139:         var fillJob = new FillJob<TEnumerable>(source, this);
+ 140:         FilledPartitionCount = fillCount;
+ 141:         if (parallel)
+ 142:             ReadOnlyQueryPairJobs.ExecuteParallel(queries.Access, queries.First, in fillJob,
+ 143:                 fillCount, _fillAccesses.AsSpan(0, 2 * fillCount), 2);
+ 144:         else
+ 145:             ReadOnlyQueryPairJobs.ExecuteInline(queries.Access, queries.First, in fillJob, fillCount);
+ 146:     }
+ 147: 
+ 148:     private readonly struct CountJob<TEnumerable>(TEnumerable source, CollisionPairBuffer buffer) : IReadOnlyQueryPairJob
+ 149:         where TEnumerable : struct, ICollisionPartitionEnumerable
+ 150:     {
+ 151:         public void Execute(int index, scoped QueryCursor access, scoped QueryCursor members)
+ 152:         {
+ 153:             var output = new CollisionPairQueries.PairCount();
+ 154:             source.Enumerate(buffer._partitions[index], new RelationQueryViews(access, members, default), ref output);
+ 155:             buffer._counts[index] = output.Count;
+ 156:         }
+ 157:     }
+ 158: 
+ 159:     private void BuildOffsets(int partitionCount)
+ 160:     {
+ 161:         _offsets[0] = 0;
+ 162:         for (int index = 0; index < partitionCount; index++)
+ 163:             _offsets[index + 1] = checked(_offsets[index] + _counts[index]);
+ 164:         Count = _offsets[partitionCount];
+ 165:         if (_pairs.Length < Count)
+ 166:             Array.Resize(ref _pairs, Math.Max(Count, _pairs.Length * 2));
+ 167:     }
+ 168: 
+ 169:     private readonly struct FillJob<TEnumerable>(TEnumerable source, CollisionPairBuffer buffer) : IReadOnlyQueryPairJob
+ 170:         where TEnumerable : struct, ICollisionPartitionEnumerable
+ 171:     {
+ 172:         public void Execute(int index, scoped QueryCursor access, scoped QueryCursor members)
+ 173:         {
+ 174:             int partition = buffer._fillPartitions[index];
+ 175:             int start = buffer._offsets[partition];
+ 176:             int count = buffer._offsets[partition + 1] - start;
+ 177:             var output = new PairArrayOutput(buffer._pairs.AsSpan(start, count));
+ 178:             source.Enumerate(buffer._partitions[partition], new RelationQueryViews(access, members, default), ref output);
+ 179:         }
+ 180:     }
+ 181: 
+ 182:     private ref struct PairArrayOutput(Span<(Entity, Entity)> pairs) : IQueryRelationOutput<(Entity, Entity)>
+ 183:     {
+ 184:         private readonly Span<(Entity, Entity)> _pairs = pairs;
+ 185:         private int _count;
+ 186: 
+ 187:         public bool Add(in (Entity, Entity) pair)
+ 188:         {
+ 189:             _pairs[_count++] = pair;
+ 190:             return true;
+ 191:         }
+ 192: 
+ 193:         public bool Add(in (Entity, Entity) pair, scoped QueryRow first, scoped QueryRow second) => Add(in pair);
+ 194:     }
+ 195: 
+ 196:     public void Dispose()
+ 197:     {
+ 198:         _scheduler.ReleaseResourceToken(_pairRangesResource);
+ 199:         _scheduler.ReleaseResourceToken(_countResource);
+ 200:         _scheduler.ReleaseResourceToken(_offsetResource);
+ 201:         _scheduler.ReleaseResourceToken(_pairResource);
+ 202:     }
+ 203: }

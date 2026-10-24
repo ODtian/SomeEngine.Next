@@ -4,20 +4,50 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Features.Shadows;
 
-internal readonly record struct VirtualShadowAtlasInitializePassData(GraphTextureId Atlas)
+internal readonly record struct VirtualShadowViewCopyPassData(GraphBufferSlice Source, GraphBufferId Destination)
 {
-    private static readonly TextureSubresourceRange AtlasRange =
-        new(0, 1, 0, 1, TextureAspects.Color);
+    internal static void Declare(ref PassDefinition pass, ref VirtualShadowViewCopyPassData data)
+    {
+        _ = pass.Read(data.Source.Buffer, data.Source.Range, PipelineSync.Copy, ResourceAccess.CopySource);
+        _ = pass.Write(data.Destination, new BufferRange(0, data.Source.Range.Size), PipelineSync.Copy,
+            ResourceAccess.CopyDestination, WriteCoverage.Complete);
+    }
+
+    internal static void Record(ref CopyPassCommandScope commands, in VirtualShadowViewCopyPassData data) =>
+        commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.Source.Buffer), data.Source.Range.Offset,
+            commands.GetBuffer(data.Destination), 0, data.Source.Range.Size));
+}
+
+internal readonly record struct VirtualShadowResolutionCopyPassData(GraphBufferId Source, GraphBufferId Destination)
+{
+    private static readonly BufferRange BiasRange = new(0, sizeof(float));
+
+    internal static void Declare(ref PassDefinition pass, ref VirtualShadowResolutionCopyPassData data)
+    {
+        _ = pass.Read(data.Source, BiasRange, PipelineSync.Copy, ResourceAccess.CopySource);
+        _ = pass.Write(data.Destination, BiasRange, PipelineSync.Copy, ResourceAccess.CopyDestination,
+            WriteCoverage.Complete);
+    }
+
+    internal static void Record(ref CopyPassCommandScope commands, in VirtualShadowResolutionCopyPassData data) =>
+        commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.Source), 0,
+            commands.GetBuffer(data.Destination), 0, BiasRange.Size));
+}
+
+internal readonly record struct VirtualShadowAtlasInitializePassData(GraphTextureId Atlas, uint ArrayLayers = 1)
+{
+    private TextureSubresourceRange AtlasRange =>
+        new(0, 1, 0, ArrayLayers, TextureAspects.Color);
 
     internal static void Declare(
         ref PassDefinition access,
         ref VirtualShadowAtlasInitializePassData data) =>
         _ = access.Write(
             data.Atlas,
-            AtlasRange,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            TextureLayout.CopyDestination,
+            data.AtlasRange,
+            PipelineSync.RenderTarget,
+            ResourceAccess.RenderTarget,
+            TextureLayout.RenderTarget,
             WriteCoverage.Complete);
 
     internal static void Record(
@@ -25,7 +55,7 @@ internal readonly record struct VirtualShadowAtlasInitializePassData(GraphTextur
         in VirtualShadowAtlasInitializePassData data) =>
         commands.ClearTexture(
             commands.GetTexture(data.Atlas),
-            AtlasRange,
+            data.AtlasRange,
             System.Numerics.Vector4.Zero);
 }
 
@@ -39,9 +69,9 @@ internal readonly record struct VirtualShadowPageHiZStorageInitializePassData(
         _ = access.Write(
             data.PageHiZ,
             data.Range,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            TextureLayout.CopyDestination,
+            PipelineSync.RenderTarget,
+            ResourceAccess.RenderTarget,
+            TextureLayout.RenderTarget,
             WriteCoverage.Complete);
 
     internal static void Record(
@@ -89,60 +119,6 @@ internal readonly record struct VirtualShadowIndirectPassData(
     }
 }
 
-internal readonly record struct VirtualShadowPoolResetPassData(
-    GraphBufferId FreePageCount,
-    GraphBufferId EvictionBucketCounts)
-{
-    internal static void Declare(
-        ref PassDefinition access,
-        ref VirtualShadowPoolResetPassData data)
-    {
-        _ = access.Write(
-            data.FreePageCount,
-            BufferRange.Whole,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            WriteCoverage.Complete);
-        _ = access.Write(
-            data.EvictionBucketCounts,
-            BufferRange.Whole,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            WriteCoverage.Complete);
-    }
-
-    internal static void Record(
-        ref CopyPassCommandScope commands,
-        in VirtualShadowPoolResetPassData data)
-    {
-        Buffer free = commands.GetBuffer(data.FreePageCount);
-        commands.ClearBuffer(free, new BufferRange(0, free.Info.Size));
-        Buffer buckets = commands.GetBuffer(data.EvictionBucketCounts);
-        commands.ClearBuffer(buckets, new BufferRange(0, buckets.Info.Size));
-    }
-}
-
-internal readonly record struct VirtualShadowReceiverMaskResetPassData(
-    GraphBufferId ReceiverMasks)
-{
-    internal static void Declare(
-        ref PassDefinition access,
-        ref VirtualShadowReceiverMaskResetPassData data) =>
-        _ = access.Write(
-            data.ReceiverMasks,
-            BufferRange.Whole,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            WriteCoverage.Complete);
-
-    internal static void Record(
-        ref CopyPassCommandScope commands,
-        in VirtualShadowReceiverMaskResetPassData data)
-    {
-        Buffer buffer = commands.GetBuffer(data.ReceiverMasks);
-        commands.ClearBuffer(buffer, new BufferRange(0, buffer.Info.Size));
-    }
-}
 
 internal readonly record struct VirtualShadowBufferResetPassData(GraphBufferId Buffer)
 {

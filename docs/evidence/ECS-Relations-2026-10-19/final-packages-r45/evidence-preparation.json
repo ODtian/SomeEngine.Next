@@ -1,0 +1,9 @@
+{
+  "StartedAtUtc": "2026-10-20T01:23:19.5435623Z",
+  "FinishedAtUtc": "2026-10-20T01:23:19.649317Z",
+  "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+  "ConsumerQueueId": "0943bc78afa94cbd816e22a2a2350079",
+  "ParserErrors": 0,
+  "MeasurementEvidenceFile": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\focused-native-r45\\archive.ps1",
+  "StagePlacement": "After 14 package stages and consumer codegen proof"
+}

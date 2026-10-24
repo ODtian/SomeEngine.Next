@@ -1,5 +1,6 @@
 using System.Text.Json;
 using SomeEngine.Assets.Importing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace SomeEngine.Assets;
 
@@ -42,21 +43,23 @@ public sealed class AssetImporterAttribute(string id, params Type[] producedBloc
 public sealed record AssetBlockCapability(Guid Id, Type BlockType);
 
 /// <summary>Editor information about an available importer; it does not enable an import.</summary>
-public sealed record AssetImporterCapability(
-    Guid Id,
-    Type ImporterType,
-    Type SourceType,
-    Type SettingsType,
-    IReadOnlyList<AssetBlockCapability> ProducedBlocks,
-    string ImplementationVersion = "")
+public abstract class AssetImporterCapability(
+    Guid id,
+    Type importerType,
+    Type sourceType,
+    Type settingsType,
+    IReadOnlyList<AssetBlockCapability> producedBlocks,
+    string implementationVersion = "")
 {
-    private Func<IServiceProvider, JsonElement?, object>? BindImporter { get; init; }
-
-    public AssetImporterCapability(Guid id, Type importerType, Type sourceType, Type settingsType,
-        IReadOnlyList<AssetBlockCapability> producedBlocks, string implementationVersion,
-        Func<IServiceProvider, JsonElement?, object> bindImporter)
-        : this(id, importerType, sourceType, settingsType, producedBlocks, implementationVersion)
-        => BindImporter = bindImporter;
+    public Guid Id { get; } = id;
+    public Type ImporterType { get; } = importerType;
+    public Type SourceType { get; } = sourceType;
+    public Type SettingsType { get; } = settingsType;
+    public IReadOnlyList<AssetBlockCapability> ProducedBlocks { get; } = producedBlocks;
+    public string ImplementationVersion { get; } = implementationVersion;
+    public abstract object GetImporter(IServiceProvider services);
+    public abstract JsonElement GetDefaultSettings(SourceMeta source);
+    protected abstract object BindImporter(IServiceProvider services, JsonElement? settings);
 
     public IAssetImporter<TSource> Bind<TSource>(IServiceProvider services, JsonElement? settings = null)
         where TSource : class
@@ -64,10 +67,23 @@ public sealed record AssetImporterCapability(
         ArgumentNullException.ThrowIfNull(services);
         if (SourceType != typeof(TSource))
             throw new InvalidOperationException($"Importer {Id} consumes {SourceType}, not {typeof(TSource)}.");
-        if (BindImporter is null)
-            throw new InvalidOperationException($"Importer {Id} has no settings codec.");
         return (IAssetImporter<TSource>)BindImporter(services, settings);
     }
+}
+
+public sealed class AssetImporterCapability<TImporter, TSource, TSettings>(Guid id,
+    IReadOnlyList<AssetBlockCapability> producedBlocks, IAssetImporterSettings<TSettings>? settings,
+    string implementationVersion)
+    : AssetImporterCapability(id, typeof(TImporter), typeof(TSource), typeof(TSettings), producedBlocks, implementationVersion)
+    where TImporter : class, IAssetImporter<TSource, TSettings> where TSource : class where TSettings : notnull
+{
+    public override object GetImporter(IServiceProvider services) => services.GetRequiredService<TImporter>();
+    public override JsonElement GetDefaultSettings(SourceMeta source) => settings is null ? default
+        : JsonSerializer.SerializeToElement(settings.GetDefaults(source), settings.TypeInfo);
+
+    protected override object BindImporter(IServiceProvider services, JsonElement? value)
+        => AssetImporter.Bind(Id, ProducedBlocks.Select(static block => block.Id).ToArray(), services.GetRequiredService<TImporter>(),
+            settings ?? throw new InvalidOperationException($"Importer {Id} needs a settings codec."), value);
 }
 
 /// <summary>A generated editor choice. Persist Id; Value is local to the compiled project.</summary>

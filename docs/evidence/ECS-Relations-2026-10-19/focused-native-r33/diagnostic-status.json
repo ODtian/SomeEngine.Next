@@ -1,0 +1,17 @@
+{
+  "Series": "focused-native-r33",
+  "SourceCommit": "fc44af810814147f98901dff57e712e31ce9c282",
+  "Role": "Optimization diagnostic feedback",
+  "QuietPassed": false,
+  "AuditSuccessMeaning": "Completed audit with the actual observation overlaps retained.",
+  "KnownOverlap": {
+    "CaseId": "default-large-dynamic90",
+    "QueueId": "c898ec81cff24cad87da102a7c990893",
+    "CaseStartedAtUtc": "2026-10-19T12:32:05.0852941Z",
+    "CaseFinishedAtUtc": "2026-10-19T12:32:24.8655828Z",
+    "Observation": "Deferred r34 watcher process start through WATCH_READY",
+    "ObservationStartedAtUtc": "2026-10-19T12:32:13.3762756Z",
+    "ObservationFinishedAtUtc": "2026-10-19T12:32:14.3856520Z"
+  },
+  "FinalAcceptanceProtocol": "Independent complete final108 series uses the ready-file preparation handshake and requires zero observation overlaps."
+}

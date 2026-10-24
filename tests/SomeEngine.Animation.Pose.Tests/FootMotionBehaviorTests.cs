@@ -251,7 +251,7 @@ public sealed class FootMotionBehaviorTests
         public async Task<Dictionary<string, ImportedAction>> ImportAsync()
         {
             var project = new AssetProject(_directory, []);
-            var importer = new GltfSourceImporter(services => PoseTestAssets.AddAssetCapabilities(services),
+            var importer = new GltfSourceImporter(PoseTestAssets.AddAssetCapabilities(new Microsoft.Extensions.DependencyInjection.ServiceCollection()),
                 PoseTestAssets.BuildVersion, PoseSceneImporter.Id);
             await project.ImportAsync(_source, importer);
             AssetEntry skeletonEntry = Assert.Single(project.Manifest.Assets.Values, value => value.AssetType == SkeletonAsset.FileType);

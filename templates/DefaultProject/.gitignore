@@ -1,5 +1,6 @@
 **/bin/
 **/obj/
 Library/
+*.import.json
 assets/**/*.asset
 assets/Shaders/generated/

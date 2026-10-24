@@ -1,70 +1,84 @@
 #ifndef CLUSTER_BIN_BATCHES_SLANG
 #define CLUSTER_BIN_BATCHES_SLANG
 
+bool RasterBatchUsesSoftware(uint slotOffset, uint material, bool software)
+{
+    uint stage = GetStageSlot(RasterSlots, slotOffset, material, Uniforms.SlotCapacity);
+    // Pixel-programmable ranges use the existing meshlet raster path when it
+    // is available. Target windows and tessellated ranges keep their prior route.
+    bool pixelMeshlet = (stage & 0x50000000u) == 0x50000000u;
+    return software && (Uniforms.PolicyTarget != 0u || !pixelMeshlet);
+}
+
+void EmitRasterBatch(uint bin, uint visible, uint workIndex, bool software, bool depthBuckets, inout uint batchCount)
+{
+    if (!IsBin(bin)) return;
+    batchCount++;
+    WriteRasterBatch(bin, visible, workIndex, software, depthBuckets);
+}
+
 void BuildRasterBatches(
     uint visibleIndex,
     uint slotOffset,
-    uint4 vertReuseBatchWords,
+    ClusterMaterialRanges materials,
     uint vertexCount,
     uint triangleCount,
-    uint3 packedMaterials,
-    uint packedRanges,
     bool isSoftware)
 {
     if (triangleCount == 0u)
         return;
 
-    uint rangeCount = MaterialRangeCount(packedRanges, triangleCount);
+    uint emittedBatches = 0u;
+    uint rangeCount = ClusterMaterialRangeCount(materials, triangleCount);
     uint triangleStart = 0u;
     uint flatBatchIndex = 0u;
     uint rangeIndex = 0u;
     while (rangeIndex < rangeCount)
     {
-        uint rangeEnd = MaterialRangeEnd(packedRanges, triangleCount, rangeIndex);
-        uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
+        uint range = ClusterMaterialRange(PageHeap, materials, triangleCount, rangeIndex);
+        uint rangeEnd = (range & 0xFFu) + ((range >> 8u) & 0xFFu);
+        uint material = materials.Materials[rangeIndex];
         uint bin = RasterKey(RasterSlots, Uniforms, slotOffset, material);
-        uint batchCount = VertReuseBatchCount(vertReuseBatchWords, rangeIndex);
+        bool depthBuckets = Uniforms.DepthBucketsEnabled != 0u &&
+            (GetStageSlot(RasterSlots, slotOffset, material, Uniforms.SlotCapacity) & 0x10000000u) != 0u;
+        uint batchCount = ClusterMaterialBatchBits(PageHeap, materials, rangeIndex * 4u, 4u);
+        bool software = RasterBatchUsesSoftware(slotOffset, material, isSoftware);
         bool useVertReuseBatches = RasterUsesVertReuseBatches(
-            RasterSlots, Uniforms, slotOffset, material, isSoftware, vertexCount, triangleCount);
+            RasterSlots, Uniforms, slotOffset, material, software, vertexCount, triangleCount);
         if (!useVertReuseBatches)
         {
             uint mergedRangeCount = 1u;
             uint mergedBatchCount = batchCount;
-            while (rangeIndex + mergedRangeCount < rangeCount)
+            while (rangeIndex + mergedRangeCount < rangeCount && mergedRangeCount < 4u)
             {
                 uint nextRange = rangeIndex + mergedRangeCount;
-                uint nextStart = MaterialRangeEnd(packedRanges, triangleCount, nextRange - 1u);
-                uint nextMaterial = LocalMaterial(packedMaterials, packedRanges, nextStart);
+                uint next = ClusterMaterialRange(PageHeap, materials, triangleCount, nextRange);
+                uint nextMaterial = materials.Materials[nextRange];
                 uint nextBin = RasterKey(RasterSlots, Uniforms, slotOffset, nextMaterial);
+                bool nextSoftware = RasterBatchUsesSoftware(slotOffset, nextMaterial, isSoftware);
                 bool nextUsesBatches = RasterUsesVertReuseBatches(
-                    RasterSlots, Uniforms, slotOffset, nextMaterial, isSoftware, vertexCount, triangleCount);
-                if (nextBin != bin || nextUsesBatches)
+                    RasterSlots, Uniforms, slotOffset, nextMaterial, nextSoftware, vertexCount, triangleCount);
+                if (nextBin != bin || nextSoftware != software || nextUsesBatches)
                     break;
-                mergedBatchCount += VertReuseBatchCount(vertReuseBatchWords, nextRange);
+                mergedBatchCount += ClusterMaterialBatchBits(PageHeap, materials, nextRange * 4u, 4u);
                 mergedRangeCount++;
             }
 
-            WriteRasterBatch(
-                bin,
-                visibleIndex,
-                RasterRangeWorkIndex(rangeIndex, mergedRangeCount),
-                isSoftware);
+            EmitRasterBatch(bin, visibleIndex,
+                RasterRangeWorkIndex(rangeIndex, mergedRangeCount), software, depthBuckets, emittedBatches);
             flatBatchIndex += mergedBatchCount;
             rangeIndex += mergedRangeCount;
-            triangleStart = MaterialRangeEnd(
-                packedRanges, triangleCount, rangeIndex - 1u);
+            uint last = ClusterMaterialRange(PageHeap, materials, triangleCount, rangeIndex - 1u);
+            triangleStart = (last & 0xFFu) + ((last >> 8u) & 0xFFu);
             continue;
         }
 
         for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
         {
-            WriteRasterBatch(
-                bin,
-                visibleIndex,
-                flatBatchIndex,
-                isSoftware);
+            EmitRasterBatch(bin, visibleIndex, flatBatchIndex, software, depthBuckets, emittedBatches);
             triangleStart = min(
-                triangleStart + VertReuseBatchTriangleCount(vertReuseBatchWords, flatBatchIndex),
+                triangleStart + ClusterMaterialBatchBits(PageHeap, materials,
+                    max(rangeCount, 3u) * 4u + flatBatchIndex * 5u, 5u) + 1u,
                 rangeEnd);
             flatBatchIndex++;
         }

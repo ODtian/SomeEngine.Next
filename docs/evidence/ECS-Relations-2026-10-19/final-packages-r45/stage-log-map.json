@@ -1,0 +1,170 @@
+[
+  {
+    "Stage": "BuildPackages",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\BuildPackages.stdout.log",
+    "ArchivedPath": "stage-logs/BuildPackages.stdout.log"
+  },
+  {
+    "Stage": "BuildPackages",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\BuildPackages.stderr.log",
+    "ArchivedPath": "stage-logs/BuildPackages.stderr.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Diagnostics",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.Diagnostics.stdout.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.Diagnostics.stdout.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Diagnostics",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.Diagnostics.stderr.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.Diagnostics.stderr.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Job.Contracts",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.Job.Contracts.stdout.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.Job.Contracts.stdout.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Job.Contracts",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.Job.Contracts.stderr.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.Job.Contracts.stderr.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Job",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.Job.stdout.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.Job.stdout.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Job",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.Job.stderr.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.Job.stderr.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.SourceGen",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.ECS.SourceGen.stdout.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.ECS.SourceGen.stdout.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.SourceGen",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.ECS.SourceGen.stderr.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.ECS.SourceGen.stderr.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.ECS.stdout.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.ECS.stdout.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.ECS.stderr.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.ECS.stderr.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.Relations",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.ECS.Relations.stdout.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.ECS.Relations.stdout.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.Relations",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.ECS.Relations.stderr.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.ECS.Relations.stderr.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.Systems",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.ECS.Systems.stdout.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.ECS.Systems.stdout.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.ECS.Systems",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.ECS.Systems.stderr.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.ECS.Systems.stderr.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Physics",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.Physics.stdout.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.Physics.stdout.log"
+  },
+  {
+    "Stage": "Pack:SomeEngine.Physics",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\Pack-SomeEngine.Physics.stderr.log",
+    "ArchivedPath": "stage-logs/Pack-SomeEngine.Physics.stderr.log"
+  },
+  {
+    "Stage": "RestoreConsumer",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\RestoreConsumer.stdout.log",
+    "ArchivedPath": "stage-logs/RestoreConsumer.stdout.log"
+  },
+  {
+    "Stage": "RestoreConsumer",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\RestoreConsumer.stderr.log",
+    "ArchivedPath": "stage-logs/RestoreConsumer.stderr.log"
+  },
+  {
+    "Stage": "RebuildConsumer",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\RebuildConsumer.stdout.log",
+    "ArchivedPath": "stage-logs/RebuildConsumer.stdout.log"
+  },
+  {
+    "Stage": "RebuildConsumer",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\RebuildConsumer.stderr.log",
+    "ArchivedPath": "stage-logs/RebuildConsumer.stderr.log"
+  },
+  {
+    "Stage": "RunConsumerJit",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\RunConsumerJit.stdout.log",
+    "ArchivedPath": "stage-logs/RunConsumerJit.stdout.log"
+  },
+  {
+    "Stage": "RunConsumerJit",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\RunConsumerJit.stderr.log",
+    "ArchivedPath": "stage-logs/RunConsumerJit.stderr.log"
+  },
+  {
+    "Stage": "PublishConsumerNative",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\PublishConsumerNative.stdout.log",
+    "ArchivedPath": "stage-logs/PublishConsumerNative.stdout.log"
+  },
+  {
+    "Stage": "PublishConsumerNative",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\PublishConsumerNative.stderr.log",
+    "ArchivedPath": "stage-logs/PublishConsumerNative.stderr.log"
+  },
+  {
+    "Stage": "RunConsumerNative",
+    "Stream": "Stdout",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\RunConsumerNative.stdout.log",
+    "ArchivedPath": "stage-logs/RunConsumerNative.stdout.log"
+  },
+  {
+    "Stage": "RunConsumerNative",
+    "Stream": "Stderr",
+    "OriginalPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\RunConsumerNative.stderr.log",
+    "ArchivedPath": "stage-logs/RunConsumerNative.stderr.log"
+  }
+]

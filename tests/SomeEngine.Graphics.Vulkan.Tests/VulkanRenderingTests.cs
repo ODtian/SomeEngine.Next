@@ -4,7 +4,8 @@ using System.Numerics;
 using SlangShaderSharp;
 using Xunit;
 
-public sealed class VulkanRenderingTests
+[Xunit.Collection("Vulkan shader compilation")]
+public sealed class VulkanRenderingTests(VulkanTestCompiler shaderCompiler)
 {
     [Fact]
     public void Dynamic_rendering_and_persistent_parameters_draw_expected_color()
@@ -25,7 +26,7 @@ public sealed class VulkanRenderingTests
             [shader("fragment")]
             float4 pixelMain() : SV_Target0 { return Tint; }
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment));

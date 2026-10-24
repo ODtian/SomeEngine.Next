@@ -11,6 +11,15 @@ namespace SomeEngine.Assets.Consumer.Tests;
 
 public sealed class AssetCapabilityGeneratorBehaviorTests
 {
+    [Fact]
+    public void ImporterConstructorServicesProduceACompilerDiagnostic()
+    {
+        var result = Compile(ExtensionSource.Replace("public Importer() { Number = 47; }",
+            "public Importer(Dependency dependency) { Number = dependency.Number; }", StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, value => value.Id == "SEAC001"
+            && value.Severity == DiagnosticSeverity.Error);
+    }
+
     private const string ExtensionSource = """
         using System;
         using System.Threading;

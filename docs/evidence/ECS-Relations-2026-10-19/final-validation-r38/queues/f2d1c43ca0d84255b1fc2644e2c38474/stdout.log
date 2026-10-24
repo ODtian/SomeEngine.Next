@@ -1,0 +1,36 @@
+
+CaseId                 Boundary               Required MedianRatio P95Ratio Status            QueueId
+------                 --------               -------- ----------- -------- ------            -------
+updates-small-sparse   IndependentMaintenance    False        0.99     1.00 pass              0b879d9b7fe141589ff39f36бн
+updates-small-sparse   IndependentQuery          False        0.76     0.82 pass              0b879d9b7fe141589ff39f36бн
+updates-small-sparse   IndependentConsume        False        0.99     1.04 measured-overhead 0b879d9b7fe141589ff39f36бн
+updates-small-uniform  IndependentMaintenance    False        1.00     1.05 measured-overhead cf40c5586cd24f82a1e821e3бн
+updates-small-uniform  IndependentQuery          False        0.66     0.68 pass              cf40c5586cd24f82a1e821e3бн
+updates-small-uniform  IndependentConsume        False        0.99     1.00 measured-overhead cf40c5586cd24f82a1e821e3бн
+updates-small-dense    IndependentMaintenance    False        1.00     1.02 measured-overhead deb079c152cf45f581833032бн
+updates-small-dense    IndependentQuery          False        0.71     0.72 pass              deb079c152cf45f581833032бн
+updates-small-dense    IndependentConsume        False        0.96     0.96 pass              deb079c152cf45f581833032бн
+updates-middle-sparse  IndependentMaintenance    False        0.97     0.97 pass              a5c0e86c1c1c4cb99a66a5e0бн
+updates-middle-sparse  IndependentQuery          False        0.64     0.70 pass              a5c0e86c1c1c4cb99a66a5e0бн
+updates-middle-sparse  IndependentConsume        False        1.01     1.03 measured-overhead a5c0e86c1c1c4cb99a66a5e0бн
+updates-middle-uniform IndependentMaintenance    False        0.99     1.04 measured-overhead 2eed12f8f89a4b83acb62d56бн
+updates-middle-uniform IndependentQuery          False        0.70     0.73 pass              2eed12f8f89a4b83acb62d56бн
+updates-middle-uniform IndependentConsume        False        0.97     0.98 pass              2eed12f8f89a4b83acb62d56бн
+updates-middle-dense   IndependentMaintenance    False        0.98     0.98 pass              081c72f87f9a47bb9f46028cбн
+updates-middle-dense   IndependentQuery          False        0.71     0.71 pass              081c72f87f9a47bb9f46028cбн
+updates-middle-dense   IndependentConsume        False        1.00     0.99 pass              081c72f87f9a47bb9f46028cбн
+updates-large-sparse   IndependentMaintenance    False        0.98     0.99 pass              8f0d03c32e2c4f1db2378785бн
+updates-large-sparse   IndependentQuery          False        0.62     0.66 pass              8f0d03c32e2c4f1db2378785бн
+updates-large-sparse   IndependentConsume        False        1.01     1.17 measured-overhead 8f0d03c32e2c4f1db2378785бн
+updates-large-uniform  IndependentMaintenance    False        1.00     1.00 pass              fd543665b2f447559fd6e659бн
+updates-large-uniform  IndependentQuery          False        0.68     0.70 pass              fd543665b2f447559fd6e659бн
+updates-large-uniform  IndependentConsume        False        1.01     1.09 measured-overhead fd543665b2f447559fd6e659бн
+updates-large-dense    IndependentMaintenance    False        0.99     0.95 pass              2b5eece6d0bf460a857c9646бн
+updates-large-dense    IndependentQuery          False        0.71     0.72 pass              2b5eece6d0bf460a857c9646бн
+updates-large-dense    IndependentConsume        False        1.01     0.98 measured-overhead 2b5eece6d0bf460a857c9646бн
+
+{"Script":"Collect-Measurements.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1","-Series","final-phases-r38"],"StartedAtUtc":"2026-10-19T22:46:44.2170904Z","FinishedAtUtc":"2026-10-19T22:46:46.0058639Z","ExitCode":0}
+final-phases-r38: 9 reports; F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\docs\evidence\ECS-Relations-2026-10-19\final-phases-r38
+{"Script":"Export-Evidence.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1","-Series","final-phases-r38"],"StartedAtUtc":"2026-10-19T22:46:46.1060922Z","FinishedAtUtc":"2026-10-19T22:46:47.9989241Z","ExitCode":0}
+final-phases-r38: cases=9; required=0; passed=0; approved=0; approvedRatioLimit=1.01; F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\docs\evidence\ECS-Relations-2026-10-19\final-phases-r38
+{"Script":"Write-MeasurementReport.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1","-Series","final-phases-r38"],"StartedAtUtc":"2026-10-19T22:46:48.0061663Z","FinishedAtUtc":"2026-10-19T22:46:50.379176Z","ExitCode":0}

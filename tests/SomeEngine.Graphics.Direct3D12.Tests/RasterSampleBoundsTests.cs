@@ -5,7 +5,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class RasterSampleBoundsTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class RasterSampleBoundsTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(false, 512u)]
@@ -67,7 +68,7 @@ public sealed class RasterSampleBoundsTests
                     ? float4(0, 1, 0, 1) : float4(1, 0, 0, 1);
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "sample_coverage", source,
             [new("DrawTriangle", SlangStage.Vertex), new("CheckCoverage", SlangStage.Fragment)],
             "sm_6_0", ShaderDirectory());
@@ -127,7 +128,7 @@ public sealed class RasterSampleBoundsTests
     [InlineData(16384u)]
     public void BoundsBetweenCentersAreRejectedButSnappingMarginsSurvive(uint size)
     {
-        uint[] result = Assert.Single(D3D12TestCompute.ExecuteSource("""
+        uint[] result = Assert.Single(new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "raster_sample_bounds.slang"
             StructuredBuffer<uint> Size;
             RWStructuredBuffer<uint> Result;
@@ -153,7 +154,7 @@ public sealed class RasterSampleBoundsTests
     [InlineData(1024u)]
     public void GeometryProjectionDoesNotGrowWithHiZTexelSize(uint size)
     {
-        uint[] result = Assert.Single(D3D12TestCompute.ExecuteSource("""
+        uint[] result = Assert.Single(new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "cluster_view.slang"
             #include "cluster_hiz_shared.slang"
             StructuredBuffer<uint> Size;

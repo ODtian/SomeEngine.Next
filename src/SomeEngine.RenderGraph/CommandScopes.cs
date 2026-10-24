@@ -81,6 +81,11 @@ public ref struct RasterPassCommandScope
     public void Draw(in DrawArguments arguments) => _frame.Backend.Draw(_context, arguments);
     public void DrawIndexed(in DrawIndexedArguments arguments) =>
         _frame.Backend.DrawIndexed(_context, arguments);
+    public void WriteTimestamp(GraphQueryPoolId pool, uint queryIndex)
+    {
+        QueryPool resource = _frame.Executor.GetQueryPool(_passIndex, pool, new QueryRange(queryIndex, 1), write: true);
+        _frame.Backend.WriteTimestamp(_context, resource, queryIndex);
+    }
     public void ExecuteIndirect(IndirectCommandLayout layout, in BufferRegion arguments,
         uint maximumCommandCount, BufferRegion? count = null)
     {

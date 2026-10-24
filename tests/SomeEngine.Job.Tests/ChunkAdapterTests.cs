@@ -2,22 +2,24 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class ChunkAdapterTests
 {
+    private readonly ChunkAdapterData _data = new();
+
     public ChunkAdapterTests()
     {
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
-        ChunkAdapterJobs.Reset();
+        _data.Reset();
     }
 
     [Fact]
     public void ChunkAdapterSchedulesAllChunks()
     {
         var values = new int[12];
-        var source = ChunkAdapterJobs.ArrayChunkSource.Create(
+        var source = ChunkAdapterData.ArrayChunkSource.Create(
             new JobChunk(0, 0, 3),
             new JobChunk(1, 3, 4),
             new JobChunk(2, 7, 5));
 
-        new ChunkAdapterJobs.FillChunkJob(values).Schedule(source, batchSize: 1).Complete();
+        new ChunkAdapterData.FillChunkJob(values).Schedule(source, batchSize: 1).Complete();
 
         Assert.All(values, value => Assert.Equal(1, value));
     }
@@ -25,29 +27,29 @@ public sealed class ChunkAdapterTests
     [Fact]
     public void ChunkAdapterPreservesExplicitDependencyOrdering()
     {
-        using var dependencyStarted = new ManualResetEventSlim();
-        using var dependencyGate = new ManualResetEventSlim();
-        using var chunkStarted = new ManualResetEventSlim();
-        var source = ChunkAdapterJobs.ArrayChunkSource.Create(new JobChunk(0, 0, 1));
+        using var dependencyStarted = _data.Events.CreateSignal();
+        using var dependencyGate = _data.Events.CreateSignal();
+        using var chunkStarted = _data.Events.CreateSignal();
+        var source = ChunkAdapterData.ArrayChunkSource.Create(new JobChunk(0, 0, 1));
 
         var dependency = JobSystem.Schedule(
-            new ChunkAdapterJobs.BlockingJob(dependencyStarted, dependencyGate));
-        var chunk = new ChunkAdapterJobs.SignalChunkJob(chunkStarted).Schedule(source, 1, dependency);
+            new ChunkAdapterData.BlockingJob(dependencyStarted, dependencyGate));
+        var chunk = new ChunkAdapterData.SignalChunkJob(chunkStarted).Schedule(source, 1, dependency);
 
         Assert.True(dependencyStarted.Wait(TimeSpan.FromSeconds(2)));
-        Assert.False(chunkStarted.Wait(TimeSpan.FromMilliseconds(100)));
 
         dependencyGate.Set();
         chunk.Complete();
 
         Assert.True(chunkStarted.IsSet);
+        _data.Events.AssertBefore(dependencyGate, chunkStarted);
     }
 
     [Fact]
     public void ChunkAdapterUsesParallelDispatchOverChunkIndices()
     {
         var values = new int[16];
-        var source = ChunkAdapterJobs.ArrayChunkSource.Create(
+        var source = ChunkAdapterData.ArrayChunkSource.Create(
             new JobChunk(0, 0, 2),
             new JobChunk(1, 2, 2),
             new JobChunk(2, 4, 2),
@@ -57,7 +59,7 @@ public sealed class ChunkAdapterTests
             new JobChunk(6, 12, 2),
             new JobChunk(7, 14, 2));
 
-        new ChunkAdapterJobs.FillChunkJob(values).Schedule(source, batchSize: 3).Complete();
+        new ChunkAdapterData.FillChunkJob(values).Schedule(source, batchSize: 3).Complete();
 
         Assert.All(values, value => Assert.Equal(1, value));
     }
@@ -65,24 +67,24 @@ public sealed class ChunkAdapterTests
     [Fact]
     public void EmptyChunkSourceReturnsCompletedHandleForDefaultDependency()
     {
-        var source = ChunkAdapterJobs.ArrayChunkSource.Create();
+        var source = ChunkAdapterData.ArrayChunkSource.Create();
 
-        var handle = new ChunkAdapterJobs.CountChunkJob().Schedule(source, batchSize: 1);
+        var handle = new ChunkAdapterData.CountChunkJob(_data).Schedule(source, batchSize: 1);
 
         Assert.True(handle.IsCompleted);
         handle.Complete();
-        Assert.Equal(0, ChunkAdapterJobs.ChunkExecutions);
+        Assert.Equal(0, _data.ChunkExecutions);
     }
 
     [Fact]
     public void ChunkAdapterAcceptsClassBackedChunkSource()
     {
         var values = new int[4];
-        var source = new ChunkAdapterJobs.ClassChunkSource(
+        var source = new ChunkAdapterData.ClassChunkSource(
             new JobChunk(0, 0, 2),
             new JobChunk(1, 2, 2));
 
-        new ChunkAdapterJobs.FillChunkJob(values).Schedule(source, batchSize: 1).Complete();
+        new ChunkAdapterData.FillChunkJob(values).Schedule(source, batchSize: 1).Complete();
 
         Assert.All(values, value => Assert.Equal(1, value));
     }
@@ -90,26 +92,26 @@ public sealed class ChunkAdapterTests
     [Fact]
     public void ChunkAdapterComposesWithResourceAccessInference()
     {
-        using var writerStarted = new ManualResetEventSlim();
-        using var writerGate = new ManualResetEventSlim();
-        using var chunkStarted = new ManualResetEventSlim();
+        using var writerStarted = _data.Events.CreateSignal();
+        using var writerGate = _data.Events.CreateSignal();
+        using var chunkStarted = _data.Events.CreateSignal();
         var resource = JobSystem.CreateResource("chunk-resource");
-        var source = ChunkAdapterJobs.ArrayChunkSource.Create(new JobChunk(0, 0, 1));
+        var source = ChunkAdapterData.ArrayChunkSource.Create(new JobChunk(0, 0, 1));
 
         var writer = JobSystem.Schedule(
-            new ChunkAdapterJobs.BlockingJob(writerStarted, writerGate),
+            new ChunkAdapterData.BlockingJob(writerStarted, writerGate),
             JobResourceAccess.Write(resource));
-        var chunk = new ChunkAdapterJobs.SignalChunkJob(chunkStarted)
+        var chunk = new ChunkAdapterData.SignalChunkJob(chunkStarted)
             .Schedule(source, 1, JobResourceAccess.Read(resource));
 
         Assert.True(writerStarted.Wait(TimeSpan.FromSeconds(2)));
-        Assert.False(chunkStarted.Wait(TimeSpan.FromMilliseconds(100)));
 
         writerGate.Set();
         chunk.Complete();
 
         Assert.True(chunkStarted.IsSet);
         writer.Complete();
+        _data.Events.AssertBefore(writerGate, chunkStarted);
     }
 
     [Fact]
@@ -125,11 +127,13 @@ public sealed class ChunkAdapterTests
         Assert.DoesNotContain(referencedAssemblies, name => name is not null && name.Contains("Entities", StringComparison.Ordinal));
     }
 
-    private static class ChunkAdapterJobs
+    private sealed class ChunkAdapterData
     {
-        internal static int ChunkExecutions;
+        internal readonly ExecutionEvents Events = new();
 
-        internal static void Reset()
+        internal int ChunkExecutions;
+
+        internal void Reset()
         {
             ChunkExecutions = 0;
         }
@@ -193,18 +197,22 @@ public sealed class ChunkAdapterTests
 
         internal struct CountChunkJob : IJobChunk
         {
+            private readonly ChunkAdapterData _data;
+
+            internal CountChunkJob(ChunkAdapterData data) => _data = data;
+
             public void Execute(JobChunk chunk)
             {
                 _ = chunk;
-                Interlocked.Increment(ref ChunkExecutions);
+                Interlocked.Increment(ref _data.ChunkExecutions);
             }
         }
 
         internal readonly struct SignalChunkJob : IJobChunk
         {
-            private readonly ManualResetEventSlim _started;
+            private readonly JobSignal _started;
 
-            internal SignalChunkJob(ManualResetEventSlim started)
+            internal SignalChunkJob(JobSignal started)
             {
                 _started = started;
             }
@@ -218,10 +226,10 @@ public sealed class ChunkAdapterTests
 
         internal readonly struct BlockingJob : IJob
         {
-            private readonly ManualResetEventSlim _started;
-            private readonly ManualResetEventSlim _gate;
+            private readonly JobSignal _started;
+            private readonly JobSignal _gate;
 
-            internal BlockingJob(ManualResetEventSlim started, ManualResetEventSlim gate)
+            internal BlockingJob(JobSignal started, JobSignal gate)
             {
                 _started = started;
                 _gate = gate;

@@ -137,6 +137,84 @@ public sealed partial class SkinningRenderingTests
         Assert.True(visible > 1000);
     }
 
+    [Fact]
+    public async Task FootFollowsRotatingSupportWithItsHeelAndToe()
+    {
+        using SkinContent content = await SkinContent.CreateAsync();
+        await content.WriteMeshesAsync(EncodeFloatInfluences);
+        BoneTransform Bone(Vector3 position) => new() { Translation = position, Rotation = Quaternion.Identity, Scale = Vector3.One };
+        var skeleton = new Skeleton([-1, 0, 1, 2],
+            [Bone(new(0, 1.8f, 0)), Bone(new(0, -.9f, 0)), Bone(new(0, -.9f, 0)), Bone(new(0, 0, .3f))],
+            [1, 2, 3, 4]);
+        var action = new AnimationClip(skeleton, 2, ClipSampler.Create<RawClipData, RawClipSampler>(new(2, [])));
+        FootMotion motion = FootMotion.Analyze(action, 0, [new(2, 3)], new(8),
+            [new(0, 0, 2, FootContactKind.Support)]);
+        var source = new GpuPoseBlend(skeleton, new GpuBlendClip(QuantizedClipData.Encode(action, 8)));
+        var leg = new GpuTwoBoneChain(skeleton, 0, 1, 2);
+        var feet = new FootLockRig(0, [new(leg, 0, Vector3.UnitZ, Vector3.UnitY)]);
+        var pose = new GpuTwoBonePose(source, leg, 0);
+        var storage = new PoseStorage();
+        using SkeletonInstance character = storage.CreateInstance(skeleton);
+        Entity target = default, step = default;
+        Matrix4x4 actor = default;
+        CollisionMaintenance<MovingStep, StepReader, SpatialAll, GroupMatch>? maintenance = null;
+        var reads = new List<GpuPoseReadback>();
+        var supports = new List<Matrix4x4>();
+        var mesh = new CollisionMesh(new Vector3[] { new(-1, 0, -1), new(1, 0, -1), new(1, 0, 1), new(-1, 0, 1) },
+            new uint[] { 0, 2, 1, 0, 3, 2 });
+        var reader = new StepReader(mesh);
+        var application = new ApplicationScene(content.Project.RootPath)
+        {
+            Initialize = frame =>
+            {
+                actor = frame.World.Read<WorldTransform>(frame.Scene.MeshEntities[0]).Qvvs.ToMatrix();
+                step = frame.World.CreateEntity(new MovingStep(Matrix4x4.CreateTranslation(0, .2f, 0) * actor, 1));
+                QueryHandle members = frame.World.Query(frame.World.QueryDefinition().All<MovingStep>());
+                CollisionTree tree = Collision.Build<MovingStep, StepReader>(frame.World, members, reader);
+                maintenance = Collision.Candidates<MovingStep, StepReader>(frame.World, members, tree, reader).CreateMaintenance(JobSystem.Default);
+                maintenance.Schedule().Complete();
+                var surfaces = Collision.Query<MovingStep, StepReader>(frame.World, members, tree, reader);
+                frame.Systems.AddGameSystem(new StepInputs(surfaces, maintenance, members));
+                GpuPoseAnimation.AddSystems(frame.Systems.Animation);
+                AnimationSystems.Add(frame.Systems.Animation, new FootLockSystem(), AnimationPhase.Composition);
+                target = GpuPoseAnimation.CreateTarget(frame.World, character);
+                using var builder = new AnimationBuilder(frame.World);
+                using (builder.Parallel())
+                {
+                    builder.Leaf<GpuTwoBoneParameters, GpuTwoBoneLeaf>(target, new(pose, TranslationBone: 0, Duration: 2));
+                    builder.LockFeet(target, new(feet, new(PosePath.FromClip(action, motion), new(0)),
+                        surfaces, new(Vector3.UnitY, 2, 2), Duration: 2));
+                }
+                Entity animation = builder.Play();
+                Entity actorEntity = frame.Scene.MeshEntities[0];
+                frame.World.ExecuteBufferWrite<FootLockInstance, Entity>(animation, ref actorEntity,
+                    static (instances, ref actorEntity) => instances[0].Actor = actorEntity);
+                var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [2, 3]);
+                foreach (Entity entity in frame.Scene.MeshEntities) frame.World.Add(entity, new MeshSkin(character, binding));
+            },
+            UpdateFrame = frame =>
+            {
+                Matrix4x4 support = Matrix4x4.CreateRotationY(frame.Index * MathF.PI / 6)
+                    * Matrix4x4.CreateTranslation(0, .2f, 0) * actor;
+                frame.World.Replace(step, new MovingStep(support, (ulong)frame.Index + 2));
+                maintenance!.Schedule().Complete();
+                supports.Add(support);
+                frame.Scene.ReadGpuPose(target, reads.Add);
+            },
+        };
+        await SceneImages.RunAsync("d3d12", new SceneScript(application, 4, []), "--no-taa", "--no-vsm", "--fixed-step", ".25");
+
+        Assert.Equal(4, reads.Count);
+        for (int frame = 0; frame < reads.Count; frame++)
+        {
+            Matrix4x4.Invert(supports[frame], out Matrix4x4 inverse);
+            Vector3 heel = Vector3.Transform(reads[frame].Current.Span[2].Translation, actor);
+            Vector3 toe = Vector3.Transform(reads[frame].Current.Span[3].Translation, actor);
+            FootNear(Vector3.Zero, Vector3.Transform(heel, inverse));
+            FootNear(new(0, 0, .3f), Vector3.Transform(toe, inverse));
+        }
+    }
+
     private static void FootNear(Vector3 expected, Vector3 actual) =>
         Assert.True(Vector3.Distance(expected, actual) < .001f, $"Expected {expected}; actual {actual}.");
 

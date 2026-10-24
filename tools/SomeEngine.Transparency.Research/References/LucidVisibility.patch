@@ -1,0 +1,240 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index cf8f4bb..5323e0a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -72,3 +72,10 @@ set_target_properties(lucid PROPERTIES
+     RUNTIME_OUTPUT_DIRECTORY_DEVELOP "${BASE_DIR}"
+     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${BASE_DIR}"
+ )
++
++target_sources(lucid PRIVATE vector_algorithms.cpp)
++set_source_files_properties(vector_algorithms.cpp PROPERTIES INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/stl-inc" COMPILE_DEFINITIONS "_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH")
++set_source_files_properties(vector_algorithms.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
++
++target_sources(lucid PRIVATE "${TRANSPARENCY_SOURCE}")
++target_include_directories(lucid PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+diff --git a/data/shaders/shared/raster.glsl b/data/shaders/shared/raster.glsl
+index 4d8a9fa..e8bc130 100644
+--- a/data/shaders/shared/raster.glsl
++++ b/data/shaders/shared/raster.glsl
+@@ -381,7 +381,8 @@ void shadeAndReduceSamples(uint hbid, uint sample_count, in out ReductionContext
+ 
+ 			uint pixel_bit = SUBGROUP_SIZE == 64 ? gl_SubgroupEqMask.x | gl_SubgroupEqMask.y :
+ 												   gl_SubgroupEqMask.x;
+-			atomicOr(s_buffer[buf_offset + sample_pixel_id], pixel_bit);
++			if ((sample_color >> 24) != 0)
++				atomicOr(s_buffer[buf_offset + sample_pixel_id], pixel_bit);
+ 		}
+ 		subgroupMemoryBarrierShared();
+ 
+diff --git a/data/shaders/shared/shading.glsl b/data/shaders/shared/shading.glsl
+index 97dac8f..a87c69e 100644
+--- a/data/shaders/shared/shading.glsl
++++ b/data/shaders/shared/shading.glsl
+@@ -24,7 +24,7 @@ layout(std430, set = 1, binding = 4) readonly restrict buffer buf4_ { uint g_ins
+ layout(std430, set = 1, binding = 5) readonly restrict buffer buf5_ { vec4 g_instance_uv_rects[]; };
+ layout(std430, set = 1, binding = 6) readonly restrict buffer buf6_ { uvec4 g_uvec4_storage[]; };
+ layout(std430, set = 1, binding = 7) readonly restrict buffer buf7_ { uint g_normals_storage[]; };
+-layout(set = 1, binding = 8, rgba8) uniform image2D g_raster_image;
++layout(set = 1, binding = 8, rgba16f) uniform image2D g_raster_image;
+ layout(set = 1, binding = 9) uniform sampler2D opaque_texture;
+ layout(set = 1, binding = 10) uniform sampler2D transparent_texture;
+ 
+@@ -115,6 +115,7 @@ uint shadeSample(ivec2 pixel_pos, uint tri_idx, out float out_depth) {
+ 
+ 	float inv_ray_pos = depth_eq.x * px + (depth_eq.y * py + depth_eq.z);
+ 	out_depth = inv_ray_pos;
++
+ 	float ray_pos = 1.0 / inv_ray_pos;
+ 
+ 	float e0 = edge0_eq.x * px + (edge0_eq.y * py + edge0_eq.z);
+@@ -131,6 +132,8 @@ uint shadeSample(ivec2 pixel_pos, uint tri_idx, out float out_depth) {
+ 	}
+ 	// TODO: compute bary only if we use vertex attributes? That would be all scenes...
+ 	bary -= bary_params;
++    if(any(lessThan(bary, vec2(0))) || bary.x + bary.y > 1.0) return 0;
++    return g_uvec4_storage[STORAGE_QUAD_COLOR_OFFSET + (tri_idx >> 1)][0];
+ 
+ 	vec4 color = (instance_flags & INST_HAS_COLOR) != 0 ?
+ 					 decodeRGBA8(g_instance_colors[instance_id]) :
+@@ -183,7 +186,7 @@ uint shadeSample(ivec2 pixel_pos, uint tri_idx, out float out_depth) {
+ 	return encodeRGBA8(color);
+ }
+ 
+-#define RC_COLOR_SIZE 3
++#define RC_COLOR_SIZE BENCHMARK_DEPTH_FILTER
+ #ifdef VISUALIZE_ERRORS
+ #define RC_DEPTH_SIZE (RC_COLOR_SIZE + 1)
+ #else
+diff --git a/data/shaders/simple_material.glsl b/data/shaders/simple_material.glsl
+index bff6df8..f04f304 100644
+--- a/data/shaders/simple_material.glsl
++++ b/data/shaders/simple_material.glsl
+@@ -27,6 +27,7 @@ layout(location = 3) out vec3 v_normalWS;
+ void main() {
+ 	vec3 posWS = vec4(in_pos, 1.0).xyz;
+ 	gl_Position = simple_dc.proj_view_matrix * vec4(posWS, 1.0);
++    gl_Position.z = (gl_Position.z + gl_Position.w) * .5;
+ 	v_posWS = posWS;
+ 
+ 	v_color = flagSet(INST_HAS_VERTEX_COLORS) ? in_color : vec4(1, 1, 1, 1);
+@@ -69,7 +70,7 @@ void main() {
+ 	}
+ 
+ 	float light_value = max(0.0, dot(-lighting.sun_dir.xyz, normalWS) * 0.7 + 0.3);
+-	f_color.rgb = finalShading(lighting, color.rgb, light_value);
++	f_color.rgb = color.rgb;
+ 	f_color.a = color.a;
+ }
+ 
+diff --git a/src/lucid.cpp b/src/lucid.cpp
+index 17c44f4..0ddf140 100644
+--- a/src/lucid.cpp
++++ b/src/lucid.cpp
+@@ -20,7 +20,11 @@
+ #include <fwk/vulkan/vulkan_swap_chain.h>
+ #include <fwk/vulkan/vulkan_window.h>
+ 
++int runTransparencyComparison(const char *, const char *);
++
+ Ex<int> exMain(int argc, char **argv) {
++    if(argc == 4 && std::string(argv[1]) == "--transparency-comparison")
++        return runTransparencyComparison(argv[2], argv[3]);
+ 	IRect window_rect = IRect({1280, 720}) + int2(32, 32);
+ 
+ 	// TODO: xml loading is still messy
+diff --git a/src/lucid_base.h b/src/lucid_base.h
+index a258766..af5a343 100644
+--- a/src/lucid_base.h
++++ b/src/lucid_base.h
+@@ -81,6 +81,7 @@ struct RenderContext {
+ 	const SceneLighting &lighting;
+ 	const Frustum &frustum;
+ 	const Camera &camera;
++    PVImageView target;
+ };
+ 
+ struct StatsRow {
+diff --git a/src/lucid_renderer.cpp b/src/lucid_renderer.cpp
+index 031b9ad..9db1a68 100644
+--- a/src/lucid_renderer.cpp
++++ b/src/lucid_renderer.cpp
+@@ -184,7 +184,7 @@ void LucidRenderer::addShaderDefs(VulkanDevice &device, ShaderCompiler &compiler
+ }
+ 
+ Ex<void> LucidRenderer::exConstruct(VulkanDevice &device, ShaderCompiler &compiler, Opts opts,
+-									int2 view_size) {
++									int2 view_size, uint inputQuads, uint binReferences) {
+ 	print("Constructing LucidRenderer (flags:% res:%):\n", opts, view_size);
+ 	auto time = getTime();
+ 	m_bin_size = 32; //opts & Opt::bin_size_64 ? 64 : 32;
+@@ -202,6 +202,7 @@ Ex<void> LucidRenderer::exConstruct(VulkanDevice &device, ShaderCompiler &compil
+ 	auto mem_size_mb = phys_info.deviceLocalMemorySize() / (1024 * 1024);
+ 	m_max_dispatches = mem_size_mb >= 4000 ? 256 : mem_size_mb >= 2000 ? 128 : 64;
+ 	uint max_visible_quads = min(1024ull * 1024 * 1024 / 224, mem_size_mb * 1024);
++	if(inputQuads) { max_visible_quads = 1; while(max_visible_quads < inputQuads) max_visible_quads *= 2; }
+ 	m_max_visible_quads = max_visible_quads;
+ 	if(m_max_dispatches > LUCID_INFO_MAX_DISPATCHES) {
+ 		print("Warning: max dispatches limit reached (%)\nIncrease LUCID_INFO_MAX_DISPATCHES\n",
+@@ -235,8 +236,8 @@ Ex<void> LucidRenderer::exConstruct(VulkanDevice &device, ShaderCompiler &compil
+ 	// TODO: what should we do when quads won't fit?
+ 	// TODO: better estimate needed; it should depend on bin size
+ 	// TODO: properly handle situations when limits are reached
+-	uint max_bin_quads = max_visible_quads * 2;
+-	uint max_bin_tris = max_visible_quads * 2;
++	uint max_bin_quads = binReferences ? binReferences : max_visible_quads * 2;
++	uint max_bin_tris = binReferences ? binReferences * 2 : max_visible_quads * 2;
+ 
+ 	auto usage = VBufferUsage::storage;
+ 	auto usage_copyable = VBufferUsage::storage | VBufferUsage::transfer_src;
+@@ -338,6 +339,7 @@ Ex<> LucidRenderer::render(const Context &ctx) {
+ 
+ 	m_debug_buffer = {};
+ 
++	if(!ctx.target) {
+ 	cmds.barrier(VPipeStage::compute_shader, VPipeStage::transfer, VAccess::shader_write,
+ 				 VAccess::transfer_read);
+ 	if(auto result = cmds.download(m_info, "info", 16); result && *result) {
+@@ -346,6 +348,8 @@ Ex<> LucidRenderer::render(const Context &ctx) {
+ 	}
+ 	cmds.barrier(VPipeStage::transfer, VPipeStage::all_commands, VAccess::transfer_read,
+ 				 VAccess::memory_write);
++	}
++
+ 	return {};
+ }
+ 
+@@ -440,7 +444,7 @@ Ex<> LucidRenderer::setupInputData(const Context &ctx) {
+ 	config.frustum = FrustumInfo(ctx.camera);
+ 	config.view_proj_matrix = ctx.camera.matrix();
+ 	config.lighting = ctx.lighting;
+-	config.background_color = (float4)FColor(ctx.config.background_color);
++	config.background_color = ctx.target ? float4(.125f, .125f, .125f, 1) : (float4)FColor(ctx.config.background_color);
+ 	config.num_instances = m_num_instances;
+ 	config.enable_backface_culling = ctx.config.backface_culling;
+ 	config.instance_packet_size = m_instance_packet_size;
+@@ -540,7 +544,7 @@ void LucidRenderer::bindRaster(PVPipeline pipeline, const Context &ctx) {
+ 		   m_instance_uv_rects, m_uvec4_storage, m_normals_storage);
+ 
+ 	auto swap_chain = ctx.device.swapChain();
+-	auto raster_image = swap_chain->acquiredImage();
++	auto raster_image = ctx.target ? ctx.target : swap_chain->acquiredImage();
+ 	ds.setStorageImage(8, raster_image, VImageLayout::general);
+ 	if(m_opts & Opt::debug_raster) {
+ 		ds.set(11, m_debug_buffer);
+@@ -834,3 +838,22 @@ vector<StatsGroup> LucidRenderer::getStats() const {
+ 
+ 	return out;
+ }
++
++Ex<> LucidRenderer::renderCached(const Context &ctx) {
++    auto &commands = ctx.device.cmdQueue();
++    commands.fullBarrier();
++    uint first = offsetof(shader::LucidInfo, a_small_bins) / sizeof(u32);
++    commands.fill(m_info.subSpan(first, first + 2), 0);
++    commands.barrier(VPipeStage::transfer, VPipeStage::compute_shader,
++        VAccess::transfer_write, VAccess::shader_read | VAccess::shader_write);
++    rasterLow(ctx);
++    rasterHigh(ctx);
++    return {};
++}
++u64 LucidRenderer::transparencyBytes() const {
++    u64 bytes = m_bin_quads.byteSize() + m_bin_tris.byteSize() + m_normals_storage.byteSize() +
++        m_uvec4_storage.byteSize() + m_scratch_32.byteSize() + m_scratch_64.byteSize();
++    for(int index = 0; index < num_frames; index++)
++        bytes += m_frame_instance_data[index].byteSize() + m_frame_info[index].byteSize() + m_frame_config[index].byteSize();
++    return bytes;
++}
+diff --git a/src/lucid_renderer.h b/src/lucid_renderer.h
+index 74b60c1..7627910 100644
+--- a/src/lucid_renderer.h
++++ b/src/lucid_renderer.h
+@@ -33,9 +33,11 @@ class LucidRenderer {
+ 
+ 	static void addShaderDefs(VulkanDevice &, ShaderCompiler &, const ShaderConfig &);
+ 	CSpan<ShaderDefId> shaderDefIds() const { return m_shader_def_ids; }
+-	Ex<void> exConstruct(VulkanDevice &, ShaderCompiler &, Opts, int2 view_size);
++	Ex<void> exConstruct(VulkanDevice &, ShaderCompiler &, Opts, int2 view_size, uint inputQuads = 0, uint binReferences = 0);
+ 
+ 	Ex<> render(const Context &);
++    Ex<> renderCached(const Context &);
++    u64 transparencyBytes() const;
+ 
+ 	void verifyInfo();
+ 	vector<StatsGroup> getStats() const;
+diff --git a/src/simple_renderer.cpp b/src/simple_renderer.cpp
+index 633dc57..5e788de 100644
+--- a/src/simple_renderer.cpp
++++ b/src/simple_renderer.cpp
+@@ -181,9 +181,9 @@ Ex<> SimpleRenderer::render(const RenderContext &ctx, bool wireframe) {
+ 	cmds.bindIndices(ctx.tris_ib);
+ 
+ 	auto swap_chain = ctx.device.swapChain();
+-	auto swap_image = swap_chain->acquiredImage()->image();
++	auto target = ctx.target ? ctx.target : swap_chain->acquiredImage();
+ 
+-	auto framebuffer = ctx.device.getFramebuffer({swap_chain->acquiredImage(), m_depth_buffer});
++	auto framebuffer = ctx.device.getFramebuffer({target, m_depth_buffer});
+ 	cmds.beginRenderPass(framebuffer, m_render_pass, none,
+ 						 {FColor(ColorId::magneta), VClearDepthStencil(1.0)});
+ 

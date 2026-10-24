@@ -128,23 +128,9 @@ internal sealed partial class FrameExecutor
             ValidateBuffer(pass, _buffers[view.BufferIndex].Resource!, view.BufferRange,
                 kind is GraphViewKind.BufferUav);
         if (view.TextureIndex >= 0)
-            ValidateTextureView(pass, view);
+            ValidateTexture(pass, _textures[view.TextureIndex].Resource!, view.TextureRange,
+                kind is GraphViewKind.TextureUav or GraphViewKind.ColorAttachment or GraphViewKind.DepthStencil);
         return (T)view.View!;
-    }
-
-    [Conditional("DEBUG")]
-    private void ValidateTextureView(int pass, in FrameView view)
-    {
-        Texture texture = _textures[view.TextureIndex].Resource!;
-        if (view.Kind == GraphViewKind.DepthStencil)
-        {
-            if ((view.TextureRange.Aspects & TextureAspects.Depth) != 0)
-                ValidateTexture(pass, texture, view.TextureRange with { Aspects = TextureAspects.Depth }, !view.ReadOnlyDepth);
-            if ((view.TextureRange.Aspects & TextureAspects.Stencil) != 0)
-                ValidateTexture(pass, texture, view.TextureRange with { Aspects = TextureAspects.Stencil }, !view.ReadOnlyStencil);
-        }
-        else ValidateTexture(pass, texture, view.TextureRange,
-            view.Kind is GraphViewKind.TextureUav or GraphViewKind.ColorAttachment);
     }
 
     [Conditional("DEBUG")]

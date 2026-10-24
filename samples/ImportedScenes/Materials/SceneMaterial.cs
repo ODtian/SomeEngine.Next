@@ -7,7 +7,6 @@ using Texture = SomeEngine.Resources.Texture;
 
 namespace ImportedScenes;
 
-[MaterialType("ImportedScenes.SceneMaterial")]
 public sealed partial class SceneMaterial : Material
 {
     public partial Texture? AlbedoMap { get; set; }
@@ -28,11 +27,10 @@ public sealed partial class SceneMaterial : Material
 
 public sealed class SceneMaterialAsset : MaterialAsset
 {
-    public SceneMaterialAsset(Guid id = default) : base(id, SceneMaterial.TypeId) { }
+    public SceneMaterialAsset(Guid id = default) : base(id) { }
     private SceneMaterialAsset(SceneMaterialAsset source) : base(source) { }
     public override SceneMaterialAsset Duplicate()
     {
         lock (SyncRoot) { RequireIdle(); return new(this); }
     }
-    public static void Register() => MaterialAsset.RegisterType<SceneMaterial, SceneMaterialAsset>(static id => new(id));
 }

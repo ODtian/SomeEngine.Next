@@ -1,0 +1,25 @@
+{
+  "Series": "focused-native-r41",
+  "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+  "CaseCount": 6,
+  "PreparationExitCode": 0,
+  "CaseExitCodes": [
+    0
+  ],
+  "AnalysisExitCodes": [
+    0
+  ],
+  "LastCaseSubmittedAtUtc": "2026-10-19T23:49:03.8292531Z",
+  "PreparationFinishedAtUtc": "2026-10-20T07:49:04.1954138+08:00",
+  "FirstCaseStartedAtUtc": "2026-10-20T07:49:04.4224393+08:00",
+  "LastCaseFinishedAtUtc": "2026-10-20T07:54:35.1594955+08:00",
+  "FirstAnalysisStartedAtUtc": "2026-10-20T07:55:32.8719255+08:00",
+  "AllCasesSubmittedBeforeExecution": true,
+  "PreparationFinishedBeforeExecution": true,
+  "AnalysisStartedAfterExecution": true,
+  "QuietPassed": true,
+  "CaseExecutionSeconds": 54.5266816,
+  "BetweenCasesSeconds": 276.2103746,
+  "AnalysisExecutionSeconds": 6.1594248,
+  "SubmissionToAnalysisFinishedSeconds": 452.5050594
+}

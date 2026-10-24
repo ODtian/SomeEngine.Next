@@ -1,3 +1,4 @@
+using SlangShaderSharp;
 using SomeEngine.Graphics;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
@@ -45,7 +46,154 @@ public sealed partial class ShaderAsset : Asset
     public IEnumerable<Guid> References() => BlockReferences();
     public AssetEntry Describe() => Describe(SchemaHash, References());
 
-    public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+    /// <summary>Adds this block's Slang inputs to the shader's shared input order.</summary>
+    public void SelectInputs<T>() where T : ShaderInputBlock, IAssetBlock<T>
+    {
+        lock (SyncRoot)
+        {
+            T block = GetBlock<T>();
+            GetBlock<ShaderSourceBlock>().AddInputs(T.BlockTypeId, block.SourceNames.Count);
+        }
+    }
+
+    public async ValueTask<Shader> CreateAsync(
+        IGlobalSession slang,
+        SessionDesc sessionDescription,
+        ReadOnlyMemory<SpecializationArg> specializations = default,
+        CancellationToken cancellationToken = default)
+    {
+        using ShaderAsset copy = Duplicate();
+        ShaderSourceBlock source = await copy.GetBlockAsync<ShaderSourceBlock>(cancellationToken).ConfigureAwait(false);
+        if (source.Inputs.Count == 0 && !source.HasSerializedSources)
+        {
+            return await source.CreateAsync(slang, sessionDescription, copy.Name,
+                specializations, cancellationToken).ConfigureAwait(false);
+        }
+        ShaderInputSource[] inputs = await copy.ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
+        ShaderBlock? savedCode = null;
+        if (specializations.IsEmpty && copy.ContainsBlock<ShaderBlock>())
+        {
+            ShaderBlock code = await copy.GetBlockAsync<ShaderBlock>(cancellationToken).ConfigureAwait(false);
+            if (code.MatchesInputs(inputs.Select(static input => input.Version), sessionDescription)) savedCode = code;
+        }
+        using ShaderSourceBlock selected = source.FromInputs(inputs);
+        return savedCode is null
+            ? await selected.CreateAsync(slang, sessionDescription, copy.Name, specializations, cancellationToken).ConfigureAwait(false)
+            : await savedCode.CreateAsync(selected, slang, sessionDescription, copy.Name,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Compiles the asset's complete inputs and saves their common target and entry code.</summary>
+    public async ValueTask<ShaderCompilation> CompileAsync(
+        IGlobalSession slang, SessionDesc sessionDescription, CancellationToken cancellationToken = default)
+    {
+        using ShaderAsset copy = Duplicate();
+        ShaderSourceBlock source = await copy.GetBlockAsync<ShaderSourceBlock>(cancellationToken).ConfigureAwait(false);
+        ShaderCompilation compiled;
+        ShaderInputSource[] inputs;
+        if (source.Inputs.Count == 0 && !source.HasSerializedSources)
+        {
+            compiled = await source.CompileAsync(slang, sessionDescription, copy.Name, cancellationToken).ConfigureAwait(false);
+            for (int index = 0; index < compiled.SerializedSources.Count; index++)
+                source.SetSerializedSource(index, compiled.SerializedSources[index].Span);
+            inputs = await copy.ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            inputs = await copy.ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
+            compiled = await source.CompileSelectedAsync(inputs, slang, sessionDescription, copy.Name,
+                cancellationToken).ConfigureAwait(false);
+        }
+        using var code = new ShaderBlock();
+        code.InputVersions = inputs.Select(static input => input.Version).ToList();
+        SaveCode(compiled.Shader, [], null);
+        using ShaderSourceBlock selected = source.FromInputs(inputs);
+        source.Specializations = compiled.Specializations.ToList();
+        inputs = await copy.ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
+        code.InputVersions = inputs.Select(static input => input.Version).ToList();
+        foreach (ShaderSpecialization variant in compiled.Specializations)
+        {
+            // Code generation belongs to asset preparation, alongside the common entries.
+            ShaderCompilation cooked = await selected.CompileSelectedEntryAsync(slang, sessionDescription, copy.Name,
+                variant.EntryPoint, variant.ToSlangArguments(), cancellationToken).ConfigureAwait(false);
+            SaveCode(cooked.Shader, variant.Arguments.ToArray(), variant.EntryPoint);
+        }
+
+        void SaveCode(Shader shader, string[] arguments, string? entryPoint)
+        {
+            for (int target = 0; target < shader.SlangTargetCount; target++)
+            {
+                if (shader.GetSlangTargetBlob(target) is { } targetCode)
+                    code.SetTargetCode(sessionDescription, target, targetCode.Buffer, arguments, entryPoint);
+                for (int entry = 0; entry < shader.SlangEntryCount; entry++)
+                {
+                    if (shader.GetSlangEntryPoint(entry).GetSpecializationParamCount() != 0 && entryPoint is null) continue;
+                    if (shader.GetSlangEntryBlob(target, entry) is { } entryCode)
+                        code.SetEntryCode(sessionDescription, target, entry, entryCode.Buffer, arguments, entryPoint);
+                    code.SetEntryUsage(sessionDescription, target, entry, shader.GetSlangUsedParameters(target, entry), arguments, entryPoint);
+                }
+            }
+        }
+        lock (SyncRoot)
+        {
+            SetBlock(source);
+            SetBlock(code);
+        }
+        return compiled;
+    }
+
+    private static ShaderInputLocation[] GetInputLocations(ShaderSourceBlock source)
+        => source.Inputs.Count == 0
+            ? Enumerable.Range(0, source.SourceNames.Count).Select(static index => new ShaderInputLocation(ShaderSourceBlock.BlockTypeId, index)).ToArray()
+            : source.Inputs.ToArray();
+
+    internal async ValueTask<Shader> CreateFromInputsAsync(
+        IGlobalSession slang, SessionDesc sessionDescription,
+        ReadOnlyMemory<SpecializationArg> specializations, bool generateCode,
+        CancellationToken cancellationToken)
+    {
+        ShaderSourceBlock source = await GetBlockAsync<ShaderSourceBlock>(cancellationToken).ConfigureAwait(false);
+        ShaderInputSource[] inputs = await ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
+        return await source.CreateSelectedAsync(inputs, slang, sessionDescription, Name,
+            specializations, generateCode, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<ShaderInputSource[]> ReadInputsAsync(ShaderSourceBlock source, CancellationToken cancellationToken)
+    {
+        ShaderInputLocation[] locations = GetInputLocations(source);
+        var selected = new ShaderInputSource[locations.Length];
+        foreach (var group in locations.Select((input, index) => (Input: input, Index: index))
+            .GroupBy(static input => input.Input.BlockTypeId))
+        {
+            if (GetBlock(group.Key) is { } block)
+            {
+                var inputBlock = (ShaderInputBlock)block;
+                foreach (var input in group)
+                {
+                    int index = input.Input.SourceIndex;
+                    selected[input.Index] = new(inputBlock.SourceNames[index],
+                        await inputBlock.ReadBytesAsync(ShaderInputBlock.SerializedSourceKey(index), cancellationToken).ConfigureAwait(false),
+                        new(input.Input, inputBlock.DataVersion));
+                }
+            }
+            else
+            {
+                using AssetBlockSource inputBlock = OpenBlockSource(group.Key);
+                var data = new ShaderInputData();
+                await inputBlock.ReadIntoAsync(data, cancellationToken).ConfigureAwait(false);
+                foreach (var input in group)
+                {
+                    int index = input.Input.SourceIndex;
+                    selected[input.Index] = new(data.SourceNames[index],
+                        await inputBlock.ReadBytesAsync(ShaderInputBlock.SerializedSourceKey(index), cancellationToken).ConfigureAwait(false),
+                        new(input.Input, data.DataVersion));
+                }
+            }
+        }
+        return selected;
+    }
+
+    public override async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
         using ShaderAsset copy = Duplicate();
         return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);
@@ -87,9 +235,13 @@ public sealed partial class ShaderAsset : Asset
         return await ReadFileAsync(file, id.Value, cancellationToken).ConfigureAwait(false);
     }
 
-    public ValueTask<AssetEntry> SaveSourceAsync(string path, IReadOnlyDictionary<ulong, string>? chunkFiles = null,
+    public async ValueTask<AssetEntry> SaveSourceAsync(string path, IReadOnlyDictionary<ulong, string>? chunkFiles = null,
         CancellationToken cancellationToken = default)
-        => AssetText.SaveAsync(path, this, (writer, asset) => writer.WriteBlock(asset.GetBlock<ShaderSourceBlock>(), chunkFiles), cancellationToken);
+    {
+        using var writer = AssetText.Create(this);
+        writer.WriteBlock<ShaderSourceBlock>(chunkFiles);
+        return await writer.SaveAsync(path, cancellationToken).ConfigureAwait(false);
+    }
 
     public static async ValueTask<ShaderAsset> OpenSourceAsync(string path, CancellationToken cancellationToken = default)
     {

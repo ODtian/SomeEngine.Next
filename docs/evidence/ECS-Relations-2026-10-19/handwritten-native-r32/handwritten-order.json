@@ -1,0 +1,268 @@
+{
+  "Series": "handwritten-native-r32",
+  "SourceCommit": "3b582fe541d86d7f556b3f9d6854962d292454ef",
+  "Required": false,
+  "Quantiles": "R7, raw tick precision",
+  "BoundaryFields": {
+    "Query": "QueryTicks",
+    "Consume": "ConsumeTicks"
+  },
+  "Rows": [
+    {
+      "CaseId": "default-large-dynamic50-control",
+      "Boundary": "Query",
+      "Side": "H1",
+      "Position": "First",
+      "Samples": 128,
+      "MedianTicks": 279630.0,
+      "P95Ticks": 298908.8,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "default-large-dynamic50-control",
+      "Boundary": "Query",
+      "Side": "H1",
+      "Position": "Second",
+      "Samples": 128,
+      "MedianTicks": 278384.0,
+      "P95Ticks": 304217.55,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "default-large-dynamic50-control",
+      "Boundary": "Query",
+      "Side": "H2",
+      "Position": "First",
+      "Samples": 128,
+      "MedianTicks": 277758.5,
+      "P95Ticks": 301682.3,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "default-large-dynamic50-control",
+      "Boundary": "Query",
+      "Side": "H2",
+      "Position": "Second",
+      "Samples": 128,
+      "MedianTicks": 280328.0,
+      "P95Ticks": 305473.3,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "default-large-dynamic50-control",
+      "Boundary": "Consume",
+      "Side": "H1",
+      "Position": "First",
+      "Samples": 128,
+      "MedianTicks": 34270.5,
+      "P95Ticks": 38143.65,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "default-large-dynamic50-control",
+      "Boundary": "Consume",
+      "Side": "H1",
+      "Position": "Second",
+      "Samples": 128,
+      "MedianTicks": 34158.5,
+      "P95Ticks": 37408.799999999996,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "default-large-dynamic50-control",
+      "Boundary": "Consume",
+      "Side": "H2",
+      "Position": "First",
+      "Samples": 128,
+      "MedianTicks": 34269.5,
+      "P95Ticks": 37452.5,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "default-large-dynamic50-control",
+      "Boundary": "Consume",
+      "Side": "H2",
+      "Position": "Second",
+      "Samples": 128,
+      "MedianTicks": 33604.0,
+      "P95Ticks": 37344.75,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "finite-large-mask1-mutual-control",
+      "Boundary": "Query",
+      "Side": "H1",
+      "Position": "First",
+      "Samples": 128,
+      "MedianTicks": 263168.0,
+      "P95Ticks": 280610.35,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "finite-large-mask1-mutual-control",
+      "Boundary": "Query",
+      "Side": "H1",
+      "Position": "Second",
+      "Samples": 128,
+      "MedianTicks": 263021.5,
+      "P95Ticks": 275026.6,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "finite-large-mask1-mutual-control",
+      "Boundary": "Query",
+      "Side": "H2",
+      "Position": "First",
+      "Samples": 128,
+      "MedianTicks": 262821.5,
+      "P95Ticks": 276927.89999999997,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "finite-large-mask1-mutual-control",
+      "Boundary": "Query",
+      "Side": "H2",
+      "Position": "Second",
+      "Samples": 128,
+      "MedianTicks": 263316.5,
+      "P95Ticks": 278458.1,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "finite-large-mask1-mutual-control",
+      "Boundary": "Consume",
+      "Side": "H1",
+      "Position": "First",
+      "Samples": 128,
+      "MedianTicks": 28.0,
+      "P95Ticks": 37.64999999999999,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "finite-large-mask1-mutual-control",
+      "Boundary": "Consume",
+      "Side": "H1",
+      "Position": "Second",
+      "Samples": 128,
+      "MedianTicks": 28.0,
+      "P95Ticks": 35.64999999999999,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "finite-large-mask1-mutual-control",
+      "Boundary": "Consume",
+      "Side": "H2",
+      "Position": "First",
+      "Samples": 128,
+      "MedianTicks": 27.5,
+      "P95Ticks": 34.0,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    },
+    {
+      "CaseId": "finite-large-mask1-mutual-control",
+      "Boundary": "Consume",
+      "Side": "H2",
+      "Position": "Second",
+      "Samples": 128,
+      "MedianTicks": 28.0,
+      "P95Ticks": 34.0,
+      "TotalFrameAllocatedBytes": 0.0,
+      "Gen0": 0.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "Processors": [
+        2
+      ]
+    }
+  ]
+}

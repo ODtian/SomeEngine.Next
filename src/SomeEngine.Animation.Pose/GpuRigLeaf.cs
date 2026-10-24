@@ -107,7 +107,7 @@ internal struct GpuRigSystem : ISystem<ImmediateSystemContext>
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        world.ExecuteQuery(_rigs, ref world, static (QueryCursor rows, ref World world) =>
+        world.ExecuteQuery(_rigs, ref world, static (scoped QueryCursor rows, ref World world) =>
         {
             foreach (QueryRow row in rows.Rows)
             {

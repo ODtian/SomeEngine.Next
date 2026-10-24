@@ -2,7 +2,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class ClusterMeshTopologyTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class ClusterMeshTopologyTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(0, 256)]
@@ -35,7 +36,7 @@ public sealed class ClusterMeshTopologyTests
             input[index] = (index < boundaries.Length ? boundaries[index] : (uint)(index * 47 + 19)) % (uint)indexRange;
         input[96] = (uint)active;
         uint[] expected = input.Take(active * 3).Distinct().Order().ToArray();
-        uint[] result = Assert.Single(D3D12TestCompute.ExecuteSource(source, "Evaluate", new(1, 1, 1),
+        uint[] result = Assert.Single(new D3D12TestCompute(shaderCompiler).ExecuteSource(source, "Evaluate", new(1, 1, 1),
             [(input, ResourceBindingType.BufferSrv, 4), (new uint[128], ResourceBindingType.BufferUav, 4)]));
         for (int lane = 0; lane < 32; lane++)
         {

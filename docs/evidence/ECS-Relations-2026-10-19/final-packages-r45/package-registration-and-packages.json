@@ -1,0 +1,39 @@
+{
+  "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+  "JobStorageRegistrationCalls": 17,
+  "RelationSchemaRegistrationCalls": 2,
+  "Packages": [
+    {
+      "Name": "SomeEngine.Diagnostics/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Name": "SomeEngine.ECS/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Name": "SomeEngine.ECS.Relations/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Name": "SomeEngine.ECS.SourceGen/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Name": "SomeEngine.ECS.Systems/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Name": "SomeEngine.Job/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Name": "SomeEngine.Job.Contracts/0.1.0-relations.231",
+      "Type": "package"
+    },
+    {
+      "Name": "SomeEngine.Physics/0.1.0-relations.231",
+      "Type": "package"
+    }
+  ]
+}

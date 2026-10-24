@@ -24,7 +24,8 @@ public ref partial struct RenderGraphEdit
         in TState declarationState,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        RasterFrameCallback<TState> callback) =>
+        RasterFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
         AddPersistentFramePass(
             label,
             GraphPassKind.Raster,
@@ -37,7 +38,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new RasterFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback));
+                callback), region);
 
     public GraphPassId AddRasterFramePass<TState>(
         string label,
@@ -48,7 +49,8 @@ public ref partial struct RenderGraphEdit
         VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
-        RasterFrameCallback<TState> callback) =>
+        RasterFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
         AddPersistentFramePass(
             label,
             GraphPassKind.Raster,
@@ -61,7 +63,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new RasterFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback));
+                callback), region);
 
     public GraphPassId AddComputeFramePass<TState>(
         string label,
@@ -69,7 +71,8 @@ public ref partial struct RenderGraphEdit
         in TState declarationState,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        ComputeFrameCallback<TState> callback) =>
+        ComputeFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
         AddPersistentFramePass(
             label,
             GraphPassKind.Compute,
@@ -82,7 +85,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new ComputeFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback));
+                callback), region);
 
     public GraphPassId AddComputeFramePass<TState>(
         string label,
@@ -93,7 +96,8 @@ public ref partial struct RenderGraphEdit
         VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
-        ComputeFrameCallback<TState> callback) =>
+        ComputeFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
         AddPersistentFramePass(
             label,
             GraphPassKind.Compute,
@@ -106,7 +110,33 @@ public ref partial struct RenderGraphEdit
             declaration,
             new ComputeFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback));
+                callback), region);
+
+    public GraphPassId AddComputeFramePass<TState>(
+        string label,
+        in PassQueueSelection queue,
+        in TState declarationState,
+        in PassOptions options,
+        Pipeline pipeline,
+        VariableLayoutReflection parameterLayout,
+        ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
+        PassDeclaration<TState> declaration,
+        bool initiallyEnabled,
+        ComputeFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
+        AddPersistentFramePass(
+            label,
+            GraphPassKind.Compute,
+            queue,
+            declarationState,
+            options,
+            pipeline,
+            parameterLayout,
+            parameterBindings,
+            declaration,
+            new ComputeFrameOnlyPassCallbackStorage<TState>(
+                declarationState,
+                callback), region, initiallyEnabled);
 
     public GraphPassId AddCopyFramePass<TState>(
         string label,
@@ -114,7 +144,8 @@ public ref partial struct RenderGraphEdit
         in TState declarationState,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        CopyFrameCallback<TState> callback) =>
+        CopyFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
         AddPersistentFramePass(
             label,
             GraphPassKind.Copy,
@@ -127,7 +158,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new CopyFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback));
+                callback), region);
 
     public GraphPassId AddGeneralFramePass<TState>(
         string label,
@@ -135,7 +166,8 @@ public ref partial struct RenderGraphEdit
         in TState declarationState,
         in PassOptions options,
         PassDeclaration<TState> declaration,
-        GeneralFrameCallback<TState> callback) =>
+        GeneralFrameCallback<TState> callback,
+        GraphRegionId region = default) =>
         AddPersistentFramePass(
             label,
             GraphPassKind.General,
@@ -148,7 +180,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new GeneralFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback));
+                callback), region);
 
     public GraphBufferCbvId CreateBufferCbv(
         GraphBufferId buffer,
@@ -274,7 +306,9 @@ public ref partial struct RenderGraphEdit
         VariableLayoutReflection parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
-        PassCallbackStorage callbackStorage)
+        PassCallbackStorage callbackStorage,
+        GraphRegionId region,
+        bool initiallyEnabled = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         ArgumentNullException.ThrowIfNull(declaration);
@@ -286,15 +320,16 @@ public ref partial struct RenderGraphEdit
         var pass = new GraphPass
         {
             Label = label,
+            Enabled = initiallyEnabled,
             Kind = kind,
             Queue = queue,
             Options = options,
             CallbackStorage = callbackStorage,
             Pipeline = pipeline,
             ParameterLayout = parameterLayout,
-            DeclarationOrdinal = checked(Staging.NextDeclarationOrdinal++),
         };
         GraphIdentity identity = Staging.Passes.Add(Graph.Identity, pass);
+        SetPassRegion(identity, region);
         Changes.TouchPass(identity, membership: true);
         TState mutable = declarationState;
         try
@@ -312,6 +347,7 @@ public ref partial struct RenderGraphEdit
                 if (Structure.Accesses.Contains(access))
                     _ = Staging.Accesses.Remove(access);
             }
+            RemoveRegionEntry(pass.Region, identity);
             _ = Staging.Passes.Remove(identity);
             throw;
         }

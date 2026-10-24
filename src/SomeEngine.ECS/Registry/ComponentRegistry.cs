@@ -29,26 +29,6 @@ internal static class ComponentRegistry
     }
 
     /// <summary>
-    /// Publishes a monotonic alias-safety certificate after either the runtime shape validator or
-    /// the source generator has proved the closed component layout. Updating under the registry
-    /// gate avoids writing through a stale array reference while another component grows it.
-    /// </summary>
-    internal static void MarkJobAliasFree(int id)
-    {
-        lock (s_gate)
-        {
-            if (id <= 0 || id >= _count)
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(id),
-                    $"Component ID {id} is not registered and cannot receive an alias-safety certificate.");
-            }
-
-            _infos[id].IsJobAliasFree = true;
-        }
-    }
-
-    /// <summary>
     /// 按 ID 查找组件元数据。返回 ref 以避免拷贝。
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">id 无效时。</exception>

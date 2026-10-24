@@ -40,10 +40,9 @@ public sealed class MeshTests
         Assert.Throws<InvalidDataException>(() => mesh.AddPages([(0, corrupt)], mesh.Revision));
         Assert.False(mesh.TryGetPage(0, out _));
         Mesh captured = mesh.CaptureData();
-        int changes = 0;
-        mesh.Changed += _ => changes++;
+        ulong version = mesh.Revision;
         mesh.AddPages([(0, payload.AsMemory(0, offset))], mesh.Revision);
-        Assert.Equal(1, changes);
+        Assert.Equal(version + 1, mesh.Revision);
         Assert.False(captured.TryGetPage(0, out _));
         Assert.True(mesh.CaptureData().TryGetPage(0, out _));
         byte[] restored = new byte[offset];

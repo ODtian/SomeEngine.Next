@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -10,6 +11,7 @@ using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Instances;
+using SomeEngine.Render.Lighting;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
@@ -27,16 +29,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private static readonly SomeEngine.Diagnostics.TraceSite ResidencyUploadsTrace = new("render", "Cluster.ResidencyUploads");
     private static readonly SomeEngine.Diagnostics.TraceSite FrameResourcesTrace = new("render", "Cluster.FrameResources");
     private static readonly SomeEngine.Diagnostics.TraceSite FrameUploadsTrace = new("render", "Cluster.FrameUploads");
-    private static readonly SomeEngine.Diagnostics.TraceSite InstanceTransferTrace = new("render", "Cluster.InstanceTransfer");
     private static readonly SomeEngine.Diagnostics.TraceSite SceneBoundsTrace = new("render", "Cluster.SceneBounds");
     private static readonly SomeEngine.Diagnostics.TraceSite RasterInputsTrace = new("render", "Cluster.RasterInputs");
     private static readonly SomeEngine.Diagnostics.TraceSite RasterStagesTrace = new("render", "Cluster.ResolveRasterStages");
     private static readonly SomeEngine.Diagnostics.TraceSite ShadeStagesTrace = new("render", "Cluster.ResolveShadeStages");
     private static readonly SomeEngine.Diagnostics.TraceSite GraphInstallTrace = new("render", "Cluster.InstallGraph");
 
-    private const int ReadbackGenerationCount = 2;
-    private const int RasterEpochCount = 4;
-    private static readonly TimeSpan ReadbackRetirementTimeout = TimeSpan.FromSeconds(30);
+    private const int RasterPhaseCount = 4;
 
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
@@ -47,28 +46,30 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ClusterMaterialAssignments _materialAssignments;
     private readonly ClusterShaders _configuration;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
+    private readonly ClusterGraphRegions _regions;
+    private readonly GraphRegionId _targetPhaseOneRegion;
+    private readonly GraphRegionId _targetPhaseTwoRegion;
     private readonly ClusterPipelineOutputDescription _outputDescription;
     private readonly IGraphResourceProvider? _stageResourceProvider;
+    private readonly ClusteredViewGrid _viewGrid;
     private readonly ClusterStreamingFeedbackChannel _streamingFeedback;
-    private readonly ClusterPipelineOptions _options;
+    private ClusterPipelineOptions _options;
     private readonly ClusterVisibilityMode _visibilityMode;
     private QueryHandle _viewQuery;
+    private QueryHandle _sceneQuery;
+    private RenderInstanceDataTransfer? _instanceDataTransfer;
+    private int _frameInstanceGeneration;
     private ClusterPipelineSet? _pipelines;
-    private ClusterEntryUsageCache? _entryUsages;
     private ClusterRasterStages? _rasterStages;
     private ClusterShadeStages? _shadeStages;
     private ClusterRasterStageSet? _installedRasterStages;
     private ClusterShadeStageSet? _installedShadeStages;
     private ClusterCullingHistory? _history;
-    private ClusterFrameUploads? _uploads;
-    private FrameResources _frameResources;
-    private RenderInstanceDataTransfer? _instanceDataTransfer;
-    private readonly List<GraphPassId> _historyInitializationPasses = [];
-    private readonly List<ClusterLayerDispatch> _layerDispatches = [];
-    private readonly List<GraphPassId> _winnerResolvePasses = [];
-    private System.Collections.Immutable.ImmutableHashSet<GraphPassId> _pageHeapReaderPasses = [];
     private ClusterViewUniforms[] _packedViews;
     private RenderView[] _stagedViews;
+    private bool[] _viewDataValid;
+    private WorldOrigin _viewDataOrigin;
+    private bool _hasViewDataOrigin;
     private Entity[] _stagedViewEntities;
     private Matrix4x4[] _stagedPreviousViewProjections;
     private bool[] _stagedHasPreviousView;
@@ -77,71 +78,17 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private int _stagedViewCount;
     private int _primaryViewCount;
     private GraphBufferSlice _framePolicyViews;
-    private GraphPassId _traversalSeedPass;
-    private GraphPassId _traversalPass;
-    private readonly List<GraphPassId> _traversalLevelPasses = [];
-    private GraphPassId _primaryDeferredResetPass;
-    private GraphPassId _primaryDeferredResumePass;
-    private GraphPassId _primaryPostTraversalPass;
-    private readonly List<GraphPassId> _primaryPostTraversalLevelPasses = [];
-    private GraphPassId _continuationResetPass;
-    private GraphPassId _continuationTraversalSeedPass;
-    private GraphPassId _continuationTraversalPass;
-    private readonly List<GraphPassId> _continuationTraversalLevelPasses = [];
-    private GraphPassId _continuationCullPass;
-    private GraphPassId _continuationDeferredResetPass;
-    private GraphPassId _continuationDeferredResumePass;
-    private GraphPassId _continuationPostTraversalPass;
-    private readonly List<GraphPassId> _continuationPostTraversalLevelPasses = [];
-    private GraphPassId _continuationPostCullPass;
-    private GraphPassId _phaseOneCullPass;
-    private GraphPassId _winnerClearPass;
-    private GraphPassId _phaseTwoCullPass;
-    private GraphPassId _phaseOneWinnerResolvePass;
-    private GraphPassId _phaseTwoWinnerResolvePass;
-    private GraphPassId _phaseOneHiZPass;
-    private GraphPassId _phaseTwoHiZPass;
-    private GraphPassId _pageFaultReadbackPass;
-    private GraphPassId _candidateMetricsReadbackPass;
-    private GraphPassId _frameMetricsReadbackPass;
-    private readonly List<GraphPassId> _residencyUploadPasses = [];
-    private GraphPassId _shadeResolvePass;
-    private ClusterPipelineOutputs _outputs;
     private ClusterRenderContext _renderContext;
-    private GraphPassId _shadeBeginAfter;
-    private GraphPassId _shadeCompleteBefore;
-    private GraphPassId _depthCompleteBefore;
     private ulong _installedMaterialTopologyVersion;
     private bool _cullingEnabled;
     private bool _graphInstalled;
     private IndirectCommandLayout? _dispatchIndirectLayout;
     private IndirectCommandLayout? _drawIndirectLayout;
     private IndirectCommandLayout? _drawIndexedIndirectLayout;
-    private readonly Buffer?[] _pageFaultReadbacks = new Buffer?[ReadbackGenerationCount];
-    private readonly ClusterReadbackTicket[] _pageFaultReadbackTickets =
-        new ClusterReadbackTicket[ReadbackGenerationCount];
-    private readonly bool[] _pageFaultReadbackPending = new bool[ReadbackGenerationCount];
-    private readonly QueueCompletion[] _pageFaultReadbackCompletions = new QueueCompletion[ReadbackGenerationCount];
-    private readonly Buffer?[] _frameMetricReadbacks = new Buffer?[ReadbackGenerationCount];
-    private byte[] _frameMetricReadbackBytes = [];
-    private readonly ulong[] _frameMetricReadbackFrames = new ulong[ReadbackGenerationCount];
-    private readonly bool[] _frameMetricReadbackPending = new bool[ReadbackGenerationCount];
-    private readonly QueueCompletion[][] _readbackFences = [[], []];
-    private readonly BufferBoundaryState[][] _pageFaultReadbackStates = [[], []];
-    private readonly BufferBoundaryState[][] _frameMetricReadbackStates = [[], []];
-    private readonly ulong[] _readbackSequences = new ulong[ReadbackGenerationCount];
     private readonly ViewCollector _viewCollector = new();
-    private ulong _frameMetricsSubmittedFrame;
-    private ulong _nextReadbackSequence;
-    private int _readbackWriteGeneration = -1;
-    private int _preferredReadbackGeneration;
+    private ulong _metricFrameIndex;
     private ClusterFrameMetrics? _latestFrameMetrics;
-    private ClusterEpochId _pendingReadbackEpoch;
-    private QueueCompletion? _pageFaultSubmission;
-    private int _pendingInstanceGeneration = -1;
-    private ClusterResidencyPublication? _pendingResidencyPublication;
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
-    private bool _bindingScratchReadsPageHeap;
     private bool _hasPendingFrame;
     private bool _created;
 
@@ -155,12 +102,15 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ClusterMaterialAssignments materialAssignments,
         ClusterShaders configuration,
         global::SomeEngine.RenderGraph.RenderGraph graph,
+        in ClusterGraphRegions regions,
         in ClusterPipelineOutputDescription outputDescription,
         ClusterStreamingFeedbackChannel streamingFeedback,
         IGraphResourceProvider? stageResourceProvider = null,
         ClusterPipelineOptions? options = null,
-        IClusterBoundsSource? boundsSource = null)
+        ClusteredViewGrid viewGrid = default,
+        IClusterBoundsSource? deformBounds = null)
     {
+        _deformBounds = deformBounds;
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _renderDevice = renderDevice ?? throw new ArgumentNullException(nameof(renderDevice));
@@ -176,21 +126,29 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new ArgumentException("The Cluster pipeline and RenderGraph must use the same Device.", nameof(graph));
         _outputDescription = outputDescription;
         _streamingFeedback = streamingFeedback ?? throw new ArgumentNullException(nameof(streamingFeedback));
-        _stageResourceProvider = stageResourceProvider;
-        _deformBounds = boundsSource;
+        _stageResourceProvider = new MaterialDecalResources(this, stageResourceProvider);
+        _viewGrid = viewGrid;
         _options = options ?? new ClusterPipelineOptions();
         _visibilityMode = _options.SelectVisibilityMode(device.Capabilities);
         _packedViews = new ClusterViewUniforms[checked((int)outputDescription.ViewCount)];
         _stagedViews = new RenderView[checked((int)outputDescription.ViewCount)];
+        _viewDataValid = new bool[_stagedViews.Length];
         _stagedViewEntities = new Entity[_stagedViews.Length];
         _stagedPreviousViewProjections = new Matrix4x4[_stagedViews.Length];
         _stagedHasPreviousView = new bool[_stagedViews.Length];
         _stagedPolicies = new uint[_stagedViews.Length];
         _stagedPolicyViewIndices = new uint[_stagedViews.Length];
+        using RenderGraphEdit edit = graph.BeginEdit();
+        RenderGraphEdit graphEdit = edit;
+        _regions = CreateGraphRegions(ref graphEdit, regions);
+        _targetPhaseOneRegion = edit.AddRegion("Cluster target first geometry", _regions.TargetGeometry);
+        IntermediateOcclusionRegion = edit.AddRegion("Cluster target intermediate occlusion", _regions.TargetGeometry);
+        _targetPhaseTwoRegion = edit.AddRegion("Cluster target second geometry", _regions.TargetGeometry);
+        edit.Commit();
     }
 
-    public ClusterPipelineOutputs Outputs => _outputs.IsValid
-        ? _outputs
+    public ClusterPipelineOutputs Outputs => GraphData.Outputs.IsValid
+        ? GraphData.Outputs
         : throw new InvalidOperationException("The Cluster retained graph has not been installed.");
 
     public ulong GeometryRevision => _resources.CaptureDiagnostics().Meshes.ChangeRevision;
@@ -204,6 +162,32 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ? current.Groups[0].Batch : null;
 
     public ClusterVisibilityMode VisibilityMode => _visibilityMode;
+
+    public ClusterShadingPath ShadingPath => _options.ShadingPath;
+    public uint DebugMode => _options.DebugMode;
+
+    /// <summary>The shading path committed by the last successful graph reconciliation.</summary>
+    public ClusterShadingPath InstalledShadingPath => _installedShadeStages?.ShadingPath
+        ?? throw new InvalidOperationException("The Cluster retained graph has not been installed.");
+
+    /// <summary>Selects saved shaders at the next frame-boundary ReconcileGraph call.</summary>
+    public void SetShadingPath(ClusterShadingPath path)
+    {
+        if (path != ClusterShadingPath.Deferred && path != ClusterShadingPath.Forward)
+            throw new ArgumentOutOfRangeException(nameof(path));
+        if (_options.ShadingPath != path) _options = _options with { ShadingPath = path };
+    }
+
+    /// <summary>Selects a saved debug specialization at the next frame-boundary ReconcileGraph call.</summary>
+    public void SetDebugMode(uint mode)
+    {
+        if (_options.DebugMode != mode) _options = _options with { DebugMode = mode };
+    }
+
+    /// <summary>Target-view occlusion work between the two geometry phases.</summary>
+    public GraphRegionId IntermediateOcclusionRegion { get; }
+
+    public GraphReadbackId PageFaultReadback => GraphData.PageFaultReadback;
 
     public int CurrentInstanceCount
     {
@@ -275,7 +259,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
         EnsureStagedViewStorage(required);
 
-        views.CopyTo(_stagedViews.AsSpan(_stagedViewCount));
+        StoreViews(views, _stagedViewCount);
         if (identities.IsEmpty) _stagedViewEntities.AsSpan(_stagedViewCount, views.Length).Clear();
         else identities.CopyTo(_stagedViewEntities.AsSpan(_stagedViewCount));
         if (previousViewProjections.IsEmpty)
@@ -296,12 +280,24 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _stagedViewCount = required;
     }
 
+    private void StoreViews(scoped ReadOnlySpan<RenderView> views, int first)
+    {
+        EnsureStagedViewStorage(checked(first + views.Length));
+        for (int index = 0; index < views.Length; index++)
+        {
+            int target = first + index;
+            if (!_stagedViews[target].Equals(views[index])) _viewDataValid[target] = false;
+            _stagedViews[target] = views[index];
+        }
+    }
+
     private void EnsureStagedViewStorage(int required)
     {
         if (_stagedViews.Length >= required)
             return;
         Array.Resize(ref _packedViews, required);
         Array.Resize(ref _stagedViews, required);
+        Array.Resize(ref _viewDataValid, required);
         Array.Resize(ref _stagedViewEntities, required);
         Array.Resize(ref _stagedPreviousViewProjections, required);
         Array.Resize(ref _stagedHasPreviousView, required);
@@ -325,40 +321,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _renderContext = context;
     }
 
-    public void ConfigureShadeBeginAfter(GraphPassId pass)
-    {
-        if (_graphInstalled)
-            throw new InvalidOperationException("The shade dependency must be configured before graph installation.");
-        if (pass == default)
-            throw new ArgumentException("The shade dependency pass is invalid.", nameof(pass));
-        _shadeBeginAfter = pass;
-    }
-
-    /// <summary>The page-fault readback pass, for ordering presentation after streaming submissions.</summary>
-    public GraphPassId PageFaultReadbackPass => _pageFaultReadbackPass;
-
-    public GraphPassId ShadeCompletePass => _shadeGroups.Count != 0
-        ? _shadeGroups[_shadeGroupOrder.Max].Pass
-        : _shadeResolvePass;
-
-    public void ConfigureShadeCompleteBefore(GraphPassId pass)
-    {
-        if (_graphInstalled)
-            throw new InvalidOperationException("The shade completion pass must be configured before graph installation.");
-        if (pass == default)
-            throw new ArgumentException("The shade completion pass is invalid.", nameof(pass));
-        _shadeCompleteBefore = pass;
-    }
-
-    public void ConfigureDepthCompleteBefore(GraphPassId pass)
-    {
-        if (_graphInstalled)
-            throw new InvalidOperationException("The depth consumer must be configured before graph installation.");
-        if (pass == default)
-            throw new ArgumentException("A depth consumer pass is required.", nameof(pass));
-        _depthCompleteBefore = pass;
-    }
-
     public void OnCreate(ref RenderFrameSystemContext context)
     {
         if (_created)
@@ -370,8 +332,11 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         {
             view = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
             _viewQuery = view;
+            _sceneQuery = context.World.Query(_instances.EntityQuery);
             EnsurePipelineResources();
-            _entryUsages = new ClusterEntryUsageCache();
+            _decalWorld = context.World;
+            _decalQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderMaterialDecal>().Read<RenderTransform>());
+            EditGraph(InstallMaterialDecals);
             _rasterStages = new ClusterRasterStages(
                 _backend,
                 _device,
@@ -379,29 +344,21 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _pipelines!.DefaultRasterVertexEncoding,
                 _pipelines.SoftwareRaster,
                 _pipelines.HardwareRaster,
-                _stageResourceProvider,
-                _entryUsages);
+                new RasterMaterialResources(this, _stageResourceProvider));
             _shadeStages = new ClusterShadeStages(
                 _backend,
                 _device,
-                _stageResourceProvider,
-                _entryUsages);
-            _history = new ClusterCullingHistory(
-                _backend,
-                _device,
-                _outputDescription.ViewCount);
+                _stageResourceProvider);
+            _history = new ClusterCullingHistory(_outputDescription.ViewCount);
             _created = true;
         }
         catch
         {
-            _history?.Dispose();
             _history = null;
             _shadeStages?.Dispose();
             _shadeStages = null;
             _rasterStages?.Dispose();
             _rasterStages = null;
-            _entryUsages?.Dispose();
-            _entryUsages = null;
             _pipelines?.Dispose();
             _pipelines = null;
             _dispatchIndirectLayout?.Dispose();
@@ -409,6 +366,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _drawIndirectLayout?.Dispose();
             _drawIndirectLayout = null;
             ReleaseIfValid(context.World, view);
+            ReleaseIfValid(context.World, _sceneQuery);
+            ReleaseIfValid(context.World, _decalQuery);
+            _sceneQuery = default;
             throw;
         }
     }
@@ -421,294 +381,131 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         if (!_created)
             throw new InvalidOperationException("The Cluster pipeline was not created.");
-        ClusterMaterialAssignmentSet assignments = _materialAssignments.Current;
+        if (_graphRemoved)
+            throw new InvalidOperationException("The Cluster graph has been uninstalled.");
+        ClusterMaterialAssignmentSet sourceAssignments = _materialAssignments.Current;
+        ClusterMaterialAssignmentSet assignments = sourceAssignments.ChangesSince(_consumedMaterialAssignments);
         RefreshMaterialTextures();
-        if (_graphInstalled && _traversalLevelPasses.Count < _resources.HierarchyLevels)
-            ReconcileTraversal();
+        bool decalResourcesChanged = UpdateMaterialDecals();
+        if (_graphInstalled && _resources.GeometryPageCount > GraphData.Resources.PagePriorityCapacity)
+            EditGraph((ref RenderGraphEdit edit) => GrowPageRequestPriorities(ref edit));
+        if (_graphInstalled && _resources.MaximumRasterBatchesPerCluster > GraphData.Resources.BinnedEntriesPerCluster)
+            EditGraph((ref RenderGraphEdit edit) => GrowRasterWork(ref edit));
         bool assignmentsChanged = !_graphInstalled ||
             _installedMaterialTopologyVersion != assignments.TopologyVersion;
-        bool materialResourcesChanged = CollectMaterialChanges(assignments);
-        if (!assignmentsChanged && !materialResourcesChanged)
+        bool materialResourcesChanged = CollectMaterialChanges(assignments, assignmentsChanged) || decalResourcesChanged;
+        bool forward = _options.ShadingPath == ClusterShadingPath.Forward;
+        if (forward && (assignmentsChanged || materialResourcesChanged || _installedShadeStages is null ||
+            _installedShadeStages.ShadingPath != _options.ShadingPath ||
+            _installedShadeStages.DebugMode != _options.DebugMode))
+            _primaryDepthMaterialsSupported = _shadeStages!.SupportsPrimaryDepthReceivers(
+                assignments, _options.DebugMode, _options.ExportSurfaceReceivers);
+        if (forward && _surfaceReceiverRegion != default && !_evaluateSurfaceReceivers)
+            RefreshCasterInputs();
+        bool evaluateReceivers = !forward || (_surfaceReceiverRegion != default &&
+            (_evaluateSurfaceReceivers || !_primaryDepthMaterialsSupported || _hasFirstPersonReceiverMeshes));
+        bool shadingChanged = _installedShadeStages is null ||
+            _installedShadeStages.ShadingPath != _options.ShadingPath ||
+            _installedShadeStages.DebugMode != _options.DebugMode ||
+            _installedShadeStages.HasReceiverEvaluation != evaluateReceivers;
+        // Unknown evaluators remain conservative. Complete declarations let shading-only
+        // edits preserve depth while the ordinary scalar upload still carries their new values.
+        bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
+        if (!assignmentsChanged && !materialResourcesChanged && !shadingChanged)
         {
-            ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments);
+            ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments,
+                _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
             if (!ReferenceEquals(updated, _materialScalars))
             {
-                _uploads!.SetChangedValue(_scalarBytes, updated.Bytes, updated.ByteChanges);
+                QueueBufferWrites(GraphData.ScalarBytes, updated.Bytes, updated.ByteChanges);
                 if (updated.OffsetChanges.Length != 0)
-                    _uploads.SetChangedValue(_scalarOffsets, updated.Offsets, updated.OffsetChanges);
+                    QueueBufferWrites(GraphData.ScalarOffsets, updated.Offsets, updated.OffsetChanges);
                 _materialScalars = updated;
             }
-            AcceptMaterialChanges(assignments);
-            return _outputs;
+            _textureScalarChanges.Clear();
+            RecordMaterialCasterChanges(assignments);
+            AcceptMaterialChanges(assignments, sourceAssignments);
+            if (materialDepthChanged) _rasterRevision = checked(_rasterRevision + 1);
+            return GraphData.Outputs;
         }
-        ClusterRasterStageSet rasterStages;
-        using (SomeEngine.Diagnostics.EngineTrace.Begin(RasterStagesTrace))
-            rasterStages = (_rasterStages ?? throw new InvalidOperationException(
-                "The Cluster raster stages were not created.")).Resolve(assignments);
-        ClusterShadeStageSet shadeStages;
-        using (SomeEngine.Diagnostics.EngineTrace.Begin(ShadeStagesTrace))
-            shadeStages = (_shadeStages ?? throw new InvalidOperationException(
-                "The Cluster shade stages were not created.")).Resolve(assignments);
-        ClusterMaterialScalars scalars = _materialScalars.Update(shadeStages, assignments);
-        bool cullingEnabled = (_pipelines ?? throw new InvalidOperationException(
-            "The Cluster pipelines were not created.")).DefaultRasterCullingEnabled &&
-            rasterStages.HasFiniteBounds;
-        bool rasterChanged = _installedRasterStages is null || rasterStages.ChangedBins.Count != 0 ||
-            _installedRasterStages.BinIndices.Length != rasterStages.BinIndices.Length || _cullingEnabled != cullingEnabled;
-        if (_graphInstalled)
+        if (!_graphInstalled)
         {
-            bool shadeChanged = _installedShadeStages is null ||
-                shadeStages.ChangedBins.Count != 0 ||
-                _installedShadeStages.BinIndices.Length != shadeStages.BinIndices.Length;
-            if (rasterChanged || shadeChanged)
-                _geometryPassesEnabled = null;
-            if (rasterChanged)
+            _instanceDataTransfer = _resources.InstanceResources.GetDataTransfer(_graph);
+            _resources.Residency.InstallGeometryBuffers(_graph);
+        }
+        ClusterRasterStageSet rasterStages = null!;
+        ClusterShadeStageSet shadeStages = null!;
+        ClusterMaterialScalars scalars = null!;
+        bool cullingEnabled = false;
+        bool rasterChanged = false;
+        EditGraph((ref RenderGraphEdit edit) =>
+        {
+            if (assignmentsChanged || materialResourcesChanged)
             {
-                ReconcileStageRegion(
-                    assignments,
-                    rasterStages,
-                    shadeStages,
-                    rasterChanged,
-                    shadeChanged,
-                    scalars);
+                using (SomeEngine.Diagnostics.EngineTrace.Begin(RasterStagesTrace))
+                    rasterStages = _rasterStages!.Resolve(assignments);
             }
-            else if (shadeChanged)
+            else rasterStages = _installedRasterStages!;
+            using (SomeEngine.Diagnostics.EngineTrace.Begin(ShadeStagesTrace))
+                shadeStages = _shadeStages!.Resolve(assignments, _options.ShadingPath, _options.DebugMode,
+                    _options.ExportSurfaceReceivers, evaluateReceivers);
+            scalars = _materialScalars.Update(shadeStages, assignments,
+                _renderDevice.GetTextureDescriptorIndex, shadingChanged
+                    ? assignments.ActiveOffsets.Concat(_textureScalarChanges) : _textureScalarChanges);
+            cullingEnabled = _pipelines!.DefaultRasterCullingEnabled;
+            rasterChanged = !ReferenceEquals(rasterStages, _installedRasterStages) &&
+                (_installedRasterStages is null || rasterStages.ChangedBins.Count != 0 ||
+                    _installedRasterStages.BinIndices.Length != rasterStages.BinIndices.Length || _cullingEnabled != cullingEnabled);
+            bool shadeChanged = shadingChanged || _installedShadeStages is null || shadeStages.ChangedBins.Count != 0 ||
+                _installedShadeStages.BinIndices.Length != shadeStages.BinIndices.Length;
+            if (_graphInstalled)
             {
-                UpdateShading(assignments, rasterStages, shadeStages, scalars);
+                UpdateScalarBuffers(ref edit, scalars);
+                uint rasterBinCount = GraphData.Resources.RasterBinCount;
+                if (rasterChanged || shadeChanged)
+                {
+                    ReconcileStageResources(ref edit, assignments, rasterStages, shadeStages);
+                    if (shadeChanged) UpdateShadeBinning(ref edit, shadeStages);
+                }
+                else UpdateMaterialIndexBuffers(ref edit, rasterStages, shadeStages);
+                if (rasterChanged || shadeChanged || materialResourcesChanged || assignmentsChanged)
+                    GraphData.RasterPhases = ReconcileRasterPhases(ref edit, rasterStages, shadeStages);
+                if (rasterChanged)
+                {
+                    UpdateRasterBinning(ref edit, GraphData.RasterPhases);
+                    UpdateRasterCapacity(ref edit, rasterBinCount, GraphData.RasterPhases);
+                }
+                if (shadeChanged || materialResourcesChanged || assignmentsChanged)
+                    GraphData.ShadeGroups = UpdateShadeGroups(ref edit, shadeStages);
             }
             else
             {
-                UpdateMaterialBins(assignments, rasterStages, shadeStages, scalars);
-            }
-            _materialScalars = scalars;
-            _installedMaterialTopologyVersion = assignments.TopologyVersion;
-            AcceptMaterialChanges(assignments);
-            _installedRasterStages = rasterStages;
-            _installedShadeStages = shadeStages;
-            _rasterStages!.AcceptChanges();
-            _shadeStages!.AcceptChanges();
-            _cullingEnabled = cullingEnabled;
-            if (rasterChanged) _rasterRevision = checked(_rasterRevision + 1);
-            return _outputs;
-        }
-
-        var uploads = new ClusterFrameUploads(
-            _backend,
-            _device,
-            ReadbackGenerationCount);
-        try
-        {
-            _uploads = uploads;
-            _instanceDataTransfer = _device.Adapter.Type == AdapterType.Discrete
-                ? _resources.InstanceResources.GetDataTransfer(_graph) : null;
-            RenderGraphEdit edit = _graph.BeginEdit();
-            try
-            {
-                uploads.BeginDeclarations();
-                _scalarBytes = uploads.Declare(ref edit, scalars.Bytes, BufferUsages.ShaderRead, "Cluster material scalars");
-                _scalarOffsets = uploads.Declare(ref edit, scalars.Offsets,
-                    BufferUsages.ShaderRead, "Cluster material scalar offsets");
-                _shadeScalarsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
-                _shadeScalarOffsetsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+                GraphData.ScalarBytes = CreateBufferData(ref edit, scalars.Bytes, BufferUsages.ShaderRead, "Cluster material scalars");
+                GraphData.ScalarOffsets = CreateBufferData(ref edit, scalars.Offsets, BufferUsages.ShaderRead, "Cluster material scalar offsets");
+                GraphData.ShadeScalars = edit.CreateBufferInput(BufferUsages.ShaderRead);
+                GraphData.ShadeScalarOffsets = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 using (SomeEngine.Diagnostics.EngineTrace.Begin(GraphInstallTrace))
-                    InstallGraph(
-                        ref edit,
-                        in _outputDescription,
-                        assignments,
-                        rasterStages,
-                        shadeStages);
-                var materialResources = UpdateMaterialResources(ref edit, rasterStages, shadeStages);
-                edit.Commit();
-                _materialBuffers = materialResources.Buffers;
-                AcceptMaterialTextures(materialResources.Textures);
-                uploads.CompleteDeclarations(_graph);
-            }
-            catch
-            {
-                uploads.CancelDeclarations();
-                throw;
-            }
-            finally
-            {
-                edit.Dispose();
-            }
-            _materialScalars = scalars;
-            _installedMaterialTopologyVersion = assignments.TopologyVersion;
-            AcceptMaterialChanges(assignments);
-            _installedRasterStages = rasterStages;
-            _installedShadeStages = shadeStages;
-            _rasterStages!.AcceptChanges();
-            _shadeStages!.AcceptChanges();
-            _cullingEnabled = cullingEnabled;
-            _graphInstalled = true;
-            _rasterRevision = checked(_rasterRevision + 1);
-            return _outputs;
-        }
-        catch
-        {
-            _uploads = null;
-            uploads.Dispose();
-            _historyInitializationPasses.Clear();
-            _layerDispatches.Clear();
-            _winnerResolvePasses.Clear();
-            _pageHeapReaderPasses = _pageHeapReaderPasses.Clear();
-            _bindingScratchReadsPageHeap = false;
-            _traversalSeedPass = default;
-            _traversalPass = default;
-            _traversalLevelPasses.Clear();
-            _primaryDeferredResetPass = default;
-            _primaryDeferredResumePass = default;
-            _primaryPostTraversalPass = default;
-            _primaryPostTraversalLevelPasses.Clear();
-            _continuationResetPass = default;
-            _continuationTraversalSeedPass = default;
-            _continuationTraversalPass = default;
-            _continuationTraversalLevelPasses.Clear();
-            _continuationCullPass = default;
-            _continuationDeferredResetPass = default;
-            _continuationDeferredResumePass = default;
-            _continuationPostTraversalPass = default;
-            _continuationPostTraversalLevelPasses.Clear();
-            _continuationPostCullPass = default;
-            _materialInputs = _materialInputs.Clear();
-            _frameResources = default;
-            _instanceDataTransfer = null;
-            _outputs = default;
-            Array.Clear(_rasterBinning);
-            _rasterEpochs = _rasterEpochs.Clear();
-            _meshRasterPasses = _meshRasterPasses.Clear();
-            _shadeGroups = _shadeGroups.Clear();
-            _shadeGroupOrder.Clear();
-            throw;
-        }
-    }
-
-    private void UpdateMaterialBins(ClusterMaterialAssignmentSet assignments,
-        ClusterRasterStageSet rasterStages, ClusterShadeStageSet shadeStages, ClusterMaterialScalars scalars)
-    {
-        ClusterFrameUploads uploads = _uploads!;
-        RenderGraphEdit edit = _graph.BeginEdit();
-        try
-        {
-            uploads.BeginDeclarations();
-            UpdateScalarBuffers(ref edit, scalars);
-            UpdateMaterialIndexBuffers(ref edit, rasterStages, shadeStages);
-            var materialResources = UpdateMaterialResources(ref edit, rasterStages, shadeStages);
-            edit.Commit();
-            _materialBuffers = materialResources.Buffers;
-            AcceptMaterialTextures(materialResources.Textures);
-        }
-        catch
-        {
-            uploads.CancelDeclarations();
-            throw;
-        }
-        finally { edit.Dispose(); }
-        uploads.CompleteDeclarations(_graph);
-    }
-
-    private void ReconcileStageRegion(
-        ClusterMaterialAssignmentSet assignments,
-        ClusterRasterStageSet rasterStages,
-        ClusterShadeStageSet shadeStages,
-        bool rasterChanged,
-        bool shadeChanged,
-        ClusterMaterialScalars scalars)
-    {
-        ClusterFrameUploads uploads = _uploads ?? throw new InvalidOperationException(
-            "Cluster retained upload storage was not created.");
-        var previousEpochs = _rasterEpochs;
-        var previousMeshPasses = _meshRasterPasses;
-        var previousPageHeapReaders = _pageHeapReaderPasses;
-        var previousMaterialInputs = _materialInputs;
-        var previousShadeGroups = _shadeGroups;
-        FrameResources previousFrameResources = _frameResources;
-        RenderGraphEdit edit = _graph.BeginEdit();
-        try
-        {
-            uploads.BeginDeclarations();
-            UpdateScalarBuffers(ref edit, scalars);
-            ReconcileStageResources(
-                ref edit,
-                assignments,
-                rasterStages,
-                shadeStages);
-            UpdateRasterBinning(ref edit);
-            if (rasterChanged)
-            {
-                RecordGeometryStageRegion(
-                    ref edit,
-                    _frameResources,
-                    rasterStages,
-                    _frameResources.PackedViews,
-                    rasterChanged);
-            }
-            UpdateRasterCapacity(ref edit, previousFrameResources.RasterBinCount);
-            if (shadeChanged)
-            {
-                RecordShadeStageRegion(
-                    ref edit,
-                    _frameResources,
-                    shadeStages);
+                    GraphData.RasterPhases = InstallGraph(ref edit, in _outputDescription, assignments, rasterStages, shadeStages);
             }
             var materialResources = UpdateMaterialResources(ref edit, rasterStages, shadeStages);
-            edit.Commit();
-            _materialBuffers = materialResources.Buffers;
-            AcceptMaterialTextures(materialResources.Textures);
-        }
-        catch
-        {
-            uploads.CancelDeclarations();
-            _rasterEpochs = previousEpochs;
-            _meshRasterPasses = previousMeshPasses;
-            _pageHeapReaderPasses = previousPageHeapReaders;
-            _materialInputs = previousMaterialInputs;
-            _shadeGroups = previousShadeGroups;
-            foreach (uint bin in shadeStages.ChangedBins)
-                if (_shadeGroups.ContainsKey(bin)) _shadeGroupOrder.Add(bin);
-                else _shadeGroupOrder.Remove(bin);
-            _frameResources = previousFrameResources;
-            throw;
-        }
-        finally
-        {
-            edit.Dispose();
-        }
-        uploads.CompleteDeclarations(_graph);
-    }
-
-    internal int AdmitFrameResources()
-    {
-        if (_hasPendingFrame)
-            throw new InvalidOperationException("The previous Cluster frame has not been committed or discarded.");
-        if (_readbackWriteGeneration >= 0)
-            return 1;
-        _readbackWriteGeneration =
-            AcquireReadbackGeneration(out int availableGenerationCount);
-        return availableGenerationCount;
-    }
-
-    internal bool TryAdmitFrameResources(
-        out int availableGenerationCount,
-        out QueueCompletion[] retirementFences)
-    {
-        if (_hasPendingFrame)
-            throw new InvalidOperationException("The previous Cluster frame has not been committed or discarded.");
-        if (_readbackWriteGeneration >= 0)
-        {
-            availableGenerationCount = 1;
-            retirementFences = [];
-            return true;
-        }
-        if (!TryAcquireReadbackGeneration(
-                out int generation,
-                out availableGenerationCount,
-                out retirementFences))
-        {
-            return false;
-        }
-        _readbackWriteGeneration = generation;
-        return true;
+            GraphData.MaterialBuffers = materialResources.Buffers;
+            GraphData.MaterialTextures = materialResources.Textures;
+            ReconcileTransparency(ref edit, assignments, shadeStages);
+            ReconcileBlendMeasurements(ref edit);
+        });
+        _materialScalars = scalars;
+        _textureScalarChanges.Clear();
+        _installedMaterialTopologyVersion = assignments.TopologyVersion;
+        RecordMaterialCasterChanges(assignments);
+        AcceptMaterialChanges(assignments, sourceAssignments);
+        _installedRasterStages = rasterStages;
+        _installedShadeStages = shadeStages;
+        _rasterStages!.AcceptChanges();
+        _shadeStages!.AcceptChanges();
+        _cullingEnabled = cullingEnabled;
+        _graphInstalled = true;
+        if (rasterChanged || materialDepthChanged) _rasterRevision = checked(_rasterRevision + 1);
+        return GraphData.Outputs;
     }
 
     public void OnUpdate(ref RenderFrameSystemContext context)
@@ -753,6 +550,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 views = CollectionsMarshal.AsSpan(viewCollector.Views);
                 viewEntities = CollectionsMarshal.AsSpan(viewCollector.Entities);
                 primaryViewCount = views.Length;
+                StoreViews(views, 0);
             }
             if (primaryViewCount != checked((int)_outputDescription.ViewCount))
             {
@@ -787,7 +585,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         finally
         {
             viewCollector.Clear();
-            _stagedViews.AsSpan(0, _stagedViewCount).Clear();
             _stagedPolicies.AsSpan(0, _stagedViewCount).Clear();
             _stagedPolicyViewIndices.AsSpan(0, _stagedViewCount).Clear();
             _stagedViewCount = 0;
@@ -806,21 +603,23 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             context.ActiveFrame,
             batch,
             _instanceLayout);
-        EnsurePageFaultReadback(binding.PageFaultCapacity);
-        EnsureFrameMetricsReadback();
-        if (_readbackWriteGeneration < 0)
-            _readbackWriteGeneration = AcquireReadbackGeneration();
+        RenderGraphFrame graph = context.Graph;
+        bool writeGeometry = BeginGeometryFrame(ref graph, binding.Publication);
+        _frameInstanceGeneration = binding.InstanceGeneration;
         ClusterCullingHistory history = _history ?? throw new InvalidOperationException(
             "The Cluster culling history was not created.");
         bool historyPrepared = false;
         try
         {
             Span<ClusterViewUniforms> packedViews = _packedViews;
-            packedViews.Clear();
-            history.Prepare(
-                _outputDescription.Width,
-                _outputDescription.Height,
-                views[..primaryViewCount], viewEntities[..primaryViewCount]);
+            WorldOrigin dataOrigin = views[0].WorldOrigin;
+            if (!_hasViewDataOrigin || _viewDataOrigin != dataOrigin)
+            {
+                Array.Clear(_viewDataValid);
+                _viewDataOrigin = dataOrigin;
+                _hasViewDataOrigin = true;
+            }
+            history.Prepare(views[..primaryViewCount], viewEntities[..primaryViewCount]);
             historyPrepared = true;
             for (int viewIndex = 0; viewIndex < views.Length; viewIndex++)
             {
@@ -829,13 +628,15 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     (isTargetView && _renderContext.HardwareRasterOnly)
                     ? ClusterViewRasterMode.Hardware
                     : ClusterViewRasterMode.Adaptive;
-                packedViews[viewIndex] = ClusterViewUniforms.Create(
-                    in views[viewIndex],
-                    _options,
-                    rasterMode,
-                    _cullingEnabled,
-                    binding.DispatchExtent,
-                    binding.PageFaultCapacity);
+                if (!_viewDataValid[viewIndex])
+                {
+                    packedViews[viewIndex] = ClusterViewUniforms.Create(
+                        in views[viewIndex], _options, rasterMode, _cullingEnabled,
+                        binding.DispatchExtent, binding.PageFaultCapacity, dataOrigin);
+                    _viewDataValid[viewIndex] = true;
+                }
+                packedViews[viewIndex].UpdateFrameData(in views[viewIndex], rasterMode, _cullingEnabled,
+                    binding.DispatchExtent, binding.PageFaultCapacity, _resources.Residency.StreamingQuality);
                 packedViews[viewIndex].TargetPolicy = isTargetView
                     ? _stagedPolicies[viewIndex]
                     : 0u;
@@ -845,18 +646,28 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 if (!isTargetView && history.TryGetPrevious(
                         viewIndex,
                         out Matrix4x4 previousView,
-                        out Matrix4x4 previousProjection))
+                        out Matrix4x4 previousProjection,
+                        out WorldOrigin previousOrigin))
                 {
                     ref ClusterViewUniforms uniforms = ref packedViews[viewIndex];
-                    uniforms.PrevViewProj = previousView * previousProjection;
+                    Matrix4x4.Invert(previousView, out Matrix4x4 previousInverse);
+                    Vector3 previousCamera = new(previousInverse.M41, previousInverse.M42, previousInverse.M43);
+                    WorldOrigin previousViewOrigin = new(previousOrigin.X + previousCamera.X,
+                        previousOrigin.Y + previousCamera.Y, previousOrigin.Z + previousCamera.Z);
+                    Matrix4x4 previousNearView = Matrix4x4.CreateTranslation(previousCamera) * previousView;
+                    uniforms.PrevViewProj = previousNearView * previousProjection;
+                    uniforms.PreviousWorldTranslation = views[0].WorldOrigin.RelativeTo(previousViewOrigin);
+                    uniforms.PreviousDataTranslation = previousOrigin.RelativeTo(views[0].WorldOrigin);
                     uniforms.HasPrevHistory = 1;
-                    uniforms.HiZMipCount = checked((uint)history.HiZMipCount);
+                    uniforms.HiZMipCount = checked((uint)ClusterCullingHistory.CalculateMipCount(_outputDescription.Width, _outputDescription.Height));
                     uniforms.HiZInvSize = new Vector2(
                         1.0f / _outputDescription.Width,
                         1.0f / _outputDescription.Height);
-                    uniforms.PrevView = previousView;
+                    uniforms.PrevView = previousNearView;
+                    uniforms.PreviousWorldToFirstPerson = history.PreviousFirstPersonTransform(viewIndex);
                     uniforms.PrevP00 = previousProjection.M11;
                     uniforms.PrevP11 = previousProjection.M22;
+                    previousViewOrigin.Split(out uniforms.PreviousWorldOriginHigh, out uniforms.PreviousWorldOriginLow);
                 }
                 else if (isTargetView && _renderContext.IsValid)
                 {
@@ -873,63 +684,68 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 }
             }
 
-            _pendingReadbackEpoch = binding.ReadbackEpoch;
-            _pendingInstanceGeneration = binding.InstanceGeneration;
-            _pendingResidencyPublication = binding.Publication;
-            _outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRange);
-            _residentPageReads = _outputs.Geometry.ResidentPageReads;
+            BindMaterialDecalFrame(ref graph, views[..primaryViewCount]);
+            BindTransparencyFrame(ref graph, batch, views[..primaryViewCount], binding.Publication is not null);
+            GraphData.BlendMeasurements?.Stage(ref graph, _measurementSimulationFrame,
+                GraphData.Transparency?.Reused ?? true, GraphData.Decals!.Reused, CaptureDecalBuffers());
+            GraphData.Outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRanges);
+            _residentPageReads = GraphData.Outputs.Geometry.ResidentPageReads;
             _hasPendingFrame = true;
 
-            RenderGraphFrame graph = context.Graph;
             graph.ObserveExecution(this);
-            ClusterRenderDiagnostics diagnostics = _resources.CaptureDiagnostics();
-            bool streamWork = diagnostics.Meshes.PublishedMeshes != diagnostics.Meshes.RegisteredMeshes ||
-                diagnostics.Residency.HasPendingPublication || diagnostics.Residency.QueuedPageLoads != 0 ||
-                diagnostics.Residency.ActivePageLoads != 0 || diagnostics.Residency.PendingPageLoads != 0;
-            graph.SetPassOptions(_pageFaultReadbackPass,
-                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true) { SubmitAfter = streamWork });
+            graph.SetReadbackTag(GraphData.PageFaultReadback, graph.FrameIdentity);
+            if (_options.EnableFrameMetricsReadback)
+                graph.SetReadbackTag(GraphData.FrameMetricsReadback, binding.ReadbackEpoch.Value);
             int policyViewCount = views.Length - primaryViewCount;
             _framePolicyViews = policyViewCount == 0
-                ? new GraphBufferSlice(_frameResources.PackedViews, BufferRange.Whole)
+                ? new GraphBufferSlice(GraphData.Resources.PackedViews, BufferRange.Whole)
                 : graph.Upload(
                     packedViews.Slice(primaryViewCount, policyViewCount),
                     BufferUsages.ShaderRead,
                     "Cluster active policy views");
             if (_renderContext.IsValid)
                 _renderContext.InvocationSourceBinder(ref graph, _framePolicyViews);
+            using (SomeEngine.Diagnostics.EngineTrace.Begin(MaterialInputsTrace))
+                UpdateMaterialInputs(ref graph);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(FrameResourcesTrace))
                 BindFrameResources(
                     ref graph,
                     in binding,
                     history);
-            using (SomeEngine.Diagnostics.EngineTrace.Begin(InstanceTransferTrace))
-                _instanceDataTransfer?.Stage(ref graph, batch, binding.InstanceData);
+            _instanceDataTransfer!.Stage(ref graph, batch, binding.InstanceData);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(SceneBoundsTrace))
-                BindSceneBounds(ref graph, batch, policyViewCount != 0);
+                BindSceneBounds(ref graph, context.World, batch, policyViewCount != 0, views[0].WorldOrigin);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyUploadsTrace))
-                RecordResidencyUploads(ref graph, in binding);
+                RecordResidencyUploads(ref graph, in binding, writeGeometry);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyReadsTrace))
                 DeclareResidencyReads(ref graph, in binding);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(FrameUploadsTrace))
                 WriteFrameUploads(
                     ref graph,
-                    RequireReadbackWriteGeneration(),
                     _installedRasterStages ?? throw new InvalidOperationException("Raster stages were not installed."),
                     _installedShadeStages ?? throw new InvalidOperationException("Shade stages were not installed."),
                     packedViews[..primaryViewCount],
                     primaryViewCount);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(RasterInputsTrace))
                 UpdateRasterDispatches(ref graph);
+            ulong hierarchyNodes = 0;
+            foreach (BufferRange range in binding.BvhRanges) hierarchyNodes += range.Size / ClusterBvh.NodeBytes;
+            ulong work = Math.Min(_options.MaxCandidates, Math.Max(hierarchyNodes, checked((ulong)binding.DispatchExtent)));
+            uint groupBudget = Math.Max(1u, Math.Max(_device.Capabilities.ShaderLaneCount,
+                _device.Capabilities.Limits.MaximumComputeThreadsPerGroup) / 64u);
+            uint workerGroups = Math.Max(1u, Math.Min(groupBudget, checked((uint)((work + 15u) / 16u))));
+            foreach (GraphPassId phase in GraphData.Resources.Work.Phases)
+                if (phase != default)
+                    graph.SetPassData(phase, new ClusterDispatchParameters(new DispatchArguments(workerGroups, 1, 1)));
             UpdateShadeInputs(ref graph, _installedShadeStages!);
-            using (SomeEngine.Diagnostics.EngineTrace.Begin(MaterialInputsTrace))
-                UpdateMaterialInputs(ref graph);
+            uint viewGroups = ClusterRenderContext.GetViewWorkGroupCount(checked((uint)primaryViewCount));
             graph.SetPassData(
-                _traversalSeedPass,
+                GraphData.PrimarySeed.Pass,
                 new ClusterDispatchParameters(new DispatchArguments(
                     checked((checked((uint)binding.DispatchExtent) + 63u) / 64u),
-                    checked((checked((uint)primaryViewCount) + 31u) / 32u),
-                    1)));
-            foreach (ClusterLayerDispatch dispatch in _layerDispatches)
+                    Math.Min(viewGroups, 65535u),
+                    Math.Max(1u, (viewGroups + 65534u) / 65535u))));
+            foreach (ClusterLayerDispatch dispatch in GraphData.LayerDispatches)
             {
                 graph.SetPassData(
                     dispatch.Pass,
@@ -938,57 +754,25 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                         dispatch.GroupY,
                         checked((uint)primaryViewCount))));
             }
-            foreach (GraphPassId pass in _winnerResolvePasses)
+            foreach (ClusterLayerDispatch dispatch in GraphData.WinnerDispatches)
             {
                 graph.SetPassData(
-                    pass,
+                    dispatch.Pass,
                     new ClusterFullscreenParameters(
                         _outputDescription.Width,
                         _outputDescription.Height,
                         checked((uint)primaryViewCount)));
             }
             bool initializeHistory = history.RequiresInitialization;
-            foreach (GraphPassId pass in _historyInitializationPasses)
-                graph.SetPassEnabled(pass, initializeHistory);
+            graph.SetRegionEnabled(GraphData.HistoryInitialization, initializeHistory);
         }
         catch
         {
-            if (binding.Publication is { } publication)
-                _resources.RetainResidencyPublication(publication);
             if (historyPrepared)
                 history.Discard();
             ClearPendingFrame();
             throw;
         }
-    }
-
-    private void BindTargetPolicyResources(ref RenderGraphEdit graph)
-    {
-        PassDefinition seed = graph.GetPass(_traversalSeedPass);
-        BindNeutralInvocationCount(ref graph, ref seed);
-        BindHierarchySeedResources(ref graph, _traversalSeedPass, policyTarget: false);
-        foreach (GraphPassId traversalLevelPass in _traversalLevelPasses)
-            BindTargetPolicyResources(ref graph, traversalLevelPass, policyTarget: false);
-        foreach (GraphPassId traversalLevelPass in _primaryPostTraversalLevelPasses)
-            BindTargetPolicyResources(ref graph, traversalLevelPass, policyTarget: false);
-        BindTargetPolicyResources(ref graph, _phaseOneCullPass, policyTarget: false);
-        BindTargetPolicyResources(ref graph, _phaseTwoCullPass, policyTarget: false);
-
-        if (!_renderContext.IsValid)
-            return;
-
-        PassDefinition continuationSeed = graph.GetPass(_continuationTraversalSeedPass);
-        _renderContext.InvocationCountBinder(ref graph, ref continuationSeed, PipelineSync.ComputeShading);
-        BindHierarchySeedResources(
-            ref graph,
-            _continuationTraversalSeedPass,
-            policyTarget: true);
-        foreach (GraphPassId traversalLevelPass in _continuationTraversalLevelPasses)
-            BindTargetPolicyResources(ref graph, traversalLevelPass, policyTarget: true);
-        foreach (GraphPassId traversalLevelPass in _continuationPostTraversalLevelPasses)
-            BindTargetPolicyResources(ref graph, traversalLevelPass, policyTarget: true);
-        BindTargetPolicyResources(ref graph, _continuationCullPass, policyTarget: true);
-        BindTargetPolicyResources(ref graph, _continuationPostCullPass, policyTarget: true);
     }
 
     private void BindNeutralInvocationCount(
@@ -997,8 +781,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
-                _frameResources.NeutralPolicyValue,
-                range: new BufferRange(2u * sizeof(uint), sizeof(uint)),
+                GraphData.Resources.NeutralPolicyValue,
+                range: new BufferRange(0u, 3u * sizeof(uint)),
                 structureStride: sizeof(uint),
                 label: "Cluster neutral raster-invocation count"),
             PipelineSync.ComputeShading);
@@ -1010,16 +794,17 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool policyTarget)
     {
         PassDefinition pass = graph.GetPass(passId);
+        FrameResources frame = GetRasterFrameResources(GraphData.Resources, policyTarget);
         _ = pass.Bind(
             graph.CreateTextureSrv(
-                _frameResources.PreviousHiZ,
+                frame.PreviousHiZ,
                 format: Format.R32Float,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Cluster hierarchy history HiZ"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateBufferUav(
-                _frameResources.Phase2CandidateClusters,
+                frame.Phase2CandidateClusters,
                 structureStride: CandidateStride,
                 label: "Cluster deferred hierarchy work"),
             PipelineSync.ComputeShading,
@@ -1029,13 +814,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(
             graph.CreateBufferUav(
-                _frameResources.Phase2CandidateCount,
+                frame.Phase2CandidateCount,
                 structureStride: sizeof(uint),
                 label: "Cluster deferred hierarchy count"),
             PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite,
             WriteCoverage.Complete);
-        _ = pass.Bind(graph.CreateBufferUav(_frameResources.Phase2CandidateArgs,
+        _ = pass.Bind(graph.CreateBufferUav(frame.Phase2CandidateArgs,
                 label: "Cluster deferred hierarchy dispatch arguments"),
             PipelineSync.ComputeShading, GraphAccessMode.ReadWrite, WriteCoverage.Complete);
         BindPolicyClusterViews(
@@ -1048,13 +833,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         else
             BindNeutralTargetPolicyFilterResources(ref graph, ref pass);
         BindSceneSeed(ref graph, ref pass);
-        BindDeformBounds(ref graph, ref pass);
+        BindWorkStatus(ref graph, ref pass);
     }
 
     private void BindTargetPolicyResources(
         ref RenderGraphEdit graph,
         GraphPassId passId,
-        bool policyTarget)
+        bool policyTarget, bool workStatusFirst = false)
     {
         PassDefinition pass = graph.GetPass(passId);
         BindPolicyClusterViews(
@@ -1062,7 +847,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             ref pass,
             PipelineSync.ComputeShading,
             policyTarget);
-        BindDeformBounds(ref graph, ref pass);
+        if (workStatusFirst) BindWorkStatus(ref graph, ref pass);
         if (policyTarget)
             _renderContext.FilterResourcesBinder(ref graph, ref pass, PipelineSync.ComputeShading);
         else
@@ -1080,7 +865,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _renderContext.InvocationViewsBinder(ref graph, ref pass, sync);
             return;
         }
-        GraphBufferId views = _frameResources.PackedViews;
+        GraphBufferId views = GraphData.Resources.PackedViews;
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 views,
@@ -1095,117 +880,80 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
-                _frameResources.NeutralPolicyView,
+                GraphData.Resources.NeutralPolicyView,
                 structureStride: ClusterRenderContext.TargetViewSizeInBytes,
                 label: "Cluster neutral raster target view"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateBufferSrv(
-                _frameResources.NeutralPolicyView,
-                structureStride: sizeof(uint),
+                GraphData.Resources.NeutralPolicyView,
+                structureStride: 2u * sizeof(uint),
                 label: "Cluster neutral raster page masks"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateBufferSrv(
-                _frameResources.NeutralPolicyView,
+                GraphData.Resources.NeutralPolicyView,
                 structureStride: 4 * sizeof(uint),
                 label: "Cluster neutral raster page table"),
             PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateTextureSrv(GraphData.Resources.NeutralPolicyOutput,
+            format: Format.R32UInt, dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D), PipelineSync.ComputeShading);
+        _ = pass.Bind(graph.CreateBufferSrv(GraphData.Resources.NeutralPolicyView,
+            structureStride: sizeof(uint), label: "Cluster neutral effective caster classes"), PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateBufferSrv(
-                _frameResources.NeutralPolicyView,
-                structureStride: 2 * sizeof(uint),
-                label: "Cluster neutral raster receiver masks"),
+                GraphData.Resources.NeutralPolicyView,
+                structureStride: 4 * sizeof(uint),
+                label: "Cluster neutral raster page HiZ metadata"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateTextureSrv(
-                _frameResources.PreviousHiZ,
+                GraphData.Resources.PreviousHiZ,
                 format: Format.R32Float,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Cluster neutral current target HiZ"),
             PipelineSync.ComputeShading);
         _ = pass.Bind(
             graph.CreateTextureSrv(
-                _frameResources.PreviousHiZ,
+                GraphData.Resources.PreviousHiZ,
                 format: Format.R32Float,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Cluster neutral previous target HiZ"),
             PipelineSync.ComputeShading);
     }
 
-    void IRenderGraphFrameExecutionObserver.OnRenderGraphSubmitted(RenderGraphFrameResult result)
-    {
-        if (!_hasPendingFrame) return;
-        RegisterPageFaultReadback(result);
-        DrainCompletedReadbacks();
-    }
-
-    private void RegisterPageFaultReadback(RenderGraphFrameResult result)
-    {
-        if (_pageFaultSubmission is not null ||
-            !result.TryGetPassCompletion(_pageFaultReadbackPass, out QueueCompletion completion)) return;
-        int generation = RequireReadbackWriteGeneration();
-        ulong sequence = checked(++_nextReadbackSequence);
-        _readbackSequences[generation] = sequence;
-        _pageFaultReadbackTickets[generation] = new ClusterReadbackTicket(_pendingReadbackEpoch, sequence);
-        _pageFaultReadbackCompletions[generation] = completion;
-        _pageFaultReadbackPending[generation] = true;
-        _pageFaultSubmission = completion;
-    }
-
     void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
     {
         if (!_hasPendingFrame) return;
+        _resources.InstanceResources.StoreMetadataReadStates(_frameInstanceGeneration,
+            result.GetBufferStates(GraphData.Resources.InstanceProperties));
+        CullWork work = GraphData.Resources.Work;
+        if (result.TryGetPassCompletion(work.Initialize, out _)) work.Initialized = true;
+        for (int phase = 0; phase < work.Phases.Length; phase++)
+            if ((work.FramePhases & (1u << phase)) != 0u && !result.TryGetPassCompletion(work.Phases[phase], out _))
+                work.Initialized = false;
         if (result.SubmittedCompletions.IsEmpty)
         {
             Discard();
             return;
         }
-        int generation = RequireReadbackWriteGeneration();
-        // The generation includes upload data as well as readbacks. Any accepted queue
-        // may still read it, even when neither readback pass reached submission.
-        _readbackFences[generation] = result.SubmittedCompletions.ToArray();
-        _pageFaultReadbackStates[generation] = result.GetBufferStates(_frameResources.PageFaultReadback).ToArray();
-        if (_options.EnableFrameMetricsReadback)
-            _frameMetricReadbackStates[generation] = result.GetBufferStates(_frameResources.FrameMetricsReadback).ToArray();
-        _preferredReadbackGeneration = generation;
         try
         {
-            _history!.FinishFrame(result, _frameResources.PreviousHiZ, _frameResources.CurrentHiZ,
-                result.TryGetPassCompletion(_phaseTwoHiZPass, out _));
-            _uploads!.FinishFrame(generation, result);
-            if (_instanceDataTransfer is null)
-                _resources.StoreInstanceReadStates(_pendingInstanceGeneration,
-                    result.GetBufferStates(_frameResources.InstanceData),
-                    result.GetBufferStates(_frameResources.InstanceProperties));
-            else
-                _resources.InstanceResources.StoreMetadataReadStates(_pendingInstanceGeneration,
-                    result.GetBufferStates(_frameResources.InstanceProperties));
-            RegisterPageFaultReadback(result);
-            DrainCompletedReadbacks();
-            if (_options.EnableFrameMetricsReadback &&
-                result.TryGetPassCompletion(_candidateMetricsReadbackPass, out _) &&
-                result.TryGetPassCompletion(_frameMetricsReadbackPass, out _))
-            {
-                _frameMetricReadbackFrames[generation] = checked(++_frameMetricsSubmittedFrame);
-                _frameMetricReadbackPending[generation] = true;
-            }
-            if (result.TryGetPassCompletion(_sceneBoundsPass, out _))
+            CompleteTransparencyFrame(result);
+            CompleteMaterialDecalFrame(result);
+            bool geometryWritten = result.TryGetPassCompletion(GraphData.Outputs.Geometry.CompletePass, out _);
+            _history!.FinishFrame(geometryWritten);
+            foreach (GraphBufferId buffer in GraphData.BufferWrites.Keys)
+                if (result.TryGetPassCompletion(GraphData.BufferDescriptions[buffer].UploadPass, out _))
+                    GraphData.BufferWrites = GraphData.BufferWrites.Remove(buffer);
+            if (result.TryGetPassCompletion(GraphData.SceneBounds.Pass, out _))
             {
                 _sceneBatch = CurrentInstances;
                 _sceneInstanceRevision = _sceneBatch?.ContentRevision ?? 0;
                 _sceneGeometryRevision = GeometryRevision;
                 _sceneDeformRevision = _deformBounds?.Revision ?? 0;
-            }
-            if (_pendingResidencyPublication is { } publication)
-            {
-                bool uploaded = true;
-                foreach (GraphPassId pass in _residencyUploadPasses)
-                    uploaded &= result.TryGetPassCompletion(pass, out _);
-                if (uploaded)
-                    _resources.CommitResidencyPublication(publication, CaptureRetirementCompletions(publication));
-                else
-                    _resources.RetainResidencyPublication(publication);
+                _sceneRasterRevision = RasterRevision;
+                _sceneOrigin = _frameSceneOrigin;
             }
         }
         finally { ClearPendingFrame(); }
@@ -1215,25 +963,16 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private void Discard()
     {
         if (!_hasPendingFrame) return;
-        if (_pendingResidencyPublication is { } publication)
-            _resources.RetainResidencyPublication(publication);
         _history?.Discard();
         ClearPendingFrame();
     }
 
     private void ClearPendingFrame()
     {
-        _uploads?.DiscardFrame();
-        if (_outputs.IsValid)
-            _outputs.Geometry.ClearFrame();
-        _pendingReadbackEpoch = default;
-        _pageFaultSubmission = null;
-        _pendingInstanceGeneration = -1;
-        _pendingResidencyPublication = null;
-        _residencyUploadPasses.Clear();
+        if (GraphData.Outputs.IsValid)
+            GraphData.Outputs.Geometry.ClearFrame();
         _residentPageReads = BufferRangeSet.Empty;
         _framePolicyViews = default;
-        _readbackWriteGeneration = -1;
         _hasPendingFrame = false;
     }
 
@@ -1241,96 +980,48 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         if (!_created)
             return;
+
         _materialBindingVersions.Clear();
+        _consumedMaterialAssignments = null;
         List<Exception>? failures = null;
         Release(ref _viewQuery, context.World, ref failures);
-        Dispose(ref _uploads, ref failures);
+        Release(ref _sceneQuery, context.World, ref failures);
+        Release(ref _decalQuery, context.World, ref failures);
+        _decalWorld = null;
         Dispose(ref _shadeStages, ref failures);
+        foreach (TransparencyShaders shaders in _transparencyShaders)
+        {
+            foreach (TransparencyPipeline pipeline in shaders.Pipelines.Values)
+                try { pipeline.Pipeline.Dispose(); }
+                catch (Exception error) { (failures ??= []).Add(error); }
+        }
+        _transparencyShaders.Clear();
         Dispose(ref _rasterStages, ref failures);
-        Dispose(ref _entryUsages, ref failures);
         DisposeMaterialSamplers(ref failures);
         Dispose(ref _pipelines, ref failures);
-        Dispose(ref _history, ref failures);
+        _history = null;
         Dispose(ref _dispatchIndirectLayout, ref failures);
         Dispose(ref _drawIndirectLayout, ref failures);
         Dispose(ref _drawIndexedIndirectLayout, ref failures);
-        for (int generation = 0; generation < ReadbackGenerationCount; generation++)
-        {
-            if (_pageFaultReadbacks[generation] is { } pageFaultReadback)
-            {
-                try { pageFaultReadback.Dispose(); }
-                catch (Exception failure) { (failures ??= []).Add(failure); }
-            }
-            _pageFaultReadbacks[generation] = null;
-            _pageFaultReadbackStates[generation] = [];
-            _frameMetricReadbackStates[generation] = [];
-            _pageFaultReadbackTickets[generation] = default;
-            _pageFaultReadbackPending[generation] = false;
-            _pageFaultReadbackCompletions[generation] = default;
-
-            if (_frameMetricReadbacks[generation] is { } frameMetricReadback)
-            {
-                try { frameMetricReadback.Dispose(); }
-                catch (Exception failure) { (failures ??= []).Add(failure); }
-            }
-            _frameMetricReadbacks[generation] = null;
-            _frameMetricReadbackFrames[generation] = 0;
-            _frameMetricReadbackPending[generation] = false;
-            _readbackFences[generation] = [];
-            _readbackSequences[generation] = 0;
-
-        }
-        _frameMetricReadbackBytes = [];
-        _frameMetricsSubmittedFrame = 0;
-        _nextReadbackSequence = 0;
-        _readbackWriteGeneration = -1;
-        _preferredReadbackGeneration = 0;
+        _metricFrameIndex = 0;
         _latestFrameMetrics = null;
-        _historyInitializationPasses.Clear();
-        _materialInputs = _materialInputs.Clear();
-        _materialInputGroups = [];
-        _materialInputSource = null;
-        _materialInputRaster = null;
-        _materialInputShade = null;
-        _materialBuffers = _materialBuffers.Clear();
-        AcceptMaterialTextures(_materialTextures.Clear());
+        AcceptMaterialTextures(_graphData.MaterialTextures.Clear(), shutdown: true);
+        _missingTextureInputsToPrepare = false;
         _materialScalars = ClusterMaterialScalars.Empty;
-        _layerDispatches.Clear();
-        _winnerResolvePasses.Clear();
-        _traversalSeedPass = default;
-        _traversalPass = default;
-        _traversalLevelPasses.Clear();
-        _primaryDeferredResetPass = default;
-        _primaryDeferredResumePass = default;
-        _primaryPostTraversalPass = default;
-        _primaryPostTraversalLevelPasses.Clear();
-        _continuationResetPass = default;
-        _continuationTraversalSeedPass = default;
-        _continuationTraversalPass = default;
-        _continuationTraversalLevelPasses.Clear();
-        _continuationCullPass = default;
-        _continuationDeferredResetPass = default;
-        _continuationDeferredResumePass = default;
-        _continuationPostTraversalPass = default;
-        _continuationPostTraversalLevelPasses.Clear();
-        _continuationPostCullPass = default;
-        _frameResources = default;
-        _instanceDataTransfer = null;
-        _outputs = default;
+        _casterChanges.Clear();
+        _casterRevision = 0;
+        _lastGeometryChangeSequence = 0;
+        _casterStreamingQuality = 1.0f;
+        _graphData = new ClusterGraphData();
         _renderContext = default;
-        _shadeCompleteBefore = default;
-        _depthCompleteBefore = default;
         _installedRasterStages = null;
         _installedShadeStages = null;
-        Array.Clear(_rasterBinning);
-        _rasterEpochs = _rasterEpochs.Clear();
-        _meshRasterPasses = _meshRasterPasses.Clear();
-        _shadeGroups = _shadeGroups.Clear();
-        _shadeGroupOrder.Clear();
         _installedMaterialTopologyVersion = 0;
         _graphInstalled = false;
         ClearPendingFrame();
         Array.Clear(_stagedViews);
+        Array.Clear(_viewDataValid);
+        _hasViewDataOrigin = false;
         Array.Clear(_stagedPolicies);
         Array.Clear(_stagedPolicyViewIndices);
         _stagedViewCount = 0;
@@ -1398,155 +1089,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         }
     }
 
-    private void EnsurePageFaultReadback(int capacity)
-    {
-        int byteCount = checked(sizeof(uint) + capacity * sizeof(uint));
-        if (_pageFaultReadbacks[0] is not null)
-        {
-            if (_pageFaultReadbacks[0]!.Info.Size != (ulong)byteCount)
-            {
-                throw new InvalidOperationException(
-                    "The Cluster page-fault capacity changed inside a live renderer epoch.");
-            }
-            return;
-        }
-
-        CreateReadbackBuffers(
-            _pageFaultReadbacks,
-            byteCount,
-            "Cluster page-fault readback");
-    }
-
-    private int AcquireReadbackGeneration() =>
-        AcquireReadbackGeneration(out _);
-
-    private int AcquireReadbackGeneration(out int availableGenerationCount)
-    {
-        if (TryAcquireReadbackGeneration(
-                out int generation,
-                out availableGenerationCount,
-                out _))
-        {
-            return generation;
-        }
-
-        int preferred = _preferredReadbackGeneration;
-        int alternate = 1 - preferred;
-        int oldest = _readbackSequences[preferred] <= _readbackSequences[alternate]
-            ? preferred
-            : alternate;
-        if (!WaitForAll(_readbackFences[oldest], ReadbackRetirementTimeout))
-        {
-            throw new TimeoutException(
-                $"Cluster readback generation {oldest} did not retire within {ReadbackRetirementTimeout}.");
-        }
-        DrainCompletedReadbacks();
-        if (_pageFaultReadbackPending[oldest])
-            throw new InvalidOperationException("A completed Cluster readback generation was not reclaimed.");
-        availableGenerationCount =
-            (CanUseReadbackStorage(0) ? 1 : 0) +
-            (CanUseReadbackStorage(1) ? 1 : 0);
-        return oldest;
-    }
-
-    private bool TryAcquireReadbackGeneration(
-        out int generation,
-        out int availableGenerationCount,
-        out QueueCompletion[] retirementFences)
-    {
-        DrainCompletedReadbacks();
-        int preferred = _preferredReadbackGeneration;
-        int alternate = 1 - preferred;
-        bool preferredAvailable = CanUseReadbackStorage(preferred);
-        bool alternateAvailable = CanUseReadbackStorage(alternate);
-        availableGenerationCount =
-            (preferredAvailable ? 1 : 0) + (alternateAvailable ? 1 : 0);
-        if (preferredAvailable)
-        {
-            generation = preferred;
-            retirementFences = [];
-            return true;
-        }
-        if (alternateAvailable)
-        {
-            generation = alternate;
-            retirementFences = [];
-            return true;
-        }
-
-        int oldest = _readbackSequences[preferred] <= _readbackSequences[alternate]
-            ? preferred
-            : alternate;
-        generation = -1;
-        retirementFences = _readbackFences[oldest];
-        if (retirementFences.Length == 0)
-        {
-            throw new InvalidOperationException(
-                "An unavailable Cluster readback generation has no retirement position.");
-        }
-        return false;
-    }
-
-    private int RequireReadbackWriteGeneration()
-    {
-        if ((uint)_readbackWriteGeneration >= ReadbackGenerationCount)
-        {
-            throw new InvalidOperationException(
-                "Cluster readback storage has no admitted write generation.");
-        }
-        return _readbackWriteGeneration;
-    }
-
-    private void DrainCompletedReadbacks()
-    {
-        while (TryGetOldestPendingReadback(out int generation))
-        {
-            if (!_backend.IsComplete(_pageFaultReadbackCompletions[generation]))
-                break;
-
-            Buffer pageFaultReadback =
-                _pageFaultReadbacks[generation] is { } value
-                    ? value
-                    : throw new InvalidOperationException(
-                        "Cluster page-fault readback ownership was lost.");
-            ClusterReadbackTicket ticket = _pageFaultReadbackTickets[generation];
-            if (!ticket.IsValid)
-                throw new InvalidOperationException("Cluster page-fault readback ticket was lost.");
-            using (MappedBuffer mapping = _backend.Map(pageFaultReadback, MapType.Read, BufferRange.Whole))
-            {
-                mapping.Invalidate(mapping.Range);
-                _streamingFeedback.Publish(ticket, mapping.Bytes);
-            }
-            _pageFaultReadbackTickets[generation] = default;
-            _pageFaultReadbackPending[generation] = false;
-            _pageFaultReadbackCompletions[generation] = default;
-        }
-        for (int generation = 0; generation < ReadbackGenerationCount; generation++)
-            if (_frameMetricReadbackPending[generation] && WaitForAll(_readbackFences[generation], TimeSpan.Zero))
-                DrainFrameMetricsReadback(generation);
-    }
-
-    private bool CanUseReadbackStorage(int generation) =>
-        !_pageFaultReadbackPending[generation] && !_frameMetricReadbackPending[generation] &&
-        WaitForAll(_readbackFences[generation], TimeSpan.Zero);
-
-    private bool TryGetOldestPendingReadback(out int generation)
-    {
-        generation = -1;
-        ulong sequence = ulong.MaxValue;
-        for (int candidate = 0; candidate < ReadbackGenerationCount; candidate++)
-        {
-            if (!_pageFaultReadbackPending[candidate]
-                || _readbackSequences[candidate] >= sequence)
-            {
-                continue;
-            }
-            generation = candidate;
-            sequence = _readbackSequences[candidate];
-        }
-        return generation >= 0;
-    }
-
     /// <summary>
     /// Reads counters from the latest frame. The caller must have completed its GPU frame before
     /// requesting CPU-visible diagnostics.
@@ -1558,80 +1100,14 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new InvalidOperationException(
                 "Cluster frame metrics are not enabled for this renderer epoch.");
         }
-        DrainCompletedReadbacks();
+        _graph.CollectCompleted();
         return _latestFrameMetrics ?? throw new InvalidOperationException(
             "No completed Cluster frame metrics are available.");
     }
 
-    private void EnsureFrameMetricsReadback()
+    private void ReceiveFrameMetrics(ReadOnlySpan<byte> bytes, ulong epoch)
     {
-        if (!_options.EnableFrameMetricsReadback
-            || _frameMetricReadbacks[0] is not null)
-            return;
-        _frameMetricReadbackBytes = new byte[FrameMetricsReadbackByteSize];
-        CreateReadbackBuffers(
-            _frameMetricReadbacks,
-            FrameMetricsReadbackByteSize,
-            "Cluster frame metrics readback");
-    }
-
-    private void CreateReadbackBuffers(
-        Buffer?[] slots,
-        int byteCount,
-        string label)
-    {
-        if (slots.Length != ReadbackGenerationCount || slots[0] is not null || slots[1] is not null)
-            throw new InvalidOperationException("Cluster readback slots are not empty.");
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(byteCount);
-        ArgumentException.ThrowIfNullOrWhiteSpace(label);
-
-        Buffer? first = null;
-        Buffer? second = null;
-        try
-        {
-            first = _backend.CreateBuffer(
-                _device,
-                new BufferDesc(
-                    checked((ulong)byteCount),
-                    BufferUsages.CopyDestination,
-                    $"{label} 0"),
-                MemoryType.Readback);
-            second = _backend.CreateBuffer(
-                _device,
-                new BufferDesc(
-                    checked((ulong)byteCount),
-                    BufferUsages.CopyDestination,
-                    $"{label} 1"),
-                MemoryType.Readback);
-        }
-        catch (Exception primary)
-        {
-            List<Exception>? cleanupFailures = null;
-            Dispose(ref second, ref cleanupFailures);
-            Dispose(ref first, ref cleanupFailures);
-            if (cleanupFailures is not null)
-            {
-                cleanupFailures.Insert(0, primary);
-                throw new AggregateException(
-                    $"{label} creation failed and cleanup also reported failures.",
-                    cleanupFailures);
-            }
-            throw;
-        }
-
-        slots[0] = first;
-        slots[1] = second;
-    }
-
-    private void DrainFrameMetricsReadback(int generation)
-    {
-        if (!_frameMetricReadbackPending[generation])
-            return;
-        Buffer frameMetricReadback = _frameMetricReadbacks[generation] is { } value
-            ? value
-            : throw new InvalidOperationException("Cluster frame-metrics readback ownership was lost.");
-        ReadMappedBuffer(frameMetricReadback, _frameMetricReadbackBytes);
-        ReadOnlySpan<byte> bytes = _frameMetricReadbackBytes;
+        if (epoch != _resources.Residency.EpochId.Value) return;
         uint phaseOneFinal = ReadUInt32(
             bytes,
             PhaseOneTessellationCountersReadbackOffset + 2 * sizeof(uint));
@@ -1657,7 +1133,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             bytes,
             PhaseTwoTessellationCountersReadbackOffset + 5 * sizeof(uint));
         var metrics = new ClusterFrameMetrics(
-            _frameMetricReadbackFrames[generation],
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(MetricsFrameIndexOffset, sizeof(ulong))),
             ReadUInt32(bytes, CandidateCountReadbackOffset),
             ReadUInt32(bytes, CandidateArgsReadbackOffset),
             ReadUInt32(bytes, DrawArgsReadbackOffset + sizeof(uint)),
@@ -1677,12 +1153,22 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             SaturatingAdd(phaseOneCulled, phaseTwoCulled),
             SaturatingAdd(phaseOneQualityLimited, phaseTwoQualityLimited),
             ReadUInt32(bytes, SoftwareDebugReadbackOffset),
-            CountNonZeroVisibilityProbe(bytes));
+            CountNonZeroVisibilityProbe(bytes))
+        {
+            ResidencyEpoch = epoch,
+            Work = new ClusterWorkMetrics(
+                (ClusterWorkOverflow)ReadUInt32(bytes, WorkMetricsReadbackOffset),
+                ReadWorkMetric(bytes, 8), ReadWorkMetric(bytes, 16), ReadWorkMetric(bytes, 24),
+                ReadWorkMetric(bytes, 32), ReadWorkMetric(bytes, 40), ReadWorkMetric(bytes, 48),
+                ReadWorkMetric(bytes, 56), ReadWorkMetric(bytes, 64), ReadWorkMetric(bytes, 72),
+                ReadWorkMetric(bytes, 80), ReadWorkMetric(bytes, 88)),
+        };
         if (_latestFrameMetrics is not { } latest || metrics.FrameIndex > latest.FrameIndex)
             _latestFrameMetrics = metrics;
-        _frameMetricReadbackFrames[generation] = 0;
-        _frameMetricReadbackPending[generation] = false;
     }
+
+    private static ulong ReadWorkMetric(ReadOnlySpan<byte> bytes, int offset) =>
+        BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(WorkMetricsReadbackOffset + offset, sizeof(ulong)));
 
     private static uint ReadUInt32(ReadOnlySpan<byte> bytes, int offset) =>
         BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, sizeof(uint)));
@@ -1697,42 +1183,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             if (ReadUInt32(bytes, VisibilityProbeReadbackOffset + index * sizeof(uint)) != 0)
                 result++;
         return result;
-    }
-
-    private void ReadMappedBuffer(Buffer source, Span<byte> destination)
-    {
-        BufferRange range = new(0, checked((ulong)destination.Length));
-        using MappedBuffer mapping = _backend.Map(source, MapType.Read, range);
-        mapping.Invalidate(range);
-        mapping.Bytes.CopyTo(destination);
-    }
-
-    private bool WaitForAll(ReadOnlySpan<QueueCompletion> completions, TimeSpan timeout)
-    {
-        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
-            throw new ArgumentOutOfRangeException(nameof(timeout));
-        if (timeout == TimeSpan.Zero)
-        {
-            foreach (ref readonly QueueCompletion completion in completions)
-            {
-                if (!_backend.IsComplete(completion))
-                    return false;
-            }
-            return true;
-        }
-
-        long started = Environment.TickCount64;
-        foreach (ref readonly QueueCompletion completion in completions)
-        {
-            TimeSpan remaining = timeout == Timeout.InfiniteTimeSpan
-                ? Timeout.InfiniteTimeSpan
-                : timeout - TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
-            if (remaining < TimeSpan.Zero)
-                remaining = TimeSpan.Zero;
-            if (_backend.WaitCpu(completion, remaining) != WaitStatus.Completed)
-                return false;
-        }
-        return true;
     }
 
     private IndirectCommandLayout RequireDispatchIndirectLayout() =>

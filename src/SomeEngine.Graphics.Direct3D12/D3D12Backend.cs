@@ -200,10 +200,10 @@ factory, index,
             _deviceCreated = true;
         }
 
-        IDXGIAdapter4* adapter = SelectAdapter(desc.AdapterId, out AdapterInfo adapterInfo);
+        IDXGIAdapter4* adapter = SelectAdapter(desc.AdapterId, out AdapterInfo adapterInfo, out ID3D12Device10* native);
         try
         {
-            D3D12Device device = D3D12Device.Create(this, adapter, adapterInfo, desc);
+            D3D12Device device = D3D12Device.Create(this, adapter, native, adapterInfo, desc);
             adapter = null;
             try
             {
@@ -477,7 +477,19 @@ _deviceFactory, (IUnknown*)adapter,
         return true;
     }
 
-    private IDXGIAdapter4* SelectAdapter(AdapterId id, out AdapterInfo info)
+    private bool TryCreateDevice(IDXGIAdapter4* adapter, out ID3D12Device10* device)
+    {
+        Guid iid = ID3D12Device10.Guid;
+        ID3D12Device10* native = null;
+        int result = DevicePipelineTrace.CreateDevice(_deviceFactory, (IUnknown*)adapter,
+            D3DFeatureLevel.Level120, &iid, (void**)&native);
+        device = native;
+        if (result == DxgiErrorUnsupported) return false;
+        ThrowIfFailed(null, result, NativeOperationType.Ordinary, "D3D12CreateDevice");
+        return true;
+    }
+
+    private IDXGIAdapter4* SelectAdapter(AdapterId id, out AdapterInfo info, out ID3D12Device10* device)
     {
         IDXGIFactory6* factory = EnsureFactory();
 
@@ -499,7 +511,7 @@ factory, index,
             {
                 ThrowIfFailed(null, PresentationTrace.GetDesc3(adapter, &native), NativeOperationType.Ordinary, "IDXGIAdapter4::GetDesc3");
                 AdapterInfo candidate = ToAdapterInfo(adapter, native);
-                if ((id.IsDefault || candidate.Id == id) && SupportsDirect3D12(adapter))
+                if ((id.IsDefault || candidate.Id == id) && TryCreateDevice(adapter, out device))
                 {
                     info = candidate;
                     return adapter;
@@ -525,7 +537,7 @@ factory, index,
             {
                 ThrowIfFailed(null, PresentationTrace.GetDesc3(warp, &native), NativeOperationType.Ordinary, "IDXGIAdapter4::GetDesc3");
                 AdapterInfo candidate = ToAdapterInfo(warp, native);
-                if (!id.IsDefault && candidate.Id == id && SupportsDirect3D12(warp))
+                if (!id.IsDefault && candidate.Id == id && TryCreateDevice(warp, out device))
                 {
                     info = candidate;
                     return warp;

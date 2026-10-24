@@ -68,17 +68,19 @@ public sealed class CompressedSkinBindingBehaviorTests
                 for (int index = payload.Length; index < payloadSize; index++) writer.Write((byte)0);
             }
             else File.WriteAllText(path, document.ToJsonString());
-            ModelRoot source = await new GltfSourceImporter(static _ => { }, "compressed-bindings").ReadAsync(path, default);
+            ModelRoot source = await new GltfSourceImporter(new Microsoft.Extensions.DependencyInjection.ServiceCollection(), "compressed-bindings").ReadAsync(path, default);
             var decoded = new GltfAccessorReader(source).ReadComponents(source.LogicalAccessors[0]);
             Assert.Equal(values.Select(value => (double)value), decoded.Values.ToArray());
             await using var context = new ImportContext();
-            context.ConfigureAssets<Skin, SkeletonAsset>(skin => "skin/" + skin.LogicalIndex, (_, id) => new SkeletonAsset(id),
-                (_, id) => id + ".skeleton.asset", static (asset, output, token) => asset.SaveAsync(output, token));
             context.EnableImporter<Skin, SkeletonAsset>(Guid.NewGuid(), [SkeletonBlock.BlockTypeId],
                 (skin, imports, output, token) => new GltfSkeletonImporter().ImportAsync(skin, new(), imports, output, token));
             context.EnableImporter<Skin, SkeletonAsset>(Guid.NewGuid(), [SkinBindingBlock.BlockTypeId],
                 (skin, imports, output, token) => new SkinBindingImporter().ImportAsync(skin, new(), imports, output, token));
-            SkeletonAsset asset = await context.GetAssetAsync<Skin, SkeletonAsset>(source.LogicalSkins[0]);
+            Skin input = source.LogicalSkins[0];
+            string key = "skin/" + input.LogicalIndex;
+            Guid id = context.GetAssetId(key);
+            context.AddAsset(input, new SkeletonAsset(id), key, id + ".skeleton.asset");
+            SkeletonAsset asset = await context.GetAssetAsync<Skin, SkeletonAsset>(input);
             SkinBindingBlock binding = asset.GetBlock<SkinBindingBlock>();
             Assert.Equal(expected, Assert.Single(binding.InverseBindMatrices.ToArray()));
             Assert.Equal(new short[] {0}, binding.JointBones.ToArray());

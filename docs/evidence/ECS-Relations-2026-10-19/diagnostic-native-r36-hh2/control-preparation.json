@@ -1,0 +1,10 @@
+{
+  "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+  "ReaderQueueId": "ecacd58dfc144c24abfe70c2242d0fd7",
+  "StartedAtUtc": "2026-10-19T19:19:31.2975747Z",
+  "LastCaseSubmittedAtUtc": "2026-10-19T19:19:33.2203118Z",
+  "InitialObservationEndedAtUtc": "2026-10-19T19:19:33.2730591Z",
+  "PreparationEndAtUtc": "2026-10-19T19:19:33.3146104Z",
+  "CaseCount": 2,
+  "FinalQueueId": "64081869ce2544ee9b999d3598192351"
+}

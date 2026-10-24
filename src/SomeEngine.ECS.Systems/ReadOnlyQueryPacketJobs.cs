@@ -366,7 +366,7 @@ public static class ReadOnlyQueryPacketJobs
     private const int InitialPacketCapacity = 16;
 
     public static int ExecuteParallel<TJob>(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         in TJob job,
         int rowsPerPacket = 0,
         JobScheduleOptions options = default)
@@ -384,7 +384,7 @@ public static class ReadOnlyQueryPacketJobs
     /// only output or other external resources touched by <typeparamref name="TJob"/>.
     /// </summary>
     public static int ExecuteParallel<TJob>(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         in TJob job,
         ReadOnlySpan<JobResourceAccess> externalAccesses,
         int rowsPerPacket = 0,
@@ -402,7 +402,7 @@ public static class ReadOnlyQueryPacketJobs
     /// borrows the cursor's chunks and therefore cannot outlive the current query callback.
     /// </summary>
     public static ReadOnlyQueryPacketPlan CreatePlan(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         int rowsPerPacket = 0)
     {
         if (rowsPerPacket < 0)
@@ -466,7 +466,7 @@ public static class ReadOnlyQueryPacketJobs
     /// may be played back only after that snapshot callback returns.
     /// </summary>
     public static JobCommandBuffer RecordParallel<TJob>(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         in TJob job,
         ReadOnlySpan<JobResourceAccess> externalAccesses,
         int rowsPerPacket = 0,
@@ -500,31 +500,14 @@ public static class ReadOnlyQueryPacketJobs
                     "A non-empty packet plan lost its packet storage.");
             }
 
-            JobResourceAccess[]? accesses = null;
-            try
-            {
-                int accessCount = checked(externalAccesses.Length + 1);
-                accesses = ArrayPool<JobResourceAccess>.Shared.Rent(accessCount);
-                accesses[0] = JobResourceAccess.Read(packets);
-                externalAccesses.CopyTo(accesses.AsSpan(1, externalAccesses.Length));
-                var producer = new PacketCommandProducer<TJob>(
-                    packets,
-                    lastSystemVersion,
-                    job);
-                commands.ScheduleParallel(
-                    in producer,
-                    batchSize: 1,
-                    accesses.AsSpan(0, accessCount),
-                    options).Complete();
-            }
-            finally
-            {
-                if (accesses is not null)
-                {
-                    accesses.AsSpan().Clear();
-                    ArrayPool<JobResourceAccess>.Shared.Return(accesses);
-                }
-            }
+            // The synchronous query keeps these private immutable descriptors alive through
+            // recording, just as it does for ordinary packet execution.
+            var producer = new PacketCommandProducer<TJob>(packets, lastSystemVersion, job);
+            commands.ScheduleParallel(
+                in producer,
+                batchSize: 1,
+                externalAccesses,
+                options).Complete();
 
             return commands;
         }
@@ -536,7 +519,7 @@ public static class ReadOnlyQueryPacketJobs
     }
 
     private static void BuildPackets(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         int rowsPerPacket,
         ref ReadOnlyPacketRange[]? packets,
         ref int packetCount,
@@ -707,8 +690,6 @@ public static class ReadOnlyQueryPacketJobs
     {
         public void Execute(int producerIndex, ref JobCommandWriter commands)
         {
-            JobSystem.RequireCurrentAccess(
-                JobResourceAccess.Read(packets, producerIndex, 1));
             ReadOnlyPacketRange range = packets.Span[producerIndex];
             var context = new ReadOnlyQueryPacketContext(
                 producerIndex,

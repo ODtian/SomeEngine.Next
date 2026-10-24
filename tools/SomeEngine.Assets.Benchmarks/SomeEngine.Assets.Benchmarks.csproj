@@ -10,6 +10,10 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Render\SomeEngine.Render.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Graphics.Direct3D12\SomeEngine.Graphics.Direct3D12.csproj" />
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

@@ -1,0 +1,131 @@
+diff --git a/tools/SomeEngine.ECS.Relations.AotSmoke/Build-Consumer.ps1 b/tools/SomeEngine.ECS.Relations.AotSmoke/Build-Consumer.ps1
+index f70f4b05..e05a298d 100644
+--- a/tools/SomeEngine.ECS.Relations.AotSmoke/Build-Consumer.ps1
++++ b/tools/SomeEngine.ECS.Relations.AotSmoke/Build-Consumer.ps1
+@@ -1,4 +1,8 @@
+-param([string]$QueueScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../tools/Invoke-Benchmark.ps1')))
++param(
++    [string]$QueueScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../tools/Invoke-Benchmark.ps1')),
++    [string]$SourceCommit,
++    [string]$Session = $env:CODEX_THREAD_ID
++)
+ 
+ $ErrorActionPreference = 'Stop'
+ $queueTool = [IO.Path]::GetFullPath($QueueScript)
+@@ -6,25 +10,45 @@ $consumerProject = Join-Path $PSScriptRoot 'SomeEngine.ECS.Relations.AotSmoke.cs
+ [xml]$consumerXml = Get-Content -LiteralPath $consumerProject -Raw
+ $packageVersion = [string]$consumerXml.Project.PropertyGroup.SomeEnginePackageVersion
+ $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
++if (!$SourceCommit) { $SourceCommit = (git -C $repositoryRoot rev-parse HEAD).Trim() }
+ $packageArea = Join-Path $repositoryRoot 'artifacts/ecs-relations'
+ $packageFeed = Join-Path $packageArea 'feed'
+ $packageCache = Join-Path $packageArea 'cache'
+ $nativeOutput = Join-Path $PSScriptRoot 'bin/Release/net10.0/win-x64/native-publish'
+ $packageNames = @('SomeEngine.Diagnostics', 'SomeEngine.Job.Contracts', 'SomeEngine.Job', 'SomeEngine.ECS.SourceGen',
+     'SomeEngine.ECS', 'SomeEngine.ECS.Relations', 'SomeEngine.ECS.Systems', 'SomeEngine.Physics')
++$stages = [Collections.Generic.List[object]]::new()
++$stagePath = Join-Path $packageArea "package-stages-$SourceCommit.json"
++$packStagePath = Join-Path $packageArea "package-pack-stages-$SourceCommit.json"
++$sourceArgument = "-p:SourceRevisionId=$SourceCommit"
+ 
+ function Submit-Command([string[]]$Command) {
+-    $submission = & $queueTool @Command
++    $submission = & $queueTool --session $Session @Command
+     if ($LASTEXITCODE -ne 0) { throw "Queue submission failed: $($Command -join ' ')" }
+     $queued = $submission | ConvertFrom-Json
+     Write-Host "QUEUED $($queued.Id): $($Command -join ' ')"
+     return $queued
+ }
+ 
+-function Complete-Command($Queued) {
++function Complete-Command($Queued, [string]$Stage) {
+     $resultFile = Join-Path $Queued.OutputDirectory 'result.json'
+     while (!(Test-Path -LiteralPath $resultFile)) { Start-Sleep -Seconds 1 }
+     $completed = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
++    if ($Stage -eq 'PackPackages') {
++        foreach ($pack in (Get-Content -LiteralPath $packStagePath -Raw | ConvertFrom-Json)) {
++            $pack | Add-Member -NotePropertyName QueueId -NotePropertyValue $Queued.Id
++            $stages.Add($pack)
++        }
++    }
++    else {
++        $stages.Add([pscustomobject]@{
++            Stage = $Stage; SourceCommit = $SourceCommit; QueueId = $Queued.Id
++            Executable = $completed.Executable; Arguments = $completed.Arguments
++            StartedAtUtc = $completed.StartedAtUtc; FinishedAtUtc = $completed.FinishedAtUtc
++            ExitCode = $completed.ExitCode
++        })
++    }
++    $stages | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $stagePath -Encoding utf8
+     Write-Host ($completed | Select-Object Id, ExitCode, StartedAtUtc, FinishedAtUtc | ConvertTo-Json -Compress)
+     Get-Content -LiteralPath (Join-Path $Queued.OutputDirectory 'stdout.log') -Tail 12 | Write-Host
+     if ($completed.ExitCode -ne 0) {
+@@ -38,12 +62,35 @@ try {
+     Set-Location -LiteralPath $repositoryRoot
+     New-Item -ItemType Directory -Path $packageFeed, $packageCache -Force | Out-Null
+     Complete-Command (Submit-Command @('dotnet', 'build', 'src/SomeEngine.Physics/SomeEngine.Physics.csproj',
+-        '-c', 'Release', '--no-restore', '-p:EmitCompilerGeneratedFiles=true'))
+-    $packCommands = foreach ($name in $packageNames) {
+-        Submit-Command @('dotnet', 'pack', "src/$name/$name.csproj", '-c', 'Release', '--no-build',
+-            "-p:Version=$packageVersion", '-o', $packageFeed)
++        '-c', 'Release', '--no-restore', '-p:EmitCompilerGeneratedFiles=true', $sourceArgument)) 'BuildPackages'
++    $packSettings = [pscustomobject]@{
++        RepositoryRoot = $repositoryRoot; PackageNames = $packageNames; PackageVersion = $packageVersion
++        PackageFeed = $packageFeed; SourceCommit = $SourceCommit; StagePath = $packStagePath
++    } | ConvertTo-Json -Compress
++    $encodedSettings = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($packSettings))
++    $packScript = '$settings = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(''' + $encodedSettings + ''')) | ConvertFrom-Json' + "`n" + @'
++$ErrorActionPreference = 'Stop'
++Set-Location -LiteralPath $settings.RepositoryRoot
++$stages = [Collections.Generic.List[object]]::new()
++foreach ($name in $settings.PackageNames) {
++    $arguments = @('pack', "src/$name/$name.csproj", '-c', 'Release', '--no-build',
++        "-p:Version=$($settings.PackageVersion)", "-p:SourceRevisionId=$($settings.SourceCommit)", '-o', $settings.PackageFeed)
++    $started = [DateTime]::UtcNow
++    & dotnet @arguments
++    $code = $LASTEXITCODE
++    $stage = [pscustomobject]@{
++        Stage = "Pack:$name"; SourceCommit = $settings.SourceCommit
++        Executable = 'dotnet'; Arguments = $arguments
++        StartedAtUtc = $started; FinishedAtUtc = [DateTime]::UtcNow; ExitCode = $code
+     }
+-    foreach ($command in $packCommands) { Complete-Command $command }
++    $stages.Add($stage)
++    $stages | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $settings.StagePath -Encoding utf8
++    Write-Output ('PACK_STAGE ' + ($stage | ConvertTo-Json -Compress))
++    if ($code -ne 0) { exit $code }
++}
++'@
++    $encodedPack = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($packScript))
++    Complete-Command (Submit-Command @('pwsh', '-NoProfile', '-EncodedCommand', $encodedPack)) 'PackPackages'
+     foreach ($name in $packageNames) {
+         $versionDirectory = [IO.Path]::GetFullPath((Join-Path $packageCache "$($name.ToLowerInvariant())/$packageVersion"))
+         $cacheDirectory = [IO.Path]::GetFullPath($packageCache) + [IO.Path]::DirectorySeparatorChar
+@@ -54,7 +101,7 @@ try {
+     }
+     Complete-Command (Submit-Command @('dotnet', 'restore', $consumerProject, '-r', 'win-x64',
+         '-p:PublishAot=true', '-p:_IsPublishing=true', "-p:RestorePackagesPath=$packageCache",
+-        '--configfile', (Join-Path $PSScriptRoot 'NuGet.Config')))
++        '--configfile', (Join-Path $PSScriptRoot 'NuGet.Config'), $sourceArgument)) 'RestoreConsumer'
+     $generatedDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'obj/Release/net10.0/win-x64/generated'))
+     $consumerDirectory = [IO.Path]::GetFullPath($PSScriptRoot) + [IO.Path]::DirectorySeparatorChar
+     if (!$generatedDirectory.StartsWith($consumerDirectory, [StringComparison]::OrdinalIgnoreCase)) {
+@@ -62,11 +109,11 @@ try {
+     }
+     if (Test-Path -LiteralPath $generatedDirectory) { Remove-Item -LiteralPath $generatedDirectory -Recurse -Force }
+     Complete-Command (Submit-Command @('dotnet', 'build', $consumerProject, '-c', 'Release', '--no-restore',
+-        "-p:RestorePackagesPath=$packageCache", '-t:Rebuild'))
+-    Complete-Command (Submit-Command @('dotnet', (Join-Path $PSScriptRoot 'bin/Release/net10.0/win-x64/SomeEngine.ECS.Relations.AotSmoke.dll')))
++        "-p:RestorePackagesPath=$packageCache", '-t:Rebuild', $sourceArgument)) 'RebuildConsumer'
++    Complete-Command (Submit-Command @('dotnet', (Join-Path $PSScriptRoot 'bin/Release/net10.0/win-x64/SomeEngine.ECS.Relations.AotSmoke.dll'))) 'RunConsumerJit'
+     Complete-Command (Submit-Command @('dotnet', 'publish', $consumerProject, '-c', 'Release', '-r', 'win-x64',
+         '--self-contained', 'true', '--no-restore', '-p:PublishAot=true', '-p:PublishAotUsingRuntimePack=true',
+-        "-p:RestorePackagesPath=$packageCache", '-p:TrimmerSingleWarn=false', '-o', $nativeOutput))
+-    Complete-Command (Submit-Command @((Join-Path $nativeOutput 'SomeEngine.ECS.Relations.AotSmoke.exe')))
++        "-p:RestorePackagesPath=$packageCache", '-p:TrimmerSingleWarn=false', '-o', $nativeOutput, $sourceArgument)) 'PublishConsumerNative'
++    Complete-Command (Submit-Command @((Join-Path $nativeOutput 'SomeEngine.ECS.Relations.AotSmoke.exe'))) 'RunConsumerNative'
+ }
+ finally { Set-Location -LiteralPath $previousDirectory }
+[codex/ecs-relations-243 3573775d] Record package production stages in the public queue
+ 1 file changed, 60 insertions(+), 13 deletions(-)
+FINAL_PREPARATION {"SourceCommit":"51c8ce75949cf16d7190e14028c655f526d5697b","StartedAtUtc":"2026-10-19T21:59:34.9775045Z","PublishQueueId":"09e27c3989dd4717835ef1f692127416","ReportQueueId":"7c68b721d83e4622aabbcbb4228c4ef0","Cases":[{"CaseId":"finite-small-mask1-mutual","QueueId":"c4eceeb249e041cca849e08bbbdba7eb","ExitCode":0,"Equal":true,"MedianRatio":0.9936923823386705,"P95Ratio":1.0121711603536732},{"CaseId":"finite-small-mask8-oneway","QueueId":"316d18e97fea40d0b6bd34100b459174","ExitCode":0,"Equal":true,"MedianRatio":1.0052064414578037,"P95Ratio":0.9901755516186181},{"CaseId":"finite-middle-mask8-oneway","QueueId":"7e55b779139647e3a4ba479cb78ae68f","ExitCode":0,"Equal":true,"MedianRatio":0.9993857033696417,"P95Ratio":1.007133291041094},{"CaseId":"finite-large-mask8-oneway","QueueId":"b031cd11b86148e39ab532d5332f1ee0","ExitCode":0,"Equal":true,"MedianRatio":1.0039870691637827,"P95Ratio":1.0012326418146156},{"CaseId":"finite-large-mask8-mutual","QueueId":"0b89c15a84ea4736ae7b7fdd767dc475","ExitCode":0,"Equal":true,"MedianRatio":1.0026409647529915,"P95Ratio":0.998992180589962}],"PostprocessStages":[{"Script":"Collect-Measurements.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1","-Series","focused-native-r38"],"StartedAtUtc":"2026-10-19T21:36:48.1632223Z","FinishedAtUtc":"2026-10-19T21:36:49.5272287Z","ExitCode":0},{"Script":"Export-Evidence.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1","-Series","focused-native-r38"],"StartedAtUtc":"2026-10-19T21:36:49.615974Z","FinishedAtUtc":"2026-10-19T21:36:51.1988027Z","ExitCode":0},{"Script":"Write-MeasurementReport.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1","-Series","focused-native-r38"],"StartedAtUtc":"2026-10-19T21:36:51.2058438Z","FinishedAtUtc":"2026-10-19T21:36:52.911538Z","ExitCode":0}],"FocusedApproved":"4/5","FocusedEqual":"5/5","ApprovedRatioLimit":1.01,"FinalAcceptancePending":true,"Continue":true,"ProducerCommit":"3573775db6e0e5404ec8886c9775d1a0bff1d678","PushExitCode":0,"FinishedAtUtc":"2026-10-19T21:59:41.5887272Z"}

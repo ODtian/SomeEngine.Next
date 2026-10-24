@@ -22,7 +22,8 @@ struct TextureDisplacement : IDomainEvaluate<StandardVertex>
     Triangle makeTriangle(
         StandardVertex first,
         StandardVertex second,
-        StandardVertex third)
+        StandardVertex third,
+        uint materialIndex)
     {
         return MakeStandardTriangle(first, second, third);
     }

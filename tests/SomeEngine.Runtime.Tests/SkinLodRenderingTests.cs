@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 using System.Numerics;
-using Game.Importing;
+using DefaultGame.Content;
 using Microsoft.Extensions.DependencyInjection;
 using SharpGLTF.Schema2;
 using SomeEngine.Animation;
@@ -136,12 +136,10 @@ public sealed partial class SkinningRenderingTests
         private async Task<MeshAsset> ImportSurfaceAsync(int index, VertexPrimitive primitive)
         {
             await using var context = new ImportContext(Project.RootPath, "skin-lod", _source);
-            context.ConfigureAssets<GltfMesh, MeshAsset>(_ => $"surface-{index}", (_, id) => new MeshAsset(id),
-                (_, id) => id + ".mesh.asset", static (asset, path, token) => asset.SaveAsync(path, token));
             context.EnableImporter<GltfMesh, MeshAsset>(Guid.NewGuid(), [VertexStreamsBlock.BlockTypeId],
                 (_, _, asset, _) => { asset.SetBlock(new VertexStreamsBlock([primitive], [])); return ValueTask.CompletedTask; });
             var services = new ServiceCollection();
-            ProjectAssetCapabilities.AddAssetCapabilities(services);
+            EngineAssetCapabilities.AddAssetCapabilities(services);
             ServiceProvider provider = services.BuildServiceProvider();
             context.Hold(provider);
             var set = provider.GetServices<AssetImporterSetCapability>().Single(value => value.Id == new Guid(GltfImporterSets.ClusterId));
@@ -150,6 +148,9 @@ public sealed partial class SkinningRenderingTests
                 context.EnableImporter<GltfMesh, MeshAsset>(capability.Bind<GltfMesh>(provider));
             GltfMesh source = ModelRoot.CreateModel().CreateMesh($"surface-{index}");
             source.CreatePrimitive();
+            string key = $"surface-{index}";
+            Guid id = context.GetAssetId(key);
+            context.AddAsset(source, new MeshAsset(id), key, id + ".mesh.asset");
             MeshAsset mesh = await context.GetAssetAsync<GltfMesh, MeshAsset>(source);
             mesh.SetBlock(new MeshMaterialsBlock { Materials = [new(Project.Manifest.List(MaterialAsset.FileType).Single(value => value.Name == "Standard").AssetGuid)] });
             return mesh.Duplicate();

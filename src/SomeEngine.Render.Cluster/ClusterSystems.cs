@@ -73,7 +73,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
         int rowsPerPacket = 0)
     {
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));
-        _entities = (entities ?? throw new ArgumentNullException(nameof(entities))).WithOptionalRead<RenderDeformBounds>();
+        _entities = (entities ?? throw new ArgumentNullException(nameof(entities)))
+            .WithOptionalRead<RenderDeformBounds>().WithOptionalRead<RenderMesh>().WithOptionalRead<RenderXray>();
         ArgumentNullException.ThrowIfNull(exactShaderLayout);
         var combined = new RenderInstanceProducerBundle<
             ClusterRenderResources.ClusterGeometryProducer,
@@ -86,6 +87,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
             groupingPartitions: 1,
             rowsPerPacket);
     }
+
+    public QueryDefinition EntityQuery => _entities;
 
     public RenderInstanceBatches<RenderInstanceSingleGroup>? Current => _builder.Current;
 
@@ -176,8 +179,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
     private sealed class InstanceColumnChanges
     {
         internal const int CurrentTransform = 1, PreviousTransform = 2, Mesh = 4, Additional = 8;
-        internal const int InitialValues = 16;
-        internal const int All = CurrentTransform | PreviousTransform | Mesh | Additional | InitialValues;
+        internal const int InitialValues = 16, Xray = 32;
+        internal const int All = CurrentTransform | PreviousTransform | Mesh | Additional | InitialValues | Xray;
         private int _fields;
         private int _partialTransformChanges;
         internal uint LastVersion { get; private set; }
@@ -219,8 +222,10 @@ public sealed class ClusterInstanceSystem<TProducer> :
                 int fields = 0;
                 if (packet.ChangedSince<RenderTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.CurrentTransform;
                 if (packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.PreviousTransform;
-                if (packet.ChangedSince<RenderMesh>(lastSystemVersion) ||
-                    packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastSystemVersion)) fields |= InstanceColumnChanges.Mesh;
+                if (ClusterRenderResources.ClusterGeometryProducer.MeshChanged(packet, lastSystemVersion))
+                    fields |= InstanceColumnChanges.Mesh;
+                if (ClusterRenderResources.ClusterGeometryProducer.XrayChanged(packet, lastSystemVersion))
+                    fields |= InstanceColumnChanges.Xray;
                 if (producer.Second.GetChanges(packet, lastSystemVersion) != RenderInstanceChanges.None)
                     fields |= InstanceColumnChanges.Additional;
                 columns.Add(fields);
@@ -233,7 +238,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
             uint lastSystemVersion) =>
             columns.AllTransformsChanged || packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion)
             || packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion)
-            || packet.AllRowsChangedSince<RenderMesh>(lastSystemVersion);
+            || packet.AllRowsChangedSince<RenderClusterGeometry>(lastSystemVersion);
 
         public int CountGroups(ReadOnlyQueryPacket packet, int entityRow) => 1;
 
@@ -267,7 +272,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
             producer.First.Bind(destination.Restrict(producer.First.Properties),
                 (fields & InstanceColumnChanges.CurrentTransform) != 0,
                 (fields & InstanceColumnChanges.PreviousTransform) != 0,
-                (fields & InstanceColumnChanges.Mesh) != 0);
+                (fields & InstanceColumnChanges.Mesh) != 0,
+                (fields & InstanceColumnChanges.Xray) != 0);
             if ((fields & InstanceColumnChanges.Additional) != 0)
                 producer.Second.Bind(destination.Restrict(producer.Second.Properties));
         }
@@ -294,8 +300,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
             producer.First.Write(destination.Restrict(producer.First.Properties), packet,
                 all || (fields & InstanceColumnChanges.CurrentTransform) != 0 && packet.ChangedSince<RenderTransform>(lastVersion),
                 all || (fields & InstanceColumnChanges.PreviousTransform) != 0 && packet.ChangedSince<RenderPreviousTransform>(lastVersion),
-                all || (fields & InstanceColumnChanges.Mesh) != 0 && (packet.ChangedSince<RenderMesh>(lastVersion) ||
-                    packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastVersion)));
+                all || (fields & InstanceColumnChanges.Mesh) != 0 && ClusterRenderResources.ClusterGeometryProducer.MeshChanged(packet, lastVersion),
+                all || (fields & InstanceColumnChanges.Xray) != 0 && ClusterRenderResources.ClusterGeometryProducer.XrayChanged(packet, lastVersion));
             if (all || (fields & InstanceColumnChanges.Additional) != 0 &&
                 producer.Second.GetChanges(packet, lastVersion) != RenderInstanceChanges.None)
                 producer.Second.Write(destination.Restrict(producer.Second.Properties), packet);

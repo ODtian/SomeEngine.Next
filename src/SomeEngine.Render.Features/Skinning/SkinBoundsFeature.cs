@@ -68,7 +68,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
                 static (ref PassDefinition _, ref DispatchArguments _) => { },
                 static (ref ComputePassCommandScope commands, in DispatchArguments data) => commands.Dispatch(data));
             PassDefinition pass = edit.GetPass(_boundsPass);
-            Resource[] resources = FeatureResourceLayout.Resolve<Resource>(_pipeline.ParameterLayout, static (name, _) => name switch
+            Resource[] resources = ShaderResourceLayout.Resolve<Resource>(_pipeline.ParameterLayout, static (name, _) => name switch
             {
                 "SkinBoundsControls" => Resource.Controls, "SkinBoundsWork" => Resource.Work, "SkinBoundsBoxes" => Resource.Boxes,
                 "SkinCurrentBounds" => Resource.Current, "SkinPreviousBounds" => Resource.Previous,

@@ -8,7 +8,7 @@
 
 `ISpatialFilter<TGroupResults>` 为此空间后端提供组件读取声明、摘要重建、单节点更新、组判断和叶子判断。`TGroupResults` 是 unmanaged 值，遍历栈直接保存它。各条件在父节点已取得的结论随子节点继承。
 
-`SpatialComponentFilter<TRelation,TFirst,TSecond>` 的组判断为 Unknown，叶子经 Access 和现有 `ComponentRelation` 读取分别传入的组件引用。`SpatialKeyFilter` 和 `SpatialBitmapFilter` 读取各自的具体摘要。`SpatialAnd` 的组结果为 `(TFirstResults,TSecondResults)`，继续组合产生嵌套 ValueTuple；最终组合为 Unknown 时，各条件的 All/None 仍在叶子阶段复用。
+`SpatialComponentFilter<TRelation,TFirst,TSecond>` 的组判断为 Unknown，构造只接收具体关系值。叶子遍历把已验证成员的两个 `QueryRow` 按身份位置交给现有 `ComponentRelation`，从同一借用行读取组件引用。静态 `ReadsComponentRows` 将这一需求沿组合传递。`SpatialKeyFilter` 和 `SpatialBitmapFilter` 读取各自的具体摘要。`SpatialAnd` 的组结果为 `(TFirstResults,TSecondResults)`，继续组合产生嵌套 ValueTuple；最终组合为 Unknown 时，各条件的 All/None 仍在叶子阶段复用。
 
 `SpatialExcept` 保留内部结果并交换返回的 All/None；Unknown 继续细分。叶子通过内部结果判断该条件，再执行排除。因此组合中已证明的键或类别条件可以直接决定该条件的通过状态。
 
@@ -23,6 +23,8 @@
 
 两个摘要持有者都是 sealed 类型，各自引用同一个 CollisionTree，以节点编号读取数组。`MemberCount` 直接读取拓扑节点。树的 `CreateKeySummary` 和 `CreateBitmapSummary` 返回具体持有者，筛选描述直接保存这些引用。泛型条件链的 `RebuildSummaries`、`RefitSummary` 是组合的更新入口。
 
+摘要的节点索引器返回数组元素的 `ref readonly`，具体组判断直接读取该元素。组件语义条件和 SpatialAll 显式报告其摘要变化状态；维护回调按块持有具体筛选值，再观察行的组件变化。
+
 角色键叶子读取既有 `IIndexedComponent<TKey>.GetKey()`，分支合并键数和统一键。组判断调用具体 `IKeyRelation.Matches(in relation,in firstKey,in secondKey)`：
 
 - 任一组 KeyCount 为零，结果为 None。
@@ -32,7 +34,7 @@
 
 同角色头发相等关系由此得到同键全覆盖、不同统一键、键缺失和混合组的对应结论。节点摘要只保存从组件派生的键信息，已有 ECS 键桶继续沿其原有生命周期维护。
 
-类别叶子调用同一个 `IBitmapRelation.Read(in relation,in component)` 得到 `CategoryBits`。分支保存 `CategoriesAny`、`CategoriesCommon`、`AllowedAny`、`AllowedCommon`，分别对有组件成员做 OR 和 AND。完整覆盖由 ComponentCount 与节点 MemberCount 比较取得。
+类别叶子通过同一个 `ICategoryBitsReader.ReadCategories(in relation,in component)` 和 `ReadAllowedCategories(in relation,in component)` 得到 `CategoryBits` 的两值。分支保存 `CategoriesAny`、`CategoriesCommon`、`AllowedAny`、`AllowedCommon`，分别对有组件成员做 OR 和 AND。完整覆盖由 ComponentCount 与节点 MemberCount 比较取得。
 
 | 具体组证明 | None 的条件 | All 的条件 | Unknown 的条件 |
 | --- | --- | --- | --- |

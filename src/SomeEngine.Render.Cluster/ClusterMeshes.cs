@@ -17,6 +17,7 @@ internal enum PageLoadResult : byte
     AlreadyTracked,
     Deferred,
     UnknownPage,
+    Removed,
     NoCapacity,
 }
 
@@ -40,10 +41,15 @@ internal sealed record ClusterMeshPublication(
     uint[] ResidentPages,
     PageRetirement[] Retirements,
     ClusterStagedUpload[] PageUploads,
-    BufferRange[] ResidentPageRanges);
+    BufferRange[] ResidentPageRanges,
+    ClusterLeafFlagFixup[] LeafFlagFixups,
+    ClusterLodChange[] LodChanges);
 
 internal sealed partial class ClusterMeshes : IDisposable
 {
+    internal uint MaximumRasterBatchesPerCluster => 9u;
+    internal uint GeometryPageCount { get { lock (_gate) return _pages.Count; } }
+
     private static long s_nextEpochId;
 
     private readonly PageHeap _heap;
@@ -56,6 +62,7 @@ internal sealed partial class ClusterMeshes : IDisposable
     private readonly Dictionary<uint, PageAllocation> _pageAllocations = new();
     private readonly List<StagingBlock> _quarantinedStagingBlocks = [];
     private readonly List<PendingPageRetirement> _pendingPageRetirements = [];
+    private readonly List<MeshRetirement> _meshRetirements = [];
     private ulong _stateRevision;
     private ulong _cleanupFailureSequence;
     private uint _evictedPageCount;
@@ -92,14 +99,15 @@ internal sealed partial class ClusterMeshes : IDisposable
         uint pageHeapCapacity,
         ResidencyBudgetLedger? residency,
         IClusterPageStorage? pageStorage = null,
-        IClusterBvhStorage? bvhStorage = null)
+        IClusterBvhStorage? bvhStorage = null,
+        ulong bvhCapacityBytes = ClusterBvh.DefaultCapacityBytes)
     {
         long epochValue = Interlocked.Increment(ref s_nextEpochId);
         if (epochValue <= 0)
             throw new InvalidOperationException("Cluster epoch id space is exhausted.");
         EpochId = new ClusterEpochId(checked((ulong)epochValue));
         _heap = new PageHeap(pageHeapCapacity);
-        _bvh = new ClusterBvh(bvhStorage);
+        _bvh = new ClusterBvh(bvhStorage, bvhCapacityBytes);
         _residency = residency ?? new ResidencyBudgetLedger();
         _pageStorage = pageStorage ?? new SparseClusterPageStorage(pageHeapCapacity);
         _stateRevision = 1;
@@ -134,6 +142,11 @@ internal sealed partial class ClusterMeshes : IDisposable
     private readonly record struct PendingPageRetirement(
         PageAllocation Allocation,
         ResidencyReservation Reservation,
+        QueueCompletion[] Completions);
+
+    private readonly record struct MeshRetirement(
+        RegisteredMeshPages Pages,
+        ClusterBvhAllocation Bvh,
         QueueCompletion[] Completions);
 
     public ClusterMeshesSnapshot CaptureSnapshot()
@@ -193,6 +206,43 @@ internal sealed partial class ClusterMeshes : IDisposable
         {
             ThrowIfDisposed();
             _bvh.CollectPageDependencies(pages);
+        }
+    }
+
+    internal void CollectPageDependencies(Dictionary<uint, uint> priorities)
+    {
+        lock (_gate)
+        {
+            var pages = priorities.Keys.Where(page => _pages.TrySource(page, out _, out _)).ToHashSet();
+            uint priority = priorities.Count == 0 ? 0u : priorities.Values.Max();
+            _bvh.CollectPageDependencies(pages);
+            foreach (uint page in pages)
+                priorities.TryAdd(page, priority);
+        }
+    }
+
+    internal void ResolvePages(Dictionary<uint, uint> priorities, List<KeyValuePair<uint, uint>> unresolved)
+    {
+        lock (_gate)
+        {
+            unresolved.Clear();
+            foreach ((uint page, uint priority) in priorities)
+            {
+                PageFaultResolution resolution = ResolvePageCore(page);
+                if (resolution.Kind is not (PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending or PageFaultResolutionKind.Unknown))
+                    unresolved.Add(new(page, priority));
+            }
+        }
+    }
+
+    internal ClusterStreamingDemand SetReferencedPages(IEnumerable<uint> pages, bool complete)
+    {
+        lock (_gate)
+        {
+            _pages.ClearReferences();
+            ulong bytes = 0;
+            foreach (uint page in pages) bytes += _pages.ReferencePage(page);
+            return new(bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity), complete);
         }
     }
 
@@ -258,6 +308,7 @@ internal sealed partial class ClusterMeshes : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
+            if (_pages.IsRemoved(pageID)) return PageLoadResult.Removed;
             if (_pages.IsRetiring(pageID))
                 return PageLoadResult.Deferred;
             if (_pages.IsResident(pageID) || _pages.IsLoadPending(pageID) || _stagingLoads.ContainsKey(pageID))
@@ -402,6 +453,11 @@ internal sealed partial class ClusterMeshes : IDisposable
             lock (_gate)
             {
                 ThrowIfDisposed();
+                if (_pages.IsRemoved(pageID))
+                {
+                    CancelStagedLoad(pageID, load);
+                    return PageLoadResult.Removed;
+                }
                 if (!_stagingLoads.TryGetValue(pageID, out StagedPageLoad? current) ||
                     !ReferenceEquals(current, load))
                 {
@@ -801,6 +857,18 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
+    internal ClusterGeometry GetGeometry(Mesh mesh, uint root)
+    {
+        lock (_gate)
+        {
+            _pages.TryRegistration(mesh, out uint firstPage, out uint pageCount);
+            uint nodeCount = checked((uint)(mesh.BvhLength / ClusterBvh.NodeBytes));
+            var allocation = new ClusterGeometryAllocation(
+                EpochId.Value, firstPage, pageCount, checked(root + 1 - nodeCount), nodeCount);
+            return new ClusterGeometry(root, mesh.Revision, mesh.VertexEncoding, mesh.Bounds, allocation);
+        }
+    }
+
     public int PublishedMeshCount
     {
         get
@@ -855,7 +923,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                 residentPages,
                 retirements,
                 _pageStorage.CaptureStagedUploads(),
-                BuildResidentPageRanges(residentPages, retirements));
+                BuildResidentPageRanges(residentPages, retirements), [], bvh.LodChanges);
             return _preparedPublication;
         }
     }
@@ -936,6 +1004,7 @@ internal sealed partial class ClusterMeshes : IDisposable
     private void RetireCompletedCore(IGraphicsBackend backend)
     {
         List<ResidencyReservation>? reservations = null;
+        List<MeshPayloadSource>? sources = null;
         Exception? cleanupFailure = null;
         lock (_gate)
         {
@@ -966,6 +1035,22 @@ internal sealed partial class ClusterMeshes : IDisposable
                 (reservations ??= []).Add(pending.Reservation);
                 AdvanceRevision();
             }
+            for (int index = _meshRetirements.Count - 1; index >= 0; index--)
+            {
+                MeshRetirement retirement = _meshRetirements[index];
+                bool complete = true;
+                foreach (QueueCompletion completion in retirement.Completions)
+                    if (!backend.IsComplete(completion)) { complete = false; break; }
+                if (!complete) continue;
+                uint firstPage = retirement.Pages.FirstPageId;
+                uint endPage = checked(firstPage + (uint)retirement.Pages.PageCount);
+                if (_stagingLoads.Keys.Any(page => page >= firstPage && page < endPage)) continue;
+                _bvh.ReleaseAllocation(retirement.Bvh);
+                _meshRetirements.RemoveAt(index);
+                if (retirement.Pages.OwnsSource) (sources ??= []).Add(retirement.Pages.Source);
+                AdvanceRevision();
+            }
+            RetireGpu(backend);
         }
 
         if (reservations is not null)
@@ -976,6 +1061,29 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
         if (cleanupFailure is not null)
             RecordCleanupFailure(ClusterCleanupStage.Publication, cleanupFailure);
+        if (sources is not null)
+            foreach (MeshPayloadSource source in sources) source.Dispose();
+    }
+
+    internal void RemoveMesh(Mesh mesh, QueueCompletion[] completions)
+    {
+        lock (_gate)
+        {
+            RegisteredMeshPages pages = _pages.RemoveMesh(mesh);
+            ClusterBvhAllocation bvh = _bvh.RemoveMesh(mesh);
+            uint end = checked(pages.FirstPageId + (uint)pages.PageCount);
+            for (uint page = pages.FirstPageId; page < end; page++)
+            {
+                ResidencyReservation? reservation = _pages.RemovePage(page, out bool uploadReady);
+                if (!_pageAllocations.Remove(page, out PageAllocation allocation)) continue;
+                if (uploadReady)
+                    _pageStorage.Release(allocation.Offset, checked((int)PageHeap.AllocationSize(allocation.Size)));
+                _pendingPageRetirements.Add(new(allocation, reservation!, completions));
+            }
+            _meshRetirements.Add(new(pages, bvh, completions));
+            _residentPageRanges = BuildResidentPageRanges([], []);
+            AdvanceRevision();
+        }
     }
 
     private BufferRange[] _residentPageRanges = [];
@@ -994,13 +1102,12 @@ internal sealed partial class ClusterMeshes : IDisposable
         get { lock (_gate) { ThrowIfDisposed(); return _bvh.HierarchyLevels; } }
     }
 
-    internal BufferRange CaptureBvhRange()
+    internal BufferRange[] CaptureBvhRanges()
     {
         lock (_gate)
         {
             ThrowIfDisposed();
-            ulong length = _bvh.ByteLength;
-            return length == 0 ? default : new BufferRange(0, length);
+            return _bvh.ReadRanges;
         }
     }
 
@@ -1009,6 +1116,8 @@ internal sealed partial class ClusterMeshes : IDisposable
         ReadOnlySpan<PageRetirement> publishingEvictions)
     {
         var ranges = new List<BufferRange>(_pageAllocations.Count);
+        foreach (ClusterGpuAllocation allocation in _gpuGeometry.Values)
+            ranges.Add(new(allocation.PageOffset, allocation.Sizes.PageBytes));
         foreach ((uint pageId, PageAllocation backing) in _pageAllocations)
         {
             bool loading = publishingLoads.BinarySearch(pageId) >= 0;
@@ -1113,7 +1222,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             lifecycle,
             _stateRevision,
             new ClusterPageStateSnapshot(
-                _pages.Count,
+                _pages.RegisteredCount,
                 _pages.ResidentCount,
                 _pages.MissingCount,
                 _pages.PendingLoadCount,
@@ -1145,7 +1254,7 @@ internal sealed partial class ClusterMeshes : IDisposable
     private void ThrowIfDisposed()
         => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-    /// <summary>Destroys the whole append-only epoch after its owner has quiesced GPU readers.</summary>
+    /// <summary>Destroys the remaining Cluster storage after its GPU readers complete.</summary>
     public void Dispose()
     {
         if (IsRegistrationOwner)
@@ -1164,6 +1273,7 @@ internal sealed partial class ClusterMeshes : IDisposable
     {
         StagingBlock[] quarantinedStagingBlocks;
         PendingPageRetirement[] pendingRetirements;
+        MeshPayloadSource[] removedSources;
         PreparedMeshPagesDisposal pageDisposal;
         Exception? cleanupFailure;
         lock (_gate)
@@ -1182,6 +1292,7 @@ internal sealed partial class ClusterMeshes : IDisposable
 
             quarantinedStagingBlocks = [.. _quarantinedStagingBlocks];
             pendingRetirements = [.. _pendingPageRetirements];
+            removedSources = [.. _meshRetirements.Where(item => item.Pages.OwnsSource).Select(item => item.Pages.Source)];
             pageDisposal = _pages.PrepareDisposal();
             ulong terminalRevision = _stateRevision == ulong.MaxValue
                 ? ulong.MaxValue
@@ -1218,6 +1329,9 @@ internal sealed partial class ClusterMeshes : IDisposable
             _pageAllocations.Clear();
             _quarantinedStagingBlocks.Clear();
             _pendingPageRetirements.Clear();
+            _meshRetirements.Clear();
+            _gpuGeometry.Clear();
+            _gpuRetirements.Clear();
             _preparedPublication = null;
             _pages.CommitDisposal(pageDisposal);
             cleanupFailure = _bvh.Clear();
@@ -1228,6 +1342,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             pageDisposal.GpuReservations,
             pageDisposal.OwnedSources);
         cleanupFailure = cleanupFailure ?? resourceCleanupFailure;
+        foreach (MeshPayloadSource source in removedSources) source.Dispose();
         foreach (PendingPageRetirement pending in pendingRetirements)
         {
             try

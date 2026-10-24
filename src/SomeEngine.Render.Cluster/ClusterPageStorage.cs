@@ -126,6 +126,7 @@ internal interface IClusterBvhStorage : IDisposable
     void Stage(ulong offset, int length);
     ClusterStagedUpload[] CaptureStagedUploads();
     void CompleteStagedUploads(ReadOnlySpan<ClusterStagedUpload> uploads);
+    void DiscardStagedRange(ulong offset, int length);
     void Release(ulong offset, int length);
 }
 
@@ -213,11 +214,13 @@ internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
         if (!_blocks.TryGetValue(offset, out ClusterPageBytes? bytes) || bytes.Length != length)
             throw new InvalidOperationException($"Global BVH range at {offset} is not owned by this storage.");
         _blocks.Remove(offset);
-        _stagedRanges.RemoveAll(range =>
-            range.Offset >= offset &&
-            checked(range.Offset + (uint)range.Length) <= checked(offset + (uint)length));
+        DiscardStagedRange(offset, length);
         bytes.Release();
     }
+
+    public void DiscardStagedRange(ulong offset, int length) =>
+        _stagedRanges.RemoveAll(range => range.Offset >= offset &&
+            checked(range.Offset + (uint)range.Length) <= checked(offset + (uint)length));
 
     public void Dispose()
     {

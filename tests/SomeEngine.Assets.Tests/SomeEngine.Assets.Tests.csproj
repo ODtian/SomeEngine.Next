@@ -31,15 +31,11 @@
     <ProjectReference Include="..\..\src\SomeEngine.Generators\SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Content\Gltf\mikk-reference.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\..\templates\DefaultProject\assets\Shaders\hello_triangle.shader.asset">
-      <Link>Content\Shaders\hello_triangle.shader.asset</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <Content Include="..\..\external\dxc\bin\x64\dxcompiler.dll">
       <Link>dxcompiler.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -50,9 +46,10 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game.Importing/Game.Importing.csproj" />
-    <Using Include="Game.Content" />
-    <Using Include="Game.Assets" />
-    <Using Include="Game.Importing" />
+    <Using Include="SomeEngine.Resources" />
+    <Using Include="SomeEngine.Assets.Schema" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Content/**/*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

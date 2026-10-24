@@ -42,7 +42,6 @@ public class DynamicBufferTests
         Assert.IsType<InvalidOperationException>(ex.InnerException);
     }
 
-
     // ——————————————————————————————————————————————————
     // World API
     // ——————————————————————————————————————————————————
@@ -99,7 +98,7 @@ public class DynamicBufferTests
     }
 
     [Fact]
-    public void World_BufferReplaceWith_ReplacesInlineAndOverflowContents()
+    public void BufferClearAndAddReplaceInlineAndOverflowContents()
     {
         var world = new World();
         var entity = world.CreateEntity();
@@ -107,20 +106,23 @@ public class DynamicBufferTests
         world.AddBuffer<SmallInlineElement>(entity);
         world.ExecuteBufferWrite<SmallInlineElement>(entity, static buffer =>
         {
-            buffer.ReplaceWith(
-            [
+            buffer.Clear();
+            foreach (var value in new SmallInlineElement[]
+            {
                 new SmallInlineElement { Value = 1 },
                 new SmallInlineElement { Value = 2 },
                 new SmallInlineElement { Value = 3 },
-            ]);
+            })
+                buffer.Add(value);
 
             Assert.Equal([1, 2, 3], buffer.AsSpan().ToArray().Select(x => x.Value).ToArray());
 
-            buffer.ReplaceWith([new SmallInlineElement { Value = 9 }]);
+            buffer.Clear();
+            buffer.Add(new SmallInlineElement { Value = 9 });
             Assert.Equal(1, buffer.Count);
             Assert.Equal(9, buffer.Read(0).Value);
 
-            buffer.ReplaceWith(ReadOnlySpan<SmallInlineElement>.Empty);
+            buffer.Clear();
             Assert.Equal(0, buffer.Count);
             Assert.Empty(buffer.AsSpan().ToArray());
         });
@@ -147,7 +149,7 @@ public class DynamicBufferTests
 
         var query = world.Query(world.QueryDefinition().ChangedBuffer<SmallInlineElement>());
         int rows = 0;
-        world.ExecuteQuery(query, lastTick, world.CurrentTick, cursor =>
+        world.ExecuteQuery(query, lastTick, cursor =>
         {
             foreach (var _ in cursor.Rows)
                 rows++;
@@ -171,7 +173,7 @@ public class DynamicBufferTests
 
         var query = world.Query(world.QueryDefinition().ChangedBuffer<SmallInlineElement>());
         int rows = 0;
-        world.ExecuteQuery(query, lastTick, world.CurrentTick, cursor =>
+        world.ExecuteQuery(query, lastTick, cursor =>
         {
             foreach (var _ in cursor.Rows)
                 rows++;
@@ -189,7 +191,6 @@ public class DynamicBufferTests
         world.AddBuffer<SmallInlineElement>(first);
         world.AddBuffer<SmallInlineElement>(second);
 
-
         uint lastTick = world.AcquireSystemTick();
         world.ExecuteBufferWrite<SmallInlineElement>(
             second,
@@ -198,7 +199,7 @@ public class DynamicBufferTests
         var query = world.Query(
             world.QueryDefinition().ChangedBuffer<SmallInlineElement>());
         var changed = new List<Entity>();
-        world.ExecuteQuery(query, lastTick, world.CurrentTick, cursor =>
+        world.ExecuteQuery(query, lastTick, cursor =>
         {
             foreach (var row in cursor.Rows)
                 changed.Add(row.Entity);
@@ -219,7 +220,6 @@ public class DynamicBufferTests
         world.ExecuteBufferWrite<SmallInlineElement>(first, FillOverflowBuffer);
         world.ExecuteBufferWrite<SmallInlineElement>(second, FillOverflowBuffer);
 
-
         uint lastTick = world.AcquireSystemTick();
         world.ExecuteBufferWrite<SmallInlineElement>(second, static buffer =>
         {
@@ -229,7 +229,7 @@ public class DynamicBufferTests
         var query = world.Query(
             world.QueryDefinition().ChangedBuffer<SmallInlineElement>());
         var changed = new List<Entity>();
-        world.ExecuteQuery(query, lastTick, world.CurrentTick, cursor =>
+        world.ExecuteQuery(query, lastTick, cursor =>
         {
             foreach (var row in cursor.Rows)
                 changed.Add(row.Entity);
@@ -293,7 +293,7 @@ public class DynamicBufferTests
         var query = world.Query(
             world.QueryDefinition().ChangedBuffer<SmallInlineElement>());
         int rows = 0;
-        world.ExecuteQuery(query, lastTick, world.CurrentTick, cursor =>
+        world.ExecuteQuery(query, lastTick, cursor =>
         {
             foreach (var _ in cursor.Rows)
                 rows++;
@@ -308,10 +308,6 @@ public class DynamicBufferTests
         buffer.Add(new SmallInlineElement { Value = 2 });
         buffer.Add(new SmallInlineElement { Value = 3 });
     }
-
-
-
-
 
     [Fact]
     public void QueryWithBufferFindsMatchingEntities()

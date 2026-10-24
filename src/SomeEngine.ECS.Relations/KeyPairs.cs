@@ -1,6 +1,7 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Relations;
 
@@ -33,43 +34,75 @@ public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent
 
     public int QueryCount => TPairing.QueryCount;
 
+    public static bool ReadsFromSingleQuery => TPairing.ReadsFromSingleQuery;
+
     public QueryHandle GetQuery(int position) => position == 0 ? _first : _second;
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition.WithOptionalRead<TComponent>();
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryCursor second = QueryCount == 1 ? queries.First : queries.Second;
-        var firstGroups = new KeyGroups<TComponent, TKey>(World, queries.First, queries.Access);
-        var secondGroups = QueryCount == 1 ? firstGroups : new KeyGroups<TComponent, TKey>(World, second, queries.Access);
-        foreach (var firstGroup in firstGroups)
+        QueryCursor first = queries.First;
+        if (TPairing.QueryCount == 1 && TPairing.ReadsFromSingleQuery)
+            return Enumerate(World, _exclude, in _relation, in _implementation, first, first, first, ref output);
+        QueryCursor second = queries.Second;
+        QueryCursor access = queries.Access;
+        return Enumerate(World, _exclude, in _relation, in _implementation, first, second, access, ref output);
+    }
+
+    private static bool Enumerate<TOutput>(World world, bool exclude, scoped in TRelation relation,
+        scoped in TImplementation implementation, scoped QueryCursor first, scoped QueryCursor second,
+        scoped QueryCursor access, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+    {
+        var firstGroups = TPairing.ReadsFromSingleQuery ? new KeyGroups<TComponent, TKey>(world, in first)
+            : new KeyGroups<TComponent, TKey>(world, in first, in access);
+        var secondGroups = TPairing.QueryCount == 1 ? firstGroups : new KeyGroups<TComponent, TKey>(world, in second, in access);
+        var firstValues = firstGroups.GetEnumerator();
+        while (firstValues.MoveNext(out var firstGroup))
         {
-            foreach (var secondGroup in secondGroups)
+            var secondValues = secondGroups.GetEnumerator();
+            while (secondValues.MoveNext(out var secondGroup))
             {
                 bool hasKeys = firstGroup.HasKey && secondGroup.HasKey;
-                bool forwardMatch = hasKeys && _implementation.Matches(in _relation, in firstGroup.Key, in secondGroup.Key);
+                bool forwardMatch = hasKeys && implementation.Matches(in relation, in firstGroup.Key, in secondGroup.Key);
                 bool reverseMatch = TPairing.ReordersPairs
-                    ? hasKeys && _implementation.Matches(in _relation, in secondGroup.Key, in firstGroup.Key)
+                    ? hasKeys && implementation.Matches(in relation, in secondGroup.Key, in firstGroup.Key)
                     : forwardMatch;
-                bool forwardAccepted = forwardMatch != _exclude;
-                bool reverseAccepted = reverseMatch != _exclude;
+                bool forwardAccepted = forwardMatch != exclude;
+                bool reverseAccepted = reverseMatch != exclude;
                 if (!forwardAccepted && !reverseAccepted)
                     continue;
                 foreach (Entity firstEntity in firstGroup.Entities)
                 {
-                    if (!queries.First.TryGetRow(firstEntity, out _))
+                    scoped QueryRow firstRow = default;
+                    bool firstMember = TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows
+                        ? first.TryGetRow(firstEntity, out firstRow)
+                        : first.Contains(firstEntity);
+                    if (!firstMember)
                         continue;
                     foreach (Entity secondEntity in secondGroup.Entities)
                     {
-                        if (!second.TryGetRow(secondEntity, out _) ||
-                            !TPairing.TryPair(queries, firstEntity, secondEntity, out var pair))
+                        if (!TPairing.TryPair(in first, in second, firstEntity, secondEntity, out var pair))
+                            continue;
+                        scoped QueryRow secondRow = default;
+                        bool secondMember;
+                        if (TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows)
+                            secondMember = first.TryGetRow(secondEntity, out secondRow);
+                        else
+                            secondMember = TPairing.QueryCount == 1
+                                ? first.Contains(secondEntity) : second.Contains(secondEntity);
+                        if (!secondMember)
                             continue;
                         bool accepted = TPairing.ReordersPairs && pair.Item1 != firstEntity
                             ? reverseAccepted : forwardAccepted;
                         if (!accepted)
                             continue;
-                        if (!output.Add(in pair))
+                        bool continued = TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows
+                            ? output.Add(in pair, firstRow, secondRow) : output.Add(in pair);
+                        if (!continued)
                             return false;
                     }
                 }

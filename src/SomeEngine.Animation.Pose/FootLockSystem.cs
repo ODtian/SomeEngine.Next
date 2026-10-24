@@ -23,7 +23,7 @@ public struct FootLockSystem : ISystem<ImmediateSystemContext>
     {
         _steps.Clear();
         var gather = (World: context.World, Steps: _steps);
-        context.World.ExecuteQuery(_instances, ref gather, static (QueryCursor rows, ref (World World, List<FootLockStep> Steps) gather) =>
+        context.World.ExecuteQuery(_instances, ref gather, static (scoped QueryCursor rows, ref (World World, List<FootLockStep> Steps) gather) =>
         {
             foreach (QueryRow row in rows.Rows)
                 foreach (ref FootLockInstance instance in row.Buffer<FootLockInstance>().AsSpan())

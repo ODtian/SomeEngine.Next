@@ -36,9 +36,9 @@ public sealed class RuntimeSafetyTests
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
         JobHandle root = scheduler.Schedule(new ThrowingJob());
-        Assert.Equal("job failed", Assert.Throws<InvalidOperationException>(root.Complete).Message);
+        Assert.Throws<InvalidOperationException>(root.Complete);
         JobHandle parent = scheduler.Schedule(new SpawnFailingChild());
-        Assert.Equal("job failed", Assert.Throws<InvalidOperationException>(parent.Complete).Message);
+        Assert.Throws<InvalidOperationException>(parent.Complete);
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public sealed class RuntimeSafetyTests
         _ = scheduler.Schedule(new ThrowingJob());
         _ = scheduler.Schedule(new Increment(counts, 0));
         AggregateException error = Assert.Throws<AggregateException>(scheduler.Dispose);
-        Assert.Contains(error.InnerExceptions, exception => exception.Message == "job failed");
+        Assert.IsType<InvalidOperationException>(Assert.Single(error.InnerExceptions));
         Assert.Equal(1, counts[0]);
         scheduler.Dispose();
     }

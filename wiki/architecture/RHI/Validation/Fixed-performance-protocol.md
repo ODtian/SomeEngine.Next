@@ -45,4 +45,16 @@ is closed. It contains no Queue submission, GPU wait or Present. Every implement
 same source-derived material sequence and must report the same operation counts and workload identity.
 This audit is the authority for RHI CPU frame-construction overhead; the older repeated-call loops
 remain attribution microbenchmarks only.
+
+## Managed benchmark inputs and reports
+
+`SomeEngine.Graphics.Benchmarks` exposes command-line configuration through `BenchmarkOptions.Parse`,
+sample and report values through `FrameSample`, `WorkloadRun` and `WorkloadMeasurements`, and report
+aggregation through `BenchmarkOutput.Complete` and `MetricDistribution`. Managed benchmark callers
+can construct and inspect the same reports consumed by the command-line tool. Frame samples attribute
+allocation ticks to intervals that recorded managed allocation, and report post-close cleanup separately.
+
+`RepresentativeFrameProfile` exposes worker ranges and object-packet generation for callers producing
+the shared managed/native workload content. Benchmark runners keep command recording and state
+suppression within their implementations; viewport comparison uses the public `Viewport` value equality.
 ^rhi-evid-003

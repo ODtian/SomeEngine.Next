@@ -1,0 +1,153 @@
+
+$ErrorActionPreference='Stop'
+Set-Location -LiteralPath 'F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next'
+$source='51c8ce75949cf16d7190e14028c655f526d5697b'
+$control=[IO.Path]::GetFullPath('artifacts/relations-measurements/final-validation-r38')
+$evidenceRoot=[IO.Path]::GetFullPath('docs/evidence/ECS-Relations-2026-10-19')
+$manifest=Get-Content -LiteralPath (Join-Path $control 'manifest-ready.json') -Raw|ConvertFrom-Json
+$preparation=Get-Content -LiteralPath (Join-Path $control 'preparation.json') -Raw|ConvertFrom-Json
+$ready=Get-Content -LiteralPath (Join-Path $control 'watcher-ready.json') -Raw|ConvertFrom-Json
+$firstWatch=Get-Content -LiteralPath (Join-Path $control 'cache-correction/watch-started-first.json') -Raw|ConvertFrom-Json
+$master=Get-Content -LiteralPath 'artifacts/benchmark-queue/6868d55d206646358d631ef517892b0b/result.json' -Raw|ConvertFrom-Json
+function Timestamp($value){([DateTimeOffset]$value).UtcDateTime.ToString('o')}
+function Seconds($start,$finish){([DateTimeOffset]$finish-[DateTimeOffset]$start).TotalSeconds}
+function F($value){if($null -eq $value){return ''};if($value -is [double]){return $value.ToString('R',[Globalization.CultureInfo]::InvariantCulture)};[string]$value}
+$allCases=[Collections.Generic.List[object]]::new()
+$allAnalyses=[Collections.Generic.List[object]]::new()
+$seriesTable=[Collections.Generic.List[object]]::new()
+foreach($definition in $manifest.Series){
+    $submissions=@(Get-Content -LiteralPath $definition.Submissions -Raw|ConvertFrom-Json)
+    $queueSubmission=Get-Content -LiteralPath $definition.QueueSubmission -Raw|ConvertFrom-Json
+    $cases=@(foreach($submission in $submissions){
+        $queue=Get-Content -LiteralPath (Join-Path $submission.QueueDirectory 'result.json') -Raw|ConvertFrom-Json
+        [pscustomobject]@{CaseId=$submission.CaseId;SourceCommit=$submission.SourceCommit;Queue=$queue}
+    })
+    $analyses=@(foreach($item in $queueSubmission.Reports){Get-Content -LiteralPath (Join-Path $item.QueueDirectory 'result.json') -Raw|ConvertFrom-Json})
+    foreach($case in $cases){$allCases.Add($case)}
+    foreach($analysis in $analyses){$allAnalyses.Add($analysis)}
+    $ordered=@($cases|Sort-Object{[DateTimeOffset]$_.Queue.StartedAtUtc})
+    $first=$ordered[0].Queue
+    $last=$ordered[-1].Queue
+    $analysisFirst=$analyses|Sort-Object{[DateTimeOffset]$_.StartedAtUtc}|Select-Object -First 1
+    $analysisLast=$analyses|Sort-Object{[DateTimeOffset]$_.FinishedAtUtc}|Select-Object -Last 1
+    $lastSubmitted=$cases.Queue|Sort-Object{[DateTimeOffset]$_.SubmittedAtUtc}|Select-Object -Last 1
+    $firstSubmitted=$cases.Queue|Sort-Object{[DateTimeOffset]$_.SubmittedAtUtc}|Select-Object -First 1
+    $execution=($cases|ForEach-Object{Seconds $_.Queue.StartedAtUtc $_.Queue.FinishedAtUtc}|Measure-Object -Sum).Sum
+    $analysisExecution=($analyses|ForEach-Object{Seconds $_.StartedAtUtc $_.FinishedAtUtc}|Measure-Object -Sum).Sum
+    $between=@(for($i=1;$i -lt $ordered.Count;$i++){
+        [pscustomobject]@{BeforeCaseId=$ordered[$i-1].CaseId;AfterCaseId=$ordered[$i].CaseId;StartedAtUtc=(Timestamp $ordered[$i-1].Queue.FinishedAtUtc);FinishedAtUtc=(Timestamp $ordered[$i].Queue.StartedAtUtc);Seconds=(Seconds $ordered[$i-1].Queue.FinishedAtUtc $ordered[$i].Queue.StartedAtUtc)}
+    })
+    $overlaps=@($cases|Where-Object{[DateTimeOffset]$_.Queue.StartedAtUtc -lt [DateTimeOffset]$ready.InitialObservationEndedAtUtc -and [DateTimeOffset]$_.Queue.FinishedAtUtc -gt [DateTimeOffset]$firstWatch.ProcessStartedAtUtc}|Select-Object -ExpandProperty CaseId)
+    $summary=[pscustomobject]@{
+        Series=$definition.Series;SourceCommit=$source;Backend=$definition.Backend;CaseCount=$cases.Count
+        SessionIds=@($cases.Queue.SessionId|Select-Object -Unique);PreparationExitCode=$master.ExitCode
+        CaseExitCodes=@($cases.Queue.ExitCode|Select-Object -Unique);AnalysisExitCodes=@($analyses.ExitCode|Select-Object -Unique)
+        LastCaseSubmittedAtUtc=(Timestamp $lastSubmitted.SubmittedAtUtc);FirstCaseStartedAtUtc=(Timestamp $first.StartedAtUtc)
+        PreparationFinishedAtUtc=(Timestamp $master.FinishedAtUtc);LastCaseFinishedAtUtc=(Timestamp $last.FinishedAtUtc)
+        FirstAnalysisStartedAtUtc=(Timestamp $analysisFirst.StartedAtUtc)
+        AllCasesSubmittedBeforeExecution=([DateTimeOffset]$lastSubmitted.SubmittedAtUtc -le [DateTimeOffset]$first.StartedAtUtc)
+        PreparationFinishedBeforeExecution=([DateTimeOffset]$master.FinishedAtUtc -le [DateTimeOffset]$first.StartedAtUtc)
+        AnalysisStartedAfterExecution=([DateTimeOffset]$analysisFirst.StartedAtUtc -ge [DateTimeOffset]$last.FinishedAtUtc)
+        MeasurementSeconds=(Seconds $first.StartedAtUtc $last.FinishedAtUtc)
+        CaseExecutionSeconds=$execution;BetweenCasesSeconds=($between.Seconds|Measure-Object -Sum).Sum
+        LongestBetweenCasesSeconds=($between.Seconds|Measure-Object -Maximum).Maximum
+        PreparationWaitingSeconds=(Seconds $master.SubmittedAtUtc $master.StartedAtUtc)
+        AnalysisExecutionSeconds=$analysisExecution
+        SubmissionToAnalysisFinishedSeconds=(Seconds $firstSubmitted.SubmittedAtUtc $analysisLast.FinishedAtUtc)
+        QuietPassed=($overlaps.Count -eq 0)
+    }
+    $postprocessPath=Join-Path (Split-Path -Parent $definition.Submissions) 'postprocess-stages.json'
+    $postprocess=if(Test-Path -LiteralPath $postprocessPath){@(Get-Content -LiteralPath $postprocessPath -Raw|ConvertFrom-Json)}else{@()}
+    $record=[pscustomobject]@{
+        Summary=$summary;Preparation=$master;BatchPreparation=$preparation;Cases=$cases;Analyses=$analyses
+        BetweenCases=$between
+        ProtectedObservation=[pscustomobject]@{StartedAtUtc=(Timestamp $firstWatch.ProcessStartedAtUtc);FinishedAtUtc=$ready.InitialObservationEndedAtUtc;Seconds=(Seconds $firstWatch.ProcessStartedAtUtc $ready.InitialObservationEndedAtUtc);OverlappingCases=$overlaps}
+        WatcherReady=$ready;PostprocessStages=$postprocess;RootHostQuietFromUtc='2026-10-19T22:10:49Z'
+        OneFinalTextRead=[pscustomobject]@{StartedAtUtc='2026-10-19T22:10:34.1758640Z';FinishedAtUtc='2026-10-19T22:10:35.1545853Z'}
+    }
+    $directory=Join-Path $evidenceRoot $definition.Series
+    $record|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $directory 'queue-boundaries.json') -Encoding utf8
+    $summary|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $directory 'queue-timing-summary.json') -Encoding utf8
+    $seriesTable.Add($summary)
+}
+$casesSeconds=($seriesTable.CaseExecutionSeconds|Measure-Object -Sum).Sum
+$analysesSeconds=($seriesTable.AnalysisExecutionSeconds|Measure-Object -Sum).Sum
+$masterSeconds=Seconds $master.StartedAtUtc $master.FinishedAtUtc
+$final=$allAnalyses|Sort-Object{[DateTimeOffset]$_.FinishedAtUtc}|Select-Object -Last 1
+$wallSeconds=Seconds $master.SubmittedAtUtc $final.FinishedAtUtc
+$overall=[pscustomobject]@{
+    SourceCommit=$source;CaseCount=$allCases.Count;AnalysisCount=$allAnalyses.Count
+    Master=$master;AllCaseExitCodes=@($allCases.Queue.ExitCode|Select-Object -Unique);AllAnalysisExitCodes=@($allAnalyses.ExitCode|Select-Object -Unique)
+    CaseExecutionSeconds=$casesSeconds;AnalysisExecutionSeconds=$analysesSeconds;MasterExecutionSeconds=$masterSeconds
+    SubmissionToFinalSeconds=$wallSeconds;OutsideBatchExecutionSeconds=$wallSeconds-$casesSeconds-$analysesSeconds-$masterSeconds
+    Preparation=$preparation;Series=@($seriesTable)
+}
+$batchEvidence=Join-Path $evidenceRoot 'final-validation-r38'
+New-Item -ItemType Directory -Path $batchEvidence -Force|Out-Null
+$overall|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $batchEvidence 'execution-summary.json') -Encoding utf8
+$seriesTable|Select-Object Series,CaseCount,CaseExecutionSeconds,BetweenCasesSeconds,AnalysisExecutionSeconds,SubmissionToAnalysisFinishedSeconds,FirstCaseStartedAtUtc,LastCaseFinishedAtUtc,QuietPassed|Export-Csv -LiteralPath (Join-Path $batchEvidence 'execution-summary.csv') -NoTypeInformation -Encoding utf8
+foreach($file in Get-ChildItem -LiteralPath $control -File -Filter '*.json'){Copy-Item -LiteralPath $file.FullName -Destination $batchEvidence -Force}
+Copy-Item -LiteralPath (Join-Path $control 'cache-correction') -Destination $batchEvidence -Recurse -Force
+foreach($queue in @($master)+@($allAnalyses)){
+    $directory=Join-Path $batchEvidence "queues/$($queue.Id)"
+    New-Item -ItemType Directory -Path $directory -Force|Out-Null
+    foreach($name in @('result.json','stdout.log','stderr.log')){Copy-Item -LiteralPath "artifacts/benchmark-queue/$($queue.Id)/$name" -Destination $directory -Force}
+}
+$approved=Get-Content -LiteralPath (Join-Path $evidenceRoot 'final-native-r38/approved-summary.json') -Raw|ConvertFrom-Json
+$unmet=@($approved.Metrics|Where-Object{$_.Required -and !$_.ApprovedPassed})
+$reports=@{}
+$rows=foreach($metric in $unmet){
+    if(!$reports.ContainsKey($metric.CaseId)){$reports[$metric.CaseId]=Get-Content -LiteralPath "artifacts/ecs-relations/measurements/final-native-r38/$($metric.CaseId).json" -Raw|ConvertFrom-Json}
+    $report=$reports[$metric.CaseId]
+    $rawBoundary=if($metric.Boundary -eq 'FrameTotal' -and $report.Input.Class -eq 'complete'){'Query'}else{$metric.Boundary}
+    $gc=@(foreach($side in @('relation','handwritten')){
+        $samples=@($report.RawSamples|Where-Object{$_.Side -eq $side -and $_.Boundary -eq $rawBoundary})
+        [pscustomobject]@{Side=$side;Samples=$samples.Count;Gen0=($samples.Gen0|Measure-Object -Sum).Sum;Gen1=($samples.Gen1|Measure-Object -Sum).Sum;Gen2=($samples.Gen2|Measure-Object -Sum).Sum;NonzeroGcFrames=@($samples|Where-Object{$_.Gen0 -ne 0 -or $_.Gen1 -ne 0 -or $_.Gen2 -ne 0}).Count}
+    })
+    [pscustomobject]@{
+        CaseId=$metric.CaseId;Boundary=$metric.Boundary;Frequency=$metric.Frequency
+        RelationMedianTicks=$metric.RelationMedianTicks;HandwrittenMedianTicks=$metric.HandwrittenMedianTicks;MedianRatio=$metric.MedianRatio
+        RelationP95Ticks=$metric.RelationP95Ticks;HandwrittenP95Ticks=$metric.HandwrittenP95Ticks;P95Ratio=$metric.P95Ratio
+        RelationMedianMicroseconds=$metric.RelationMedianTicks*1e6/$metric.Frequency;HandwrittenMedianMicroseconds=$metric.HandwrittenMedianTicks*1e6/$metric.Frequency
+        RelationP95Microseconds=$metric.RelationP95Ticks*1e6/$metric.Frequency;HandwrittenP95Microseconds=$metric.HandwrittenP95Ticks*1e6/$metric.Frequency
+        RelationTotalFrameAllocatedBytes=$metric.RelationTotalFrameAllocatedBytes;HandwrittenTotalFrameAllocatedBytes=$metric.HandwrittenTotalFrameAllocatedBytes
+        RelationGc=$gc[0];HandwrittenGc=$gc[1];QueueId=$metric.QueueId
+    }
+}
+$rows|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $evidenceRoot 'final-native-r38/approved-unmet.json') -Encoding utf8
+$lines=[Collections.Generic.List[string]]::new()
+$lines.Add('# Final NativeAOT measurements outside the approved limit')
+$lines.Add('')
+$lines.Add("Source $source. 108/108 equivalent; strict 103/126; ApprovedRatioLimit=1.01, approved 114/126. Stopwatch frequency: 10,000,000 ticks/second. Each side has 256 actual frames per boundary; allocations and GC below use those actual frame records.")
+$lines.Add('')
+$lines.Add('| Case | Boundary | Median E/H ticks | Median ratio | p95 E/H ticks | p95 ratio | Frame allocation E/H bytes | GC E/H (Gen0/1/2) |')
+$lines.Add('| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |')
+foreach($row in $rows){
+    $lines.Add("| $($row.CaseId) | $($row.Boundary) | $(F $row.RelationMedianTicks)/$(F $row.HandwrittenMedianTicks) | $(F $row.MedianRatio) | $(F $row.RelationP95Ticks)/$(F $row.HandwrittenP95Ticks) | $(F $row.P95Ratio) | $($row.RelationTotalFrameAllocatedBytes)/$($row.HandwrittenTotalFrameAllocatedBytes) | $($row.RelationGc.Gen0)/$($row.RelationGc.Gen1)/$($row.RelationGc.Gen2) ; $($row.HandwrittenGc.Gen0)/$($row.HandwrittenGc.Gen1)/$($row.HandwrittenGc.Gen2) |")
+}
+$lines.Add('')
+$lines.Add('The JSON companion retains absolute microseconds, sample counts, nonzero-GC frame counts and original queue identity. H1/H2 controls use their separate same-function report and retain Required=false.')
+$lines|Set-Content -LiteralPath (Join-Path $evidenceRoot 'final-native-r38/approved-unmet.md') -Encoding utf8
+$readme=@(
+'# Final source measurement batch',
+'',
+"Source: $source. Native 108 cases, H1/H2 controls 4, JIT representatives 9, independent update stages 9, fresh-process startup cases 9. The 139 case tasks and five postprocessing tasks all returned exit0.",
+'',
+'Native equivalence is 108/108. Strict ratio limit 1.00 passes 103/126; the approved 1.01 limit passes 114/126. The 12 remaining rows are retained with full-precision ratios, ticks, allocation and GC.',
+'',
+'- [Native full matrix](../final-native-r38/summary.md)',
+'- [Native 12 remaining rows](../final-native-r38/approved-unmet.md)',
+'- [H1/H2 independent controls](../final-hh-r38/control-summary.md)',
+'- [JIT representatives](../final-jit-r38/summary.md)',
+'- [Independent update stages](../final-phases-r38/summary.md)',
+'- [Fresh-process startup](../final-startup-r38/report.md)',
+'- [Actual execution and wall time](execution-summary.json)',
+'',
+'The preparation cache correction happened before ready ACK and before the first case. Both its initial files and correction facts remain under cache-correction/. The executed Master source is preserved as MasterActual in input-scripts.json. The next source change is decided from the recorded remaining rows; this batch remains an independent measurement.'
+)
+$readme|Set-Content -LiteralPath (Join-Path $batchEvidence 'README.md') -Encoding utf8
+$masterPath=Join-Path $control 'master.ps1'
+if(Test-Path -LiteralPath $masterPath){Remove-Item -LiteralPath $masterPath}
+Write-Output ('FINAL_EXECUTION '+($overall|Select-Object SourceCommit,CaseCount,AnalysisCount,CaseExecutionSeconds,AnalysisExecutionSeconds,MasterExecutionSeconds,SubmissionToFinalSeconds,OutsideBatchExecutionSeconds|ConvertTo-Json -Compress))
+Write-Output ('FINAL_UNMET '+($rows|Select-Object CaseId,Boundary,MedianRatio,P95Ratio,RelationGc,HandwrittenGc|ConvertTo-Json -Depth 5 -Compress))
+exit 0

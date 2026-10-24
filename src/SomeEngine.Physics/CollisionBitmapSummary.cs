@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Physics;
 
@@ -45,14 +46,22 @@ public sealed class CollisionBitmapSummary<TRelation, TImplementation, TComponen
 
     public ReadOnlySpan<CollisionBitmapData> Nodes => _nodes.AsSpan(0, Tree.NodeCount);
 
-    public void Rebuild(QueryCursor access)
+    public int NodeCapacity => _nodes.Length;
+
+    public ref readonly CollisionBitmapData this[int node]
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => ref _nodes[node];
+    }
+
+    public void Rebuild(scoped QueryCursor access)
     {
         Resize();
         if (Tree.Root >= 0)
             Fill(Tree.Root, access);
     }
 
-    private void Fill(int node, QueryCursor access)
+    private void Fill(int node, scoped QueryCursor access)
     {
         ref readonly CollisionNode value = ref Tree.Nodes[node];
         if (!value.IsLeaf)
@@ -63,7 +72,7 @@ public sealed class CollisionBitmapSummary<TRelation, TImplementation, TComponen
         Refit(node, access);
     }
 
-    public void Refit(int node, QueryCursor access)
+    public void Refit(int node, scoped QueryCursor access)
     {
         Resize();
         ref readonly CollisionNode value = ref Tree.Nodes[node];
@@ -71,7 +80,9 @@ public sealed class CollisionBitmapSummary<TRelation, TImplementation, TComponen
         {
             if (access.TryGetRow(value.Entity, out var row) && row.Has<TComponent>())
             {
-                CategoryBits bits = _implementation.Read(in _relation, in row.ReadRef<TComponent>());
+                ref readonly TComponent component = ref row.ReadRef<TComponent>();
+                var bits = new CategoryBits(_implementation.ReadCategories(in _relation, in component),
+                    _implementation.ReadAllowedCategories(in _relation, in component));
                 _nodes[node] = new CollisionBitmapData(1, bits.Categories, bits.Categories,
                     bits.AllowedCategories, bits.AllowedCategories);
             }

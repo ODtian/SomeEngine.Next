@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Queries;
@@ -7,21 +8,47 @@ namespace SomeEngine.ECS;
 
 public partial class World
 {
+    [MethodImpl(MethodImplOptions.NoInlining)]
     internal bool TryGetEntityQueryRow(QueryState query, Entity entity, uint last, uint current,
         out QueryRow row)
     {
-        if (_entities.Store.IsAlive(entity))
+        if (TryGetEntityQueryRecord(query, entity, last, out var record, out var match))
         {
-            EntityRecord record = _entities.Store.GetRecordReadOnly(entity);
-            if (record.Archetype is not null && query.TryGetMatch(record.Archetype, out var match) &&
-                match.MatchesChunkFilter(record.Chunk!, last) &&
-                match.MatchesRow(record.Chunk!, record.RowInChunk, last))
-            {
-                row = new QueryRow(this, match, record.Chunk!, record.RowInChunk, last, current);
-                return true;
-            }
+            row = new QueryRow(this, match, record.Chunk!, record.RowInChunk, last, current);
+            return true;
         }
         row = default;
+        return false;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal static ComponentReference<T> ReadEntityQueryRef<T>(scoped in QueryData data, Entity entity) where T : struct
+    {
+        if (data.World.TryGetEntityQueryRecord(data.State, entity, data.LastSystemVersion, out var record, out var match) &&
+            QueryAccessGuards.TryRequireReadAccess<T>(match, out int column))
+            return new(in record.Chunk!.ComponentRows<T>(column)[record.RowInChunk]);
+        return default;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal bool ContainsEntityQuery(QueryState query, Entity entity, uint last) =>
+        TryGetEntityQueryRecord(query, entity, last, out _, out _);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool TryGetEntityQueryRecord(QueryState query, Entity entity, uint last,
+        out EntityRecord record, out QueryArchetypeMatch match)
+    {
+        EntityStore entities = _entities.Store;
+        if (entities.IsAlive(entity))
+        {
+            record = entities.GetRecordReadOnly(entity);
+            if (record.Archetype is not null && query.TryGetMatch(record.Archetype, out match) &&
+                match.MatchesChunkFilter(record.Chunk!, last) &&
+                match.MatchesRow(record.Chunk!, record.RowInChunk, last))
+                return true;
+        }
+        record = default;
+        match = null!;
         return false;
     }
 
@@ -42,8 +69,9 @@ public partial class World
         return false;
     }
     /// <summary>
-    /// Observes table membership at its mutation source. The first batch includes existing live
-    /// entities; later batches contain only changed identities, including destroyed generations.
+    /// Observes table membership and enable masks at their mutation sources.
+    /// The first batch includes existing live entities; later batches contain only changed identities,
+    /// including destroyed generations.
     /// Changes in an aborted structural transaction are discarded with that transaction.
     /// </summary>
     public EntityTableChanges ObserveEntityTables()

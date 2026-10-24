@@ -135,7 +135,7 @@ internal readonly record struct RuntimeEnvironment(
     bool CaptureToolLoaded,
     BuildIdentity Build);
 
-internal readonly record struct CalibrationRecord(
+public readonly record struct CalibrationRecord(
     QueueType Queue,
     int FrameIndex,
     long CpuCounter,
@@ -143,7 +143,7 @@ internal readonly record struct CalibrationRecord(
     ulong QueueCounter,
     ulong QueueFrequency);
 
-internal readonly record struct FrameSample(
+public readonly record struct FrameSample(
     int FrameIndex,
     long CpuStopwatchTicks,
     double CpuMicroseconds,
@@ -152,16 +152,31 @@ internal readonly record struct FrameSample(
     long EtwAllocationEvents,
     ulong CompletionValue,
     long? PostCloseCleanupStopwatchTicks = null,
-    double? PostCloseCleanupMicroseconds = null);
+    double? PostCloseCleanupMicroseconds = null)
+{
+    // Attribute delayed allocation ticks when this frame recorded managed allocation.
+    public long EtwAllocationEvents { get; init; } =
+        AllocationEventsForFrame(ManagedAllocatedBytes, EtwAllocationEvents);
 
-internal readonly record struct BarrierEvidence(
+    private static long AllocationEventsForFrame(long allocatedBytes, long observedEvents)
+    {
+        if (allocatedBytes < 0)
+            throw new ArgumentOutOfRangeException(nameof(ManagedAllocatedBytes));
+        if (observedEvents < 0)
+            throw new ArgumentOutOfRangeException(nameof(EtwAllocationEvents));
+
+        return allocatedBytes == 0 ? 0 : observedEvents;
+    }
+}
+
+public readonly record struct BarrierEvidence(
     int PublicOrdinal,
     string PublicKind,
     int NativeOrdinal,
     int NativeExpansionCount,
     string? ExpansionReason);
 
-internal readonly record struct CommandWorkloadEvidence(
+public readonly record struct CommandWorkloadEvidence(
     int ObjectPacketCount,
     int LogicalDrawRequests,
     int LogicalMaterialBindingRequests,
@@ -173,7 +188,7 @@ internal readonly record struct CommandWorkloadEvidence(
     int WorkerCount,
     string DrawCallShape);
 
-internal sealed record WorkloadRun(
+public sealed record WorkloadRun(
     GraphicsWorkload Workload,
     RunDisposition Disposition,
     string Reason,
@@ -198,7 +213,7 @@ internal sealed record ProcessRun(
     RuntimeEnvironment Environment,
     WorkloadRun[] Workloads);
 
-internal sealed record WorkloadMeasurements(
+public sealed record WorkloadMeasurements(
     GraphicsWorkload Workload,
     RunDisposition Disposition,
     string Reason,
@@ -214,7 +229,7 @@ internal sealed record WorkloadMeasurements(
     BarrierEvidence[] Barriers,
     double[] PostCloseCleanupSamples)
 {
-    internal static WorkloadMeasurements Create(WorkloadRun run)
+    public static WorkloadMeasurements Create(WorkloadRun run)
     {
         return new WorkloadMeasurements(
             run.Workload,

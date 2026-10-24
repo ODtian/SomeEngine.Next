@@ -28,24 +28,25 @@ SaveAsync 写出现有二进制文档并返回 AssetEntry。只有显式登记�
 
 人工原生定义保存自己的身份和强类型 Block。外部来源的 `.meta` 保存 Source ID、Importer 选择、强类型参数和必须保留的元素 ID 映射；`.import.json` 是可丢弃的构建记录。内容版本、文件路径、来源 ID 与资产 ID 不互相代替。缓存命中必须核验实际输入、输出内容及文档版本。
 
-Loader 与存储按已选条目取得字节范围，不缓存唯一业务实例，不隐式导入或编译。完整性、认证、压缩、包、差分和范围读取仍由原有通用实现提供。详见 [文件读写](../wiki/architecture/Assets/Asset-File-IO.md)、[引用和版本](../wiki/architecture/Assets/Asset-Identity-and-Dependencies.md)。
+Loader 与存储按已选条目取得字节范围。ShaderAsset.GetAsync、TextureAsset.GetAsync 以业务提供的强类型 WeakValues 复用存活实例，具体创建覆盖打开、Block 取得和完整资源创建；Material 的具体类型及实际资源引用由业务提供。完整性、认证、压缩、包、差分和范围读取由原有通用实现提供。详见 [文件读写](../wiki/architecture/Assets/Asset-File-IO.md)、[引用和版本](../wiki/architecture/Assets/Asset-Identity-and-Dependencies.md)。
 
 ## 扩展导入
 
 扩展实现 IAssetImporter<TSource,TSettings>，直接接收原生来源库对象。多个 Importer 可向同一 Asset 写不同 Block。每个 Block 在同次结果中只能有一个生产者；冲突由配置或明确检查解决，不以执行顺序覆盖。Context 合并遍历与依赖调用，处理循环、取消和结果释放。
 
-项目引用决定能力，SG 生成 Microsoft DI 注册、静态设置读取和编辑器能力描述，不生成来源遍历或跨扩展业务。来源配置与本次覆盖分别生效。实际 glTF 集成位于 templates/DefaultProject/Game.Importing；外部扩展示例位于 samples/SomeEngine.Curves.Assets。
+项目引用决定能力，SG 为 Importer、Importer 能力描述和导入组合生成 Microsoft DI 注册。Importer 使用无参构造，实际来源和设置由导入上下文提供；其余资产操作通过对象方法和静态编码完成。来源配置与本次覆盖分别生效。标准 glTF 集成位于引擎 `SomeEngine.Assets.Importers`；外部扩展示例位于 `samples/SomeEngine.Curves.Assets`。
 
 ## 项目模板与工具
 
-独立项目通过 templates/DefaultProject/Install.ps1 安装到新目录。安装后的 C#、材质、顶层 Slang 和 Shader 定义由用户维护；后续构建不会补回删除的人工源码。引擎 Shader 库以明确 include 路径提供算法，应用只读取自己输出目录中的目录文件及资产。
+独立项目通过 `templates/DefaultProject/Install.ps1` 安装到新目录。一个游戏项目编译游戏本体与所选开发能力。项目维护自己的代码、顶层 Slang 和 Shader 定义；引擎提供标准材质、导入和资产构建能力。引擎 Shader 库以明确 include 路径提供算法，应用读取自己输出目录中的目录文件及资产。配置与 API 见 [游戏开发组合](Game-Development.md)。
 
 ```powershell
-# 在引擎检出目录内重建其默认项目。
-dotnet run --project tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAssets.csproj -c Release -- --engine <engine-directory>
+# 在引擎检出目录内生成统一渲染样例内容。
+dotnet run --project samples/DefaultGame/DefaultGame.csproj -- sample
 
-# 独立项目必须运行自己的构建入口。
-dotnet run --project <project-directory>/Game.Build/Game.Build.csproj -c Release -- --project <project-directory> --engine <engine-directory>
+# 游戏的开发组合调用引擎资产命令。
+dotnet run --project <project-directory>/Game.csproj -- prepare-materials
+dotnet run --project <project-directory>/Game.csproj -- import assets/Models/character.glb
 ```
 
-GenerateDefaultAssets 仅调用模板的唯一内容构建实现，不再维护引擎根目录的另一套默认内容生成流程。[Shader 来源](ShaderSources.md)、[可读源格式](AssetSources.md)、[资产字节与业务分块](AssetPages.md) 和 [通用编码](BinarySerialization.md) 说明各自边界。
+`GenerateDefaultAssets` 调用 `samples/DefaultGame` 的内容生成实现。[Shader 来源](ShaderSources.md)、[可读源格式](AssetSources.md)、[资产字节与业务分块](AssetPages.md) 和 [通用编码](BinarySerialization.md) 说明各自边界。

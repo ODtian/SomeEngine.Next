@@ -85,7 +85,7 @@ public sealed class AssetImportTests
     }
 
     [Fact]
-    public async Task FailureAfterSavingDraftsDoesNotChangeFilesMetadataOrDirectory()
+    public async Task FailureWhileSavingLaterDraftPreservesFilesMetadataAndDirectory()
     {
         using var files = new TestFiles();
         var project = new AssetProject(files.Root, []);
@@ -93,7 +93,7 @@ public sealed class AssetImportTests
         IReadOnlyList<Guid> first = await project.ImportAsync(files.Source, importer);
         Dictionary<string, byte[]> before = files.SavedFiles();
         File.WriteAllText(files.Source, "changed source");
-        importer.FailAfterSave = 1;
+        importer.FailSavingShader = 1;
         await Assert.ThrowsAsync<InvalidDataException>(() => project.ImportAsync(files.Source, importer).AsTask());
         files.AssertSavedFiles(before);
         Assert.Equal(first.Order(), project.List().Select(static entry => entry.AssetGuid).Order());
@@ -118,7 +118,7 @@ public sealed class AssetImportTests
     }
 
     [Fact]
-    public async Task CancellationAfterDraftSavePreservesLastSuccessfulImport()
+    public async Task CancellationDuringDraftSavePreservesLastSuccessfulImport()
     {
         using var files = new TestFiles();
         var project = new AssetProject(files.Root, []);
@@ -127,7 +127,7 @@ public sealed class AssetImportTests
         Dictionary<string, byte[]> before = files.SavedFiles();
         File.WriteAllText(files.Source, "changed source");
         using var cancellation = new CancellationTokenSource();
-        importer.CancelAfterSave = cancellation;
+        importer.CancelWhileSaving = cancellation;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => project.ImportAsync(files.Source, importer, cancellation.Token).AsTask());
         files.AssertSavedFiles(before);
         files.AssertNoTemporaryFiles();
@@ -345,8 +345,7 @@ public sealed class AssetImportTests
             await Assert.ThrowsAsync<InvalidDataException>(() => project.MoveAsync(files.Source, System.IO.Path.Combine(boundary, "outside.input")).AsTask());
             await Assert.ThrowsAsync<InvalidDataException>(() => project.CopySourceAsync(files.Source, System.IO.Path.Combine(boundary, "copy.input")).AsTask());
             using var asset = new ShaderAsset();
-            await Assert.ThrowsAsync<InvalidDataException>(() => project.CopyAssetAsync(asset, outside,
-                static (copy, path, token) => copy.SaveAsync(path, token)).AsTask());
+            await Assert.ThrowsAsync<InvalidDataException>(() => project.CopyAssetAsync(asset, outside).AsTask());
             string externalSource = System.IO.Path.Combine(boundary, "external.input");
             File.WriteAllText(externalSource, "external source");
             var reader = new SourceImporter();
@@ -371,11 +370,12 @@ public sealed class AssetImportTests
         public ValueTask<string> ReadAsync(string path, CancellationToken token) => ValueTask.FromResult(File.ReadAllText(path));
         public async ValueTask ImportAsync(string source, ImportContext context, CancellationToken token)
         {
-            context.ConfigureAssets<ShaderPart, ShaderAsset>(part => "outside", (_, id) => new ShaderAsset(id),
-                (_, _) => outputPath, static (asset, path, cancellation) => asset.SaveAsync(path, cancellation));
             context.EnableImporter<ShaderPart, ShaderAsset>(new AssetImporter<ShaderPart, int>(Id,
                 [ShaderBlock.BlockTypeId, ShaderSourceBlock.BlockTypeId], new ShaderConversion(), 0));
-            await context.GetAssetAsync<ShaderPart, ShaderAsset>(new(0, source), token);
+            var part = new ShaderPart(0, source);
+            Guid id = context.GetAssetId("outside");
+            context.AddAsset(part, new ShaderAsset(id), "outside", outputPath);
+            await context.GetAssetAsync<ShaderPart, ShaderAsset>(part, token);
         }
     }
 
@@ -386,8 +386,8 @@ public sealed class AssetImportTests
         public int Reads { get; private set; }
         public int ShaderCount { get; set; } = 1;
         public bool IncludeMesh { get; set; }
-        public int FailAfterSave { get; set; } = -1;
-        public CancellationTokenSource? CancelAfterSave { get; set; }
+        public int FailSavingShader { get; set; } = -1;
+        public CancellationTokenSource? CancelWhileSaving { get; set; }
         public async ValueTask<string> ReadAsync(string sourcePath, CancellationToken cancellationToken)
         { Reads++; return await File.ReadAllTextAsync(sourcePath, cancellationToken); }
         public ValueTask<ImportInputs?> GetInputsAsync(string projectRoot, string sourcePath, SourceMeta metadata,
@@ -400,29 +400,39 @@ public sealed class AssetImportTests
         public async ValueTask ImportAsync(string source, ImportContext context, AssetImportSettings<int>? overrides, CancellationToken token)
         {
             int settings = context.GetSettings(Id, 0, ImportTestJsonContext.Default.Int32, overrides);
-            int saved = 0;
-            context.ConfigureAssets<ShaderPart, ShaderAsset>(part => $"shader/{part.Index}",
-                (part, id) => new ShaderAsset(id) { Name = $"{part.Text}:{settings}" },
-                (part, _) => $"shader{part.Index}.shader.asset", async (asset, path, cancellation) =>
-                {
-                    AssetEntry entry = await asset.SaveAsync(path, cancellation);
-                    if (saved++ == FailAfterSave) throw new InvalidDataException("Import failed after saving an output.");
-                    CancelAfterSave?.Cancel();
-                    return entry;
-                });
             context.EnableImporter<ShaderPart, ShaderAsset>(new AssetImporter<ShaderPart, int>(Id,
                 [ShaderBlock.BlockTypeId, ShaderSourceBlock.BlockTypeId], new ShaderConversion(), settings));
             if (IncludeMesh)
             {
-                context.ConfigureAssets<string, MeshAsset>(_ => "mesh/0", (_, id) => new MeshAsset(id),
-                    (_, _) => "mesh.mesh.asset", static (asset, path, cancellation) => asset.SaveAsync(path, cancellation));
                 context.EnableImporter<string, MeshAsset>(new AssetImporter<string, int>(
                     new Guid("c698a681-8c3a-4e20-965e-f8d321f6bda9"),
                     [MeshBlock.BlockTypeId, ClusterGeometryBlock.BlockTypeId, ClusterVertexAttributesBlock.BlockTypeId, MeshMaterialsBlock.BlockTypeId], new MeshConversion(), 0));
             }
             for (int index = 0; index < ShaderCount; index++)
-                await context.GetAssetAsync<ShaderPart, ShaderAsset>(new(index, source), token);
-            if (IncludeMesh) await context.GetAssetAsync<string, MeshAsset>(source, token);
+            {
+                var part = new ShaderPart(index, source);
+                string key = $"shader/{index}";
+                Guid id = context.GetAssetId(key);
+                var asset = new ShaderAsset(id) { Name = $"{source}:{settings}" };
+                if (index == FailSavingShader)
+                {
+                    using var failure = new FailedImportSaveBlock();
+                    asset.SetBlock(failure);
+                }
+                if (CancelWhileSaving is { } cancellation)
+                {
+                    using var canceled = new CanceledImportSaveBlock(cancellation);
+                    asset.SetBlock(canceled);
+                }
+                context.AddAsset(part, asset, key, $"shader{index}.shader.asset");
+                await context.GetAssetAsync<ShaderPart, ShaderAsset>(part, token);
+            }
+            if (IncludeMesh)
+            {
+                Guid id = context.GetAssetId("mesh/0");
+                context.AddAsset(source, new MeshAsset(id), "mesh/0", "mesh.mesh.asset");
+                await context.GetAssetAsync<string, MeshAsset>(source, token);
+            }
         }
     }
 
@@ -474,3 +484,26 @@ public sealed class AssetImportTests
 
 [JsonSerializable(typeof(int))]
 internal sealed partial class ImportTestJsonContext : JsonSerializerContext;
+
+[AssetBlock("SomeEngine.Tests.ImportSaveFailure")]
+internal sealed partial class FailedImportSaveBlock(object? syncRoot = null) : AssetBlock(syncRoot), IAssetBlockWriter
+{
+    public override AssetBlock Duplicate() => new FailedImportSaveBlock();
+    public override AssetBlock Duplicate(object syncRoot) => new FailedImportSaveBlock(syncRoot);
+    public ValueTask WriteAsync(AssetBlockWriter writer, CancellationToken cancellationToken = default)
+        => throw new InvalidDataException("Import failed while saving an output.");
+}
+
+[AssetBlock("SomeEngine.Tests.ImportSaveCancellation")]
+internal sealed partial class CanceledImportSaveBlock(CancellationTokenSource cancellation, object? syncRoot = null)
+    : AssetBlock(syncRoot), IAssetBlockWriter
+{
+    public override AssetBlock Duplicate() => new CanceledImportSaveBlock(cancellation);
+    public override AssetBlock Duplicate(object syncRoot) => new CanceledImportSaveBlock(cancellation, syncRoot);
+    public ValueTask WriteAsync(AssetBlockWriter writer, CancellationToken cancellationToken = default)
+    {
+        cancellation.Cancel();
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.CompletedTask;
+    }
+}

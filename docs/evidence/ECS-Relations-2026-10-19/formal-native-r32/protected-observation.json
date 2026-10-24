@@ -1,0 +1,11 @@
+{
+  "ObservationKind": "Manifest watcher started before preparation; read the final report identifier on the manifest change event",
+  "ManifestWatcherStartedAtUtc": "2026-10-19T07:40:44.2264639Z",
+  "ObservationStartedAtUtc": "2026-10-19T07:41:38.412536Z",
+  "ObservationFinishedAtUtc": "2026-10-19T07:41:38.4343887Z",
+  "FinalQueueId": "070ce4d5a083404e97cd790bc88834cb",
+  "CaseCount": 108,
+  "WatcherProcessId": 96588,
+  "WatcherCondition": "Final analysis result.json Created/Changed, or existing result.json at registration",
+  "FinalEventAtUtc": "2026-10-19T08:12:10.6944Z"
+}

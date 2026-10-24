@@ -1,0 +1,3 @@
+numbers: 8 arities, Item8, typed/generated reads; edges: identities, roles, maintenance
+spatial: key+bitmap+components; parallel/serial=5; updated=3; consumed counts=2,2,0,2
+PASS: packages; arities=1..8; Item8; ref output; schema; typed/generated/query access; edges; key; bitmap; spatial; maintenance; parallel; consumption.

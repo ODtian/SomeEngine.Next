@@ -163,12 +163,12 @@ internal sealed unsafe partial class D3D12Backend
 
         if (command.EnhancedBarriers)
         {
-            // Separate ordered Barrier calls plus ALL->ALL scopes complete all
-            // preceding access before any after-side discard. NO_ACCESS makes
-            // the old contents unnecessary; it does not promise a write flush. The
-            // after entries deliberately remain NO_ACCESS/UNDEFINED; a later
-            // ordinary barrier declares the real first use.
+            // Complete memory visibility at the resource switch; subsequent accesses
+            // may name a different resource over the same heap bytes.
             EncodeEnhancedAliasingBatches(command, barrier.Before, barrier.After);
+            GlobalBarrier aliasMemory = new(BarrierSync.All, BarrierSync.All, BarrierAccess.Common, BarrierAccess.Common);
+            BarrierGroup aliasGroup = new(BarrierType.Global, 1, pGlobalBarriers: &aliasMemory);
+            D3D12CommandListFastCalls.Barrier(command.List, 1, &aliasGroup);
             return;
         }
 
@@ -337,6 +337,8 @@ internal sealed unsafe partial class D3D12Backend
             command.NativeBackend.UseQueueSpecificCommonLayouts,
             layoutBefore,
             layoutAfter,
+            accessBefore,
+            accessAfter,
             out BarrierLayout nativeLayoutBefore,
             out BarrierLayout nativeLayoutAfter);
         nativeLayoutBefore = layoutBeforeOverride ?? nativeLayoutBefore;
@@ -498,23 +500,22 @@ internal sealed unsafe partial class D3D12Backend
         bool queueSpecificCommonLayouts,
         TextureLayout layoutBefore,
         TextureLayout layoutAfter,
+        BarrierAccess accessBefore,
+        BarrierAccess accessAfter,
         out BarrierLayout nativeLayoutBefore,
         out BarrierLayout nativeLayoutAfter)
     {
-        if (queueSpecificCommonLayouts && queueType != QueueType.Copy)
-        {
-            nativeLayoutBefore = ToQueueSpecificBarrierLayout(
-                queueType,
-                layoutBefore);
-            nativeLayoutAfter = ToQueueSpecificBarrierLayout(
-                queueType,
-                layoutAfter);
-            return;
-        }
         if (queueType != QueueType.Copy)
         {
-            nativeLayoutBefore = ToBarrierLayout(layoutBefore);
-            nativeLayoutAfter = ToBarrierLayout(layoutAfter);
+            nativeLayoutBefore = queueSpecificCommonLayouts
+                ? ToQueueSpecificBarrierLayout(queueType, layoutBefore) : ToBarrierLayout(layoutBefore);
+            nativeLayoutAfter = queueSpecificCommonLayouts
+                ? ToQueueSpecificBarrierLayout(queueType, layoutAfter) : ToBarrierLayout(layoutAfter);
+            // Native generic read permits the depth attachment and sampled view together.
+            if (layoutBefore == TextureLayout.DepthStencilRead && (accessBefore & BarrierAccess.ShaderResource) != 0)
+                nativeLayoutBefore = BarrierLayout.DirectQueueGenericRead;
+            if (layoutAfter == TextureLayout.DepthStencilRead && (accessAfter & BarrierAccess.ShaderResource) != 0)
+                nativeLayoutAfter = BarrierLayout.DirectQueueGenericRead;
             return;
         }
 
@@ -1331,7 +1332,8 @@ internal sealed unsafe partial class D3D12Backend
             TextureLayout.RenderTarget => ResourceStates.RenderTarget,
             TextureLayout.UnorderedAccess => ResourceStates.UnorderedAccess,
             TextureLayout.DepthStencilWrite => ResourceStates.DepthWrite,
-            TextureLayout.DepthStencilRead => ResourceStates.DepthRead,
+            TextureLayout.DepthStencilRead => ResourceStates.DepthRead |
+                ((access & ResourceAccess.ShaderResource) != 0 ? ToLegacyShaderResourceState(queueType, sync) : ResourceStates.Common),
             TextureLayout.ShaderResource => ToLegacyShaderResourceState(queueType, sync),
             TextureLayout.CopySource => ResourceStates.CopySource,
             TextureLayout.CopyDestination => ResourceStates.CopyDest,

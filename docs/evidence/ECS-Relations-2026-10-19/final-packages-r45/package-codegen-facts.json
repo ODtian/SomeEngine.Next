@@ -1,0 +1,132 @@
+{
+  "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+  "ReaderQueueId": "5bc38d23ffdd4c2fa48b9a115101dbbb",
+  "ProducerFacts": "artifacts/ecs-relations/package-stages-c0effa290eee225c296f779a85b9d79109d789a5.json",
+  "ProducerQueues": [
+    "PRODUCER 0943bc78afa94cbd816e22a2a2350079 ExitCode=2",
+    {
+      "Id": "0943bc78afa94cbd816e22a2a2350079",
+      "ExitCode": 2,
+      "StartedAtUtc": "2026-10-20T09:23:25.1335162+08:00",
+      "FinishedAtUtc": "2026-10-20T09:23:53.3700947+08:00",
+      "Completion": "All production stages returned ExitCode0; the initial codegen reader returned ExitCode2.",
+      "CompletedStages": 5,
+      "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "QueueDirectory": "artifacts/benchmark-queue/0943bc78afa94cbd816e22a2a2350079"
+    },
+    "PRODUCER b29fc3fd3ed94505adb27bead7eed42c ExitCode=0",
+    {
+      "Id": "b29fc3fd3ed94505adb27bead7eed42c",
+      "ExitCode": 0,
+      "StartedAtUtc": "2026-10-20T09:22:48.9688892+08:00",
+      "FinishedAtUtc": "2026-10-20T09:23:23.5961484+08:00",
+      "Completion": "Production task ExitCode0.",
+      "CompletedStages": 9,
+      "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "QueueDirectory": "artifacts/benchmark-queue/b29fc3fd3ed94505adb27bead7eed42c"
+    }
+  ],
+  "InitialReaderStage": "package-initial-reader-stage.json",
+  "FrozenInputs": [
+    {
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll",
+      "ExpectedUtc": "2026-10-20T01:23:34.4962378+00:00",
+      "ActualUtc": "2026-10-20T01:23:34.4962378+00:00",
+      "ExpectedLength": 69120,
+      "ActualLength": 69120
+    },
+    {
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.AotSmoke.obj",
+      "ExpectedUtc": "2026-10-20T01:23:50.7250812+00:00",
+      "ActualUtc": "2026-10-20T01:23:50.7250812+00:00",
+      "ExpectedLength": 24930157,
+      "ActualLength": 24930157
+    }
+  ],
+  "DllBefore": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll",
+    "Utc": "2026-10-20T01:23:34.4962378Z",
+    "Length": 69120
+  },
+  "DllAfter": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll",
+    "Utc": "2026-10-20T01:23:34.4962378Z",
+    "Length": 69120
+  },
+  "ObjectBefore": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.AotSmoke.obj",
+    "Utc": "2026-10-20T01:23:50.7250812Z",
+    "Length": 24930157
+  },
+  "ObjectAfter": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.AotSmoke.obj",
+    "Utc": "2026-10-20T01:23:50.7250812Z",
+    "Length": 24930157
+  },
+  "IlRecipeQueue": "60d0895422044ab1ac184826a2c3d6ee",
+  "NativeRecipeQueue": "e29cdab130204f68a7a777dd5fe27522",
+  "IlTargets": [
+    "IL TARGET count=1 Consumer EcsTypeRegistration::RegisterTypes",
+    "IL TARGET count=1 Consumer WeightedTotal8::Matches",
+    "IL TARGET count=1 Consumer EighthEntity::Add",
+    "IL TARGET count=1 Consumer NumberPointValue::Execute",
+    "IL TARGET count=2 Consumer ForwardedMutualPermission::Matches",
+    "IL TARGET count=1 Consumer FillContacts`1::Execute",
+    "IL TARGET count=3 Relations ComponentRelation`9::Matches",
+    "IL TARGET count=2 Relations BitmapRelation`4::Matches",
+    "IL TARGET count=2 Relations BitmapRelation`4::Evaluate",
+    "IL TARGET count=1 Relations ICategoryPermission::Evaluate",
+    "IL TARGET count=2 Relations OneWayPermission::Matches",
+    "IL TARGET count=1 Relations OneWayPermission::Evaluate",
+    "IL TARGET count=2 Relations MutualPermission::Matches",
+    "IL TARGET count=1 Relations MutualPermission::Evaluate",
+    "IL TARGET count=1 Relations IdentityPermissionOutput`2::Matched",
+    "IL TARGET count=1 Relations IdentityPermissionOutput`2::Unmatched",
+    "IL TARGET count=1 ECS GeneratedEcsTypes::RegisterJobStorage",
+    "IL TARGET count=1 ECS GeneratedEcsTypes::RegisterRelationSchema",
+    "IL TARGET count=1 ECS JobStorageTypeMetadata`1::Register",
+    "IL TARGET count=1 ECS JobStorageTypeMetadata`1::get_IsAliasFree",
+    "IL TARGET count=1 ECS JobStorageTypeMetadata`1::GetIsAliasFree",
+    "IL TARGET count=1 ECS ComponentMetadata`1::CreateOperations",
+    "IL TARGET count=1 ECS ComponentInfo::get_IsJobAliasFree",
+    "IL TARGET count=1 ECS RelationSchema::For",
+    "IL TARGET count=1 ECS RelationSchemaCache`1::Register",
+    "IL TARGET count=1 ECS RelationSchemaCache`1::get_Value",
+    "IL TARGET count=1 ECS QueryCursor::TryReadRef",
+    "IL TARGET count=1 ECS World::ReadEntityQueryRef",
+    "IL TARGET count=1 Systems QueryJobAccess::CopyAccesses",
+    "IL TARGET count=2 Physics SpatialTraversal::Enumerate",
+    "IL TARGET count=1 Physics SpatialBitmapFilter`5::MatchesLeaves",
+    "IL TARGET count=1 Physics CountJob`1::Execute",
+    "IL TARGET count=1 Physics FillJob`1::Execute",
+    "IL TARGET count=1 Physics CollisionPairBuffer::Fill"
+  ],
+  "NativeTargets": [
+    {
+      "Role": "Weighted8",
+      "Name": "SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_WeightedTotal8__Matches"
+    },
+    {
+      "Role": "Component8",
+      "Name": "SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentRelation_9<SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_WeightedTotal8__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>>__Matches"
+    },
+    {
+      "Role": "NumberPoint",
+      "Name": "SomeEngine_ECS_SomeEngine_ECS_World__ReadEntityQueryRef<SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>>"
+    },
+    {
+      "Role": "SpatialFill",
+      "Name": "SomeEngine_Physics_SomeEngine_Physics_SpatialTraversal__Enumerate_0<SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialComponentFilter_3<SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_DefaultContacts__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Body__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Body>__SomeEngine_Physics_SomeEngine_Physics_SpatialBitmapFilter_5<SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_MutualCategories__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_BodyBitmap__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Body__SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_MutualPermission__SomeEngine_Physics_SomeEngine_Physics_MutualSpatialPermission>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_SpatialExcept_2<SomeEngine_Physics_SomeEngine_Physics_SpatialKeyFilter_4<SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_SameCharacterHair__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_HairCharacterIndex__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Hair__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_CollisionPairBuffer_PairArrayOutput>"
+    }
+  ],
+  "NativeCommand": [
+    "C:\\Program Files\\LLVM\\bin\\llvm-objdump.exe",
+    "-d",
+    "-r",
+    "--no-show-raw-insn",
+    "--disassemble-symbols=SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_WeightedTotal8__Matches,SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentRelation_9<SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_WeightedTotal8__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>>__Matches,SomeEngine_ECS_SomeEngine_ECS_World__ReadEntityQueryRef<SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Number_1<Int32>>,SomeEngine_Physics_SomeEngine_Physics_SpatialTraversal__Enumerate_0<SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialComponentFilter_3<SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_DefaultContacts__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Body__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Body>__SomeEngine_Physics_SomeEngine_Physics_SpatialBitmapFilter_5<SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_MutualCategories__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_BodyBitmap__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Body__SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_MutualPermission__SomeEngine_Physics_SomeEngine_Physics_MutualSpatialPermission>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_SpatialExcept_2<SomeEngine_Physics_SomeEngine_Physics_SpatialKeyFilter_4<SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_SameCharacterHair__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_HairCharacterIndex__SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_Hair__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_CollisionPairBuffer_PairArrayOutput>",
+    "tools/SomeEngine.ECS.Relations.AotSmoke/obj/Release/net10.0/win-x64/native/SomeEngine.ECS.Relations.AotSmoke.obj"
+  ],
+  "StartedAtUtc": "2026-10-20T01:29:18.8142709Z",
+  "FinishedAtUtc": "2026-10-20T01:29:59.4203918Z"
+}

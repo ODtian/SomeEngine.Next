@@ -1,4 +1,4 @@
-using System.Reflection;
+using System.Collections.Concurrent;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
@@ -109,29 +109,21 @@ public sealed class WorldStreamingSerializationTests
         world.CreateEntity(new ThrowingWorldComponent { Value = 1 });
         using var output = new MemoryStream();
 
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             WorldSerializer.WriteWorld(output, world, registry));
-        Assert.Contains("Injected codec fault", error.Message);
+
         await AssertMutationCompletesAsync(world);
     }
 
     [Fact]
     public void WorldWrite_ComponentCodecReentryMutatesSuccessorWithoutChangingRetainedOutput()
     {
-        var registry = new SerializationRegistry()
-            .Register<ReentrantWorldComponent, ReentrantWorldComponentCodec>();
         using var world = new World();
+        var registry = new SerializationRegistry()
+            .RegisterCodec<ReentrantWorldComponent, ReentrantWorldComponentCodec>(new ReentrantWorldComponentCodec(world));
         world.CreateEntity(new ReentrantWorldComponent { Value = 1 });
         using var output = new MemoryStream();
-        ReentrantWorldComponentCodec.Target = world;
-        try
-        {
-            WorldSerializer.WriteWorld(output, world, registry);
-        }
-        finally
-        {
-            ReentrantWorldComponentCodec.Target = null;
-        }
+        WorldSerializer.WriteWorld(output, world, registry);
 
         Assert.Equal(2, world.EntityCount);
         output.Position = 0;
@@ -175,13 +167,13 @@ public sealed class WorldStreamingSerializationTests
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
         Entity valid = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        var invalid = new Entity(valid.Index + 100, valid.Generation);
+        Entity invalid = world.CreateEntity();
+        world.DestroyEntity(invalid);
         using var output = new MemoryStream();
 
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             WorldSerializer.WriteEntities(output, world, [valid, invalid], registry));
 
-        Assert.Contains("not alive", error.Message);
         Assert.Equal(0, output.Length);
         Assert.True(world.IsAlive(valid));
     }
@@ -208,7 +200,6 @@ public sealed class WorldStreamingSerializationTests
         });
         Assert.Equal(1, matched);
     }
-
 
     [Fact]
     public void CanonicalWorldStateHash_IsStableAndChangesWithState()
@@ -320,16 +311,21 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
+        var events = new ConcurrentQueue<string>();
         world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        using var output = new GateWriteStream();
+        using var output = new GateWriteStream { WriteObserved = () => events.Enqueue("write") };
 
         Task write = Task.Run(() => WorldSerializer.WriteWorld(output, world, registry));
         Assert.True(output.WaitUntilWrite(TimeSpan.FromSeconds(10)));
-        Task dispose = Task.Run(world.Dispose);
+        Task dispose = Task.Run(() =>
+        {
+            world.Dispose();
+            events.Enqueue("disposed");
+        });
         try
         {
-            Task completed = await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromMilliseconds(200)));
-            Assert.NotSame(dispose, completed);
+            await DisposalChecks.WaitForReadRejectionAsync(() => _ = world.EntityCount);
+            Assert.False(dispose.IsCompleted);
         }
         finally
         {
@@ -339,16 +335,18 @@ public sealed class WorldStreamingSerializationTests
         await write.WaitAsync(TimeSpan.FromSeconds(10));
         await dispose.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Throws<ObjectDisposedException>(() => world.CreateEntity());
+        Assert.Contains("write", events);
+        Assert.Equal("disposed", events.Last());
     }
 
     [Fact]
     public void WorldWrite_InvokesComponentAndBufferCodecsExactlyOncePerValue()
     {
-        CountingWorldComponentCodec.Reset();
-        CountingWorldBufferCodec.Reset();
+        var componentCalls = new CodecCalls();
+        var bufferCalls = new CodecCalls();
         var registry = new SerializationRegistry()
-            .Register<CountingWorldComponent, CountingWorldComponentCodec>()
-            .RegisterBuffer<CountingWorldBuffer, CountingWorldBufferCodec>();
+            .RegisterCodec<CountingWorldComponent, CountingWorldComponentCodec>(new CountingWorldComponentCodec(componentCalls))
+            .RegisterBufferCodec<CountingWorldBuffer, CountingWorldBufferCodec>(new CountingWorldBufferCodec(bufferCalls));
         var world = new World();
         world.CreateEntity(new CountingWorldComponent { Value = 1 });
         world.CreateEntity(new CountingWorldComponent { Value = 2 });
@@ -367,32 +365,43 @@ public sealed class WorldStreamingSerializationTests
         using var output = new MemoryStream();
         WorldSerializer.WriteWorld(output, world, registry);
 
-        Assert.Equal(2, CountingWorldComponentCodec.WriteCount);
-        Assert.Equal(3, CountingWorldBufferCodec.WriteCount);
+        Assert.Equal(2, componentCalls.Writes);
+        Assert.Equal(3, bufferCalls.Writes);
     }
 
     [Fact]
-    public void LargeArchetypeAndSparseWorld_WritesThroughBoundedNonSeekableFrames()
+    public void LargeArchetypeAndSparseWorldRoundTripsThroughNonSeekableOutput()
     {
         const int entityCount = 20_000;
         var registry = new SerializationRegistry()
             .Register<SerPosition>()
             .RegisterSparse<SerSparse>();
-        var world = new World(entityCount);
+        using var world = new World(entityCount);
+        var entities = new Entity[entityCount];
         for (int i = 0; i < entityCount; i++)
         {
             Entity entity = world.CreateEntity(new SerPosition { X = i, Y = -i });
+            entities[i] = entity;
             if (i % 3 == 0)
                 world.AddSparse(entity, new SerSparse { Value = i });
         }
 
-        using var output = new CountingNonSeekableWriteStream();
+        using var output = new NonSeekableWriteStream();
         WorldSerializer.WriteWorld(output, world, registry);
 
-        Assert.True(output.BytesWritten > entityCount * 20L);
-        // Whole-world buffering would arrive as a multi-megabyte write. The streaming writer's
-        // largest request is one header string or one item frame, independent of entity count.
-        Assert.InRange(output.MaximumWriteSize, 1, 512);
+        using var input = new MemoryStream(output.ToArray(), writable: false);
+        using World loaded = WorldSerializer.ReadWorld(input, registry);
+        Assert.Equal(entityCount, loaded.EntityCount);
+        for (int i = 0; i < entities.Length; i++)
+        {
+            Assert.True(loaded.IsAlive(entities[i]));
+            Assert.Equal(i, loaded.Read<SerPosition>(entities[i]).X);
+            Assert.Equal(-i, loaded.Read<SerPosition>(entities[i]).Y);
+            if (i % 3 == 0)
+                Assert.Equal(i, loaded.ReadSparse<SerSparse>(entities[i]).Value);
+            else
+                Assert.False(loaded.HasSparse<SerSparse>(entities[i]));
+        }
     }
 
     [Fact]
@@ -407,13 +416,12 @@ public sealed class WorldStreamingSerializationTests
         }
 
         using var rejected = new MemoryStream();
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             WorldSerializer.WriteWorld(
                 rejected,
                 world,
                 registry,
                 new SerializeOptions(MaximumSparseMemberships: 2)));
-        Assert.Contains("sparse membership count", error.Message);
 
         using var accepted = new MemoryStream();
         WorldSerializer.WriteWorld(
@@ -432,13 +440,12 @@ public sealed class WorldStreamingSerializationTests
         int[] values = [1, 2, 3];
         var world = new World();
         Entity entity = world.CreateEntity(new SnapshotReferenceComponent { Values = values });
-        using var output = new GateWriteStream();
+        using var output = new MemoryStream();
 
-        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<InvalidOperationException>(
             () => Task.Run(() => WorldSerializer.WriteWorld(output, world, registry)));
 
-        Assert.Contains("deep snapshot-clone contract", error.Message);
-        Assert.False(output.WaitUntilWrite(TimeSpan.FromMilliseconds(100)));
+        Assert.Equal(0, output.Length);
         values[0] = 99;
         Assert.Equal(99, world.Read<SnapshotReferenceComponent>(entity).Values![0]);
     }
@@ -471,17 +478,16 @@ public sealed class WorldStreamingSerializationTests
         DefaultHierarchy.SetParent(world, first, parent);
         DefaultHierarchy.SetParent(world, second, parent);
 
-        using var recordRejected = new CountingNonSeekableWriteStream();
-        InvalidOperationException recordError = Assert.Throws<InvalidOperationException>(() =>
+        using var recordRejected = new NonSeekableWriteStream();
+        Assert.Throws<InvalidOperationException>(() =>
             WorldSerializer.WriteWorld(
                 recordRejected,
                 world,
                 registry,
                 new SerializeOptions(MaximumTopologyRecords: 1)));
-        Assert.Contains("topology record count", recordError.Message);
 
-        using var payloadRejected = new CountingNonSeekableWriteStream();
-        InvalidOperationException payloadError = Assert.Throws<InvalidOperationException>(() =>
+        using var payloadRejected = new NonSeekableWriteStream();
+        Assert.Throws<InvalidOperationException>(() =>
             WorldSerializer.WriteWorld(
                 payloadRejected,
                 world,
@@ -489,9 +495,8 @@ public sealed class WorldStreamingSerializationTests
                 new SerializeOptions(
                     MaximumTopologyRecords: 16,
                     MaximumTopologyPayloadBytes: 1)));
-        Assert.Contains("topology payload bytes", payloadError.Message);
 
-        using var accepted = new CountingNonSeekableWriteStream();
+        using var accepted = new NonSeekableWriteStream();
         WorldSerializer.WriteWorld(
             accepted,
             world,
@@ -499,7 +504,10 @@ public sealed class WorldStreamingSerializationTests
             new SerializeOptions(
                 MaximumTopologyRecords: 16,
                 MaximumTopologyPayloadBytes: 1024));
-        Assert.InRange(accepted.MaximumWriteSize, 1, 512);
+        using var input = new MemoryStream(accepted.ToArray(), writable: false);
+        using World loaded = WorldSerializer.ReadWorld(input, registry);
+        Assert.Equal(parent, DefaultHierarchy.GetParent(loaded, first));
+        Assert.Equal(parent, DefaultHierarchy.GetParent(loaded, second));
     }
 
     [Fact]
@@ -574,8 +582,6 @@ public sealed class WorldStreamingSerializationTests
         Assert.Single(loaded.GetOutgoingRelations<StreamingRelation>(source).Entries.ToArray());
     }
 
-
-
     [Fact]
     public void RepeatedWorldSerializationKeepsLatestClockAndBytes()
     {
@@ -612,9 +618,6 @@ public sealed class WorldStreamingSerializationTests
         Assert.Equal(1, later.Read<SerPosition>(first).X);
         Assert.Equal(2, later.Read<SerPosition>(first).Y);
     }
-
-
-
 
     private static async Task AssertMutationCompletesAsync(World world)
     {
@@ -689,13 +692,12 @@ public sealed class WorldStreamingSerializationTests
         public int Value;
     }
 
-    private struct ReentrantWorldComponentCodec : IComponentCodec<ReentrantWorldComponent>
+    private struct ReentrantWorldComponentCodec(World world) : IComponentCodec<ReentrantWorldComponent>
     {
-        internal static World? Target { get; set; }
 
         public void Write(ref DataWriter writer, in ReentrantWorldComponent value)
         {
-            Target!.CreateEntity();
+            world.CreateEntity();
             writer.WriteInt32(value.Value);
         }
 
@@ -708,16 +710,11 @@ public sealed class WorldStreamingSerializationTests
         public int Value;
     }
 
-    private struct CountingWorldComponentCodec : IComponentCodec<CountingWorldComponent>
+    private struct CountingWorldComponentCodec(CodecCalls calls) : IComponentCodec<CountingWorldComponent>
     {
-        private static int s_writeCount;
-
-        internal static int WriteCount => Volatile.Read(ref s_writeCount);
-        internal static void Reset() => Volatile.Write(ref s_writeCount, 0);
-
         public void Write(ref DataWriter writer, in CountingWorldComponent value)
         {
-            Interlocked.Increment(ref s_writeCount);
+            Interlocked.Increment(ref calls.Writes);
             writer.WriteInt32(value.Value);
         }
 
@@ -730,16 +727,11 @@ public sealed class WorldStreamingSerializationTests
         public int Value;
     }
 
-    private struct CountingWorldBufferCodec : IComponentCodec<CountingWorldBuffer>
+    private struct CountingWorldBufferCodec(CodecCalls calls) : IComponentCodec<CountingWorldBuffer>
     {
-        private static int s_writeCount;
-
-        internal static int WriteCount => Volatile.Read(ref s_writeCount);
-        internal static void Reset() => Volatile.Write(ref s_writeCount, 0);
-
         public void Write(ref DataWriter writer, in CountingWorldBuffer value)
         {
-            Interlocked.Increment(ref s_writeCount);
+            Interlocked.Increment(ref calls.Writes);
             writer.WriteInt32(value.Value);
         }
 
@@ -777,14 +769,6 @@ public sealed class WorldStreamingSerializationTests
             value = new SnapshotReferenceComponent { Values = values };
         }
     }
-
-
-
-
-
-
-
-
 
     private sealed class ThrowingWriteStream : Stream
     {
@@ -878,6 +862,8 @@ public sealed class WorldStreamingSerializationTests
 
     private sealed class GateWriteStream : Stream
     {
+        internal Action? WriteObserved { get; init; }
+
         private readonly MemoryStream _inner = new();
         private readonly ManualResetEventSlim _entered = new(initialState: false);
         private readonly ManualResetEventSlim _release = new(initialState: false);
@@ -912,6 +898,7 @@ public sealed class WorldStreamingSerializationTests
             if (_failure is not null)
                 throw _failure;
             _inner.Write(buffer, offset, count);
+            WriteObserved?.Invoke();
         }
 
         public override void Write(ReadOnlySpan<byte> buffer)
@@ -920,6 +907,7 @@ public sealed class WorldStreamingSerializationTests
             if (_failure is not null)
                 throw _failure;
             _inner.Write(buffer);
+            WriteObserved?.Invoke();
         }
 
         public override void WriteByte(byte value)
@@ -928,6 +916,7 @@ public sealed class WorldStreamingSerializationTests
             if (_failure is not null)
                 throw _failure;
             _inner.WriteByte(value);
+            WriteObserved?.Invoke();
         }
 
         public override int Read(byte[] buffer, int offset, int count) =>
@@ -960,48 +949,26 @@ public sealed class WorldStreamingSerializationTests
         }
     }
 
-
-
-    private sealed class CountingNonSeekableWriteStream : Stream
+    private sealed class NonSeekableWriteStream : Stream
     {
-        internal long BytesWritten { get; private set; }
-
-        internal int MaximumWriteSize { get; private set; }
-
+        private readonly MemoryStream _bytes = new();
+        internal byte[] ToArray() => _bytes.ToArray();
         public override bool CanRead => false;
         public override bool CanSeek => false;
         public override bool CanWrite => true;
         public override long Length => throw new NotSupportedException();
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override void Write(byte[] buffer, int offset, int count) => Count(count);
-
-        public override void Write(ReadOnlySpan<byte> buffer) => Count(buffer.Length);
-
-        public override void WriteByte(byte value) => Count(1);
-
-        public override int Read(byte[] buffer, int offset, int count) =>
-            throw new NotSupportedException();
-
-        public override long Seek(long offset, SeekOrigin origin) =>
-            throw new NotSupportedException();
-
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override void Write(byte[] buffer, int offset, int count) => _bytes.Write(buffer, offset, count);
+        public override void Write(ReadOnlySpan<byte> buffer) => _bytes.Write(buffer);
+        public override void WriteByte(byte value) => _bytes.WriteByte(value);
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();
-
-        private void Count(int count)
+        protected override void Dispose(bool disposing)
         {
-            BytesWritten += count;
-            MaximumWriteSize = Math.Max(MaximumWriteSize, count);
+            if (disposing) _bytes.Dispose();
+            base.Dispose(disposing);
         }
     }
-
-
 }

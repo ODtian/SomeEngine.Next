@@ -38,17 +38,18 @@ VirtualShadowReceiverPixel ReconstructVirtualShadowReceiverPixel(
     float depth,
     float4x4 clipToWorld)
 {
-    float depthDx = VirtualShadowReceiverDepthStep(depthImage, pixel, screenSize, depth, uint2(1u, 0u));
-    float depthDy = VirtualShadowReceiverDepthStep(depthImage, pixel, screenSize, depth, uint2(0u, 1u));
     float2 uv = (float2(pixel.xy) + 0.5) / float2(screenSize);
     float4 world = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0), clipToWorld);
-    float4 worldDx = world + mul(float4(2.0 / float(screenSize.x), 0.0, depthDx, 0.0), clipToWorld);
-    float4 worldDy = world + mul(float4(0.0, -2.0 / float(screenSize.y), depthDy, 0.0), clipToWorld);
+    // The camera pixel footprint has constant camera depth. Receiver-plane
+    // gradients belong to depth comparison, independently of map resolution.
+    float4 worldDx = world + mul(float4(2.0 / float(screenSize.x), 0.0, 0.0, 0.0), clipToWorld);
+    float4 worldDy = world + mul(float4(0.0, -2.0 / float(screenSize.y), 0.0, 0.0), clipToWorld);
     VirtualShadowReceiverPixel result;
     result.Position = world.xyz / max(abs(world.w), 1e-8);
     result.PositionDx = worldDx.xyz / max(abs(worldDx.w), 1e-8);
     result.PositionDy = worldDy.xyz / max(abs(worldDy.w), 1e-8);
     return result;
 }
+
 
 #endif

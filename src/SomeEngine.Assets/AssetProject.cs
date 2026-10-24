@@ -6,6 +6,8 @@ using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
 using SomeEngine.Assets.Importing;
+using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Schema;
 
 namespace SomeEngine.Assets;
 
@@ -19,20 +21,19 @@ public sealed partial class AssetProject
     private readonly string _projectRoot;
     private readonly string _manifestDirectory;
     private readonly IReadOnlyList<IAssetSourceImporter> _importers;
-    private readonly IReadOnlyList<IAssetSourceFormat> _sourceFormats;
+    private readonly string[] _shaderIncludeDirectories;
 
     public AssetProject(
         string projectRoot,
         IEnumerable<IAssetSourceImporter> importers,
         string? manifestDirectory = null,
-        IEnumerable<IAssetSourceFormat>? sourceFormats = null)
+        IReadOnlyList<string>? shaderIncludeDirectories = null)
     {
         _projectRoot = Path.GetFullPath(projectRoot);
         _manifestDirectory = RequireProjectPath(_projectRoot, manifestDirectory ?? Path.Combine(_projectRoot, "Library", "AssetManifest"), allowProjectRoot: true);
         _importers = importers?.ToArray() ?? throw new ArgumentNullException(nameof(importers));
-        _sourceFormats = sourceFormats?.ToArray() ?? [];
-        if (_sourceFormats.Select(format => format.SourceExtension).Distinct(StringComparer.OrdinalIgnoreCase).Count() != _sourceFormats.Count)
-            throw new ArgumentException("Each source suffix must select one format.", nameof(sourceFormats));
+        _shaderIncludeDirectories = shaderIncludeDirectories?
+            .Select(path => Path.GetFullPath(Path.Combine(_projectRoot, path))).ToArray() ?? [];
 
         Manifest = AssetManifest.Load(_manifestDirectory);
     }
@@ -73,10 +74,11 @@ public sealed partial class AssetProject
         try
         {
             string fullPath = FullPath(sourcePath);
-            IAssetSourceFormat format = _sourceFormats.SingleOrDefault(format =>
-                fullPath.EndsWith(format.SourceExtension, StringComparison.OrdinalIgnoreCase))
-                ?? throw new NotSupportedException($"No native source format is registered for '{fullPath}'.");
+            if (!fullPath.EndsWith(".shader", StringComparison.OrdinalIgnoreCase))
+                throw new NotSupportedException($"Shader definitions use the .shader suffix: '{fullPath}'.");
             byte[] sourceBytes = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
+            using ShaderAsset definition = await ShaderAsset.OpenSourceAsync(fullPath,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
             AssetEntry description = AssetText.Describe(sourceBytes);
             string targetPath = RequireProjectPath(_projectRoot, outputPath ?? fullPath + ".asset");
             void CheckDestination()
@@ -91,8 +93,8 @@ public sealed partial class AssetProject
             lock (_gate) CheckDestination();
             string buildPath = SourceMeta.GetBuildPath(fullPath);
             byte[]? previousBuild = ReadOptional(buildPath);
-            if (await CanReuseSourceAsync(format, fullPath, targetPath, description, previousBuild,
-                cancellationToken).ConfigureAwait(false)) return description.AssetGuid;
+            if (await CanReuseSourceAsync(definition, fullPath, targetPath, description, previousBuild,
+                _shaderIncludeDirectories, cancellationToken).ConfigureAwait(false)) return description.AssetGuid;
             bool registered;
             lock (_gate) registered = Manifest.TryGetAsset(description.AssetGuid, out AssetEntry previous)
                 && PathsEqual(FullPath(previous.Path), targetPath)
@@ -101,24 +103,32 @@ public sealed partial class AssetProject
             files = new AssetImportFiles();
             string stage = files.CreateStagePath(targetPath);
             files.AddFile(targetPath, stage);
-            AssetSourceResult result = await format.BuildAsync(_projectRoot, fullPath, stage, cancellationToken).ConfigureAwait(false);
-            AssetEntry output = result.Asset;
+            using ShaderAsset built = SlangShaderImporter.CompileDefinition(definition, fullPath,
+                cancellationToken, _shaderIncludeDirectories, _projectRoot);
+            var trace = built.GetBlock<ShaderBlock>().ImportTrace!;
+            var inputs = new ImportInputs
+            {
+                InputHash = trace.ContentFingerprint!, ImporterVersion = trace.ImporterVersion,
+                Dependencies = trace.Dependencies!.Select(static input => new FileDependency
+                    { RelativePath = input.Path!, ContentHash = input.ContentHash! }).ToArray(),
+            };
+            AssetEntry output = await built.SaveAsync(stage, cancellationToken).ConfigureAwait(false);
             if (output.AssetGuid != description.AssetGuid || output.AssetType != description.AssetType
                 || !PathsEqual(Path.GetFullPath(output.Path), stage))
                 throw new InvalidDataException("The built asset identity, type or path differs from its native definition.");
             CheckUnchanged(fullPath, sourceBytes);
-            ImportInputs? finalInputs = await format.GetInputsAsync(_projectRoot, fullPath,
-                result.Inputs.Dependencies, cancellationToken).ConfigureAwait(false);
-            if (finalInputs is null || finalInputs.InputHash != result.Inputs.InputHash
-                || finalInputs.ImporterVersion != result.Inputs.ImporterVersion)
+            ImportInputs? finalInputs = SlangShaderImporter.GetDefinitionInputs(definition, fullPath,
+                inputs.Dependencies, _shaderIncludeDirectories, _projectRoot);
+            if (finalInputs is null || finalInputs.InputHash != inputs.InputHash
+                || finalInputs.ImporterVersion != inputs.ImporterVersion)
                 throw new IOException("Native definition inputs changed during the build.");
             var build = new SourceBuildRecord
             {
-                ImporterVersion = result.Inputs.ImporterVersion, InputHash = result.Inputs.InputHash,
-                Inputs = result.Inputs.Dependencies,
+                ImporterVersion = inputs.ImporterVersion, InputHash = inputs.InputHash,
+                Inputs = inputs.Dependencies,
                 Outputs = [new SourceOutput
                 {
-                    AssetGuid = output.AssetGuid, SubAssetKey = "", InputHash = result.Inputs.InputHash,
+                    AssetGuid = output.AssetGuid, SubAssetKey = "", InputHash = inputs.InputHash,
                     Dependencies = [], AssetPath = Path.GetRelativePath(Path.GetDirectoryName(fullPath)!, targetPath),
                     Version = output.Version, ContentHash = await HashFileAsync(stage, cancellationToken).ConfigureAwait(false),
                     AssetDependencies = output.Dependencies,

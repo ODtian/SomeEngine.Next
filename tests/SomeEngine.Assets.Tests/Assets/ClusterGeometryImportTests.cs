@@ -1,3 +1,4 @@
+using SomeEngine.Geometry.Cluster;
 using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -215,10 +216,10 @@ public sealed class ClusterGeometryImportTests
                 "accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]}],
                 "meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}]}
                 """);
-            ModelRoot model = await new GltfSourceImporter(static _ => { }, "cluster-tests").ReadAsync(path, CancellationToken.None);
+            ModelRoot model = await new GltfSourceImporter(new ServiceCollection(), "cluster-tests").ReadAsync(path, CancellationToken.None);
             await using var context = CreateContext();
             var services = new ServiceCollection();
-            Game.Importing.ProjectAssetCapabilities.AddAssetCapabilities(services);
+            EngineAssetCapabilities.AddAssetCapabilities(services);
             ServiceProvider provider = services.BuildServiceProvider();
             context.Hold(provider);
             foreach (AssetImporterSetCapability set in provider.GetServices<AssetImporterSetCapability>()
@@ -228,7 +229,11 @@ public sealed class ClusterGeometryImportTests
                     .Where(capability => set.Importers.Contains(capability.Id) && capability.SourceType == typeof(GltfMesh)))
                     context.EnableImporter<GltfMesh, MeshAsset>(capability.Bind<GltfMesh>(provider));
             }
-            MeshAsset mesh = await context.GetAssetAsync<GltfMesh, MeshAsset>(model.LogicalMeshes[0]);
+            GltfMesh source = model.LogicalMeshes[0];
+            string key = $"mesh/{source.LogicalIndex}";
+            Guid id = context.GetAssetId(key);
+            context.AddAsset(source, new MeshAsset(id), key, id + ".mesh.asset");
+            MeshAsset mesh = await context.GetAssetAsync<GltfMesh, MeshAsset>(source);
             Assert.Single(mesh.GetBlock<ClusterGeometryBlock>().Clusters);
             Assert.Single(mesh.GetBlock<ClusterVertexAttributesBlock>().Clusters);
             Assert.Equal(3, Assert.Single(mesh.GetBlock<ClusterGeometryBlock>().Clusters).Vertices.Length);
@@ -361,13 +366,7 @@ public sealed class ClusterGeometryImportTests
         }
     }
 
-    private static ImportContext CreateContext()
-    {
-        var context = new ImportContext();
-        context.ConfigureAssets<GltfMesh, MeshAsset>(mesh => $"mesh/{mesh.LogicalIndex}", (_, id) => new MeshAsset(id),
-            (_, id) => id + ".mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
-        return context;
-    }
+    private static ImportContext CreateContext() => new();
 
     private static async Task<ImportResult> ImportAsync(VertexPrimitive[] primitives)
     {
@@ -377,13 +376,17 @@ public sealed class ClusterGeometryImportTests
             context.EnableImporter<GltfMesh, MeshAsset>(Guid.NewGuid(), [VertexStreamsBlock.BlockTypeId],
                 (_, _, output, _) => { output.SetBlock(new VertexStreamsBlock((IReadOnlyList<VertexPrimitive>)primitives, [])); return ValueTask.CompletedTask; });
             var services = new ServiceCollection();
-            Game.Importing.ProjectAssetCapabilities.AddAssetCapabilities(services);
+            EngineAssetCapabilities.AddAssetCapabilities(services);
             ServiceProvider provider = services.BuildServiceProvider();
             context.Hold(provider);
             foreach (AssetImporterCapability capability in provider.GetServices<AssetImporterCapability>()
                 .Where(value => value.ImporterType == typeof(ClusterGeometryImporter) || value.ImporterType == typeof(ClusterVertexAttributesImporter)))
                 context.EnableImporter<GltfMesh, MeshAsset>(capability.Bind<GltfMesh>(provider));
-            MeshAsset asset = await context.GetAssetAsync<GltfMesh, MeshAsset>(ModelRoot.CreateModel().CreateMesh("Test mesh"));
+            GltfMesh source = ModelRoot.CreateModel().CreateMesh("Test mesh");
+            string key = $"mesh/{source.LogicalIndex}";
+            Guid id = context.GetAssetId(key);
+            context.AddAsset(source, new MeshAsset(id), key, id + ".mesh.asset");
+            MeshAsset asset = await context.GetAssetAsync<GltfMesh, MeshAsset>(source);
             return new(context, asset);
         }
         catch { await context.DisposeAsync(); throw; }

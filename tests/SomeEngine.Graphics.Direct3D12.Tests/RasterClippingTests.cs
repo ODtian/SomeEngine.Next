@@ -3,7 +3,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class RasterClippingTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class RasterClippingTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void ClippingOnlyIntersectedPlanesMatchesTheSevenPlaneResult()
@@ -59,7 +60,7 @@ public sealed class RasterClippingTests
                 (float)(random.NextDouble() * 4 - 1), (float)(random.NextDouble() * 2)) * scale;
         }
         uint[] input = System.Runtime.InteropServices.MemoryMarshal.Cast<Vector4, uint>(triangles).ToArray();
-        uint[] result = Assert.Single(D3D12TestCompute.ExecuteSource(source, "Evaluate", new(cases / 32, 1, 1),
+        uint[] result = Assert.Single(new D3D12TestCompute(shaderCompiler).ExecuteSource(source, "Evaluate", new(cases / 32, 1, 1),
             [([0u], ResourceBindingType.BufferSrv, 0), ([0u], ResourceBindingType.BufferSrv, 4),
              (input, ResourceBindingType.BufferSrv, 16), (new uint[cases * 130], ResourceBindingType.BufferUav, 4)]));
         Assert.Equal(3u, result[0]);

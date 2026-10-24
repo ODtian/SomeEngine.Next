@@ -1,9 +1,23 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Shadows;
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 136)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 96)]
+public struct VirtualShadowReceiverProjection
+{
+    public Vector4 WorldToClipW;
+    // Keep the shared uniform layout valid for both DXIL and SPIR-V.
+    public Vector3 WorldTranslation;
+    public float ScreenPixelRadius;
+    public Vector4 WorldToViewDepth;
+    public CameraDepthOfField DepthOfField;
+    public Vector3 CameraPosition;
+    public float CotanHalfFieldOfView;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 240)]
 public struct VirtualShadowPageDemandUniforms
 {
     public Matrix4x4 ClipToWorld;
@@ -23,8 +37,11 @@ public struct VirtualShadowPageDemandUniforms
     public uint FrameIndex;
     public float PageDilationBorderPages;
     public float NormalBias;
-    public uint Pad1;
-    public uint Pad2;
+    public uint AdditionalReceiverLayerCount;
+    public uint CullBackfacingPixels;
+    public float FirstPersonPixelRequestBias;
+    public int FirstPersonPixelRequestMinLevel;
+    public VirtualShadowReceiverProjection ReceiverProjection;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
@@ -44,7 +61,7 @@ public struct VirtualShadowPageAllocationUniforms
     public uint MaxPhysicalPages;
     public uint ViewCount;
     public uint FrameIndex;
-    public uint EvictionBucketCount;
+    public int DeferredInvalidationBudget;
     public uint HierarchyWordsPerView;
     public uint MipLevelCount;
 }
@@ -70,7 +87,7 @@ public struct VirtualShadowInvalidationUniforms
     public uint FrameIndex;
     public uint HierarchyWordsPerView;
     public uint MipLevelCount;
-    public uint Pad2;
+    public uint DeferredChangedInstanceCount;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
@@ -79,7 +96,7 @@ public struct VirtualShadowPagePoolUniforms
     public uint MaxPhysicalPages;
     public uint PageTableEntryCount;
     public uint FrameIndex;
-    public uint EvictionBucketCount;
+    public uint PageListPhase;
     public uint PageTableEntriesPerView;
     public uint HierarchyWordsPerView;
     public uint MipLevelCount;
@@ -99,8 +116,8 @@ public struct VirtualShadowRasterWorkUniforms
     public uint PhysicalPagesPerRow;
     public uint InstanceGroupCount;
     public uint HasPreviousHistory;
-    public uint Pad0;
-    public uint Pad1;
+    public uint WorkFeedbackEnabled;
+    public uint StaticHiZLayerOffset;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
@@ -112,7 +129,20 @@ public struct VirtualShadowPageClearUniforms
     public uint Pad0;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 56)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+public struct VirtualShadowRaySettings
+{
+    public uint RayCount;
+    public uint SamplesPerRay;
+    public uint AdaptiveRayCount;
+    public float ExtrapolateMaxSlope;
+    public float TexelDitherScale;
+    public float RayLengthScale;
+    public float MaxRayAngle;
+    public float MaxSlopeBias;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 240)]
 public struct VirtualShadowSamplingUniforms
 {
     public uint ViewCount;
@@ -129,25 +159,35 @@ public struct VirtualShadowSamplingUniforms
     public float BlockerSearchRadiusTexels;
     public float MaxFilterRadiusTexels;
     public float NormalBias;
+    public uint FrameIndex;
+    public uint FirstPersonViewOffset;
+    public VirtualShadowReceiverProjection ReceiverProjection;
+    public VirtualShadowRaySettings DirectionalRays;
+    public VirtualShadowRaySettings LocalRays;
+    public uint CullBackfacingPixels;
+    public float ScreenRayLength;
+    private uint _receiverPadding1, _receiverPadding2;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
 public struct VirtualShadowPageHiZUniforms
 {
     public uint PageSize;
     public uint PhysicalPagesPerRow;
     public uint SourceMip;
     public uint DestinationMip;
+    public uint StaticLayerOffset;
+    private uint _padding0, _padding1, _padding2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
 public struct VirtualShadowDynamicResolutionUniforms
 {
     public uint MaxPhysicalPages;
-    public uint TargetRasterWork;
+    public uint PadRasterWork;
     public float PagePoolLoadStart;
-    public float MaxDirectionalLodBias;
-    public float MaxLocalLodBias;
+    public float MaxLodBias;
+    public uint PadLodBias;
     public uint Enabled;
     public uint Pad0;
     public uint Pad1;

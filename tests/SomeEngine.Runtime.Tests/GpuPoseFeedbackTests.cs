@@ -101,6 +101,73 @@ public sealed partial class SkinningRenderingTests
         }
     }
 
+    [Fact]
+    public async Task CanceledGpuPoseInputCanBeRequestedAgainForTheFollowingSubmission()
+    {
+        using SkinContent content = await SkinContent.CreateAsync();
+        await content.WriteMeshesAsync(EncodeFloatInfluences);
+        BoneTransform identity = new() { Rotation = Quaternion.Identity, Scale = Vector3.One };
+        var definition = new Skeleton([-1, 0, 1], [identity, identity, identity], [1, 2, 3]);
+        QuantizedClipData clip = QuantizedClipData.Encode(GpuPoseExamples.Clip(definition, 0), 4);
+        var storage = new PoseStorage();
+        using SkeletonInstance body = storage.CreateInstance(definition);
+        var trace = new FeedbackTrace();
+        Entity target = default;
+        GpuPoseReadback? followingSubmission = null;
+        var application = new ApplicationScene(content.Project.RootPath)
+        {
+            Initialize = frame =>
+            {
+                GpuPoseAnimation.AddSystems(frame.Systems.Animation);
+                AnimationSystems.Add(frame.Systems.Animation, new FeedbackNodeSystem(), AnimationPhase.Composition);
+                target = GpuPoseAnimation.CreateTarget(frame.World, body);
+                using var builder = new AnimationBuilder(frame.World);
+                builder.Leaf<FeedbackParameters, FeedbackLeaf>(target, new(clip, trace));
+                builder.Play();
+                foreach (Entity mesh in frame.Scene.MeshEntities)
+                    frame.World.Add(mesh, new MeshSkin(body, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [1, 2])));
+            },
+            UpdateFrame = frame =>
+            {
+                if (frame.Index == 0)
+                {
+                    frame.Scene.ReadGpuPose(target, result => followingSubmission = result);
+                    frame.Scene.CancelFrame();
+                }
+            },
+        };
+        await SceneImages.RunAsync("d3d12", new SceneScript(application, 3, []), "--fixed-step", "0.25", "--no-taa", "--no-vsm");
+
+        Assert.Equal(2, trace.Requests.Count);
+        GpuPoseReadbackRequest canceled = trace.Requests[0], next = trace.Requests[1];
+        Assert.True(canceled.Completion.IsCanceled);
+        Assert.True(next.Completion.IsCompletedSuccessfully);
+        GpuPoseReadback result = await next.Completion;
+        Assert.Equal(next.Identity, result.Identity);
+        Assert.Equal(canceled.Identity.Starts, result.Identity.Starts);
+        Assert.Equal(canceled.Identity.AnimationStarts, result.Identity.AnimationStarts);
+        Assert.True(result.InputNumber > canceled.Identity.InputNumber);
+        Assert.Equal(new PoseRange(1, 2), result.Range);
+        Assert.Equal(.5f, result.SampleTime);
+        Assert.Equal(.5, result.CalculationTime);
+        GpuPoseReadback delivered = Assert.IsType<GpuPoseReadback>(followingSubmission);
+        Assert.Equal(result.Identity, delivered.Identity);
+        Assert.Equal(result.Version, delivered.Version);
+        Assert.Equal(result.CalculationTime, delivered.CalculationTime);
+        Assert.Equal(new PoseRange(0, 3), delivered.Range);
+
+        using SkeletonInstance reference = storage.CreateInstance(definition);
+        var local = new BoneTransform[3];
+        clip.CreateClip(definition).SampleLocal(result.SampleTime, local);
+        reference.Update(local, result.CalculationTime);
+        for (int bone = 0; bone < result.Range.Count; bone++)
+        {
+            Matrix4x4 expected = reference.ModelPose.GetBone(bone + 1).Transform;
+            GpuPoseExamples.Near(expected, result.Current.Span[bone]);
+            GpuPoseExamples.Near(expected, delivered.Current.Span[bone + 1]);
+        }
+    }
+
     private sealed class FeedbackTrace
     {
         internal Entity Animation;
@@ -139,7 +206,7 @@ public sealed partial class SkinningRenderingTests
         public void OnUpdate(ref ImmediateSystemContext context)
         {
             World world = context.World;
-            world.ExecuteQuery(_nodes, ref world, static (QueryCursor rows, ref World world) =>
+            world.ExecuteQuery(_nodes, ref world, static (scoped QueryCursor rows, ref World world) =>
             {
                 foreach (QueryRow row in rows.Rows)
                 foreach (ref FeedbackNode node in row.Buffer<FeedbackNode>().AsSpan())
@@ -154,9 +221,10 @@ public sealed partial class SkinningRenderingTests
                     world.Replace(node.Target, output);
                     if (time.Time.Time == 0) { AnimationGraph.Submit(world, row.Entity, in node.Placement, true); continue; }
                     FeedbackTrace trace = node.Parameters.Trace;
+                    if (node.Request?.Completion.IsCanceled == true) node.Request = null;
                     if (node.Request is null)
                     {
-                        if (trace.Requests.Count > 0)
+                        if (trace.Requests.Count > 0 && trace.Requests[0].Completion.IsCompletedSuccessfully)
                         {
                             if (!GpuPoseAnimation.SubmitFeedback(world, row.Entity, node.Target, in node.Placement, trace.Requests[0], finished: true))
                                 trace.StaleResults++;

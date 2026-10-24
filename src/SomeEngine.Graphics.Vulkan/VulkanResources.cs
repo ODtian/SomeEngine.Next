@@ -58,6 +58,9 @@ internal sealed unsafe partial class VulkanBackend
         if (copy.MipLevel >= desc.MipLevelCount || copy.ArrayLayer >= desc.ArrayLayerCount)
             throw new ArgumentOutOfRangeException(nameof(copy));
         (uint blockWidth, uint blockHeight, uint blockBytes) = VulkanFormats.GetBlockInfo(desc.Format);
+        if (copy.Aspect == TextureAspects.Stencil) (blockWidth, blockHeight, blockBytes) = (1, 1, 1);
+        else if (copy.Aspect == TextureAspects.Depth && desc.Format == Format.D32FloatS8UInt)
+            (blockWidth, blockHeight, blockBytes) = (1, 1, 4);
         uint rowBlocks = DivideRoundUp(copy.Width, blockWidth);
         uint rowCount = DivideRoundUp(copy.Height, blockHeight);
         ulong rowSize = checked((ulong)rowBlocks * blockBytes);

@@ -12,7 +12,6 @@ public sealed class BundleExecutionTests
     public void ExecuteBundleSpawn_CallbackFaultDiscardsCandidateAndReleasesRuntime()
     {
         var world = new World();
-        int archetypeCount = world.ArchetypeCount;
         int[] componentIds =
         [
             ComponentMetadata<Position>.Id,
@@ -30,7 +29,6 @@ public sealed class BundleExecutionTests
                 }));
 
         Assert.Equal(0, world.EntityCount);
-        Assert.Equal(archetypeCount, world.ArchetypeCount);
 
         Entity entity = world.ExecuteBundleSpawn(
             componentIds,

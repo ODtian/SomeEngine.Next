@@ -6,6 +6,40 @@ namespace SomeEngine.Runtime.Tests;
 
 internal static class SceneImages
 {
+    internal static void AssertLinearEqual(SceneLinearImage expected, SceneLinearImage actual, float tolerance,
+        [CallerMemberName] string test = "")
+    {
+        try
+        {
+            Assert.Equal(expected.Frame.Width, actual.Frame.Width);
+            Assert.Equal(expected.Frame.Height, actual.Frame.Height);
+            float maximum = 0;
+            int largest = 0;
+            for (int index = 0; index < actual.Pixels.Length; index++)
+            {
+                float difference = MathF.Abs((float)expected.Pixels.Span[index] - (float)actual.Pixels.Span[index]);
+                if (difference > maximum) { maximum = difference; largest = index; }
+            }
+            Assert.True(maximum <= tolerance, $"Linear color error {maximum} at pixel ({largest / 4 % actual.Frame.Width}, {largest / 4 / actual.Frame.Width}), channel {largest % 4}; tolerance {tolerance}.");
+        }
+        catch (XunitException)
+        {
+            SaveFailure(Preview(expected), Preview(actual), test);
+            throw;
+        }
+
+    }
+
+    internal static void AssertLinearNotEqual(SceneLinearImage expected, SceneLinearImage actual,
+        [CallerMemberName] string test = "")
+    {
+        try { Assert.NotEqual(expected.Pixels.ToArray(), actual.Pixels.ToArray()); }
+        catch (XunitException) { SaveFailure(Preview(expected), Preview(actual), test); throw; }
+    }
+
+    private static SceneImage Preview(SceneLinearImage value) => new(value.Frame.Frame, value.Frame.Width, value.Frame.Height,
+        value.Pixels.Span.ToArray().Select(channel => (byte)Math.Clamp((float)channel * 255, 0, 255)).ToArray());
+
     internal static async Task RunAsync(string backend, SceneScript script, params string[] options)
     {
         ApplicationResult result = await Application.RunAsync(
@@ -41,6 +75,21 @@ internal static class SceneImages
         catch (XunitException)
         {
             SaveFailure(expected, actual, test);
+            throw;
+        }
+    }
+
+    internal static void AssertChanged(SceneImage before, SceneImage after,
+        [CallerMemberName] string test = "")
+    {
+        try
+        {
+            Assert.False(before.Pixels.Span.SequenceEqual(after.Pixels.Span),
+                $"Frames {before.Frame} and {after.Frame}: the edit should change the captured pixels.");
+        }
+        catch (XunitException)
+        {
+            SaveFailure(before, after, test);
             throw;
         }
     }

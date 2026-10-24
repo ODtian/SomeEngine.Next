@@ -65,7 +65,7 @@ public sealed partial class AssetProject
                 await CheckOutputFileAsync(output.Path, output.Asset.Id, cancellationToken, allowCorrupt: registered).ConfigureAwait(false);
                 string stage = files.CreateStagePath(output.Path);
                 files.AddFile(output.Path, stage);
-                AssetEntry entry = await output.Save(output.Asset, stage, cancellationToken).ConfigureAwait(false);
+                AssetEntry entry = await output.Asset.SaveAsync(stage, cancellationToken).ConfigureAwait(false);
                 if (entry.AssetGuid != output.Asset.Id || !PathsEqual(Path.GetFullPath(entry.Path), stage))
                     throw new InvalidDataException("The saved draft identity or path differs from the requested output.");
                 entries.Add(entry with { Path = output.Path, SourceGuid = metadata.SourceGuid, SubAssetKey = output.ElementKey });

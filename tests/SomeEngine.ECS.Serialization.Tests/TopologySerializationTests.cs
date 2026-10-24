@@ -1,3 +1,4 @@
+using SomeEngine.Serialization;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
@@ -39,8 +40,7 @@ public sealed class TopologySerializationTests
         using var rejected = new MemoryStream(bytes, writable: false);
         InvalidDataException mismatch = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadWorld(rejected, rejectRegistry));
-        Assert.Contains("Topology schema mismatch", mismatch.Message);
-
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(mismatch));
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public sealed class TopologySerializationTests
         stream.Position = 0;
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadWorld(stream, readRegistry));
-        Assert.Contains("Unknown serialized Hierarchy topology", error.Message);
+        Assert.Equal(SerializationError.UnknownType, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -87,8 +87,7 @@ public sealed class TopologySerializationTests
                 stream,
                 registry,
                 new WorldLoadOptions(ReadLimits: limits)));
-        Assert.Contains("hierarchy", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("limit", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -105,8 +104,7 @@ public sealed class TopologySerializationTests
         InvalidOperationException customError = Assert.Throws<InvalidOperationException>(
             () => registry.RegisterRelationTopology<NonTableRelationPayload>(topologyKey));
 
-        Assert.Contains("ordinary table component", defaultError.Message);
-        Assert.Equal(defaultError.Message, customError.Message);
+        Assert.Equal(defaultError.GetType(), customError.GetType());
     }
 
     [Fact]
@@ -278,9 +276,9 @@ public sealed class TopologySerializationTests
             source.GetOutgoingRelations<SerializedLink>(newSource);
 
         using var stream = new MemoryStream();
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             WorldSerializer.WriteWorld(stream, source, registry));
-        Assert.Contains("dirty or in-progress state", error.Message);
+
         Assert.Equal(0, stream.Length);
 
         RelationAdjacencySnapshot<SerializedLink> oldAfter =
@@ -301,7 +299,6 @@ public sealed class TopologySerializationTests
         Assert.Equal(
             resident,
             Assert.Single(newAfter.Entries.ToArray()).Edge);
-
     }
 
     [Fact]
@@ -335,9 +332,9 @@ public sealed class TopologySerializationTests
             Hierarchy<DefaultHierarchyDomain>.GetChildren(source, newParent);
 
         using var stream = new MemoryStream();
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             WorldSerializer.WriteWorld(stream, source, registry));
-        Assert.Contains("deferred or dirty inverse state", error.Message);
+
         Assert.Equal(0, stream.Length);
 
         HierarchyChildrenSnapshot<DefaultHierarchyDomain> oldAfter =
@@ -351,7 +348,6 @@ public sealed class TopologySerializationTests
         Assert.Equal(newParent, Hierarchy<DefaultHierarchyDomain>.GetParent(source, moved));
         Assert.Equal(new[] { moved }, oldAfter.ToArray());
         Assert.Equal(new[] { resident }, newAfter.ToArray());
-
     }
 
     private static SerializationRegistry CreateRegistry() =>

@@ -1,4 +1,4 @@
-using Game.Build;
+using DefaultGame.Content;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
@@ -48,15 +48,13 @@ public sealed class DeformCacheRenderingTests
         Directory.CreateDirectory(content);
         try
         {
-            string source = Path.Combine(root, "templates", "DefaultProject");
+            string source = Path.Combine(root, "samples", "DefaultGame");
             foreach (string file in Directory.EnumerateFiles(Path.Combine(source, "assets"), "*", SearchOption.AllDirectories))
             {
                 string destination = Path.Combine(content, Path.GetRelativePath(source, file));
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
                 File.Copy(file, destination);
             }
-            Directory.CreateDirectory(Path.Combine(content, "Game.Build"));
-            File.Copy(Path.Combine(source, "Game.Build", "Game.Build.csproj"), Path.Combine(content, "Game.Build", "Game.Build.csproj"));
             string shaderPath = Path.Combine(content, "assets", "Shaders", "standard.slang");
             string shader = await File.ReadAllTextAsync(shaderPath);
             shader = shader.Replace("typedef StaticVertexEval VertexEvaluate;", UserDeformation + "\ntypedef CachedVertexEval<UserDeformation> VertexEvaluate;\ntypedef UserDeformation DeformEvaluate;");
@@ -64,8 +62,9 @@ public sealed class DeformCacheRenderingTests
             shader = shader.Replace("typedef LinearSurface DomainEvaluate;", "typedef UserSurface DomainEvaluate;");
             shader += "\n#include \"cluster_deform.slang\"\n";
             await File.WriteAllTextAsync(shaderPath, shader);
-            await DefaultContent.BuildAsync(content, root);
-            var project = new AssetProject(content, [], sourceFormats: [new ShaderSourceFormat([Path.Combine(root, "assets", "Shaders")])]);
+            await SampleContent.BuildAsync(content, root);
+            var project = new AssetProject(content, [], shaderIncludeDirectories: [Path.Combine(root, "assets", "Shaders")]);
+            await project.BuildAsync(shaderPath.Replace(".slang", ".shader"));
             AssetEntry sceneEntry = project.Manifest.List(WorldAsset.FileType).Single(entry => entry.Name == "Default");
             using (var world = new World())
             {
@@ -134,8 +133,8 @@ public sealed class DeformCacheRenderingTests
             typedef Triangle TriangleData;
             typedef SurfaceEval Surface;
             LinearSurface source;
-            TriangleData makeTriangle(UserVertex a, UserVertex b, UserVertex c)
-            { return source.makeTriangle(a.Surface, b.Surface, c.Surface); }
+            TriangleData makeTriangle(UserVertex a, UserVertex b, UserVertex c, uint materialIndex)
+            { return source.makeTriangle(a.Surface, b.Surface, c.Surface, materialIndex); }
             float3 cornerPosition(TriangleData value, uint corner) { return source.cornerPosition(value, corner); }
             float3 position(TriangleData value, float3 bary) { return source.position(value, bary); }
             Surface eval(TriangleData value, float3 bary) { return source.eval(value, bary); }

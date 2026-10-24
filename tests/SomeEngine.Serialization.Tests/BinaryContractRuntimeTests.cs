@@ -71,7 +71,7 @@ public sealed class BinaryContractRuntimeTests
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => BinarySerializer.Deserialize<TestRoot>(encoded.Span));
 
-        Assert.Contains("Invalid Boolean value 2", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class BinaryContractRuntimeTests
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ReadOneString(malformed));
 
-        Assert.Contains("malformed UTF-8", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public sealed class BinaryContractRuntimeTests
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => BinarySerializer.Deserialize<TestRoot>(encoded.Span));
 
-        Assert.Contains("unexpected trailing bytes", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(exception));
     }
 
     [Fact]

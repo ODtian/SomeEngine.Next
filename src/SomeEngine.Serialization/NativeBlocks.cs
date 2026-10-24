@@ -251,7 +251,8 @@ public static class NativeBlock
         int count = BinaryPrimitives.ReadInt32LittleEndian(source[12..]);
         if (count < 0 || count > maxElementCount)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                count < 0 ? SerializationError.InvalidData : SerializationError.LimitExceeded,
                 $"Native block element count {count} exceeds configured limit {maxElementCount}.");
         }
         int alignment = BinaryPrimitives.ReadInt32LittleEndian(source[16..]);
@@ -321,27 +322,35 @@ public static class NativeBlock
     {
         if (fingerprint != proof.Fingerprint)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Native layout fingerprint 0x{fingerprint:X16} does not match expected " +
                 $"0x{proof.Fingerprint:X16} for '{typeof(T).FullName}'.");
         }
         if (elementSize != proof.Size || elementSize != Unsafe.SizeOf<T>())
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Native element size {elementSize} does not match proven runtime size {proof.Size} " +
                 $"for '{typeof(T).FullName}'.");
+        }
+        if (version != FormatVersion)
+        {
+            throw SerializationErrors.CreateDataException(
+                SerializationError.UnsupportedVersion,
+                $"Unsupported native block version {version}.");
         }
         if (alignment != proof.Alignment
             || architecture != proof.ArchitectureToken
             || pointerSize != proof.PointerSize
             || littleEndian != 1
-            || version != FormatVersion
             || reserved != 0
             || abiTokenHash != proof.AbiTokenHash
             || coveredFieldBytes != proof.CoveredFieldBytes
             || reservedTail != 0)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Native block ABI metadata does not match the proven layout for '{typeof(T).FullName}'.");
         }
         if (payloadOffset < FixedHeaderSize

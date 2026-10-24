@@ -4,16 +4,34 @@ using System.Runtime.CompilerServices;
 namespace SomeEngine.ECS.Registry;
 
 /// <summary>
-/// Cached runtime classification for value types that may be borrowed directly by an ECS Job.
+/// Generated or lazily derived type data for values borrowed directly by an ECS Job.
 /// Alias-free storage cannot contain a managed reference, byref, pointer, native-sized handle,
 /// fixed buffer, or a recursively nested value with one of those shapes.
 /// </summary>
 internal static class JobStorageTypeMetadata<T>
     where T : struct
 {
-    internal static readonly bool IsAliasFree =
-        !RuntimeHelpers.IsReferenceOrContainsReferences<T>() &&
-        JobStorageTypeShape.IsAliasFree(typeof(T));
+    private static int s_aliasFree;
+
+    internal static bool IsAliasFree
+    {
+        get
+        {
+            int value = Volatile.Read(ref s_aliasFree);
+            if (value == 0)
+            {
+                value = !RuntimeHelpers.IsReferenceOrContainsReferences<T>() &&
+                    JobStorageTypeShape.IsAliasFree(typeof(T)) ? 1 : -1;
+                Interlocked.CompareExchange(ref s_aliasFree, value, 0);
+            }
+            return value > 0;
+        }
+    }
+
+    internal static bool GetIsAliasFree() => IsAliasFree;
+
+    internal static void Register(bool isAliasFree) =>
+        Volatile.Write(ref s_aliasFree, isAliasFree ? 1 : -1);
 
     internal static void RequireAliasFree(string storageKind)
     {

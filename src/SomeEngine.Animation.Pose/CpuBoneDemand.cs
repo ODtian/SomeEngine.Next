@@ -127,7 +127,7 @@ internal sealed class CpuBoneDemands(World world)
         _work.Clear(); _sources.Clear();
         QueryHandle targets = world.Query(new QueryDefinitionBuilder().Read<GpuPoseTarget>());
         CpuBoneDemands demands = this;
-        world.ExecuteQuery(targets, ref demands, static (QueryCursor rows, ref CpuBoneDemands demands) =>
+        world.ExecuteQuery(targets, ref demands, static (scoped QueryCursor rows, ref CpuBoneDemands demands) =>
         {
             foreach (QueryRow row in rows.Rows)
             {
@@ -140,20 +140,25 @@ internal sealed class CpuBoneDemands(World world)
         Dictionary<SkeletonInstance, PoseResultReference> modelSources = PoseAnimation.ReadModelSources(world);
         _bindings = modelSources.Keys.Concat(_sources.Keys).Distinct()
             .Select(static skeleton => (skeleton, skeleton.BindingVersion)).ToArray();
-        foreach (Source source in _sources.Values)
-            if (source.Input.CpuBones is { } demand)
-            {
-                foreach (short bone in demand.Bones) Require(source, bone);
-                if (demand.Source is { } result) RequireAlgorithm(source, result);
-            }
-        foreach (PoseNode node in nodes.Values)
-            if (node.ModelBones.Length != 0)
-            {
-                SkeletonInstance skeleton = world.Read<PoseTarget>(node.Output.Entity).Skeleton;
-                foreach (short bone in node.ModelBones)
-                    for (int ancestor = bone; ancestor >= 0; ancestor = skeleton.Skeleton.Parents[ancestor])
-                        RequireParent(skeleton, ancestor);
-            }
+        bool expanded;
+        do
+        {
+            expanded = false;
+            foreach (Source source in _sources.Values)
+                if (source.Input.CpuBones is { } demand)
+                {
+                    foreach (short bone in demand.Bones) Require(source, bone);
+                    if (demand.Source is { } result) RequireAlgorithm(source, result);
+                }
+            foreach (PoseNode node in nodes.Values)
+                if (node.ModelBones.Length != 0)
+                {
+                    SkeletonInstance skeleton = world.Read<PoseTarget>(node.Output.Entity).Skeleton;
+                    foreach (short bone in node.ModelBones)
+                        for (int ancestor = bone; ancestor >= 0; ancestor = skeleton.Skeleton.Parents[ancestor])
+                            RequireParent(skeleton, ancestor);
+                }
+        } while (expanded);
         foreach (Source source in _sources.Values) Add(source);
         _work.Sort(static (a, b) => a.Skeleton.Sections.Length.CompareTo(b.Skeleton.Sections.Length));
         Changed = false;
@@ -163,6 +168,7 @@ internal sealed class CpuBoneDemands(World world)
         {
             if (source.Required[bone]) return;
             source.Required[bone] = true;
+            expanded = true;
             Skeleton skeleton = source.Input.Skeleton.Skeleton;
             int parent = skeleton.Parents[bone];
             if (parent >= 0) Require(source, parent);

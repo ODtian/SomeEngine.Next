@@ -13,6 +13,10 @@ required by their public operations. Examples include:
 - linked-node masks and external-handle operations;
 - presentation, calibrated timestamps and Pipeline creation support.
 
+Device creation selects an adapter by creating its native D3D12 device. The selected
+native device supplies capability discovery and the engine device wrapper. Adapter
+enumeration uses the compatibility query independently of device creation.
+
 Native creation or command failure remains authoritative even after positive feature discovery.
 Unreleased or unbound native features are not advertised by inventing a portable substitute.
 ^rhi-d3d12-007

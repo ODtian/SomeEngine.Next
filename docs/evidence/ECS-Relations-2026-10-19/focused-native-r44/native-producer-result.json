@@ -1,0 +1,16 @@
+{
+  "Id": "5e4a42759df440bf92d9f5601e4254d6",
+  "Executable": "pwsh",
+  "Arguments": [
+    "-NoProfile",
+    "-File",
+    "F:/.codex/worktrees/ecs-relations-worker-3/SomeEngine.Next/artifacts/relations-measurements/focused-native-r44/producer.ps1"
+  ],
+  "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+  "ExitCode": 0,
+  "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+  "Kind": "Exclusive",
+  "SubmittedAtUtc": "2026-10-20T08:34:49.2691755+08:00",
+  "StartedAtUtc": "2026-10-20T08:40:10.9472418+08:00",
+  "FinishedAtUtc": "2026-10-20T08:41:33.5823502+08:00"
+}

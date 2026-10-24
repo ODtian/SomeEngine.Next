@@ -44,7 +44,7 @@ internal sealed unsafe partial class VulkanBackend
         RhiDevice device,
         in GraphicsPipelineDesc desc,
         SomeEngine.Graphics.PipelineCache? cache,
-        IComponentType? capturedSlangCode)
+        SlangShaderData? capturedSlangCode)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
@@ -61,7 +61,7 @@ internal sealed unsafe partial class VulkanBackend
             desc.StaticSamplers);
         VkPipeline native = default;
         VulkanPipeline? pipeline = null;
-        IComponentType? retainedCode = null;
+        SlangShaderData? retainedCode = null;
         try
         {
             CompiledSpirv vertex = CompileSpirv(
@@ -114,7 +114,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        IComponentType slangCode = desc.SlangCode;
+        SlangShaderData slangCode = desc.SlangCode;
         GraphicsPipelineData data = new(desc);
         return EnqueuePipelineCreation(
             nativeDevice,
@@ -134,7 +134,7 @@ internal sealed unsafe partial class VulkanBackend
         RhiDevice device,
         in ComputePipelineDesc desc,
         SomeEngine.Graphics.PipelineCache? cache,
-        IComponentType? capturedSlangCode)
+        SlangShaderData? capturedSlangCode)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
@@ -149,7 +149,7 @@ internal sealed unsafe partial class VulkanBackend
         VkShaderModule module = default;
         nint entryName = 0;
         VulkanPipeline? pipeline = null;
-        IComponentType? retainedCode = null;
+        SlangShaderData? retainedCode = null;
         try
         {
             CompiledSpirv compute = CompileSpirv(
@@ -233,7 +233,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        IComponentType slangCode = desc.SlangCode;
+        SlangShaderData slangCode = desc.SlangCode;
         ComputePipelineData data = new(desc);
         return EnqueuePipelineCreation(
             nativeDevice,
@@ -844,7 +844,7 @@ internal sealed unsafe partial class VulkanBackend
 
     private sealed class GraphicsPipelineData
     {
-        private readonly IComponentType _slangCode;
+        private readonly SlangShaderData _slangCode;
         private readonly ShaderReflection _reflection;
         private readonly EntryPointReflection _vertex;
         private readonly ReadOnlySequence<byte>[] _code;
@@ -909,7 +909,7 @@ internal sealed unsafe partial class VulkanBackend
             VulkanBackend backend,
             VulkanDevice device,
             SomeEngine.Graphics.PipelineCache? cache,
-            IComponentType capturedSlangCode)
+            SlangShaderData capturedSlangCode)
         {
             BlendState blend = new(_blendAttachments, _independentBlend, _logicOperation);
             AttachmentFormatSignature attachments = new(_colorFormats, _depthFormat, _multisample.SampleCount);
@@ -976,7 +976,7 @@ internal sealed unsafe partial class VulkanBackend
 
     private sealed class ComputePipelineData
     {
-        private readonly IComponentType _slangCode;
+        private readonly SlangShaderData _slangCode;
         private readonly ShaderReflection _reflection;
         private readonly EntryPointReflection _compute;
         private readonly ReadOnlySequence<byte>[] _code;
@@ -999,7 +999,7 @@ internal sealed unsafe partial class VulkanBackend
             VulkanBackend backend,
             VulkanDevice device,
             SomeEngine.Graphics.PipelineCache? cache,
-            IComponentType capturedSlangCode) =>
+            SlangShaderData capturedSlangCode) =>
             backend.CreateComputePipeline(
                 device,
                 new ComputePipelineDesc(
@@ -1018,14 +1018,14 @@ internal sealed unsafe partial class VulkanBackend
     {
         private readonly VulkanDevice _device;
         private readonly VulkanLifetime _lifetime;
-        private IComponentType? _slangCode;
+        private SlangShaderData? _slangCode;
         private VkPipeline _native;
 
         internal VulkanPipeline(
             VulkanDevice device,
             VkPipeline native,
             VulkanPipelineLayoutState layout,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             PipelineType type,
             string? label,
             VulkanRayTracingPipelineState? rayTracing = null)

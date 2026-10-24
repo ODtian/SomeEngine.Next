@@ -22,7 +22,7 @@ Chunks 位于对应 Block 内，以 16 位十六进制局部键映射到相对�
 
 可读来源由具体资产显式接入。例如 `ShaderAsset.OpenSourceAsync` 调用 `AssetText.OpenAsync`，核对资产类型，在新资产上通过 `SourceReader.ReadBlockIntoAsync` 读取所需 Block；失败时释放新资产。AssetGenerator 目前只生成共同身份及二进制文件入口，可读来源入口由具体资产实现。
 
-`AssetText.SaveAsync` 使用同目录临时写入、刷新、身份检查和替换，具体资产的 `SaveSourceAsync` 指定需要写出的 Block。不同资产 ID 不能静默覆盖同一路径。
+`AssetText.Create(asset)` 返回实际文本写入对象；具体资产的 `SaveSourceAsync` 通过 `writer.WriteBlock<TBlock>(chunkFiles)` 选择 Block，再通过 `writer.SaveAsync(path)` 完成同目录临时写入、刷新、身份检查和替换。写入对象持有自己的资产分支，根字段及 Block 来自同一份内容。
 
 通用 `TextSerializer.DeserializeInto` 只应用出现的字段，可以用于局部编辑。`SourceReader.ReadBlockIntoAsync` 核对 Block 类型和 schema，再将字段及外部 chunk 读入调用方提供的 Block；出错时目标可能已经部分修改。需要失败隔离时使用新对象或 Duplicate 分支，具体资产的 `OpenSourceAsync` 应在新对象边界完成读取。
 

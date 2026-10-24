@@ -83,7 +83,7 @@ public sealed class UnaryRelationTests
         var first = world.CreateEntity(new Score { Value = 8 });
         var second = world.CreateEntity(new Score { Value = 9 });
         world.CreateEntity(new Score { Value = 12 });
-        var members = world.Query(world.QueryDefinition().All<Score>());
+        var members = world.Query(world.QueryDefinition().Read<Score>());
         Span<Entity> result = stackalloc Entity[1];
         var output = new FirstEntity(result);
 
@@ -95,6 +95,9 @@ public sealed class UnaryRelationTests
         Assert.False(completed);
         Assert.Equal(1, output.Count);
         Assert.Contains(result[0], new[] { first, second });
+        world.CreateEntity(new Score { Value = 20 });
+        Assert.Equal(5, world.Product(members).Count());
+        world.ReleaseQuery(members);
     }
 
     [Fact]
@@ -115,13 +118,15 @@ public sealed class UnaryRelationTests
         world.CreateEntity(new Score { Value = 8 });
         uint baseline = world.AcquireSystemTick();
         uint version = world.CurrentTick;
-        var members = world.Query(world.QueryDefinition().All<Score>());
+        var members = world.Query(world.QueryDefinition().Read<Score>());
         var changes = world.Query(world.QueryDefinition().Changed<Score>());
 
-        world.Product(members).Where(new MinimumScore(5)).Count();
+        Assert.Equal(1, world.Product(members).Where(new MinimumScore(5)).Count());
 
         Assert.Equal(version, world.CurrentTick);
         Assert.Equal(0, world.Product(changes).Count(baseline));
+        world.ReleaseQuery(members);
+        world.ReleaseQuery(changes);
     }
 
     [Fact]

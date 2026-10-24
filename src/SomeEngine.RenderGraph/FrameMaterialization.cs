@@ -9,7 +9,7 @@ internal sealed partial class FrameExecutor
     private void MaterializationChanged((GraphAccessTargetKind Kind, int Index) key, bool updateViewDescriptions = true)
     {
         if (_resourceAccessLists.TryGetValue(key, out List<int>? commandAccesses))
-            foreach (int access in commandAccesses) _commandChanges.Add(_accesses[access].PassIndex);
+            foreach (int access in commandAccesses) InvalidateCommands(_accesses[access].PassIndex);
         ChangeResourceParameters(key);
         GraphIdentity identity;
         if (key.Kind == GraphAccessTargetKind.Buffer && key.Index < _buffers.Count)

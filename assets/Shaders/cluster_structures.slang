@@ -16,11 +16,11 @@ struct PackedCluster
     float3 BoundMin;                    // 32 — conservative object-space AABB min
     float3 BoundMax;                    // 44 — conservative object-space AABB max
     uint PackedLodErrorTriangleStart;   // 56 — LODErrorHalf:16 | TriangleStart:16
-    uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
+    uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Flags:8]
     uint PackedGroup;                   // 64 — GroupId(i16):16 | Reserved:16
     uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
     uint PackedRanges;                  // 72 — [range0End:8][range1End:8][Reserved:16]
-    uint MaterialTableOffset;           // 76 — page-relative uint32 material table, or 0xFFFFFFFF for inline IDs
+    uint MaterialTableOffset;           // 76 — page-relative uint32 material IDs, or 0xFFFFFFFF
     uint VertReuseBatchWord0;           // 80
     uint VertReuseBatchWord1;           // 84
     uint VertReuseBatchWord2;           // 88
@@ -46,13 +46,6 @@ float DecodeClusterLODError(PackedCluster c)
 uint DecodeTriangleStart(PackedCluster c)
 {
     return c.PackedLodErrorTriangleStart >> 16;
-}
-
-int DecodeGroupId(PackedCluster c)
-{
-    // Sign-extend from 16-bit
-    int raw = int(c.PackedGroup & 0xFFFFu);
-    return (raw << 16) >> 16;
 }
 
 uint4 VertReuseBatchWords(PackedCluster cluster)
@@ -100,21 +93,68 @@ uint MaterialRangeEnd(uint packedRanges, uint triangleCount, uint rangeIndex)
         return min((packedRanges >> 8u) & 0xFFu, triangleCount);
     return triangleCount;
 }
+
+uint3 LoadClusterMaterials(ByteAddressBuffer heap, uint pageAddress, uint clusterAddress)
+{
+    uint table = heap.Load(clusterAddress + 76u);
+    if (table != 0xFFFFFFFFu)
+        return heap.Load3(pageAddress + table);
+    uint packed = heap.Load(clusterAddress + 68u);
+    return uint3(packed & 255u, (packed >> 8u) & 255u, (packed >> 16u) & 255u);
+}
+
+uint LocalMaterial(uint3 materials, uint ranges, uint triangle)
+{
+    uint firstEnd = ranges & 255u;
+    uint secondEnd = (ranges >> 8u) & 255u;
+    return triangle < firstEnd ? materials.x : triangle < secondEnd ? materials.y : materials.z;
+}
+
+struct ClusterMaterialRanges
+{
+    uint3 Materials;
+    uint Ranges;
+    uint4 BatchWords;
+};
+
+uint ClusterMaterialRangeCount(ClusterMaterialRanges data, uint triangleCount)
+{
+    return MaterialRangeCount(data.Ranges, triangleCount);
+}
+
+uint ClusterMaterialRange(ByteAddressBuffer heap, ClusterMaterialRanges data, uint triangleCount, uint index)
+{
+    uint start = index == 0u ? 0u : MaterialRangeEnd(data.Ranges, triangleCount, index - 1u);
+    uint end = MaterialRangeEnd(data.Ranges, triangleCount, index);
+    return start | ((end - start) << 8u);
+}
+
+uint ClusterMaterialBatchBits(ByteAddressBuffer heap, ClusterMaterialRanges data, uint bit, uint count)
+{
+    return ReadVertReuseBits(data.BatchWords, bit, count);
+}
+
+ClusterMaterialRanges LoadClusterMaterialRanges(ByteAddressBuffer heap, uint clusterAddress, uint pageAddress)
+{
+    ClusterMaterialRanges data;
+    data.Materials = LoadClusterMaterials(heap, pageAddress, clusterAddress);
+    data.Ranges = heap.Load(clusterAddress + 72u);
+    data.BatchWords = heap.Load4(clusterAddress + 80u);
+    return data;
+}
+
+uint LocalMaterial(ByteAddressBuffer heap, uint clusterAddress, uint pageAddress, uint triangle)
+{
+    return LocalMaterial(LoadClusterMaterials(heap, pageAddress, clusterAddress),
+        heap.Load(clusterAddress + 72u), triangle);
+}
+
 uint DecodeTriangleCount(PackedCluster c)
 {
     return (c.PackedCounts >> 8) & 0xFF;
 }
 
-struct ClusterBVHNode
-{
-    float4 BoundMin;
-    float4 BoundMax;
-    float4 LODSphere; // xyz: Center, w: Radius
-    float LODError;
-    uint ChildPointer;
-    uint ChildCount;
-    uint NodeType; // 0=Internal, 1=Leaf
-};
+#include "cluster_hierarchy.slang"
 
 // Each stage owns an independent dense material-slot mapping. The Cluster instance ABI stores
 // only the assignment-sequence offset; stage compatibility never enters the instance record.
@@ -132,21 +172,6 @@ uint GetStageSlot(
         return SLOT_INVALID;
 
     return stageSlots[slotOffset + localMaterialIndex];
-}
-
-uint3 LoadClusterMaterials(ByteAddressBuffer heap, uint pageOffset, uint clusterOffset)
-{
-    uint table = heap.Load(clusterOffset + 76u);
-    if (table != 0xFFFFFFFFu) return heap.Load3(pageOffset + table);
-    uint packed = heap.Load(clusterOffset + 68u);
-    return uint3(packed & 255u, (packed >> 8u) & 255u, (packed >> 16u) & 255u);
-}
-
-uint LocalMaterial(uint3 materials, uint ranges, uint triangle)
-{
-    uint firstEnd = ranges & 255u;
-    uint secondEnd = (ranges >> 8u) & 255u;
-    return triangle < firstEnd ? materials.x : triangle < secondEnd ? materials.y : materials.z;
 }
 
 uint LocalMaterial(uint packedMaterials, uint packedRanges, uint triStart)
@@ -290,6 +315,7 @@ struct RasterBinEntry
     uint HWCursor;
     uint SWOffset;     // Exclusive prefix sum of SW clusters only across bins
     uint HardwareOffset;
+    uint DepthBucketEnabled;
 };
 
 // 12-byte geometry work item. Cluster ids are bounded to 12 bits by the packed-page ABI;
@@ -324,19 +350,88 @@ uint DrawRequestViewIndex(DrawRequest request)
     return request.ClusterAndView >> 12u;
 }
 
-// Candidate-only data survives deferred culling. Visible raster work keeps
-// the compact DrawRequest and has already made its LOD decision.
-struct ClusterCandidate
+// A visible item adds one packed page window to the three identity words.
+// The instance word follows UE's 24-bit instance range; its upper byte is depth.
+struct VisibleCluster
 {
-    DrawRequest Request;
-    uint KeepCoarseGeometry;
+    uint PageAndFlags;
+    uint InstanceAndDepth;
+    uint ClusterAndView;
+    uint RasterWindow;
 };
 
-ClusterCandidate MakeClusterCandidate(DrawRequest request, uint keepCoarseGeometry)
+DrawRequest VisibleClusterRequest(VisibleCluster cluster)
+{
+    DrawRequest request;
+    request.PageOffset = cluster.PageAndFlags & ~15u;
+    request.InstanceID = cluster.InstanceAndDepth & 0xFFFFFFu;
+    request.ClusterAndView = cluster.ClusterAndView;
+    return request;
+}
+
+uint DrawRequestViewIndex(VisibleCluster cluster)
+{
+    return cluster.ClusterAndView >> 12u;
+}
+uint DrawRequestClusterID(VisibleCluster cluster)
+{
+    return cluster.ClusterAndView & 0xFFFu;
+}
+uint VisibleClusterDepthBucket(VisibleCluster cluster)
+{
+    return cluster.InstanceAndDepth >> 24u;
+}
+
+uint2 VisibleClusterRasterWindow(VisibleCluster cluster)
+{
+    uint2 first = uint2(cluster.RasterWindow & 0x1FFFu, (cluster.RasterWindow >> 13u) & 0x1FFFu);
+    uint2 last = first + uint2((cluster.RasterWindow >> 26u) & 7u, cluster.RasterWindow >> 29u);
+    return uint2(first.x | (first.y << 16u), last.x | (last.y << 16u));
+}
+
+VisibleCluster MakeVisibleCluster(DrawRequest request, uint2 window, uint depthBucket, uint flags)
+{
+    uint2 first = uint2(window.x & 0xFFFFu, window.x >> 16u);
+    uint2 last = uint2(window.y & 0xFFFFu, window.y >> 16u);
+    uint2 extent = last - first;
+    VisibleCluster result;
+    result.PageAndFlags = request.PageOffset | (flags & 15u);
+    result.InstanceAndDepth = request.InstanceID | (depthBucket << 24u);
+    result.ClusterAndView = request.ClusterAndView;
+    result.RasterWindow = first.x | (first.y << 13u) | (extent.x << 26u) | (extent.y << 29u);
+    return result;
+}
+
+// Page allocation is 16-byte aligned. Leaf flags occupy the low address bits;
+// deferred hierarchy work retains its tagged node index in the same three words.
+struct ClusterCandidate
+{
+    uint PageAndFlags;
+    uint InstanceID;
+    uint ClusterAndView;
+};
+
+DrawRequest CandidateRequest(ClusterCandidate candidate)
+{
+    DrawRequest request;
+    request.PageOffset = (candidate.PageAndFlags & 2u) != 0u
+        ? candidate.PageAndFlags : candidate.PageAndFlags & ~15u;
+    request.InstanceID = candidate.InstanceID;
+    request.ClusterAndView = candidate.ClusterAndView;
+    return request;
+}
+
+uint CandidateFlags(ClusterCandidate candidate)
+{
+    return (candidate.PageAndFlags & 2u) != 0u ? 0u : candidate.PageAndFlags & 1u;
+}
+
+ClusterCandidate MakeClusterCandidate(DrawRequest request, uint flags)
 {
     ClusterCandidate result;
-    result.Request = request;
-    result.KeepCoarseGeometry = keepCoarseGeometry;
+    result.PageAndFlags = request.PageOffset | flags;
+    result.InstanceID = request.InstanceID;
+    result.ClusterAndView = request.ClusterAndView;
     return result;
 }
 
@@ -366,35 +461,43 @@ uint ClusterTraversalViewIndex(ClusterTraversalNode node)
     return node.ViewIndex;
 }
 
-// The phase-two buffer is a compact tagged union shared by hierarchy and leaf work. A
-// hierarchy item reserves the top bit of the first word; resident page offsets and BVH node
-// indices are both constrained below 2 GiB by the cooked Cluster address ABI.
-static const uint CLUSTER_DEFERRED_NODE_BIT = 0x80000000u;
-static const uint CLUSTER_DEFERRED_INDEX_MASK = 0x7FFFFFFFu;
+// Deferred work retains the 64-byte node index. The direct bit means that
+// resuming work tests this node before expanding its children.
+static const uint CLUSTER_DEFERRED_NODE_BIT = 2u;
+static const uint CLUSTER_TRAVERSAL_DIRECT_BIT = 0x80000000u;
+static const uint CLUSTER_TRAVERSAL_NODE_MASK = 0x0FFFFFFFu;
+
+uint ClusterTraversalNodeIndex(ClusterTraversalNode node)
+{
+    return node.NodeIndex & CLUSTER_TRAVERSAL_NODE_MASK;
+}
+bool ClusterTraversalIsDirect(ClusterTraversalNode node)
+{
+    return (node.NodeIndex & CLUSTER_TRAVERSAL_DIRECT_BIT) != 0u;
+}
+uint ClusterTraversalDirect(uint nodeIndex)
+{
+    return nodeIndex | CLUSTER_TRAVERSAL_DIRECT_BIT;
+}
 
 DrawRequest MakeDeferredTraversalNode(ClusterTraversalNode node)
 {
     DrawRequest result;
-    result.PageOffset = CLUSTER_DEFERRED_NODE_BIT |
-        (node.NodeIndex & CLUSTER_DEFERRED_INDEX_MASK);
+    result.PageOffset = (ClusterTraversalNodeIndex(node) << 4u) | CLUSTER_DEFERRED_NODE_BIT |
+        (ClusterTraversalIsDirect(node) ? 8u : 0u);
     result.InstanceID = node.InstanceID;
     result.ClusterAndView = node.ViewIndex;
     return result;
 }
-
 bool IsDeferredTraversalNode(DrawRequest work)
 {
     return (work.PageOffset & CLUSTER_DEFERRED_NODE_BIT) != 0u;
 }
-
 ClusterTraversalNode DecodeDeferredTraversalNode(DrawRequest work)
 {
-    ClusterTraversalNode result;
-    result.NodeIndex = work.PageOffset & CLUSTER_DEFERRED_INDEX_MASK;
-    result.InstanceID = work.InstanceID;
-    result.ViewIndex = work.ClusterAndView;
-    result.ViewMask = 1u;
-    return result;
+    uint nodeIndex = work.PageOffset >> 4u;
+    nodeIndex |= (work.PageOffset & 8u) << 28u;
+    return MakeClusterTraversalNode(nodeIndex, work.InstanceID, work.ClusterAndView, 1u);
 }
 
 struct ClusterMeshVertex
@@ -405,12 +508,16 @@ struct ClusterMeshVertex
 struct ClusterRasterVertexData<TVarying>
 {
     float4 Pos : SV_POSITION;
+    float2 ClipDepth : RASTER_CLIP_DEPTH;
     TVarying Varying;
+    nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
+    nointerpolation uint ViewIndex : VIEW_INDEX;
 };
 
 struct ClusterRasterPixelInput<TVarying>
 {
     float4 Pos : SV_POSITION;
+    float2 ClipDepth : RASTER_CLIP_DEPTH;
     TVarying Varying;
     nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
     nointerpolation uint TriangleID : TRIANGLE_ID;
@@ -420,9 +527,7 @@ struct ClusterRasterPixelInput<TVarying>
 
 struct ClusterMeshPrimitive
 {
-    nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
     nointerpolation uint TriangleID : TRIANGLE_ID;
-    nointerpolation uint ViewIndex : VIEW_INDEX;
     uint RenderTargetIndex : SV_RenderTargetArrayIndex;
 };
 

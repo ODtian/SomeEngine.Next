@@ -31,8 +31,8 @@ void PublishDispatch(
 {
     uint groups = (count + parentsPerGroup - 1u) / parentsPerGroup;
     uint ignored;
-    arguments.InterlockedMax(0u, groups, ignored);
-    arguments.Store(4u, 1u);
+    arguments.InterlockedMax(0u, min(groups, 65535u), ignored);
+    arguments.InterlockedMax(4u, (groups + 65534u) / 65535u, ignored);
     arguments.Store(8u, 1u);
 }
 
@@ -40,10 +40,12 @@ void PublishDispatch(
 [numthreads(64, 1, 1)]
 void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
 {
-    uint count = min(DeferredWorkCount[0], ResumeUniforms.MaxWorkItems);
+    uint rawCount = DeferredWorkCount[0];
+    if (rawCount > ResumeUniforms.MaxWorkItems) RejectClusterWork(4u);
+    uint count = min(rawCount, ResumeUniforms.MaxWorkItems);
     bool valid = threadId.x < count;
     ClusterCandidate candidate = valid ? DeferredWork[threadId.x] : (ClusterCandidate)0;
-    DrawRequest work = candidate.Request;
+    DrawRequest work = CandidateRequest(candidate);
     bool isNode = valid && IsDeferredTraversalNode(work);
     bool isCluster = valid && !isNode;
 
@@ -56,17 +58,25 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
         uint waveCount = WaveMaskBitCount(nodeMask);
         if (lane == leader)
         {
-            TraversalArguments.InterlockedAdd(12u, waveCount, waveBase);
+            waveBase = ReserveClusterWork(TraversalArguments, 12u,
+                waveCount, ResumeUniforms.MaxWorkItems, 1u);
             uint published = min(waveBase + waveCount, ResumeUniforms.MaxWorkItems);
             PublishDispatch(TraversalArguments, published, 4u);
             TraversalArguments.Store(16u, 0u);
             TraversalArguments.Store(20u, 0u);
-            TraversalArguments.Store(24u, published);
+            uint accepted = min(waveCount, ResumeUniforms.MaxWorkItems - min(waveBase, ResumeUniforms.MaxWorkItems));
+            uint ignored;
+            TraversalArguments.InterlockedAdd(CLUSTER_NODE_OUTSTANDING, accepted, ignored);
         }
         waveBase = WaveReadLaneAt(waveBase, leader);
         uint output = waveBase + WaveMaskPrefix(nodeMask, lane);
         if (output < ResumeUniforms.MaxWorkItems)
+        {
             TraversalNodes[output] = DecodeDeferredTraversalNode(work);
+            DeviceMemoryBarrier();
+            uint ignored;
+            InterlockedExchange(TraversalReady[output], 1u, ignored);
+        }
     }
 
     uint4 clusterMask = WaveActiveBallot(isCluster);
@@ -78,13 +88,22 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
         uint waveCount = WaveMaskBitCount(clusterMask);
         if (lane == leader)
         {
-            InterlockedAdd(CandidateCount[0], waveCount, waveBase);
+            waveBase = ReserveClusterWork(CandidateCount, waveCount, ResumeUniforms.MaxWorkItems, 2u);
             uint published = min(waveBase + waveCount, ResumeUniforms.MaxWorkItems);
+            uint ignored;
+            TraversalArguments.InterlockedMax(CLUSTER_BATCH_COUNT, published, ignored);
             PublishDispatch(CandidateArgs, published, 64u);
+            PublishDispatch(TraversalArguments, published, 64u);
         }
         waveBase = WaveReadLaneAt(waveBase, leader);
         uint output = waveBase + WaveMaskPrefix(clusterMask, lane);
         if (output < ResumeUniforms.MaxWorkItems)
+        {
             CandidateClusters[output] = candidate;
+            PublishClusterBatchRange(output, 1u, ResumeUniforms.MaxWorkItems);
+        }
     }
 }
+
+#include "cluster_work_status.slang"
+#include "cluster_work_queue.slang"

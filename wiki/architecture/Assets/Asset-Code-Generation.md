@@ -34,7 +34,9 @@ Importer 使用 `[AssetImporter]` 声明持久 ID、生产的 Block 以及可选
 
 生成代码注册 Importer 与能力描述，强类型设置工厂保存在 Importer 能力描述中。`[AssetImporterSet]` 声明成员与中立标记；`[AssetCapabilities(params string[] defaultImporterSets)]` 按持久 ID 指定项目默认组合。生成的 `ImporterSetCapabilities` 提供组合 ID、名称、成员 ID、`Neutral` 与 `Default`，并在 DI 中按 ID 合并。组合声明的错误使用 `SEAC001`、重复身份使用 `SEAC002`、不可用默认组合使用 `SEAC003`。来源展开与逐项替换见 [Importer Sets](Importer-Sets.md)。Microsoft DI 用于 Importer 互相发现与按导入作用域共享实例；Importer 具有公开无参构造函数，任一带参数的构造函数使生成器报告 `SEAC004` 编译错误（ADR 0015）。诊断同时覆盖本项目与引用程序集的 Importer，包括可选参数、主构造函数和私有重载。重复注册保持幂等。能力描述可供编辑器显示来源类型、设置类型、产出 Block 和实现版本。安装多个替代生产者是合法项目能力，不等于一次导入同时启用它们。
 
-SG 不遍历来源文件，不创建完整流程，不决定默认选择，不生成依赖业务调用或保存登记。来源持久设置与单次覆盖由项目流程解释，生产者竞争由 Context 在一次调用内检查。
+`[AssetImporterSet]` 声明包提供的导入组合，生成的 `ImporterSets` 数据保存组合身份、Importer 身份、中立与默认选择。来源集成将组合展开为逐个 Importer 写入 `.meta`。完整来源遍历、依赖执行和保存登记由来源集成与 Context 的对象方法完成，生产者竞争在一次导入中处理。
+
+设置提供者通过 `GetDefaults(SourceMeta)` 取得来源的初始设置，组合展开将这些值保存到实际 Importer 项；已有项继续提供该 Importer 的明确参数。glTF 几何设置沿用来源中的切线生成默认值，后续执行读取自己的已选参数。
 
 项目同时生成 `BlockKind`、`ImporterKind` 两个 enum，`BlockChoices`、`ImporterChoices` 提供编译时确定的 GUI 选择数据，含枚举值、显示名称和持久 ID。`SelectImporter` 将选择变成来源配置；`ContainsBlock` 和 `GetBlockAsync` 接受 Block 枚举，并以生成的强类型分支调用对应 API。GUI 无需扫描程序集或反射枚举类型。enum 数值只在当前项目编译结果中有效，文件保存持久 ID。
 
@@ -48,7 +50,7 @@ Importer 是在库中完整编译的普通类，glTF 来源遍历及各 Block �
 
 ## 材质与使用边界
 
-材质生成器由项目的强类型材质声明生成参数访问和转换。Standard、Unlit 的具体声明随模板交给项目维护，不内置为引擎的全局材料假设。参数访问针对 MaterialBlock，不恢复旧的嵌套资产属性模型。
+材质生成器由具体材料声明生成属性、参数解释和 `IMaterial<TMaterial>.Create`、`Update` 静态实现。创建直接构造具体材料，保留类字段默认值并应用已解析的参数与实际纹理引用；更新直接复制该具体类型的全部字段，并在字段就绪后推进一次材料 Revision。`MaterialAsset.CreateAsync<TMaterial>` 与 `UpdateAsync<TMaterial>` 接收文件访问以及 Shader、Texture 的强类型实际引用字典，通过这些静态接口操作完整对象。`ResolveAsync` 提供独立的完整 MaterialBlock，供业务准备具体资源。Standard、Unlit 位于引擎 Resources，参数访问针对 MaterialBlock。
 
 针对明确声明的使用对象，分析器检查静态成员中直接或间接泄漏 Asset 及资产引用。导入、编辑、工具代码仍可正常使用资产，不用方法名猜测职责。业务程序集无须依赖 Assets。
 

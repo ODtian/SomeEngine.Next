@@ -3,6 +3,9 @@ namespace SomeEngine.RenderGraph;
 /// <summary>Receives accepted GPU submissions and frame completion results.</summary>
 public interface IRenderGraphFrameExecutionObserver
 {
+    /// <summary>Finishes frame declarations after callers supply their inputs and before graph analysis begins.</summary>
+    void OnRenderGraphFramePreparing(ref RenderGraphFrame frame) { }
+
     /// <summary>Receives accepted submissions while later frame work can still be recorded and submitted.</summary>
     void OnRenderGraphSubmitted(RenderGraphFrameResult result) { }
 
@@ -45,6 +48,14 @@ public readonly ref struct RenderGraphFrameResult
     {
         if (_frame is not null)
             return _frame.TryGetPassCompletion(pass, out completion);
+        completion = default;
+        return false;
+    }
+    /// <summary>Returns a completion only when this readback was queued for completed-byte delivery.</summary>
+    public bool TryGetReadbackCompletion(GraphReadbackId readback, out QueueCompletion completion)
+    {
+        if (_frame is not null)
+            return _frame.TryGetReadbackCompletion(readback, out completion);
         completion = default;
         return false;
     }

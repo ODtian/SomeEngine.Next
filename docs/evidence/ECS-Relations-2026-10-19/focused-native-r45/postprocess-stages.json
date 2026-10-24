@@ -1,0 +1,44 @@
+[
+  {
+    "Script": "Collect-Measurements.ps1",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1",
+      "-Series",
+      "focused-native-r45"
+    ],
+    "StartedAtUtc": "2026-10-20T01:22:08.0802852Z",
+    "FinishedAtUtc": "2026-10-20T01:22:09.4650532Z",
+    "ExitCode": 0
+  },
+  {
+    "Script": "Export-Evidence.ps1",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1",
+      "-Series",
+      "focused-native-r45"
+    ],
+    "StartedAtUtc": "2026-10-20T01:22:09.5528369Z",
+    "FinishedAtUtc": "2026-10-20T01:22:10.8177137Z",
+    "ExitCode": 0
+  },
+  {
+    "Script": "Write-MeasurementReport.ps1",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1",
+      "-Series",
+      "focused-native-r45"
+    ],
+    "StartedAtUtc": "2026-10-20T01:22:10.8245407Z",
+    "FinishedAtUtc": "2026-10-20T01:22:12.2805459Z",
+    "ExitCode": 0
+  }
+]

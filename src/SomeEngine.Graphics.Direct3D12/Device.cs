@@ -434,21 +434,10 @@ internal sealed unsafe partial class D3D12Backend
         internal static D3D12Device Create(
             D3D12Backend backend,
             IDXGIAdapter4* adapter,
+            ID3D12Device10* native,
             in AdapterInfo adapterInfo,
             in DeviceDesc description)
         {
-            ID3D12Device10* native = null;
-            Guid iid = ID3D12Device10.Guid;
-            ThrowIfFailed(
-                null,
-                    DevicePipelineTrace.CreateDevice(
-                backend._deviceFactory, (IUnknown*)adapter,
-                    D3DFeatureLevel.Level120,
-                    &iid,
-                    (void**)&native),
-                NativeOperationType.Ordinary,
-                "D3D12CreateDevice");
-
             try
             {
                 D3D12FeatureSupport features = D3D12FeatureSupport.Query(native);

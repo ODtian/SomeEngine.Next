@@ -33,8 +33,10 @@ public readonly struct OneWayContacts : IRelation<CollisionLayer, CollisionLayer
 
 public readonly struct OneWayContactBitmap : IBitmapRelation<OneWayContacts, CollisionLayer, OneWayPermission>
 {
-    public CategoryBits Read(in OneWayContacts relation, in CollisionLayer component) =>
-        new((ulong)component.Categories, (ulong)component.AllowedCategories);
+    public ulong ReadCategories(in OneWayContacts relation, in CollisionLayer component) => (ulong)component.Categories;
+
+    public ulong ReadAllowedCategories(in OneWayContacts relation, in CollisionLayer component) =>
+        (ulong)component.AllowedCategories;
 }
 
 public readonly struct MutualContacts : IRelation<CollisionLayer, CollisionLayer>
@@ -46,6 +48,8 @@ public readonly struct MutualContacts : IRelation<CollisionLayer, CollisionLayer
 
 public readonly struct MutualContactBitmap : IBitmapRelation<MutualContacts, CollisionLayer, MutualPermission>
 {
-    public CategoryBits Read(in MutualContacts relation, in CollisionLayer component) =>
-        new((ulong)component.Categories, (ulong)component.AllowedCategories);
+    public ulong ReadCategories(in MutualContacts relation, in CollisionLayer component) => (ulong)component.Categories;
+
+    public ulong ReadAllowedCategories(in MutualContacts relation, in CollisionLayer component) =>
+        (ulong)component.AllowedCategories;
 }

@@ -21,6 +21,24 @@ public readonly struct JobHandle
     {
         Scheduler?.Complete(this);
     }
+
+    /// <summary>Waits for the work and its descendants, propagating their completion result.</summary>
+    public ValueTask WaitAsync()
+    {
+        if (IsCompleted)
+        {
+            Complete();
+            return ValueTask.CompletedTask;
+        }
+        var result = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        JobSystem.OnCompleted(this, static (handle, state) =>
+        {
+            var result = (TaskCompletionSource)state!;
+            try { handle.Complete(); result.SetResult(); }
+            catch (Exception error) { result.SetException(error); }
+        }, result);
+        return new ValueTask(result.Task);
+    }
 }
 
 

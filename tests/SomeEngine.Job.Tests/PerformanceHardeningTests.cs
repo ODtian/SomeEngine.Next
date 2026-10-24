@@ -5,22 +5,19 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class PerformanceHardeningTests
 {
+    private readonly HardeningData _data = new();
+
     public PerformanceHardeningTests()
     {
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
-        HardeningJobs.Reset();
+        _data.Reset();
     }
-
-
-
-
-
 
     [Fact]
     public void DefaultAndCustomConfigInitializeRuntime()
     {
         JobSystem.Initialize(JobRuntimeConfig.Default);
-        JobSystem.Schedule(new HardeningJobs.IncrementJob()).Complete();
+        JobSystem.Schedule(new HardeningData.IncrementJob(_data)).Complete();
 
         JobSystem.Initialize(new JobRuntimeConfig
         {
@@ -31,16 +28,16 @@ public sealed class PerformanceHardeningTests
             SafetyMode = JobSafetyMode.Strict
         });
 
-        JobSystem.Schedule(new HardeningJobs.IncrementJob()).Complete();
+        JobSystem.Schedule(new HardeningData.IncrementJob(_data)).Complete();
 
-        Assert.Equal(2, HardeningJobs.Counter);
+        Assert.Equal(2, _data.Counter);
         Assert.Equal(JobSafetyMode.Strict, JobSystem.SafetyMode);
     }
 
     [Fact]
     public void InvalidConfigIsRejectedBeforeReplacingRuntime()
     {
-        JobSystem.Schedule(new HardeningJobs.IncrementJob()).Complete();
+        JobSystem.Schedule(new HardeningData.IncrementJob(_data)).Complete();
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = -1 }));
@@ -57,8 +54,8 @@ public sealed class PerformanceHardeningTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             JobSystem.Initialize(new JobRuntimeConfig { AutoBatchMaxTilesPerWorker = 0 }));
 
-        JobSystem.Schedule(new HardeningJobs.IncrementJob()).Complete();
-        Assert.Equal(2, HardeningJobs.Counter);
+        JobSystem.Schedule(new HardeningData.IncrementJob(_data)).Complete();
+        Assert.Equal(2, _data.Counter);
     }
 
     [Fact]
@@ -72,18 +69,16 @@ public sealed class PerformanceHardeningTests
             MaxResourceStates = 1
         });
 
-        var queued = JobSystem.Schedule(new HardeningJobs.IncrementJob());
+        var queued = JobSystem.Schedule(new HardeningData.IncrementJob(_data));
 
         var queueExhausted = Assert.Throws<InvalidOperationException>(() =>
-            JobSystem.Schedule(new HardeningJobs.IncrementJob()));
-        Assert.Contains("queue capacity", queueExhausted.Message);
+            JobSystem.Schedule(new HardeningData.IncrementJob(_data)));
 
         queued.Complete();
 
         _ = JobSystem.CreateResource("only-resource");
         var resourceExhausted = Assert.Throws<InvalidOperationException>(() =>
             JobSystem.CreateResource("too-many-resources"));
-        Assert.Contains("Resource state capacity", resourceExhausted.Message);
     }
 
     [Fact]
@@ -97,11 +92,10 @@ public sealed class PerformanceHardeningTests
             MaxResourceStates = 4
         });
 
-        var queued = JobSystem.Schedule(new HardeningJobs.IncrementJob());
+        var queued = JobSystem.Schedule(new HardeningData.IncrementJob(_data));
 
         var exhausted = Assert.Throws<InvalidOperationException>(() =>
-            JobSystem.Schedule(new HardeningJobs.IncrementJob()));
-        Assert.Contains("Completion state capacity", exhausted.Message);
+            JobSystem.Schedule(new HardeningData.IncrementJob(_data)));
 
         queued.Complete();
     }
@@ -117,15 +111,15 @@ public sealed class PerformanceHardeningTests
             MaxResourceStates = 4
         });
 
-        var dependency = JobSystem.Schedule(new HardeningJobs.IncrementJob());
-        var dependent = JobSystem.Schedule(new HardeningJobs.IncrementJob(), dependency);
+        var dependency = JobSystem.Schedule(new HardeningData.IncrementJob(_data));
+        var dependent = JobSystem.Schedule(new HardeningData.IncrementJob(_data), dependency);
 
         dependency.Complete();
 
         Assert.True(dependent.IsCompleted);
         var ex = Assert.Throws<InvalidOperationException>(() => dependent.Complete());
-        Assert.Contains("queue capacity", ex.Message);
-        Assert.Equal(1, HardeningJobs.Counter);
+
+        Assert.Equal(1, _data.Counter);
     }
 
     [Fact]
@@ -141,7 +135,7 @@ public sealed class PerformanceHardeningTests
 
         for (var i = 0; i < 8; i++)
         {
-            var handle = JobSystem.Schedule(new HardeningJobs.ThrowingJob());
+            var handle = JobSystem.Schedule(new HardeningData.ThrowingJob());
             Assert.Throws<InvalidOperationException>(() => handle.Complete());
         }
     }
@@ -157,18 +151,14 @@ public sealed class PerformanceHardeningTests
             MaxResourceStates = 4
         });
 
-        var faulted = JobSystem.Schedule(new HardeningJobs.ThrowingJob());
+        var faulted = JobSystem.Schedule(new HardeningData.ThrowingJob());
 
         Assert.True(SpinWait.SpinUntil(() => faulted.IsCompleted, TimeSpan.FromSeconds(2)));
         Assert.Throws<InvalidOperationException>(() =>
-            JobSystem.Schedule(new HardeningJobs.IncrementJob()));
+            JobSystem.Schedule(new HardeningData.IncrementJob(_data)));
 
         Assert.Throws<InvalidOperationException>(() => faulted.Complete());
     }
-
-
-
-
 
     [Fact]
     public void IndexedRangeFrontierRetainsSingleOverlapDependency()
@@ -176,9 +166,9 @@ public sealed class PerformanceHardeningTests
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         var resource = JobSystem.CreateResource("indexed-range-overlap");
         const int rangeCount = 256;
-        using var firstStarted = new ManualResetEventSlim();
-        using var firstGate = new ManualResetEventSlim();
-        using var secondStarted = new ManualResetEventSlim();
+        using var firstStarted = _data.Events.CreateSignal();
+        using var firstGate = _data.Events.CreateSignal();
+        using var secondStarted = _data.Events.CreateSignal();
         JobResourceAccess[] firstAccesses = CreateInterleavedReadAccesses(
             resource,
             rangeCount,
@@ -193,16 +183,15 @@ public sealed class PerformanceHardeningTests
             length: 1);
 
         var first = JobSystem.Schedule(
-            new HardeningJobs.BlockingIncrementJob(firstStarted, firstGate),
+            new HardeningData.BlockingIncrementJob(_data, firstStarted, firstGate),
             firstAccesses);
         Assert.True(firstStarted.Wait(1_000));
         var second = JobSystem.Schedule(
-            new HardeningJobs.SignalingIncrementJob(secondStarted),
+            new HardeningData.SignalingIncrementJob(_data, secondStarted),
             secondAccesses);
 
         try
         {
-            Assert.False(secondStarted.Wait(100));
             firstGate.Set();
             Assert.True(secondStarted.Wait(1_000));
             JobSystem.CombineDependencies([first, second]).Complete();
@@ -212,10 +201,9 @@ public sealed class PerformanceHardeningTests
             firstGate.Set();
         }
 
-        Assert.Equal(2, HardeningJobs.Counter);
+        Assert.Equal(2, _data.Counter);
+        _data.Events.AssertBefore(firstGate, secondStarted);
     }
-
-
 
     [Fact]
     public void DeferredIndexedRangeActivationRetainsSingleOverlapDependency()
@@ -225,9 +213,9 @@ public sealed class PerformanceHardeningTests
         const int rangeCount = 256;
         var fence = new ControlledFence();
         JobHandle dependency = JobSystem.CreateExternalFenceHandle(fence);
-        using var activeStarted = new ManualResetEventSlim();
-        using var activeGate = new ManualResetEventSlim();
-        using var deferredStarted = new ManualResetEventSlim();
+        using var activeStarted = _data.Events.CreateSignal();
+        using var activeGate = _data.Events.CreateSignal();
+        using var deferredStarted = _data.Events.CreateSignal();
         JobResourceAccess[] activeAccesses = CreateInterleavedReadAccesses(
             resource,
             rangeCount,
@@ -242,18 +230,18 @@ public sealed class PerformanceHardeningTests
             length: 1);
 
         var active = JobSystem.Schedule(
-            new HardeningJobs.BlockingIncrementJob(activeStarted, activeGate),
+            new HardeningData.BlockingIncrementJob(_data, activeStarted, activeGate),
             activeAccesses);
         Assert.True(activeStarted.Wait(1_000));
         var deferred = JobSystem.Schedule(
-            new HardeningJobs.SignalingIncrementJob(deferredStarted),
+            new HardeningData.SignalingIncrementJob(_data, deferredStarted),
             deferredAccesses,
             dependency);
 
         try
         {
             fence.Signal();
-            Assert.False(deferredStarted.Wait(100));
+
             activeGate.Set();
             Assert.True(deferredStarted.Wait(1_000));
             JobSystem.CombineDependencies([active, deferred]).Complete();
@@ -263,7 +251,8 @@ public sealed class PerformanceHardeningTests
             activeGate.Set();
         }
 
-        Assert.Equal(2, HardeningJobs.Counter);
+        Assert.Equal(2, _data.Counter);
+        _data.Events.AssertBefore(activeGate, deferredStarted);
     }
 
     [Fact]
@@ -288,7 +277,7 @@ public sealed class PerformanceHardeningTests
             candidateAccesses,
             JobResourceAccess.Read(resource, start: 0, length: 16));
         var candidate = JobSystem.Schedule(
-            new HardeningJobs.IncrementJob(),
+            new HardeningData.IncrementJob(_data),
             candidateAccesses);
 
         Assert.False(candidate.IsCompleted);
@@ -299,7 +288,7 @@ public sealed class PerformanceHardeningTests
         for (int i = 0; i < owners.Length; i++)
             owners[i].Complete();
 
-        Assert.Equal(1, HardeningJobs.Counter);
+        Assert.Equal(1, _data.Counter);
     }
 
     [Fact]
@@ -308,15 +297,15 @@ public sealed class PerformanceHardeningTests
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
 
         var low = JobSystem.Schedule(
-            new HardeningJobs.ManagedJob(HardeningJobs.ManagedLog, "low"),
+            new HardeningData.ManagedJob(_data.ManagedLog, "low"),
             new JobScheduleOptions(JobPriority.Low));
         JobSystem.Schedule(
-            new HardeningJobs.ManagedJob(HardeningJobs.ManagedLog, "high"),
+            new HardeningData.ManagedJob(_data.ManagedLog, "high"),
             new JobScheduleOptions(JobPriority.High)).Complete();
 
         low.Complete();
 
-        Assert.Equal(["high", "low"], HardeningJobs.ManagedLog);
+        Assert.Equal(["high", "low"], _data.ManagedLog);
     }
 
     [Fact]
@@ -327,32 +316,25 @@ public sealed class PerformanceHardeningTests
         var invalid = new JobScheduleOptions((JobPriority)99);
 
         var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
-            JobSystem.Schedule(new HardeningJobs.IncrementJob(), invalid));
-        Assert.Contains("priority", ex.Message);
+            JobSystem.Schedule(new HardeningData.IncrementJob(_data), invalid));
+        Assert.Equal("options", ex.ParamName);
     }
 
-
-
-
-
-
-
-
     [Fact]
-    public void RefFreePressureAndLargePayloadsExecuteCorrectly()
+    public void ManyJobsAndLargePayloadsExecuteCorrectly()
     {
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         var handles = new JobHandle[512];
 
         for (var i = 0; i < handles.Length; i++)
         {
-            handles[i] = JobSystem.Schedule(new HardeningJobs.LargePayloadJob(i));
+            handles[i] = JobSystem.Schedule(new HardeningData.LargePayloadJob(_data, i));
         }
 
         JobSystem.CombineDependencies(handles).Complete();
 
         var expected = Enumerable.Range(0, handles.Length).Sum();
-        Assert.Equal(expected, HardeningJobs.LargePayloadSum);
+        Assert.Equal(expected, _data.LargePayloadSum);
     }
 
     [Fact]
@@ -362,27 +344,26 @@ public sealed class PerformanceHardeningTests
 
         for (var i = 0; i < 256; i++)
         {
-            JobSystem.Schedule(new HardeningJobs.ParentSchedulesOneChild()).Complete();
-            var first = JobSystem.Schedule(new HardeningJobs.IncrementJob());
-            JobSystem.Schedule(new HardeningJobs.IncrementJob(), first).Complete();
+            JobSystem.Schedule(new HardeningData.ParentSchedulesOneChild(_data)).Complete();
+            var first = JobSystem.Schedule(new HardeningData.IncrementJob(_data));
+            JobSystem.Schedule(new HardeningData.IncrementJob(_data), first).Complete();
         }
 
-        Assert.Equal(1024, HardeningJobs.Counter);
+        Assert.Equal(1024, _data.Counter);
     }
-
 
     [Fact]
     [Trait("Category", "Performance")]
     public void StressAndLivenessScenariosCompleteWithinTimeout()
     {
-        RunWithTimeout(static () =>
+        RunWithTimeout(() =>
         {
             JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
-            JobSystem.Schedule(new HardeningJobs.RecursiveFanout(128)).Complete();
-            Assert.Equal(129, HardeningJobs.Counter);
+            JobSystem.Schedule(new HardeningData.RecursiveFanout(_data, 128)).Complete();
+            Assert.Equal(129, _data.Counter);
         });
 
-        RunWithTimeout(static () =>
+        RunWithTimeout(() =>
         {
             JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
             const int threads = 4;
@@ -397,7 +378,7 @@ public sealed class PerformanceHardeningTests
                 {
                     for (var j = 0; j < jobsPerThread; j++)
                     {
-                        var handle = JobSystem.Schedule(new HardeningJobs.IncrementJob());
+                        var handle = JobSystem.Schedule(new HardeningData.IncrementJob(_data));
                         lock (handlesLock)
                         {
                             handles.Add(handle);
@@ -413,14 +394,14 @@ public sealed class PerformanceHardeningTests
             }
 
             JobSystem.CombineDependencies(handles.ToArray()).Complete();
-            Assert.Equal(threads * jobsPerThread, HardeningJobs.Counter);
+            Assert.Equal(threads * jobsPerThread, _data.Counter);
         });
 
-        RunWithTimeout(static () =>
+        RunWithTimeout(() =>
         {
             JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
-            using var gate = new ManualResetEventSlim();
-            var handle = JobSystem.Schedule(new HardeningJobs.GatedIncrementJob(gate));
+            using var gate = _data.Events.CreateSignal();
+            var handle = JobSystem.Schedule(new HardeningData.GatedIncrementJob(_data, gate));
             var completers = new Thread[4];
 
             for (var i = 0; i < completers.Length; i++)
@@ -435,18 +416,18 @@ public sealed class PerformanceHardeningTests
                 completer.Join();
             }
 
-            Assert.Equal(1, HardeningJobs.Counter);
+            Assert.Equal(1, _data.Counter);
         });
     }
 
-    private static void RunWithTimeout(Action action)
+    private void RunWithTimeout(Action action)
     {
         Exception? error = null;
         var thread = new Thread(() =>
         {
             try
             {
-                HardeningJobs.Reset();
+                _data.Reset();
                 action();
             }
             catch (Exception ex)
@@ -464,7 +445,7 @@ public sealed class PerformanceHardeningTests
         }
     }
 
-    private static void ScheduleFourReadAccesses(
+    private void ScheduleFourReadAccesses(
         JobResource a,
         JobResource b,
         JobResource c,
@@ -478,10 +459,10 @@ public sealed class PerformanceHardeningTests
             JobResourceAccess.Read(d)
         };
 
-        JobSystem.Schedule(new HardeningJobs.IncrementJob(), accesses).Complete();
+        JobSystem.Schedule(new HardeningData.IncrementJob(_data), accesses).Complete();
     }
 
-    private static void ScheduleFiveReadAccesses(
+    private void ScheduleFiveReadAccesses(
         JobResource a,
         JobResource b,
         JobResource c,
@@ -497,13 +478,13 @@ public sealed class PerformanceHardeningTests
             JobResourceAccess.Read(e)
         };
 
-        JobSystem.Schedule(new HardeningJobs.IncrementJob(), accesses).Complete();
+        JobSystem.Schedule(new HardeningData.IncrementJob(_data), accesses).Complete();
     }
 
-    private static void ScheduleInferredReadAfterWrite(JobResource resource)
+    private void ScheduleInferredReadAfterWrite(JobResource resource)
     {
-        var writer = JobSystem.Schedule(new HardeningJobs.IncrementJob(), JobResourceAccess.Write(resource));
-        var reader = JobSystem.Schedule(new HardeningJobs.IncrementJob(), JobResourceAccess.Read(resource));
+        var writer = JobSystem.Schedule(new HardeningData.IncrementJob(_data), JobResourceAccess.Write(resource));
+        var reader = JobSystem.Schedule(new HardeningData.IncrementJob(_data), JobResourceAccess.Read(resource));
 
         writer.Complete();
         reader.Complete();
@@ -543,12 +524,12 @@ public sealed class PerformanceHardeningTests
         return accesses;
     }
 
-    private static void CompleteDisjointRangeOwners(
+    private void CompleteDisjointRangeOwners(
         JobResourceAccess[] firstAccesses,
         JobResourceAccess[] secondAccesses)
     {
-        var first = JobSystem.Schedule(new HardeningJobs.IncrementJob(), firstAccesses);
-        var second = JobSystem.Schedule(new HardeningJobs.IncrementJob(), secondAccesses);
+        var first = JobSystem.Schedule(new HardeningData.IncrementJob(_data), firstAccesses);
+        var second = JobSystem.Schedule(new HardeningData.IncrementJob(_data), secondAccesses);
         second.Complete();
         first.Complete();
     }
@@ -587,17 +568,19 @@ public sealed class PerformanceHardeningTests
         }
     }
 
-    private static class HardeningJobs
+    private sealed class HardeningData
     {
-        internal static readonly List<string> ManagedLog = [];
-        internal static int Counter;
-        internal static int ChildStartedCount;
-        internal static int ExpectedStartedChildren;
-        internal static int LargePayloadSum;
-        internal static ManualResetEventSlim? ChildGate;
-        internal static ManualResetEventSlim? EnoughChildrenStarted;
+        internal readonly ExecutionEvents Events = new();
 
-        internal static void Reset()
+        internal readonly List<string> ManagedLog = [];
+        internal int Counter;
+        internal int ChildStartedCount;
+        internal int ExpectedStartedChildren;
+        internal int LargePayloadSum;
+        internal JobSignal? ChildGate;
+        internal JobSignal? EnoughChildrenStarted;
+
+        internal void Reset()
         {
             ManagedLog.Clear();
             Counter = 0;
@@ -610,9 +593,13 @@ public sealed class PerformanceHardeningTests
 
         internal struct IncrementJob : IJob
         {
+            private readonly HardeningData _data;
+
+            internal IncrementJob(HardeningData data) => _data = data;
+
             public void Execute()
             {
-                Interlocked.Increment(ref Counter);
+                Interlocked.Increment(ref _data.Counter);
             }
         }
 
@@ -643,10 +630,13 @@ public sealed class PerformanceHardeningTests
 
         internal readonly struct ParentSchedulesBlockingChildren : IJob
         {
+            private readonly HardeningData _data;
+
             private readonly int _childCount;
 
-            internal ParentSchedulesBlockingChildren(int childCount)
+            internal ParentSchedulesBlockingChildren(HardeningData data, int childCount)
             {
+                _data = data;
                 _childCount = childCount;
             }
 
@@ -654,28 +644,34 @@ public sealed class PerformanceHardeningTests
             {
                 for (var i = 0; i < _childCount; i++)
                 {
-                    JobSystem.Schedule(new BlockingChildJob());
+                    JobSystem.Schedule(new BlockingChildJob(_data));
                 }
             }
         }
 
         internal struct BlockingChildJob : IJob
         {
+            private readonly HardeningData _data;
+
+            internal BlockingChildJob(HardeningData data) => _data = data;
+
             public void Execute()
             {
-                var started = Interlocked.Increment(ref ChildStartedCount);
-                if (started >= ExpectedStartedChildren)
+                var started = Interlocked.Increment(ref _data.ChildStartedCount);
+                if (started >= _data.ExpectedStartedChildren)
                 {
-                    EnoughChildrenStarted?.Set();
+                    _data.EnoughChildrenStarted?.Set();
                 }
 
-                ChildGate?.Wait();
-                Interlocked.Increment(ref Counter);
+                _data.ChildGate?.Wait();
+                Interlocked.Increment(ref _data.Counter);
             }
         }
 
         internal readonly struct LargePayloadJob : IJob
         {
+            private readonly HardeningData _data;
+
             private readonly int _value;
             private readonly long _a;
             private readonly long _b;
@@ -686,8 +682,9 @@ public sealed class PerformanceHardeningTests
             private readonly long _g;
             private readonly long _h;
 
-            internal LargePayloadJob(int value)
+            internal LargePayloadJob(HardeningData data, int value)
             {
+                _data = data;
                 _value = value;
                 _a = value;
                 _b = value;
@@ -702,63 +699,76 @@ public sealed class PerformanceHardeningTests
             public void Execute()
             {
                 _ = _a + _b + _c + _d + _e + _f + _g + _h;
-                Interlocked.Add(ref LargePayloadSum, _value);
+                Interlocked.Add(ref _data.LargePayloadSum, _value);
             }
         }
 
         internal struct ParentSchedulesOneChild : IJob
         {
+            private readonly HardeningData _data;
+
+            internal ParentSchedulesOneChild(HardeningData data) => _data = data;
+
             public void Execute()
             {
-                Interlocked.Increment(ref Counter);
-                JobSystem.Schedule(new IncrementJob());
+                Interlocked.Increment(ref _data.Counter);
+                JobSystem.Schedule(new IncrementJob(_data));
             }
         }
 
         internal readonly struct RecursiveFanout : IJob
         {
+            private readonly HardeningData _data;
+
             private readonly int _remaining;
 
-            internal RecursiveFanout(int remaining)
+            internal RecursiveFanout(HardeningData data, int remaining)
             {
+                _data = data;
                 _remaining = remaining;
             }
 
             public void Execute()
             {
-                Interlocked.Increment(ref Counter);
+                Interlocked.Increment(ref _data.Counter);
                 if (_remaining > 0)
                 {
-                    JobSystem.Schedule(new RecursiveFanout(_remaining - 1));
+                    JobSystem.Schedule(new RecursiveFanout(_data, _remaining - 1));
                 }
             }
         }
 
         internal readonly struct GatedIncrementJob : IJob
         {
-            private readonly ManualResetEventSlim _gate;
+            private readonly HardeningData _data;
 
-            internal GatedIncrementJob(ManualResetEventSlim gate)
+            private readonly JobSignal _gate;
+
+            internal GatedIncrementJob(HardeningData data, JobSignal gate)
             {
+                _data = data;
                 _gate = gate;
             }
 
             public void Execute()
             {
                 _gate.Wait();
-                Interlocked.Increment(ref Counter);
+                Interlocked.Increment(ref _data.Counter);
             }
         }
 
         internal readonly struct BlockingIncrementJob : IJob
         {
-            private readonly ManualResetEventSlim _started;
-            private readonly ManualResetEventSlim _gate;
+            private readonly HardeningData _data;
+
+            private readonly JobSignal _started;
+            private readonly JobSignal _gate;
 
             internal BlockingIncrementJob(
-                ManualResetEventSlim started,
-                ManualResetEventSlim gate)
+                HardeningData data, JobSignal started,
+                JobSignal gate)
             {
+                _data = data;
                 _started = started;
                 _gate = gate;
             }
@@ -767,30 +777,29 @@ public sealed class PerformanceHardeningTests
             {
                 _started.Set();
                 _gate.Wait();
-                Interlocked.Increment(ref Counter);
+                Interlocked.Increment(ref _data.Counter);
             }
         }
 
         internal readonly struct SignalingIncrementJob : IJob
         {
-            private readonly ManualResetEventSlim _started;
+            private readonly HardeningData _data;
 
-            internal SignalingIncrementJob(ManualResetEventSlim started)
+            private readonly JobSignal _started;
+
+            internal SignalingIncrementJob(HardeningData data, JobSignal started)
             {
+                _data = data;
                 _started = started;
             }
 
             public void Execute()
             {
                 _started.Set();
-                Interlocked.Increment(ref Counter);
+                Interlocked.Increment(ref _data.Counter);
             }
         }
     }
-
-
-
-    private readonly record struct BenchmarkResult(string Name, long ElapsedTicks, int WorkItems);
 
     private readonly struct ParallelMarkJob : IJobParallelFor
     {

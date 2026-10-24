@@ -74,7 +74,7 @@ public static partial class PoseAnimation
     {
         var nodes = new Dictionary<PoseResultReference, PoseNode>();
         QueryHandle query = world.Query(new QueryDefinitionBuilder().ReadBuffer<PoseNodeEntry>());
-        world.ExecuteQuery(query, ref nodes, static (QueryCursor rows, ref Dictionary<PoseResultReference, PoseNode> nodes) =>
+        world.ExecuteQuery(query, ref nodes, static (scoped QueryCursor rows, ref Dictionary<PoseResultReference, PoseNode> nodes) =>
         {
             foreach (QueryRow row in rows.Rows)
                 foreach (PoseNodeEntry entry in row.ReadBuffer<PoseNodeEntry>().AsSpan()) nodes[entry.Node.Output] = entry.Node;
@@ -115,7 +115,7 @@ public static partial class PoseAnimation
     {
         var sources = new Dictionary<SkeletonInstance, PoseResultReference>();
         QueryHandle targets = world.Query(new QueryDefinitionBuilder().Read<PoseTarget>());
-        world.ExecuteQuery(targets, ref sources, static (QueryCursor rows, ref Dictionary<SkeletonInstance, PoseResultReference> sources) =>
+        world.ExecuteQuery(targets, ref sources, static (scoped QueryCursor rows, ref Dictionary<SkeletonInstance, PoseResultReference> sources) =>
         {
             foreach (QueryRow row in rows.Rows)
             {
@@ -125,7 +125,7 @@ public static partial class PoseAnimation
         });
         world.ReleaseQuery(targets);
         targets = world.Query(new QueryDefinitionBuilder().Read<GpuPoseTarget>());
-        world.ExecuteQuery(targets, ref sources, static (QueryCursor rows, ref Dictionary<SkeletonInstance, PoseResultReference> sources) =>
+        world.ExecuteQuery(targets, ref sources, static (scoped QueryCursor rows, ref Dictionary<SkeletonInstance, PoseResultReference> sources) =>
         {
             foreach (QueryRow row in rows.Rows)
             {
@@ -181,7 +181,7 @@ internal struct PoseNodeSystem(Action<SystemGroup<PoseNodeContext>> configure) :
         CpuBoneDemands cpu = CpuBoneDemands.For(context.World);
         cpu.EnsureBound();
         int depth = -1;
-        context.World.ExecuteQuery(_graphs, ref depth, static (QueryCursor rows, ref int depth) =>
+        context.World.ExecuteQuery(_graphs, ref depth, static (scoped QueryCursor rows, ref int depth) =>
         {
             foreach (QueryRow row in rows.Rows)
                 foreach (PoseNodeEntry entry in row.ReadBuffer<PoseNodeEntry>().AsSpan()) depth = Math.Max(depth, entry.Node.Level);

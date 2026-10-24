@@ -2,6 +2,7 @@ using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
 using SomeEngine.Serialization.Streaming;
+using System.Runtime.InteropServices;
 
 namespace SomeEngine.Assets;
 
@@ -76,14 +77,14 @@ public sealed class AssetFile : IDisposable, IAsyncDisposable
     {
         await using AssetFile access = Retain();
         FileContent content = access._content.Read;
-        byte[]? bytes = null;
-        Memory<byte>? found = await content.Document.TryReadChunkAsync(key, length =>
-        {
-            if (length > content.MaxDecodedBytes)
-                throw new InvalidDataException("The requested data exceeds the configured read limit.");
-            return bytes = new byte[length];
-        }, cancellationToken).ConfigureAwait(false);
-        return found.HasValue ? bytes! : throw new KeyNotFoundException($"Chunk {key:X16} is absent.");
+        BinaryChunkEntry chunk = await content.Document.FindChunkAsync(key, cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Chunk {key:X16} is absent.");
+        if (chunk.DecodedLength > content.MaxDecodedBytes)
+            throw new InvalidDataException("The requested data exceeds the configured read limit.");
+        Memory<byte> bytes = await content.Document.CopyChunkAsync(new BinaryChunkRef(key, chunk.DecodedLength),
+            cancellationToken).ConfigureAwait(false);
+        MemoryMarshal.TryGetArray((ReadOnlyMemory<byte>)bytes, out ArraySegment<byte> array);
+        return array.Array!;
     }
 
     public async ValueTask<BinaryChunkEntry> DescribeChunkAsync(ulong key, CancellationToken cancellationToken = default)

@@ -3,7 +3,8 @@ namespace SomeEngine.Graphics.Vulkan.Tests;
 using SlangShaderSharp;
 using Xunit;
 
-public sealed class VulkanFaultAndLifetimeTests
+[Xunit.Collection("Vulkan shader compilation")]
+public sealed class VulkanFaultAndLifetimeTests(VulkanTestCompiler shaderCompiler)
 {
 
 
@@ -94,7 +95,7 @@ public sealed class VulkanFaultAndLifetimeTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID) {}
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         using var backend = VulkanGraphicsBackend.Create();

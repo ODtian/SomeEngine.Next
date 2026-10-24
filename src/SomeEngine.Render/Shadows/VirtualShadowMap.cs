@@ -16,8 +16,9 @@ namespace SomeEngine.Render.Shadows;
 /// Owns persistent virtual-shadow page tables, physical-page allocation state, atlas storage and
 /// cross-frame readiness. Geometry pipelines consume imported frame resources but never own them.
 /// </summary>
-public sealed class VirtualShadowMap : IDisposable
+public sealed partial class VirtualShadowMap : IDisposable
 {
+    public static ulong CalculatePageListBufferSize(uint capacity) => checked(4ul * (capacity + 1ul) * sizeof(uint));
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private Buffer? _pageTable;
@@ -52,6 +53,11 @@ public sealed class VirtualShadowMap : IDisposable
     private ulong _pendingRasterRevision;
     private uint _committedCacheGeneration;
     private uint _pendingCacheGeneration;
+    private uint _framePageTableEntryCount;
+    private WorldOrigin _worldOrigin;
+    private WorldOrigin _committedWorldOrigin;
+    private uint _viewPlayerId;
+    private uint _committedViewPlayerId;
 
     public VirtualShadowMap(
         IGraphicsBackend backend,
@@ -65,6 +71,7 @@ public sealed class VirtualShadowMap : IDisposable
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         settings.Validate();
         LinkedComputePipeline? markPages = null;
+        LinkedComputePipeline? markDepthPages = null;
         LinkedComputePipeline? resetFrame = null;
         LinkedComputePipeline? resetReceiverMasks = null;
         LinkedComputePipeline? markCoarsePages = null;
@@ -76,6 +83,7 @@ public sealed class VirtualShadowMap : IDisposable
         LinkedComputePipeline? compactViews = null;
         LinkedComputePipeline? initializePageHiZ = null;
         LinkedComputePipeline? reducePageHiZ = null;
+        LinkedComputePipeline? completePageDepth = null;
         LinkedComputePipeline? dynamicResolution = null;
         Buffer? physicalPageOwners = null;
         Texture? atlas = null;
@@ -87,6 +95,9 @@ public sealed class VirtualShadowMap : IDisposable
             resetFrame = LinkedComputePipeline.Create(
                 _backend, _device, shaders.ResetFrameShader, shaders.ResetFrame,
                 "Virtual shadow frame reset");
+            if (shaders.MarkDepthPagesShader is { } depthShader)
+                markDepthPages = LinkedComputePipeline.Create(_backend, _device, depthShader,
+                    shaders.MarkDepthPages, "Virtual shadow depth receiver page marking");
             markPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
@@ -141,6 +152,8 @@ public sealed class VirtualShadowMap : IDisposable
                 shaders.InitializePageHiZShader,
                 shaders.InitializePageHiZ,
                 "Virtual shadow physical-page HiZ initialization");
+            completePageDepth = LinkedComputePipeline.Create(_backend, _device,
+                shaders.CompletePageDepthShader, shaders.CompletePageDepth, "Complete virtual shadow page depth");
             reducePageHiZ = LinkedComputePipeline.Create(
                 _backend,
                 _device,
@@ -158,7 +171,7 @@ public sealed class VirtualShadowMap : IDisposable
                 new BufferDesc(
                     checked((ulong)settings.MaxPhysicalPages * sizeof(uint)),
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite |
-                        BufferUsages.CopyDestination,
+                        BufferUsages.CopyDestination | BufferUsages.CopySource,
                     "Virtual shadow physical-page owners"),
                 MemoryType.DeviceLocal);
             atlas = _backend.CreateTexture(
@@ -166,10 +179,10 @@ public sealed class VirtualShadowMap : IDisposable
                 new TextureDesc(
                     TextureDimension.Texture2D,
                     settings.AtlasSize,
-                    settings.AtlasSize,
+                    settings.AtlasHeight,
                     1,
                     1,
-                    1,
+                    2,
                     1,
                     Format.R32UInt,
                     TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
@@ -183,6 +196,7 @@ public sealed class VirtualShadowMap : IDisposable
                 TryDispose(physicalPageOwners, ref cleanupFailures);
             if (clearPages is not null) TryDispose(clearPages, ref cleanupFailures);
             if (compactViews is not null) TryDispose(compactViews, ref cleanupFailures);
+            if (completePageDepth is not null) TryDispose(completePageDepth, ref cleanupFailures);
             if (reducePageHiZ is not null) TryDispose(reducePageHiZ, ref cleanupFailures);
             if (dynamicResolution is not null) TryDispose(dynamicResolution, ref cleanupFailures);
             if (initializePageHiZ is not null) TryDispose(initializePageHiZ, ref cleanupFailures);
@@ -191,6 +205,7 @@ public sealed class VirtualShadowMap : IDisposable
             if (initializeState is not null) TryDispose(initializeState, ref cleanupFailures);
             if (allocatePages is not null) TryDispose(allocatePages, ref cleanupFailures);
             if (markCoarsePages is not null) TryDispose(markCoarsePages, ref cleanupFailures);
+            if (markDepthPages is not null) TryDispose(markDepthPages, ref cleanupFailures);
             if (markPages is not null) TryDispose(markPages, ref cleanupFailures);
             if (resetFrame is not null) TryDispose(resetFrame, ref cleanupFailures);
             if (resetReceiverMasks is not null) TryDispose(resetReceiverMasks, ref cleanupFailures);
@@ -205,6 +220,7 @@ public sealed class VirtualShadowMap : IDisposable
         }
 
         PageMarkPipeline = markPages;
+        DepthPageMarkPipeline = markDepthPages;
         FrameResetPipeline = resetFrame;
         ReceiverMaskResetPipeline = resetReceiverMasks;
         CoarsePageMarkPipeline = markCoarsePages;
@@ -216,9 +232,11 @@ public sealed class VirtualShadowMap : IDisposable
         ViewCompactPipeline = compactViews;
         PageHiZInitializePipeline = initializePageHiZ;
         PageHiZReducePipeline = reducePageHiZ;
+        PageDepthCompletePipeline = completePageDepth;
         DynamicResolutionPipeline = dynamicResolution;
         _physicalPageOwners = physicalPageOwners;
         _atlas = atlas;
+
 
         _physicalPageOwnersEndpoint = [Initial(_physicalPageOwners)];
         _atlasEndpoint = [Initial(_atlas)];
@@ -239,6 +257,7 @@ public sealed class VirtualShadowMap : IDisposable
     public VirtualShadowMapSettings Settings { get; }
     public LinkedComputePipeline FrameResetPipeline { get; }
     public LinkedComputePipeline ReceiverMaskResetPipeline { get; }
+    public LinkedComputePipeline? DepthPageMarkPipeline { get; }
     public LinkedComputePipeline PageMarkPipeline { get; }
     public LinkedComputePipeline CoarsePageMarkPipeline { get; }
     public LinkedComputePipeline PageAllocatePipeline { get; }
@@ -249,44 +268,55 @@ public sealed class VirtualShadowMap : IDisposable
     public LinkedComputePipeline ViewCompactPipeline { get; }
     public LinkedComputePipeline PageHiZInitializePipeline { get; }
     public LinkedComputePipeline PageHiZReducePipeline { get; }
+    public LinkedComputePipeline PageDepthCompletePipeline { get; }
     public LinkedComputePipeline DynamicResolutionPipeline { get; }
     public bool RequiresInitialization => !_pageTableInitialized;
     public bool RequiresCacheReset => _pendingCacheReset;
     public bool UsesPageGranularTransformInvalidation =>
         _initialized && _pendingViewCount != 0 && !_pendingCacheReset;
     public uint PendingCacheGeneration => _pendingCacheGeneration;
+    public uint PageTableEntryCount => _framePageTableEntryCount;
     public ulong PendingGeometryRevision => _pendingGeometryRevision;
     public ulong PendingRasterRevision => _pendingRasterRevision;
     public uint PendingDirectionalLightCount { get; private set; }
+    public uint DirectionalClipmapLevelCount { get; private set; }
     public uint PendingPointLightCount { get; private set; }
     public uint PendingSpotLightCount { get; private set; }
     public uint PendingPointViewOffset { get; private set; }
     public uint PendingSpotViewOffset { get; private set; }
+    public uint FirstPersonViewOffset { get; private set; } = uint.MaxValue;
 
     public ReadOnlySpan<VirtualShadowView> PrepareViews(
         RenderLightSet lights,
         in RenderView receiverView,
         ulong geometryRevision,
         ulong rasterRevision,
-        int instanceCount)
+        int instanceCount,
+        bool hasFirstPersonCasters = false,
+        uint receiverMaskColumns = 1u)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(lights);
         if (!_pending)
             throw new InvalidOperationException(
                 "Import the virtual-shadow resources before preparing frame views.");
-        int remainingLights = Settings.Enabled ? checked((int)Settings.MaxShadowLights) : 0;
-        int directionalLightCount = Math.Min(lights.Directional.Count, remainingLights);
-        remainingLights -= directionalLightCount;
-        int pointLightCount = Math.Min(lights.Points.Count, remainingLights);
-        remainingLights -= pointLightCount;
-        int spotLightCount = Math.Min(lights.Spots.Count, remainingLights);
-        int clipmapLevels = checked((int)Settings.DirectionalClipmapLevels);
+        int directionalLightCount = Settings.Enabled ? lights.Directional.Count : 0;
+        int pointLightCount = Settings.Enabled ? lights.Points.Count : 0;
+        int spotLightCount = Settings.Enabled ? lights.Spots.Count : 0;
+        DirectionalCameraParameters directionalCamera = directionalLightCount != 0
+            ? CalculateDirectionalCameraParameters(receiverView)
+            : new(0f, Settings.DirectionalFirstClipmapLevel, Settings.DirectionalClipmapLevels);
+        DirectionalClipmapLevelCount = directionalCamera.LevelCount;
+        int clipmapLevels = checked((int)directionalCamera.LevelCount);
         int directionalViewCount = checked(directionalLightCount * clipmapLevels);
         int pointViewOffset = directionalViewCount;
         int pointViewCount = checked(pointLightCount * 6);
         int spotViewOffset = checked(pointViewOffset + pointViewCount);
-        int viewCount = checked(spotViewOffset + spotLightCount);
+        int firstPersonViewOffset = checked(spotViewOffset + spotLightCount);
+        bool firstPersonShadows = Settings.FirstPersonShadowsEnabled && hasFirstPersonCasters && directionalLightCount != 0;
+        int firstPersonLevels = firstPersonShadows ? checked(Settings.FirstPersonLastClipmapLevel - Settings.FirstPersonFirstClipmapLevel + 1) : 0;
+        int viewCount = checked(firstPersonViewOffset + directionalLightCount * firstPersonLevels);
+        FirstPersonViewOffset = firstPersonShadows ? checked((uint)firstPersonViewOffset) : uint.MaxValue;
         EnsurePendingViewStorage(viewCount);
         PendingDirectionalLightCount = checked((uint)directionalLightCount);
         PendingPointLightCount = checked((uint)pointLightCount);
@@ -297,6 +327,8 @@ public sealed class VirtualShadowMap : IDisposable
         _pendingGeometryRevision = geometryRevision;
         _pendingRasterRevision = rasterRevision;
         _pendingInstanceCount = instanceCount;
+        _worldOrigin = receiverView.WorldOrigin;
+        _viewPlayerId = receiverView.PlayerId;
         if (viewCount == 0)
         {
             _pendingCacheReset = !_initialized;
@@ -306,93 +338,139 @@ public sealed class VirtualShadowMap : IDisposable
         if (!Matrix4x4.Invert(receiverView.View, out Matrix4x4 worldFromView))
             throw new ArgumentException("The receiver view must be invertible.", nameof(receiverView));
         Vector3 camera = new(worldFromView.M41, worldFromView.M42, worldFromView.M43);
-        // Receiver demand and material sampling project the same screen-pixel
-        // footprint into the light view. Only the user's quality bias belongs
-        // in the view data; camera distance cannot describe that footprint.
-        float resolutionLodBias = Settings.DirectionalResolutionLodBias;
+        bool orthographicReceiver = receiverView.Projection.M44 >= 1f;
+        Vector3 clipmapOrigin = orthographicReceiver && Settings.OrthographicProjectCameraTarget &&
+            receiverView.CameraTarget is { } target ? target : camera;
         uint physicalPagesPerRow = Settings.AtlasSize / Settings.PageSize;
         uint virtualPagesPerRow = Settings.VirtualResolution / Settings.PageSize;
         uint pageTableEntriesPerView = Settings.PageTableEntriesPerView;
-        for (int lightIndex = 0; lightIndex < directionalLightCount; lightIndex++)
+        for (int family = 0; family < (firstPersonShadows ? 2 : 1); family++)
         {
-            Vector3 direction = NormalizeOrZero(lights.Directional[lightIndex].Direction);
-            if (direction == Vector3.Zero)
-                direction = Vector3.UnitZ;
-            Vector3 up = MathF.Abs(Vector3.Dot(direction, Vector3.UnitY)) > 0.95f
-                ? Vector3.UnitX
-                : Vector3.UnitY;
-            Vector3 right = Vector3.Normalize(Vector3.Cross(up, direction));
-            Vector3 vertical = Vector3.Normalize(Vector3.Cross(direction, right));
-            float cameraRight = Vector3.Dot(camera, right);
-            float cameraVertical = Vector3.Dot(camera, vertical);
-            for (int clipmapLevel = 0; clipmapLevel < clipmapLevels; clipmapLevel++)
+            bool firstPerson = family != 0;
+            DirectionalCameraParameters familyCamera = firstPerson
+                ? new(directionalCamera.ResolutionLodBias, Settings.FirstPersonFirstClipmapLevel, checked((uint)firstPersonLevels))
+                : directionalCamera;
+            int familyLevels = checked((int)familyCamera.LevelCount);
+            for (int lightIndex = 0; lightIndex < directionalLightCount; lightIndex++)
             {
-                int absoluteClipmapLevel = checked(
-                    Settings.DirectionalFirstClipmapLevel + clipmapLevel);
-                // UE clipmaps snap by one virtual radius, i.e. one quarter of the
-                // level-0 page table. Snapping every page destroys cache locality.
-                float levelRadius = MathF.Pow(2.0f, absoluteClipmapLevel + 1.0f);
-                float worldExtent = 4.0f * levelRadius;
-                int centerSnapX = checked((int)MathF.Round(cameraRight / levelRadius));
-                int centerSnapY = checked((int)MathF.Round(cameraVertical / levelRadius));
-                int pagesPerSnap = checked((int)virtualPagesPerRow / 4);
-                int centerPageX = checked(centerSnapX * pagesPerSnap);
-                int centerPageY = checked(centerSnapY * pagesPerSnap);
-                // LookAt's horizontal axis is -right; UV's vertical flip is
-                // -vertical. The world-page origin follows those same axes,
-                // so scrolling preserves the address of fixed world geometry.
-                int pageOriginX = checked(-centerPageX - (int)virtualPagesPerRow / 2);
-                int pageOriginY = checked(-centerPageY - (int)virtualPagesPerRow / 2);
-                Vector3 snappedCenter =
-                    right * (centerSnapX * levelRadius) +
-                    vertical * (centerSnapY * levelRadius);
-                Matrix4x4 lightView = Matrix4x4.CreateLookAt(
-                    snappedCenter - direction * Settings.DirectionalLightDistance,
-                    snappedCenter,
-                    up);
-                Matrix4x4 lightProjection = Matrix4x4.CreateOrthographic(
-                    worldExtent,
-                    worldExtent,
-                    Settings.DirectionalNearPlane,
-                    Settings.DirectionalFarPlane);
-                int viewIndex = checked(lightIndex * clipmapLevels + clipmapLevel);
-                bool coarseFallback =
-                    absoluteClipmapLevel >= Settings.DirectionalFirstCoarseClipmapLevel &&
-                    absoluteClipmapLevel <= Settings.DirectionalLastCoarseClipmapLevel ||
-                    clipmapLevel == clipmapLevels - 1;
-                _views[viewIndex] = new VirtualShadowView
+                RenderDirectionalLight light = lights.Directional[lightIndex];
+                float resolutionLodBias = MathF.Max(0f, CalculateLightResolutionLodBias(
+                    Settings.DirectionalResolutionLodBias, Settings.DirectionalMovingResolutionLodBias,
+                    firstPerson ? 1f : lights.GetDirectionalMobility(lightIndex), light.ShadowSettings.ResolutionLodBias) +
+                    directionalCamera.ResolutionLodBias);
+                Vector3 direction = NormalizeOrZero(light.Direction);
+                if (direction == Vector3.Zero)
+                    direction = Vector3.UnitZ;
+                Vector3 up = MathF.Abs(Vector3.Dot(direction, Vector3.UnitY)) > 0.95f
+                    ? Vector3.UnitX
+                    : Vector3.UnitY;
+                Vector3 right = Vector3.Normalize(Vector3.Cross(up, direction));
+                Vector3 vertical = Vector3.Normalize(Vector3.Cross(direction, right));
+                double originRight = receiverView.WorldOrigin.Dot(right);
+                double originVertical = receiverView.WorldOrigin.Dot(vertical);
+                double cameraRight = originRight + Vector3.Dot(clipmapOrigin, right);
+                double cameraVertical = originVertical + Vector3.Dot(clipmapOrigin, vertical);
+                float cameraDepth = Vector3.Dot(clipmapOrigin, direction);
+                double coarsestRadius = Math.Pow(2.0, familyCamera.FirstLevel + familyLevels) *
+                    Settings.WorldUnitsPerCentimeter;
+                long referenceSnapX = checked((long)Math.Round(cameraRight / coarsestRadius));
+                long referenceSnapY = checked((long)Math.Round(cameraVertical / coarsestRadius));
+                for (int clipmapLevel = 0; clipmapLevel < familyLevels; clipmapLevel++)
                 {
-                    LightViewProjection = lightView * lightProjection,
-                    VirtualResolution = Settings.VirtualResolution,
-                    PageSize = Settings.PageSize,
-                    AtlasSize = Settings.AtlasSize,
-                    PhysicalPagesPerRow = physicalPagesPerRow,
-                    MaxPhysicalPages = checked(physicalPagesPerRow * physicalPagesPerRow),
-                    VirtualPageOriginX = pageOriginX,
-                    DepthBias = Settings.DepthBias,
-                    PageTableOffset = checked((uint)viewIndex * pageTableEntriesPerView),
-                    VirtualPageOriginY = pageOriginY,
-                    ClipmapLevel = absoluteClipmapLevel,
-                    LightIndex = checked((uint)lightIndex),
-                    ClipmapWorldOrigin = camera,
-                    ResolutionLodBias = resolutionLodBias,
-                    FirstClipmapLevel = Settings.DirectionalFirstClipmapLevel,
-                    ClipmapLevelCount = Settings.DirectionalClipmapLevels,
-                    MipLevelCount = Settings.MipLevelCount,
-                    MinMipLevel = 0u,
-                    Flags =
-                        (coarseFallback
-                            ? VirtualShadowViewFlags.CoarseClipLevel |
-                              VirtualShadowViewFlags.ForceCacheDynamicCoarse
-                            : 0u) |
-                        (Settings.DirectionalReceiverMask
-                            ? VirtualShadowViewFlags.UseReceiverMask
-                            : 0u),
-                    LightKind = VirtualShadowLightKind.Directional,
-                    FaceIndex = checked((uint)clipmapLevel),
-                };
-                _preparedLightViews[viewIndex] = lightView;
-                _preparedLightProjections[viewIndex] = lightProjection;
+                    int absoluteClipmapLevel = checked(
+                        familyCamera.FirstLevel + clipmapLevel);
+                    // UE clipmaps snap by one virtual radius, i.e. one quarter of the
+                    // level-0 page table. Snapping every page destroys cache locality.
+                    float levelRadius = MathF.Pow(2.0f, absoluteClipmapLevel + 1.0f) *
+                        Settings.WorldUnitsPerCentimeter;
+                    float worldExtent = 4.0f * levelRadius;
+                    long centerSnapX = checked((long)Math.Round(cameraRight / levelRadius));
+                    long centerSnapY = checked((long)Math.Round(cameraVertical / levelRadius));
+                    int pagesPerSnap = checked((int)virtualPagesPerRow / 4);
+                    long centerPageX = checked(centerSnapX * pagesPerSnap);
+                    long centerPageY = checked(centerSnapY * pagesPerSnap);
+                    // LookAt's horizontal axis is -right; UV's vertical flip is
+                    // -vertical. The world-page origin follows those same axes,
+                    // so scrolling preserves the address of fixed world geometry.
+                    long pageOriginX = checked(-centerPageX - (int)virtualPagesPerRow / 2);
+                    long pageOriginY = checked(-centerPageY - (int)virtualPagesPerRow / 2);
+                    Vector3 snappedCenter =
+                        right * (float)(centerSnapX * (double)levelRadius - originRight) +
+                        vertical * (float)(centerSnapY * (double)levelRadius - originVertical) + direction * cameraDepth;
+                    long referenceScale = 1L << (familyLevels - clipmapLevel - 1);
+                    float depthRadius = levelRadius * Settings.DirectionalDepthRangeScale;
+                    float cullingEndDistance = levelRadius * MathF.Pow(2f, -resolutionLodBias);
+                    Matrix4x4 lightView = Matrix4x4.CreateLookAt(
+                        Vector3.Zero,
+                        direction,
+                        up);
+                    Matrix4x4 lightProjection = Matrix4x4.CreateOrthographic(
+                        worldExtent,
+                        worldExtent,
+                        -depthRadius,
+                        (!firstPerson && Settings.PrefilteredDistantEnabled) ? cullingEndDistance : depthRadius);
+                    int viewIndex = checked((firstPerson ? firstPersonViewOffset : 0) + lightIndex * familyLevels + clipmapLevel);
+                    float depthCenter = firstPerson || Settings.PrefilteredDistantEnabled ? cameraDepth : SelectDirectionalDepthCenter(
+                        viewIndex, absoluteClipmapLevel, checked((uint)lightIndex),
+                        cameraDepth, depthRadius, levelRadius, lightView * lightProjection);
+                    // The view tracks current world position while this offset keeps
+                    // cached pages in their adopted light-space depth coordinates.
+                    lightProjection.M43 += (cameraDepth - depthCenter) / (2.0f * depthRadius);
+                    bool coarseFallback =
+                        absoluteClipmapLevel >= Settings.DirectionalFirstCoarseClipmapLevel &&
+                        absoluteClipmapLevel <= Settings.DirectionalLastCoarseClipmapLevel ||
+                        clipmapLevel == familyLevels - 1;
+                    _views[viewIndex] = new VirtualShadowView
+                    {
+                        LightViewProjection = lightView * lightProjection,
+                        WorldTranslation = -snappedCenter,
+                        VirtualResolution = Settings.VirtualResolution,
+                        PageSize = Settings.PageSize,
+                        AtlasSize = Settings.AtlasSize,
+                        PhysicalPagesPerRow = physicalPagesPerRow,
+                        MaxPhysicalPages = checked(physicalPagesPerRow * physicalPagesPerRow),
+                        VirtualPageOriginX = unchecked((int)pageOriginX),
+                        DepthBias = Settings.DepthBias,
+                        PageTableOffset = checked((uint)viewIndex * pageTableEntriesPerView),
+                        VirtualPageOriginY = unchecked((int)pageOriginY),
+                        WorldPageOriginX = pageOriginX,
+                        WorldPageOriginY = pageOriginY,
+                        ClipmapCornerRelativeOffsetX = checked((int)(centerSnapX - referenceSnapX * referenceScale + 2)),
+                        ClipmapCornerRelativeOffsetY = checked((int)(centerSnapY - referenceSnapY * referenceScale + 2)),
+                        ClipmapLevel = absoluteClipmapLevel,
+                        LightIndex = checked((uint)lightIndex),
+                        ClipmapWorldOrigin = clipmapOrigin,
+                        ResolutionLodBias = resolutionLodBias,
+                        FirstClipmapLevel = familyCamera.FirstLevel,
+                        WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
+                        ClipmapLevelCount = familyCamera.LevelCount,
+                        MipLevelCount = 1u,
+                        MinMipLevel = 0u,
+                        Flags =
+                            (orthographicReceiver ? VirtualShadowViewFlags.OrthographicReceiver : 0u) |
+                            (firstPerson ? VirtualShadowViewFlags.FirstPersonShadow : CalculateCoarsePageFlags(Settings.DirectionalCoarsePageMode, coarseFallback)) |
+                            (Settings.DirectionalReceiverMask
+                                ? VirtualShadowViewFlags.UseReceiverMask
+                                : 0u),
+                        LightKind = VirtualShadowLightKind.Directional,
+                        FaceIndex = checked((uint)clipmapLevel),
+                        GeometryLodScale = Settings.ShadowGeometryLodScale,
+                        MaxPixelsPerEdge = Settings.ShadowMaxPixelsPerEdge,
+                        MinPixelsPerEdgeHardware = Settings.ShadowMinPixelsPerEdgeHardware,
+                        DicingRate = Settings.ShadowDicingRate,
+                        DepthCenterZ = depthCenter,
+                        DepthRadius = depthRadius,
+                        DepthCullRange = !firstPerson && Settings.PrefilteredDistantEnabled
+                            ? new Vector2(lightProjection.M43 + (clipmapLevel == 0 ? 0f : cullingEndDistance * .5f) * lightProjection.M33,
+                                lightProjection.M43 + cullingEndDistance * lightProjection.M33)
+                            : !firstPerson && Settings.DirectionalReceiverMask
+                                ? new Vector2(-float.MaxValue, lightProjection.M43 - cullingEndDistance * lightProjection.M33)
+                                : new Vector2(-float.MaxValue, float.MaxValue),
+                    };
+                    if (!firstPerson && Settings.PrefilteredDistantEnabled) _views[viewIndex].Flags |= VirtualShadowViewFlags.PrefilteredDistant;
+                    _preparedLightViews[viewIndex] = lightView;
+                    _preparedLightProjections[viewIndex] = lightProjection;
+                }
             }
         }
         for (int lightIndex = 0; lightIndex < pointLightCount; lightIndex++)
@@ -408,8 +486,8 @@ public sealed class VirtualShadowMap : IDisposable
             {
                 GetPointLightFace(faceIndex, out Vector3 forward, out Vector3 up);
                 Matrix4x4 lightView = Matrix4x4.CreateLookAt(
-                    light.Position,
-                    light.Position + forward,
+                    Vector3.Zero,
+                    forward,
                     up);
                 int viewIndex = checked(pointViewOffset + lightIndex * 6 + (int)faceIndex);
                 uint gpuLightIndex = checked((uint)(lights.Directional.Count + lightIndex));
@@ -422,8 +500,11 @@ public sealed class VirtualShadowMap : IDisposable
                     faceIndex,
                     light.Position,
                     light.Range,
+                    CalculateLightResolutionLodBias(Settings.LocalResolutionLodBias, Settings.LocalMovingResolutionLodBias,
+                        lights.GetPointMobility(lightIndex), light.ShadowSettings.ResolutionLodBias),
                     physicalPagesPerRow,
                     pageTableEntriesPerView);
+                ConfigureLocalRepresentation(ref _views[viewIndex], receiverView, projection.M11);
                 _preparedLightViews[viewIndex] = lightView;
                 _preparedLightProjections[viewIndex] = projection;
             }
@@ -441,8 +522,8 @@ public sealed class VirtualShadowMap : IDisposable
                 ? Vector3.UnitX
                 : Vector3.UnitY;
             Matrix4x4 lightView = Matrix4x4.CreateLookAt(
-                light.Position,
-                light.Position + direction,
+                Vector3.Zero,
+                direction,
                 up);
             Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(
                 2.0f * MathF.Acos(light.OuterConeCos),
@@ -461,11 +542,63 @@ public sealed class VirtualShadowMap : IDisposable
                 0u,
                 light.Position,
                 light.Range,
+                CalculateLightResolutionLodBias(Settings.LocalResolutionLodBias, Settings.LocalMovingResolutionLodBias,
+                    lights.GetSpotMobility(lightIndex), light.ShadowSettings.ResolutionLodBias),
                 physicalPagesPerRow,
                 pageTableEntriesPerView);
+            ConfigureLocalRepresentation(ref _views[viewIndex], receiverView, projection.M11);
             _preparedLightViews[viewIndex] = lightView;
             _preparedLightProjections[viewIndex] = projection;
         }
+
+        for (int index = 0; index < viewCount; index++)
+        {
+            Vector3 viewCenter = -_views[index].WorldTranslation;
+            WorldOrigin viewOrigin = new(_worldOrigin.X + viewCenter.X,
+                _worldOrigin.Y + viewCenter.Y, _worldOrigin.Z + viewCenter.Z);
+            viewOrigin.Split(out Vector3 worldOriginHigh, out Vector3 worldOriginLow);
+            _views[index].WorldOriginHigh = worldOriginHigh;
+            _views[index].WorldOriginLow = worldOriginLow;
+            _views[index].PageDilationBorder = _views[index].LightKind == VirtualShadowLightKind.Directional
+                ? Settings.DirectionalPageDilationBorder : Settings.LocalPageDilationBorder;
+            VirtualShadowView shadow = _views[index];
+            LightShadowSettings source;
+            if (shadow.LightKind == VirtualShadowLightKind.Directional)
+            {
+                RenderDirectionalLight light = lights.Directional[checked((int)shadow.LightIndex)];
+                source = light.ShadowSettings;
+            }
+            else if (shadow.LightKind == VirtualShadowLightKind.Point)
+            {
+                RenderPointLight light = lights.Points[checked((int)shadow.LightIndex - lights.Directional.Count)];
+                source = light.ShadowSettings;
+            }
+            else
+            {
+                RenderSpotLight light = lights.Spots[checked((int)shadow.LightIndex - lights.Directional.Count - lights.Points.Count)];
+                source = light.ShadowSettings;
+            }
+            Matrix4x4 lightView = _preparedLightViews[index];
+            _views[index].LightDirection = new(-lightView.M13, -lightView.M23, -lightView.M33);
+            _views[index].SourceRadius = source.SourceRadius;
+            _views[index].SourceAngleRadians = shadow.LightKind == VirtualShadowLightKind.Directional
+                ? (source.SourceAngleDegrees ?? .5357f) * (MathF.PI / 180f) : 0f;
+            _views[index].ProjectionDepthScale = _preparedLightProjections[index].M33;
+            _views[index].ProjectionDepthOffset = _preparedLightProjections[index].M43;
+            _views[index].TexelDitherScale = 1f;
+        }
+
+        uint pageTableOffset = 0;
+        for (int index = 0; index < viewCount; index++)
+        {
+            ref VirtualShadowView view = ref _views[index];
+            view.PageTableOffset = pageTableOffset;
+            pageTableOffset = checked(pageTableOffset +
+                ((view.Flags & VirtualShadowViewFlags.SinglePage) != 0u ? 1u :
+                    view.LightKind == VirtualShadowLightKind.Directional ? Settings.VirtualPagesPerView :
+                        Settings.PageTableEntriesPerView));
+        }
+        _framePageTableEntryCount = pageTableOffset;
 
         bool viewLayoutChanged = !_initialized || viewCount != _committedViewCount;
         bool structuralContentChanged =
@@ -473,7 +606,7 @@ public sealed class VirtualShadowMap : IDisposable
             (geometryRevision != _committedGeometryRevision ||
              rasterRevision != _committedRasterRevision ||
              instanceCount != _committedInstanceCount);
-        _pendingCacheReset = !_initialized || viewLayoutChanged;
+        _pendingCacheReset = !_initialized || viewLayoutChanged || _viewPlayerId != _committedViewPlayerId;
 
         uint generation = _committedCacheGeneration;
         if (_pendingCacheReset || structuralContentChanged)
@@ -486,7 +619,8 @@ public sealed class VirtualShadowMap : IDisposable
         {
             for (int index = 0; index < viewCount; index++)
             {
-                if (HasSameClipmapConfiguration(_views[index], _committedViews[index]))
+                VirtualShadowView cached = RebaseCommittedView(_committedViews[index]);
+                if (HasSameClipmapConfiguration(_views[index], cached))
                 {
                     _views[index].CacheGeneration = _committedViews[index].CacheGeneration;
                     continue;
@@ -498,18 +632,49 @@ public sealed class VirtualShadowMap : IDisposable
                 _views[index].CacheGeneration = generation;
             }
         }
+        if (generation < _committedCacheGeneration)
+        {
+            _pendingCacheReset = true;
+            for (int index = 0; index < viewCount; index++)
+                _views[index].CacheGeneration = generation;
+        }
         if (_initialized && viewCount == _committedViewCount)
         {
             for (int index = 0; index < viewCount; index++)
             {
                 if (_views[index].LightViewProjection.Equals(
-                        _committedViews[index].LightViewProjection))
+                        _committedViews[index].LightViewProjection) &&
+                    _views[index].WorldOriginHigh == _committedViews[index].WorldOriginHigh &&
+                    _views[index].WorldOriginLow == _committedViews[index].WorldOriginLow)
                 {
                     _views[index].Flags |= VirtualShadowViewFlags.PreviousProjectionValid;
                 }
             }
         }
+        SelectDistantUpdates(lights, viewCount, ref generation);
+        if (Settings.PrefilteredDistantEnabled)
+            for (int index = 0; index < pointViewOffset; index++)
+            {
+                generation = NextCacheGeneration(generation);
+                _views[index].CacheGeneration = generation;
+            }
+        for (int index = firstPersonViewOffset; index < viewCount; index++)
+        {
+            generation = NextCacheGeneration(generation);
+            _views[index].CacheGeneration = generation;
+            _views[index].Flags &= ~VirtualShadowViewFlags.PreviousProjectionValid;
+        }
+        if (generation < _committedCacheGeneration)
+        {
+            _pendingCacheReset = true;
+            for (int index = 0; index < viewCount; index++) _views[index].CacheGeneration = generation;
+        }
         _pendingCacheGeneration = generation;
+        for (int index = 0; index < viewCount; index++)
+        {
+            _views[index].ReceiverMaskOriginX = (uint)index % receiverMaskColumns * Settings.VirtualPagesPerRow * 2u;
+            _views[index].ReceiverMaskOriginY = (uint)index / receiverMaskColumns * Settings.VirtualPagesPerRow * 3u;
+        }
         return _views.AsSpan(0, viewCount);
     }
 
@@ -531,7 +696,15 @@ public sealed class VirtualShadowMap : IDisposable
                 _preparedLightProjections[index],
                 shadow.VirtualResolution,
                 shadow.VirtualResolution,
-                CameraCut: false);
+                CameraCut: false,
+                GeometryLodScale: shadow.GeometryLodScale,
+                WorldOrigin: new WorldOrigin(
+                    (double)shadow.WorldOriginHigh.X + shadow.WorldOriginLow.X,
+                    (double)shadow.WorldOriginHigh.Y + shadow.WorldOriginLow.Y,
+                    (double)shadow.WorldOriginHigh.Z + shadow.WorldOriginLow.Z),
+                PlayerId: _viewPlayerId,
+                Family: (shadow.Flags & VirtualShadowViewFlags.FirstPersonShadow) != 0u
+                    ? RenderViewFamily.FirstPersonShadow : RenderViewFamily.Shadow);
         }
         return _pendingViewCount;
     }
@@ -557,9 +730,13 @@ public sealed class VirtualShadowMap : IDisposable
                 nameof(lightViewProjections));
         }
 
-        _committedViews.AsSpan(0, _committedViewCount).CopyTo(destination);
         for (int index = 0; index < _committedViewCount; index++)
-            lightViewProjections[index] = _committedViews[index].LightViewProjection;
+        {
+            VirtualShadowView previous = RebaseCommittedView(_committedViews[index]);
+            destination[index] = previous;
+            Vector3 translation = previous.WorldTranslation - _views[index].WorldTranslation;
+            lightViewProjections[index] = Matrix4x4.CreateTranslation(translation) * previous.LightViewProjection;
+        }
         return true;
     }
 
@@ -587,8 +764,7 @@ public sealed class VirtualShadowMap : IDisposable
             throw new InvalidOperationException("Begin and prepare the virtual-shadow frame first.");
 
         ulong requiredSize = checked(
-            Math.Max(1ul, (ulong)_pendingViewCount *
-            Settings.PageTableEntriesPerView) *
+            Math.Max(1ul, _framePageTableEntryCount) *
             VirtualShadowView.PageTableEntrySizeInBytes);
         if (_frameResourcesAcquired)
             throw new InvalidOperationException("Virtual-shadow frame resources were already acquired.");
@@ -619,12 +795,12 @@ public sealed class VirtualShadowMap : IDisposable
             new VirtualShadowBufferResource(pageTable, _pageTableEndpoint),
             new VirtualShadowBufferResource(_physicalPageOwners, _physicalPageOwnersEndpoint),
             new VirtualShadowTextureResource(_atlas, _atlasEndpoint),
-            cache.FreePages,
-            cache.FreePageCount,
             cache.PageMetadata,
-            cache.EvictionPages,
-            cache.EvictionBucketCounts,
-            !_pageTableInitialized);
+            cache.PageLists,
+            !_pageTableInitialized)
+        {
+            StaticAtlas = new VirtualShadowTextureResource(_atlas, _atlasEndpoint),
+        };
     }
 
     /// <summary>Accepts actual GPU work and returns a replaced page table for retirement.</summary>
@@ -665,6 +841,9 @@ public sealed class VirtualShadowMap : IDisposable
         _committedInstanceCount = _pendingInstanceCount;
         _committedGeometryRevision = _pendingGeometryRevision;
         _committedRasterRevision = _pendingRasterRevision;
+        CommitDistantLights();
+        _committedWorldOrigin = _worldOrigin;
+        _committedViewPlayerId = _viewPlayerId;
         if (_committedViews.Length != _pendingViewCount)
             _committedViews = new VirtualShadowView[_pendingViewCount];
         _views.AsSpan(0, _pendingViewCount).CopyTo(_committedViews);
@@ -723,7 +902,7 @@ public sealed class VirtualShadowMap : IDisposable
     }
 
     private static TextureBoundaryState Initial(Texture texture) => new(
-        new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+        new TextureSubresourceRange(0, 1, 0, texture.Info.ArrayLayerCount, TextureAspects.Color),
         texture.InitialSync,
         texture.InitialAccess,
         texture.InitialLayout,
@@ -731,6 +910,37 @@ public sealed class VirtualShadowMap : IDisposable
 
     private static Vector3 NormalizeOrZero(Vector3 value)
         => value.LengthSquared() > 1e-12f ? Vector3.Normalize(value) : Vector3.Zero;
+
+    private readonly record struct DirectionalCameraParameters(float ResolutionLodBias, int FirstLevel, uint LevelCount);
+
+    private DirectionalCameraParameters CalculateDirectionalCameraParameters(in RenderView view)
+    {
+        float viewportWidth = MathF.Max(view.ViewportWidth, Settings.DirectionalMinCameraViewportWidth);
+        float projectionScale = MathF.Abs(view.Projection.M11);
+        int firstLevel = Settings.DirectionalFirstClipmapLevel;
+        uint levelCount = Settings.DirectionalClipmapLevels;
+        if (view.Projection.M44 >= 1f)
+        {
+            float halfWidthCentimeters = 1f / MathF.Abs(view.Projection.M11) / Settings.WorldUnitsPerCentimeter;
+            viewportWidth = MathF.Max(viewportWidth, MathF.Ceiling(2f * halfWidthCentimeters));
+            projectionScale = 1f;
+            int lastLevel = checked(firstLevel + (int)levelCount - 1);
+            if (Settings.OrthographicEstimateClipmapLevels)
+                firstLevel = Math.Max(0, checked(Math.Max(firstLevel,
+                    (int)MathF.Floor(MathF.Log2(halfWidthCentimeters))) + Settings.OrthographicClipmapLodBias));
+            levelCount = checked((uint)(Math.Max(firstLevel, lastLevel) - firstLevel + 1));
+        }
+        float resolutionScale = .5f * Settings.VirtualResolution / (viewportWidth * projectionScale);
+        return new(MathF.Log2(resolutionScale), firstLevel, levelCount);
+    }
+
+    private static float CalculateLightResolutionLodBias(float nonMovingBias, float movingBias,
+        float mobilityFactor, float lightBias) =>
+        nonMovingBias + mobilityFactor * (MathF.Max(nonMovingBias, movingBias) - nonMovingBias) + lightBias;
+
+    private static uint CalculateCoarsePageFlags(VirtualShadowCoarsePageMode mode, bool coarseLevel) =>
+        (coarseLevel && mode != VirtualShadowCoarsePageMode.Disabled ? VirtualShadowViewFlags.CoarseClipLevel : 0u) |
+        (mode == VirtualShadowCoarsePageMode.CachedDynamic ? VirtualShadowViewFlags.ForceCacheDynamicCoarse : 0u);
 
     private VirtualShadowView CreateLocalView(
         int viewIndex,
@@ -741,10 +951,12 @@ public sealed class VirtualShadowMap : IDisposable
         uint faceIndex,
         Vector3 lightPosition,
         float lightRange,
+        float resolutionLodBias,
         uint physicalPagesPerRow,
         uint pageTableEntriesPerView) => new()
     {
         LightViewProjection = lightView * lightProjection,
+        WorldTranslation = -lightPosition,
         VirtualResolution = Settings.VirtualResolution,
         PageSize = Settings.PageSize,
         AtlasSize = Settings.AtlasSize,
@@ -754,18 +966,28 @@ public sealed class VirtualShadowMap : IDisposable
         PageTableOffset = checked((uint)viewIndex * pageTableEntriesPerView),
         ClipmapLevel = -1,
         LightIndex = lightIndex,
-        ResolutionLodBias = Settings.LocalResolutionLodBias,
+        ResolutionLodBias = resolutionLodBias,
         FirstClipmapLevel = -1,
         ClipmapLevelCount = 1u,
         MipLevelCount = Settings.MipLevelCount,
         MinMipLevel = 0u,
-        Flags = VirtualShadowViewFlags.CoarseClipLevel |
-            VirtualShadowViewFlags.ForceCacheDynamicCoarse |
+        Flags = CalculateCoarsePageFlags(Settings.LocalCoarsePageMode, true) |
+            (Settings.LocalMipMode switch
+            {
+                VirtualShadowLocalMipMode.Even => VirtualShadowViewFlags.EvenMipLevels,
+                VirtualShadowLocalMipMode.Odd => VirtualShadowViewFlags.OddMipLevels,
+                _ => 0u,
+            }) |
             (Settings.LocalReceiverMask ? VirtualShadowViewFlags.UseReceiverMask : 0u),
         LightKind = lightKind,
         FaceIndex = faceIndex,
         LightPosition = lightPosition,
         LightRange = lightRange,
+        GeometryLodScale = Settings.ShadowGeometryLodScale,
+        MaxPixelsPerEdge = Settings.ShadowMaxPixelsPerEdge,
+        MinPixelsPerEdgeHardware = Settings.ShadowMinPixelsPerEdgeHardware,
+        DicingRate = Settings.ShadowDicingRate,
+        WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
     };
 
     private void ValidateLocalLight(Vector3 position, float range, string label)
@@ -799,14 +1021,40 @@ public sealed class VirtualShadowMap : IDisposable
     private static uint NextCacheGeneration(uint value)
     {
         uint next = value + 1u;
-        return next == 0u ? 1u : next;
+        // The high bit distinguishes completed receiver coverage from a whole page.
+        return next >= 0x80000000u ? 1u : next;
+    }
+
+    private float SelectDirectionalDepthCenter(
+        int viewIndex, int clipmapLevel, uint lightIndex,
+        float center, float depthRadius, float levelRadius, Matrix4x4 projection)
+    {
+        if (!_initialized || viewIndex >= _committedViewCount)
+            return center;
+        VirtualShadowView cached = RebaseCommittedView(_committedViews[viewIndex]);
+        bool sameLevel = cached.LightKind == VirtualShadowLightKind.Directional &&
+            cached.LightIndex == lightIndex && cached.ClipmapLevel == clipmapLevel &&
+            cached.DepthRadius.Equals(depthRadius) &&
+            HasSameDirectionalProjectionAxes(projection, cached.LightViewProjection);
+        return sameLevel && MathF.Abs(center - cached.DepthCenterZ) + levelRadius <= .9f * cached.DepthRadius
+            ? cached.DepthCenterZ : center;
+    }
+
+    private VirtualShadowView RebaseCommittedView(VirtualShadowView view)
+    {
+        Vector3 translation = _committedWorldOrigin.RelativeTo(_worldOrigin);
+        view.LightPosition += translation;
+        view.ClipmapWorldOrigin += translation;
+        view.WorldTranslation -= translation;
+        view.DepthCenterZ += Vector3.Dot(translation, view.LightDirection);
+        return view;
     }
 
     private static bool HasSameClipmapConfiguration(
         in VirtualShadowView left,
         in VirtualShadowView right) =>
         (left.LightKind == VirtualShadowLightKind.Directional
-            ? HasSameLinearProjection(left.LightViewProjection, right.LightViewProjection)
+            ? HasSameDirectionalProjectionAxes(left.LightViewProjection, right.LightViewProjection)
             : left.LightViewProjection.Equals(right.LightViewProjection)) &&
         left.VirtualResolution == right.VirtualResolution &&
         left.PageSize == right.PageSize &&
@@ -821,14 +1069,19 @@ public sealed class VirtualShadowMap : IDisposable
         left.ClipmapLevelCount == right.ClipmapLevelCount &&
         left.MipLevelCount == right.MipLevelCount &&
         left.MinMipLevel == right.MinMipLevel &&
-        (left.Flags & ~VirtualShadowViewFlags.PreviousProjectionValid) ==
-            (right.Flags & ~VirtualShadowViewFlags.PreviousProjectionValid) &&
+        (left.Flags & ~(VirtualShadowViewFlags.PreviousProjectionValid | VirtualShadowViewFlags.CachedDistantLight)) ==
+            (right.Flags & ~(VirtualShadowViewFlags.PreviousProjectionValid | VirtualShadowViewFlags.CachedDistantLight)) &&
         left.LightKind == right.LightKind &&
         left.FaceIndex == right.FaceIndex &&
         left.LightPosition == right.LightPosition &&
-        left.LightRange.Equals(right.LightRange);
+        left.LightRange.Equals(right.LightRange) &&
+        left.GeometryLodScale.Equals(right.GeometryLodScale) &&
+        left.MaxPixelsPerEdge.Equals(right.MaxPixelsPerEdge) &&
+        left.MinPixelsPerEdgeHardware.Equals(right.MinPixelsPerEdgeHardware) &&
+        left.DicingRate.Equals(right.DicingRate) &&
+        left.DepthCenterZ.Equals(right.DepthCenterZ) && left.DepthRadius.Equals(right.DepthRadius);
 
-    private static bool HasSameLinearProjection(Matrix4x4 left, Matrix4x4 right) =>
+    private static bool HasSameDirectionalProjectionAxes(Matrix4x4 left, Matrix4x4 right) =>
         left.M11.Equals(right.M11) && left.M12.Equals(right.M12) &&
         left.M13.Equals(right.M13) && left.M14.Equals(right.M14) &&
         left.M21.Equals(right.M21) && left.M22.Equals(right.M22) &&
@@ -845,6 +1098,7 @@ public sealed class VirtualShadowMap : IDisposable
         if (_pageCache is not null)
             TryDispose(_pageCache, ref failures);
         _pageCache = null;
+
         TryDispose(_atlas, ref failures);
         TryDispose(_physicalPageOwners, ref failures);
         if (_previousPageTable is not null) TryDispose(_previousPageTable, ref failures);
@@ -853,6 +1107,7 @@ public sealed class VirtualShadowMap : IDisposable
             TryDispose(_pageTable, ref failures);
         _pageTable = null;
         TryDispose(PageClearPipeline, ref failures);
+        TryDispose(PageDepthCompletePipeline, ref failures);
         TryDispose(PageHiZReducePipeline, ref failures);
         TryDispose(DynamicResolutionPipeline, ref failures);
         TryDispose(PageHiZInitializePipeline, ref failures);
@@ -862,6 +1117,7 @@ public sealed class VirtualShadowMap : IDisposable
         TryDispose(StateInitializePipeline, ref failures);
         TryDispose(PageAllocatePipeline, ref failures);
         TryDispose(CoarsePageMarkPipeline, ref failures);
+        if (DepthPageMarkPipeline is not null) TryDispose(DepthPageMarkPipeline, ref failures);
         TryDispose(PageMarkPipeline, ref failures);
         TryDispose(FrameResetPipeline, ref failures);
         TryDispose(ReceiverMaskResetPipeline, ref failures);
@@ -911,9 +1167,9 @@ public readonly record struct VirtualShadowMapFrameResources(
     VirtualShadowBufferResource PageTable,
     VirtualShadowBufferResource PhysicalPageOwners,
     VirtualShadowTextureResource Atlas,
-    VirtualShadowBufferResource FreePages,
-    VirtualShadowBufferResource FreePageCount,
     VirtualShadowBufferResource PageMetadata,
-    VirtualShadowBufferResource EvictionPages,
-    VirtualShadowBufferResource EvictionBucketCounts,
-    bool RequiresInitialization);
+    VirtualShadowBufferResource PageLists,
+    bool RequiresInitialization)
+{
+    public VirtualShadowTextureResource StaticAtlas { get; init; }
+}

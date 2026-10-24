@@ -5,7 +5,6 @@ using SomeEngine.Core.Diagnostics;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
 using Buffer = SomeEngine.Graphics.Buffer;
-using Texture = SomeEngine.Resources.Texture;
 
 namespace SomeEngine.Elements.Render;
 
@@ -13,7 +12,6 @@ namespace SomeEngine.Elements.Render;
 public sealed class ImageMaterial : Material
 {
     public static Guid TypeId { get; } = new("ad789793-f54a-472c-8a16-14d4e147b6cc");
-    public override Guid MaterialTypeId => TypeId;
     public override IReadOnlyList<MaterialPropertyDefinition> Properties => [];
 
     /// <summary>Uses the shared built-in shader compiled for the requested graphics target.</summary>
@@ -22,11 +20,6 @@ public sealed class ImageMaterial : Material
         Shader = ElementShaders.Get("Image", target),
     };
 
-    public override void ApplyParameter(MaterialValue parameter, Texture? texture) =>
-        DevelopmentCheck.Fail("Image drawing values are supplied by the canvas instance buffer.");
-
-    protected override void CopyProperties(Material source) { }
-    protected override Material CreateEmpty() => new ImageMaterial();
 }
 
 /// <summary>Image's shader-specific pipeline, sampler and instance bytes.</summary>

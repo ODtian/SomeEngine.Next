@@ -1,22 +1,24 @@
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Physics;
 
 public interface ISpatialBitmapProof
 {
-    static abstract GroupMatch Match(in CollisionBitmapData first, int firstMembers,
-        in CollisionBitmapData second, int secondMembers);
+    static abstract GroupMatch Match(in CollisionBitmapData first, in CollisionBitmapData second,
+        in CollisionNode firstNode, in CollisionNode secondNode);
 }
 
 public readonly struct OneWaySpatialPermission : ISpatialBitmapProof
 {
-    public static GroupMatch Match(in CollisionBitmapData first, int firstMembers,
-        in CollisionBitmapData second, int secondMembers)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static GroupMatch Match(in CollisionBitmapData first, in CollisionBitmapData second,
+        in CollisionNode firstNode, in CollisionNode secondNode)
     {
         if ((first.AllowedAny & second.CategoriesAny) == 0)
             return GroupMatch.None;
-        if (first.ComponentCount == firstMembers && second.ComponentCount == secondMembers &&
+        if (first.ComponentCount == firstNode.MemberCount && second.ComponentCount == secondNode.MemberCount &&
             (first.AllowedCommon & second.CategoriesCommon) != 0)
             return GroupMatch.All;
         return GroupMatch.Unknown;
@@ -25,16 +27,23 @@ public readonly struct OneWaySpatialPermission : ISpatialBitmapProof
 
 public readonly struct MutualSpatialPermission : ISpatialBitmapProof
 {
-    public static GroupMatch Match(in CollisionBitmapData first, int firstMembers,
-        in CollisionBitmapData second, int secondMembers) =>
-        GroupMatches.And(OneWaySpatialPermission.Match(in first, firstMembers, in second, secondMembers),
-            OneWaySpatialPermission.Match(in second, secondMembers, in first, firstMembers));
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static GroupMatch Match(in CollisionBitmapData first, in CollisionBitmapData second,
+        in CollisionNode firstNode, in CollisionNode secondNode)
+    {
+        if ((first.AllowedAny & second.CategoriesAny) == 0 || (second.AllowedAny & first.CategoriesAny) == 0)
+            return GroupMatch.None;
+        if (first.ComponentCount == firstNode.MemberCount && second.ComponentCount == secondNode.MemberCount &&
+            (first.AllowedCommon & second.CategoriesCommon) != 0 && (second.AllowedCommon & first.CategoriesCommon) != 0)
+            return GroupMatch.All;
+        return GroupMatch.Unknown;
+    }
 }
 
 public readonly struct UnknownSpatialPermission : ISpatialBitmapProof
 {
-    public static GroupMatch Match(in CollisionBitmapData first, int firstMembers,
-        in CollisionBitmapData second, int secondMembers) => GroupMatch.Unknown;
+    public static GroupMatch Match(in CollisionBitmapData first, in CollisionBitmapData second,
+        in CollisionNode firstNode, in CollisionNode secondNode) => GroupMatch.Unknown;
 }
 
 public readonly struct SpatialBitmapFilter<TRelation, TImplementation, TComponent, TPermission, TGroupPermission>
@@ -52,25 +61,35 @@ public readonly struct SpatialBitmapFilter<TRelation, TImplementation, TComponen
 
     public QueryDefinition AddReads(QueryDefinition definition) => definition.WithOptionalRead<TComponent>();
 
-    public void RebuildSummaries(QueryCursor access) => Summary.Rebuild(access);
+    public void RebuildSummaries(scoped QueryCursor access) => Summary.Rebuild(access);
 
-    public void RefitSummary(int node, QueryCursor access) => Summary.Refit(node, access);
+    public void RefitSummary(int node, scoped QueryCursor access) => Summary.Refit(node, access);
 
-    public bool HasSummaryChange(QueryChunkView chunk, int row) =>
-        chunk.Has<TComponent>() && chunk.HasChangedSinceLastSystemVersion<TComponent>() &&
-        chunk.RowChangedSinceLastSystemVersion<TComponent>(row);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void ReadChanges<TGeometry, TExecution>(QueryChunkView chunk, TExecution execution)
+        where TGeometry : struct
+        where TExecution : struct, ISpatialChangeExecution, allows ref struct
+    {
+        if (typeof(TComponent) == typeof(TGeometry))
+            execution.Execute(default(UnchangedQueryRows));
+        else
+            execution.Execute(chunk.ReadRowChanges<TComponent>());
+    }
 
-    public GroupMatch MatchGroups(int firstNode, int secondNode, in GroupMatch inherited, out GroupMatch results) =>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public GroupMatch MatchGroups(int firstNode, int secondNode,
+        in CollisionNode first, in CollisionNode second, in GroupMatch inherited, out GroupMatch results) =>
         results = inherited != GroupMatch.Unknown ? inherited :
-            TGroupPermission.Match(in Summary.Nodes[firstNode], Summary.Tree.Nodes[firstNode].MemberCount,
-                in Summary.Nodes[secondNode], Summary.Tree.Nodes[secondNode].MemberCount);
+            TGroupPermission.Match(in Summary[firstNode], in Summary[secondNode], in first, in second);
 
-    public bool MatchesLeaves(QueryCursor access, int firstNode, int secondNode, in GroupMatch results)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool MatchesLeaves(scoped in QueryRow firstRow, scoped in QueryRow secondRow,
+        int firstNode, int secondNode, in GroupMatch results)
     {
         if (results != GroupMatch.Unknown)
             return results == GroupMatch.All;
-        ref readonly var first = ref Summary.Nodes[firstNode];
-        ref readonly var second = ref Summary.Nodes[secondNode];
+        ref readonly var first = ref Summary[firstNode];
+        ref readonly var second = ref Summary[secondNode];
         if (first.ComponentCount == 0 || second.ComponentCount == 0)
             return false;
         var firstBits = new CategoryBits(first.CategoriesAny, first.AllowedAny);

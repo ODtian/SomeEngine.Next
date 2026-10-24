@@ -82,7 +82,7 @@ public static class SpatialCollisionConsumption
         private readonly Span<int> _counts = contactCounts;
         private readonly Span<float> _depths = penetrationDepths;
 
-        public void Execute(QueryCursor access)
+        public void Execute(scoped QueryCursor access)
         {
             foreach (var pair in _pairs)
             {

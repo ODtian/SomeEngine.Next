@@ -7,7 +7,7 @@ namespace SomeEngine.Assets.Consumer.Tests;
 public sealed class AssetCapabilityBehaviorTests
 {
     [Fact]
-    public void GeneratedFactoriesShareOneImporterWithinEachScope()
+    public void GeneratedImportersShareOneInstanceWithinEachScope()
     {
         var services = new ServiceCollection();
         Assert.Same(services, ConsumerAssetCapabilities.AddAssetCapabilities(services));
@@ -19,7 +19,6 @@ public sealed class AssetCapabilityBehaviorTests
         using var first = provider.CreateScope();
         using var second = provider.CreateScope();
         var importer = first.ServiceProvider.GetRequiredService<CapabilityImporter>();
-        Assert.Same(importer, first.ServiceProvider.GetRequiredService<CapabilityImporter>());
         Assert.Same(importer, first.ServiceProvider.GetServices<IAssetImporter<CapabilitySource, CapabilitySettings>>()
             .Single(value => value is CapabilityImporter));
         Assert.NotSame(importer, second.ServiceProvider.GetRequiredService<CapabilityImporter>());
@@ -38,11 +37,12 @@ public sealed class AssetCapabilityBehaviorTests
             Assert.Equal(typeof(CapabilitySettings), capability.SettingsType);
             Assert.Equal(CapabilityData.BlockTypeId, Assert.Single(capability.ProducedBlocks).Id);
         });
-        Assert.Contains(provider.GetServices<AssetBlockCapability>(), capability =>
+        Assert.Contains(ConsumerAssetCapabilities.BlockCapabilities, capability =>
             capability.Id == CapabilityData.BlockTypeId && capability.BlockType == typeof(CapabilityData));
         Assert.Equal(new Guid("90b3ba7e-813b-4ad7-8c24-90c2f45eb356"),
             Assert.Single(alternatives, capability => capability.ImporterType == typeof(CapabilityImporter)).Id);
     }
+
 }
 
 [AssetCapabilities]

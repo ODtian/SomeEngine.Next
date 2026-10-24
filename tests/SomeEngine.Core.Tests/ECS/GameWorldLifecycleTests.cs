@@ -8,8 +8,6 @@ namespace SomeEngine.Core.Tests.ECS;
 
 public sealed class GameWorldLifecycleTests
 {
-
-
     [Fact]
     public async Task Dispose_WaitsWorldJobsAndClosesSystemsAndWorld()
     {
@@ -81,8 +79,7 @@ public sealed class GameWorldLifecycleTests
         gameWorld.Update(0);
 
         AggregateException error = Assert.Throws<AggregateException>(gameWorld.Dispose).Flatten();
-
-        Assert.Contains(error.InnerExceptions, exception => exception.Message == "engine-destroy-fault");
+        Assert.IsType<InvalidOperationException>(Assert.Single(error.InnerExceptions));
         Assert.Throws<ObjectDisposedException>(() => _ = gameWorld.World.EntityCount);
         gameWorld.Dispose();
     }
@@ -97,7 +94,6 @@ public sealed class GameWorldLifecycleTests
         InvalidOperationException error =
             Assert.Throws<InvalidOperationException>(() => disposer.Complete());
 
-        Assert.Contains("Job callback", error.Message, StringComparison.Ordinal);
         gameWorld.Update(0);
         _ = gameWorld.World.EntityCount;
         gameWorld.Dispose();

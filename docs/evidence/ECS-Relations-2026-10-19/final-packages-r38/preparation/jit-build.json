@@ -1,0 +1,23 @@
+{
+  "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+  "ReaderQueueId": "cb3aed562ed146e69b3467d2735f174a",
+  "Executable": "dotnet",
+  "Arguments": [
+    "build",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+    "-c",
+    "Release",
+    "-p:PublishAot=false",
+    "-p:SelfContained=false",
+    "-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b"
+  ],
+  "StartedAtUtc": "2026-10-19T22:08:26.226725Z",
+  "FinishedAtUtc": "2026-10-19T22:08:34.9717517Z",
+  "BuildExitCode": 0,
+  "SourceCheckExitCode": 0,
+  "Dll": {
+    "FullName": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.Benchmarks.dll",
+    "Length": 336896,
+    "LastWriteTimeUtc": "2026-10-19T22:08:34.6754950Z"
+  }
+}

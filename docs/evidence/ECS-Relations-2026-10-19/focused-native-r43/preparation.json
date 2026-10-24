@@ -1,0 +1,27 @@
+{
+  "SourceCommit": "73f7e089990e65cf4fc5517593e31aaeee03298a",
+  "PublishQueueId": "3411257468b74319bbce935d77544f1d",
+  "StartedAtUtc": "2026-10-20T00:22:14.5082113Z",
+  "LastCaseSubmittedAtUtc": "2026-10-20T00:22:15.7226102Z",
+  "InitialObservationEndedAtUtc": "2026-10-20T00:26:57.7073605Z",
+  "WatcherInitialObservationEndedAtUtc": "2026-10-20T00:22:15.7603168Z",
+  "NativeReaderRelease": {
+    "ReaderQueueId": "15e3f6f0e9904c3dbf3e5d958197d7aa",
+    "SourceCommit": "73f7e089990e65cf4fc5517593e31aaeee03298a",
+    "NativeReaderStartedAtUtc": "2026-10-20T00:22:11.9565369Z",
+    "NativeReaderFinishedAtUtc": "2026-10-20T00:22:14.3451251Z",
+    "NativeReaderExitCode": 0,
+    "ReleasedAtUtc": "2026-10-20T00:26:57.646404Z",
+    "ReleaseBasis": "The completed reader stage in this Master returned ExitCode0."
+  },
+  "RootHostRelease": {
+    "SourceCommit": "73f7e089990e65cf4fc5517593e31aaeee03298a",
+    "RootHostReadEndedAtUtc": "2026-10-20T00:23:00Z",
+    "StandardsReadEndedAtUtc": "2026-10-20T00:22:17Z",
+    "RecordedAtUtc": "2026-10-20T00:23:27.6215661Z"
+  },
+  "PreparationEndAtUtc": "2026-10-20T00:26:57.7073605Z",
+  "CaseCount": 2,
+  "ReaderQueueId": "15e3f6f0e9904c3dbf3e5d958197d7aa",
+  "FinalQueueId": "e67cd8d6286d474bb06bac458d4755e0"
+}

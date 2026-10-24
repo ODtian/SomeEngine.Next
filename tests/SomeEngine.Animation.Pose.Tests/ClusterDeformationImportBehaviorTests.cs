@@ -116,8 +116,6 @@ public sealed class ClusterDeformationImportBehaviorTests
     private static async Task<ImportResult> ImportAsync(VertexPrimitive primitive)
     {
         var context = new ImportContext();
-        context.ConfigureAssets<GltfMesh, MeshAsset>(mesh => $"mesh/{mesh.LogicalIndex}", (_, id) => new MeshAsset(id),
-            (_, id) => id + ".mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
         context.EnableImporter<GltfMesh, MeshAsset>(Guid.NewGuid(), [VertexStreamsBlock.BlockTypeId],
             (_, _, output, _) => { output.SetBlock(new VertexStreamsBlock([primitive], [])); return ValueTask.CompletedTask; });
         var services = new ServiceCollection();
@@ -129,7 +127,11 @@ public sealed class ClusterDeformationImportBehaviorTests
         foreach (AssetImporterCapability capability in provider.GetServices<AssetImporterCapability>()
             .Where(value => cluster.Importers.Contains(value.Id)))
             context.EnableImporter<GltfMesh, MeshAsset>(capability.Bind<GltfMesh>(provider));
-        MeshAsset asset = await context.GetAssetAsync<GltfMesh, MeshAsset>(ModelRoot.CreateModel().CreateMesh("deforming mesh"));
+        GltfMesh mesh = ModelRoot.CreateModel().CreateMesh("deforming mesh");
+        string key = $"mesh/{mesh.LogicalIndex}";
+        Guid id = context.GetAssetId(key);
+        context.AddAsset(mesh, new MeshAsset(id), key, id + ".mesh.asset");
+        MeshAsset asset = await context.GetAssetAsync<GltfMesh, MeshAsset>(mesh);
         return new(context, asset);
     }
 

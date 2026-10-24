@@ -1,0 +1,17 @@
+
+CaseId                            Boundary Required MedianRatio P95Ratio Status     QueueId
+------                            -------- -------- ----------- -------- ------     -------
+finite-small-mask1-mutual-control Query       False        1.00     0.99 diagnostic 37eeaf3c9de74f08a2a273d5158477e5
+finite-small-mask1-mutual-control Consume     False           1        1 diagnostic 37eeaf3c9de74f08a2a273d5158477e5
+default-small-dynamic10-control   Query       False           1     0.97 diagnostic ce1f62f8e0cd4aa6838f66bc16826450
+default-small-dynamic10-control   Consume     False           1        1 diagnostic ce1f62f8e0cd4aa6838f66bc16826450
+finite-large-mask8-mutual-control Query       False        1.00     0.99 diagnostic caf91df26f2f408095e130590d12fa3c
+finite-large-mask8-mutual-control Consume     False        0.98     1.02 diagnostic caf91df26f2f408095e130590d12fa3c
+default-large-dynamic50-control   Query       False        1.00     1.00 diagnostic accddedc7c134324af6edecfdae1e456
+default-large-dynamic50-control   Consume     False        1.00     1.00 diagnostic accddedc7c134324af6edecfdae1e456
+
+{"Script":"Collect-Measurements.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1","-Series","final-hh-r38"],"StartedAtUtc":"2026-10-19T22:44:38.9645042Z","FinishedAtUtc":"2026-10-19T22:44:40.3248724Z","ExitCode":0}
+final-hh-r38: 4 reports; F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\docs\evidence\ECS-Relations-2026-10-19\final-hh-r38
+{"Script":"Export-Evidence.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1","-Series","final-hh-r38"],"StartedAtUtc":"2026-10-19T22:44:40.4304827Z","FinishedAtUtc":"2026-10-19T22:44:41.7848475Z","ExitCode":0}
+final-hh-r38: cases=4; required=0; passed=0; approved=0; approvedRatioLimit=1.01; F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\docs\evidence\ECS-Relations-2026-10-19\final-hh-r38
+{"Script":"Write-MeasurementReport.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1","-Series","final-hh-r38"],"StartedAtUtc":"2026-10-19T22:44:41.7917731Z","FinishedAtUtc":"2026-10-19T22:44:43.3494958Z","ExitCode":0}

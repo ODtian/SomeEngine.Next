@@ -426,7 +426,7 @@ internal static partial class EcsBenchmarkSuite
         world.ExecuteQuery(
             query,
             ref count,
-            static (QueryCursor cursor, ref int rows) =>
+            static (scoped QueryCursor cursor, ref int rows) =>
             {
                 foreach (var _ in cursor.Rows)
                     rows++;
@@ -457,7 +457,7 @@ internal static partial class EcsBenchmarkSuite
         world.ExecuteQuery(
             query,
             ref state,
-            static (QueryCursor cursor, ref WorldChecksumState checksum) =>
+            static (scoped QueryCursor cursor, ref WorldChecksumState checksum) =>
             {
                 foreach (var row in cursor.Rows)
                 {
@@ -574,7 +574,7 @@ internal static partial class EcsBenchmarkSuite
                 World.ExecuteQuery(
                     _query,
                     ref checksum,
-                    static (QueryCursor cursor, ref long sum) =>
+                    static (scoped QueryCursor cursor, ref long sum) =>
                     {
                         foreach (var row in cursor.Rows)
                         {

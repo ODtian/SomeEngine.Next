@@ -13,12 +13,13 @@ without trace, and F10 for CPU traces of every scene. Detailed and allocation tr
 are selected in that same panel. Traced runs must be compared separately from ordinary timing runs.
 
 ```powershell
-dotnet build templates/DefaultProject/Game.App/Game.App.csproj -c Release
+./tools/Build.ps1 -Configuration Release
 ./tools/Measure-Scenes.ps1
 ./tools/Measure-Scenes.ps1 -Trace
 ```
 
 The script controls the same in-game action and limits the complete application run to 60 seconds.
+The Release build produces NativeAOT. Reports include NativeAot and Startup; startup completes when the scene's coarse geometry is ready and a scene frame is presented. F9/F10 requests made during startup run after that first scene frame. With -Trace, the script also captures startup before the window is created; its trace is separate from the later scene traces.
 Content building is separate. A scene that does not finish streaming in time is marked incomplete;
 it does not receive a passing steady-state timing. Reports and optional `.setrace` files are written
 under the application's `Performance` directory. See [current measurements](../../docs/Scene-Performance-2026-09-22.md).

@@ -2,12 +2,14 @@ using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Geometry.Cluster;
+using BuilderMeshlet = SomeEngine.Geometry.Cluster.ClusterMeshBuilder.ClusterMeshlet;
 
 namespace SomeEngine.Assets.Importers;
 
 public static partial class ClusterBuilder
 {
-    private const byte SourceVertexLockBit = 1 << 2;
+    private const byte SourceVertexLockBit = ClusterMeshBuilder.SourceVertexLockBit;
 
     internal static ClusterGeometryBlock BuildGeometry(VertexStreamsBlock streams, CancellationToken cancellationToken)
     {
@@ -93,7 +95,7 @@ public static partial class ClusterBuilder
             Vector3[] partitionPositions = workingPositions.ToArray();
             List<BuilderMeshlet> meshlets = [];
             List<uint> indices = [];
-            BuildClusterLod(ClusterLodConfig.GetDefault() with
+            ClusterMeshBuilder.BuildLod(ClusterLodConfig.GetDefault() with
                 { ClusterSpatial = true, SimplifyPermissive = false, SimplifyFallbackSloppy = false },
                 partitionPositions, CollectionsMarshal.AsSpan(workingTriangles), new float[partitionPositions.Length],
                 meshlets, indices, CollectionsMarshal.AsSpan(workingLocks));
@@ -112,6 +114,8 @@ public static partial class ClusterBuilder
             Clusters = clusters,
         };
     }
+
+    private static SomeEngine.Resources.Vec3 CreateVec3(Vector3 value) => new() { X = value.X, Y = value.Y, Z = value.Z };
 
     private static Vector3 ReadPosition(VertexRow row)
     {

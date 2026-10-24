@@ -59,11 +59,8 @@ public partial class World
         BeginQueryIteration(relationshipWrite);
         try
         {
-            execution(new QueryCursor(
-                this,
-                _queries.Get(query).State,
-                lastSystemVersion,
-                currentSystemVersion));
+            var data = new QueryData(this, _queries.Get(query).State, lastSystemVersion, currentSystemVersion);
+            execution(new QueryCursor(in data));
         }
         catch (Exception bodyFault)
         {
@@ -96,7 +93,6 @@ public partial class World
         uint currentSystemVersion,
         ref TState state,
         delegate* managed<QueryCursor, ref TState, void> execution)
-        where TState : allows ref struct
     {
         using WorldJobAdmissionScope admission = EnterJobQuery(query, out bool relationshipWrite);
         ExecuteQueryAdmitted(
@@ -113,7 +109,6 @@ public partial class World
         uint lastSystemVersion,
         ref TState state,
         delegate* managed<QueryCursor, ref TState, void> execution)
-        where TState : allows ref struct
     {
         using WorldJobAdmissionScope admission = EnterJobQuery(query, out bool relationshipWrite);
         uint currentSystemVersion = AcquireAdmittedQueryVersion(query);
@@ -130,7 +125,6 @@ public partial class World
         QueryHandle query,
         ref TState state,
         delegate* managed<QueryCursor, ref TState, void> execution)
-        where TState : allows ref struct
     {
         using WorldJobAdmissionScope admission = EnterJobQuery(query, out bool relationshipWrite);
         AcquireAdmittedQueryVersions(
@@ -153,18 +147,12 @@ public partial class World
         bool relationshipWrite,
         ref TState state,
         delegate* managed<QueryCursor, ref TState, void> execution)
-        where TState : allows ref struct
     {
         BeginQueryIteration(relationshipWrite);
         try
         {
-            execution(
-                new QueryCursor(
-                    this,
-                    _queries.Get(query).State,
-                    lastSystemVersion,
-                    currentSystemVersion),
-                ref state);
+            var data = new QueryData(this, _queries.Get(query).State, lastSystemVersion, currentSystemVersion);
+            execution(new QueryCursor(in data), ref state);
         }
         catch (Exception bodyFault)
         {

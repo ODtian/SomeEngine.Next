@@ -1,0 +1,12 @@
+{
+  "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+  "ReadStartedAtUtc": "2026-10-19T20:34:19.6757758Z",
+  "ProcessId": 88680,
+  "ParentProcessId": 30304,
+  "CreatedAtUtc": "2026-10-19T20:22:21.4862045Z",
+  "CpuSeconds": 715.65625,
+  "CommandLine": "\"C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe\" -i F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmc.etl -symbols -o F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmc-events.csv -a dumper -stacktimeshifting -add_fieldnames",
+  "StopRequestedAtUtc": "2026-10-19T20:34:20.2794894Z",
+  "Reason": "Parent-authorized interruption of whole-machine dumper postprocessing; native capture completed with exit 0.",
+  "StopReturnedAtUtc": "2026-10-19T20:34:20.284776Z"
+}

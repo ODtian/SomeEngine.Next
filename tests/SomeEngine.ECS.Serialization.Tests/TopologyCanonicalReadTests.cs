@@ -1,3 +1,4 @@
+using SomeEngine.Serialization;
 using System.Runtime.InteropServices;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -41,8 +42,7 @@ public sealed class TopologyCanonicalReadTests
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             ReadTopologySection(bytes, registry, world));
 
-        Assert.Contains("count", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("exactly match", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -55,14 +55,14 @@ public sealed class TopologyCanonicalReadTests
         byte[] bytes = Encode(writer =>
         {
             writer.Write(1);
-            writer.Write((byte)TopologySerializationKind.Hierarchy);
-            PayloadFormat.WriteTypeKey(writer, alias);
+            writer.Write((byte)0);
+            SaveBytes.WriteTypeKey(writer, alias);
         });
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             ReadTopologySection(bytes, registry, world));
 
-        Assert.Contains("does not exactly match", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -75,14 +75,14 @@ public sealed class TopologyCanonicalReadTests
         byte[] bytes = Encode(writer =>
         {
             writer.Write(2);
-            writer.Write((byte)TopologySerializationKind.Hierarchy);
-            PayloadFormat.WriteTypeKey(writer, s_hierarchyKeyB);
+            writer.Write((byte)0);
+            SaveBytes.WriteTypeKey(writer, s_hierarchyKeyB);
         });
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             ReadTopologySection(bytes, registry, world));
 
-        Assert.Contains("canonical registry order", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -93,23 +93,21 @@ public sealed class TopologyCanonicalReadTests
         Entity childA = world.CreateEntity();
         Entity parentB = world.CreateEntity();
         Entity childB = world.CreateEntity();
-        var runtime = new HierarchyTopologySerializationRuntime<HierarchyDomainA>(s_hierarchyKeyA);
+        var registry = new SerializationRegistry().RegisterHierarchyDomain<HierarchyDomainA>(s_hierarchyKeyA);
         byte[] bytes = Encode(writer =>
         {
-            var data = new DataWriter(writer);
             writer.Write(2);
-            data.WriteEntity(childB);
-            data.WriteEntity(parentB);
-            data.WriteEntity(childA);
-            data.WriteEntity(parentA);
+            SaveBytes.WriteEntity(writer, childB);
+            SaveBytes.WriteEntity(writer, parentB);
+            SaveBytes.WriteEntity(writer, childA);
+            SaveBytes.WriteEntity(writer, parentA);
             writer.Write(0);
         });
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            ReadRuntime(bytes, runtime, world));
+            ReadHierarchyPayload(bytes, registry, world));
 
-        Assert.Contains("hierarchy Parent child", error.Message, StringComparison.Ordinal);
-        Assert.Contains("canonical entity order", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -120,144 +118,71 @@ public sealed class TopologyCanonicalReadTests
         Entity childA = world.CreateEntity();
         Entity parentB = world.CreateEntity();
         Entity childB = world.CreateEntity();
-        var runtime = new HierarchyTopologySerializationRuntime<HierarchyDomainA>(s_hierarchyKeyA);
+        var registry = new SerializationRegistry().RegisterHierarchyDomain<HierarchyDomainA>(s_hierarchyKeyA);
         byte[] bytes = Encode(writer =>
         {
-            var data = new DataWriter(writer);
             writer.Write(2);
-            data.WriteEntity(childA);
-            data.WriteEntity(parentA);
-            data.WriteEntity(childB);
-            data.WriteEntity(parentB);
+            SaveBytes.WriteEntity(writer, childA);
+            SaveBytes.WriteEntity(writer, parentA);
+            SaveBytes.WriteEntity(writer, childB);
+            SaveBytes.WriteEntity(writer, parentB);
             writer.Write(2);
-            data.WriteEntity(parentB);
+            SaveBytes.WriteEntity(writer, parentB);
             writer.Write(1);
-            data.WriteEntity(childB);
-            data.WriteEntity(parentA);
+            SaveBytes.WriteEntity(writer, childB);
+            SaveBytes.WriteEntity(writer, parentA);
             writer.Write(1);
-            data.WriteEntity(childA);
+            SaveBytes.WriteEntity(writer, childA);
         });
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            ReadRuntime(bytes, runtime, world));
+            ReadHierarchyPayload(bytes, registry, world));
 
-        Assert.Contains("ordered hierarchy sequence parent", error.Message, StringComparison.Ordinal);
-        Assert.Contains("canonical entity order", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
-    public void DeepHierarchyImport_SealsWithOneVisitPerParentAndReleasesMetadata()
+    public void DeepHierarchySavePreservesEveryParent()
     {
-        const int parentCount = 4_096;
+        const int parentCount = 4096;
         using var world = new World();
         var entities = new Entity[parentCount + 1];
         for (int i = 0; i < entities.Length; i++)
             entities[i] = world.CreateEntity();
-
-        var import =
-            world.BeginHierarchyTopologyImport<HierarchyDomainA>(parentCount);
         for (int i = 1; i < entities.Length; i++)
-            import.AddParent(entities[i], entities[i - 1]);
-
-        import.SealParents();
-
-        Assert.Equal(1, import.CycleValidationPasses);
-        Assert.Equal(parentCount, import.CycleValidationEntityVisits);
-        Assert.Equal(0, import.RetainedCycleMetadataCount);
-        import.SetOrderedSequenceCount(0);
-        import.Complete();
-        Assert.Equal(
-            entities[^2],
-            Hierarchy<HierarchyDomainA>.GetParent(world, entities[^1]));
+            Hierarchy<HierarchyDomainA>.SetParent(world, entities[i], entities[i - 1]);
+        var registry = new SerializationRegistry().RegisterHierarchyDomain<HierarchyDomainA>(s_hierarchyKeyA);
+        using var stream = new MemoryStream();
+        WorldSerializer.WriteDurableWorld(stream, world, registry);
+        stream.Position = 0;
+        using World loaded = WorldSerializer.ReadDurableWorld(stream, registry);
+        for (int i = 1; i < entities.Length; i++)
+            Assert.Equal(entities[i - 1], Hierarchy<HierarchyDomainA>.GetParent(loaded, entities[i]));
     }
 
     [Fact]
-    public void HierarchyImportCycleSeal_ReportsTheWireEdgeThatClosedTheCycle()
+    public void HierarchyReadRejectsCyclesBeforeReadingTheOrderedSection()
     {
         using var world = new World();
         Entity first = world.CreateEntity();
         Entity second = world.CreateEntity();
         Entity third = world.CreateEntity();
-        var import =
-            world.BeginHierarchyTopologyImport<HierarchyDomainA>(3);
-        import.AddParent(first, second);
-        import.AddParent(second, third);
-        import.AddParent(third, first);
-
-        InvalidDataException error = Assert.Throws<InvalidDataException>(import.SealParents);
-
-        Assert.Contains($"{third} -> {first}", error.Message, StringComparison.Ordinal);
-        InvalidOperationException inner = Assert.IsType<InvalidOperationException>(error.InnerException);
-        Assert.Equal("Parent would create a hierarchy cycle.", inner.Message);
-        Assert.InRange(import.CycleValidationEntityVisits, 1, 3);
-    }
-
-    [Fact]
-    public void HierarchyImportCycleSeal_ReportsEarliestClosingEdgeAcrossCycles()
-    {
-        using var world = new World();
-        Entity lateFirst = world.CreateEntity();
-        Entity lateSecond = world.CreateEntity();
-        Entity earlyFirst = world.CreateEntity();
-        Entity earlySecond = world.CreateEntity();
-        var import =
-            world.BeginHierarchyTopologyImport<HierarchyDomainA>(4);
-
-        import.AddParent(lateFirst, lateSecond);     // ordinal 0
-        import.AddParent(earlyFirst, earlySecond);  // ordinal 1
-        import.AddParent(earlySecond, earlyFirst);  // ordinal 2: first closed cycle
-        import.AddParent(lateSecond, lateFirst);    // ordinal 3
-
-        InvalidDataException error = Assert.Throws<InvalidDataException>(import.SealParents);
-
-        Assert.Contains($"{earlySecond} -> {earlyFirst}", error.Message, StringComparison.Ordinal);
-        InvalidOperationException inner = Assert.IsType<InvalidOperationException>(error.InnerException);
-        Assert.Equal("Parent would create a hierarchy cycle.", inner.Message);
-        Assert.InRange(import.CycleValidationEntityVisits, 1, 4);
-    }
-
-    [Fact]
-    public void HierarchyRuntime_SealsCyclicParentsBeforeReadingOrderedSection()
-    {
-        using var world = new World();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        Entity third = world.CreateEntity();
-        var runtime = new HierarchyTopologySerializationRuntime<HierarchyDomainA>(s_hierarchyKeyA);
+        var registry = new SerializationRegistry().RegisterHierarchyDomain<HierarchyDomainA>(s_hierarchyKeyA);
         byte[] bytes = Encode(writer =>
         {
-            var data = new DataWriter(writer);
             writer.Write(3);
-            data.WriteEntity(first);
-            data.WriteEntity(second);
-            data.WriteEntity(second);
-            data.WriteEntity(third);
-            data.WriteEntity(third);
-            data.WriteEntity(first);
+            SaveBytes.WriteEntity(writer, first);
+            SaveBytes.WriteEntity(writer, second);
+            SaveBytes.WriteEntity(writer, second);
+            SaveBytes.WriteEntity(writer, third);
+            SaveBytes.WriteEntity(writer, third);
+            SaveBytes.WriteEntity(writer, first);
         });
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            ReadRuntime(bytes, runtime, world));
+            ReadHierarchyPayload(bytes, registry, world));
 
-        Assert.Contains("hierarchy cycle", error.InnerException?.Message ?? error.Message,
-            StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void HierarchyImportCannotPublishBeforeParentSeal()
-    {
-        using var world = new World();
-        var import =
-            world.BeginHierarchyTopologyImport<HierarchyDomainA>(0);
-
-        Assert.Throws<InvalidOperationException>(() => import.SetOrderedSequenceCount(0));
-        Assert.Throws<InvalidOperationException>(import.Complete);
-
-        import.SealParents();
-        Assert.Throws<InvalidOperationException>(() =>
-            import.AddParent(world.CreateEntity(), world.CreateEntity()));
-        import.SetOrderedSequenceCount(0);
-        import.Complete();
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -268,26 +193,24 @@ public sealed class TopologyCanonicalReadTests
         Entity second = world.CreateEntity();
         Entity edgeA = world.CreateEntity(new CanonicalRelationPayload { Value = 1 });
         Entity edgeB = world.CreateEntity(new CanonicalRelationPayload { Value = 2 });
-        RelationTopologySerializationRuntime<CanonicalRelationPayload> runtime = CreateRelationRuntime();
+        SerializationRegistry registry = CreateRelationRegistry();
         byte[] bytes = Encode(writer =>
         {
-            var data = new DataWriter(writer);
             WriteRelationSchema(writer);
             writer.Write(2);
-            data.WriteEntity(edgeB);
-            data.WriteEntity(first);
-            data.WriteEntity(second);
-            data.WriteEntity(edgeA);
-            data.WriteEntity(first);
-            data.WriteEntity(second);
+            SaveBytes.WriteEntity(writer, edgeB);
+            SaveBytes.WriteEntity(writer, first);
+            SaveBytes.WriteEntity(writer, second);
+            SaveBytes.WriteEntity(writer, edgeA);
+            SaveBytes.WriteEntity(writer, first);
+            SaveBytes.WriteEntity(writer, second);
             writer.Write(0);
         });
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            ReadRuntime(bytes, runtime, world));
+            ReadRelationPayload(bytes, registry, world));
 
-        Assert.Contains("relation edge", error.Message, StringComparison.Ordinal);
-        Assert.Contains("canonical entity order", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -299,108 +222,87 @@ public sealed class TopologyCanonicalReadTests
         Entity endpointC = world.CreateEntity();
         Entity outgoingEdge = world.CreateEntity(new CanonicalRelationPayload { Value = 1 });
         Entity incomingEdge = world.CreateEntity(new CanonicalRelationPayload { Value = 2 });
-        RelationTopologySerializationRuntime<CanonicalRelationPayload> runtime = CreateRelationRuntime();
+        SerializationRegistry registry = CreateRelationRegistry();
         byte[] bytes = Encode(writer =>
         {
-            var data = new DataWriter(writer);
             WriteRelationSchema(writer);
             writer.Write(2);
-            data.WriteEntity(outgoingEdge);
-            data.WriteEntity(endpointA);
-            data.WriteEntity(endpointB);
-            data.WriteEntity(incomingEdge);
-            data.WriteEntity(endpointC);
-            data.WriteEntity(endpointA);
+            SaveBytes.WriteEntity(writer, outgoingEdge);
+            SaveBytes.WriteEntity(writer, endpointA);
+            SaveBytes.WriteEntity(writer, endpointB);
+            SaveBytes.WriteEntity(writer, incomingEdge);
+            SaveBytes.WriteEntity(writer, endpointC);
+            SaveBytes.WriteEntity(writer, endpointA);
             writer.Write(2);
-            data.WriteEntity(endpointA);
+            SaveBytes.WriteEntity(writer, endpointA);
             writer.Write((byte)RelationAdjacencyRole.Incoming);
             writer.Write(1);
-            data.WriteEntity(incomingEdge);
-            data.WriteEntity(endpointA);
+            SaveBytes.WriteEntity(writer, incomingEdge);
+            SaveBytes.WriteEntity(writer, endpointA);
             writer.Write((byte)RelationAdjacencyRole.Outgoing);
             writer.Write(1);
-            data.WriteEntity(outgoingEdge);
+            SaveBytes.WriteEntity(writer, outgoingEdge);
         });
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            ReadRuntime(bytes, runtime, world));
+            ReadRelationPayload(bytes, registry, world));
 
-        Assert.Contains("canonical endpoint/role order", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
-    public void OrderedRelationImportPreservesEdgeOrder()
+    public void OrderedRelationSavePreservesEdgeOrder()
     {
-        const int edgeCount = 2_048;
+        const int edgeCount = 2048;
         using var world = new World();
         Entity source = world.CreateEntity();
-        var targets = new Entity[edgeCount];
-        var edges = new Entity[edgeCount];
+        world.SetRelationAdjacencyOrder<CanonicalRelationPayload>(source,
+            RelationAdjacencyRole.Outgoing, RelationAdjacencyOrderPolicy.Ordered);
+        var edges = new RelationEdge<CanonicalRelationPayload>[edgeCount];
         for (int i = 0; i < edgeCount; i++)
-        {
-            targets[i] = world.CreateEntity();
-            edges[i] = world.CreateEntity(new CanonicalRelationPayload { Value = i });
-        }
-
-        RelationSchema schema = RelationSchema.For<CanonicalRelationPayload>();
-        RelationTopologyImport<CanonicalRelationPayload> import =
-            world.BeginRelationTopologyImport<CanonicalRelationPayload>(
-                schema.Direction,
-                schema.Cardinality,
-                schema.AllowSelfEdge,
-                edgeCount);
-        for (int i = 0; i < edgeCount; i++)
-            import.AddEdge(edges[i], source, targets[i]);
-
-        import.SetOrderedSequenceCount(1);
-        RelationTopologyImport<CanonicalRelationPayload>.OrderedSequence sequence =
-            import.BeginOrderedSequence(source, RelationAdjacencyRole.Outgoing, edgeCount);
-        for (int i = 0; i < edgeCount; i++)
-            sequence.AddEdge(edges[i]);
-
-        sequence.Complete();
-        import.Complete();
-
-        Assert.Equal(edges, world.GetOutgoingRelations<CanonicalRelationPayload>(source).Entries.ToArray().Select(entry => entry.Edge.Entity));
+            edges[i] = world.CreateRelation(source, world.CreateEntity(), new CanonicalRelationPayload { Value = i });
+        world.ReorderRelationAdjacency(source, RelationAdjacencyRole.Outgoing, edges[^1], 0);
+        RelationEdge<CanonicalRelationPayload>[] expected = [edges[^1], .. edges[..^1]];
+        var registry = CreateRelationRegistry();
+        using var stream = new MemoryStream();
+        WorldSerializer.WriteDurableWorld(stream, world, registry);
+        stream.Position = 0;
+        using World loaded = WorldSerializer.ReadDurableWorld(stream, registry);
+        Assert.Equal(expected, loaded.GetOrderedOutgoingRelations<CanonicalRelationPayload>(source)
+            .Entries.ToArray().Select(entry => entry.Edge));
     }
 
     [Fact]
-    public void OrderedRelationImport_StillRejectsDuplicateMembers()
+    public void OrderedRelationReadRejectsDuplicateMembers()
     {
         using var world = new World();
         Entity source = world.CreateEntity();
         Entity target = world.CreateEntity();
         Entity firstEdge = world.CreateEntity(new CanonicalRelationPayload { Value = 1 });
         Entity secondEdge = world.CreateEntity(new CanonicalRelationPayload { Value = 2 });
-        RelationSchema schema = RelationSchema.For<CanonicalRelationPayload>();
-        RelationTopologyImport<CanonicalRelationPayload> import =
-            world.BeginRelationTopologyImport<CanonicalRelationPayload>(
-                schema.Direction,
-                schema.Cardinality,
-                schema.AllowSelfEdge,
-                2);
-        import.AddEdge(firstEdge, source, target);
-        import.AddEdge(secondEdge, source, target);
-        import.SetOrderedSequenceCount(1);
-        RelationTopologyImport<CanonicalRelationPayload>.OrderedSequence sequence =
-            import.BeginOrderedSequence(source, RelationAdjacencyRole.Outgoing, 2);
-        sequence.AddEdge(firstEdge);
-
-        InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            sequence.AddEdge(firstEdge));
-
-        Assert.Contains("repeats edge", error.Message, StringComparison.Ordinal);
+        byte[] bytes = Encode(writer =>
+        {
+            WriteRelationSchema(writer);
+            writer.Write(2);
+            SaveBytes.WriteEntity(writer, firstEdge);
+            SaveBytes.WriteEntity(writer, source);
+            SaveBytes.WriteEntity(writer, target);
+            SaveBytes.WriteEntity(writer, secondEdge);
+            SaveBytes.WriteEntity(writer, source);
+            SaveBytes.WriteEntity(writer, target);
+            writer.Write(1);
+            SaveBytes.WriteEntity(writer, source);
+            writer.Write((byte)RelationAdjacencyRole.Outgoing);
+            writer.Write(2);
+            SaveBytes.WriteEntity(writer, firstEdge);
+            SaveBytes.WriteEntity(writer, firstEdge);
+        });
+        Assert.Throws<InvalidDataException>(() => ReadRelationPayload(bytes, CreateRelationRegistry(), world));
     }
 
-    private static RelationTopologySerializationRuntime<CanonicalRelationPayload>
-        CreateRelationRuntime()
-    {
-        var registry = new SerializationRegistry()
-            .Register<CanonicalRelationPayload, CanonicalRelationPayloadCodec>(s_relationPayloadKey);
-        return new RelationTopologySerializationRuntime<CanonicalRelationPayload>(
-            s_relationTopologyKey,
-            Assert.Single(registry.Entries.ToArray()));
-    }
+    private static SerializationRegistry CreateRelationRegistry() => new SerializationRegistry()
+        .Register<CanonicalRelationPayload, CanonicalRelationPayloadCodec>(s_relationPayloadKey)
+        .RegisterRelationTopology<CanonicalRelationPayload>(s_relationTopologyKey);
 
     private static void WriteRelationSchema(BinaryWriter writer)
     {
@@ -410,40 +312,44 @@ public sealed class TopologyCanonicalReadTests
         writer.Write(schema.AllowSelfEdge);
     }
 
-    private static void ReadTopologySection(
-        byte[] bytes,
-        SerializationRegistry registry,
-        World world)
+    private static void ReadTopologySection(byte[] bytes, SerializationRegistry registry, World world)
     {
-        using var stream = new MemoryStream(bytes, writable: false);
-        using var reader = new BinaryReader(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
-        TopologyCodec.ReadApply(
-            reader,
-            registry,
-            new SerializationReadBudget(new SerializationReadLimits()),
-            SerializationContract.DurableSave,
-            world,
-            remapper: null);
+        // The component-only save ends with a zero topology count. Replace that complete section.
+        var values = new SerializationRegistry()
+            .Register<CanonicalRelationPayload, CanonicalRelationPayloadCodec>(s_relationPayloadKey);
+        using var stream = new MemoryStream();
+        WorldSerializer.WriteDurableWorld(stream, world, values);
+        stream.SetLength(stream.Length - sizeof(int));
+        stream.Position = stream.Length;
+        stream.Write(bytes);
+        stream.Position = 0;
+        using World loaded = WorldSerializer.ReadDurableWorld(stream, registry);
     }
 
-    private static void ReadRuntime(
-        byte[] bytes,
-        TopologySerializationRuntime runtime,
-        World world)
+    private static void ReadHierarchyPayload(byte[] bytes, SerializationRegistry registry, World world) =>
+        ReadTopologyPayload(bytes, registry, world, 0, s_hierarchyKeyA);
+
+    private static void ReadRelationPayload(byte[] bytes, SerializationRegistry registry, World world) =>
+        ReadTopologyPayload(bytes, registry, world, 1, s_relationTopologyKey);
+
+    private static void ReadTopologyPayload(byte[] bytes, SerializationRegistry registry, World world,
+        byte kind, SerializationTypeKey key)
     {
-        using var stream = new MemoryStream(bytes, writable: false);
-        using var reader = new BinaryReader(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
-        runtime.ReadApply(
-            reader,
-            new SerializationReadBudget(new SerializationReadLimits()),
-            world,
-            remapper: null);
+        byte[] section = Encode(writer =>
+        {
+            writer.Write(1);
+            writer.Write(kind);
+            SaveBytes.WriteTypeKey(writer, key);
+            writer.Write(bytes);
+            writer.Write(bytes.Length);
+        });
+        ReadTopologySection(section, registry, world);
     }
 
     private static byte[] Encode(Action<BinaryWriter> write)
     {
         using var stream = new MemoryStream();
-        using (var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true))
+        using (var writer = new BinaryWriter(stream, SaveBytes.Utf8, leaveOpen: true))
         {
             write(writer);
             writer.Flush();

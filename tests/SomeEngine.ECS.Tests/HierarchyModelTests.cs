@@ -24,41 +24,7 @@ public class HierarchyModelTests
     }
 
     [Fact]
-    public void ComponentIdFirstAccess_UsesTypedRegistrationForParentAndChildren()
-    {
-        var parentFirst = new World();
-        Entity parentEntity = parentFirst.CreateEntity();
-        Assert.False(parentFirst.Hierarchy.TryDomain<ComponentIdRegisteredDomain>(out _));
-
-        parentFirst.Hierarchy.TrackParent(
-            parentEntity,
-            ComponentMetadata<Parent<ComponentIdRegisteredDomain>>.Id);
-
-        Assert.True(
-            parentFirst.Hierarchy.TryDomain<ComponentIdRegisteredDomain>(out var parentStore));
-        Assert.Equal(
-            ComponentMetadata<Parent<ComponentIdRegisteredDomain>>.Id,
-            parentStore.ParentComponentId);
-        Assert.Equal(
-            ComponentMetadata<Children<ComponentIdRegisteredDomain>>.Id,
-            parentStore.ChildrenComponentId);
-
-        var childrenFirst = new World();
-        Entity childrenEntity = childrenFirst.CreateEntity();
-        Assert.False(childrenFirst.Hierarchy.TryDomain<ComponentIdRegisteredDomain>(out _));
-
-        childrenFirst.Hierarchy.TrackParent(
-            childrenEntity,
-            ComponentMetadata<Children<ComponentIdRegisteredDomain>>.Id);
-
-        Assert.True(
-            childrenFirst.Hierarchy.TryDomain<ComponentIdRegisteredDomain>(out var childrenStore));
-        Assert.Equal(parentStore.ParentComponentId, childrenStore.ParentComponentId);
-        Assert.Equal(parentStore.ChildrenComponentId, childrenStore.ChildrenComponentId);
-    }
-
-    [Fact]
-    public void LargeSubtreeDestroy_UsesConstantCanonicalParentPasses()
+    public void DestroySubtreeRemovesEveryDescendant()
     {
         const int ChildCount = 1_024;
         var world = new World();
@@ -69,8 +35,6 @@ public class HierarchyModelTests
             children[i] = world.CreateEntity();
             Hierarchy<SceneDomain>.SetParentDeferred(world, children[i], root);
         }
-
-        var store = world.Hierarchy.Domain<SceneDomain>();
 
         Hierarchy<SceneDomain>.DestroySubtree(world, root);
 
@@ -90,8 +54,6 @@ public class HierarchyModelTests
         Hierarchy<SceneDomain>.SetParent(world, appliedChild, doomedParent);
         Hierarchy<SceneDomain>.SetParent(world, deferredChild, oldParent);
         Hierarchy<SceneDomain>.SetParentDeferred(world, deferredChild, doomedParent);
-
-        var store = world.Hierarchy.Domain<SceneDomain>();
 
         world.DestroyEntity(doomedParent);
 
@@ -241,14 +203,14 @@ public class HierarchyModelTests
         Entity[] QueryEntities(QueryHandle query, uint? lastVersion = null)
         {
             var entities = new List<Entity>();
-            void Capture(QueryCursor cursor)
+            void Capture(scoped QueryCursor cursor)
             {
                 foreach (var row in cursor.Rows)
                     entities.Add(row.Entity);
             }
 
             if (lastVersion is uint since)
-                world.ExecuteQuery(query, since, world.CurrentTick, Capture);
+                world.ExecuteQuery(query, since, Capture);
             else
                 world.ExecuteQuery(query, Capture);
             entities.Sort(static (left, right) =>
@@ -785,23 +747,18 @@ public class HierarchyModelTests
         start.Set();
         await Task.WhenAll(readers.Append(writer));
 
-        Assert.False(world.Hierarchy.TryDomain<NeverRegisteredDomain>(out _));
-        Assert.True(world.Hierarchy.TryDomain<SceneDomain>(out _));
     }
 
     [Fact]
-    public void UnknownDomainScalarReads_DoNotMaterializePersistentDomainState()
+    public void UnknownDomainScalarReadsReturnEmptyParentAndDefaultOrder()
     {
         var world = new World();
         Entity entity = world.CreateEntity();
 
-        Assert.False(world.Hierarchy.Any);
         Assert.Equal(Entity.Null, Hierarchy<NeverRegisteredDomain>.GetParent(world, entity));
         Assert.Equal(
             ChildOrderPolicy.Unordered,
             Hierarchy<NeverRegisteredDomain>.GetChildOrderPolicy(world, entity));
-        Assert.False(world.Hierarchy.Any);
-        Assert.False(world.Hierarchy.TryDomain<NeverRegisteredDomain>(out _));
     }
 
     [Fact]

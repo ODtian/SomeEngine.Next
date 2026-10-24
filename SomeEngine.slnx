@@ -1,4 +1,10 @@
 <Solution>
+  <Project Path="src/SomeEngine.Terrain/SomeEngine.Terrain.csproj" />
+  <Project Path="tests/SomeEngine.Terrain.Tests/SomeEngine.Terrain.Tests.csproj" />
+  <Project Path="src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
+  <Project Path="templates/DefaultProject/Game.csproj" />
+  <Project Path="samples/DefaultGame/DefaultGame.csproj" />
+  <Project Path="samples/DefaultGame/SceneContent/DefaultGame.SceneContent.csproj" />
   <Project Path="src\SomeEngine.Diagnostics\SomeEngine.Diagnostics.csproj" />
   <Project Path="tools\SomeEngine.Trace\SomeEngine.Trace.csproj" />
   <Project Path="tests\SomeEngine.Diagnostics.Tests\SomeEngine.Diagnostics.Tests.csproj" />
@@ -10,11 +16,12 @@
   <Project Path="src\SomeEngine.Animation.Pose.Importers\SomeEngine.Animation.Pose.Importers.csproj" />
   <Project Path="tests\SomeEngine.Animation.Pose.Tests\SomeEngine.Animation.Pose.Tests.csproj" />
   <Project Path="src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+  <Project Path="src\SomeEngine.Navigation\SomeEngine.Navigation.csproj" />
+  <Project Path="tests\SomeEngine.Navigation.Tests\SomeEngine.Navigation.Tests.csproj" />
   <Project Path="src\SomeEngine.Resources\SomeEngine.Resources.csproj" />
   <Project Path="tests\SomeEngine.Resources.Tests\SomeEngine.Resources.Tests.csproj" />
   <Project Path="src\SomeEngine.Assets.Importers\SomeEngine.Assets.Importers.csproj" />
   <Project Path="src\SomeEngine.Serialization\SomeEngine.Serialization.csproj" />
-  <Project Path="tools\SomeEngine.AssetCook\SomeEngine.AssetCook.csproj" />
   <Project Path="tools\SomeEngine.Assets.AotSmoke\SomeEngine.Assets.AotSmoke.csproj" />
   <Project Path="tools\SomeEngine.Serialization.AotSmoke\SomeEngine.Serialization.AotSmoke.csproj" />
   <Project Path="tools\SomeEngine.Serialization.Benchmarks\SomeEngine.Serialization.Benchmarks.csproj" />
@@ -82,25 +89,36 @@
   <Project Path="samples\SomeEngine.RenderGraph.Sample\SomeEngine.RenderGraph.Sample.csproj" />
   <Project Path="samples\SomeEngine.Curves\SomeEngine.Curves.csproj" />
   <Project Path="samples\SomeEngine.Curves.Assets\SomeEngine.Curves.Assets.csproj" />
-  <Project Path="templates/DefaultProject/Game/Game.csproj" />
-  <Project Path="templates/DefaultProject/Game.Assets/Game.Assets.csproj" />
-  <Project Path="templates/DefaultProject/Game.Importing/Game.Importing.csproj" />
-  <Project Path="templates/DefaultProject/Game.App/Game.App.csproj" />
   <Project Path="benchmarks\SomeEngine.Graphics.Benchmarks\SomeEngine.Graphics.Benchmarks.csproj" />
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/SomeEngine.RenderGraph.Benchmarks/SomeEngine.RenderGraph.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/samples/" />
+  <Folder Name="/samples/ImportedScenes/" />
+  <Folder Name="/samples/ImportedScenes/Materials/">
+    <Project Path="samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
+  </Folder>
   <Folder Name="/src/" />
   <Folder Name="/templates/" />
-  <Folder Name="/templates/DefaultProject/">
-    <Project Path="templates/DefaultProject/Game.Build/Game.Build.csproj" />
-  </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SomeEngine.TestRules.Tests/SomeEngine.TestRules.Tests.csproj" />
     <Project Path="tests/SomeEngine.Assets.Consumer.Tests/SomeEngine.Assets.Consumer.Tests.csproj" />
+    <Project Path="tests/SomeEngine.ECS.Benchmarks.Tests/SomeEngine.ECS.Benchmarks.Tests.csproj" />
+    <Project Path="tests/SomeEngine.Graphics.Benchmarks.Tests/SomeEngine.Graphics.Benchmarks.Tests.csproj" />
     <Project Path="tests/SomeEngine.Assets.ImporterSets.Tests/SomeEngine.Assets.ImporterSets.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />
+    <Project Path="tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj" />
+    <Project Path="tools/TestRules/SomeEngine.TestRules.csproj" />
     <Project Path="tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAssets.csproj" />
+    <Project Path="tools/SomeEngine.Job.Benchmarks/SomeEngine.Job.Benchmarks.csproj" />
+    <Project Path="tools/SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" />
     <Project Path="tools/SomeEngine.RenderScenarios/SomeEngine.RenderScenarios.csproj" />
+    <Project Path="tools/RhiTypeGraph/RhiTypeGraph.csproj" />
     <Project Path="tools/SomeEngine.Assets.Benchmarks/SomeEngine.Assets.Benchmarks.csproj" />
     <Project Path="tools/SomeEngine.Views.AotReference/SomeEngine.Views.AotReference.csproj" />
+    <Project Path="tools/SomeEngine.Core.Benchmarks/SomeEngine.Core.Benchmarks.csproj" />
   </Folder>
   <Project Path="benchmarks\SomeEngine.ECS.Benchmarks\SomeEngine.ECS.Benchmarks.csproj" />
   <Project Path="src\SomeEngine.Graphics.Direct3D12.Validation\SomeEngine.Graphics.Direct3D12.Validation.csproj" />

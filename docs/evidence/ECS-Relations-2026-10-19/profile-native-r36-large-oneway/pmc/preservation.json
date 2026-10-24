@@ -1,0 +1,82 @@
+{
+  "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+  "StartedAtUtc": "2026-10-19T20:52:14.2990823Z",
+  "FinishedAtUtc": "2026-10-19T20:52:15.3452551Z",
+  "QueueRecords": [
+    "ba2963d687eb483caef769c19c9aa981",
+    "e5cefa7577b7415aa205cc5d69de6932",
+    "108243b42a72447b92c1e29ca89f37ec",
+    "1f984499733e4cb7bdd5c354838b9504",
+    "3a2afe444c5f45f784c9e37c3ae0dd15"
+  ],
+  "RawReadChecks": [
+    {
+      "Name": "pmc-target-29672.raw.json.gz",
+      "OriginalBytes": 699612,
+      "PreservedBytes": 699612,
+      "CompleteGzipRead": true,
+      "UncompressedBytes": 7503696,
+      "ReadCompletedAtUtc": "2026-10-19T20:52:14.7609225Z"
+    },
+    {
+      "Name": "pmc-target-29672-by-stack.raw.json.gz",
+      "OriginalBytes": 704659,
+      "PreservedBytes": 704659,
+      "CompleteGzipRead": true,
+      "UncompressedBytes": 7571094,
+      "ReadCompletedAtUtc": "2026-10-19T20:52:14.7754414Z"
+    }
+  ],
+  "ConsumedFiles": [
+    {
+      "Name": "processor-counters.txt",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\processor-counters.txt",
+      "Length": 457352289,
+      "DeletedAtUtc": "2026-10-19T20:52:14.8533751Z",
+      "DeleteStartedAtUtc": "2026-10-19T20:52:14.7883698Z"
+    },
+    {
+      "Name": "pmc-events.csv",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmc-events.csv",
+      "Length": 1630800198,
+      "DeletedAtUtc": "2026-10-19T20:52:15.1470037Z",
+      "DeleteStartedAtUtc": "2026-10-19T20:52:14.8543781Z"
+    },
+    {
+      "Name": "kernel.etl",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\kernel.etl",
+      "Length": 1096941568,
+      "DeletedAtUtc": "2026-10-19T20:52:15.1529961Z",
+      "DeleteStartedAtUtc": "2026-10-19T20:52:15.1484403Z"
+    },
+    {
+      "Name": "pmc.etl",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\pmc-session\\pmc.etl",
+      "Length": 1119354880,
+      "DeletedAtUtc": "2026-10-19T20:52:15.3421679Z",
+      "DeleteStartedAtUtc": "2026-10-19T20:52:15.1541721Z"
+    }
+  ],
+  "TargetSourceCounts": {
+    "BranchMispredictsRetired": 143,
+    "LLCMisses": 0,
+    "UnhaltedCoreCycles": 406,
+    "InstructionRetired": 518
+  },
+  "AllSourceCounts": {
+    "BranchMispredictsRetired": 33938,
+    "LLCMisses": 0,
+    "UnhaltedCoreCycles": 2777857,
+    "InstructionRetired": 839833
+  },
+  "RunCounts": {
+    "UnhaltedCoreCyclesG": 0,
+    "InstructionRetiredH": 0,
+    "InstructionRetiredG": 0,
+    "BranchG": 5,
+    "UnhaltedCoreCyclesH": 0,
+    "Cpi": null,
+    "BranchH": 2
+  },
+  "OriginalPidFilteringHypothesis": "Refuted by complete PMC collection joined to target StackWalk QPC/TID: OtherPublicPid=0; matched samples=1057 in both readers."
+}

@@ -3,7 +3,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Vulkan.Tests;
 
-public sealed class VulkanParameterBindingTests
+[Xunit.Collection("Vulkan shader compilation")]
+public sealed class VulkanParameterBindingTests(VulkanTestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(false)]
@@ -19,7 +20,7 @@ public sealed class VulkanParameterBindingTests
                 Result[0] = Values[0] + 7u;
             }
             """;
-        var shader = VulkanTestShader.Compile(source, ("computeMain", SlangStage.Compute));
+        var shader = shaderCompiler.Compile(source, ("computeMain", SlangStage.Compute));
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
         VariableLayoutReflection entry = shader.Entries[0].VarLayout;
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();

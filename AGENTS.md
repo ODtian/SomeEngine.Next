@@ -12,8 +12,16 @@ Debug、优化时，先问是否是架构造成的，不要在错误的架构下
 
 临时运行、临时脚本、临时结果、临时探针，使用完成后立即删除，不要把临时内容保留在工作区内或者临时目录/
 
+# Agent 工作区
+
+- 每个任务同时最多运行 3 个子 agent；工作树和独立引擎编译产物各最多 3 套，并按实际活跃工作量复用。
+- 子 agent 交接直接复用同一工作树及其编译输出，采用增量编译；实现合入后立即删除空闲工作树。
+- 临时日志、捕获和报告使用完立即删除。禁止保留本任务的历史 evidence、evidance 归档，以及额外的完整应用和场景副本。
+- 清理严格限于本任务创建的工作树、目录和产物。
+- 性能相关的启动、测量和捕获通过 `F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1` 提交到共享队列。
+
 # Testing
-测试范围仅覆盖行为与公共API，严禁针对内部具体实现进行测试
+测试按 [行为检查规则](wiki/harness/Behavior-Checks.md) 编写和评审；默认测试命令执行该页规定的自动检查。
 
 CPU、GPU benchmark 通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提交到公共 FIFO 队列。比较期间需要独占 CPU/GPU 的构建、内容导入与捕获使用同一入口。提交返回任务编号和结果目录；交付保留 stdout、stderr、退出码与测量配置。用法见 `wiki/harness/Harness-Performance-Evidence.md`。
 
@@ -25,3 +33,17 @@ CPU、GPU benchmark 通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提
 
 
 RG 采用持久图，稳定拓扑和资源通过显式修改维护。按更新频率拆分：接近每帧刷新且重建更便宜的工作使用即时子图或当帧重建，不为这类工作强行维护增量拓扑，也不能因此每帧重建主体图。
+
+## Agent skills
+
+### Issue tracker
+
+需求规格与任务票使用 GitHub Issues：`ODtian/SomeEngine.Next`。执行相关技能前读取 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+任务角色与标签名称见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+领域文档采用根级 `GLOSSARY.md`、`docs/adr/` 与现有 Wiki。探索代码前读取 `docs/agents/domain.md`。当前行为以源码核对结果为准，已确认的需求和设计目标用于规划变更；Wiki/ADR 的引用范围按该文件中的筛选规则确定。

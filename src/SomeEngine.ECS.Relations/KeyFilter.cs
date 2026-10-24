@@ -29,28 +29,29 @@ public readonly struct KeyFilter<TEnumerable, TRelation, TImplementation, TCompo
 
     public int QueryCount => _enumerable.QueryCount;
 
+    public static bool ReadsFromSingleQuery => TEnumerable.ReadsFromSingleQuery;
+
     public QueryHandle GetQuery(int position) => _enumerable.GetQuery(position);
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>
         _enumerable.AddReads(definition, position).WithOptionalRead<TComponent>();
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+        => _exclude ? Enumerate<ExceptSelection, TOutput>(queries, ref output)
+            : Enumerate<WhereSelection, TOutput>(queries, ref output);
+
+    private bool Enumerate<TSelection, TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+        where TSelection : struct, IRelationSelection
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        var relation = new KeyRelation<TRelation, TImplementation, TComponent, TKey>(queries.Access, _relation, _implementation, _exclude);
-        var filtered = new RelationFilterOutput<KeyRelation<TRelation, TImplementation, TComponent, TKey>, TOutput, (Entity, Entity)>(relation, output);
-        try
-        {
-            return _enumerable.Enumerate(queries, ref filtered);
-        }
-        finally
-        {
-            output = filtered.Output;
-        }
+        var relation = new KeyRelation<TRelation, TImplementation, TComponent, TKey>(queries.Access, _relation, _implementation);
+        var filtered = new RelationFilterOutput<KeyRelation<TRelation, TImplementation, TComponent, TKey>, TOutput, (Entity, Entity), TSelection>(relation, new(ref output));
+        return _enumerable.Enumerate(queries, ref filtered);
     }
 }
 
-public ref struct KeyRelation<TRelation, TImplementation, TComponent, TKey> : IRelation<(Entity, Entity)>
+public ref struct KeyRelation<TRelation, TImplementation, TComponent, TKey> : IQueryRelation<(Entity, Entity)>
     where TRelation : struct, IRelation<TComponent, TComponent>
     where TImplementation : struct, IKeyRelation<TRelation, TComponent, TKey>
     where TComponent : struct, IIndexedComponent<TKey>
@@ -59,26 +60,29 @@ public ref struct KeyRelation<TRelation, TImplementation, TComponent, TKey> : IR
     private readonly QueryCursor _query;
     private TRelation _relation;
     private TImplementation _implementation;
-    private readonly bool _exclude;
 
-    public KeyRelation(QueryCursor query, TRelation relation, TImplementation implementation, bool exclude)
+    public KeyRelation(QueryCursor query, TRelation relation, TImplementation implementation)
     {
         _query = query;
         _relation = relation;
         _implementation = implementation;
-        _exclude = exclude;
     }
 
     public bool Matches(in (Entity, Entity) pair)
     {
+        return _query.TryGetRow(pair.Item1, out var first) && _query.TryGetRow(pair.Item2, out var second)
+            && Matches(in pair, first, second);
+    }
+
+    public bool Matches(in (Entity, Entity) pair, scoped QueryRow first, scoped QueryRow second)
+    {
         bool matches = false;
-        if (_query.TryGetRow(pair.Item1, out var first) && first.Has<TComponent>() &&
-            _query.TryGetRow(pair.Item2, out var second) && second.Has<TComponent>())
+        if (first.TryReadRef<TComponent>(out var firstValue) && second.TryReadRef<TComponent>(out var secondValue))
         {
-            TKey firstKey = first.ReadRef<TComponent>().GetKey();
-            TKey secondKey = second.ReadRef<TComponent>().GetKey();
+            TKey firstKey = firstValue.Value.GetKey();
+            TKey secondKey = secondValue.Value.GetKey();
             matches = _implementation.Matches(in _relation, in firstKey, in secondKey);
         }
-        return matches != _exclude;
+        return matches;
     }
 }

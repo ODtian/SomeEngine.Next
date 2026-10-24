@@ -1,0 +1,133 @@
+param([Parameter(Mandatory=$true)][string]$ReaderQueueId)
+try {
+$ErrorActionPreference='Stop'
+Set-Location 'F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next'
+$sourceRecordPath='artifacts/relations-measurements/focused-native-r45/source.json'
+$sourceRecord=Get-Content -LiteralPath $sourceRecordPath -Raw | ConvertFrom-Json
+foreach($stage in @('BehaviorExitCode','PushExitCode','PublishExitCode','SourceCheckExitCode')) {
+ if($sourceRecord.$stage -ne 0){'STOP source stage '+$stage;exit 2}
+}
+$source=[string]$sourceRecord.SourceCommit
+$producerResult=Get-Content -LiteralPath 'artifacts/benchmark-queue/45457c0a0ea343458c8de1c83d1ba0f8/result.json' -Raw | ConvertFrom-Json
+if($producerResult.ExitCode -ne 0){'STOP source producer';exit 2}
+$productsPath='artifacts/relations-measurements/final-packages-r45/products.json'
+$products=Get-Content -LiteralPath $productsPath -Raw | ConvertFrom-Json
+if($products.SourceCommit -cne $source -or $products.Stages -ne 14){'STOP package products source/stages';exit 2}
+$producerFactsPath='artifacts/ecs-relations/package-stages-'+$source+'.json'
+$stages=@(Get-Content -LiteralPath $producerFactsPath -Raw | ConvertFrom-Json)
+if($stages.Count -ne 14){'STOP package stage count';exit 2}
+foreach($stage in $stages){if($stage.ExitCode -ne 0 -or $stage.SourceCommit -cne $source){'STOP package stage '+$stage.Stage;exit 2}}
+$queueIds=@($stages.QueueId | Sort-Object -Unique)
+$productQueueIds=@($products.QueueIds | Sort-Object -Unique)
+if($queueIds.Count -ne 2 -or ($queueIds -join ',') -cne ($productQueueIds -join ',')){'STOP package experiment count';exit 2}
+$evidence='docs/evidence/ECS-Relations-2026-10-19/final-packages-r45'
+[void](New-Item -ItemType Directory -Path $evidence -Force)
+$started=[DateTime]::UtcNow
+Get-Content -LiteralPath $PSCommandPath -Raw | Set-Content -LiteralPath (Join-Path $evidence 'package-codegen-command.txt') -Encoding utf8
+$gates=@(foreach($id in $queueIds){
+ $queueStages=@($stages | Where-Object QueueId -eq $id)
+ if($id -eq $ReaderQueueId){
+  [pscustomobject]@{Id=$id;ExitCode=$null;Completion='The parent task result follows this reader.';CompletedStages=$queueStages.Count;SourceCommit=$source;QueueDirectory=('artifacts/benchmark-queue/'+$id)}
+ } else {
+  $receipt=Get-Content -LiteralPath ('artifacts/benchmark-queue/'+$id+'/result.json') -Raw | ConvertFrom-Json
+  'PRODUCER '+$id+' ExitCode='+$receipt.ExitCode
+    $completion='Production task ExitCode0.'
+  if($receipt.ExitCode -ne 0){
+   $initialReader=Get-Content -LiteralPath 'docs/evidence/ECS-Relations-2026-10-19/final-packages-r45/package-initial-reader-stage.json' -Raw | ConvertFrom-Json
+   if($receipt.Id -cne $initialReader.ReaderQueueId -or $receipt.ExitCode -ne $initialReader.ExitCode -or $initialReader.ExitCode -ne 2 -or $initialReader.SourceCommit -cne $source){'STOP producer queue';exit 2}
+   $completion='All production stages returned ExitCode0; the initial codegen reader returned ExitCode2.'
+  }
+  [pscustomobject]@{Id=$receipt.Id;ExitCode=$receipt.ExitCode;StartedAtUtc=$receipt.StartedAtUtc;FinishedAtUtc=$receipt.FinishedAtUtc;Completion=$completion;CompletedStages=$queueStages.Count;SourceCommit=$source;QueueDirectory=('artifacts/benchmark-queue/'+$id)}
+ }
+})
+$gates | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $evidence 'codegen-producer-queues.json') -Encoding utf8
+$stages | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $evidence 'codegen-producer-stages.json') -Encoding utf8
+$products | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidence 'codegen-products.json') -Encoding utf8
+$sourceRecord | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $evidence 'codegen-source-record.json') -Encoding utf8
+'PACKAGE STAGES='+$stages.Count+' EXPERIMENTS='+$queueIds.Count+' SOURCE='+$source
+$consumer='tools/SomeEngine.ECS.Relations.AotSmoke/bin/Release/net10.0/win-x64/SomeEngine.ECS.Relations.AotSmoke.dll'
+$obj='tools/SomeEngine.ECS.Relations.AotSmoke/obj/Release/net10.0/win-x64/native/SomeEngine.ECS.Relations.AotSmoke.obj'
+$dllInfo=Get-Item -LiteralPath $consumer;$objInfo=Get-Item -LiteralPath $obj
+$dllBefore=[pscustomobject]@{Path=$dllInfo.FullName;Utc=$dllInfo.LastWriteTimeUtc.ToString('O');Length=$dllInfo.Length}
+$objBefore=[pscustomobject]@{Path=$objInfo.FullName;Utc=$objInfo.LastWriteTimeUtc.ToString('O');Length=$objInfo.Length}
+$frozenInputs=@(foreach($inputFile in @($dllBefore,$objBefore)) {
+ $frozen=@($products.Products | Where-Object {[IO.Path]::GetFullPath($_.Path) -eq $inputFile.Path})
+ if($frozen.Count -ne 1){'STOP frozen product path '+$inputFile.Path;exit 2}
+ $expectedUtc=[DateTimeOffset]($frozen[0].LastWriteTimeUtc)
+ $observedUtc=[DateTimeOffset]($inputFile.Utc)
+ if($expectedUtc -ne $observedUtc -or $frozen[0].Length -ne $inputFile.Length){'STOP current frozen input '+$inputFile.Path;exit 2}
+ [pscustomobject]@{Path=$inputFile.Path;ExpectedUtc=$expectedUtc.ToString('O');ActualUtc=$observedUtc.ToString('O');ExpectedLength=$frozen[0].Length;ActualLength=$inputFile.Length}
+})
+$frozenInputs | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidence 'package-frozen-inputs.json') -Encoding utf8
+'SOURCE '+$source+' DLL UTC='+$dllBefore.Utc+' Length='+$dllBefore.Length+' OBJECT UTC='+$objBefore.Utc+' Length='+$objBefore.Length
+$sourceFiles=@(rg --files tools/SomeEngine.ECS.Relations.AotSmoke -g '*.cs')
+$sourceLines=@(& rg -n 'WeightedTotal8|EighthEntity|NumberPointValue|FillContacts|Read<Number<int>>|PackageReference|ProjectReference' @sourceFiles 'tools/SomeEngine.ECS.Relations.AotSmoke/SomeEngine.ECS.Relations.AotSmoke.csproj')
+$sourceLines|Set-Content -LiteralPath (Join-Path $evidence 'codegen-consumer-source.txt') -Encoding utf8
+$ilRecipe=Get-Content -Raw -LiteralPath 'artifacts/benchmark-queue/60d0895422044ab1ac184826a2c3d6ee/result.json'|ConvertFrom-Json
+$ilCode=[string]$ilRecipe.Arguments[-1]
+$ilOutput=@(& ([ScriptBlock]::Create($ilCode)))
+$ilOutput|Set-Content -LiteralPath (Join-Path $evidence 'package-selected-methods.il') -Encoding utf8
+$ilTargets=@($ilOutput|Where-Object{$_ -like 'IL TARGET*'})
+$ilTargets|Set-Content -LiteralPath (Join-Path $evidence 'package-il-targets.txt') -Encoding utf8
+$ilTargets|ForEach-Object{Write-Host $_}
+$registerBegin=@(for($i=0;$i -lt $ilOutput.Count;$i++){if($ilOutput[$i] -eq 'BEGIN SELECTED METHOD Consumer EcsTypeRegistration::RegisterTypes'){$i}})
+$registerEnd=@(for($i=0;$i -lt $ilOutput.Count;$i++){if($ilOutput[$i] -eq 'END SELECTED METHOD Consumer EcsTypeRegistration::RegisterTypes'){$i}})
+if($registerBegin.Count -ne 1 -or $registerEnd.Count -ne 1){'STOP consumer registration block';exit 2}
+$registration=@($ilOutput[$registerBegin[0]..$registerEnd[0]])
+$storageCalls=@($registration | Where-Object {$_ -match 'GeneratedEcsTypes::RegisterJobStorage<'}).Count
+$schemaCalls=@($registration | Where-Object {$_ -match 'GeneratedEcsTypes::RegisterRelationSchema<'}).Count
+if($storageCalls -ne 17 -or $schemaCalls -ne 2){'STOP generated registration count storage='+$storageCalls+' schema='+$schemaCalls;exit 2}
+$assets=Get-Content -LiteralPath 'tools/SomeEngine.ECS.Relations.AotSmoke/obj/project.assets.json' -Raw | ConvertFrom-Json
+$packages=@($assets.libraries.PSObject.Properties | Where-Object {$_.Name.StartsWith('SomeEngine.')} | ForEach-Object {[pscustomobject]@{Name=$_.Name;Type=$_.Value.type}})
+if($packages.Count -ne 8 -or @($packages | Where-Object Type -ne 'package').Count -gt 0){'STOP consumer package sources';exit 2}
+[ordered]@{SourceCommit=$source;JobStorageRegistrationCalls=$storageCalls;RelationSchemaRegistrationCalls=$schemaCalls;Packages=$packages} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $evidence 'package-registration-and-packages.json') -Encoding utf8
+'GENERATED STORAGE='+$storageCalls+' SCHEMA='+$schemaCalls+' PACKAGES='+$packages.Count
+$llvm='C:\Program Files\LLVM\bin\llvm-objdump.exe'
+$names=@(& $llvm -t $obj|ForEach-Object{if($_ -match '\(sec\s+2\).* 0x[0-9a-f]+ (.+)$'){$Matches[1]}})
+if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+$weighted='SomeEngine_ECS_Relations_AotSmoke_SomeEngine_Tools_RelationsSmoke_WeightedTotal8__Matches'
+$old=Get-Content -Raw -LiteralPath 'artifacts/benchmark-queue/5f9aaca348574fb49e6bfd9a442f944e/result.json'|ConvertFrom-Json
+$oldTargets=@($old.Arguments|Where-Object{$_.StartsWith('--disassemble-symbols=')})
+if($oldTargets.Count -ne 1){'STOP Component8 recipe';exit 2}
+$component=$oldTargets[0].Substring('--disassemble-symbols='.Length)
+$points=@($names|Where-Object{$_ -like '*World__ReadEntityQueryRef<*Number_1<*'})
+$fill=@($names|Where-Object{$_ -like '*SpatialTraversal__Enumerate*' -and $_ -like '*PairArrayOutput*' -and $_ -like '*DefaultContacts*' -and $_ -like '*MutualCategories*' -and $_ -like '*HairCharacterIndex*'})
+'DISCOVERY NumberPoint='+$points.Count+' SpatialFill='+$fill.Count
+if($points.Count -ne 1 -or $fill.Count -ne 1){'STOP unique native role';exit 2}
+$roles=@([pscustomobject]@{Role='Weighted8';Name=$weighted},[pscustomobject]@{Role='Component8';Name=$component},[pscustomobject]@{Role='NumberPoint';Name=$points[0]},[pscustomobject]@{Role='SpatialFill';Name=$fill[0]})
+foreach($role in $roles){$hits=@($names|Where-Object{$_ -ceq $role.Name});'NATIVE TARGET '+$role.Role+' count='+$hits.Count;if($hits.Count -ne 1){'STOP selected native role';exit 2}}
+$native=@(& $llvm -d -r --no-show-raw-insn ('--disassemble-symbols='+(($roles.Name)-join ',')) $obj)
+if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+$native|Set-Content -LiteralPath (Join-Path $evidence 'package-four-functions.raw.asm') -Encoding utf8
+$functions=@{};$roleName=$null
+foreach($line in $native){if($line -match '^([0-9a-f]{16}) <(.+)>:$'){$symbol=$Matches[2];$roleName=($roles|Where-Object{$_.Name -ceq $symbol}).Role;if($roleName){$functions[$roleName]=[Collections.Generic.List[string]]::new()}};if($roleName){$functions[$roleName].Add(($line -replace '\s+#.*$','' -replace ' <.*$',' <symbol>'))}}
+foreach($role in $roles){$functions[$role.Role]|Set-Content -LiteralPath (Join-Path $evidence ('package-native-'+$role.Role+'.asm')) -Encoding utf8}
+$roles|ConvertTo-Json -Depth 5|Set-Content -LiteralPath (Join-Path $evidence 'package-native-symbols.json') -Encoding utf8
+$sourceName=$source
+$templateReceipt=Get-Content -Raw -LiteralPath 'artifacts/benchmark-queue/1b0235ae0a3e483c9c78eae2e8b7fb49/result.json'|ConvertFrom-Json
+$template=[string]$templateReceipt.Arguments[-1]
+$functionStart=$template.IndexOf('function ReadFunctions(');$setsStart=$template.IndexOf('$sets=');$statsStart=$template.IndexOf('foreach($set in $sets)');$afterStart=$template.IndexOf('$after=')
+$roleLine='$role=if($name.Contains(''HandwrittenDefaultPairs'')) {''Hand''} else {''Required''}'
+$newRoleLine='$role=($roles | Where-Object {$_.Name -ceq $name}).Role'
+$functionCode=$template.Substring($functionStart,$setsStart-$functionStart).Replace($roleLine,$newRoleLine)
+$setsCode='$sets=@([pscustomobject]@{Version=$sourceName;Functions=@(ReadFunctions $native)})'
+$statsCode=$template.Substring($statsStart,$afterStart-$statsStart)
+$stats=@(& ([ScriptBlock]::Create($functionCode+[Environment]::NewLine+$setsCode+[Environment]::NewLine+$statsCode)))
+$stats|Set-Content -LiteralPath (Join-Path $evidence 'package-native-statistics.log') -Encoding utf8
+$statistics=@($stats|Where-Object{$_ -match '^\{"Version"'}|ForEach-Object{$_|ConvertFrom-Json})
+$statistics|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $evidence 'package-native-statistics.json') -Encoding utf8
+foreach($stat in $statistics){'NATIVE FUNCTION '+($stat|ConvertTo-Json -Compress)}
+$dllAfter=Get-Item -LiteralPath $consumer;$objAfter=Get-Item -LiteralPath $obj
+$facts=[pscustomobject]@{SourceCommit=$source;ReaderQueueId=$ReaderQueueId;ProducerFacts=('artifacts/ecs-relations/package-stages-'+$source+'.json');ProducerQueues=$gates;InitialReaderStage='package-initial-reader-stage.json';FrozenInputs=$frozenInputs;DllBefore=$dllBefore;DllAfter=[pscustomobject]@{Path=$dllAfter.FullName;Utc=$dllAfter.LastWriteTimeUtc.ToString('O');Length=$dllAfter.Length};ObjectBefore=$objBefore;ObjectAfter=[pscustomobject]@{Path=$objAfter.FullName;Utc=$objAfter.LastWriteTimeUtc.ToString('O');Length=$objAfter.Length};IlRecipeQueue='60d0895422044ab1ac184826a2c3d6ee';NativeRecipeQueue='e29cdab130204f68a7a777dd5fe27522';IlTargets=$ilTargets;NativeTargets=$roles;NativeCommand=@($llvm,'-d','-r','--no-show-raw-insn',('--disassemble-symbols='+(($roles.Name)-join ',')),$obj);StartedAtUtc=$started;FinishedAtUtc=[DateTime]::UtcNow}
+$facts|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $evidence 'package-codegen-facts.json') -Encoding utf8
+'EVIDENCE '+(Join-Path (Get-Location) $evidence)
+'OBJECT AFTER UTC='+$objAfter.LastWriteTimeUtc.ToString('O')+' Length='+$objAfter.Length
+'DLL AFTER UTC='+$dllAfter.LastWriteTimeUtc.ToString('O')+' Length='+$dllAfter.Length
+'AUDIT END UTC='+[DateTime]::UtcNow.ToString('O')
+$released=[DateTime]::UtcNow.ToString('O')
+[ordered]@{ReaderQueueId=$ReaderQueueId;SourceCommit=$source;NativeReaderStartedAtUtc=$started.ToString('O');NativeReaderFinishedAtUtc=$released;NativeReaderExitCode=0;ReleasedAtUtc=$released;ProducerStages=14;ProducerExperiments=2;ReleaseBasis='Selected IL methods, four complete native functions, and producer facts are saved.'} | ConvertTo-Json | Set-Content -LiteralPath 'artifacts/relations-measurements/final-packages-r45/native-reader-released.json' -Encoding utf8
+'PACKAGE READER RELEASE UTC='+$released
+} finally { Remove-Item -LiteralPath $PSCommandPath }
+
+
+

@@ -19,7 +19,7 @@ struct RayTracingClusterRecord
 ConstantBuffer<GeometryExportUniforms> ExportUniforms;
 ByteAddressBuffer PhaseOneCounts;
 ByteAddressBuffer PhaseTwoCounts;
-StructuredBuffer<DrawRequest> VisibleClusters;
+StructuredBuffer<VisibleCluster> VisibleClusters;
 ByteAddressBuffer PageHeap;
 RWStructuredBuffer<RayTracingClusterRecord> RayTracingClusters;
 RWByteAddressBuffer RayTracingClusterCount;
@@ -57,7 +57,7 @@ void BuildRayTracingGeometry(uint3 dispatchThreadId : SV_DispatchThreadID)
         PhaseTwoCounts,
         ExportUniforms.Capacity,
         dispatchThreadId.x);
-    DrawRequest request = VisibleClusters[visibleIndex];
+    DrawRequest request = VisibleClusterRequest(VisibleClusters[visibleIndex]);
     uint vertexBlobAddress;
     uint vertexBlobSize;
     uint triangleStart;

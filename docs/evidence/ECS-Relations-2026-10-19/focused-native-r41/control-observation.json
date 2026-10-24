@@ -1,0 +1,46 @@
+{
+  "ProcessId": 95108,
+  "ProcessStartedAtUtc": "2026-10-19T23:55:23.4473669Z",
+  "ObservationStartedAtUtc": "2026-10-19T23:55:24.9948681Z",
+  "ObservationEndedAtUtc": "2026-10-19T23:55:26.5538199Z",
+  "Receipts": [
+    {
+      "QueueId": "37feeb1a99da44c1a39db44ee5e60f0c",
+      "ResultCreated": true,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "StartedAtUtc": "2026-10-20T07:54:15.9115751+08:00",
+      "FinishedAtUtc": "2026-10-20T07:54:35.1594955+08:00",
+      "ExitCode": 0
+    },
+    {
+      "QueueId": "4d417bfc23f34af599c07cbd82d27049",
+      "ResultCreated": false
+    }
+  ],
+  "WorkerProcesses": [
+    {
+      "ProcessId": 90944,
+      "ParentProcessId": 81812,
+      "Name": "conhost.exe",
+      "StartedAtUtc": "2026-10-19T08:23:27.7621540Z",
+      "Workspace": null,
+      "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+    },
+    {
+      "ProcessId": 56396,
+      "ParentProcessId": 81812,
+      "Name": "python.exe",
+      "StartedAtUtc": "2026-10-19T23:54:35.1983380Z",
+      "Workspace": null,
+      "Command": "\"C:/Users/boqi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe\" -B F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/run.py --scene bistro --scene-cache F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/bistro.npz --scene-layout F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/loads/bistro-sparse-motion.json --width 480 --height 270 --warmup 96 --frames 32 --variants screen_chain_surfel_grid_ray screen_mature_hash_grid_ray screen_dense_hash_grid_ray --profiles static camera moving turn_lights --primary-query raster --geometry-query cells --object-query cell --object-walk lists --object-update split --object-covers --object-grid 32 --dense-grid 4 --pointer-seeds 0 --cell-ray-bounds --triangle-data aos --cell-triangle-indices packed --tail-cache sharc_nrc --neural-coordinates world --neural-weights uniform --probe-sampling history --probe-spacing 16 --probe-rays 1 --pixel-rays quad --surfel-history --surfel-capacity 65536 --surfel-read center --lighting-history 4 --training 128 --training-stride 4 --training-width 1 --training-sampling scan --raster-bucket 128 --temporal-frames 16 --temporal-width 64 --temporal-spp 256 --temporal-reference-repeats 2 --quality-checks 1 --query-rays 0 --combine-passes --frame-timing --out F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/results-mature-hash-v1-fast-small-bistro-motion --gather-width 8 --reference-spp 256 --save-linear"
+    },
+    {
+      "ProcessId": 75364,
+      "ParentProcessId": 56396,
+      "Name": "conhost.exe",
+      "StartedAtUtc": "2026-10-19T23:54:35.2199920Z",
+      "Workspace": null,
+      "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+    }
+  ]
+}

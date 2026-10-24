@@ -3,7 +3,8 @@ namespace SomeEngine.Graphics.Vulkan.Tests;
 using SlangShaderSharp;
 using Xunit;
 
-public sealed class VulkanHotPathTests
+[Xunit.Collection("Vulkan shader compilation")]
+public sealed class VulkanHotPathTests(VulkanTestCompiler shaderCompiler)
 {
     [Fact]
     public void RepeatedParameterBindingDispatchWritesExpectedBytes()
@@ -15,7 +16,7 @@ public sealed class VulkanHotPathTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID) { Output[0] = Tint; }
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
