@@ -40,9 +40,10 @@ public sealed partial class SkinningRenderingTests
             });
             Assert.Equal(64, frames.Count);
             Assert.All(frames, frame => Assert.Equal(frame.Gpu.FrameIdentity, frame.Geometry.FrameIdentity));
+            foreach (ApplicationFrameTiming complete in frames.Take(4).Append(frames[^1]))
+                _output.WriteLine($"{path} frame {complete.Frame}: GPU={complete.Gpu.ElapsedMs} ms, passes={complete.Gpu.Passes.Count}; geometry={JsonSerializer.Serialize(complete.Geometry)}");
             Assert.True(frames[^1].Geometry.SelectedVertices > 0);
             Assert.True(frames[^1].Geometry.SelectedTriangles > 0);
-            _output.WriteLine($"{path} completed geometry: {JsonSerializer.Serialize(frames[^1].Geometry)}");
             SceneImage captured = Assert.IsType<SceneImage>(image);
             Assert.Equal(1920, captured.Width);
             Assert.Equal(1080, captured.Height);
