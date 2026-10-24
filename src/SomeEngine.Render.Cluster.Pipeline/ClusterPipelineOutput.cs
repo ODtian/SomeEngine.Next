@@ -52,23 +52,6 @@ public readonly record struct ClusterPipelineOutputs(
     int Height,
     uint ViewCount)
 {
-    /// <summary>
-    /// 48-byte receiver records used for primary-view shadow page requests. Forward shading guarantees
-    /// only request fields here unless full receiver export was requested when creating the pipeline.
-    /// Consume complete material fields through <see cref="SurfaceReceiverConsumers"/>.
-    /// </summary>
-    public GraphBufferId SurfaceReceivers { get; init; }
-    /// <summary>Additional receiver-layer records, with the same optional full-export boundary as <see cref="SurfaceReceivers"/>.</summary>
-    public GraphBufferId AdditionalSurfaceReceivers { get; init; }
-    public uint AdditionalReceiverLayerCount { get; init; }
-    /// <summary>
-    /// Present only when <see cref="ClusterPipelineOptions.ExportSurfaceReceivers"/> was enabled at creation.
-    /// Add complete-receiver consumers to this region and declare their buffer reads. The region follows
-    /// material shading and retains its identity across forward/deferred switches and material changes.
-    /// Without this opt-in, forward shading keeps the final receiver local to lighting and exports
-    /// only the color, depth, and motion textures needed by post-processing.
-    /// </summary>
-    public GraphRegionId? SurfaceReceiverConsumers { get; init; }
     public GraphTextureId CurrentHiZ { get; init; }
     public ClusterTransparencyGeometry? Transparency { get; init; }
     public ClusterStencil? Stencil { get; init; }
@@ -170,6 +153,7 @@ public sealed class ClusterGeometryCapabilities
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
     private BufferRangeSet _lastResidentPageReads = BufferRangeSet.Empty;
     private BufferRange[] _lastBvhRanges = [];
+    private BufferRangeSet _lastBvhReadRanges = BufferRangeSet.Empty;
     private BufferRangeSet _bvhReadRanges = BufferRangeSet.Empty;
 
     internal ClusterGeometryCapabilities(
@@ -265,8 +249,9 @@ public sealed class ClusterGeometryCapabilities
         if (!ReferenceEquals(bvhRanges, _lastBvhRanges))
         {
             _lastBvhRanges = bvhRanges;
-            _bvhReadRanges = bvhRanges.Length == 0 ? BufferRangeSet.Empty : new BufferRangeSet(bvhRanges);
+            _lastBvhReadRanges = bvhRanges.Length == 0 ? BufferRangeSet.Empty : new BufferRangeSet(bvhRanges);
         }
+        _bvhReadRanges = _lastBvhReadRanges;
     }
 
     internal void ClearFrame()

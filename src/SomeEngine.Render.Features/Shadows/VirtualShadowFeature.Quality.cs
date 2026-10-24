@@ -26,13 +26,11 @@ public sealed partial class VirtualShadowFeature
         try
         {
             AddQualityReadback(ref edit, readbacks, QualityData.FrameBias, _frameResolutionBias);
-            // Allocation consumes the published demand before the queue reset.
-            // Capture at that boundary, not at the later depth-completion boundary.
+            // Capture the completed request count after allocation.
             GraphReadbackId demand = edit.AddReadback(_requestedPageCount, BufferRange.Whole,
                 new QualityReceiver(readbacks, QualityData.RequestCount), "Capture frame shadow demand", _qualityDemandRegion);
             readbacks.Readbacks.Add(demand);
             edit.OrderAfter(demand, _allocatePass);
-            edit.OrderAfter(_requestResetPass, demand);
             AddQualityReadback(ref edit, readbacks, QualityData.DirtyCount, _activePageCount);
             AddQualityReadback(ref edit, readbacks, QualityData.Failures, _allocationFailures);
             AddQualityReadback(ref edit, readbacks, QualityData.FreeCount, _pageOwners);
@@ -144,12 +142,10 @@ public sealed partial class VirtualShadowFeature
                             uint basePages = view.VirtualResolution / view.PageSize;
                             uint tailX = mip == 0u ? 0u : basePages - (basePages >> ((int)mip - 1));
                             uint tailY = mip == 0u ? 0u : basePages;
-                            uint address = view.ReceiverMaskOriginX + 2u * (tailX + x) +
+                            uint address = view.ReceiverMaskOriginX + tailX + x +
                                 (view.ReceiverMaskOriginY + 2u * (tailY + y)) * coverageRowWords;
                             covered += (uint)(BitOperations.PopCount(coverage[(int)address]) +
-                                BitOperations.PopCount(coverage[(int)address + 1]) +
-                                BitOperations.PopCount(coverage[(int)(address + coverageRowWords)]) +
-                                BitOperations.PopCount(coverage[(int)(address + coverageRowWords) + 1]));
+                                BitOperations.PopCount(coverage[(int)(address + coverageRowWords)]));
                         }
                     }
                     mips[mip] = new(mip, Math.Max(view.VirtualResolution >> (int)mip, view.PageSize),

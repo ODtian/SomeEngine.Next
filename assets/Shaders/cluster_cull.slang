@@ -85,7 +85,7 @@ PackedCluster LoadCluster(uint pageOffset, uint clusterIndex)
     c.BoundMax = LoadFloat3(PageHeap, offset + 44);
     c.PackedLodErrorTriangleStart = PageHeap.Load(offset + 56);
     c.PackedCounts = PageHeap.Load(offset + 60);
-    c.PackedGroup = PageHeap.Load(offset + 64);
+    c.PackedMaximumEdgeLength = PageHeap.Load(offset + 64);
     c.PackedMaterials = PageHeap.Load(offset + 68);
     c.PackedRanges = PageHeap.Load(offset + 72);
     c.MaterialTableOffset = PageHeap.Load(offset + 76);
@@ -106,14 +106,16 @@ bool PassesLODFilter(
     ClusterViewUniforms view,
     float lodError)
 {
-    // Unbounded deformation uses the original geometry level.
+    // Current leaves provide complete coverage while detail pages are streaming.
     if (view.CullingEnabled == 0u)
-        return ((cluster.PackedCounts >> 16u) & 255u) == 0u;
+        return ((cluster.PackedCounts >> 24u) & 6u) != 0u;
 
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
-    return ClusterSphereError(worldCenter, worldRadius, lodError * maxScale, view) <= view.LodThreshold;
+    float errorScale = abs(t.Scale) * min(min(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
+    return ClusterSphereError(worldCenter, worldRadius, lodError * errorScale, view) <= view.LodThreshold ||
+        ((cluster.PackedCounts >> 24u) & 2u) != 0u;
 }
 
 struct ClusterWorldBounds
@@ -228,7 +230,7 @@ bool ShouldUseSWRaster(
     if (ClusterViewClipsDepth(view) && nearDepth <= 0.0)
         return false;
     if (view.RasterMode == 2u) return true;
-    float maximumEdge = length(cluster.BoundMax - cluster.BoundMin);
+    float maximumEdge = abs(DecodeClusterMaximumEdgeLength(cluster));
     float maximumScale = abs(transform.Scale) *
         max(max(abs(transform.Stretch.x), abs(transform.Stretch.y)), abs(transform.Stretch.z));
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, transform);
@@ -399,7 +401,7 @@ bool LoadAndFilterCandidate(
     if (view.TargetPolicy != 0u) AddClusterWorkMetric(8u, 1u);
 
     cluster = LoadCluster(pageOffset, clusterID);
-    float lodError = ApplyDrawClusterBounds(cluster, PageHeap.Load(pageOffset + 44u) + clusterID, instanceID, false);
+    float lodError = ApplyDrawClusterBounds(cluster, (PageHeap.Load(pageOffset + 44u) >> 1u) + clusterID, instanceID, false);
     t = LoadRenderTransform(
         InstanceData,
         LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD),
@@ -411,7 +413,7 @@ bool LoadAndFilterCandidate(
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
             instanceID));
 
-    if ((CandidateFlags(work) & 1u) == 0u && !PassesLODFilter(cluster, t, view, lodError))
+    if (!PassesLODFilter(cluster, t, view, lodError))
         return false;
 
     uint depthCacheClass = view.TargetPolicy != 0u
@@ -549,7 +551,7 @@ void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
         !KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view))
     {
         PackedCluster previousCluster = LoadCluster(pageOffset, clusterID);
-        ApplyDrawClusterBounds(previousCluster, PageHeap.Load(pageOffset + 44u) + clusterID, instanceID, true);
+        ApplyDrawClusterBounds(previousCluster, (PageHeap.Load(pageOffset + 44u) >> 1u) + clusterID, instanceID, true);
         RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instanceID);
         ClusterWorldBounds previousBounds = TransformClusterBounds(previousCluster, previous, boundsExpansion);

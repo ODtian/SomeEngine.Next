@@ -55,9 +55,6 @@ public sealed record ClusterPipelineOptions
 
     public ClusterShadingPath ShadingPath { get; init; } = ClusterShadingPath.Deferred;
 
-    /// <summary>Exports complete receiver records for consumers across either shading path.</summary>
-    public bool ExportSurfaceReceivers { get; init; }
-
     /// <summary>Saved shader specialization to display. Zero selects normal shading.</summary>
     public uint DebugMode { get; init; }
 

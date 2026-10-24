@@ -149,9 +149,11 @@ internal sealed partial class ClusterMeshes
                 // reservation completes before either canonical registry is mutated.
                 _pages.ReserveRegistration(pageRegistration);
                 _bvh.ReserveCommit(bvh);
+                ClusterPageFixups.Group[] groups = _fixups.ReserveRegistration(bvh);
 
                 _pages.CommitRegistration(pageRegistration);
                 uint rootNode = _bvh.Commit(bvh);
+                _fixups.Register(groups);
                 destinationAllocated = false;
                 source = null;
                 AdvanceRevision();

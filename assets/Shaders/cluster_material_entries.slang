@@ -264,22 +264,21 @@ void ClusterShadeMode<let debugMode : uint>(uniform VertexEvaluate vertex, unifo
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void ClusterShadowReceiver<let visibilityDepth : uint, let debugMode : uint>(
+void ClusterShadowRequests<let visibilityDepth : uint, let debugMode : uint>(
     uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
     uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
 {
-    CSEvaluateShadowReceiver(vertex, domain, surface, tid, visibilityDepth);
+    CSRequestShadowPages(vertex, domain, surface, tid, visibilityDepth);
 }
 
-[PrimaryDepthReceiver]
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void ClusterForwardShade<let visibilityDepth : uint, let debugMode : uint, let exportSurfaceReceivers : bool>(
+void ClusterForwardShade<let visibilityDepth : uint, let debugMode : uint>(
     uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
     uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
 {
-    CSForwardShade(vertex, domain, surface, tid, visibilityDepth, debugMode, exportSurfaceReceivers);
+    CSForwardShade(vertex, domain, surface, tid, visibilityDepth, debugMode);
 }
 #endif
 

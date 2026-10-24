@@ -87,7 +87,7 @@ public sealed partial class ClusterPipelineSystem
         FrameResources frame = GraphData.Resources;
         _ = CreateStencil(ref edit);
         uint tiles = checked(_viewGrid.CellCountPerView * frame.ViewCount);
-        GraphRegionId preparation = _transparencyRequestRegion != default ? _transparencyRequestRegion : _surfaceReceiverRegion;
+        GraphRegionId preparation = _transparencyRequestRegion != default ? _transparencyRequestRegion : _shadowRequestRegion;
         if (preparation == default) preparation = _regions.Shading;
         BufferUsages storage = BufferUsages.ShaderRead | BufferUsages.ShaderWrite;
         BufferUsages counted = storage | (_options.MeasureBlending ? BufferUsages.CopySource : BufferUsages.None);
@@ -142,8 +142,13 @@ public sealed partial class ClusterPipelineSystem
                 CellOffsets = data.Offsets, StreamingCells = data.Streams, Sources = data.Sources,
                 SourceCounts = data.SourceCounts, ReferenceCapacity = _options.BlendReferenceCapacity,
             } };
-        if (_transparencyRequestRegion != default && shaders.Pipelines.ContainsKey("RequestTransparentShadows"))
-            data.RequestPasses = AddPixelPasses(ref edit, ["RequestTransparentShadows", "RequestProjectedTransparentShadows"], data.Requests);
+        if (_transparencyRequestRegion != default && shaders.Pipelines.ContainsKey("RequestTransparentPages"))
+        {
+            GraphPassId request = AddTransparencyPass(ref edit, data, shaders.Pipelines["RequestTransparentPages"],
+                "RequestTransparentPages", data.Requests, default, true, 0u);
+            edit.OrderAfter(request, geometryReady);
+            data.RequestPasses = [request];
+        }
         data.ColorPasses = AddPixelPasses(ref edit, ["ResolveTransparentColor", "ResolveProjectedTransparentColor"], data.Color);
 
         GraphPassId[] AddPixelPasses(ref RenderGraphEdit graph, string[] names, GraphRegionId region)
@@ -266,7 +271,7 @@ public sealed partial class ClusterPipelineSystem
                 if (core != ClusterShadeCoreResource.None)
                 {
                     BindShadeCoreResource(ref graph, ref access, core, data.ShadeParameters,
-                        GraphData.ShadeScalars, GraphData.ShadeScalarOffsets, UnorderedAccessHazardMode.Ordered);
+                        GraphData.ShadeScalars, GraphData.ShadeScalarOffsets);
                     continue;
                 }
                 if (_stageResourceProvider?.TryResolve(resource.Name, resource.Type, out GraphResourceBinder binder) == true)

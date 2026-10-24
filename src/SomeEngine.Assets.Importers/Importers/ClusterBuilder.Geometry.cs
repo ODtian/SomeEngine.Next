@@ -97,8 +97,8 @@ public static partial class ClusterBuilder
             List<uint> indices = [];
             ClusterMeshBuilder.BuildLod(ClusterLodConfig.GetDefault() with
                 { ClusterSpatial = true, SimplifyPermissive = false, SimplifyFallbackSloppy = false },
-                partitionPositions, CollectionsMarshal.AsSpan(workingTriangles), new float[partitionPositions.Length],
-                meshlets, indices, CollectionsMarshal.AsSpan(workingLocks));
+                partitionPositions, CollectionsMarshal.AsSpan(workingTriangles), workingSources.Select(source => (uint)source.Region).ToArray(),
+                meshlets, indices, CollectionsMarshal.AsSpan(workingLocks), ReadSimplificationAttributes(vertices, workingIdentities));
             foreach (BuilderMeshlet meshlet in meshlets)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -113,6 +113,27 @@ public static partial class ClusterBuilder
                 row.Vertex, row.Rows.Primitive.SourceVertices.Span[row.Vertex])).ToArray(),
             Clusters = clusters,
         };
+    }
+
+    private static RawAttribute[] ReadSimplificationAttributes(List<VertexRow> vertices, List<uint> identities)
+    {
+        string[] names = identities.SelectMany(identity => vertices[(int)identity].Rows.Primitive.Attributes.Keys)
+            .Where(name => name != "POSITION" && name != "_MATERIAL_INDEX"
+                && !name.StartsWith("JOINTS", StringComparison.Ordinal) && !name.StartsWith("WEIGHTS", StringComparison.Ordinal)).Distinct().Order(StringComparer.Ordinal).ToArray();
+        return names.Select(name =>
+        {
+            int components = identities.Select(identity => vertices[(int)identity].Rows.Primitive.Attributes)
+                .Where(attributes => attributes.ContainsKey(name)).Max(attributes => attributes[name].ComponentCount);
+            float[] values = new float[identities.Count * components];
+            for (int vertex = 0; vertex < identities.Count; vertex++)
+            {
+                VertexRow row = vertices[(int)identities[vertex]];
+                if (!row.Rows.Primitive.Attributes.TryGetValue(name, out VertexStream? stream)) continue;
+                for (int component = 0; component < stream.ComponentCount; component++)
+                    values[vertex * components + component] = (float)stream.Values.Span[row.Vertex * stream.ComponentCount + component];
+            }
+            return new RawAttribute(name, values, components, SomeEngine.Resources.Geometry.ValueType.Float32, (byte)components, false);
+        }).ToArray();
     }
 
     private static SomeEngine.Resources.Vec3 CreateVec3(Vector3 value) => new() { X = value.X, Y = value.Y, Z = value.Z };
@@ -173,7 +194,8 @@ public static partial class ClusterBuilder
         List<uint> identities, List<ClusterTriangleSource> sources, Vector3[] positions, ClusterDeform deform, int groupOffset)
     {
         ReadOnlySpan<uint> triangles = indices.Slice(meshlet.IndicesOffset, meshlet.IndicesCount);
-        (List<uint> vertices, byte[] localIndices) = CreateLocalIndices(triangles);
+        uint[] vertices = meshlet.LocalVertices;
+        byte[] localIndices = meshlet.LocalIndices;
         int[] materials = new int[triangles.Length / 3];
         int[] regions = new int[triangles.Length / 3];
         for (int triangle = 0; triangle < materials.Length; triangle++)
@@ -182,7 +204,7 @@ public static partial class ClusterBuilder
             materials[triangle] = source.Material;
             regions[triangle] = source.Region;
         }
-        EncodedClusterPositions encoded = StandardClusterPositionEncoder.Encode(positions, CollectionsMarshal.AsSpan(vertices));
+        EncodedClusterPositions encoded = StandardClusterPositionEncoder.Encode(positions, vertices);
         return new()
         {
             Deform = deform, Vertices = [.. vertices.Select(vertex => identities[(int)vertex])], Indices = [.. localIndices], TriangleMaterials = [.. materials], TriangleRegions = [.. regions],
@@ -196,24 +218,7 @@ public static partial class ClusterBuilder
         };
     }
 
-    private static (List<uint> Vertices, byte[] Indices) CreateLocalIndices(ReadOnlySpan<uint> triangles)
-    {
-        Dictionary<uint, byte> local = [];
-        List<uint> vertices = [];
-        byte[] indices = new byte[triangles.Length];
-        for (int corner = 0; corner < triangles.Length; corner++)
-        {
-            uint identity = triangles[corner];
-            if (!local.TryGetValue(identity, out byte vertex))
-            {
-                vertex = checked((byte)vertices.Count);
-                local.Add(identity, vertex);
-                vertices.Add(identity);
-            }
-            indices[corner] = vertex;
-        }
-        return (vertices, indices);
-    }
+
 
     private readonly record struct ClusterTriangleSource(int Material, int Region);
 

@@ -1,4 +1,4 @@
-struct SkinBoundsBox { float4 minimum; float4 maximum; uint joint; uint3 padding; };
+struct SkinBoundsBox { float4 minimum; float4 maximum; uint joint; uint padding0; uint padding1; uint padding2; };
 struct ModelBounds { float4 minimum; float4 maximum; float4 lodSphere; };
 struct SkinBoundsGroup
 {
@@ -8,8 +8,8 @@ struct SkinBoundsGroup
     uint output;
     uint firstLodBox;
     uint lodBoxCount;
-    float error;
-    uint padding;
+    float minError;
+    float maxParentError;
 };
 
 StructuredBuffer<float4x4> SkinCurrentBones;
@@ -84,11 +84,11 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
         previousStretch = max(previousStretch, SkinTransformStretch(previous));
     }
     ModelBounds current, previous;
-    current.minimum = float4(currentMin, work.error * currentStretch);
-    current.maximum = float4(currentMax, 0.0);
+    current.minimum = float4(currentMin, work.minError * currentStretch);
+    current.maximum = float4(currentMax, work.maxParentError * currentStretch);
     current.lodSphere = float4((currentLodMin + currentLodMax) * 0.5, length(currentLodMax - currentLodMin) * 0.5);
-    previous.minimum = float4(previousMin, work.error * previousStretch);
-    previous.maximum = float4(previousMax, 0.0);
+    previous.minimum = float4(previousMin, work.minError * previousStretch);
+    previous.maximum = float4(previousMax, work.maxParentError * previousStretch);
     previous.lodSphere = float4((previousLodMin + previousLodMax) * 0.5, length(previousLodMax - previousLodMin) * 0.5);
     SkinCurrentBounds[control.z + work.output] = current;
     SkinPreviousBounds[control.z + work.output] = previous;

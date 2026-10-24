@@ -60,7 +60,7 @@ public static class MeshIntegrity
         foreach (MeshPayloadPageDigest page in pages)
         {
             if (page.Offset != checked((ulong)offset) || page.Length < MeshPageHeader.Size
-                || page.Length > int.MaxValue || page.ClusterCount == 0 || page.VertexEncodingHash != encoding)
+                || page.Length > MeshPageHeader.MaxPageSize || page.ClusterCount == 0 || page.VertexEncodingHash != encoding)
                 throw new InvalidDataException("Mesh page descriptions contain an invalid layout or vertex encoding.");
             if (page.Sha256.IsDefault || page.Sha256.Length != Digest256.Size)
                 throw new InvalidDataException("Mesh pages must carry one SHA-256 digest.");

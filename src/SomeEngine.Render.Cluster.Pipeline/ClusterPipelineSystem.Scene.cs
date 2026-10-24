@@ -65,13 +65,13 @@ public sealed partial class ClusterPipelineSystem
             graph.CreateBufferSrv(GraphData.Resources.Bvh, label: "Cluster scene BVH")));
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.Resources.InstanceData), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferCbv(GraphData.Resources.InstanceProperties, GraphData.Resources.InstancePropertiesRange), PipelineSync.ComputeShading);
+        BindDeformBounds(ref graph, ref pass);
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.SceneInstances, structureStride: 4), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferUav(GraphData.SceneChunks, structureStride: 16), PipelineSync.ComputeShading,
             GraphAccessMode.Write, WriteCoverage.Partial, ResourceContentState.Defined, BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(graph.CreateBufferUav(GraphData.InstanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.Resources.MaterialBounds, structureStride: sizeof(uint)), PipelineSync.ComputeShading);
-        BindDeformBounds(ref graph, ref pass);
         _sceneBatch = null;
     }
 
@@ -143,12 +143,11 @@ public sealed partial class ClusterPipelineSystem
         work.FramePhases = hasGeometry ? hasTargetGeometry ? 15u : 3u : 0u;
         graph.SetRegionEnabled(work.Initialization, !work.Initialized);
         bool scatter = hasGeometry && CalculateShadeBinItemCapacity(GraphData.Resources) == 0u;
-        graph.SetRegionEnabled(GraphData.EmptyReceivers, !hasGeometry && _installedShadeStages!.WritesReceivers);
         graph.SetRegionEnabled(GraphData.PrimaryGeometry, hasGeometry);
         graph.SetRegionEnabled(_regions.TargetGeometry, hasTargetGeometry);
         graph.SetRegionEnabled(GraphData.ShadeBinning, hasGeometry);
         graph.SetRegionEnabled(GraphData.ShadeGroups.Parent, hasGeometry);
-        graph.SetRegionEnabled(GraphData.ReceiverGroups.Parent, hasGeometry);
+        graph.SetRegionEnabled(GraphData.ShadowRequestGroups.Parent, hasGeometry);
         graph.SetRegionEnabled(GraphData.ShadeScatter, scatter);
     }
 

@@ -35,9 +35,9 @@ void BuildRasterBatches(
     uint rangeIndex = 0u;
     while (rangeIndex < rangeCount)
     {
-        uint range = ClusterMaterialRange(PageHeap, materials, triangleCount, rangeIndex);
-        uint rangeEnd = (range & 0xFFu) + ((range >> 8u) & 0xFFu);
-        uint material = materials.Materials[rangeIndex];
+        uint2 range = ClusterMaterialRange(PageHeap, materials, triangleCount, rangeIndex);
+        uint rangeEnd = (range.x & 0xFFu) + ((range.x >> 8u) & 0xFFu);
+        uint material = range.y;
         uint bin = RasterKey(RasterSlots, Uniforms, slotOffset, material);
         bool depthBuckets = Uniforms.DepthBucketsEnabled != 0u &&
             (GetStageSlot(RasterSlots, slotOffset, material, Uniforms.SlotCapacity) & 0x10000000u) != 0u;
@@ -52,8 +52,8 @@ void BuildRasterBatches(
             while (rangeIndex + mergedRangeCount < rangeCount && mergedRangeCount < 4u)
             {
                 uint nextRange = rangeIndex + mergedRangeCount;
-                uint next = ClusterMaterialRange(PageHeap, materials, triangleCount, nextRange);
-                uint nextMaterial = materials.Materials[nextRange];
+                uint2 next = ClusterMaterialRange(PageHeap, materials, triangleCount, nextRange);
+                uint nextMaterial = next.y;
                 uint nextBin = RasterKey(RasterSlots, Uniforms, slotOffset, nextMaterial);
                 bool nextSoftware = RasterBatchUsesSoftware(slotOffset, nextMaterial, isSoftware);
                 bool nextUsesBatches = RasterUsesVertReuseBatches(
@@ -68,8 +68,8 @@ void BuildRasterBatches(
                 RasterRangeWorkIndex(rangeIndex, mergedRangeCount), software, depthBuckets, emittedBatches);
             flatBatchIndex += mergedBatchCount;
             rangeIndex += mergedRangeCount;
-            uint last = ClusterMaterialRange(PageHeap, materials, triangleCount, rangeIndex - 1u);
-            triangleStart = (last & 0xFFu) + ((last >> 8u) & 0xFFu);
+            uint2 last = ClusterMaterialRange(PageHeap, materials, triangleCount, rangeIndex - 1u);
+            triangleStart = (last.x & 0xFFu) + ((last.x >> 8u) & 0xFFu);
             continue;
         }
 
