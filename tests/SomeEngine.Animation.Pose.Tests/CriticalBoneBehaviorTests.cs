@@ -43,12 +43,12 @@ public sealed class CriticalBoneBehaviorTests
             static (chains, ref goal) => chains[0].Target = goal);
         GpuPoseAnimation.SetCpuBones(world, childTarget, new CpuBoneDemand(PoseAnimation.Resolve(world, childSource, new(1)), [2]));
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        GpuPoseAnimation.AddSystems(systems);
         PoseAnimation.AddSystems(systems, nodes: static nodes =>
         {
             nodes.Add(new FabrikSystem());
             nodes.Add(new PoseBlendSystem());
         });
+        GpuPoseAnimation.AddSystems(systems);
         var frame = new ImmediateSystemContext(world, 0, 0, .25);
 
         systems.Update(ref frame);
