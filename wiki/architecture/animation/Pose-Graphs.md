@@ -50,6 +50,8 @@ actorTransform = frame.RootMotion.Transform * actorTransform;
 
 [Inertialization](Inertialization.md) 保存动作切换时的可见姿势与速度差，通过共同结果和依赖节点组衰减到当前来源。
 
+[Physics Pose Blending](Physics-Pose-Blending.md) 将已完成刚体世界变换还原为骨骼局部姿势，按部位遮罩和共同层权重与当前动画混合，并沿普通结果恢复到动作。
+
 ## 结果交接
 
 `PoseResultId` 表达图内的结果编号。`PoseAnimation.CreateTarget` 的 `resultCount` 分配连续的 `LocalPose` buffer 区段；`output` 选择骨架最终消费的编号。`PoseResult` buffer 保存各区段的采样时刻、累计相位、启动标记、当前贡献权重、运动增量和版本。片段贡献权重采用共同图权重乘目标上的动画层权重。

@@ -76,6 +76,7 @@ internal sealed class FrameSlot : IDisposable
     {
         if (!IsReady(backend))
             throw new InvalidOperationException("The frame slot is still in flight.");
+        _state?.CollectGpuTimes();
         for (int i = _objects.Count - 1; i >= 0; i--)
         {
             _objects[i].Dispose();
@@ -110,6 +111,7 @@ internal sealed class FrameSlot : IDisposable
 
     public void Dispose()
     {
+        _state?.DisposeGpuTimes();
         _state?.ReleaseRecordingContexts();
         for (int i = _objects.Count - 1; i >= 0; i--)
         {

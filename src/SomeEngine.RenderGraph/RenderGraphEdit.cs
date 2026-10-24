@@ -355,6 +355,14 @@ public ref partial struct RenderGraphEdit
         Changes.Labels.Add(pass.Value);
     }
 
+    public void SetPassTimeGroup(GraphPassId pass, string? group)
+    {
+        ValidatePass(pass);
+        GraphPass row = Staging.Passes.GetMutable(pass.Value);
+        row.Options = row.Options with { TimeGroup = group };
+        Changes.TouchPass(pass.Value);
+    }
+
     public void SetPassOptions(GraphPassId pass, in PassOptions options)
     {
         ValidatePass(pass);
