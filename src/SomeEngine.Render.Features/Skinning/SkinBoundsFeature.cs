@@ -139,7 +139,17 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         SkinBoundsFeature feature = this;
         _world.ExecuteQuery(_query, ref feature, static (QueryCursor rows, ref SkinBoundsFeature feature) =>
         {
-            foreach (QueryRow row in rows.Rows) feature.ReadInstance(row);
+            foreach (QueryChunkView chunk in rows.Chunks)
+            {
+                ReadOnlySpan<Entity> entities = chunk.Entities;
+                ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
+                ReadOnlySpan<RenderMeshSkin> skins = chunk.Read<RenderMeshSkin>();
+                ReadOnlySpan<RenderSkinBinding> bindings = chunk.Read<RenderSkinBinding>();
+                ReadOnlySpan<RenderSkinBounds> bounds = chunk.Read<RenderSkinBounds>();
+                for (int index = 0; index < entities.Length; index++)
+                    if (feature.ReadInstance(entities[index], meshes[index].Mesh, bindings[index], skins[index].Joints, bounds[index].Data))
+                        _ = chunk.Write<RenderDeformBounds>(index);
+            }
         });
         _removed.Clear();
         foreach ((Entity entity, MeshBounds instance) in _instances)
@@ -153,16 +163,15 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         if (_layoutChanged) Rebuild();
     }
 
-    private void ReadInstance(QueryRow row)
+    private bool ReadInstance(Entity entity, Mesh mesh, RenderSkinBinding binding, RenderSkinJoint[] joints, ClusterSkinBounds bounds)
     {
-        if (!_instances.TryGetValue(row.Entity, out MeshBounds? instance))
+        if (!_instances.TryGetValue(entity, out MeshBounds? instance))
         {
-            _instances.Add(row.Entity, instance = new(row.Entity));
+            _instances.Add(entity, instance = new(entity));
             _layoutChanged = true;
         }
         instance.Collection = _collection;
-        Mesh mesh = row.Read<RenderMesh>().Mesh;
-        var geometry = new GeometryKey(mesh.Bvh, mesh.ClusterGeometryIndices, row.Read<RenderSkinBounds>().Data);
+        var geometry = new GeometryKey(mesh.Bvh, mesh.ClusterGeometryIndices, bounds);
         if (instance.Geometry != geometry)
         {
             instance.Geometry = geometry;
@@ -170,9 +179,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             _layoutChanged = true;
         }
         bool changed = false, geometryChanged = false;
-        RenderSkinBinding binding = row.Read<RenderSkinBinding>();
         if (instance.Binding != binding) { instance.Binding = binding; changed = geometryChanged = _layoutChanged = true; }
-        RenderSkinJoint[] joints = row.Read<RenderMeshSkin>().Joints;
         if (!ReferenceEquals(instance.Joints, joints))
         {
             instance.Joints = joints;
@@ -191,7 +198,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         }
         if (changed) { instance.Input++; Revision++; }
         // The same range can hold new geometry. Publish its change through ordinary instance consumers.
-        if (geometryChanged) _ = row.Write<RenderDeformBounds>();
+        return geometryChanged;
     }
 
     private void Rebuild()
@@ -251,7 +258,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         edit.OrderAfter(_jointPass, _uploadPass);
         edit.OrderAfter(CompletePass, _uploadPass);
         edit.Commit();
-        _dispatch = new((uint)((workCount + 63) / 64), 1, 1);
+        _dispatch = new((uint)((workCount + 15) / 16), 1, 1);
         _jointDispatch = new((maximumJoints + 63) / 64, (uint)_order.Length, 1);
         _layoutChanged = false;
         _uploadRequired = true;
@@ -282,8 +289,8 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         frame.SetPassEnabled(_uploadPass, _uploadRequired);
         frame.SetPassEnabled(_boundsPass, changed);
         frame.SetPassEnabled(_jointPass, changed);
-        frame.SetPassData(_boundsPass, _dispatch);
-        frame.SetPassData(_jointPass, _jointDispatch);
+        frame.SetPassDataIfChanged(_boundsPass, _dispatch);
+        frame.SetPassDataIfChanged(_jointPass, _jointDispatch);
         frame.ObserveExecution(this);
     }
 

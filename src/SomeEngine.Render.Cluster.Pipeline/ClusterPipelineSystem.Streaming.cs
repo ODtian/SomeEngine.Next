@@ -40,7 +40,7 @@ public sealed partial class ClusterPipelineSystem
             "Cluster streaming fixup parameters"));
         graph.SetBufferInput(GraphData.LeafFlagData, graph.Upload(data,
             BufferUsages.ShaderRead, "Cluster streaming fixup records"));
-        graph.SetPassData(GraphData.LeafFlagPass, new ClusterDispatchParameters(new DispatchArguments(
+        graph.SetPassDataIfChanged(GraphData.LeafFlagPass, new ClusterDispatchParameters(new DispatchArguments(
             (uint)((data.Length + 63) / 64), 1, 1)));
         graph.SetRegionEnabled(GraphData.LeafFlagRegion, !data.IsEmpty);
         PassDefinition pass = graph.GetPass(GraphData.LeafFlagPass);

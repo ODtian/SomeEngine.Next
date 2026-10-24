@@ -122,23 +122,29 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         SkinningFeature feature = this;
         context.World.ExecuteQuery(_sectionQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            foreach (QueryChunkView chunk in rows.Chunks)
             {
-                RenderBoneSectionData data = row.Read<RenderBoneSectionData>();
-                if (!feature._sections.TryGetValue(row.Entity, out Section? section))
+                ReadOnlySpan<Entity> entities = chunk.Entities;
+                ReadOnlySpan<RenderBoneSectionData> values = chunk.Read<RenderBoneSectionData>();
+                for (int index = 0; index < entities.Length; index++)
                 {
-                    feature._sections.Add(row.Entity, section = new(row.Entity));
-                    feature._membershipChanged = feature._definitionsChanged = true;
+                    Entity entity = entities[index];
+                    RenderBoneSectionData data = values[index];
+                    if (!feature._sections.TryGetValue(entity, out Section? section))
+                    {
+                        feature._sections.Add(entity, section = new(entity));
+                        feature._membershipChanged = feature._definitionsChanged = true;
+                    }
+                    if (!ReferenceEquals(section.Data.Parents, data.Parents) || !ReferenceEquals(section.Data.Clip, data.Clip)
+                        || !ReferenceEquals(section.Data.StateMachine, data.StateMachine)
+                        || !ReferenceEquals(section.Data.Blend, data.Blend) || !ReferenceEquals(section.Data.Rig, data.Rig)
+                        || !ReferenceEquals(section.Data.Evaluation, data.Evaluation)
+                        || !section.Data.CpuBones.Equals(data.CpuBones))
+                        feature._definitionsChanged = true;
+                    if (!ReferenceEquals(section.Data.Blend, data.Blend) || !ReferenceEquals(section.Data.Rig, data.Rig)) feature._membershipChanged = true;
+                    section.Data = data;
+                    section.Collection = feature._collection;
                 }
-                if (!ReferenceEquals(section.Data.Parents, data.Parents) || !ReferenceEquals(section.Data.Clip, data.Clip)
-                    || !ReferenceEquals(section.Data.StateMachine, data.StateMachine)
-                    || !ReferenceEquals(section.Data.Blend, data.Blend) || !ReferenceEquals(section.Data.Rig, data.Rig)
-                    || !ReferenceEquals(section.Data.Evaluation, data.Evaluation)
-                    || !section.Data.CpuBones.Equals(data.CpuBones))
-                    feature._definitionsChanged = true;
-                if (!ReferenceEquals(section.Data.Blend, data.Blend) || !ReferenceEquals(section.Data.Rig, data.Rig)) feature._membershipChanged = true;
-                section.Data = data;
-                section.Collection = feature._collection;
             }
         });
         _removed.Clear();
@@ -147,17 +153,23 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         foreach (Entity entity in _removed) { _sections.Remove(entity); _membershipChanged = _definitionsChanged = true; }
         context.World.ExecuteQuery(_meshQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            foreach (QueryChunkView chunk in rows.Chunks)
             {
-                RenderMeshSkin data = row.Read<RenderMeshSkin>();
-                if (!feature._meshes.TryGetValue(row.Entity, out MeshInput? mesh))
+                ReadOnlySpan<Entity> entities = chunk.Entities;
+                ReadOnlySpan<RenderMeshSkin> values = chunk.Read<RenderMeshSkin>();
+                for (int index = 0; index < entities.Length; index++)
                 {
-                    feature._meshes.Add(row.Entity, mesh = new());
-                    feature._definitionsChanged = true;
+                    Entity entity = entities[index];
+                    RenderMeshSkin data = values[index];
+                    if (!feature._meshes.TryGetValue(entity, out MeshInput? mesh))
+                    {
+                        feature._meshes.Add(entity, mesh = new());
+                        feature._definitionsChanged = true;
+                    }
+                    if (mesh.Data != data) feature._definitionsChanged = true;
+                    mesh.Data = data;
+                    mesh.Collection = feature._collection;
                 }
-                if (mesh.Data != data) feature._definitionsChanged = true;
-                mesh.Data = data;
-                mesh.Collection = feature._collection;
             }
         });
         _removed.Clear();
@@ -170,12 +182,17 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         PrepareEvaluations();
         context.World.ExecuteQuery(_sectionQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            foreach (QueryChunkView chunk in rows.Chunks)
             {
-                Section section = feature._sections[row.Entity];
-                RenderBoneSectionData data = section.Data;
-                row.Write<RenderPoseSection>() = new(section.Range, data.Starts, data.InputNumber, section.FrameTime,
-                    data.StateMachine is null && data.Blend is null ? data.SampleTime : data.PlaybackTime, section.Index, section.FrameVersion);
+                ReadOnlySpan<Entity> entities = chunk.Entities;
+                Span<RenderPoseSection> values = chunk.Write<RenderPoseSection>();
+                for (int index = 0; index < entities.Length; index++)
+                {
+                    Section section = feature._sections[entities[index]];
+                    RenderBoneSectionData data = section.Data;
+                    values[index] = new(section.Range, data.Starts, data.InputNumber, section.FrameTime,
+                        data.StateMachine is null && data.Blend is null ? data.SampleTime : data.PlaybackTime, section.Index, section.FrameVersion);
+                }
             }
         });
         RequestReadbacks();
@@ -183,7 +200,6 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
 
     private void ReadFrameInputs()
     {
-        PrepareEvaluations();
         _controls.Clear(); _controlValues.Clear(); _cpuValues.Clear(); _cpuCopies.Clear();
         _goalValues.Clear(); _modelOffsets.Clear(); _rootCorrections.Clear(); _movements.Clear(); _xpbdFrames.Clear();
         foreach (Section section in _sectionOrder)

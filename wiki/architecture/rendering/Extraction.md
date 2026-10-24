@@ -12,6 +12,9 @@ Extraction 把 GameWorld 的渲染相关变化转换成下一次 RenderWorld 更
 
 `MeshRenderExtractor` 从 GameWorld 的 `MeshInstance`、`WorldTransform` 和材质绑定缓冲提取 `RenderMesh`、`RenderTransform` 与材质数据。实例化资源句柄提取通路已于 2026-10-04 删除，见 [[history/Rendering/Removed-Code-2026-10-04|删除记录]]。
 
+来源网格持有者同时保存已发布的 mesh revision 和合成后的边界扩展量。后续收集比较来源
+资产与材质的当前值，实际变化时重新捕获 `Mesh` 并更新 Rendering world 的网格值。
+
 ## 同一读取窗口内的补充收集
 
 `IRenderExtractionSystem.CompleteSourceCollection(World sourceWorld, bool fullCollection)`
