@@ -16,6 +16,8 @@ public struct GpuPoseTarget : IComponent
     public GpuPoseBlend? Blend;
     public GpuPoseRig? Rig;
     public GpuPoseMovement Movement;
+    /// <summary>The current actor model frame in world space, also used by GPU secondary chains.</summary>
+    public Matrix4x4 ModelToWorld;
     public Vector3 ModelOffset;
     public float[]? Controls;
     public float PlaybackTime;
@@ -103,7 +105,7 @@ public static partial class GpuPoseAnimation
 {
     public static Entity CreateTarget(World world, SkeletonInstance skeleton)
     {
-        Entity target = world.CreateEntity(new GpuPoseTarget { Skeleton = skeleton });
+        Entity target = world.CreateEntity(new GpuPoseTarget { Skeleton = skeleton, ModelToWorld = Matrix4x4.Identity });
         CpuBoneDemands.For(world).Changed = true;
         return target;
     }

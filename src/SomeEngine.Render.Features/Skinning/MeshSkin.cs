@@ -28,7 +28,7 @@ internal readonly record struct RenderBoneSectionData(Skeleton Skeleton, RenderB
     Matrix4x4[] Current, ulong Version, ulong BindingVersion, QuantizedClipData? Clip,
     uint Starts, ulong InputNumber, double CalculationTime, float SampleTime,
     GpuPoseStateMachine? StateMachine, GpuPoseBlend? Blend, float[] Controls, float PlaybackTime, bool Playing,
-    GpuPoseRig? Rig, GpuPoseGoal[] Goals, Vector3 ModelOffset, GpuPoseMovement Movement,
+    GpuPoseRig? Rig, GpuPoseGoal[] Goals, Vector3 ModelOffset, GpuPoseMovement Movement, Matrix4x4 ModelToWorld,
     ReadOnlyMemory<short> CpuBones, PoseCalculation[] Calculations, GpuPoseIdentity Identity,
     ReadOnlyMemory<GpuPoseReadbackRequest> Readbacks, GpuPoseEvaluation? Evaluation,
     bool ExtractRootMotion, BoneTransform RootCorrection) : IComponent
@@ -171,7 +171,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                 isGpu ? gpu.CalculationTime : model.Time,
                 isGpu ? gpu.SampleTime : (float)model.SampleTime,
                 gpu.StateMachine, gpu.Blend, section.ControlValues, gpu.PlaybackTime, gpu.Playing,
-                gpu.Rig, section.GoalValues, gpu.ModelOffset, gpu.Movement, source.CpuBones, section.CalculationValues,
+                gpu.Rig, section.GoalValues, gpu.ModelOffset, gpu.Movement, gpu.ModelToWorld, source.CpuBones, section.CalculationValues,
                 new(section.Target, source, gpu.Starts, gpu.InputNumber, gpu.AnimationStarts), gpu.Readbacks,
                 gpu.Evaluation, gpu.ExtractRootMotion, gpu.RootCorrection);
         }
