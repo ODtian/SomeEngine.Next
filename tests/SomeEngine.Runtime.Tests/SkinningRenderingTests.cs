@@ -330,6 +330,8 @@ public sealed partial class SkinningRenderingTests
                 if (!hasProducts) await SampleContent.BuildAsync(directory, engine);
                 var prepared = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engine, "assets/Shaders")]);
                 await prepared.BuildAsync(result.ShaderPath.Replace(".slang", ".shader"));
+                await prepared.BuildAsync(Path.Combine(directory, "assets/Shaders/vsm_mark_pages.shader"));
+                await prepared.BuildAsync(Path.Combine(directory, "assets/Shaders/generated/EngineSources/vsm_mark_depth_pages.shader"));
                 CopyContent(directory, products);
                 return new SkinContent(prepared, shader);
             }
