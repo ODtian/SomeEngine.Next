@@ -16,6 +16,7 @@ public struct EwbikInstance : IBufferElement
     public PoseResultReference Source, Output;
     public EwbikTarget[] Targets;
     public EwbikSettings Settings;
+    public float[] PreferenceWeights;
     internal PoseNode Node;
     internal EwbikSamples Samples;
     internal PoseResult Basis;
@@ -40,7 +41,10 @@ public readonly struct EwbikLeaf : IAnimationLeaf<EwbikParameters>
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             Targets = new EwbikTarget[parameters.Rig.Effectors.Length],
             Samples = new(parameters.Rig, skeleton), Settings = parameters.Rig.Settings,
+            PreferenceWeights = new float[parameters.Rig.Constraints.Length],
         };
+        for (int constraint = 0; constraint < instance.PreferenceWeights.Length; constraint++)
+            instance.PreferenceWeights[constraint] = parameters.Rig.Constraints[constraint].PreferenceWeight;
         for (int effector = 0; effector < instance.Targets.Length; effector++)
         {
             Matrix4x4 model = skeleton.ModelPose.GetBone(
