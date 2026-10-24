@@ -14,6 +14,19 @@ public static class SampleApplication
     public static async Task<int> Main(string[] args)
     {
 #if SOMEENGINE_DEVELOPMENT
+        if (args is ["sample-crowd-materials"])
+        {
+            string engine = Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../.."));
+            await CrowdContent.BuildMaterialsAsync(ProjectPaths.Root, engine);
+            return 0;
+        }
+        if (args is ["sample-crowd"])
+        {
+            string engine = Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../.."));
+            await SampleContent.BuildAsync(ProjectPaths.Root, engine);
+            await CrowdContent.BuildAsync(ProjectPaths.Root, engine);
+            return 0;
+        }
         if (args is ["sample"])
         {
             await SampleContent.BuildAsync(ProjectPaths.Root,
@@ -63,18 +76,40 @@ public static class SampleApplication
             return await Application.RunAsync(args, application: scene);
         }
 #endif
+        bool crowdOnly = args.Contains("--crowd", StringComparer.Ordinal);
+        bool regressionOnly = args.Contains("--regression", StringComparer.Ordinal);
+        bool measure = args.Contains("--measure", StringComparer.Ordinal);
+        args = args.Where(argument => argument is not ("--crowd" or "--regression" or "--measure")).ToArray();
         RuntimeStartupOptions startupOptions = RuntimeStartupOptions.Parse(args);
+        startupOptions = startupOptions with
+        {
+            SurfacePanel = startupOptions.SurfacePanel || !crowdOnly,
+            WorldNameplates = startupOptions.WorldNameplates || !crowdOnly,
+        };
         string? clusterEffect = args.FirstOrDefault(static value => value.StartsWith("--cluster-effect=", StringComparison.Ordinal))
             ?["--cluster-effect=".Length..] ?? (args.Contains("--cluster-oit", StringComparer.Ordinal) ? "glass" : null);
         ClusterBlendAssets? clusterAssets = clusterEffect is null ? null
             : await ClusterBlendAssets.OpenAsync(AppContext.BaseDirectory, startupOptions.GraphicsBackend);
         ClusterBlendScene? clusterScene = clusterAssets is null ? null : new(clusterAssets, clusterEffect!);
-        var scenes = SceneTestPlatform.ReadScenes(Path.Combine(AppContext.BaseDirectory, "test-scenes.json"));
+        var scenes = SceneTestPlatform.ReadScenes(Path.Combine(AppContext.BaseDirectory, "test-scenes.json")).ToList();
+        using CrowdScene? crowd = regressionOnly ? null : new(new CrowdExample());
+        if (crowd is not null)
+        {
+            TestScene[] characters =
+            [
+                crowd.CreateScene("1000 characters / inline", Path.Combine(AppContext.BaseDirectory, "CrowdInline")),
+                crowd.CreateScene("1000 characters / cache", Path.Combine(AppContext.BaseDirectory, "CrowdCache")),
+            ];
+            if (crowdOnly) scenes = characters.ToList();
+            else scenes.AddRange(characters);
+        }
         var platform = new SceneTestPlatform(scenes.Select(scene => scene with
         {
             ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
         }).ToArray(), startupOptions)
         {
+            ExitAfterMeasurements = measure,
+            MaximumMeasurementSeconds = crowdOnly ? null : 45,
             StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
             InitializeScene = clusterScene is null ? null : clusterScene.Initialize,
             UpdateScene = clusterScene is null || args.Contains("--cluster-static", StringComparer.Ordinal) ? null : clusterScene.Update,
@@ -86,6 +121,7 @@ public static class SampleApplication
                 ["Candidates"] = startupOptions.BlendIndex.ToString(),
             },
         };
+        if (measure) platform.StartMeasurements();
         return await Application.RunAsync<SampleSceneMaterials>(args, static (material, seconds) =>
         {
             float roughness = 0.5f + MathF.Sin(seconds) * 0.2f;

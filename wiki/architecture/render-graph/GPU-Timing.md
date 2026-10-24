@@ -44,8 +44,17 @@ Game world 更新、异步 compute 与多帧调度。`Gpu` 是上述 GPU 结果�
 `CpuMs` 从帧入口与该帧异步 Game update 的调度起点中较早者计到 `Present` 返回，
 因此包含该帧游戏回调、动画、提取、资源等待、渲染准备与提交。
 `GameMs`、`AnimationMs`、`ExtractionMs`、`PrepareMs`、`ReconcileMs`、`ExecuteMs` 描述各 CPU 阶段；
-`ExecuteMs` 包含图分析、命令录制和提交。CPU 与 GPU 结果通过 `FrameIdentity` 配对，
-在 GPU 完成后交付给应用。
+`ExecuteMs` 包含图分析、命令录制和提交。CPU、GPU 与 `Geometry` 结果通过 `FrameIdentity` 配对，
+在 GPU 完成后交付给应用。`RenderGraphFrameResult.FrameIdentity` 将执行观察与同一帧关联。
+`SimulationSeconds` 保留该帧 Game world 实际累计的步长，可用于对齐两种配置的源时钟。
+`AsynchronousGameUpdates` 记录应用实际选择的 Game 调度方式。
+`ApplicationScene.FrameCompleted` 在应用线程接收呈现后的帧，并先于下一次异步 Game update
+调度执行。平台通过该边界消费渲染反馈；实际 Game 编辑使用 `UpdateFrame`，沿当前帧的同步编辑路径执行。
+`ApplicationScene.CaptureImage` 将截图请求移交给下一帧的普通图像读回。
+`Geometry` 包含两个主视图 occlusion 阶段选中 cluster 的顶点项和三角形项，以及用户变形
+区域的实际分配字节；顶点项包含 cluster 和实例之间的重复。
+这些 counters 通过完成后的普通异步读回交付，`ClusterPipelineSystem.FrameMeasured` 是
+直接使用 Cluster 时的完成通知。
 
 以下是应用接入例子，输出接收方由调用者提供：
 
@@ -59,6 +68,7 @@ await Application.RunAsync(args, scene);
 
 行为入口见
 [`SkinCacheRenderingTests`](../../../tests/SomeEngine.Runtime.Tests/SkinCacheRenderingTests.cs)。
+统一平台的完整分布和实际工作量用例见 [Crowd Example](../animation/Crowd-Example.md)。
 
 相关主题：[Frame Data](Frame-Data.md)、[Range Completions](Range-Completions.md)、
 [Calibrated Timestamps](../RHI/Capabilities/Calibrated-timestamps.md)。
