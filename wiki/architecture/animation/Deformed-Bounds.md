@@ -73,4 +73,8 @@ joint 影响盒；同组叶级绘制和父级细化使用这份选择范围。�
 非负归一化权重的加权变换伸长由参与 joint 的最大上界覆盖。当前与上一姿势分别计算这些值。
 共同 Cluster shader 读取结果中的完整浮点误差，层级细化与叶级 LOD 使用同一误差和选择球。
 
+公开应用示例见 [SkinLodRenderingTests](../../../tests/SomeEngine.Runtime.Tests/SkinLodRenderingTests.cs)
+与 [SkinVisibilityRenderingTests](../../../tests/SomeEngine.Runtime.Tests/SkinVisibilityRenderingTests.cs)，
+分别展示近远视图的 LOD、遮挡后的再次出现，以及主视图和阴影视图消费同一姿势。
+
 相关主题：[Skinning](Skinning.md)、[GPU Clips](GPU-Clips.md)、[Deform Cache](../cluster/Deform-Cache.md)。
