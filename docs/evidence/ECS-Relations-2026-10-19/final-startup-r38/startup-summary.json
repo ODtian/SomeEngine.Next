@@ -1,0 +1,470 @@
+[
+  {
+    "CaseId": "finite-middle-mask4-mutual",
+    "Boundary": "ProcessToFirstResultTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 915046.0,
+      "P95Ticks": 1917613.999999999,
+      "MeanTicks": 1114881.0,
+      "MinTicks": 843959.0,
+      "MaxTicks": 2238509.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 879401.0,
+      "P95Ticks": 921743.7999999999,
+      "MeanTicks": 877633.7142857143,
+      "MinTicks": 836387.0,
+      "MaxTicks": 934801.0
+    },
+    "MedianRatio": 1.0405332720795177,
+    "P95Ratio": 2.0804197435339398
+  },
+  {
+    "CaseId": "finite-middle-mask4-mutual",
+    "Boundary": "ProcessToExitTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 977424.0,
+      "P95Ticks": 1982858.5999999992,
+      "MeanTicks": 1185751.5714285714,
+      "MinTicks": 911138.0,
+      "MaxTicks": 2303975.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 946250.0,
+      "P95Ticks": 1006466.9,
+      "MeanTicks": 952429.1428571428,
+      "MinTicks": 900690.0,
+      "MaxTicks": 1008365.0
+    },
+    "MedianRatio": 1.032944782034346,
+    "P95Ratio": 1.9701180436236891
+  },
+  {
+    "CaseId": "default-middle-dynamic50",
+    "Boundary": "ProcessToFirstResultTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 859758.0,
+      "P95Ticks": 1772772.5999999992,
+      "MeanTicks": 1037380.8571428572,
+      "MinTicks": 808963.0,
+      "MaxTicks": 2149773.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 872631.0,
+      "P95Ticks": 1538558.9999999995,
+      "MeanTicks": 996756.8571428572,
+      "MinTicks": 797006.0,
+      "MaxTicks": 1786455.0
+    },
+    "MedianRatio": 0.9852480601766382,
+    "P95Ratio": 1.1522291962804154
+  },
+  {
+    "CaseId": "default-middle-dynamic50",
+    "Boundary": "ProcessToExitTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 937610.0,
+      "P95Ticks": 1847974.999999999,
+      "MeanTicks": 1108447.7142857143,
+      "MinTicks": 867280.0,
+      "MaxTicks": 2218721.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 947267.0,
+      "P95Ticks": 1649781.6999999993,
+      "MeanTicks": 1077203.0,
+      "MinTicks": 861627.0,
+      "MaxTicks": 1897618.0
+    },
+    "MedianRatio": 0.9898054086123553,
+    "P95Ratio": 1.120133045481108
+  },
+  {
+    "CaseId": "character-middle-hair16-clustered",
+    "Boundary": "ProcessToFirstResultTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 894037.0,
+      "P95Ticks": 1179549.2999999998,
+      "MeanTicks": 959154.5714285715,
+      "MinTicks": 871149.0,
+      "MaxTicks": 1268121.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 870112.0,
+      "P95Ticks": 1813452.899999999,
+      "MeanTicks": 1065782.142857143,
+      "MinTicks": 860041.0,
+      "MaxTicks": 2201322.0
+    },
+    "MedianRatio": 1.02749646022581,
+    "P95Ratio": 0.6504438576816638
+  },
+  {
+    "CaseId": "character-middle-hair16-clustered",
+    "Boundary": "ProcessToExitTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 996748.0,
+      "P95Ticks": 1297155.5999999999,
+      "MeanTicks": 1060715.2857142857,
+      "MinTicks": 955595.0,
+      "MaxTicks": 1383486.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 933376.0,
+      "P95Ticks": 1885527.0999999992,
+      "MeanTicks": 1129985.4285714286,
+      "MinTicks": 918758.0,
+      "MaxTicks": 2276533.0
+    },
+    "MedianRatio": 1.0678954676357653,
+    "P95Ratio": 0.6879538352962418
+  },
+  {
+    "CaseId": "bitmap-space-middle-uniform-mutual",
+    "Boundary": "ProcessToFirstResultTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 937752.0,
+      "P95Ticks": 1031991.0,
+      "MeanTicks": 947449.0,
+      "MinTicks": 881703.0,
+      "MaxTicks": 1057029.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 991815.0,
+      "P95Ticks": 2199304.2,
+      "MeanTicks": 1317327.4285714286,
+      "MinTicks": 909241.0,
+      "MaxTicks": 2200896.0
+    },
+    "MedianRatio": 0.9454908425462409,
+    "P95Ratio": 0.46923522448599875
+  },
+  {
+    "CaseId": "bitmap-space-middle-uniform-mutual",
+    "Boundary": "ProcessToExitTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1032339.0,
+      "P95Ticks": 1089935.3,
+      "MeanTicks": 1026869.0,
+      "MinTicks": 949806.0,
+      "MaxTicks": 1101137.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 1061862.0,
+      "P95Ticks": 2314861.9,
+      "MeanTicks": 1411427.0,
+      "MinTicks": 983209.0,
+      "MaxTicks": 2332903.0
+    },
+    "MedianRatio": 0.9721969521463241,
+    "P95Ratio": 0.47084247228743975
+  },
+  {
+    "CaseId": "character-space-middle-clustered",
+    "Boundary": "ProcessToFirstResultTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1073910.0,
+      "P95Ticks": 1205839.6,
+      "MeanTicks": 1100628.4285714286,
+      "MinTicks": 1030799.0,
+      "MaxTicks": 1214308.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 1126264.0,
+      "P95Ticks": 2366178.0,
+      "MeanTicks": 1448150.7142857143,
+      "MinTicks": 1050770.0,
+      "MaxTicks": 2461044.0
+    },
+    "MedianRatio": 0.9535153392099899,
+    "P95Ratio": 0.5096149148542503
+  },
+  {
+    "CaseId": "character-space-middle-clustered",
+    "Boundary": "ProcessToExitTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1138069.0,
+      "P95Ticks": 1310594.0999999999,
+      "MeanTicks": 1174613.5714285714,
+      "MinTicks": 1098653.0,
+      "MaxTicks": 1329339.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 1217352.0,
+      "P95Ticks": 2439973.3,
+      "MeanTicks": 1537712.5714285714,
+      "MinTicks": 1168690.0,
+      "MaxTicks": 2536777.0
+    },
+    "MedianRatio": 0.9348725758860215,
+    "P95Ratio": 0.5371346071696768
+  },
+  {
+    "CaseId": "complete-middle-uniform",
+    "Boundary": "ProcessToFirstResultTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1008130.0,
+      "P95Ticks": 2057820.2999999996,
+      "MeanTicks": 1275883.4285714286,
+      "MinTicks": 980463.0,
+      "MaxTicks": 2268684.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 1002926.0,
+      "P95Ticks": 1089085.0,
+      "MeanTicks": 1023069.2857142857,
+      "MinTicks": 971969.0,
+      "MaxTicks": 1100587.0
+    },
+    "MedianRatio": 1.0051888175199366,
+    "P95Ratio": 1.8894946675420188
+  },
+  {
+    "CaseId": "complete-middle-uniform",
+    "Boundary": "ProcessToExitTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1129751.0,
+      "P95Ticks": 2124166.1999999993,
+      "MeanTicks": 1360082.142857143,
+      "MinTicks": 1045699.0,
+      "MaxTicks": 2341878.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 1121707.0,
+      "P95Ticks": 1203080.9,
+      "MeanTicks": 1120727.0,
+      "MinTicks": 1038446.0,
+      "MaxTicks": 1216175.0
+    },
+    "MedianRatio": 1.0071712131599428,
+    "P95Ratio": 1.765605455127747
+  },
+  {
+    "CaseId": "updates-middle-uniform",
+    "Boundary": "ProcessToFirstResultTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1010145.0,
+      "P95Ticks": 1078583.0,
+      "MeanTicks": 1016340.1428571428,
+      "MinTicks": 962686.0,
+      "MaxTicks": 1102658.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 994171.0,
+      "P95Ticks": 2332503.4,
+      "MeanTicks": 1358129.7142857143,
+      "MinTicks": 968762.0,
+      "MaxTicks": 2401204.0
+    },
+    "MedianRatio": 1.0160676583807011,
+    "P95Ratio": 0.46241433131458676
+  },
+  {
+    "CaseId": "updates-middle-uniform",
+    "Boundary": "ProcessToExitTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1082823.0,
+      "P95Ticks": 1130118.7,
+      "MeanTicks": 1089306.5714285714,
+      "MinTicks": 1064926.0,
+      "MaxTicks": 1145155.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 1097619.0,
+      "P95Ticks": 2434163.6999999997,
+      "MeanTicks": 1455535.0,
+      "MinTicks": 1046926.0,
+      "MaxTicks": 2516925.0
+    },
+    "MedianRatio": 0.9865199126472847,
+    "P95Ratio": 0.4642739105837459
+  },
+  {
+    "CaseId": "threads-middle-uniform-parallel",
+    "Boundary": "ProcessToFirstResultTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1057831.0,
+      "P95Ticks": 2046148.2999999993,
+      "MeanTicks": 1285154.4285714286,
+      "MinTicks": 1003197.0,
+      "MaxTicks": 2324461.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 1057842.0,
+      "P95Ticks": 1333073.7999999998,
+      "MeanTicks": 1107391.2857142857,
+      "MinTicks": 1017448.0,
+      "MaxTicks": 1421980.0
+    },
+    "MedianRatio": 0.9999896014716754,
+    "P95Ratio": 1.5349099952305714
+  },
+  {
+    "CaseId": "threads-middle-uniform-parallel",
+    "Boundary": "ProcessToExitTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1183902.0,
+      "P95Ticks": 2256529.0999999996,
+      "MeanTicks": 1470829.4285714286,
+      "MinTicks": 1091614.0,
+      "MaxTicks": 2451212.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 1143954.0,
+      "P95Ticks": 1446181.4999999998,
+      "MeanTicks": 1199374.5714285714,
+      "MinTicks": 1093457.0,
+      "MaxTicks": 1550814.0
+    },
+    "MedianRatio": 1.0349209845850444,
+    "P95Ratio": 1.5603360297445377
+  },
+  {
+    "CaseId": "consume-middle-uniform",
+    "Boundary": "ProcessToFirstResultTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1095924.0,
+      "P95Ticks": 1879497.3999999994,
+      "MeanTicks": 1230271.5714285714,
+      "MinTicks": 978882.0,
+      "MaxTicks": 2153011.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 1068181.0,
+      "P95Ticks": 1143080.5,
+      "MeanTicks": 1060102.142857143,
+      "MinTicks": 997751.0,
+      "MaxTicks": 1162813.0
+    },
+    "MedianRatio": 1.0259721901063583,
+    "P95Ratio": 1.6442388790640725
+  },
+  {
+    "CaseId": "consume-middle-uniform",
+    "Boundary": "ProcessToExitTicks",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Required": false,
+    "StopwatchFrequency": 10000000,
+    "Relation": {
+      "Samples": 7,
+      "MedianTicks": 1163441.0,
+      "P95Ticks": 1966721.8999999994,
+      "MeanTicks": 1319021.142857143,
+      "MinTicks": 1066335.0,
+      "MaxTicks": 2248520.0
+    },
+    "Handwritten": {
+      "Samples": 7,
+      "MedianTicks": 1142397.0,
+      "P95Ticks": 1210146.3,
+      "MeanTicks": 1133185.0,
+      "MinTicks": 1075596.0,
+      "MaxTicks": 1228140.0
+    },
+    "MedianRatio": 1.018420916721595,
+    "P95Ratio": 1.6251934993314439
+  }
+]

@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace SomeEngine.Graphics.Benchmarks;
 
-internal enum BenchmarkCommand : byte
+public enum BenchmarkCommand : byte
 {
     Warp,
     Diagnose,
@@ -12,7 +12,7 @@ internal enum BenchmarkCommand : byte
     GraphCpu,
 }
 
-internal enum BenchmarkProfile : byte
+public enum BenchmarkProfile : byte
 {
     WarpFunctional,
     FastDiagnostic,
@@ -21,7 +21,7 @@ internal enum BenchmarkProfile : byte
     GraphicsCpuDevelopment,
 }
 
-internal enum ReceiverVariant : byte
+public enum ReceiverVariant : byte
 {
     InterfaceReceiver,
     DirectSilk,
@@ -29,7 +29,7 @@ internal enum ReceiverVariant : byte
     DirectSilkDefault,
 }
 
-internal enum GraphicsWorkload : byte
+public enum GraphicsWorkload : byte
 {
     EmptySubmit,
     PersistentDraw10000,
@@ -41,7 +41,7 @@ internal enum GraphicsWorkload : byte
     RepresentativeFrameParallel,
 }
 
-internal enum RunDisposition : byte
+public enum RunDisposition : byte
 {
     Failed,
     FunctionalOnly,
@@ -150,13 +150,13 @@ internal readonly record struct WorkerConfiguration(
         SelectedWorkloads ?? BenchmarkDefaults.GetWorkloads(Profile).ToArray();
 }
 
-internal readonly record struct MetricDistribution(
+public readonly record struct MetricDistribution(
     double P50,
     double P95,
     double P99,
     double Maximum)
 {
-    internal static MetricDistribution From(ReadOnlySpan<double> values)
+    public static MetricDistribution From(ReadOnlySpan<double> values)
     {
         if (values.IsEmpty)
             throw new ArgumentException("A distribution requires at least one value.", nameof(values));
@@ -169,7 +169,7 @@ internal readonly record struct MetricDistribution(
             sorted[^1]);
     }
 
-    internal static double PercentileR7(ReadOnlySpan<double> sorted, double percentile)
+    public static double PercentileR7(ReadOnlySpan<double> sorted, double percentile)
     {
         if (sorted.IsEmpty)
             throw new ArgumentException("A percentile requires at least one value.", nameof(sorted));

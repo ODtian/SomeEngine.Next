@@ -1,6 +1,7 @@
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Benchmarks.Relations.Bitmap;
 
@@ -19,16 +20,17 @@ public readonly struct FixedCandidatePairs : IQueryRelationEnumerable<(Entity, E
 
     public World World { get; }
     public int QueryCount => 1;
+    public static bool ReadsFromSingleQuery => true;
     public QueryHandle GetQuery(int position) => _members;
     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        foreach (var pair in _pairs.AsSpan())
+        foreach (ref readonly var pair in _pairs.AsSpan())
         {
-            if (queries.First.TryGetRow(pair.Item1, out _) && queries.First.TryGetRow(pair.Item2, out _) &&
-                !output.Add(in pair))
+            if (!output.Add(in pair))
                 return false;
         }
         return true;

@@ -28,7 +28,7 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in GraphicsPipelineDesc desc,
         PipelineCache? cache,
-        IComponentType? capturedSlangCode)
+        SlangShaderData? capturedSlangCode)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CreatePipeline);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
@@ -70,7 +70,7 @@ internal sealed unsafe partial class D3D12Backend
         ID3D12PipelineState* pipelineState = null;
         NativeLease? nativeState = null;
         D3D12RootSignatureState? rootToRelease = root;
-        IComponentType? retainedCode = null;
+        SlangShaderData? retainedCode = null;
         D3D12ClassicPipeline? result = null;
         nint[] allocatedSemantics = [];
         try
@@ -346,7 +346,7 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in ComputePipelineDesc desc,
         PipelineCache? cache,
-        IComponentType? capturedSlangCode)
+        SlangShaderData? capturedSlangCode)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CreatePipeline);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
@@ -375,7 +375,7 @@ internal sealed unsafe partial class D3D12Backend
         ID3D12PipelineState* pipelineState = null;
         NativeLease? nativeState = null;
         D3D12RootSignatureState? rootToRelease = root;
-        IComponentType? retainedCode = null;
+        SlangShaderData? retainedCode = null;
         D3D12ClassicPipeline? result = null;
         try
         {
@@ -471,7 +471,7 @@ nativeDevice.Native, &native,
         Device device,
         in MeshPipelineDesc desc,
         PipelineCache? cache,
-        IComponentType? capturedSlangCode)
+        SlangShaderData? capturedSlangCode)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CreatePipeline);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
@@ -533,7 +533,7 @@ nativeDevice.Native, &native,
         ID3D12PipelineState* pipelineState = null;
         NativeLease? nativeState = null;
         D3D12RootSignatureState? rootToRelease = root;
-        IComponentType? retainedCode = null;
+        SlangShaderData? retainedCode = null;
         D3D12ClassicPipeline? result = null;
         try
         {
@@ -1653,7 +1653,7 @@ device.Native, &description,
         private readonly D3D12RootSignatureState[] _additionalRoots;
         private readonly NativeLease[] _additionalLeases;
         private readonly object _slangCodeGate = new();
-        private IComponentType? _slangCode;
+        private SlangShaderData? _slangCode;
 
         protected D3D12Pipeline(
             D3D12Device device,
@@ -1661,7 +1661,7 @@ device.Native, &description,
             D3D12RootSignatureState root,
             D3D12RootSignatureState[] additionalRoots,
             NativeLease[] additionalLeases,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             PipelineType type,
             string? label)
             : base(device, type, label)
@@ -1677,11 +1677,11 @@ device.Native, &description,
         internal IUnknown* NativeObject => (IUnknown*)_native.Pointer;
         internal NativeLease NativeLifetime => _native;
         internal D3D12RootSignatureState RootSignature => _root;
-        internal IComponentType GetSlangCodeReference()
+        internal SlangShaderData GetSlangCodeReference()
         {
             lock (_slangCodeGate)
             {
-                IComponentType slangCode = _slangCode
+                SlangShaderData slangCode = _slangCode
                     ?? throw new ObjectDisposedException(nameof(Pipeline));
                 return slangCode;
             }
@@ -1711,7 +1711,7 @@ device.Native, &description,
             D3D12Device device,
             NativeLease native,
             D3D12RootSignatureState root,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             PipelineType type,
             PrimitiveTopology topology,
             StripCut stripCut,

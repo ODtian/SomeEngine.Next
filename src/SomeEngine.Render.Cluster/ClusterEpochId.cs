@@ -1,7 +1,7 @@
 namespace SomeEngine.Render.Cluster;
 
 /// <summary>
-/// Identifies one append-only Cluster residency epoch. Page ids and GPU fault readbacks are valid
+/// Identifies one Cluster residency epoch. Page ids and GPU fault readbacks are valid
 /// only inside the epoch that allocated them; the id prevents delayed readback from aliasing a
 /// replacement epoch's page namespace.
 /// </summary>

@@ -16,6 +16,14 @@ public sealed class ClusterVertexAttributesImporter : IAssetImporter<GltfMesh, G
         VertexStreamsBlock streams = await context.GetBlockAsync<VertexStreamsBlock>(output.Target, cancellationToken).ConfigureAwait(false);
         ClusterGeometryBlock? geometry = await context.TryGetBlockAsync<ClusterGeometryBlock>(output.Target, cancellationToken).ConfigureAwait(false);
         if (geometry is null) return;
+        ClusterVertexAttributesBlock block = BuildAttributes(streams, geometry, cancellationToken);
+        try { output.SetBlock(block); }
+        catch { block.Dispose(); throw; }
+    }
+
+    internal static ClusterVertexAttributesBlock BuildAttributes(VertexStreamsBlock streams, ClusterGeometryBlock geometry,
+        CancellationToken cancellationToken = default)
+    {
         Dictionary<int, VertexPrimitive> primitives = streams.Primitives.ToDictionary(primitive => primitive.SourcePrimitive);
         List<ClusterVertexAttributes> clusters = [];
         foreach (ClusterGeometry cluster in geometry.Clusters)
@@ -45,9 +53,7 @@ public sealed class ClusterVertexAttributesImporter : IAssetImporter<GltfMesh, G
             }
             clusters.Add(StandardClusterAttributesEncoder.Encode(attributes));
         }
-        var block = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity, Clusters = clusters };
-        try { output.SetBlock(block); }
-        catch { block.Dispose(); throw; }
+        return new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity, Clusters = clusters };
     }
 
     private static bool IsShadingAttribute(string name)

@@ -64,4 +64,4 @@ Block 属性、图配置及实例化采用低频对象多态。逐帧采样、�
 CPU/GPU benchmark 和比较期间的独占构建、导入、捕获通过 `tools/Invoke-Benchmark.ps1` 公共 FIFO 队列，记录任务编号、结果目录、日志及退出码。验收以公开姿势、版本、事件及实例行为为准；性能证据独立记录算法、公共层、首次成本、稳态分配和代码体积。
 
 ## Relations
-[[architecture/animation/Animation-Layers|Animation Layers]] · [[architecture/animation/Animation-Graph|Animation Graph]]
+[[architecture/animation/Animation-Layers|Animation Layers]] · [[architecture/animation/Animation-Graph|Animation Graph]] · [Autoregressive Flow Matching](Flow-Matching.md)

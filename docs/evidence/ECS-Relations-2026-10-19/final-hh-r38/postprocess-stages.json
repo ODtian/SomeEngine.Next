@@ -1,0 +1,44 @@
+[
+  {
+    "Script": "Collect-Measurements.ps1",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1",
+      "-Series",
+      "final-hh-r38"
+    ],
+    "StartedAtUtc": "2026-10-19T22:44:38.9645042Z",
+    "FinishedAtUtc": "2026-10-19T22:44:40.3248724Z",
+    "ExitCode": 0
+  },
+  {
+    "Script": "Export-Evidence.ps1",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1",
+      "-Series",
+      "final-hh-r38"
+    ],
+    "StartedAtUtc": "2026-10-19T22:44:40.4304827Z",
+    "FinishedAtUtc": "2026-10-19T22:44:41.7848475Z",
+    "ExitCode": 0
+  },
+  {
+    "Script": "Write-MeasurementReport.ps1",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1",
+      "-Series",
+      "final-hh-r38"
+    ],
+    "StartedAtUtc": "2026-10-19T22:44:41.7917731Z",
+    "FinishedAtUtc": "2026-10-19T22:44:43.3494958Z",
+    "ExitCode": 0
+  }
+]

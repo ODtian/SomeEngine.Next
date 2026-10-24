@@ -1,0 +1,72 @@
+[
+  {
+    "Instruction": 0,
+    "Generic": "movq 0x140(%rsp), %rsi",
+    "Hand": "movq 0x140(%rsp), %rdx",
+    "GenericText": "  1d171a:      \tmovq\t0x140(%rsp), %rsi",
+    "HandText": "  15e33a:      \tmovq\t0x140(%rsp), %rdx"
+  },
+  {
+    "Instruction": 1,
+    "Generic": "leaq 0x120(%rsp), %r9",
+    "Hand": "movq %rdx, %rsi",
+    "GenericText": "  1d1722:      \tleaq\t0x120(%rsp), %r9",
+    "HandText": "  15e342:      \tmovq\t%rdx, %rsi"
+  },
+  {
+    "Instruction": 2,
+    "Generic": "movq 0x138(%rsp), %rcx",
+    "Hand": "leaq 0x120(%rsp), %r9",
+    "GenericText": "  1d172a:      \tmovq\t0x138(%rsp), %rcx",
+    "HandText": "  15e345:      \tleaq\t0x120(%rsp), %r9"
+  },
+  {
+    "Instruction": 3,
+    "Generic": "movq 0x140(%rsp), %rdx",
+    "Hand": "movq 0x138(%rsp), %rcx",
+    "GenericText": "  1d1732:      \tmovq\t0x140(%rsp), %rdx",
+    "HandText": "  15e34d:      \tmovq\t0x138(%rsp), %rcx"
+  },
+  {
+    "Instruction": 11,
+    "Generic": "je external@0x1d19a0",
+    "Hand": "je external@0x15e5bb",
+    "GenericText": "  1d175a:      \tje\t0x1d19a0 <symbol>",
+    "HandText": "  15e375:      \tje\t0x15e5bb <symbol>"
+  },
+  {
+    "Instruction": 33,
+    "Generic": "jae external@0x1d19b7",
+    "Hand": "jae external@0x15e5d1",
+    "GenericText": "  1d17df:      \tjae\t0x1d19b7 <symbol>",
+    "HandText": "  15e3fa:      \tjae\t0x15e5d1 <symbol>"
+  },
+  {
+    "Instruction": 47,
+    "Generic": "jae external@0x1d19b7",
+    "Hand": "jae external@0x15e5d1",
+    "GenericText": "  1d180f:      \tjae\t0x1d19b7 <symbol>",
+    "HandText": "  15e42a:      \tjae\t0x15e5d1 <symbol>"
+  },
+  {
+    "Instruction": 58,
+    "Generic": "jae external@0x1d19b7",
+    "Hand": "jae external@0x15e5d1",
+    "GenericText": "  1d1848:      \tjae\t0x1d19b7 <symbol>",
+    "HandText": "  15e463:      \tjae\t0x15e5d1 <symbol>"
+  },
+  {
+    "Instruction": 76,
+    "Generic": "jae external@0x1d19b7",
+    "Hand": "jae external@0x15e5d1",
+    "GenericText": "  1d1884:      \tjae\t0x1d19b7 <symbol>",
+    "HandText": "  15e49f:      \tjae\t0x15e5d1 <symbol>"
+  },
+  {
+    "Instruction": 93,
+    "Generic": "jae external@0x1d19b7",
+    "Hand": "jae external@0x15e5d1",
+    "GenericText": "  1d18bf:      \tjae\t0x1d19b7 <symbol>",
+    "HandText": "  15e4da:      \tjae\t0x15e5d1 <symbol>"
+  }
+]

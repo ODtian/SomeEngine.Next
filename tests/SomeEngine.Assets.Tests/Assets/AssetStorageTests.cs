@@ -11,12 +11,10 @@ namespace SomeEngine.Tests.Assets;
 public class AssetStorageTests
 {
     [Fact]
-    public void CreateImporters_ExposesAuthoringPipelineTypes()
+    public void RegisteredImporterAcceptsGltfAndGlb()
     {
-        IReadOnlyList<SomeEngine.Assets.Importing.IAssetSourceImporter> importers = [Game.Importing.StandardGltfSceneImporter.CreateSourceImporter()];
-        IReadOnlyList<IAssetSourceFormat> formats = [new ShaderSourceFormat()];
+        IReadOnlyList<SomeEngine.Assets.Importing.IAssetSourceImporter> importers = [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()];
 
-        Assert.Contains(formats, format => format.SourceExtension == ".shader");
         Assert.Contains(importers, importer => importer.SourceExtensions.Contains(".gltf") && importer.SourceExtensions.Contains(".glb"));
     }
 
@@ -49,7 +47,7 @@ public class AssetStorageTests
             };
             await generated.SaveAsync(materialPath);
 
-            AssetProject project = new AssetProject(dir, [Game.Importing.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             using var materialFile = await MaterialAsset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/generated.material.asset"));
             project.RegisterAsset(materialFile.Describe());
             IAssetStorage storage = project.CreateStorage();

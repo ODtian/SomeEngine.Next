@@ -29,11 +29,11 @@ internal static class TestProjectPaths
     public static string ShaderPath(string fileName)
         => Path.Combine(ShaderDirectory(), fileName);
 
-    public static string DefaultProjectRoot()
-        => Path.Combine(ProjectRoot(), "templates", "DefaultProject");
+    public static string DefaultGameRoot()
+        => Path.Combine(ProjectRoot(), "samples", "DefaultGame");
 
     public static string BuiltShaderPath(string fileName)
-        => Path.Combine(DefaultProjectRoot(), "assets", "Shaders", fileName);
+        => Path.Combine(DefaultGameRoot(), "assets", "Shaders", fileName);
 
     public static string CreateTempDir()
     {

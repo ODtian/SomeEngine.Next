@@ -158,12 +158,15 @@ public ref struct BinaryViewReader
             throw new InvalidDataException("Negative UTF-16 string code-unit count.");
         if (codeUnitCount > _limits.MaxStringBytes)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"UTF-16 string code-unit count {codeUnitCount} exceeds {_limits.MaxStringBytes}.");
         }
         int byteLength = Utf8ByteLengthForCodeUnits(_source[_position..], codeUnitCount);
         if (byteLength > _limits.MaxStringBytes)
-            throw new InvalidDataException($"UTF-8 string length {byteLength} exceeds {_limits.MaxStringBytes}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"UTF-8 string length {byteLength} exceeds {_limits.MaxStringBytes}.");
         Consume(ref _stringBytes, byteLength, _limits.MaxTotalStringBytes, "UTF-8 string bytes");
         ReadOnlySpan<byte> bytes = ReadBytes(byteLength);
         isNull = false;
@@ -221,7 +224,9 @@ public ref struct BinaryViewReader
         if (count < 0)
             throw new InvalidDataException($"Negative {description} count.");
         if (count > _limits.MaxCollectionCount)
-            throw new InvalidDataException($"{description} count {count} exceeds {_limits.MaxCollectionCount}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"{description} count {count} exceeds {_limits.MaxCollectionCount}.");
         return count;
     }
 
@@ -297,7 +302,8 @@ public ref struct BinaryViewReader
     {
         _depth = checked(_depth + 1);
         if (_depth > _limits.MaxObjectDepth)
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Binary object depth exceeds configured limit {_limits.MaxObjectDepth}.");
     }
 
@@ -354,7 +360,8 @@ public ref struct BinaryViewReader
         if (length < 0)
             throw new InvalidDataException("Negative byte payload length.");
         if (length > _limits.MaxBytePayloadBytes)
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Byte payload length {length} exceeds {_limits.MaxBytePayloadBytes}.");
         Consume(ref _decodedBytes, length, _limits.MaxTotalDecodedBytes, "decoded bytes");
     }
@@ -367,10 +374,13 @@ public ref struct BinaryViewReader
         }
         catch (OverflowException exception)
         {
-            throw new InvalidDataException($"{description} budget overflowed.", exception);
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"{description} budget overflowed.", exception);
         }
         if (total > maximum)
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Total {description} {total} exceeds configured limit {maximum}.");
     }
 }

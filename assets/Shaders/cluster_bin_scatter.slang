@@ -7,7 +7,7 @@ ByteAddressBuffer InstanceData;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<RasterBinEntry> RasterBinMeta;
 ConstantBuffer<RasterBinningUniforms> Uniforms;
-StructuredBuffer<DrawRequest> VisibleClusters;
+StructuredBuffer<VisibleCluster> VisibleClusters;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> BinnedClusterIndexBuffer;
 ByteAddressBuffer DrawArgs;
@@ -17,12 +17,17 @@ ByteAddressBuffer ClusterReadOffsetArgs2;
 StructuredBuffer<uint> RasterSlots;
 ByteAddressBuffer PageHeap;
 
-void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware)
+void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware, bool depthBuckets)
 {
-    ScatterRaster(RasterBinMeta, BinnedClusterIndexBuffer, bin, visibleIndex, workIndex, isSoftware);
+    if (!ScatterRaster(RasterBinMeta, BinnedClusterIndexBuffer, bin, visibleIndex, workIndex, isSoftware, DepthBuckets, VisibleClusterDepthBucket(VisibleClusters[visibleIndex])))
+        RejectClusterWork(16u);
 }
 
 #include "cluster_bin_batches.slang"
+#include "cluster_work_status.slang"
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> DepthBuckets;
+
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -45,7 +50,8 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         visibleIndex,
         isSoftware);
 
-    DrawRequest entry = VisibleClusters[visibleIndex];
+    DrawRequest entry = VisibleClusterRequest(VisibleClusters[visibleIndex]);
+    if (Uniforms.PolicyTarget == 0u && LoadInstanceXray(InstanceData, InstanceProperties, entry.InstanceID).Enabled != 0u) return;
     uint4 vertReuseBatchWords;
     uint vertexCount;
     uint triangleCount;
@@ -59,6 +65,9 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         triangleCount,
         packedMaterials,
         packedRanges);
+    uint clusterAddress = entry.PageOffset + PageHeap.Load(entry.PageOffset + 16u) +
+        DrawRequestClusterID(entry) * PACKED_CLUSTER_STRIDE_BYTES;
+    ClusterMaterialRanges materials = LoadClusterMaterialRanges(PageHeap, clusterAddress, entry.PageOffset);
     uint slotOffset = LoadClusterMaterialSlotOffset(
         InstanceData,
         LoadRenderInstanceMetadata(
@@ -68,10 +77,8 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
     BuildRasterBatches(
         visibleIndex,
         slotOffset,
-        vertReuseBatchWords,
+        materials,
         vertexCount,
         triangleCount,
-        packedMaterials,
-        packedRanges,
         isSoftware);
 }

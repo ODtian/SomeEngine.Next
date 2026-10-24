@@ -482,7 +482,7 @@ public readonly record struct StaticSamplerBinding(
 public readonly ref struct GraphicsPipelineDesc
 {
     public GraphicsPipelineDesc(
-        IComponentType slangCode,
+        SlangShaderData slangCode,
         ShaderReflection reflection,
         EntryPointReflection vertex,
         ReadOnlySequence<byte> vertexCode,
@@ -528,7 +528,7 @@ public readonly ref struct GraphicsPipelineDesc
     }
 
     public GraphicsPipelineDesc(
-        IComponentType slangCode,
+        SlangShaderData slangCode,
         ShaderReflection reflection,
         EntryPointReflection vertex,
         ReadOnlySequence<byte> vertexCode,
@@ -575,7 +575,7 @@ public readonly ref struct GraphicsPipelineDesc
         HasStreamOutput = true;
     }
 
-    public IComponentType SlangCode { get; }
+    public SlangShaderData SlangCode { get; }
     public ShaderReflection Reflection { get; }
     public EntryPointReflection Vertex { get; }
     public ReadOnlySequence<byte> VertexCode { get; }
@@ -609,7 +609,7 @@ public readonly ref struct GraphicsPipelineDesc
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct ComputePipelineDesc(
-    IComponentType SlangCode,
+    SlangShaderData SlangCode,
     ShaderReflection Reflection,
     EntryPointReflection Compute,
     ReadOnlySequence<byte> Code,
@@ -626,7 +626,7 @@ public readonly record struct ComputePipelineDesc(
 public readonly ref struct MeshPipelineDesc
 {
     public MeshPipelineDesc(
-        IComponentType slangCode,
+        SlangShaderData slangCode,
         ShaderReflection reflection,
         EntryPointReflection mesh,
         ReadOnlySequence<byte> meshCode,
@@ -667,7 +667,7 @@ public readonly ref struct MeshPipelineDesc
         StaticSamplers = staticSamplers;
     }
 
-    public IComponentType SlangCode { get; }
+    public SlangShaderData SlangCode { get; }
     public ShaderReflection Reflection { get; }
     public EntryPointReflection Mesh { get; }
     public ReadOnlySequence<byte> MeshCode { get; }

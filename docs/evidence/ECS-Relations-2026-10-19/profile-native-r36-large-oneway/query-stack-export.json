@@ -1,0 +1,52 @@
+[
+  {
+    "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+    "ProcessId": 95016,
+    "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+    "Arguments": [
+      "-i",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\cpu\\01068CA8-C758-4F25-B685-FFB899E72671\\sc.user_aux.etl",
+      "-symbols",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\relation-query-stacks.html",
+      "-a",
+      "stack",
+      "-butterfly",
+      "1",
+      "-pid",
+      "95016",
+      "-symbol",
+      "FixedCandidatePairs"
+    ],
+    "StartedAtUtc": "2026-10-19T19:45:13.5464075Z",
+    "FinishedAtUtc": "2026-10-19T19:45:15.5231507Z",
+    "ExitCode": 0,
+    "Output": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\relation-query-stacks.html",
+    "Bytes": 122708
+  },
+  {
+    "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+    "ProcessId": 95016,
+    "Executable": "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\xperf.exe",
+    "Arguments": [
+      "-i",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\cpu\\01068CA8-C758-4F25-B685-FFB899E72671\\sc.user_aux.etl",
+      "-symbols",
+      "-o",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\handwritten-query-stacks.html",
+      "-a",
+      "stack",
+      "-butterfly",
+      "1",
+      "-pid",
+      "95016",
+      "-symbol",
+      "HandwrittenOneWayCandidatesSide__Query"
+    ],
+    "StartedAtUtc": "2026-10-19T19:45:15.5610934Z",
+    "FinishedAtUtc": "2026-10-19T19:45:17.4675588Z",
+    "ExitCode": 0,
+    "Output": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\handwritten-query-stacks.html",
+    "Bytes": 90708
+  }
+]

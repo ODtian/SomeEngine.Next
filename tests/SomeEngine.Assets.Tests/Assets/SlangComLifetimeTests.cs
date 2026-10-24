@@ -73,7 +73,7 @@ public sealed class SlangComLifetimeTests : IDisposable
     }
 
     [Fact]
-    public void CancellationLeavesTheDefinitionAvailableForAnotherCompilation()
+    public async Task CancellationLeavesTheDefinitionAvailableForAnotherCompilation()
     {
         string path = Path.Combine(_directory, "cancel.slang");
         File.WriteAllText(path, ValidSource);
@@ -84,9 +84,7 @@ public sealed class SlangComLifetimeTests : IDisposable
             Path.Combine(_directory, "selected.shader"), cancellation.Token));
         using var result = ShaderTestCompilation.Compile(definition, path);
         Assert.Equal(definition.Id, result.Id);
-        Assert.Contains(
-            ShaderBlock.TargetCodeKey(ShaderTestCompilation.CreateSessionDescription(), 0),
-            result.GetBlock<ShaderBlock>().ContentKeys);
+        Assert.False((await result.GetBlock<ShaderBlock>().ReadBytesAsync(ShaderBlock.TargetCodeKey(ShaderTestCompilation.CreateSessionDescription(), 0))).IsEmpty);
     }
 
     [Fact]

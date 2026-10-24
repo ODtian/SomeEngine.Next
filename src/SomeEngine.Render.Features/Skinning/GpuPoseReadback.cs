@@ -31,8 +31,10 @@ public sealed partial class SkinningFeature
     {
         foreach (Readback readback in _readbacks)
         {
-            if (readback.Buffer is not null) continue;
+            if (readback.Completion != default) continue;
             Section section = _sectionOrder[readback.Section.PlaybackIndex];
+            readback.Section = new(section.Range, section.Data.Starts, section.Data.InputNumber,
+                section.FrameTime, section.Data.SampleTime, section.Index, section.FrameVersion);
             readback.Identity = section.Data.Identity;
             readback.Presentation = section.Presentation;
             readback.SampledBones = section.SampledBones.Where(bone => bone >= readback.Range.Start
@@ -43,7 +45,7 @@ public sealed partial class SkinningFeature
                 if (bone >= readback.Range.Start && bone < readback.Range.Start + readback.Range.Count)
                     readback.Calculations[bone - readback.Range.Start] = section.Data.Calculations[bone];
             ulong bytes = (ulong)readback.Range.Count * 64;
-            readback.Buffer = _backend.CreateBuffer(_device, new BufferDesc(bytes * 4 + 64, BufferUsages.CopyDestination), MemoryType.Readback);
+            readback.Buffer ??= _backend.CreateBuffer(_device, new BufferDesc(bytes * 4 + 64, BufferUsages.CopyDestination), MemoryType.Readback);
             GraphBufferId output = frame.Import(readback.Buffer,
                 [new(BufferRange.Whole, readback.Buffer.InitialSync, readback.Buffer.InitialAccess, ResourceContentState.Undefined)]);
             var data = new ReadbackCopy(_currentBones, _previousBones, _historyCurrentInput, _historyPreviousInput, _playbackInput, output,
@@ -80,8 +82,23 @@ public sealed partial class SkinningFeature
 
     private void AcceptReadbacks(RenderGraphFrameResult result)
     {
-        foreach (Readback readback in _readbacks)
-            if (result.TryGetPassCompletion(readback.Pass, out QueueCompletion completion)) readback.Completion = completion;
+        for (int index = 0; index < _readbacks.Count;)
+        {
+            Readback readback = _readbacks[index];
+            if (readback.Completion != default) { index++; continue; }
+            if (result.TryGetPassCompletion(readback.Pass, out QueueCompletion completion))
+            {
+                readback.Completion = completion;
+                index++;
+            }
+            else if (readback.Request is { } request)
+            {
+                _readbacks.RemoveAt(index);
+                readback.Buffer?.Dispose();
+                request.Cancel();
+            }
+            else index++;
+        }
     }
 
     /// <summary>Delivers completed GPU copies as independently retained matrices.</summary>
@@ -150,7 +167,7 @@ public sealed partial class SkinningFeature
         BufferRange Range, BufferRange LocalRange, BufferRange PlaybackRange);
     private sealed class Readback(RenderPoseSection section, PoseRange range, Action<GpuPoseReadback> receive)
     {
-        internal readonly RenderPoseSection Section = section;
+        internal RenderPoseSection Section = section;
         internal readonly PoseRange Range = range;
         internal readonly Action<GpuPoseReadback> Receive = receive;
         internal GpuPoseReadbackRequest? Request;

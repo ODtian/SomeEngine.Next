@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -30,6 +31,7 @@ public interface IRenderInstanceBatchSource<TGroupKey>
     where TGroupKey : notnull
 {
     RenderInstanceBatches<TGroupKey>? Current { get; }
+    QueryDefinition EntityQuery { get; }
 }
 
 /// <summary>
@@ -213,6 +215,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
     private readonly StableGrouping<TGroupKey> _grouping;
     private readonly int _rowsPerPacket;
     private readonly JobScheduleOptions _jobOptions;
+    private EntityTableChanges? _entityTables;
     private int _updating;
 
     public RenderInstanceBatchBuilder(
@@ -255,17 +258,21 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
 
         try
         {
+            _entityTables ??= context.World.ObserveEntityTables();
+            EntityTableChangeBatch membership = _entityTables.Read();
             var snapshot = new UpdateSnapshot<TComposer>(
                 this,
                 context,
                 composer,
+                membership,
                 forcedChanges);
             context.World.ExecuteReadSnapshot(
                 query,
                 context.LastSystemVersion,
                 ref snapshot,
-                static (QueryCursor cursor, ref UpdateSnapshot<TComposer> state) =>
+                static (scoped QueryCursor cursor, ref UpdateSnapshot<TComposer> state) =>
                     state.Update(cursor));
+            _entityTables.Accept(membership);
             return snapshot.Changed;
         }
         finally
@@ -287,6 +294,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         {
             RenderInstanceBatches<TGroupKey>? current = Current;
             Current = null;
+            _entityTables?.Dispose();
+            _entityTables = null;
             if (current is not null)
                 Retire(context, current);
         }
@@ -302,24 +311,27 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         private readonly RenderInstanceBatchBuilder<TGroupKey> _owner;
         private readonly RenderPrepareSystemContext _context;
         private readonly TComposer _composer;
+        private readonly EntityTableChangeBatch _membership;
         private readonly RenderInstanceChanges _forcedChanges;
 
         internal UpdateSnapshot(
             RenderInstanceBatchBuilder<TGroupKey> owner,
             RenderPrepareSystemContext context,
             TComposer composer,
+            EntityTableChangeBatch membership,
             RenderInstanceChanges forcedChanges)
         {
             _owner = owner;
             _context = context;
             _composer = composer;
+            _membership = membership;
             _forcedChanges = forcedChanges;
             Changed = false;
         }
 
         internal bool Changed { get; private set; }
 
-        internal void Update(QueryCursor cursor)
+        internal void Update(scoped QueryCursor cursor)
         {
             ReadOnlyQueryPacketPlan packets =
                 ReadOnlyQueryPacketJobs.CreatePlan(cursor, _owner._rowsPerPacket);
@@ -333,8 +345,15 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                     return;
                 }
 
+                RenderInstanceChanges forcedChanges = _forcedChanges;
+                foreach (Entity entity in _membership.Entities)
+                    if (cursor.TryGetRow(entity, out _))
+                    {
+                        forcedChanges |= RenderInstanceChanges.Structure;
+                        break;
+                    }
                 RenderInstanceChanges changes = packets.RowCount == current.EntityCount
-                    ? _forcedChanges | DetectChanges(ref packets)
+                    ? forcedChanges | DetectChanges(ref packets)
                     : RenderInstanceChanges.Structure;
                 if (changes == RenderInstanceChanges.None)
                     return;

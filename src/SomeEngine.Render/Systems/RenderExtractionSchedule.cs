@@ -4,6 +4,8 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Render.Components;
+using SomeEngine.Resources;
+using System.Collections.Immutable;
 
 namespace SomeEngine.Render.Systems;
 
@@ -31,6 +33,10 @@ public sealed class RenderExtractionSystems : IDisposable
     private EntityTableChangeBatch? _candidateSourceChanges;
     private bool _candidateFullReconciliation;
     private readonly HashSet<IRenderExtractionSystem> _changedSystems = [];
+    private ImmutableDictionary<Texture, TextureVersions> _textureVersions = ImmutableDictionary<Texture, TextureVersions>.Empty;
+    private bool _texturesChanged;
+    private ImmutableDictionary<long, RenderMaterialReference> _materialReferences = ImmutableDictionary<long, RenderMaterialReference>.Empty;
+    private bool _materialsChanged;
     private bool _candidatePending;
     private bool _extractionActive;
     private bool _disposed;
@@ -178,6 +184,11 @@ public sealed class RenderExtractionSystems : IDisposable
         var query = new RenderExtractionQuery();
         query.Write<RenderTransform>();
         query.Write<RenderPreviousTransform>();
+        query.Write<RenderTextureVersions>();
+        query.Write<RenderMaterialReference>();
+        query.ReadDestination<RenderMaterialIndex>();
+        query.ReadOptionalBuffer<MeshMaterialBinding>();
+        query.ReadOptional<LightCookie>();
         for (int index = 0; index < _systems.Count; index++)
             _systems[index].DeclareReads(query);
         _writtenComponents = query.WrittenComponents.ToArray();
@@ -195,7 +206,7 @@ public sealed class RenderExtractionSystems : IDisposable
         {
             var state = (Systems: this, Source: mainWorld);
             mainWorld.ExecuteReadSnapshot(_sourceQueryHandle, _lastSystemVersion, ref state,
-                static (QueryCursor query, ref (RenderExtractionSystems Systems, World Source) state) =>
+                static (scoped QueryCursor query, ref (RenderExtractionSystems Systems, World Source) state) =>
                 {
                     RenderExtractionSystems systems = state.Systems;
                     systems._candidateSourceChanges = systems._sourceChanges!.Read();
@@ -207,6 +218,17 @@ public sealed class RenderExtractionSystems : IDisposable
                     foreach (IRenderExtractionSystem system in systems._systems)
                         if (system.CompleteSourceCollection(state.Source, systems._candidateFullReconciliation))
                             systems._changedSystems.Add(system);
+                    var resources = TextureExtraction.Collect(query);
+                    foreach (IRenderExtractionSystem system in systems._systems) system.CollectResources(query, resources);
+                    systems._textureVersions = resources.Textures;
+                    systems._materialReferences = resources.Materials;
+                    systems._context.MaterialReferences = systems._materialReferences;
+                    systems._materialsChanged = systems._materialReferences.Values.Any(value =>
+                        systems._renderWorld.TryReadMaterial(value.Material.MaterialId, out _) &&
+                        systems._renderWorld.ReadMaterialRevision(value.Material.MaterialId) != value.Revision);
+                    var before = systems._renderWorld.TextureVersions;
+                    systems._texturesChanged = before.Count != systems._textureVersions.Count ||
+                        systems._textureVersions.Any(pair => !before.TryGetValue(pair.Key, out var version) || version != pair.Value);
                 });
             foreach (IRenderExtractionSystem system in _systems)
                 if (system.CompleteCollection(_context, _candidateFullReconciliation))
@@ -270,7 +292,7 @@ public sealed class RenderExtractionSystems : IDisposable
             return;
         }
 
-        if (_changedSystems.Count == 0 && !_context.HasTransformChanges) return;
+        if (_changedSystems.Count == 0 && !_context.HasTransformChanges && !_texturesChanged && !_materialsChanged) return;
         if (!_renderWorld.TryApplyExtractionChangesDirect(this))
             _renderWorld.ApplyExtractionChanges(this);
     }
@@ -282,6 +304,11 @@ public sealed class RenderExtractionSystems : IDisposable
         _candidateSourceChanges = null;
         _candidateFullReconciliation = false;
         _changedSystems.Clear();
+        _textureVersions = ImmutableDictionary<Texture, TextureVersions>.Empty;
+        _texturesChanged = false;
+        _materialsChanged = false;
+        _materialReferences = ImmutableDictionary<long, RenderMaterialReference>.Empty;
+        _context.MaterialReferences = _materialReferences;
         _candidatePending = false;
     }
 
@@ -294,7 +321,7 @@ public sealed class RenderExtractionSystems : IDisposable
             "A RenderWorld is bound to one authoritative main World for its lifetime.");
     }
 
-    private void Collect(QueryCursor cursor)
+    private void Collect(scoped QueryCursor cursor)
     {
         foreach (QueryChunkView chunk in cursor.ChangedChunks(_candidateSourceChanges!))
         {
@@ -304,7 +331,7 @@ public sealed class RenderExtractionSystems : IDisposable
         }
     }
 
-    private void CollectDelta(QueryCursor cursor)
+    private void CollectDelta(scoped QueryCursor cursor)
     {
         foreach (QueryChunkView chunk in cursor.Chunks)
         {
@@ -320,6 +347,8 @@ public sealed class RenderExtractionSystems : IDisposable
         _renderWorld.AcquireSystemVersion();
         for (int index = 0; index < _systems.Count; index++)
             _systems[index].Apply(_context);
+        if (_texturesChanged) _renderWorld.UpdateTextureVersions(_textureVersions);
+        if (_materialsChanged) _renderWorld.UpdateMaterials(_materialReferences.Values);
         _context.ApplyRetainedTransforms();
         _context.DestroyUnusedMirrors();
     }
@@ -336,6 +365,8 @@ public sealed class RenderExtractionSystems : IDisposable
         else
             _context.ApplyTransformValueChanges();
         foreach (IRenderExtractionSystem system in _changedSystems) system.ApplyChanges(_context);
+        if (_texturesChanged) _renderWorld.UpdateTextureVersions(_textureVersions);
+        if (_materialsChanged) _renderWorld.UpdateMaterials(_materialReferences.Values);
     }
 
     internal bool TryApplyChangesDirect()
@@ -351,6 +382,8 @@ public sealed class RenderExtractionSystems : IDisposable
         _renderWorld.AcquireSystemVersion();
         _context.ApplyTransformValueChanges();
         foreach (IRenderExtractionSystem system in _changedSystems) system.ApplyChanges(_context);
+        if (_texturesChanged) _renderWorld.UpdateTextureVersions(_textureVersions);
+        if (_materialsChanged) _renderWorld.UpdateMaterials(_materialReferences.Values);
         return true;
     }
 
@@ -416,6 +449,9 @@ public interface IRenderExtractionSystem : IDisposable
     void DeclareReads(RenderExtractionQuery query);
 
     void Reset();
+
+    /// <summary>Collects referenced resources from all current sources in the same read window.</summary>
+    void CollectResources(scoped QueryCursor source, RenderExtractionResources resources) { }
 
     /// <summary>Collects current data from an affected source chunk; unrelated chunks are not replayed.</summary>
     void Collect(QueryChunkView chunk);
@@ -499,6 +535,16 @@ public sealed class RenderExtractionContext : IDisposable
     }
 
     public RenderWorld World => _world;
+
+    /// <summary>Sets a mirror's material bindings and retains their shared rendering-world references.</summary>
+    internal IReadOnlyDictionary<long, RenderMaterialReference> MaterialReferences { get; set; } =
+        ImmutableDictionary<long, RenderMaterialReference>.Empty;
+
+    public void SetMaterials(Entity entity, ReadOnlySpan<Material> materials) =>
+        _world.SetMaterials(entity, materials, MaterialReferences);
+
+    /// <summary>Removes a mirror's bindings and releases its shared material references.</summary>
+    public void RemoveMaterials(Entity entity) => _world.RemoveMaterials(entity);
 
     public ReadOnlySpan<RenderMirror> Mirrors => System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_mirrors);
 
@@ -584,11 +630,11 @@ public sealed class RenderExtractionContext : IDisposable
         _world.ExecuteQuery(
             _renderSources,
             ref state,
-            static (QueryCursor cursor, ref RenderExtractionContext context) =>
+            static (scoped QueryCursor cursor, ref RenderExtractionContext context) =>
                 context.CollectMirrors(cursor));
     }
 
-    private void CollectMirrors(QueryCursor cursor)
+    private void CollectMirrors(scoped QueryCursor cursor)
     {
         foreach (QueryChunkView chunk in cursor.Chunks)
         {
@@ -659,10 +705,10 @@ public sealed class RenderExtractionContext : IDisposable
         if (!HasTransformChanges) return;
         RenderExtractionContext state = this;
         _world.ExecuteQuery(_transformWrites, ref state,
-            static (QueryCursor query, ref RenderExtractionContext context) => context.ApplyTransformValues(query));
+            static (scoped QueryCursor query, ref RenderExtractionContext context) => context.ApplyTransformValues(query));
     }
 
-    private void ApplyTransformValues(QueryCursor query)
+    private void ApplyTransformValues(scoped QueryCursor query)
     {
         // Dense motion is cheaper to read and write by column. Sparse edits keep
         // the entity lookup path so their cost does not scale with the whole world.
@@ -718,7 +764,7 @@ public sealed class RenderExtractionContext : IDisposable
         }
     }
 
-    private void ApplyTransformColumns(QueryCursor query)
+    private void ApplyTransformColumns(scoped QueryCursor query)
     {
         _transformUpdates.Clear();
         _transformChunks.Clear();
@@ -829,6 +875,7 @@ public sealed class RenderExtractionContext : IDisposable
             RenderMirror mirror = _mirrors[index];
             if (!_retainedSources.Contains(mirror.Source))
             {
+                _world.RemoveMaterials(mirror.RenderEntity);
                 _world.DestroyEntity(mirror.RenderEntity);
                 _previousMirrors.TryAdd(mirror.Source, mirror.RenderEntity);
                 _mirrorBySource.Remove(mirror.Source);

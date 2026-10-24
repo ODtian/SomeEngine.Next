@@ -93,7 +93,7 @@ public sealed partial class CollisionQueries<TComponent, TReader> : ICollisionQu
         private readonly Span<CollisionHit> _hits = hits;
         private readonly Span<bool> _found = found;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             for (int index = 0; index < _rays.Length; index++)
             {
@@ -112,7 +112,7 @@ public sealed partial class CollisionQueries<TComponent, TReader> : ICollisionQu
         private readonly Span<CollisionHit> _hits = hits;
         private readonly Span<bool> _found = found;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             for (int index = 0; index < _sweeps.Length; index++)
             {
@@ -129,7 +129,7 @@ public sealed partial class CollisionQueries<TComponent, TReader> : ICollisionQu
         internal CollisionSurface Surface;
         internal bool Found;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             if (!query.TryGetRow(entity, out var row)) return;
             Surface = reader.ReadSurface(in row.ReadRef<TComponent>());
@@ -173,7 +173,7 @@ public sealed partial class CollisionQueries<TComponent, TReader> : ICollisionQu
         internal CollisionHit Hit;
         internal bool Found;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             if (tree.Root < 0) return;
             CollisionRay ray = cast.Ray;

@@ -18,7 +18,7 @@ ByteAddressBuffer DeformReadOffset0;
 ByteAddressBuffer DeformReadOffset1;
 ByteAddressBuffer DeformReadOffset2;
 StructuredBuffer<uint> DeformRasterBins;
-StructuredBuffer<DrawRequest> DeformVisibleClusters;
+StructuredBuffer<VisibleCluster> DeformVisibleClusters;
 RWByteAddressBuffer DeformCacheWrite;
 RWStructuredBuffer<uint2> DeformRegionsWrite;
 RWStructuredBuffer<uint2> DeformRequests;
@@ -49,11 +49,11 @@ bool DeformMatches(DrawRequest request)
 {
     uint clusterAddress = request.PageOffset + PageHeap.Load(request.PageOffset + 16u) +
         DrawRequestClusterID(request) * PACKED_CLUSTER_STRIDE_BYTES;
-    uint material = PageHeap.Load(clusterAddress + 68u) & 255u;
+    uint material = LoadClusterMaterials(PageHeap, request.PageOffset, clusterAddress).x;
     uint first = LoadClusterMaterialSlotOffset(InstanceData,
         LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
         request.InstanceID);
-    return (DeformRasterBins[first + material] & 0x1FFFFFFFu) == DeformUniforms.CurrentBin;
+    return (DeformRasterBins[first + material] & 0x07FFFFFFu) == DeformUniforms.CurrentBin;
 }
 
 uint AddDeformBytes(uint left, uint right)
@@ -85,7 +85,7 @@ void ClusterDeformSize(uniform DeformEvaluate deform, uint3 id : SV_DispatchThre
     uint index = id.x;
     if (index >= DeformVisibleCount()) return;
     uint visible = DeformVisibleIndex(index);
-    DrawRequest request = DeformVisibleClusters[visible];
+    DrawRequest request = VisibleClusterRequest(DeformVisibleClusters[visible]);
     uint2 allocation = 0u.xx;
     if (DeformMatches(request))
     {
@@ -185,7 +185,7 @@ void ClusterDeformWrite(uniform DeformEvaluate deform,
     uint visible = DeformVisibleIndex(index);
     uint2 region = DeformRegionsWrite[visible];
     if (region.x == DEFORM_CACHE_OVERFLOW || lane >= region.y) return;
-    DrawRequest request = DeformVisibleClusters[visible];
+    DrawRequest request = VisibleClusterRequest(DeformVisibleClusters[visible]);
     uint address, bytes, triangle, counts;
     LoadClusterInfo(PageHeap, request.PageOffset, DrawRequestClusterID(request),
         address, bytes, triangle, counts);

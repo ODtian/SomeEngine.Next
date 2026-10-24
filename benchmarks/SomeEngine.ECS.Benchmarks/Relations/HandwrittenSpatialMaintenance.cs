@@ -87,7 +87,7 @@ public sealed class HandwrittenSpatialMaintenance : IDisposable
         LastSystemVersion = execution.CurrentSystemVersion;
     }
 
-    private void Reconcile(Entity entity, QueryCursor members, QueryCursor access)
+    private void Reconcile(Entity entity, scoped QueryCursor members, scoped QueryCursor access)
     {
         if (members.TryGetRow(entity, out _) && access.TryGetRow(entity, out var row) && row.Has<Body>())
         {
@@ -102,7 +102,7 @@ public sealed class HandwrittenSpatialMaintenance : IDisposable
             Refit(Tree.Remove(entity), access);
     }
 
-    private void Refit(int node, QueryCursor access)
+    private void Refit(int node, scoped QueryCursor access)
     {
         while (node >= 0)
         {
@@ -130,7 +130,7 @@ public sealed class HandwrittenSpatialMaintenance : IDisposable
     {
         public uint CurrentSystemVersion;
 
-        public void Execute(QueryCursor access)
+        public void Execute(scoped QueryCursor access)
         {
             var execution = new MemberExecution(maintenance, changes, access);
             maintenance.World.ExecuteQuery(maintenance._members, maintenance.LastSystemVersion, ref execution);
@@ -143,7 +143,7 @@ public sealed class HandwrittenSpatialMaintenance : IDisposable
     {
         private readonly QueryCursor _access = access;
 
-        public void Execute(QueryCursor members)
+        public void Execute(scoped QueryCursor members)
         {
             foreach (Entity entity in changes.Entities)
                 maintenance.Reconcile(entity, members, _access);
@@ -151,12 +151,11 @@ public sealed class HandwrittenSpatialMaintenance : IDisposable
             {
                 if (!chunk.Has<Body>())
                     continue;
-                bool bodyChanged = chunk.HasChangedSinceLastSystemVersion<Body>();
-                bool hairChanged = chunk.Has<Hair>() && chunk.HasChangedSinceLastSystemVersion<Hair>();
+                var bodyChanges = chunk.ReadRowChanges<Body>();
+                var hairChanges = chunk.ReadRowChanges<Hair>();
                 foreach (int row in chunk.RowIndices)
                 {
-                    if (bodyChanged && chunk.RowChangedSinceLastSystemVersion<Body>(row) ||
-                        hairChanged && chunk.RowChangedSinceLastSystemVersion<Hair>(row))
+                    if (bodyChanges.HasChanged(row) || hairChanges.HasChanged(row))
                         maintenance.Reconcile(chunk.GetEntity(row), members, _access);
                 }
             }

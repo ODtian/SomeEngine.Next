@@ -9,23 +9,24 @@ ByteAddressBuffer DrawArgs;
 RWByteAddressBuffer RasterWorkArguments;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> ReserveCounters;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<uint> DepthBuckets;
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void ResetBins(uint3 threadId : SV_DispatchThreadID)
 {
     CullDrawArgs args = LoadCullDrawArgs(DrawArgs, 0u);
     uint clusterCount = args.SWCount + args.HWCount;
-    uint clustersPerBin = Uniforms.MaxVisibleClusters / max(Uniforms.RasterMaxBins, 1u);
-    // The index buffer is already sized for nine raster batches per candidate.
-    // Reserve a region per bin only when every candidate could fit in any bin.
-    uint binCapacity = clusterCount <= clustersPerBin ? clustersPerBin * 9u : 0u;
     ClearRaster(RasterBinMeta, threadId.x, Uniforms.RasterMaxBins);
-    if (threadId.x < Uniforms.RasterMaxBins)
+    if (Uniforms.DepthBucketsEnabled != 0u)
     {
-        RasterBinMeta[threadId.x].ClusterOffset = threadId.x * binCapacity;
-        RasterBinMeta[threadId.x].BinCapacity = binCapacity;
-        RasterBinMeta[threadId.x].HardwareOffset = threadId.x * binCapacity + args.SWCount * 9u;
+        uint threadCount = ((Uniforms.RasterMaxBins + 63u) / 64u) * 64u;
+        for (uint bucket = threadId.x; bucket < Uniforms.RasterMaxBins * 512u; bucket += threadCount)
+            DepthBuckets[bucket] = 0u;
     }
+    else if (Uniforms.DepthBucketsEnabled == 0u && threadId.x == 0u)
+        DepthBuckets[0] = 0u;
     if (threadId.x != 0u)
         return;
 
@@ -40,7 +41,7 @@ void ResetBins(uint3 threadId : SV_DispatchThreadID)
         max(1u, Uniforms.ScreenWidth >> 4u),
         max(1u, Uniforms.ScreenHeight >> 4u), viewCount));
     RasterWorkArguments.Store3(44u, uint3(1u, 1u, viewCount));
-    RasterWorkArguments.Store3(56u, uint3(binCapacity == 0u ? (clusterCount + 63u) / 64u : 0u, 1u, 1u));
+    RasterWorkArguments.Store3(56u, uint3((clusterCount + 63u) / 64u, 1u, 1u));
     uint argumentBytes;
     RasterWorkArguments.GetDimensions(argumentBytes);
     for (uint offset = 68u, mip = 0u; offset < argumentBytes; offset += 12u, mip++)
@@ -54,7 +55,5 @@ void ResetBins(uint3 threadId : SV_DispatchThreadID)
     {
         ReserveCounters[2] = 0u;
         ReserveCounters[3] = 0u;
-        ReserveCounters[4] = 0u;
-        ReserveCounters[5] = 0u;
     }
 }

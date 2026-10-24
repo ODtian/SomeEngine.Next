@@ -5,14 +5,15 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class ClusterTessellationBinningTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class ClusterTessellationBinningTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void Material_and_pattern_bins_preserve_every_patch_and_generate_bounded_dice_and_indexed_draws()
     {
         const int materialCount = 19, binCount = materialCount * 8, patchCount = 1031;
         string[] entries = ["ResetTessellationBins", "CountTessellationBins", "ReserveTessellationBins", "ScatterTessellationBins"];
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "tessellation_bins", "#include \"cluster_tessellation_bin.slang\"",
             entries.Select(name => new D3D12TestEntry(name, SlangStage.Compute)).ToArray(), "sm_6_0", ShaderDirectory());
         using var backend = D3D12GraphicsBackend.Create();

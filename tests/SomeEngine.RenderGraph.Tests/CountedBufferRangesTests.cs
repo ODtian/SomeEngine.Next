@@ -28,42 +28,41 @@ public sealed class CountedBufferRangesTests
                 [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
             GraphBufferId ranges = edit.CreateTransientBuffer(new BufferDesc(32,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
-            edit.AddCopyFramePass("write two bounded ranges", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                (Source: source, Destination: ranges), default,
-                static (ref PassDefinition pass, ref (GraphBufferId Source, GraphBufferId Destination) data) =>
+            edit.DeclareCopyPass("write two bounded ranges", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                (ref PassDefinition pass) =>
                 {
-                    pass.Read(data.Source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
-                    pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination,
-                        WriteCoverage.Partial, resultContents: ResourceContentState.Defined, contentScope: BufferContentScope.CountBoundedRanges);
+                    pass.Read(source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+                    pass.Write(ranges, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination,
+                        WriteCoverage.Partial, resultContents: ResourceContentState.Defined,
+                        contentScope: BufferContentScope.CountBoundedRanges);
                 },
-                static (ref CopyPassCommandScope commands, in (GraphBufferId Source, GraphBufferId Destination) data) =>
+                (ref CopyPassCommandScope commands) =>
                 {
-                    commands.CopyBuffer(new(commands.GetBuffer(data.Source), 0, commands.GetBuffer(data.Destination), 4, 4));
-                    commands.CopyBuffer(new(commands.GetBuffer(data.Source), 4, commands.GetBuffer(data.Destination), 24, 4));
+                    commands.CopyBuffer(new(commands.GetBuffer(source), 0, commands.GetBuffer(ranges), 4, 4));
+                    commands.CopyBuffer(new(commands.GetBuffer(source), 4, commands.GetBuffer(ranges), 24, 4));
                 });
-            edit.AddCopyFramePass("read only the produced elements", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                (Source: ranges, Destination: result, Scope: scope), default,
-                static (ref PassDefinition pass, ref (GraphBufferId Source, GraphBufferId Destination, BufferContentScope Scope) data) =>
+            edit.DeclareCopyPass("read only the produced elements", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                (ref PassDefinition pass) =>
                 {
-                    pass.Read(data.Source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource, contentScope: data.Scope);
-                    pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination,
+                    pass.Read(ranges, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource, contentScope: scope);
+                    pass.Write(result, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination,
                         WriteCoverage.Complete);
                 },
-                static (ref CopyPassCommandScope commands, in (GraphBufferId Source, GraphBufferId Destination, BufferContentScope Scope) data) =>
+                (ref CopyPassCommandScope commands) =>
                 {
-                    commands.CopyBuffer(new(commands.GetBuffer(data.Source), 4, commands.GetBuffer(data.Destination), 0, 4));
-                    commands.CopyBuffer(new(commands.GetBuffer(data.Source), 24, commands.GetBuffer(data.Destination), 4, 4));
+                    commands.CopyBuffer(new(commands.GetBuffer(ranges), 4, commands.GetBuffer(result), 0, 4));
+                    commands.CopyBuffer(new(commands.GetBuffer(ranges), 24, commands.GetBuffer(result), 4, 4));
                 });
             edit.Commit();
         }
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         using RenderGraphFrame frame = graph.BeginFrame();
-        InvalidOperationException? failure = null;
+        UndefinedResourceReadException? failure = null;
         try { frame.Execute(completions); }
-        catch (InvalidOperationException error) { failure = error; }
+        catch (UndefinedResourceReadException error) { failure = error; }
         if (!accepted)
         {
-            Assert.IsType<InvalidOperationException>(failure);
+            Assert.NotNull(failure);
             return;
         }
         Assert.Null(failure);

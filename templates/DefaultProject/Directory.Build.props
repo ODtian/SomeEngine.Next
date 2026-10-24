@@ -1,9 +1,10 @@
 <Project>
   <Import Project="$(MSBuildThisFileDirectory)EnginePath.props" Condition="Exists('$(MSBuildThisFileDirectory)EnginePath.props')" />
   <PropertyGroup>
+    <SomeEngineApplicationProject>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)Game.csproj'))</SomeEngineApplicationProject>
     <SomeEnginePath Condition="'$(SomeEnginePath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../..'))</SomeEnginePath>
     <SomeEnginePath>$([System.IO.Path]::GetFullPath('$(SomeEnginePath)', '$(MSBuildThisFileDirectory)'))</SomeEnginePath>
-    <DefaultProjectDirectory>$(MSBuildThisFileDirectory)</DefaultProjectDirectory>
   </PropertyGroup>
   <Import Project="$(SomeEnginePath)/Directory.Build.props" />
+  <Import Project="$(SomeEnginePath)/build/SomeEngine.Game.props" Condition="'$(MSBuildProjectFullPath)' == '$(SomeEngineApplicationProject)'" />
 </Project>

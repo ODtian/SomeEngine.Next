@@ -1,4 +1,6 @@
 using SomeEngine.Assets.Importing;
+using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Schema;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
 
@@ -6,8 +8,9 @@ namespace SomeEngine.Assets;
 
 public sealed partial class AssetProject
 {
-    private async ValueTask<bool> CanReuseSourceAsync(IAssetSourceFormat format, string definitionPath,
-        string outputPath, AssetEntry description, byte[]? recordBytes, CancellationToken token)
+    private async ValueTask<bool> CanReuseSourceAsync(ShaderAsset definition, string definitionPath,
+        string outputPath, AssetEntry description, byte[]? recordBytes,
+        IReadOnlyList<string> includePaths, CancellationToken token)
     {
         if (recordBytes is null) return false;
         SourceBuildRecord record = SourceBuildRecord.Read(recordBytes);
@@ -21,7 +24,8 @@ public sealed partial class AssetProject
                 || entry.AssetType != description.AssetType || !PathsEqual(FullPath(entry.Path), outputPath)
                 || !PathsEqual(FullPath(entry.DefinitionPath), definitionPath)) return false;
 
-        ImportInputs? inputs = await format.GetInputsAsync(_projectRoot, definitionPath, record.Inputs, token).ConfigureAwait(false);
+        ImportInputs? inputs = SlangShaderImporter.GetDefinitionInputs(definition, definitionPath,
+            record.Inputs, includePaths, _projectRoot);
         if (inputs is null || inputs.InputHash != record.InputHash || inputs.ImporterVersion != record.ImporterVersion)
             return false;
         try

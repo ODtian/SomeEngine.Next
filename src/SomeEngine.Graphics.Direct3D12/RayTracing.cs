@@ -135,7 +135,7 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in RayTracingPipelineDesc desc,
         PipelineCache? cache,
-        IComponentType? capturedSlangCode)
+        SlangShaderData? capturedSlangCode)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
@@ -562,14 +562,14 @@ internal sealed unsafe partial class D3D12Backend
         IReadOnlyList<RayTracingHitGroupState> hitGroups,
         Dictionary<EntryPointReflection, D3D12RayTracingExport> entryExports,
         Dictionary<string, D3D12RayTracingExport> hitGroupExports,
-        IComponentType? capturedSlangCode,
+        SlangShaderData? capturedSlangCode,
         ref bool rootsTransferred)
     {
         ID3D12StateObject* stateObject = null;
         ID3D12StateObjectProperties* properties = null;
         NativeLease? nativeState = null;
         NativeLease? propertiesLease = null;
-        IComponentType? retainedCode = null;
+        SlangShaderData? retainedCode = null;
         D3D12RayTracingPipeline? result = null;
         try
         {
@@ -1721,7 +1721,7 @@ nativeDevice.Native, &native,
             D3D12RootSignatureState root,
             D3D12RootSignatureState[] localRoots,
             NativeLease[] additionalLeases,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             Dictionary<EntryPointReflection, D3D12RayTracingExport> entries,
             Dictionary<string, D3D12RayTracingExport> hitGroups,
             string? label)
@@ -1782,7 +1782,7 @@ nativeDevice.Native, &native,
     private sealed class D3D12RayTracingShaderTable : RayTracingShaderTable
     {
         private readonly D3D12Device _device;
-        private IComponentType? _slangCode;
+        private SlangShaderData? _slangCode;
         private readonly NativeLease _pipelineState;
 
         internal D3D12RayTracingShaderTable(
@@ -1793,7 +1793,7 @@ nativeDevice.Native, &native,
         {
             _device = device;
             Pipeline = pipeline;
-            IComponentType? slangCode = null;
+            SlangShaderData? slangCode = null;
             NativeLease? pipelineState = null;
             try
             {

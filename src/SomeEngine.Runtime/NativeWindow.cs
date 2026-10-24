@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -114,6 +115,8 @@ internal sealed class NativeWindow : IDisposable
             if (Handle == 0)
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateWindowExW failed.");
 
+            VisibleTimestamp = visible ? Stopwatch.GetTimestamp() : 0;
+
             ClientWidth = clientWidth;
             ClientHeight = clientHeight;
             uint dpi = GetDpiForWindow(Handle);
@@ -137,6 +140,8 @@ internal sealed class NativeWindow : IDisposable
     }
 
     internal nint Handle { get; private set; }
+
+    internal long VisibleTimestamp { get; }
 
     internal int ClientWidth { get; private set; }
 

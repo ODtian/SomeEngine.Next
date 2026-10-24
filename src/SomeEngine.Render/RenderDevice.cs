@@ -62,6 +62,7 @@ public sealed partial class RenderDevice : IDisposable
     public void CollectCompleted()
     {
         ThrowIfDisposed();
+        CollectTextureReleases();
         _backend.CollectCompleted(_device);
         lock (_completionGate)
             CollectCompletedLocked();
@@ -85,6 +86,7 @@ public sealed partial class RenderDevice : IDisposable
         }
         lock (_completionGate)
             CollectCompletedLocked();
+        CollectTextureReleases();
     }
 
     internal bool IsComplete(in QueueCompletion completion)
@@ -138,6 +140,7 @@ public sealed partial class RenderDevice : IDisposable
         try
         {
             DisposeTextures();
+            DisposeSamplers();
         }
         catch (Exception failure)
         {

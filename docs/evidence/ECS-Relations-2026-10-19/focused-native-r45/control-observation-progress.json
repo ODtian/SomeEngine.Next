@@ -1,0 +1,23 @@
+{
+  "StartedAtUtc": "2026-10-20T00:59:12.028385Z",
+  "FinishedAtUtc": "2026-10-20T00:59:12.7352406Z",
+  "WorkerProcessId": 81812,
+  "Children": [
+    {
+      "ProcessId": 90944,
+      "ParentProcessId": 81812,
+      "Name": "conhost.exe",
+      "CreationDate": "2026-10-19T16:23:27.762154+08:00",
+      "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+    },
+    {
+      "ProcessId": 40224,
+      "ParentProcessId": 81812,
+      "Name": "python.exe",
+      "CreationDate": "2026-10-20T08:52:49.917294+08:00",
+      "Command": "\"C:/Users/boqi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe\" -B F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/compare_frames.py --scene sponza --scene-cache F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/sponza.npz --scene-layout F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/loads/sponza-sparse-motion.json --width 960 --height 540 --warmup 80 --frames 48 --variants screen_grid_ray screen_sparse_cards_grid_ray screen_emissive_surfel_grid_ray --profiles static camera moving turn_lights --primary-query raster --geometry-query cells --object-query cell --object-walk lists --object-update split --object-c"
+    }
+  ],
+  "ProducerFiles": null,
+  "ProducerTail": null
+}

@@ -28,7 +28,7 @@ public struct PoseCompositionSystem : ISystem<ImmediateSystemContext>
 
     internal void CopyInputs(World world)
     {
-        world.ExecuteQuery(_targets, static (QueryCursor rows) =>
+        world.ExecuteQuery(_targets, static (scoped QueryCursor rows) =>
         {
             foreach (QueryRow row in rows.Rows)
             {
@@ -45,7 +45,7 @@ public struct PoseCompositionSystem : ISystem<ImmediateSystemContext>
 
     internal void ComposeModels(World world, double time)
     {
-        world.ExecuteQuery(_targets, ref time, static (QueryCursor rows, ref double time) =>
+        world.ExecuteQuery(_targets, ref time, static (scoped QueryCursor rows, ref double time) =>
         {
             foreach (QueryRow row in rows.Rows)
             {

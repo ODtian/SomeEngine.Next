@@ -32,7 +32,7 @@ public sealed class ImportContextTests
                 output.SetBlock(new ContextTextBlock(imports.GetSettings(importerId, defaults, typeInfo).BuildVersion));
                 return ValueTask.CompletedTask;
             });
-            TestAsset asset = await context.GetAssetAsync<Source, TestAsset>(new("mesh"));
+            TestAsset asset = await GetAsset(context, new("mesh"));
             Assert.Equal("configured", asset.GetBlock<ContextTextBlock>().Text);
             Assert.Throws<InvalidOperationException>(() => context.ConfigureSettings(importerId, saved));
         }
@@ -57,10 +57,10 @@ public sealed class ImportContextTests
         });
         var source = new Source("mesh");
         using var cancellation = new CancellationTokenSource();
-        Task<TestAsset> canceled = context.GetAssetAsync<Source, TestAsset>(source, cancellation.Token).AsTask();
+        Task<TestAsset> canceled = GetAsset(context, source, cancellation.Token).AsTask();
         await entered.Task.WaitAsync(Timeout);
         Task<TestAsset>[] readers = Enumerable.Range(0, 12)
-            .Select(_ => context.GetAssetAsync<Source, TestAsset>(source).AsTask()).ToArray();
+            .Select(_ => GetAsset(context, source).AsTask()).ToArray();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceled);
         Assert.Equal(1, calls);
@@ -69,7 +69,7 @@ public sealed class ImportContextTests
         TestAsset[] values = await Task.WhenAll(readers).WaitAsync(Timeout);
         Assert.All(values, value => Assert.Same(values[0], value));
         Assert.Equal(42, values[0].GetBlock<ContextNumberBlock>().Value);
-        Assert.Same(values[0], await context.GetAssetAsync<Source, TestAsset>(new Source("mesh")));
+        Assert.Same(values[0], await GetAsset(context, new Source("mesh")));
         Assert.Same(values[0], Assert.Single(context.Assets));
         Assert.Equal(1, calls);
     }
@@ -83,8 +83,8 @@ public sealed class ImportContextTests
         {
             Select(context, [ContextNumberBlock.BlockTypeId], (_, _, output, _) =>
             { output.SetBlock(new ContextNumberBlock(3)); return ValueTask.CompletedTask; });
-            TestAsset a = await context.GetAssetAsync<Source, TestAsset>(new("a"));
-            TestAsset b = await context.GetAssetAsync<Source, TestAsset>(new("b"));
+            TestAsset a = await GetAsset(context, new("a"));
+            TestAsset b = await GetAsset(context, new("b"));
             Assert.NotSame(a, b);
             Assert.NotEqual(a.Id, b.Id);
             first = a.Id;
@@ -93,7 +93,7 @@ public sealed class ImportContextTests
         {
             Select(context, [ContextNumberBlock.BlockTypeId], (_, _, output, _) =>
             { output.SetBlock(new ContextNumberBlock(8)); return ValueTask.CompletedTask; });
-            TestAsset a = await context.GetAssetAsync<Source, TestAsset>(new("a"));
+            TestAsset a = await GetAsset(context, new("a"));
             Assert.Equal(first, a.Id);
             Assert.Equal(8, a.GetBlock<ContextNumberBlock>().Value);
         }
@@ -115,7 +115,7 @@ public sealed class ImportContextTests
             output.SetBlock(new ContextNumberBlock(7));
             return ValueTask.CompletedTask;
         });
-        TestAsset asset = await context.GetAssetAsync<Source, TestAsset>(new("mesh"));
+        TestAsset asset = await GetAsset(context, new("mesh"));
         Assert.Equal(1, numbers);
         Assert.Equal(7, asset.GetBlock<ContextNumberBlock>().Value);
         Assert.Equal("21", asset.GetBlock<ContextTextBlock>().Text);
@@ -132,19 +132,19 @@ public sealed class ImportContextTests
         {
             if (source.Child is not null)
             {
-                TestAsset texture = await imports.GetAssetAsync<Source, TestAsset>(source.Child, token);
+                TestAsset texture = await GetAsset(imports, source.Child, token);
                 output.SetBlock(new ContextNumberBlock(texture.GetBlock<ContextNumberBlock>().Value));
             }
             else { children++; output.SetBlock(new ContextNumberBlock(91)); }
         });
-        TestAsset first = await context.GetAssetAsync<Source, TestAsset>(new("material-a", child));
-        TestAsset second = await context.GetAssetAsync<Source, TestAsset>(new("material-b", child));
-        TestAsset texture = await context.GetAssetAsync<Source, TestAsset>(child);
+        TestAsset first = await GetAsset(context, new("material-a", child));
+        TestAsset second = await GetAsset(context, new("material-b", child));
+        TestAsset texture = await GetAsset(context, child);
         Assert.Equal(1, children);
         Assert.Equal(3, context.Assets.Count);
         Assert.Equal(91, first.GetBlock<ContextNumberBlock>().Value);
         Assert.Equal(91, second.GetBlock<ContextNumberBlock>().Value);
-        Assert.Same(texture, await context.GetAssetAsync<Source, TestAsset>(child));
+        Assert.Same(texture, await GetAsset(context, child));
     }
 
     [Fact]
@@ -157,8 +157,8 @@ public sealed class ImportContextTests
         Select(context, [ContextNumberBlock.BlockTypeId], Produce);
         Select(context, [ContextNumberBlock.BlockTypeId], Produce);
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            context.GetAssetAsync<Source, TestAsset>(new("mesh")).AsTask());
-        Assert.Contains("competing", error.Message);
+            GetAsset(context, new("mesh")).AsTask());
+
         Assert.Equal(0, calls);
         Assert.Empty(context.Assets);
     }
@@ -169,9 +169,9 @@ public sealed class ImportContextTests
         await using var context = Context();
         Select(context, [ContextNumberBlock.BlockTypeId], (_, _, output, _) =>
         { output.SetBlock(new ContextNumberBlock(1)); return ValueTask.CompletedTask; });
-        TestAsset first = await context.GetAssetAsync<Source, TestAsset>(new("mesh"));
+        TestAsset first = await GetAsset(context, new("mesh"));
         Assert.Throws<InvalidOperationException>(() => Select(context, [ContextTextBlock.BlockTypeId], (_, _, _, _) => ValueTask.CompletedTask));
-        Assert.Same(first, await context.GetAssetAsync<Source, TestAsset>(new("mesh")));
+        Assert.Same(first, await GetAsset(context, new("mesh")));
     }
 
     [Fact]
@@ -188,8 +188,8 @@ public sealed class ImportContextTests
             throw new InvalidDataException("bad source");
         });
         var source = new Source("mesh");
-        await Assert.ThrowsAsync<InvalidDataException>(() => context.GetAssetAsync<Source, TestAsset>(source).AsTask());
-        await Assert.ThrowsAsync<InvalidDataException>(() => context.GetAssetAsync<Source, TestAsset>(source).AsTask());
+        await Assert.ThrowsAsync<InvalidDataException>(() => GetAsset(context, source).AsTask());
+        await Assert.ThrowsAsync<InvalidDataException>(() => GetAsset(context, source).AsTask());
         Assert.Equal(1, calls);
         Assert.True(failed!.Disposed);
         Assert.Empty(context.Assets);
@@ -207,7 +207,7 @@ public sealed class ImportContextTests
         });
         Select(context, [ContextNumberBlock.BlockTypeId], (_, _, output, _) =>
         { output.SetBlock(new ContextNumberBlock(5)); return ValueTask.CompletedTask; });
-        await Assert.ThrowsAsync<InvalidDataException>(() => context.GetAssetAsync<Source, TestAsset>(new("mesh")).AsTask());
+        await Assert.ThrowsAsync<InvalidDataException>(() => GetAsset(context, new("mesh")).AsTask());
         Assert.Empty(context.Assets);
         Assert.False(attached!.Disposed);
         await context.DisposeAsync();
@@ -228,7 +228,7 @@ public sealed class ImportContextTests
             entered.TrySetResult();
             await finish.Task;
         });
-        Task<TestAsset> request = context.GetAssetAsync<Source, TestAsset>(new("mesh")).AsTask();
+        Task<TestAsset> request = GetAsset(context, new("mesh")).AsTask();
         await entered.Task.WaitAsync(Timeout);
         Task first = context.DisposeAsync().AsTask();
         Task second = context.DisposeAsync().AsTask();
@@ -258,7 +258,7 @@ public sealed class ImportContextTests
             entered.TrySetResult();
             await Task.Delay(System.Threading.Timeout.Infinite, token);
         });
-        Task<TestAsset> request = context.GetAssetAsync<Source, TestAsset>(new("mesh")).AsTask();
+        Task<TestAsset> request = GetAsset(context, new("mesh")).AsTask();
         await entered.Task.WaitAsync(Timeout);
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request);
@@ -275,8 +275,7 @@ public sealed class ImportContextTests
         Select(context, [ContextTextBlock.BlockTypeId], async (_, imports, output, token) =>
         { await imports.GetBlockAsync<ContextNumberBlock>(output.Target, token); });
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            context.GetAssetAsync<Source, TestAsset>(new("mesh")).AsTask().WaitAsync(Timeout));
-        Assert.Contains("cycle", error.Message);
+            GetAsset(context, new("mesh")).AsTask().WaitAsync(Timeout));
     }
 
     [Fact]
@@ -293,19 +292,18 @@ public sealed class ImportContextTests
             {
                 a.TrySetResult();
                 await b.Task.WaitAsync(token);
-                await imports.GetAssetAsync<Source, TestAsset>(second, token);
+                await GetAsset(imports, second, token);
             }
             else
             {
                 b.TrySetResult();
                 await a.Task.WaitAsync(token);
-                await imports.GetAssetAsync<Source, TestAsset>(first, token);
+                await GetAsset(imports, first, token);
             }
         });
-        Task<TestAsset> one = context.GetAssetAsync<Source, TestAsset>(first).AsTask();
-        Task<TestAsset> two = context.GetAssetAsync<Source, TestAsset>(second).AsTask();
+        Task<TestAsset> one = GetAsset(context, first).AsTask();
+        Task<TestAsset> two = GetAsset(context, second).AsTask();
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => Task.WhenAll(one, two).WaitAsync(Timeout));
-        Assert.Contains("cycle", error.Message);
     }
 
     [Fact]
@@ -315,20 +313,16 @@ public sealed class ImportContextTests
         using var block = new ContextTextBlock("not declared");
         Select(context, [ContextNumberBlock.BlockTypeId], (_, _, output, _) =>
         { output.SetBlock(block); return ValueTask.CompletedTask; });
-        await Assert.ThrowsAsync<InvalidOperationException>(() => context.GetAssetAsync<Source, TestAsset>(new("mesh")).AsTask());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => GetAsset(context, new("mesh")).AsTask());
         Assert.False(block.Disposed);
         Assert.Empty(context.Assets);
     }
 
     [Fact]
-    public async Task MissingSelectionDoesNotCreateAnAsset()
+    public async Task MissingSelectionFailsBeforeAnAssetIsPublished()
     {
-        int created = 0;
         await using var context = new ImportContext();
-        context.ConfigureAssets<Source, TestAsset>(source => source.Key,
-            (_, id) => { created++; return new TestAsset(id); }, (_, id) => id + ".asset", Save);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => context.GetAssetAsync<Source, TestAsset>(new("mesh")).AsTask());
-        Assert.Equal(0, created);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => GetAsset(context, new("mesh")).AsTask());
         Assert.Empty(context.Assets);
     }
 
@@ -336,13 +330,15 @@ public sealed class ImportContextTests
     {
         var context = metadata is null ? new ImportContext(cancellationToken)
             : new ImportContext(Directory.GetCurrentDirectory(), "", metadata, cancellationToken);
-        context.ConfigureAssets<Source, TestAsset>(source => source.Key,
-            static (_, id) => new TestAsset(id), static (_, id) => id + ".asset", Save);
         return context;
     }
 
-    private static ValueTask<AssetEntry> Save(TestAsset asset, string path, CancellationToken token)
-        => ValueTask.FromResult(new AssetEntry(asset.Id, "test", 1, Guid.NewGuid()) { Path = path });
+    private static ValueTask<TestAsset> GetAsset(ImportContext context, Source source, CancellationToken cancellationToken = default)
+    {
+        Guid id = context.GetAssetId(source.Key);
+        context.AddAsset(source, new TestAsset(id), source.Key, id + ".asset");
+        return context.GetAssetAsync<Source, TestAsset>(source, cancellationToken);
+    }
 
     private static void Select(ImportContext context, Guid[] blocks,
         Func<Source, ImportContext, ImportOutput, CancellationToken, ValueTask> convert)

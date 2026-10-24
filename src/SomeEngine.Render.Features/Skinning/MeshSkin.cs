@@ -122,7 +122,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
             ModelPose model = source.ModelPose;
             bool isGpu = gpu.Clip is not null || gpu.StateMachine is not null || gpu.Blend is not null;
             bool copied = (!isGpu || source.CpuBones.Length != 0)
-                && (section.CpuVersion != model.Version || section.Current.Length == 0);
+                && (section.CpuVersion != model.Version || section.Current.Length == 0 || !isGpu && section.Data.IsGpu);
             if (copied)
             {
                 if (section.Capture.Length == 0)

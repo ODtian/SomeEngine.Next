@@ -11,11 +11,10 @@ public readonly record struct TexturePixels(TextureMipTile Tile, ReadOnlyMemory<
 
 /// <summary>Texture shape and ready immutable pixels, independent of asset files.</summary>
 [SomeEngine.Serialization.AssetUse]
-public sealed partial class Texture : IDisposable, IAsyncDisposable
+public sealed partial class Texture
 {
     private ReadOnlyMemory<byte>[] _pixels = [];
     public Guid DataVersion { get; internal set; }
-    private int _disposed;
     private Texture() { }
 
     public string? Name { get; private set; }
@@ -30,7 +29,11 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     public GraphicsViewDimension SampledDimension { get; private set; }
     public ImmutableList<TextureMipTile> MipTiles { get; private set; } = [];
     public ulong Revision { get; private set; } = 1;
-    public event Action<Texture>? Changed;
+    public ulong PixelsRevision { get; private set; } = 1;
+    public TextureVersions Versions
+    {
+        get { lock (_deviceGate) return new(Revision, PixelsRevision, _replacement?.Revision ?? Revision, _allocationRevision); }
+    }
     public uint BootstrapMipLevel => MipLevelCount - 1;
     public bool HasBootstrap
     {
@@ -38,7 +41,6 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         {
             lock (_deviceGate)
             {
-                ObjectDisposedException.ThrowIf(IsDisposed, this);
                 return MipTiles.Select((tile, index) => (tile, index)).Where(row => row.tile.MipLevel == BootstrapMipLevel).All(row => !_pixels[row.index].IsEmpty);
             }
         }
@@ -89,7 +91,6 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     {
         lock (_deviceGate)
         {
-            ObjectDisposedException.ThrowIf(IsDisposed, this);
             int index = MipTiles.FindIndex(tile => tile.ChunkKey == key);
             pixels = index < 0 ? default : _pixels[index];
             return !pixels.IsEmpty;
@@ -100,19 +101,26 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     {
         lock (_deviceGate)
         {
-            ObjectDisposedException.ThrowIf(IsDisposed, this);
             if (Revision != expectedRevision || _updateCompletion is not null)
                 throw new InvalidOperationException("The texture changed while its additional pixels were being acquired.");
             var replacement = (ReadOnlyMemory<byte>[])_pixels.Clone();
+            bool changed = false;
             foreach (TexturePixels input in pixels)
             {
                 int index = FindTile(input.Tile.ChunkKey);
                 ValidatePixels(index, input.Bytes);
-                if (replacement[index].IsEmpty) replacement[index] = input.Bytes;
+                if (replacement[index].IsEmpty)
+                {
+                    replacement[index] = input.Bytes;
+                    changed = true;
+                }
             }
-            _pixels = replacement;
+            if (changed)
+            {
+                _pixels = replacement;
+                PixelsRevision++;
+            }
         }
-        RaiseChanged();
     }
 
     private int FindTile(ulong key)
@@ -130,30 +138,23 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     public async ValueTask UpdateAsync(Texture replacement, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(replacement);
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
-        ObjectDisposedException.ThrowIf(replacement.IsDisposed, replacement);
         if (ReferenceEquals(this, replacement)) throw new ArgumentException("A texture cannot replace itself.", nameof(replacement));
-        await using (replacement)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            Task completion = QueueUpdate(replacement);
-            using CancellationTokenRegistration cancel = cancellationToken.Register(() =>
-                FailDeviceUpdate(replacement, new OperationCanceledException(cancellationToken)));
-            await completion.ConfigureAwait(false);
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        Task completion = QueueUpdate(replacement);
+        using CancellationTokenRegistration cancel = cancellationToken.Register(() =>
+            FailDeviceUpdate(replacement, new OperationCanceledException(cancellationToken)));
+        await completion.ConfigureAwait(false);
     }
 
     public ValueTask UpdateAsync(in TextureDesc description, IReadOnlyList<TexturePixels> pixels,
         GraphicsViewDimension sampledDimension, Format? sampledFormat = null, CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(IsDisposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         return UpdateAsync(Create(description, pixels, sampledDimension, sampledFormat), cancellationToken);
     }
 
-    private static ValueTask ApplyReloadAsync(Texture current, Texture replacement, CancellationToken cancellationToken)
+    private static void ApplyReplacement(Texture current, Texture replacement)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         ulong revision = checked(current.Revision + 1);
         current.Name = replacement.Name;
         current.Dimension = replacement.Dimension;
@@ -169,29 +170,6 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         current._pixels = replacement._pixels;
         current.DataVersion = replacement.DataVersion;
         current.Revision = revision;
-        current.RaiseChanged();
-        return ValueTask.CompletedTask;
+        current.PixelsRevision++;
     }
-
-    private void RaiseChanged()
-    {
-        if (Changed is not { } changed) return;
-        List<Exception>? errors = null;
-        foreach (Action<Texture> notify in changed.GetInvocationList())
-            try { notify(this); }
-            catch (Exception error) { (errors ??= []).Add(error); }
-        if (errors is not null)
-            throw new AggregateException("Texture contents changed, but one or more observers failed.", errors);
-    }
-
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        try { ReleaseDevices(); }
-        finally
-        {
-            lock (_deviceGate) _pixels = [];
-        }
-    }
-    public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
 }

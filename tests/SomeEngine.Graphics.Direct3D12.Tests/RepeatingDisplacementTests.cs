@@ -6,7 +6,8 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class RepeatingDisplacementTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class RepeatingDisplacementTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void ValuesAndGradientsMatchBilinearRepeatAcrossSizesAndSeams()
@@ -42,7 +43,7 @@ public sealed class RepeatingDisplacementTests
         for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
             if (Directory.Exists(Path.Combine(directory.FullName, "assets", "Shaders")))
             { shaders = Path.Combine(directory.FullName, "assets", "Shaders"); break; }
-        D3D12TestShader shader = D3D12TestShader.CompileWithSearchPaths(
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "repeating_displacement", source, [new("SampleDisplacement", SlangStage.Compute)], "sm_6_0",
             shaders ?? throw new DirectoryNotFoundException());
         using IGraphicsBackend backend = new SomeEngine.Graphics.Validation.ValidationLayer(D3D12GraphicsBackend.Create());

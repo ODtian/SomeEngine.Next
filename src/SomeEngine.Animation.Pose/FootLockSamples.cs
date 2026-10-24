@@ -17,6 +17,8 @@ internal sealed class FootLockSamples
     private readonly Matrix4x4[] _models;
     private readonly FootPredictionSample[] _motion;
     private readonly Vector3[] _slidingOffsets;
+    // The terrain correction is retained in support-local coordinates, before source foot rotation.
+    private readonly Quaternion[] _contactRotations;
     private readonly FootSupportQueries _queries;
     private readonly FootSupportRequest[] _requests;
     private readonly FootContactTarget[] _targets;
@@ -34,6 +36,7 @@ internal sealed class FootLockSamples
         _models = new Matrix4x4[1 + Goals.Length * 5];
         _motion = new FootPredictionSample[Goals.Length];
         _slidingOffsets = new Vector3[Goals.Length];
+        _contactRotations = new Quaternion[Goals.Length];
         _requests = new FootSupportRequest[Goals.Length];
         _targets = new FootContactTarget[Goals.Length];
         _queryFeet = new int[Goals.Length];
@@ -67,6 +70,7 @@ internal sealed class FootLockSamples
     {
         Array.Clear(Contacts);
         Array.Clear(_slidingOffsets);
+        Array.Clear(_contactRotations);
         _prediction = new(_source, Parameters.ContactWindow, _skeleton.ParentInstance?.ModelPose);
         Future?.Reset();
     }
@@ -103,12 +107,19 @@ internal sealed class FootLockSamples
             if (before.Kind == FootContactKind.Free && Future is { } future &&
                 future.TryGetContact(foot, time, kind, out FootContactTarget landing) &&
                 Refresh(in landing, out FootContactTarget landed, ref geometryTicks))
-            { Contacts[foot] = landed; continue; }
+            {
+                Vector3 normal = Vector3.Normalize(Vector3.TransformNormal(landed.Support.Normal, Matrix4x4.Transpose(actor)));
+                Quaternion rotation = ReadRotation(actor) * FabrikMath.FromTo(Parameters.Rig.NeutralSoles[foot], normal);
+                _contactRotations[foot] = Quaternion.Normalize(Quaternion.Inverse(ReadRotation(landed.Support.Transform)) * rotation);
+                Contacts[foot] = landed;
+                continue;
+            }
             Vector3 point = Vector3.Transform(Pivot(foot, kind), actor);
             if (Refresh(in before, out FootContactTarget current, ref geometryTicks))
             {
+                Contacts[foot] = current;
                 if (kind == before.Kind && kind != FootContactKind.Sliding)
-                { Contacts[foot] = current; continue; }
+                    continue;
                 if (before.Kind == FootContactKind.Sliding)
                     point += Vector3.TransformNormal(_slidingOffsets[foot], current.Support.Transform);
                 else
@@ -117,6 +128,7 @@ internal sealed class FootLockSamples
                     point = Vector3.Transform(ContactPoint(foot, kind, in Goals[foot], in corrected), actor);
                 }
             }
+            else Contacts[foot] = default;
             _queryFeet[count] = foot;
             _requests[count++] = new(point, kind, time);
         }
@@ -130,6 +142,22 @@ internal sealed class FootLockSamples
         {
             int foot = _queryFeet[query];
             FootContactTarget target = _targets[query];
+            if (target.HasSupport)
+            {
+                FootContactTarget previous = Contacts[foot];
+                Quaternion rotation;
+                if (previous.HasSupport)
+                {
+                    Quaternion normalChange = FabrikMath.FromTo(previous.Support.Normal, target.Support.Normal);
+                    rotation = normalChange * ReadRotation(previous.Support.Transform) * _contactRotations[foot];
+                }
+                else
+                {
+                    Vector3 normal = Vector3.Normalize(Vector3.TransformNormal(target.Support.Normal, Matrix4x4.Transpose(actor)));
+                    rotation = ReadRotation(actor) * FabrikMath.FromTo(Parameters.Rig.NeutralSoles[foot], normal);
+                }
+                _contactRotations[foot] = Quaternion.Normalize(Quaternion.Inverse(ReadRotation(target.Support.Transform)) * rotation);
+            }
             Contacts[foot] = target;
             if (target.Kind == FootContactKind.Sliding && target.HasSupport)
             {
@@ -209,13 +237,26 @@ internal sealed class FootLockSamples
     private GpuPoseGoal ContactGoal(int foot, in GpuPoseGoal source, FootContactKind kind,
         in FootContactTarget target, in Matrix4x4 actor, in Matrix4x4 worldToActor, float orientation = 1)
     {
-        Vector3 normal = Vector3.Normalize(Vector3.TransformNormal(target.Support.Normal, Matrix4x4.Transpose(actor)));
-        Quaternion tilt = Quaternion.Slerp(Quaternion.Identity, FabrikMath.FromTo(Parameters.Rig.NeutralSoles[foot], normal), orientation);
+        Quaternion rotation;
+        if (Contacts[foot].HasSupport)
+            rotation = Quaternion.Normalize(Quaternion.Inverse(ReadRotation(actor))
+                * ReadRotation(target.Support.Transform) * _contactRotations[foot]);
+        else
+        {
+            Vector3 normal = Vector3.Normalize(Vector3.TransformNormal(target.Support.Normal, Matrix4x4.Transpose(actor)));
+            rotation = Quaternion.Slerp(Quaternion.Identity, FabrikMath.FromTo(Parameters.Rig.NeutralSoles[foot], normal), orientation);
+        }
         GpuPoseGoal goal = source;
         goal.Position = Vector3.Transform(target.Support.Point, worldToActor)
-            - Vector3.Transform(Pivot(foot, kind) - source.Position, tilt);
-        goal.Orientation = Quaternion.Normalize(tilt * source.Orientation);
+            - Vector3.Transform(Pivot(foot, kind) - source.Position, rotation);
+        goal.Orientation = Quaternion.Normalize(rotation * source.Orientation);
         return goal;
+    }
+
+    private static Quaternion ReadRotation(in Matrix4x4 transform)
+    {
+        Matrix4x4.Decompose(transform, out _, out Quaternion rotation, out _);
+        return rotation;
     }
 
     private Vector3 ContactPoint(int foot, FootContactKind kind, in GpuPoseGoal source, in GpuPoseGoal corrected) =>

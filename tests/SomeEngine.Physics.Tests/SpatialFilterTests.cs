@@ -137,7 +137,8 @@ public sealed class SpatialFilterTests
         world.Add(b, new Hair { Character = characterB });
         world.AddTag<ExcludedBody>(excluded);
         var allBodies = world.Query(world.QueryDefinition().All<Body>());
-        var bodies = world.Query(world.QueryDefinition().All<Body>().None<ExcludedBody>());
+        var bodies = world.Query(world.QueryDefinition().Read<Body>().None<ExcludedBody>().Build()
+            .WithOptionalRead<Hair>());
         var tree = Collision.Build<Body, BodyBoundsReader>(world, allBodies, default);
         var contacts = Collision.Candidates<Body, BodyBoundsReader>(world, bodies, tree, default)
             .Where(default(DefaultContacts))

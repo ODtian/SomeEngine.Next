@@ -145,5 +145,8 @@ public enum ClusterShaderOperationRole : byte
     BvhTraversalInitialize = 28,
     BvhDeferredResume = 30,
     SceneBounds = 35,
+    PageRequests = 36,
+    LeafFlagFixups = 37,
+    MaterialDecalCells = 38,
 }
 

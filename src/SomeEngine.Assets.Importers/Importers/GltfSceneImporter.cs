@@ -28,7 +28,7 @@ public sealed class GltfSceneSettingsProvider : IAssetImporterSettings<GltfScene
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 public sealed partial class GltfSceneSettingsJson : JsonSerializerContext;
 
-/// <summary>Provides shared glTF node and mesh assembly; projects supply their MaterialAsset creation.</summary>
+/// <summary>Provides glTF node and mesh assembly with extensible material creation.</summary>
 public abstract class GltfSceneImporter : IAssetImporter<Scene, GltfSceneSettings>
 {
     public virtual async ValueTask ImportMeshMaterialsAsync(GltfMesh source, ImportContext context,

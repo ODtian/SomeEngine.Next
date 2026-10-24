@@ -417,8 +417,8 @@ internal static class StorageComparison
         => caseName switch
         {
             "shader" => LoadFiles(caseName, Path.Combine(root, "assets", "Shaders"), ".shader.asset"),
-            "mesh" => LoadFiles(caseName, Path.Combine(root, "templates", "DefaultProject", "assets"), ".mesh.asset"),
-            "texture" => LoadFiles(caseName, Path.Combine(root, "templates", "DefaultProject", "assets"), ".texture.asset"),
+            "mesh" => LoadFiles(caseName, Path.Combine(root, "samples", "DefaultGame", "assets"), ".mesh.asset"),
+            "texture" => LoadFiles(caseName, Path.Combine(root, "samples", "DefaultGame", "assets"), ".texture.asset"),
             "document" => LoadDocuments(root),
             "audio" => CreateRepeated(caseName, [64 * 1024, 256 * 1024, 1024 * 1024], 0xA710),
             "network" => CreateRepeated(caseName, [256, 512, 1500, 4096, 16 * 1024, 64 * 1024, 256 * 1024, 1024 * 1024], 0x4E37),

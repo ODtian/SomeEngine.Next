@@ -5,10 +5,9 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Elements;
 using SomeEngine.Layout;
-using SomeEngine.Render.Components;
 using SomeEngine.Views;
 using static SomeEngine.Layout.AbsoluteFunctions;
 using static SomeEngine.Layout.FlexFunctions;
@@ -16,34 +15,21 @@ using static SomeEngine.Layout.FlexFunctions;
 namespace SomeEngine.Runtime;
 
 /// <summary>World canvases with numbered Surface plates following selected moving spheres.</summary>
-internal sealed partial class SphereNameplates : IDisposable
+internal sealed partial class SphereNameplates : ISystem<ImmediateSystemContext>, IDisposable
 {
     private readonly World _world;
     private readonly List<(Entity Sphere, Entity Canvas)> _nameplates = [];
 
-    internal SphereNameplates(World world)
+    internal SphereNameplates(World world, IReadOnlyList<Entity> spheres)
     {
         _world = world;
-        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<MeshMotion>().Read<WorldTransform>());
-        var spheres = new List<Entity>();
-        try
-        {
-            world.ExecuteQuery(query, rows =>
-            {
-                int index = 0;
-                foreach (QueryChunkView chunk in rows.Chunks)
-                    foreach (Entity sphere in chunk.Entities)
-                    {
-                        const int columns = 32;
-                        if (index / columns == columns - 1 && index % 4 == 0) spheres.Add(sphere);
-                        index++;
-                    }
-            });
-        }
-        finally { world.ReleaseQuery(query); }
         int number = 1;
-        foreach (Entity sphere in spheres)
+        for (int index = 0; index < spheres.Count; index++)
         {
+            // The row and spacing select example scene targets from the moving meshes.
+            const int columns = 32;
+            if (index / columns != columns - 1 || index % 4 != 0) continue;
+            Entity sphere = spheres[index];
             Entity canvas = world.CreateEntity(new WorldTransform { Qvvs = PlateTransform(sphere) });
             world.Add(canvas, new Canvas
             {
@@ -54,7 +40,7 @@ internal sealed partial class SphereNameplates : IDisposable
         }
     }
 
-    internal void Update()
+    public void OnUpdate(ref ImmediateSystemContext context)
     {
         foreach ((Entity sphere, Entity canvas) in _nameplates)
             _world.Replace(canvas, new WorldTransform { Qvvs = PlateTransform(sphere) });

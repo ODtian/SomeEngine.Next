@@ -152,8 +152,6 @@ internal sealed class RelationTopologyImport<T>
     private int _sequenceCount;
     private bool _completed;
 
-    internal int RetainedMembershipMetadataCount => _memberships?.Count ?? 0;
-
     internal RelationTopologyImport(
         World world,
         RelationGraph graph,

@@ -353,7 +353,7 @@ public static class RelationJobAccess<T>
             _world.ExecuteQuery(
                 _query,
                 ref state,
-                static (QueryCursor cursor, ref TJob chunkJob) =>
+                static (scoped QueryCursor cursor, ref TJob chunkJob) =>
                 {
                     foreach (QueryChunkView chunk in cursor.Chunks)
                     {
@@ -387,7 +387,7 @@ public static class RelationJobAccess<T>
             _world.ExecuteQuery(
                 _query,
                 ref state,
-                static (QueryCursor cursor, ref TJob chunkJob) =>
+                static (scoped QueryCursor cursor, ref TJob chunkJob) =>
                 {
                     foreach (QueryChunkView chunk in cursor.Chunks)
                     {
@@ -421,7 +421,7 @@ public static class RelationJobAccess<T>
             _world.ExecuteQuery(
                 _query,
                 ref state,
-                static (QueryCursor cursor, ref TJob chunkJob) =>
+                static (scoped QueryCursor cursor, ref TJob chunkJob) =>
                 {
                     foreach (QueryChunkView chunk in cursor.Chunks)
                     {
@@ -455,7 +455,7 @@ public static class RelationJobAccess<T>
             _world.ExecuteQuery(
                 _query,
                 ref state,
-                static (QueryCursor cursor, ref TJob chunkJob) =>
+                static (scoped QueryCursor cursor, ref TJob chunkJob) =>
                 {
                     foreach (QueryChunkView chunk in cursor.Chunks)
                     {

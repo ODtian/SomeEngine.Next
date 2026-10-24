@@ -1,3 +1,7 @@
+#include "vsm_page_entry.slang"
+#include "vsm_page_dispatch.slang"
+#include "vsm_depth_cache.slang"
+
 struct VirtualShadowPageClearUniforms
 {
     uint PageSize;
@@ -8,7 +12,9 @@ struct VirtualShadowPageClearUniforms
 
 ConstantBuffer<VirtualShadowPageClearUniforms> PageClear;
 StructuredBuffer<uint4> ActivePhysicalPages;
-RWTexture2D<uint> ShadowPhysicalAtlas;
+StructuredBuffer<uint> ActivePhysicalPageCount;
+RWTexture2DArray<uint> ShadowPhysicalAtlas;
+StructuredBuffer<VirtualShadowPageMetadata> ClearPageMetadata;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -16,11 +22,14 @@ void ClearVirtualShadowPages(
     uint3 groupId : SV_GroupID,
     uint3 groupThreadId : SV_GroupThreadID)
 {
-    uint physicalPage = ActivePhysicalPages[groupId.x].x;
+    uint tiles = (max(PageClear.PageSize / 2u, 1u) + 7u) / 8u;
+    uint pageIndex = VirtualShadowDispatchPage(groupId, tiles);
+    if (pageIndex >= ActivePhysicalPageCount[0]) return;
+    uint physicalPage = ActivePhysicalPages[pageIndex].x;
     uint2 physicalPageCoord = uint2(
         physicalPage % PageClear.PhysicalPagesPerRow,
         physicalPage / PageClear.PhysicalPagesPerRow);
-    uint2 basePixel = (uint2(groupId.y, groupId.z) * 8u + groupThreadId.xy) * 2u;
+    uint2 basePixel = (VirtualShadowDispatchTile(groupId, tiles) * 8u + groupThreadId.xy) * 2u;
     [unroll]
     for (uint y = 0u; y < 2u; y++)
     [unroll]
@@ -28,7 +37,12 @@ void ClearVirtualShadowPages(
     {
         uint2 pagePixel = basePixel + uint2(x, y);
         uint2 atlasPixel = physicalPageCoord * PageClear.PageSize + pagePixel;
-        if (all(pagePixel < PageClear.PageSize) && all(atlasPixel < PageClear.AtlasSize))
-            ShadowPhysicalAtlas[atlasPixel] = 0u;
+        if (all(pagePixel < PageClear.PageSize))
+        {
+            uint flags = ClearPageMetadata[physicalPage].Flags;
+            uint staticDepth = ShadowPhysicalAtlas[int3(atlasPixel, 1)];
+            ShadowPhysicalAtlas[int3(atlasPixel, 0)] = InitializeVirtualShadowDynamicDepth(staticDepth, flags);
+            if ((flags & VSM_PAGE_STATIC_UNCACHED) != 0u) ShadowPhysicalAtlas[int3(atlasPixel, 1)] = 0u;
+        }
     }
 }

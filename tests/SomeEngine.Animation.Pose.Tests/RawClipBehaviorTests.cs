@@ -149,7 +149,7 @@ public sealed class RawClipBehaviorTests
     }
 
     private static GltfSourceImporter SourceImporter()
-        => new(services => PoseTestAssets.AddAssetCapabilities(services), PoseTestAssets.BuildVersion, PoseSceneImporter.Id);
+        => new(PoseTestAssets.AddAssetCapabilities(new Microsoft.Extensions.DependencyInjection.ServiceCollection()), PoseTestAssets.BuildVersion, PoseSceneImporter.Id);
 
     private sealed class ClipFiles : IDisposable
     {

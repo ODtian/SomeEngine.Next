@@ -1,0 +1,15 @@
+{
+  "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+  "Submissions": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\diagnostic-native-r36-hh2\\submissions.json",
+  "QueueSubmission": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\diagnostic-native-r36-hh2\\queue-submission.json",
+  "CaseQueueIds": [
+    "27dd4938b9394d54a3aa2dd0f0110fab",
+    "d82b3791cf8543d3817f78e3cf8c7c00"
+  ],
+  "AnalysisQueueIds": [
+    "36992025d7104d7480c61b27579aac2c",
+    "736c02192dd54d4d9b9ef92d2aabf29c",
+    "64081869ce2544ee9b999d3598192351"
+  ],
+  "SubmissionFinishedAtUtc": "2026-10-19T19:19:33.2203118Z"
+}

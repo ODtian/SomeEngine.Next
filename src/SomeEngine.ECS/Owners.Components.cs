@@ -768,7 +768,8 @@ internal readonly partial struct Components
         }
 
         int maskIndex = archetype.EnableMask(componentId);
-        record.Chunk!.WriteEnabled(maskIndex, record.RowInChunk, enabled);
+        if (record.Chunk!.WriteEnabled(maskIndex, record.RowInChunk, enabled))
+            _entities.Store.RecordTableChange(entity);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

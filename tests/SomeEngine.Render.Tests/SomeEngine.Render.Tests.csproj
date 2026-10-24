@@ -19,6 +19,7 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Render\SomeEngine.Render.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Job\SomeEngine.Job.csproj" />
@@ -29,23 +30,21 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\templates\DefaultProject\assets\Shaders\hello_triangle.shader.asset">
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\assets\Shaders\hello_triangle.shader.asset">
       <Link>Content\Shaders\hello_triangle.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\templates\DefaultProject\assets\Shaders\vsm_frame_reset.shader.asset">
+    <Content Include="..\..\assets\Shaders\vsm_frame_reset.shader.asset">
       <Link>Content\Shaders\vsm_frame_reset.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game.Assets/Game.Assets.csproj" />
-    <Using Include="Game.Content" />
-    <Using Include="Game.Assets" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game.Assets/Game.Assets.csproj" />
-    <Using Include="Game.Content" />
-    <Using Include="Game.Assets" />
+    <ProjectReference Include="../../src/SomeEngine.Assets/SomeEngine.Assets.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />
+    <Using Include="SomeEngine.Resources" />
+    <Using Include="SomeEngine.Assets.Schema" />
   </ItemGroup>
 </Project>

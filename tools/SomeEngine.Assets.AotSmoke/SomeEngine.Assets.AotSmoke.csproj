@@ -9,8 +9,9 @@
     <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.9" />
-    <Content Include="../../templates/DefaultProject/assets/Shaders/triangle.shader.asset" Link="Fixtures/triangle.shader.asset" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="../../samples/SomeEngine.Curves.Assets/SomeEngine.Curves.Assets.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="..\..\src\SomeEngine.Assets\SomeEngine.Assets.csproj"
                       GlobalPropertiesToRemove="PublishAot" />
@@ -20,8 +21,7 @@
                       GlobalPropertiesToRemove="PublishAot" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game.Assets/Game.Assets.csproj" />
-    <Using Include="Game.Content" />
-    <Using Include="Game.Assets" />
+    <Using Include="SomeEngine.Resources" />
+    <Using Include="SomeEngine.Assets.Schema" />
   </ItemGroup>
 </Project>

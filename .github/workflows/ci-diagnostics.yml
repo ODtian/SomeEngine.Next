@@ -1,0 +1,26 @@
+name: CI failure diagnostics
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  failure:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Demonstrate software failure propagation
+        shell: pwsh
+        run: ./tools/Test-CiFailure.ps1 -DemonstrateFailure
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: intentional-software-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: artifacts/test-results/**

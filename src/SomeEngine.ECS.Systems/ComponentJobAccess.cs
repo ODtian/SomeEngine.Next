@@ -17,7 +17,6 @@ public static class ComponentJobAccess<T>
     {
         ArgumentNullException.ThrowIfNull(world);
         JobStorageTypeMetadata<T>.RequireAliasFree("Table-component");
-        ComponentRegistry.MarkJobAliasFree(ComponentMetadata<T>.Id);
         return WorldStorageJobResources.Read(
             world,
             new WorldStorageResourceKey(WorldStorageKind.Table, ComponentMetadata<T>.Id));
@@ -27,7 +26,6 @@ public static class ComponentJobAccess<T>
     {
         ArgumentNullException.ThrowIfNull(world);
         JobStorageTypeMetadata<T>.RequireAliasFree("Table-component");
-        ComponentRegistry.MarkJobAliasFree(ComponentMetadata<T>.Id);
         return WorldStorageJobResources.Write(
             world,
             new WorldStorageResourceKey(WorldStorageKind.Table, ComponentMetadata<T>.Id));

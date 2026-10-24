@@ -1,0 +1,13 @@
+{
+  "SourceCommit": "73f7e089990e65cf4fc5517593e31aaeee03298a",
+  "Submissions": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r43\\submissions.json",
+  "QueueSubmission": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r43\\queue-submission.json",
+  "CaseQueueIds": [
+    "730530cb5d3d4039bb86067bc2b2fed7",
+    "0a5aaf682ca1435c85125c742167661c"
+  ],
+  "AnalysisQueueIds": [
+    "e67cd8d6286d474bb06bac458d4755e0"
+  ],
+  "SubmissionFinishedAtUtc": "2026-10-20T00:22:15.7226102Z"
+}

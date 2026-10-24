@@ -60,6 +60,20 @@ public static class SceneSerialization
         public void Read(ref DataReader reader, out SkeletonSource value)
             => value = new() { Skeleton = new(reader.ReadExternalReference().Value) };
     }
+    private struct XrayCodec : ICanonicalComponentCodec<Xray>
+    {
+        public void Write(ref DataWriter writer, in Xray value)
+        {
+            WriteVector(ref writer, value.Visible.ColorMultiplier); writer.WriteSingle(value.Visible.Opacity);
+            WriteVector(ref writer, value.Occluded.ColorMultiplier); writer.WriteSingle(value.Occluded.Opacity);
+            writer.WriteSingle(value.MinimumOcclusion); writer.WriteSingle(value.MaximumOcclusion);
+        }
+
+        public void Read(ref DataReader reader, out Xray value) => value = new(
+            new XrayBlend(ReadVector(ref reader), reader.ReadSingle()),
+            new XrayBlend(ReadVector(ref reader), reader.ReadSingle()), reader.ReadSingle(), reader.ReadSingle());
+    }
+
     private struct MotionCodec : ICanonicalComponentCodec<MeshMotion>
     {
         public void Write(ref DataWriter writer, in MeshMotion value) { WriteVector(ref writer, value.Amplitude); writer.WriteUInt32(value.Seed); }

@@ -62,7 +62,6 @@ public ref struct QueryChunkEnumerator<TFilter>
     private int _chunkIndex;
     private QueryArchetypeMatch? _currentMatch;
     private Chunk? _currentChunk;
-    private QueryChunkView _current;
 
     internal QueryChunkEnumerator(
         World world,
@@ -82,18 +81,33 @@ public ref struct QueryChunkEnumerator<TFilter>
         _chunkIndex = -1;
         _currentMatch = null;
         _currentChunk = null;
-        _current = default;
     }
 
     public QueryChunkView Current
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _current;
+        get => new(
+            _world,
+            _currentMatch!,
+            _currentChunk!,
+            _lastSystemVersion,
+            _currentSystemVersion);
     }
 
     internal QueryArchetypeMatch CurrentMatch => _currentMatch!;
 
     internal Chunk CurrentChunk => _currentChunk!;
+
+    internal QueryRow ReadRow(int row) => new(
+        _world,
+        _currentMatch!,
+        _currentChunk!,
+        row,
+        _lastSystemVersion,
+        _currentSystemVersion);
+
+    internal bool MoveNextRow(ref int row) =>
+        QueryRowCursor.MoveNext(_currentMatch!, _currentChunk, _lastSystemVersion, ref row);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public QueryChunkEnumerator<TFilter> GetEnumerator() => this;
@@ -138,12 +152,6 @@ public ref struct QueryChunkEnumerator<TFilter>
     {
         _currentMatch = match;
         _currentChunk = chunk;
-        _current = new QueryChunkView(
-            _world,
-            match,
-            chunk,
-            _lastSystemVersion,
-            _currentSystemVersion);
     }
 }
 

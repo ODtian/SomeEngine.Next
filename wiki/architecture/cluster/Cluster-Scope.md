@@ -13,7 +13,7 @@ Cluster 是 triangle virtual geometry 与 programmable raster 的可替换 pipel
 - tessellation/dicing integration
 
 ## Excludes
-Lighting、shadow/VSM、motion、ray tracing bridge、debug、streaming feedback consumer、translucency composition、temporal 与 presentation 都是独立 feature。
+Lighting、shadow/VSM、motion、streaming feedback consumer、temporal 与 presentation 位于各自 feature。ray tracing bridge、debug 与 translucency 的旧实现已于 2026-10-04 删除，历史边界见 [[history/Rendering/Removed-Code-2026-10-04|删除记录]]。
 
 ## Relations
 [[architecture/features/Virtual-Shadow-Maps]] · [[architecture/features/Lighting]] · [[Raster-Execution]]

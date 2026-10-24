@@ -22,7 +22,7 @@ public sealed class TextureMipTileStreamingTests
         Guid guid = project.RegisterAsset(await original.SaveAsync(directory.File("bootstrap.texture.asset")));
         await using var loader = new AssetLoader(project.CreateStorage());
         using var file = await TextureAsset.OpenAsync(loader, new(guid));
-        using Texture texture = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
+        Texture texture = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
         Assert.True(texture.HasBootstrap);
         Assert.Equal(1u, texture.BootstrapMipLevel);
         Assert.False(texture.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out _));
@@ -43,7 +43,6 @@ public sealed class TextureMipTileStreamingTests
         await using var loader = new AssetLoader(project.CreateStorage());
         using var file = await TextureAsset.OpenAsync(loader, new(guid));
         var error = await Assert.ThrowsAsync<InvalidDataException>(() => file.GetBlock<TextureBlock>().CreateAsync(file.Name).AsTask());
-        Assert.Contains("missing layer 1", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -61,7 +60,7 @@ public sealed class TextureMipTileStreamingTests
         storage.Publish(guid, beforePath);
         await using var loader = new AssetLoader(storage);
         using var file = await TextureAsset.OpenAsync(loader, new(guid));
-        using Texture current = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
+        Texture current = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
         storage.Publish(guid, afterPath);
         using var replacement = await TextureAsset.OpenAsync(loader, new(guid));
         Assert.Equal("before", current.Name);

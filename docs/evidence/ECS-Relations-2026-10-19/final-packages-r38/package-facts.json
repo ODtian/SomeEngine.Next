@@ -1,0 +1,110 @@
+{
+  "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+  "StageCount": 14,
+  "PublicJobCount": 7,
+  "AllStagesPassed": true,
+  "DirectPackageCount": 6,
+  "ActualPackageCount": 8,
+  "Packages": [
+    {
+      "Package": "SomeEngine.Diagnostics/0.1.0-relations.231",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.Diagnostics.0.1.0-relations.231.nupkg",
+      "RepositoryCommit": "51c8ce75949cf16d7190e14028c655f526d5697b"
+    },
+    {
+      "Package": "SomeEngine.ECS/0.1.0-relations.231",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.ECS.0.1.0-relations.231.nupkg",
+      "RepositoryCommit": "51c8ce75949cf16d7190e14028c655f526d5697b"
+    },
+    {
+      "Package": "SomeEngine.ECS.Relations/0.1.0-relations.231",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.ECS.Relations.0.1.0-relations.231.nupkg",
+      "RepositoryCommit": "51c8ce75949cf16d7190e14028c655f526d5697b"
+    },
+    {
+      "Package": "SomeEngine.ECS.SourceGen/0.1.0-relations.231",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.ECS.SourceGen.0.1.0-relations.231.nupkg",
+      "RepositoryCommit": "51c8ce75949cf16d7190e14028c655f526d5697b"
+    },
+    {
+      "Package": "SomeEngine.ECS.Systems/0.1.0-relations.231",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.ECS.Systems.0.1.0-relations.231.nupkg",
+      "RepositoryCommit": "51c8ce75949cf16d7190e14028c655f526d5697b"
+    },
+    {
+      "Package": "SomeEngine.Job/0.1.0-relations.231",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.Job.0.1.0-relations.231.nupkg",
+      "RepositoryCommit": "51c8ce75949cf16d7190e14028c655f526d5697b"
+    },
+    {
+      "Package": "SomeEngine.Job.Contracts/0.1.0-relations.231",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.Job.Contracts.0.1.0-relations.231.nupkg",
+      "RepositoryCommit": "51c8ce75949cf16d7190e14028c655f526d5697b"
+    },
+    {
+      "Package": "SomeEngine.Physics/0.1.0-relations.231",
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\feed\\SomeEngine.Physics.0.1.0-relations.231.nupkg",
+      "RepositoryCommit": "51c8ce75949cf16d7190e14028c655f526d5697b"
+    }
+  ],
+  "GeneratedFileCount": 27,
+  "Generators": [
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.BitmapRelationGenerator",
+      "Files": 2,
+      "ThinEntries": 4
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.EcsTypeGenerator",
+      "Files": 1,
+      "ThinEntries": 0
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.JobEntityGenerator",
+      "Files": 1,
+      "ThinEntries": 0
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.RelationEdgeGenerator",
+      "Files": 4,
+      "ThinEntries": 8
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.RelationGenerator",
+      "Files": 11,
+      "ThinEntries": 30
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.RelationImplementationGenerator",
+      "Files": 1,
+      "ThinEntries": 8
+    },
+    {
+      "Generator": "SomeEngine.ECS.SourceGen.SpatialRelationGenerator",
+      "Files": 7,
+      "ThinEntries": 28
+    }
+  ],
+  "ThinEntryCount": 78.0,
+  "JobStorageRegistrationCount": 17,
+  "RelationSchemaRegistrationCount": 2,
+  "LibraryGeneratedFileCount": 9,
+  "LibraryFixedTypeCount": 41,
+  "Artifacts": [
+    {
+      "FullName": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll",
+      "Length": 69120,
+      "LastWriteTimeUtc": "2026-10-19T22:01:17.5611514Z"
+    },
+    {
+      "FullName": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.AotSmoke.obj",
+      "Length": 25066602,
+      "LastWriteTimeUtc": "2026-10-19T22:01:35.5801336Z"
+    },
+    {
+      "FullName": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.AotSmoke.exe",
+      "Length": 4030464,
+      "LastWriteTimeUtc": "2026-10-19T22:01:36.3417455Z"
+    }
+  ]
+}

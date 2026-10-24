@@ -25,14 +25,14 @@ public struct InertialPoseSystem : ISystem<PoseNodeContext>
     {
         _jobs.Clear();
         var frame = new InertialFrame(context.Frame.World, context.Level, (float)context.Frame.DeltaTime, _jobs);
-        frame.World.ExecuteQuery(_instances, ref frame, static (QueryCursor rows, ref InertialFrame frame) =>
+        frame.World.ExecuteQuery(_instances, ref frame, static (scoped QueryCursor rows, ref InertialFrame frame) =>
         {
             foreach (QueryRow row in rows.Rows)
                 foreach (ref InertialPoseInstance instance in row.Buffer<InertialPoseInstance>().AsSpan())
                     if (instance.Node.Level == frame.Level) Gather(row.Entity, ref instance, in frame);
         });
         foreach (JobHandle job in _jobs) job.Complete();
-        frame.World.ExecuteQuery(_instances, ref frame, static (QueryCursor rows, ref InertialFrame frame) =>
+        frame.World.ExecuteQuery(_instances, ref frame, static (scoped QueryCursor rows, ref InertialFrame frame) =>
         {
             foreach (QueryRow row in rows.Rows)
                 foreach (ref InertialPoseInstance instance in row.Buffer<InertialPoseInstance>().AsSpan())

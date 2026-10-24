@@ -8,7 +8,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class WarpPipelineCacheTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class WarpPipelineCacheTests(D3D12TestCompiler shaderCompiler)
 {
 
 
@@ -22,7 +23,7 @@ public sealed class WarpPipelineCacheTests
             {
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "pipeline_cache_off_thread_prewarm",
             source,
             [new("computeMain", SlangStage.Compute)]);
@@ -549,7 +550,7 @@ public sealed class WarpPipelineCacheTests
             [numthreads(1, 1, 1)]
             void computeMain() { outputValues[0] = 0xC0FFEEu; }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "pipeline_cache_backend_identity",
             source,
             [new("computeMain", SlangStage.Compute)]);
@@ -697,7 +698,7 @@ public sealed class WarpPipelineCacheTests
             new("computeA", SlangStage.Compute),
             new("computeB", SlangStage.Compute),
         ];
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_pipeline_cache_compute",
             source,
             entries);
@@ -752,7 +753,7 @@ public sealed class WarpPipelineCacheTests
             [numthreads(1, 1, 1)]
             void computeC() {}
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_pipeline_cache_capacity_rejection",
             source,
             [
@@ -818,7 +819,7 @@ public sealed class WarpPipelineCacheTests
             [numthreads(1, 1, 1)]
             void computeMain() { outputValues[0] = 0xC0FFEEu; }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_pipeline_cache_native_reject_compute",
             source,
             [new D3D12TestEntry("computeMain", SlangStage.Compute)]);
@@ -913,7 +914,7 @@ public sealed class WarpPipelineCacheTests
                 return float4(1, 1, 1, 1);
             }
             """;
-        D3D12TestShader graphicsShader = D3D12TestShader.Compile(
+        D3D12TestShader graphicsShader = shaderCompiler.Compile(
             "rhi_pipeline_cache_graphics",
             graphicsSource,
             [
@@ -978,7 +979,7 @@ public sealed class WarpPipelineCacheTests
             [numthreads(1, 1, 1)]
             void computeMain() { outputValues[0] = 41u; }
             """;
-        D3D12TestShader computeShader = D3D12TestShader.Compile(
+        D3D12TestShader computeShader = shaderCompiler.Compile(
             "rhi_pipeline_cache_all_families_compute",
             computeSource,
             [new D3D12TestEntry("computeMain", SlangStage.Compute)]);
@@ -1022,7 +1023,7 @@ public sealed class WarpPipelineCacheTests
             [shader("raygeneration")]
             void rayGenerationMain() { outputValues[0] = 73u; }
             """;
-        D3D12TestShader rayShader = D3D12TestShader.Compile(
+        D3D12TestShader rayShader = shaderCompiler.Compile(
             "rhi_pipeline_cache_ray",
             raySource,
             [new D3D12TestEntry("rayGenerationMain", SlangStage.RayGeneration)]);
@@ -1100,7 +1101,7 @@ public sealed class WarpPipelineCacheTests
             }
             """;
         D3D12TestShader graphShader =
-            D3D12TestShader.CompileExperimental(
+            shaderCompiler.CompileExperimental(
                 "rhi_pipeline_cache_work_graph",
                 workGraphSource,
                 [new D3D12TestEntry("graphMain", SlangStage.Node)]);
@@ -1147,7 +1148,7 @@ public sealed class WarpPipelineCacheTests
 
     }
 
-    private static byte[] CreateAndRecreateMeshFamily(
+    private byte[] CreateAndRecreateMeshFamily(
         IGraphicsBackend backend,
         Device device)
     {
@@ -1177,7 +1178,7 @@ public sealed class WarpPipelineCacheTests
             }
             """;
         D3D12TestShader meshShader =
-            D3D12TestShader.Compile(
+            shaderCompiler.Compile(
                 "rhi_pipeline_cache_mesh",
                 meshSource,
                 [

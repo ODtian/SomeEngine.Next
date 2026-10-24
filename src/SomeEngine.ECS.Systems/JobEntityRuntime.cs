@@ -151,7 +151,7 @@ public ref struct JobEntityRow
 
 /// <summary>Narrow runtime entry used by source-generated IJobEntity extensions.</summary>
 [EditorBrowsable(EditorBrowsableState.Never)]
-public static class JobEntityRuntime
+public static partial class JobEntityRuntime
 {
     public static JobHandle Schedule<TJob, TAdapter>(
         World world,
@@ -180,6 +180,9 @@ public static class JobEntityRuntime
         ArgumentNullException.ThrowIfNull(descriptor);
         WorldStorageJobResources.RequireJobs(world);
         descriptor = descriptor.WithFilter(options.Filter);
+        if (descriptor.HasComponentResources)
+            return ScheduleComponentResources(world, in job, adapter, descriptor,
+                externalAccesses, options, dependency, parallel: false);
         JobResourceAccess[] captureAccesses = BuildCaptureAccesses(world, externalAccesses);
         var capture = new SerialQueryCaptureJob<TJob, TAdapter>(
             world,
@@ -229,6 +232,10 @@ public static class JobEntityRuntime
             throw new InvalidOperationException(
                 "ScheduleParallel requires unmanaged direct accesses and cannot write canonical relationship components.");
         }
+
+        if (descriptor.HasComponentResources)
+            return ScheduleComponentResources(world, in job, adapter, descriptor,
+                externalAccesses, options, dependency, parallel: true);
 
         // Delayed resource activation keeps the topology-read reservation out of the conflict
         // frontier until the full semantic dependency, including attached descendants, completes.
@@ -581,7 +588,7 @@ public static class JobEntityRuntime
                 _lastSystemVersion,
                 currentSystemVersion: 0,
                 ref state,
-                static (QueryCursor cursor, ref SerialState<TJob, TAdapter> state) =>
+                static (scoped QueryCursor cursor, ref SerialState<TJob, TAdapter> state) =>
                     ExecuteCursor(cursor, ref state));
         }
     }
@@ -872,7 +879,7 @@ public static class JobEntityRuntime
     }
 
     private static void ExecuteCursor<TJob, TAdapter>(
-        QueryCursor cursor,
+        scoped QueryCursor cursor,
         ref SerialState<TJob, TAdapter> state)
         where TJob : struct, IJobEntity
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>

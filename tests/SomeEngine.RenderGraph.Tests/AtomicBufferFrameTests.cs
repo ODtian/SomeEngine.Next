@@ -8,7 +8,7 @@ namespace SomeEngine.RenderGraph.Tests;
 
 public sealed class AtomicBufferFrameTests
 {
-    [Theory]
+    [HardwareRowsTheory]
     [InlineData(false)]
     [InlineData(true)]
     public void DisjointAtomicWritesPreserveWholeBufferSynchronization(bool vulkan)

@@ -1,0 +1,9 @@
+{
+  "ReaderQueueId": "15e3f6f0e9904c3dbf3e5d958197d7aa",
+  "SourceCommit": "73f7e089990e65cf4fc5517593e31aaeee03298a",
+  "NativeReaderStartedAtUtc": "2026-10-20T00:22:11.9565369Z",
+  "NativeReaderFinishedAtUtc": "2026-10-20T00:22:14.3451251Z",
+  "NativeReaderExitCode": 0,
+  "ReleasedAtUtc": "2026-10-20T00:26:57.6464040Z",
+  "ReleaseBasis": "The completed reader stage in this Master returned ExitCode0."
+}

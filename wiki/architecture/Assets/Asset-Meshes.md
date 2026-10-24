@@ -2,6 +2,8 @@
 
 Scene 引用 `AssetId<MeshAsset>`。`MeshBlock` 保存通用边界、区域与来源对应，`MeshMaterialsBlock` 保存区域的语义材质；Cluster 几何与顶点属性分别保存于 `ClusterGeometryBlock`、`ClusterVertexAttributesBlock`。其它管线通过自己的 Block 共用同一资产身份。
 
+`NavigationGeometryBlock` 保存导航使用的位置、三角形、面积分类与局部范围，创建普通 `NavigationGeometry` 供共享表面构建读取。接口与数据职责见[导航几何与多层表面](../Navigation-Surfaces.md)。
+
 ## 生产与查询
 
 glTF 中立组合提供语义网格与准备后的顶点流。Cluster 几何 Importer 决定顶点身份、位置、拓扑与 LOD，属性 Importer 通过 `GetBlockAsync` 获取几何及准备流，交付全部着色属性与匹配材质 Shader 的字节。网格的中立边界取自同一解码流；零三角形结果使用可选 Cluster 表示，场景装配与 Mesh 加载按可用几何创建绘制来源。构造与发现见 [Importer Discovery](Importer-Discovery.md)，数据划分见 [Block Division](Block-Division.md)。

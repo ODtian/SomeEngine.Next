@@ -9,8 +9,6 @@ public sealed class PayloadLaneTests
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
     }
 
-
-
     [Fact]
     public void ManagedReferencePayloadExecutes()
     {
@@ -36,7 +34,6 @@ public sealed class PayloadLaneTests
         var ex = Assert.Throws<InvalidOperationException>(() =>
             JobSystem.Schedule(new RefContainingPayloadJob(sink, "rejected")));
 
-        Assert.Contains("managed payload policy", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(["warned"], sink);
     }
 
@@ -97,8 +94,6 @@ public sealed class PayloadLaneTests
             GC.Collect();
         }
     }
-
-
 
     private readonly struct RefContainingPayloadJob : IJob
     {

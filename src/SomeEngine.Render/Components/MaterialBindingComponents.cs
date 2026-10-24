@@ -12,4 +12,7 @@ public readonly record struct MeshMaterialBinding(Material Material) : IBufferEl
 public readonly record struct RenderMaterialBinding(long MaterialId) : IBufferElement;
 
 /// <summary>One shared material reference registered for all meshes using its identifier.</summary>
-public readonly record struct RenderMaterialReference(Material Material) : SomeEngine.ECS.IComponent;
+public readonly record struct RenderMaterialReference(Material Material, ulong Revision) : SomeEngine.ECS.IComponent
+{
+    public RenderMaterialReference(Material material) : this(material, material.Revision) { }
+}

@@ -148,6 +148,10 @@ public readonly record struct RenderGraphStatistics(
     ulong GraphHeapBytes)
 {
     public bool AnalysisReused { get; init; }
+    /// <summary>Distinct passes visited by this frame's dependency and value analysis.</summary>
+    public int AnalyzedPassCount { get; init; }
+    /// <summary>Resource, view, pass and access rows rebuilt for this execution.</summary>
+    public int RebuiltRowCount { get; init; }
     public ulong TransientUnusedBytes => TransientHeapBytes - TransientOccupiedBytes;
 }
 

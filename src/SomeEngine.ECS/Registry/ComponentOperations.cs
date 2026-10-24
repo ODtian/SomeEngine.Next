@@ -11,6 +11,8 @@ namespace SomeEngine.ECS.Registry;
 /// </remarks>
 internal unsafe struct ComponentOperations
 {
+    internal delegate*<bool> GetJobAliasFree;
+
     /// <summary>
     /// Returns a managed interior reference to one row without exposing the owning column array.
     /// </summary>

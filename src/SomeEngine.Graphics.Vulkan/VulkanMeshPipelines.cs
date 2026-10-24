@@ -9,7 +9,7 @@ internal sealed unsafe partial class VulkanBackend
         RhiDevice device,
         in MeshPipelineDesc desc,
         SomeEngine.Graphics.PipelineCache? cache,
-        IComponentType? capturedSlangCode = null)
+        SlangShaderData? capturedSlangCode = null)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         if (!nativeDevice.TryGetCapability(out MeshShaders? capability) || capability is null)
@@ -26,7 +26,7 @@ internal sealed unsafe partial class VulkanBackend
             desc.StaticSamplers);
         VkPipeline native = default;
         VulkanPipeline? pipeline = null;
-        IComponentType? retainedCode = null;
+        SlangShaderData? retainedCode = null;
         try
         {
             var shaders = new List<MeshShaderStage>
@@ -101,7 +101,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        IComponentType slangCode = desc.SlangCode;
+        SlangShaderData slangCode = desc.SlangCode;
         var data = new MeshPipelineData(desc);
         return EnqueuePipelineCreation(
             nativeDevice,
@@ -251,7 +251,7 @@ internal sealed unsafe partial class VulkanBackend
 
     private sealed class MeshPipelineData
     {
-        private readonly IComponentType _slangCode;
+        private readonly SlangShaderData _slangCode;
         private readonly ShaderReflection _reflection;
         private readonly EntryPointReflection _mesh;
         private readonly ReadOnlySequence<byte>[] _code;
@@ -296,7 +296,7 @@ internal sealed unsafe partial class VulkanBackend
             VulkanBackend backend,
             VulkanDevice device,
             SomeEngine.Graphics.PipelineCache? cache,
-            IComponentType capturedSlangCode)
+            SlangShaderData capturedSlangCode)
         {
             BlendState blend = new(_blend, _independentBlend, _logic);
             AttachmentFormatSignature attachments = new(_colors, _depth, _multisample.SampleCount);

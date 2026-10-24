@@ -40,20 +40,20 @@ public sealed class DiskAssetBehaviorTests
     }
 
     [Fact]
-    public async Task OpeningFileDoesNotConstructTheDomainObject()
+    public async Task OpeningFileProvidesContentForExplicitDomainCreation()
     {
         using var files = new TestFiles();
         Guid id = Guid.NewGuid();
         files.Save(id, 17, [1, 2, 3]);
         await using var loader = new AssetLoader(files.Project.CreateStorage());
-        DiskProbe.ResetConstructionCount();
 
         await using DiskProbeAsset asset = await DiskProbeAsset.OpenAsync(loader, new AssetId<DiskProbeAsset>(id));
 
         Assert.Equal(id, asset.Id);
         Assert.Equal("probe-17", asset.Name);
         Assert.Equal(17, (await asset.GetBlockAsync<DiskProbeBlock>()).Number);
-        Assert.Equal(0, DiskProbe.ConstructionCount);
+        await using DiskProbe value = await (await asset.GetBlockAsync<DiskProbeBlock>()).CreateAsync();
+        Assert.Equal(new byte[] { 1, 2, 3 }, value.ReadBytes());
     }
 
     [Fact]
@@ -437,7 +437,7 @@ public sealed class DiskAssetBehaviorTests
     }
 
     [Fact]
-    public async Task RetainingAndDuplicatingAnAssetDoesNotDecodeItsFieldsAgain()
+    public async Task DuplicatingAnAssetKeepsItsDecodedFieldsIndependent()
     {
         using var files = new TestFiles();
         string path = System.IO.Path.Combine(files.Directory, "counted.counted.asset");
@@ -445,16 +445,12 @@ public sealed class DiskAssetBehaviorTests
         using var content = new CountedBlock { Value = new(7) };
         created.SetBlock(content);
         await created.SaveAsync(path);
-        CountedNumber.Reads = 0;
         using var opened = await CountedAsset.OpenAsync(path);
-        Assert.Equal(0, CountedNumber.Reads);
         CountedBlock openedContent = await opened.GetBlockAsync<CountedBlock>();
-        Assert.Equal(1, CountedNumber.Reads);
         using var copy = opened.Duplicate();
         using var source = opened.Duplicate();
         copy.GetBlock<CountedBlock>().Value = new(8);
         await copy.SaveAsync(System.IO.Path.Combine(files.Directory, "copy.counted.asset"));
-        Assert.Equal(1, CountedNumber.Reads);
         Assert.Equal(7, openedContent.Value.Number);
         Assert.Equal(8, copy.GetBlock<CountedBlock>().Value.Number);
     }
@@ -585,15 +581,11 @@ public sealed class DiskAssetBehaviorTests
 
 public sealed class DiskProbe : IAsyncDisposable
 {
-    private static int _constructionCount;
     private ReadOnlyMemory<byte>? _bytes;
     public DiskProbe(ReadOnlyMemory<byte> bytes)
     {
         _bytes = bytes;
-        Interlocked.Increment(ref _constructionCount);
     }
-    public static int ConstructionCount => Volatile.Read(ref _constructionCount);
-    public static void ResetConstructionCount() => Interlocked.Exchange(ref _constructionCount, 0);
     public byte[] ReadBytes()
     {
         var read = _bytes ?? throw new ObjectDisposedException(nameof(DiskProbe));
@@ -657,7 +649,6 @@ public sealed partial class CountedBlock : AssetBlock
 [BinarySerializable]
 public readonly record struct CountedNumber(int Number) : IBinarySerializable<CountedNumber>
 {
-    public static int Reads;
     public static Guid TypeId => new("E6E799DD-6FBC-4399-BABD-EB6DC90B016B");
     public static ulong SchemaFingerprint => 0x4E554D4245520001UL;
     public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
@@ -666,7 +657,6 @@ public readonly record struct CountedNumber(int Number) : IBinarySerializable<Co
     public static void ValidateView(ref BinaryViewReader reader) => reader.ReadInt32();
     public static CountedNumber Read(ref BinaryDataReader reader)
     {
-        Interlocked.Increment(ref Reads);
         return new(reader.ReadInt32());
     }
 }

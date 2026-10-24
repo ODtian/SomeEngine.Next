@@ -1,5 +1,5 @@
-using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.RenderGraph;
+using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Runtime;
 
@@ -20,45 +20,43 @@ internal sealed class ApplicationFrameMeasurements(Action<ApplicationFrameTiming
     internal void RecordCpu(ulong identity, int frame, double simulationSeconds, double cpuMs, double gameMs, double animationMs, double extractionMs,
         double prepareMs, double reconcileMs, double executeMs)
     {
-        FrameTimes times = Get(identity);
+        FrameTimes times = GetFrame(identity);
         times.Cpu = new(frame, simulationSeconds, cpuMs, gameMs, animationMs, extractionMs, prepareMs, reconcileMs, executeMs);
-        times.HasCpu = true;
-        Deliver(identity, times);
+        Publish(identity, times);
     }
 
     internal void ReceiveGpu(RenderGraphGpuTimes gpu)
     {
-        FrameTimes times = Get(gpu.FrameIdentity);
+        FrameTimes times = GetFrame(gpu.FrameIdentity);
         times.Gpu = gpu;
-        Deliver(gpu.FrameIdentity, times);
+        Publish(gpu.FrameIdentity, times);
     }
 
     internal void ReceiveGeometry(ClusterFrameMetrics geometry)
     {
-        FrameTimes times = Get(geometry.FrameIdentity);
+        FrameTimes times = GetFrame(geometry.FrameIdentity);
         times.Geometry = geometry;
-        Deliver(geometry.FrameIdentity, times);
+        Publish(geometry.FrameIdentity, times);
     }
 
-    private FrameTimes Get(ulong identity)
+    private FrameTimes GetFrame(ulong identity)
     {
-        if (!_frames.TryGetValue(identity, out FrameTimes? times)) _frames.Add(identity, times = new());
+        if (!_frames.TryGetValue(identity, out FrameTimes? times))
+            _frames.Add(identity, times = new());
         return times;
     }
 
-    private void Deliver(ulong identity, FrameTimes times)
+    private void Publish(ulong identity, FrameTimes times)
     {
-        if (!times.HasCpu || times.Gpu is null || times.Geometry is null) return;
+        if (times.Cpu is not { } cpu || times.Gpu is not { } gpu || times.Geometry is not { } geometry) return;
         _frames.Remove(identity);
-        CpuFrameTime cpu = times.Cpu;
         receive(new(cpu.Frame, cpu.CpuMs, cpu.GameMs, cpu.AnimationMs, cpu.ExtractionMs,
-            cpu.PrepareMs, cpu.ReconcileMs, cpu.ExecuteMs, times.Gpu, times.Geometry.Value) { SimulationSeconds = cpu.SimulationSeconds });
+            cpu.PrepareMs, cpu.ReconcileMs, cpu.ExecuteMs, gpu, geometry) { SimulationSeconds = cpu.SimulationSeconds });
     }
 
     private sealed class FrameTimes
     {
-        internal CpuFrameTime Cpu;
-        internal bool HasCpu;
+        internal CpuFrameTime? Cpu;
         internal RenderGraphGpuTimes? Gpu;
         internal ClusterFrameMetrics? Geometry;
     }

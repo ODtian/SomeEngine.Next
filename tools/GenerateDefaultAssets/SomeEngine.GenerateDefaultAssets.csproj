@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game.Build/Game.Build.csproj" />
+    <ProjectReference Include="../../samples/DefaultGame/DefaultGame.csproj" AdditionalProperties="SomeEngineDevelopment=true;PublishAot=false" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

@@ -2,6 +2,8 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class CompletionStateTests
 {
+    private readonly LifecycleData _data = new();
+
     public CompletionStateTests()
     {
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
@@ -19,36 +21,36 @@ public sealed class CompletionStateTests
     [Fact]
     public void CompleteIsIdempotent()
     {
-        LifecycleJobs.Counter = 0;
-        var handle = JobSystem.Schedule(new LifecycleJobs.IncrementJob());
+        _data.Counter = 0;
+        var handle = JobSystem.Schedule(new LifecycleData.IncrementJob(_data));
 
         handle.Complete();
         handle.Complete();
 
-        Assert.Equal(1, LifecycleJobs.Counter);
+        Assert.Equal(1, _data.Counter);
         Assert.True(handle.IsCompleted);
     }
 
     [Fact]
     public void SequentialJobsDoNotExhaustCompletionStatePool()
     {
-        LifecycleJobs.Counter = 0;
+        _data.Counter = 0;
 
         for (var i = 0; i < 1_000; i++)
         {
-            JobSystem.Schedule(new LifecycleJobs.IncrementJob()).Complete();
+            JobSystem.Schedule(new LifecycleData.IncrementJob(_data)).Complete();
         }
 
-        Assert.Equal(1_000, LifecycleJobs.Counter);
+        Assert.Equal(1_000, _data.Counter);
     }
 
     [Fact]
     public void OldHandleStaysSafeAfterStateReuse()
     {
-        var old = JobSystem.Schedule(new LifecycleJobs.NoopJob());
+        var old = JobSystem.Schedule(new LifecycleData.NoopJob());
         old.Complete();
 
-        var reused = JobSystem.Schedule(new LifecycleJobs.NoopJob());
+        var reused = JobSystem.Schedule(new LifecycleData.NoopJob());
 
         Assert.True(old.IsCompleted);
         old.Complete();
@@ -57,15 +59,19 @@ public sealed class CompletionStateTests
         Assert.True(reused.IsCompleted);
     }
 
-    private static class LifecycleJobs
+    private sealed class LifecycleData
     {
-        internal static int Counter;
+        internal int Counter;
 
         internal struct IncrementJob : IJob
         {
+            private readonly LifecycleData _data;
+
+            internal IncrementJob(LifecycleData data) => _data = data;
+
             public void Execute()
             {
-                Counter++;
+                _data.Counter++;
             }
         }
 

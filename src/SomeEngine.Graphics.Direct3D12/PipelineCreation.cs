@@ -137,7 +137,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly TaskCompletionSource<Pipeline> _completion = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        private IComponentType? _slangCode;
+        private SlangShaderData? _slangCode;
         private readonly ShaderReflection _reflection;
         private ReadOnlySequence<byte>[]? _code;
         private ISlangBlob?[]? _codeBlobs;
@@ -147,7 +147,7 @@ internal sealed unsafe partial class D3D12Backend
         protected PipelineCreationRequest(
             D3D12Device device,
             PipelineType type,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
             ISlangBlob?[] codeBlobs,
@@ -168,10 +168,10 @@ internal sealed unsafe partial class D3D12Backend
         internal PipelineType Type { get; }
         internal D3D12PipelineCache? Cache => Volatile.Read(ref _cache);
         internal Task<Pipeline> Task => _completion.Task;
-        protected IComponentType SlangCode => Volatile.Read(ref _slangCode)
+        protected SlangShaderData SlangCode => Volatile.Read(ref _slangCode)
             ?? throw new ObjectDisposedException(nameof(PipelineCreationRequest));
         protected ShaderReflection Reflection => _reflection;
-        protected IComponentType CapturedSlangCode => Volatile.Read(ref _slangCode)
+        protected SlangShaderData CapturedSlangCode => Volatile.Read(ref _slangCode)
             ?? throw new ObjectDisposedException(nameof(PipelineCreationRequest));
         protected ReadOnlySequence<byte> GetCode(int index) =>
             (Volatile.Read(ref _code) ??
@@ -234,7 +234,7 @@ internal sealed unsafe partial class D3D12Backend
         private GraphicsPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
             ISlangBlob?[] codeBlobs,
@@ -291,7 +291,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache? cache,
             in GraphicsPipelineDesc desc)
         {
-            IComponentType retainedCode = desc.SlangCode;
+            SlangShaderData retainedCode = desc.SlangCode;
             ReadOnlySequence<byte>[] code = [desc.VertexCode, desc.PixelCode];
             ISlangBlob?[] codeBlobs = [desc.VertexCodeBlob, desc.PixelCodeBlob];
             bool cacheRetained = false;
@@ -429,7 +429,7 @@ internal sealed unsafe partial class D3D12Backend
         private ComputePipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
             ISlangBlob?[] codeBlobs,
@@ -448,7 +448,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache? cache,
             in ComputePipelineDesc desc)
         {
-            IComponentType retainedCode = desc.SlangCode;
+            SlangShaderData retainedCode = desc.SlangCode;
             ReadOnlySequence<byte>[] code = [desc.Code];
             ISlangBlob?[] codeBlobs = [desc.CodeBlob];
             bool cacheRetained = false;
@@ -515,7 +515,7 @@ internal sealed unsafe partial class D3D12Backend
         private MeshPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
             ISlangBlob?[] codeBlobs,
@@ -558,7 +558,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache? cache,
             in MeshPipelineDesc desc)
         {
-            IComponentType retainedCode = desc.SlangCode;
+            SlangShaderData retainedCode = desc.SlangCode;
             ReadOnlySequence<byte>[] code =
                 [desc.MeshCode, desc.AmplificationCode, desc.PixelCode];
             ISlangBlob?[] codeBlobs =
@@ -654,7 +654,7 @@ internal sealed unsafe partial class D3D12Backend
         private RayTracingPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
             ISlangBlob?[] codeBlobs,
@@ -689,7 +689,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache? cache,
             in RayTracingPipelineDesc desc)
         {
-            IComponentType retainedCode = desc.SlangCode;
+            SlangShaderData retainedCode = desc.SlangCode;
             ReadOnlySequence<byte>[] code = [desc.Code];
             ISlangBlob?[] codeBlobs = [desc.CodeBlob];
             bool cacheRetained = false;
@@ -763,7 +763,7 @@ internal sealed unsafe partial class D3D12Backend
         private WorkGraphPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
             ISlangBlob?[] codeBlobs,
@@ -782,7 +782,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache? cache,
             in WorkGraphPipelineDesc desc)
         {
-            IComponentType retainedCode = desc.SlangCode;
+            SlangShaderData retainedCode = desc.SlangCode;
             ReadOnlySequence<byte>[] code = [desc.Code];
             ISlangBlob?[] codeBlobs = [desc.CodeBlob];
             bool cacheRetained = false;

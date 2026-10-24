@@ -4,8 +4,8 @@ using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets;
 
-/// <summary>Opens disk content. It does not create, cache, or release domain objects.</summary>
-public sealed class AssetLoader : IAsyncDisposable
+/// <summary>Opens asset files and retains their file data within the configured budgets.</summary>
+public sealed partial class AssetLoader : IAsyncDisposable
 {
     private readonly IAssetStorage _storage;
     private readonly AssetLoaderOptions _options;
@@ -36,6 +36,14 @@ public sealed class AssetLoader : IAsyncDisposable
     }
 
     public int MaxConcurrentReads => _options.MaxConcurrentReads;
+
+    /// <summary>The storage-selected file version used by a resource's acquisition key.</summary>
+    public Guid GetSourceVersion<T>(AssetId<T> id) where T : Asset
+    {
+        if (!_storage.TryFind(id.Value, out AssetEntry entry))
+            throw new KeyNotFoundException($"Asset {id} was not found in storage.");
+        return entry.Version;
+    }
 
     public async ValueTask<AssetFile> OpenFileAsync<T>(AssetId<T> id,
         string fileType, BinaryWireTypeDescriptor wireType, CancellationToken cancellationToken = default)

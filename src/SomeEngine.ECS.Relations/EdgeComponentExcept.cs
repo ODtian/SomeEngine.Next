@@ -30,21 +30,14 @@ public readonly struct EdgeComponentExcept<TEnumerable, TPayload, TRelation, T1,
         RelationEdgeEndpoints<TPayload>.AddReads(_enumerable.AddReads(definition, position))
             .WithOptionalRead<T1>().WithOptionalRead<T2>();
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<RelationEdge<TPayload>>, allows ref struct
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<RelationEdge<TPayload>>, allows ref struct
     {
         var component = new ComponentRelation<TRelation, T1, T2>(queries.Access, _relation);
         var relation = new NegatedRelation<ComponentRelation<TRelation, T1, T2>, (Entity, Entity)>(component);
         var filtered = new EdgeRelationFilterOutput<TPayload,
             NegatedRelation<ComponentRelation<TRelation, T1, T2>, (Entity, Entity)>, TOutput>(
-            queries.Access, relation, output);
-        try
-        {
-            return _enumerable.Enumerate(queries, ref filtered);
-        }
-        finally
-        {
-            output = filtered.Output;
-        }
+            queries.Access, relation, new(ref output));
+        return _enumerable.Enumerate(queries, ref filtered);
     }
 }

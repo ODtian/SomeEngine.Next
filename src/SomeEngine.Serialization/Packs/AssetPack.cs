@@ -143,13 +143,17 @@ internal static class AssetPackFooterFormat
         if (!trailer[..8].SequenceEqual("SEPACK02"u8)
             || BinaryPrimitives.ReadUInt32LittleEndian(trailer[8..]) != CurrentVersion)
         {
-            throw new InvalidDataException("Asset pack footer is not the current schema.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.UnsupportedVersion,
+                "Asset pack footer is not the current schema.");
         }
         if (trailer[13] != 0 || trailer[14] != 0 || trailer[15] != 0)
             throw new InvalidDataException("Asset pack footer reserved bytes are non-zero.");
         uint expectedChecksum = BinaryPrimitives.ReadUInt32LittleEndian(trailer[28..]);
         if (Checksum(trailer[..28]) != expectedChecksum)
-            throw new InvalidDataException("Asset pack footer checksum is invalid.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
+                "Asset pack footer checksum is invalid.");
 
         byte algorithm = trailer[12];
         int signatureLength = BinaryPrimitives.ReadInt32LittleEndian(trailer[16..]);
@@ -806,7 +810,8 @@ public sealed class AssetPack : IAsyncDisposable
             ?? throw new InvalidDataException($"Pack catalog chunk 0x{entry.ChunkKey:X16} is missing.");
         if (descriptor.TypeFingerprint != entry.SchemaFingerprint)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Pack chunk fingerprint 0x{descriptor.TypeFingerprint:X16} does not match catalog " +
                 $"fingerprint 0x{entry.SchemaFingerprint:X16}.");
         }

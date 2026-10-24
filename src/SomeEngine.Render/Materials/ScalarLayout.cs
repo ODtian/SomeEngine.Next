@@ -160,6 +160,46 @@ public sealed class ScalarLayout
         return FromFields(name, fields, payloadSize);
     }
 
+    internal static ScalarLayout FromSlangByteAddress(
+        string name,
+        TypeLayoutReflection typeLayout)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("A material scalar type requires a name.", nameof(name));
+        if (typeLayout == TypeLayoutReflection.Null || typeLayout.Kind != SlangTypeKind.Struct)
+            throw new ArgumentException("Material scalars require a reflected struct type.", nameof(typeLayout));
+
+        // MaterialScalarRegion.Load<T> uses Slang natural byte-address layout, not
+        // the target-specific StructuredBuffer layout. For the material property
+        // types supported here, every scalar (including bool) is 32 bits and
+        // vectors inherit that 4-byte alignment, without float3 tail padding.
+        // Keep declaration order from Slang; never infer fields from a C# struct.
+        uint byteOffset = 0;
+        var fields = new List<ScalarFieldLayout>(checked((int)typeLayout.FieldCount));
+        for (uint fieldIndex = 0; fieldIndex < typeLayout.FieldCount; fieldIndex++)
+        {
+            VariableLayoutReflection field = typeLayout.GetFieldByIndex(fieldIndex);
+            if (field == VariableLayoutReflection.Null || string.IsNullOrWhiteSpace(field.Name))
+                throw new InvalidDataException($"Material scalar type '{name}' has an unnamed field.");
+            TypeLayoutReflection fieldType = field.TypeLayout;
+            bool scalar = fieldType.Kind == SlangTypeKind.Scalar &&
+                fieldType.ScalarType is SlangScalarType.Bool or SlangScalarType.Int32 or
+                    SlangScalarType.UInt32 or SlangScalarType.Float32;
+            bool vector = fieldType.Kind == SlangTypeKind.Vector &&
+                fieldType.ScalarType == SlangScalarType.Float32 &&
+                fieldType.ColumnCount is >= 1 and <= 4;
+            if (!scalar && !vector)
+                throw new InvalidDataException(
+                    $"Material scalar field '{name}.{field.Name}' must be a 32-bit scalar or float vector.");
+            uint components = scalar ? 1u : fieldType.ColumnCount;
+            uint size = checked(components * sizeof(uint));
+            fields.Add(new ScalarFieldLayout(field.Name, byteOffset, size,
+                fieldType.RowCount, fieldType.ColumnCount, checked((byte)fieldType.ScalarType)));
+            byteOffset = checked(byteOffset + size);
+        }
+        return FromFields(name, fields, byteOffset);
+    }
+
     internal bool HasSameContract(ScalarLayout other)
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -255,7 +295,9 @@ public sealed class ScalarLayout
         return new ScalarMaterialLayout(this, [.. bindings]);
     }
 
-    private byte[] Encode(Material material, ReadOnlySpan<ScalarMaterialBinding> bindings)
+    private byte[] Encode(Material material, ReadOnlySpan<ScalarMaterialBinding> bindings,
+        Func<SomeEngine.Resources.Texture?, uint>? textureIndex,
+        Func<SomeEngine.Graphics.SamplerDesc, uint>? samplerIndex)
     {
         var result = new byte[ByteSize];
         WriteHeader(result);
@@ -270,6 +312,16 @@ public sealed class ScalarLayout
                 WriteFloatField(fieldBytes, field.ComponentCount, material.GetFloatComponents(binding.MaterialSlot));
             else if (type == typeof(int) || type == typeof(uint) || type == typeof(bool))
                 WriteIntegerField(fieldBytes, field, unchecked((int)material.GetInteger(binding.MaterialSlot)));
+            else if (typeof(SomeEngine.Resources.Texture).IsAssignableFrom(type))
+            {
+                if (textureIndex is null || field.Size != sizeof(uint) ||
+                    field.ScalarType != (byte)SlangScalarType.UInt32)
+                    throw new InvalidDataException($"Indexed texture '{field.Name}' requires a uint scalar field.");
+                uint index = textureIndex(material.GetTexture(binding.MaterialSlot));
+                BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, index);
+            }
+            else if (type == typeof(SomeEngine.Graphics.SamplerDesc))
+                BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, samplerIndex!(material.GetSampler(binding.MaterialSlot)));
             else
                 throw new InvalidDataException(
                     $"Material slot {binding.MaterialSlot} cannot be encoded as scalar data.");
@@ -288,11 +340,17 @@ public sealed class ScalarLayout
             _bindings = bindings;
         }
 
+        internal IEnumerable<uint> TextureProperties => _bindings
+            .Where(binding => typeof(SomeEngine.Resources.Texture).IsAssignableFrom(binding.PropertyType))
+            .Select(binding => binding.MaterialSlot);
+
         internal int ByteSize => _layout.ByteSize;
         internal uint LayoutHash => _layout.LayoutHash;
         internal uint PayloadByteSize => _layout.PayloadByteSize;
 
-        internal byte[] Encode(Material material) => _layout.Encode(material, _bindings);
+        internal byte[] Encode(Material material, Func<SomeEngine.Resources.Texture?, uint>? textureIndex = null,
+            Func<SomeEngine.Graphics.SamplerDesc, uint>? samplerIndex = null)
+            => _layout.Encode(material, _bindings, textureIndex, samplerIndex);
     }
 
     internal readonly record struct ScalarMaterialBinding(

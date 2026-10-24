@@ -1,0 +1,116 @@
+ROLE DefaultGeneric
+  1d18aa:      	movl	%edi, %edx
+  1d18ac:      	movl	%ebp, %r8d
+  1d18af:      	movl	0x10(%rbx), %r10d
+  1d18b3:      	leal	0x1(%r10), %r9d
+  1d18b7:      	movl	%r9d, 0x10(%rbx)
+  1d18bb:      	cmpl	0x8(%rbx), %r10d
+  1d18bf:      	jae	0x1d19b7 <symbol>
+  1d18c5:      	shlq	$0x4, %r10
+  1d18c9:      	addq	(%rbx), %r10
+  1d18cc:      	movl	%edx, (%r10)
+  1d18cf:      	movl	%r8d, 0x4(%r10)
+  1d18d3:      	movl	%ecx, 0x8(%r10)
+  1d18d7:      	movl	%eax, 0xc(%r10)
+  1d18db:      	movq	0xe0(%rsp), %rdx
+  1d18e3:      	movq	%rdx, %r14
+ROLE DefaultHand
+  15e4c5:      	movl	%edi, %edx
+  15e4c7:      	movl	%ebp, %r8d
+  15e4ca:      	movl	0x10(%rbx), %r10d
+  15e4ce:      	leal	0x1(%r10), %r9d
+  15e4d2:      	movl	%r9d, 0x10(%rbx)
+  15e4d6:      	cmpl	0x8(%rbx), %r10d
+  15e4da:      	jae	0x15e5d1 <symbol>
+  15e4e0:      	shlq	$0x4, %r10
+  15e4e4:      	addq	(%rbx), %r10
+  15e4e7:      	movl	%edx, (%r10)
+  15e4ea:      	movl	%r8d, 0x4(%r10)
+  15e4ee:      	movl	%ecx, 0x8(%r10)
+  15e4f2:      	movl	%eax, 0xc(%r10)
+  15e4f6:      	movq	0xe0(%rsp), %rdx
+  15e4fe:      	movq	%rdx, %r14
+ROLE KeyGeneric
+  2082a6:      	movl	0x74(%rsp), %ecx
+  2082aa:      	jmp	0x2082d2 <symbol>
+  2082ac:      	movl	0x10(%rbx), %eax
+  2082af:      	leal	0x1(%rax), %ecx
+  2082b2:      	movl	%ecx, 0x10(%rbx)
+  2082b5:      	cmpl	0x8(%rbx), %eax
+  2082b8:      	jae	0x208310 <symbol>
+  2082ba:      	shlq	$0x4, %rax
+  2082be:      	addq	(%rbx), %rax
+  2082c1:      	movl	%ebp, (%rax)
+  2082c3:      	movl	0x74(%rsp), %ecx
+  2082c7:      	movl	%ecx, 0x4(%rax)
+  2082ca:      	movl	%r13d, 0x8(%rax)
+  2082ce:      	movl	%r12d, 0xc(%rax)
+  2082d2:      	incl	%edi
+ROLE KeyHand
+  164db9:      	movq	%rdi, %rcx
+  164dbc:      	callq	0x159e80 <symbol>
+  164dc1:      	jmp	0x164ccd <symbol>
+  164dc6:      	leal	0x1(%rbp), %edx
+  164dc9:      	movl	%edx, 0x10(%rdi)
+  164dcc:      	movl	%ebp, %edx
+  164dce:      	leaq	0x10(%r12,%rdx,8), %rdx
+  164dd3:      	movl	%r14d, (%rdx)
+  164dd6:      	movl	%r13d, 0x4(%rdx)
+  164dda:      	jmp	0x164ccd <symbol>
+  164ddf:      	movq	0x20(%rsp), %rbp
+  164de4:      	movl	(%rbp), %edx
+  164de7:      	movq	0x28(%r14), %r8
+  164deb:      	xorl	%ecx, %ecx
+  164ded:      	jmp	0x164df1 <symbol>
+  165224:      	je	0x1652b6 <symbol>
+  16522a:      	leaq	0x10(%rbx), %rax
+  16522e:      	movl	0x10(%rax), %ecx
+  165231:      	leal	0x1(%rcx), %edx
+  165234:      	movl	%edx, 0x10(%rax)
+  165237:      	cmpl	0x8(%rax), %ecx
+  16523a:      	jae	0x16531c <symbol>
+  165240:      	shlq	$0x4, %rcx
+  165244:      	addq	(%rax), %rcx
+  165247:      	movl	0x5c(%rsp), %r14d
+  16524c:      	movl	%r14d, (%rcx)
+  16524f:      	movl	0x58(%rsp), %r11d
+  165254:      	movl	%r11d, 0x4(%rcx)
+  165258:      	movl	%r13d, 0x8(%rcx)
+  16525c:      	movl	0x54(%rsp), %r13d
+ROLE MutualGeneric
+  221e91:      	testq	%rcx, (%r13)
+  221e95:      	je	0x221eba <symbol>
+  221e97:      	movl	0x10(%r14), %ecx
+  221e9b:      	leal	0x1(%rcx), %edx
+  221e9e:      	movl	%edx, 0x10(%r14)
+  221ea2:      	cmpl	0x8(%r14), %ecx
+  221ea6:      	jae	0x221edc <symbol>
+  221ea8:      	movq	(%r14), %rdx
+  221eab:      	shlq	$0x4, %rcx
+  221eaf:      	movups	-0xa0(%rbp), %xmm0
+  221eb6:      	movups	%xmm0, (%rdx,%rcx)
+  221eba:      	addq	$0x10, %rbx
+  221ebe:      	decl	%r15d
+  221ec1:      	jne	0x221e4f <symbol>
+  221ec3:      	movb	$0x1, (%rdi)
+ROLE MutualHand
+  160500:      	je	0x160524 <symbol>
+  160502:      	leaq	0x10(%rbx), %rax
+  160506:      	movl	0x10(%rax), %ecx
+  160509:      	leal	0x1(%rcx), %edx
+  16050c:      	movl	%edx, 0x10(%rax)
+  16050f:      	cmpl	0x8(%rax), %ecx
+  160512:      	jae	0x16053d <symbol>
+  160514:      	movq	(%rax), %rax
+  160517:      	shlq	$0x4, %rcx
+  16051b:      	movups	0x28(%rsp), %xmm0
+  160520:      	movups	%xmm0, (%rax,%rcx)
+  160524:      	addq	$0x10, %r14
+  160528:      	decl	%ebp
+  16052a:      	jne	0x1604bf <symbol>
+  16052c:      	movb	$0x1, 0x28(%rbx)
+SHARED_POINT_CALLS
+1604d1 -> 0x1d95c0 World.ReadEntityQueryRef<CollisionLayer>
+1604e6 -> 0x1d95c0 World.ReadEntityQueryRef<CollisionLayer>
+221e63 -> 0x1d95c0 World.ReadEntityQueryRef<CollisionLayer>
+221e7a -> 0x1d95c0 World.ReadEntityQueryRef<CollisionLayer>

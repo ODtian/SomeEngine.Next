@@ -18,8 +18,8 @@ public sealed partial class ClusterPipelineSystem
         }
         else
         {
-            pass.Bind(graph.CreateBufferSrv(_frameResources.NeutralPolicyView, structureStride: 16), PipelineSync.ComputeShading);
-            pass.Bind(graph.CreateBufferSrv(_frameResources.NeutralPolicyView, structureStride: 16), PipelineSync.ComputeShading);
+            pass.Bind(graph.CreateBufferSrv(GraphData.Resources.NeutralPolicyView, structureStride: 16), PipelineSync.ComputeShading);
+            pass.Bind(graph.CreateBufferSrv(GraphData.Resources.NeutralPolicyView, structureStride: 16), PipelineSync.ComputeShading);
         }
     }
 }

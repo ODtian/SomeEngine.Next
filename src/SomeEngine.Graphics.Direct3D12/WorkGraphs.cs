@@ -18,7 +18,7 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in WorkGraphPipelineDesc desc,
         PipelineCache? cache,
-        IComponentType? capturedSlangCode)
+        SlangShaderData? capturedSlangCode)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
@@ -45,7 +45,7 @@ internal sealed unsafe partial class D3D12Backend
         NativeLease? statePropertiesLease = null;
         NativeLease? graphPropertiesLease = null;
         D3D12RootSignatureState? globalToRelease = global;
-        IComponentType? retainedCode = null;
+        SlangShaderData? retainedCode = null;
         D3D12WorkGraphPipeline? result = null;
         try
         {
@@ -936,7 +936,7 @@ stateObject, &graphPropertiesIid,
             NativeLease native,
             D3D12RootSignatureState root,
             NativeLease[] additionalLeases,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             in ProgramIdentifier identifier,
             in WorkGraphMemoryRequirements memoryRequirements,
             WorkGraphEntryPointState[] entryPoints,

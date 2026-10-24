@@ -16,6 +16,8 @@ public sealed partial class GltfMeshSettingsJson : JsonSerializerContext;
 public sealed class GltfMeshSettingsProvider : IAssetImporterSettings<GltfMeshSettings>
 {
     public GltfMeshSettings DefaultSettings => new();
+    public GltfMeshSettings GetDefaults(SourceMeta source) => new(source.GetSettings(GltfSourceImporter.SourceImporterId,
+        new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings).GenerateTangents);
     public System.Text.Json.Serialization.Metadata.JsonTypeInfo<GltfMeshSettings> TypeInfo => GltfMeshSettingsJson.Default.GltfMeshSettings;
 }
 

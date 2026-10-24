@@ -79,7 +79,7 @@ public sealed class AssetGenerator : IIncrementalGenerator
         code.Append("public override ").Append(fullType).Append(" CreateCopy(global::System.Guid id = default) => (").Append(fullType).AppendLine(")base.CreateCopy(id);");
         code.AppendLine("public global::System.Collections.Generic.IEnumerable<global::System.Guid> References() => BlockReferences();");
         code.AppendLine("public global::SomeEngine.Assets.AssetEntry Describe() => Describe(SchemaHash, References());");
-        code.AppendLine("public async global::System.Threading.Tasks.ValueTask<global::SomeEngine.Assets.AssetEntry> SaveAsync(string path, global::System.Threading.CancellationToken cancellationToken = default) {");
+        code.AppendLine("public override async global::System.Threading.Tasks.ValueTask<global::SomeEngine.Assets.AssetEntry> SaveAsync(string path, global::System.Threading.CancellationToken cancellationToken = default) {");
         code.AppendLine("using var copy = Duplicate(); return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false); }");
         code.Append("private static ").Append(fullType).AppendLine(" ReadFile(global::SomeEngine.Assets.AssetFile file, global::System.Guid expected = default) {");
         code.AppendLine("var description = file.Describe(); if ((expected != global::System.Guid.Empty && expected != description.AssetGuid) || description.AssetType != FileType) throw new global::System.IO.InvalidDataException(\"The asset identity or type differs from the selected file.\");");

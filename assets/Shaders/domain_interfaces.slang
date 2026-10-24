@@ -12,6 +12,7 @@ struct SurfaceBarycentrics
 
 struct SurfaceReconstructionInput
 {
+    float2 PixelCenter;
     float3 TargetPosition;
     float3 TargetPositionDx;
     float3 TargetPositionDy;
@@ -21,6 +22,7 @@ struct SurfaceReconstructionInput
     float3 ParentDy;
     float4x4 ViewProjection;
     uint2 ScreenSize;
+    float3 WorldTranslation;
 };
 
 // Conservative geometric approximation error for one triangular domain patch.
@@ -59,7 +61,7 @@ interface IDomainEvaluate<TVertex>
     associatedtype TriangleData;
     associatedtype Surface;
 
-    TriangleData makeTriangle(TVertex first, TVertex second, TVertex third);
+    TriangleData makeTriangle(TVertex first, TVertex second, TVertex third, uint materialIndex);
     float3 cornerPosition(TriangleData triangle, uint corner);
     float3 position(TriangleData triangle, float3 barycentric);
     Surface eval(TriangleData triangle, float3 barycentric);

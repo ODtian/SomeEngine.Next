@@ -4,7 +4,8 @@ using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using Xunit;
 
-public sealed class VulkanReflectionProbeTests
+[Xunit.Collection("Vulkan shader compilation")]
+public sealed class VulkanReflectionProbeTests(VulkanTestCompiler shaderCompiler)
 {
     [Fact]
     public void TextureSamplerAndOutputShaderCreatesPipeline()
@@ -23,7 +24,7 @@ public sealed class VulkanReflectionProbeTests
                 OutputTexture[id.xy] = material.Albedo.SampleLevel(material.Sampler, float2(0, 0), 0);
             }
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("computeMain", SlangStage.Compute));
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
@@ -54,7 +55,7 @@ public sealed class VulkanReflectionProbeTests
                 return InputTexture.Sample(InputSampler, float2(0, 0)) * Tint;
             }
             """;
-        VulkanTestShader shader = VulkanTestShader.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment));

@@ -1,0 +1,37 @@
+{
+  "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+  "ChangedFiles": [
+    "src/SomeEngine.Physics/CollisionPartitions.cs"
+  ],
+  "BehaviorStartedAtUtc": "2026-10-20T00:59:37.0047257Z",
+  "BehaviorFinishedAtUtc": "2026-10-20T01:00:10.3439367Z",
+  "BehaviorExitCode": 0,
+  "PushExitCode": 0,
+  "PublishArguments": [
+    "publish",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+    "-c",
+    "Release",
+    "-r",
+    "win-x64",
+    "-p:PublishAot=true",
+    "-p:SelfContained=true",
+    "-p:SourceRevisionId=c0effa290eee225c296f779a85b9d79109d789a5",
+    "-o",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish"
+  ],
+  "PublishStartedAtUtc": "2026-10-20T01:00:17.2784491Z",
+  "PublishFinishedAtUtc": "2026-10-20T01:00:59.0737718Z",
+  "PublishExitCode": 0,
+  "SourceCheckExitCode": 0,
+  "Object": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.Benchmarks.obj",
+    "LastWriteTimeUtc": "2026-10-20T01:00:57.8540395Z",
+    "Length": 26077547
+  },
+  "Executable": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+    "LastWriteTimeUtc": "2026-10-20T01:00:58.5835185Z",
+    "Length": 4932096
+  }
+}

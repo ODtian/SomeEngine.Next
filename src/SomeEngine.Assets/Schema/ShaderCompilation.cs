@@ -9,7 +9,10 @@ public sealed record ShaderSourceFile(string Path, string ContentHash);
 
 /// <summary>Compiled shader, serialized Slang inputs, and hashes of the bytes supplied to the compiler.</summary>
 public sealed record ShaderCompilation(Shader Shader, IReadOnlyList<ReadOnlyMemory<byte>> SerializedSources,
-    IReadOnlyList<ShaderSourceFile> Files);
+    IReadOnlyList<ShaderSourceFile> Files)
+{
+    public IReadOnlyList<ShaderSpecialization> Specializations { get; init; } = [];
+}
 
 [GeneratedComClass]
 internal partial class ShaderSourceFiles(ISlangFileSystem? supplied) : ISlangFileSystem

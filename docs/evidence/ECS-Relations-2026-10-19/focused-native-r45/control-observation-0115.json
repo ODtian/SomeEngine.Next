@@ -1,0 +1,69 @@
+{
+  "StartedAtUtc": "2026-10-20T01:15:38.8646135Z",
+  "FinishedAtUtc": "2026-10-20T01:15:40.071359Z",
+  "Worker": {
+    "ProcessId": 81812,
+    "CommandLine": "\"C:\\Program Files\\dotnet\\dotnet.exe\" F:\\SomeEngine.Next\\tools\\BenchmarkQueue\\bin\\Release\\net10.0\\SomeEngine.BenchmarkQueue.dll --worker",
+    "CreationDate": "2026-10-19T16:23:27.742435+08:00"
+  },
+  "Children": [
+    {
+      "ProcessId": 90944,
+      "Name": "conhost.exe",
+      "StartedAtUtc": "2026-10-19T08:23:27.762154Z",
+      "ElapsedSeconds": 60732.2090114,
+      "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+    },
+    {
+      "ProcessId": 66472,
+      "Name": "python.exe",
+      "StartedAtUtc": "2026-10-20T01:14:48.469475Z",
+      "ElapsedSeconds": 51.5222846,
+      "Command": "\"C:/Users/boqi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe\" -B F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/compare_frames.py --scene sponza --scene-cache F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/sponza.npz --scene-layout F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/loads/sponza-double-motion.json --width 960 --height 540 --warmup 80 --frames 48 --variants screen_grid_ray screen_sparse_cards_grid_ray screen_emissive_surfel_grid_ray --profiles static camera moving turn_lights --primary-query raster --geometry-query cells --object-query cell --object-walk lists --object-update split --object-covers --object-grid 32 --dense-grid 4 --pointer-seeds 0 --cell-ray-bounds --triangle-data aos --cell-triangle-indices packed --tail-cache sharc_nrc --neural-coordinates world --neural-weights uniform --probe-sampling history --probe-spacing 16 --probe-rays 1 --pixel-rays quad --surfel-history --surfel-capacity 65536 --surfel-read center-chain --lighting-history 4 --training 128 --training-stride 4 --training-width 1 --training-sampling scan --raster-bucket 128 --temporal-frames 16 --temporal-width 64 --temporal-spp 256 --temporal-reference-repeats 2 --quality-checks 1 --query-rays 2048 --combi"
+    }
+  ],
+  "Cases": [
+    {
+      "CaseId": "threads-small-sparse-parallel",
+      "QueueId": "d00b365df16145519b6be626374ae9b5",
+      "Result": {
+        "Id": "d00b365df16145519b6be626374ae9b5",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "threads",
+          "--size",
+          "small",
+          "--variant",
+          "sparse-parallel",
+          "--source",
+          "c0effa290eee225c296f779a85b9d79109d789a5",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\threads-small-sparse-parallel.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T09:10:26.0774062+08:00",
+        "StartedAtUtc": "2026-10-20T09:14:48.0808897+08:00",
+        "FinishedAtUtc": "2026-10-20T09:14:48.4324801+08:00"
+      },
+      "RawReportExists": true
+    },
+    {
+      "CaseId": "threads-small-uniform-parallel",
+      "QueueId": "6f3f2b4cccdf4406aae5e784bc7a971d",
+      "Result": null,
+      "RawReportExists": false
+    }
+  ]
+}

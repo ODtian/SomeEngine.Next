@@ -1,3 +1,5 @@
+using DefaultGame;
+
 namespace SomeEngine.Runtime.Tests;
 
 public sealed partial class SkinningRenderingTests
@@ -8,23 +10,24 @@ public sealed partial class SkinningRenderingTests
         using SkinContent content = await SkinContent.CreateAsync();
         await content.SetStaticShaderAsync();
         string[] options = ["--hardware-adapter", "--graphics-backend", "d3d12", "--hidden-window",
-            "--frames", "36", "--static-scene", "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm"];
-        var platform = new SceneTestPlatform([new("Fixed frame sample", content.Project.RootPath)], RuntimeStartupOptions.Parse(options))
+            "--frames", "36", "--static-scene", "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm",
+            "--fixed-step", "0.016666667"];
+        var platform = new SceneTestPlatform([new("Fixed frame sample", content.Project.RootPath) { MeasurementFrames = new(32, 4) }], RuntimeStartupOptions.Parse(options))
         {
             ExitAfterMeasurements = true,
-            MeasurementFrames = new(32, 4),
         };
         platform.StartMeasurements();
-        Assert.Equal(0, await Application.RunAsync(options, animateMaterial: null, platform));
+        Assert.Equal(0, await Application.RunAsync(options, animateMaterial: null, platform.Application));
         using var report = System.Text.Json.JsonDocument.Parse(File.ReadAllText(platform.LastReport!));
         Assert.True(report.RootElement.GetProperty("Complete").GetBoolean());
         var costs = report.RootElement.GetProperty("Scenes")[0].GetProperty("Costs");
         Assert.Equal(4, costs.GetProperty("Frames").GetInt32());
         Assert.Equal(32, costs.GetProperty("FrameRange").GetProperty("First").GetInt32());
         Assert.Equal(35, costs.GetProperty("FrameRange").GetProperty("Last").GetInt32());
-        Assert.Equal(32d / 60, costs.GetProperty("SimulationSeconds").GetProperty("First").GetDouble(), precision: 6);
-        Assert.Equal(35d / 60, costs.GetProperty("SimulationSeconds").GetProperty("Last").GetDouble(), precision: 6);
+        Assert.Equal(33d / 60, costs.GetProperty("SimulationSeconds").GetProperty("First").GetDouble(), precision: 6);
+        Assert.Equal(36d / 60, costs.GetProperty("SimulationSeconds").GetProperty("Last").GetDouble(), precision: 6);
         File.Delete(platform.LastReport!);
+        File.Delete(Path.Combine(Path.GetDirectoryName(platform.LastReport!)!, "frame-samples.json"));
         Directory.Delete(Path.GetDirectoryName(platform.LastReport!)!);
     }
 
@@ -39,15 +42,12 @@ public sealed partial class SkinningRenderingTests
             "--frames", "4", "--static-scene", "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm"];
         var selected = new TestScene("Game callbacks", content.Project.RootPath)
         {
-            CreateApplication = path => new(path)
-            {
-                Initialize = _ => starts++,
-                UpdateFrame = _ => updates++,
-                FrameMeasured = measured.Add,
-            },
+            Initialize = _ => starts++,
+            UpdateFrame = _ => updates++,
+            FrameMeasured = measured.Add,
         };
         var platform = new SceneTestPlatform([selected], RuntimeStartupOptions.Parse(options));
-        int result = await Application.RunAsync(options, animateMaterial: null, platform);
+        int result = await Application.RunAsync(options, animateMaterial: null, platform.Application);
         Assert.Equal(1, starts);
         Assert.Equal(0, result);
         Assert.Equal(4, updates);

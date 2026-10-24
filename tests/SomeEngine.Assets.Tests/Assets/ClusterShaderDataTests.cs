@@ -17,8 +17,7 @@ public sealed class ClusterShaderDataTests
     {
         string path = Path.Combine(
             TestProjectPaths.ProjectRoot(),
-            "templates",
-            "DefaultProject",
+            "samples", "DefaultGame",
             "assets",
             "Shaders",
             "standard.shader.asset");
@@ -131,11 +130,14 @@ public sealed class ClusterShaderDataTests
 
         foreach ((string entry, SlangStage stage) in entries)
         {
-            _ = RequireEntry(
+            EntryPointReflection reflection = RequireEntry(
                 shader,
                 SlangCompileTarget.Spirv,
                 entry,
                 stage);
+            int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+            Assert.True(shader.GetSlangEntryBlob(targetIndex, reflection) is not null ||
+                !shader.GetSlangEntryBytes(targetIndex, reflection).IsEmpty);
         }
     }
 
@@ -227,11 +229,14 @@ public sealed class ClusterShaderDataTests
 
         foreach ((string entry, SlangStage stage) in entries)
         {
-            _ = RequireEntry(
+            EntryPointReflection reflection = RequireEntry(
                 shader,
                 SlangCompileTarget.Spirv,
                 entry,
                 stage);
+            int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+            Assert.True(shader.GetSlangEntryBlob(targetIndex, reflection) is not null ||
+                !shader.GetSlangEntryBytes(targetIndex, reflection).IsEmpty);
         }
     }
 
@@ -308,7 +313,7 @@ public sealed class ClusterShaderDataTests
     private static async Task<(Shader Shader, string EntryPoint)> ConfiguredComputeOperation(
         ClusterShaderOperationRole role)
     {
-        string root = TestProjectPaths.DefaultProjectRoot();
+        string root = TestProjectPaths.DefaultGameRoot();
         string manifestDirectory = Path.Combine(root, "Library", "AssetManifest");
         AssetManifest manifest = AssetManifest.Load(manifestDirectory);
         AssetEntry configurationRecord = Assert.Single(
@@ -354,12 +359,7 @@ public sealed class ClusterShaderDataTests
         }
         Assert.True(entryIndex >= 0, $"Entry '{entryPoint}' was not found.");
 
-        SlangResult metadataResult = shader.SlangCode.GetEntryPointMetadata(
-            entryIndex,
-            targetIndex,
-            out IMetadata metadata,
-            out ISlangBlob? diagnostics);
-        Assert.True(metadataResult.Succeeded, diagnostics?.AsString ?? metadataResult.ToString());
+        IMetadata metadata = shader.GetSlangEntryMetadataAsync(targetIndex, entryIndex).GetAwaiter().GetResult();
         VariableLayoutReflection globals = reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
         Assert.NotEqual(VariableLayoutReflection.Null, globals);
@@ -500,7 +500,7 @@ public sealed class ClusterShaderDataTests
     private static async ValueTask<Shader> ReadTemplateShader(string assetName)
     {
         await using ShaderAsset file = await ShaderAsset.OpenAsync(Path.Combine(
-            TestProjectPaths.ProjectRoot(), "templates", "DefaultProject", "assets", "Shaders", assetName));
+            TestProjectPaths.ProjectRoot(), "samples", "DefaultGame", "assets", "Shaders", assetName));
         return await ShaderTestCompilation.CreateAsync(file);
     }
 

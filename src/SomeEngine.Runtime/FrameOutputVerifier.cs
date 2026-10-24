@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
@@ -28,7 +29,7 @@ internal sealed class FrameOutputVerifier : IDisposable
         _device = device ?? throw new ArgumentNullException(nameof(device));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
-        if (format != Format.R8G8B8A8UNorm)
+        if (format is not (Format.R8G8B8A8UNorm or Format.R16G16B16A16Float))
             throw new NotSupportedException($"Runtime frame verification does not support {format}.");
 
         _width = width;
@@ -73,7 +74,8 @@ internal sealed class FrameOutputVerifier : IDisposable
     internal void Record(
         ref RenderGraphFrame graph,
         GraphTextureId source,
-        Queue presentationQueue)
+        Queue presentationQueue,
+        GraphRegionId region)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(presentationQueue);
@@ -132,7 +134,7 @@ internal sealed class FrameOutputVerifier : IDisposable
                     data.Width,
                     data.Height,
                     1));
-            });
+            }, region: region);
     }
 
     internal void ReadPixels()
@@ -142,6 +144,19 @@ internal sealed class FrameOutputVerifier : IDisposable
         using MappedBuffer mapping = _backend.Map(_readback, MapType.Read, range);
         mapping.Invalidate(range);
         mapping.Bytes.CopyTo(_bytes);
+    }
+
+    internal SceneLinearImage CopyLinearImage(SceneFrame frame)
+    {
+        var pixels = new Half[checked(_width * _height * 4)];
+        int rowBytes = checked(_width * 8);
+        for (int row = 0; row < _height; row++)
+        {
+            int offset = checked((int)(_footprint.Offset + (ulong)row * _footprint.RowPitch));
+            MemoryMarshal.Cast<byte, Half>(_bytes.AsSpan(offset, rowBytes))
+                .CopyTo(pixels.AsSpan(row * _width * 4));
+        }
+        return new(frame, pixels);
     }
 
     internal FrameOutputMetrics Analyze()

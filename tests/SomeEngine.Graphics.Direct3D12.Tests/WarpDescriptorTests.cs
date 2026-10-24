@@ -8,7 +8,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class WarpDescriptorTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(17)]
@@ -26,7 +27,7 @@ public sealed class WarpDescriptorTests
                 output[id.x] = value;
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "persistent_recorded_lifetime",
             source,
             [new D3D12TestEntry("computeMain", SlangStage.Compute)],
@@ -131,7 +132,7 @@ public sealed class WarpDescriptorTests
                 output[id.x] = value;
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "persistent_concurrent_generation_capture",
             source,
             [new D3D12TestEntry("computeMain", SlangStage.Compute)],
@@ -254,7 +255,7 @@ public sealed class WarpDescriptorTests
                 if (tint.x == id.x) { }
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "root_cbv_single_descriptor_generation",
             source,
             [new D3D12TestEntry("computeMain", SlangStage.Compute)],
@@ -313,7 +314,7 @@ public sealed class WarpDescriptorTests
                 writeBuffer[id.x] = value;
             }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "transient_typed_null_descriptors",
             source,
             [new D3D12TestEntry("computeMain", SlangStage.Compute)],

@@ -11,7 +11,10 @@ public static class HandwrittenBitmapCollision
         ReadOnlySpan<(Entity, Entity)> candidates, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryHandle query = world.Query(world.GetQueryDefinition(members).WithOptionalRead<CollisionLayer>());
+        QueryDefinition original = world.GetQueryDefinition(members);
+        QueryDefinition definition = original.WithOptionalRead<CollisionLayer>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : members;
         var execution = new OneWayExecution<TOutput>(candidates, output);
         try
         {
@@ -21,7 +24,8 @@ public static class HandwrittenBitmapCollision
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(query);
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 
@@ -29,7 +33,10 @@ public static class HandwrittenBitmapCollision
         ReadOnlySpan<(Entity, Entity)> candidates, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryHandle query = world.Query(world.GetQueryDefinition(members).WithOptionalRead<CollisionLayer>());
+        QueryDefinition original = world.GetQueryDefinition(members);
+        QueryDefinition definition = original.WithOptionalRead<CollisionLayer>();
+        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+        QueryHandle query = temporaryQuery ? world.Query(definition) : members;
         var execution = new MutualExecution<TOutput>(candidates, output);
         try
         {
@@ -39,7 +46,8 @@ public static class HandwrittenBitmapCollision
         finally
         {
             output = execution.Output;
-            world.ReleaseQuery(query);
+            if (temporaryQuery)
+                world.ReleaseQuery(query);
         }
     }
 
@@ -57,16 +65,14 @@ public static class HandwrittenBitmapCollision
         public TOutput Output;
         public bool Completed;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             foreach (var pair in _candidates)
             {
-                if (!query.TryGetRow(pair.Item1, out var first) || !first.Has<CollisionLayer>() ||
-                    !query.TryGetRow(pair.Item2, out var second) || !second.Has<CollisionLayer>())
+                if (!query.TryReadRef<CollisionLayer>(pair.Item1, out var firstLayer) ||
+                    !query.TryReadRef<CollisionLayer>(pair.Item2, out var secondLayer))
                     continue;
-                ref readonly CollisionLayer firstLayer = ref first.ReadRef<CollisionLayer>();
-                ref readonly CollisionLayer secondLayer = ref second.ReadRef<CollisionLayer>();
-                if ((firstLayer.AllowedCategories & secondLayer.Categories) == 0)
+                if ((firstLayer.Value.AllowedCategories & secondLayer.Value.Categories) == 0)
                     continue;
                 if (!Output.Add(in pair))
                 {
@@ -92,17 +98,15 @@ public static class HandwrittenBitmapCollision
         public TOutput Output;
         public bool Completed;
 
-        public void Execute(QueryCursor query)
+        public void Execute(scoped QueryCursor query)
         {
             foreach (var pair in _candidates)
             {
-                if (!query.TryGetRow(pair.Item1, out var first) || !first.Has<CollisionLayer>() ||
-                    !query.TryGetRow(pair.Item2, out var second) || !second.Has<CollisionLayer>())
+                if (!query.TryReadRef<CollisionLayer>(pair.Item1, out var firstLayer) ||
+                    !query.TryReadRef<CollisionLayer>(pair.Item2, out var secondLayer))
                     continue;
-                ref readonly CollisionLayer firstLayer = ref first.ReadRef<CollisionLayer>();
-                ref readonly CollisionLayer secondLayer = ref second.ReadRef<CollisionLayer>();
-                if ((firstLayer.AllowedCategories & secondLayer.Categories) == 0 ||
-                    (secondLayer.AllowedCategories & firstLayer.Categories) == 0)
+                if ((firstLayer.Value.AllowedCategories & secondLayer.Value.Categories) == 0 ||
+                    (secondLayer.Value.AllowedCategories & firstLayer.Value.Categories) == 0)
                     continue;
                 if (!Output.Add(in pair))
                 {

@@ -1,8 +1,7 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Numerics;
-using Game.Build;
-using Game.Importing;
+using DefaultGame.Content;
 using Microsoft.Extensions.DependencyInjection;
 using SharpGLTF.Schema2;
 using SomeEngine.Animation;
@@ -304,23 +303,23 @@ public sealed partial class SkinningRenderingTests
             string engine = AppContext.BaseDirectory;
             while (!File.Exists(Path.Combine(engine, "SomeEngine.slnx"))) engine = Path.GetDirectoryName(engine)!;
             string directory = Path.Combine(Path.GetTempPath(), $"SomeEngine-Skin-{Guid.NewGuid():N}");
-            string source = Path.Combine(engine, "templates/DefaultProject");
+            string source = Path.Combine(engine, "samples/DefaultGame");
             foreach (string file in Directory.EnumerateFiles(Path.Combine(source, "assets"), "*", SearchOption.AllDirectories))
             {
                 string output = Path.Combine(directory, Path.GetRelativePath(source, file));
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
                 File.Copy(file, output);
             }
-            Directory.CreateDirectory(Path.Combine(directory, "Game.Build"));
-            File.Copy(Path.Combine(source, "Game.Build/Game.Build.csproj"), Path.Combine(directory, "Game.Build/Game.Build.csproj"));
             string shader = await File.ReadAllTextAsync(Path.Combine(directory, "assets/Shaders/standard.slang"));
-            var project = new AssetProject(directory, [], sourceFormats: [new ShaderSourceFormat([Path.Combine(engine, "assets/Shaders")])]);
+            var project = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engine, "assets/Shaders")]);
             var result = new SkinContent(project, shader);
             try
             {
                 await File.WriteAllTextAsync(result.ShaderPath, result.SkinShader(FloatReader, "someengine.tests.skin.float.v1"));
-                await DefaultContent.BuildAsync(directory, engine);
-                return new SkinContent(new AssetProject(directory, [], sourceFormats: [new ShaderSourceFormat([Path.Combine(engine, "assets/Shaders")])]), shader);
+                await SampleContent.BuildAsync(directory, engine);
+                var prepared = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engine, "assets/Shaders")]);
+                await prepared.BuildAsync(result.ShaderPath.Replace(".slang", ".shader"));
+                return new SkinContent(prepared, shader);
             }
             catch { result.Dispose(); throw; }
         }
@@ -377,10 +376,10 @@ public sealed partial class SkinningRenderingTests
             scene.WriteWorld(world, SceneSerialization.CreateRegistry());
             project.RegisterAsset(await scene.SaveAsync(Path.Combine(project.RootPath, entry.Path)));
         }
-        private string SkinShader(string reader, string encoding) => shader
+        private string SkinShader(string reader, string encoding) =>
+            "#define CLUSTER_VERTEX_ENCODING \"someengine.cluster.positions.uint16.v1+" + encoding + "\"\n" + shader
             .Replace("typedef StaticVertexEval VertexEvaluate;", SkinEvaluator.Replace("USER_READER", reader) + "\ntypedef PanelSkin VertexEvaluate;")
-            .Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef PanelSkin RasterVertexEvaluate;")
-            .Replace("#define CLUSTER_POSITION_RASTER 1", "#define CLUSTER_POSITION_RASTER 1\n#define CLUSTER_VERTEX_ENCODING \"someengine.cluster.positions.uint16.v1+" + encoding + "\"");
+            .Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef PanelSkin RasterVertexEvaluate;");
 
         public Task WriteMeshesAsync(Func<ClusterVertexAttributes, ClusterVertexAttributes, bool, byte[]> encode) =>
             WriteSceneAsync(async (index, previous, right) =>
@@ -458,12 +457,10 @@ public sealed partial class SkinningRenderingTests
             };
             var primitive = new VertexPrimitive(0, 0, [0,2,1, 1,2,3], [0,1,2,3], attributes, []);
             await using var context = new ImportContext(project.RootPath, "panels", _source);
-            context.ConfigureAssets<GltfMesh, MeshAsset>(_ => $"panel-{index}", (_, id) => new MeshAsset(id),
-                (_, id) => id + ".mesh.asset", static (asset, path, token) => asset.SaveAsync(path, token));
             context.EnableImporter<GltfMesh, MeshAsset>(Guid.NewGuid(), [VertexStreamsBlock.BlockTypeId],
                 (_, _, asset, _) => { asset.SetBlock(new VertexStreamsBlock([primitive], [])); return ValueTask.CompletedTask; });
             var services = new ServiceCollection();
-            ProjectAssetCapabilities.AddAssetCapabilities(services);
+            EngineAssetCapabilities.AddAssetCapabilities(services);
             ServiceProvider provider = services.BuildServiceProvider();
             context.Hold(provider);
             var set = provider.GetServices<AssetImporterSetCapability>().Single(value => value.Id == new Guid(GltfImporterSets.ClusterId));
@@ -472,6 +469,9 @@ public sealed partial class SkinningRenderingTests
                 context.EnableImporter<GltfMesh, MeshAsset>(capability.Bind<GltfMesh>(provider));
             GltfMesh source = ModelRoot.CreateModel().CreateMesh($"panel-{index}");
             source.CreatePrimitive();
+            string key = $"panel-{index}";
+            Guid id = context.GetAssetId(key);
+            context.AddAsset(source, new MeshAsset(id), key, id + ".mesh.asset");
             MeshAsset mesh = await context.GetAssetAsync<GltfMesh, MeshAsset>(source);
             mesh.SetBlock(new MeshMaterialsBlock { Materials = [new(project.Manifest.List(MaterialAsset.FileType).Single(value => value.Name == "Standard").AssetGuid)] });
             return mesh.Duplicate();

@@ -1,0 +1,9 @@
+{
+  "ReaderQueueId": "1ac977d0d3d4467e99b77379b05c78b7",
+  "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+  "ProcessId": 98836,
+  "ProcessStartUtc": "2026-10-19T23:46:24.4386321Z",
+  "ReadStartedAtUtc": "2026-10-19T23:46:25.5914026Z",
+  "ReadFinishedAtUtc": "2026-10-19T23:46:25.9546416Z",
+  "ReleasedAtUtc": "2026-10-19T23:46:25.9546416Z"
+}

@@ -4,19 +4,6 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />
-    <ProjectReference Include="../../src/SomeEngine.Render/SomeEngine.Render.csproj" />
-    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll;../../external/dxc/bin/x64/dxil.dll" Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
-      <Link>%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="../../templates/DefaultProject/Game.Importing/Game.Importing.csproj" />
-    <Using Include="Game.Content" />
-    <Using Include="Game.Assets" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" />
   </ItemGroup>
 </Project>

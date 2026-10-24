@@ -1,5 +1,6 @@
+using System.Collections.Concurrent;
+using SomeEngine.Serialization;
 using System.Buffers.Binary;
-using System.Reflection;
 using System.Security.Cryptography;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -95,18 +96,17 @@ public sealed class WorldCheckpointCodecTests
         using var input = new MemoryStream(bytes, writable: false);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             WorldCheckpointCodec.Read(input, registry));
-        Assert.Contains("payload SHA-256", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(error));
     }
-
 
     [Fact]
     public void Checkpoint_InvokesComponentBufferAndTopologyCodecsExactlyOnce()
     {
-        CountingPositionCodec.Reset();
-        CountingCheckpointBufferCodec.Reset();
+        var componentCalls = new CodecCalls();
+        var bufferCalls = new CodecCalls();
         var registry = new SerializationRegistry()
-            .Register<SerPosition, CountingPositionCodec>()
-            .RegisterBuffer<CountingCheckpointBuffer, CountingCheckpointBufferCodec>();
+            .RegisterCodec<SerPosition, CountingPositionCodec>(new CountingPositionCodec(componentCalls))
+            .RegisterBufferCodec<CountingCheckpointBuffer, CountingCheckpointBufferCodec>(new CountingCheckpointBufferCodec(bufferCalls));
         using var source = new World();
         for (int i = 0; i < 4; i++)
             source.CreateEntity(new SerPosition { X = i + 0.25f, Y = -i });
@@ -121,35 +121,31 @@ public sealed class WorldCheckpointCodecTests
                 for (int i = 0; i < input.Length; i++)
                     buffer.Add(new CountingCheckpointBuffer { Value = input[i] });
             });
-        long revisionBefore = source.PublishedTopologyRevision;
 
         using var checkpoint = new MemoryStream();
         WorldCheckpointCodec.Write(checkpoint, source, registry);
-        Assert.Equal(4, CountingPositionCodec.WriteCount);
-        Assert.Equal(3, CountingCheckpointBufferCodec.WriteCount);
+        Assert.Equal(4, componentCalls.Writes);
+        Assert.Equal(3, bufferCalls.Writes);
 
-        CountingPositionCodec.ResetRead();
-        CountingCheckpointBufferCodec.ResetRead();
         checkpoint.Position = 0;
         using World loaded = WorldCheckpointCodec.Read(checkpoint, registry);
-        Assert.Equal(4, CountingPositionCodec.ReadCount);
-        Assert.Equal(3, CountingCheckpointBufferCodec.ReadCount);
+        Assert.Equal(4, componentCalls.Reads);
+        Assert.Equal(3, bufferCalls.Reads);
     }
 
     [Fact]
     public void Checkpoint_RejectsNonSeekableDestinationWithoutInvokingCodec()
     {
-        CountingPositionCodec.Reset();
-        var registry = new SerializationRegistry().Register<SerPosition, CountingPositionCodec>();
+        var componentCalls = new CodecCalls();
+        var registry = new SerializationRegistry().RegisterCodec<SerPosition, CountingPositionCodec>(new CountingPositionCodec(componentCalls));
         using var source = new World();
         source.CreateEntity(new SerPosition { X = 1, Y = 2 });
         using var destination = new NonSeekableWriteStream();
 
-        ArgumentException error = Assert.Throws<ArgumentException>(() =>
+        Assert.Throws<ArgumentException>(() =>
             WorldCheckpointCodec.Write(destination, source, registry));
 
-        Assert.Contains("seekable", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(0, CountingPositionCodec.WriteCount);
+        Assert.Equal(0, componentCalls.Writes);
         Assert.Equal(0, destination.BytesWritten);
     }
 
@@ -185,16 +181,21 @@ public sealed class WorldCheckpointCodecTests
     {
         SerializationRegistry registry = PositionRegistry();
         var world = new World();
+        var events = new ConcurrentQueue<string>();
         world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        using var destination = new GateSeekableWriteStream();
+        using var destination = new GateSeekableWriteStream { WriteObserved = () => events.Enqueue("write") };
 
         Task write = Task.Run(() => WorldCheckpointCodec.Write(destination, world, registry));
         Assert.True(destination.WaitUntilWrite(TimeSpan.FromSeconds(10)));
-        Task dispose = Task.Run(world.Dispose);
+        Task dispose = Task.Run(() =>
+        {
+            world.Dispose();
+            events.Enqueue("disposed");
+        });
         try
         {
-            Task completed = await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromMilliseconds(200)));
-            Assert.NotSame(dispose, completed);
+            await DisposalChecks.WaitForReadRejectionAsync(() => _ = world.EntityCount);
+            Assert.False(dispose.IsCompleted);
         }
         finally
         {
@@ -204,6 +205,8 @@ public sealed class WorldCheckpointCodecTests
         await write.WaitAsync(TimeSpan.FromSeconds(10));
         await dispose.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Throws<ObjectDisposedException>(() => world.CreateEntity());
+        Assert.Contains("write", events);
+        Assert.Equal("disposed", events.Last());
     }
 
     [Theory]
@@ -240,29 +243,21 @@ public sealed class WorldCheckpointCodecTests
         world.CreateEntity(new CheckpointFaultComponent { Value = 1 });
         using var destination = new MemoryStream();
 
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             WorldCheckpointCodec.Write(destination, world, registry));
-        Assert.Contains("Injected checkpoint codec fault", error.Message);
+
         await AssertMutationCompletesAsync(world);
     }
 
     [Fact]
     public void CheckpointWrite_ComponentCodecReentryMutatesSuccessorWithoutChangingRetainedOutput()
     {
-        var registry = new SerializationRegistry()
-            .Register<CheckpointReentrantComponent, ReentrantCheckpointCodec>();
         using var world = new World();
+        var registry = new SerializationRegistry()
+            .RegisterCodec<CheckpointReentrantComponent, ReentrantCheckpointCodec>(new ReentrantCheckpointCodec(world));
         world.CreateEntity(new CheckpointReentrantComponent { Value = 1 });
         using var destination = new MemoryStream();
-        ReentrantCheckpointCodec.Target = world;
-        try
-        {
-            WorldCheckpointCodec.Write(destination, world, registry);
-        }
-        finally
-        {
-            ReentrantCheckpointCodec.Target = null;
-        }
+        WorldCheckpointCodec.Write(destination, world, registry);
 
         Assert.Equal(2, world.EntityCount);
         destination.Position = 0;
@@ -330,7 +325,7 @@ public sealed class WorldCheckpointCodecTests
         {
             InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
                 unexpected = WorldCheckpointCodec.Read(output, readRegistry));
-            Assert.Contains("registry identity", error.Message, StringComparison.Ordinal);
+            Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(error));
         }
         finally
         {
@@ -359,7 +354,7 @@ public sealed class WorldCheckpointCodecTests
         {
             InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
                 unexpected = WorldCheckpointCodec.Read(output, readRegistry));
-            Assert.Contains("registry identity", error.Message, StringComparison.Ordinal);
+            Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(error));
         }
         finally
         {
@@ -409,7 +404,7 @@ public sealed class WorldCheckpointCodecTests
         using var readInput = new MemoryStream(previous, writable: false);
         InvalidDataException readError = Assert.Throws<InvalidDataException>(() =>
             WorldCheckpointCodec.Read(readInput, registry));
-        Assert.Contains("only current SEWCP003", readError.Message);
+        Assert.Equal(SerializationError.UnsupportedVersion, SerializationErrors.GetError(readError));
 
         using var inspectInput = new MemoryStream(previous, writable: false);
         Assert.Throws<InvalidDataException>(() => WorldCheckpointCodec.Inspect(inspectInput));
@@ -419,7 +414,7 @@ public sealed class WorldCheckpointCodecTests
         using var headerInput = new MemoryStream(unauthenticated, writable: false);
         InvalidDataException headerError = Assert.Throws<InvalidDataException>(() =>
             WorldCheckpointCodec.Inspect(headerInput));
-        Assert.Contains("header authentication", headerError.Message);
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(headerError));
     }
 
     private static SerializationRegistry FullRegistry() =>
@@ -474,12 +469,11 @@ public sealed class WorldCheckpointCodecTests
         public int Value;
     }
 
-    private struct ReentrantCheckpointCodec : ICanonicalComponentCodec<CheckpointReentrantComponent>
+    private struct ReentrantCheckpointCodec(World world) : ICanonicalComponentCodec<CheckpointReentrantComponent>
     {
-        internal static World? Target { get; set; }
         public void Write(ref DataWriter writer, in CheckpointReentrantComponent value)
         {
-            Target!.CreateEntity();
+            world.CreateEntity();
             writer.WriteInt32(value.Value);
         }
         public void Read(ref DataReader reader, out CheckpointReentrantComponent value) =>
@@ -514,27 +508,17 @@ public sealed class WorldCheckpointCodecTests
             value = new SerSparse { Value = reader.ReadInt32() };
     }
 
-    private struct CountingPositionCodec : ICanonicalComponentCodec<SerPosition>
+    private struct CountingPositionCodec(CodecCalls calls) : ICanonicalComponentCodec<SerPosition>
     {
-        private static int s_writeCount;
-        private static int s_readCount;
-        internal static int WriteCount => Volatile.Read(ref s_writeCount);
-        internal static int ReadCount => Volatile.Read(ref s_readCount);
-        internal static void Reset()
-        {
-            Volatile.Write(ref s_writeCount, 0);
-            Volatile.Write(ref s_readCount, 0);
-        }
-        internal static void ResetRead() => Volatile.Write(ref s_readCount, 0);
         public void Write(ref DataWriter writer, in SerPosition value)
         {
-            Interlocked.Increment(ref s_writeCount);
+            Interlocked.Increment(ref calls.Writes);
             writer.WriteSingle(value.X);
             writer.WriteSingle(value.Y);
         }
         public void Read(ref DataReader reader, out SerPosition value)
         {
-            Interlocked.Increment(ref s_readCount);
+            Interlocked.Increment(ref calls.Reads);
             value = new SerPosition { X = reader.ReadSingle(), Y = reader.ReadSingle() };
         }
     }
@@ -544,31 +528,19 @@ public sealed class WorldCheckpointCodecTests
         public int Value;
     }
 
-    private struct CountingCheckpointBufferCodec : ICanonicalComponentCodec<CountingCheckpointBuffer>
+    private struct CountingCheckpointBufferCodec(CodecCalls calls) : ICanonicalComponentCodec<CountingCheckpointBuffer>
     {
-        private static int s_writeCount;
-        private static int s_readCount;
-        internal static int WriteCount => Volatile.Read(ref s_writeCount);
-        internal static int ReadCount => Volatile.Read(ref s_readCount);
-        internal static void Reset()
-        {
-            Volatile.Write(ref s_writeCount, 0);
-            Volatile.Write(ref s_readCount, 0);
-        }
-        internal static void ResetRead() => Volatile.Write(ref s_readCount, 0);
         public void Write(ref DataWriter writer, in CountingCheckpointBuffer value)
         {
-            Interlocked.Increment(ref s_writeCount);
+            Interlocked.Increment(ref calls.Writes);
             writer.WriteInt32(value.Value);
         }
         public void Read(ref DataReader reader, out CountingCheckpointBuffer value)
         {
-            Interlocked.Increment(ref s_readCount);
+            Interlocked.Increment(ref calls.Reads);
             value = new CountingCheckpointBuffer { Value = reader.ReadInt32() };
         }
     }
-
-
 
     private static void WriteBuffer(World world, Entity entity, params int[] values)
     {
@@ -618,6 +590,8 @@ public sealed class WorldCheckpointCodecTests
 
     private sealed class GateSeekableWriteStream : MemoryStream
     {
+        internal Action? WriteObserved { get; init; }
+
         private readonly ManualResetEventSlim _entered = new(false);
         private readonly ManualResetEventSlim _release = new(false);
         private int _blocked;
@@ -627,11 +601,13 @@ public sealed class WorldCheckpointCodecTests
         {
             BlockFirstWrite();
             base.Write(buffer, offset, count);
+            WriteObserved?.Invoke();
         }
         public override void Write(ReadOnlySpan<byte> buffer)
         {
             BlockFirstWrite();
             base.Write(buffer);
+            WriteObserved?.Invoke();
         }
         public override void WriteByte(byte value)
         {

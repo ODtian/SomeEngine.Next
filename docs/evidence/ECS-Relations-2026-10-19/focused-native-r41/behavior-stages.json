@@ -1,0 +1,50 @@
+[
+  {
+    "Name": "entity-membership",
+    "Executable": "dotnet",
+    "Arguments": [
+      "test",
+      "tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj",
+      "-c",
+      "Release",
+      "--no-restore",
+      "--filter",
+      "FullyQualifiedName~EntityTableChangesTests|FullyQualifiedName~QueryCursor_ChunkRowIndices_FilterRowsWithoutQueryRow"
+    ],
+    "StartedAtUtc": "2026-10-19T23:38:25.6847387Z",
+    "FinishedAtUtc": "2026-10-19T23:39:01.1712910Z",
+    "ExitCode": 0
+  },
+  {
+    "Name": "generated-metadata",
+    "Executable": "dotnet",
+    "Arguments": [
+      "test",
+      "tests/SomeEngine.ECS.Relations.Tests/SomeEngine.ECS.Relations.Tests.csproj",
+      "-c",
+      "Release",
+      "--no-restore",
+      "--filter",
+      "FullyQualifiedName~GeneratedMetadataTests"
+    ],
+    "StartedAtUtc": "2026-10-19T23:39:01.2165316Z",
+    "FinishedAtUtc": "2026-10-19T23:39:23.0687863Z",
+    "ExitCode": 0
+  },
+  {
+    "Name": "enabled-members-and-input-lifetime",
+    "Executable": "dotnet",
+    "Arguments": [
+      "test",
+      "tests/SomeEngine.Physics.Tests/SomeEngine.Physics.Tests.csproj",
+      "-c",
+      "Release",
+      "--no-restore",
+      "--filter",
+      "FullyQualifiedName~EnableMaskChangesRefreshMaintainedMembers|FullyQualifiedName~CountAndFillKeepTheirComponentInputUntilEveryPartitionCompletes"
+    ],
+    "StartedAtUtc": "2026-10-19T23:39:23.0720101Z",
+    "FinishedAtUtc": "2026-10-19T23:39:45.0775804Z",
+    "ExitCode": 0
+  }
+]

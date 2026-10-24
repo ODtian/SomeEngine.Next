@@ -8,8 +8,6 @@ namespace SomeEngine.Assets.Tests.Assets;
 
 public class ShaderSourcePolicyTests
 {
-
-
     [Theory]
     [InlineData("triangle.shader", "VSMain", "PSMain")]
     [InlineData("hello_triangle.shader", "VSMain", "PSMain")]
@@ -33,7 +31,6 @@ public class ShaderSourcePolicyTests
         }
     }
 
-
     [Theory]
     [InlineData("cluster_draw.shader")]
     [InlineData("cluster_resolve.shader")]
@@ -51,14 +48,8 @@ public class ShaderSourcePolicyTests
             includeDirectories: [TestProjectPaths.ShaderDirectory()]);
 
         ShaderBlock code = asset.GetBlock<ShaderBlock>();
-        Assert.Contains(
-            ShaderBlock.EntryCodeKey(
-                ShaderTestCompilation.CreateSessionDescription(),
-                0,
-                0),
-            code.ContentKeys);
-        Assert.Contains(ShaderSourceBlock.SerializedSourceKey(0),
-            asset.GetBlock<ShaderSourceBlock>().ContentKeys);
+        Assert.False((await code.ReadBytesAsync(ShaderBlock.EntryCodeKey(ShaderTestCompilation.CreateSessionDescription(), 0, 0))).IsEmpty);
+        Assert.False((await asset.GetBlock<ShaderSourceBlock>().ReadBytesAsync(ShaderSourceBlock.SerializedSourceKey(0))).IsEmpty);
         Shader shader = await ShaderTestCompilation.CreateAsync(asset);
         Assert.True(shader.SlangEntryCount > 0);
     }

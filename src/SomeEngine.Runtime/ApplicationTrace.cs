@@ -4,6 +4,8 @@ namespace SomeEngine.Runtime;
 
 internal static class ApplicationTrace
 {
+    internal static readonly TraceSite DeviceCreation = new("startup", "DeviceCreation");
+    internal static readonly TraceSite ContentWait = new("startup", "ContentWait");
     internal static readonly TraceSite Scene = new("app", "Scene.Update");
     internal static readonly TraceSite Playback = new("app", "Scene.Playback");
     internal static readonly TraceSite Prepare = new("app", "Prepare");

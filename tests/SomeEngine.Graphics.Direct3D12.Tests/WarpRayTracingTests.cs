@@ -8,7 +8,8 @@ using NativePrebuildInfo = Silk.NET.Direct3D12.RaytracingAccelerationStructurePr
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class WarpRayTracingTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void Dxr_local_parameter_groups_execute_two_exports_with_descriptors_and_ordinary_data()
@@ -50,7 +51,7 @@ public sealed class WarpRayTracingTests
             new("callableA", SlangStage.Callable),
             new("callableB", SlangStage.Callable),
         ];
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "dxr_local_callable_bindings", source, entries, "lib_6_5");
         EntryPointReflection rayGeneration = shader.GetEntryPoint(0);
         EntryPointReflection callableA = shader.GetEntryPoint(1);
@@ -134,7 +135,7 @@ public sealed class WarpRayTracingTests
     }
 
     [Fact]
-    public void Dxr_ordinary_only_and_descriptor_only_entry_local_parameters_create()
+    public void Dxr_ordinary_only_and_descriptor_only_entry_local_parameters_create_DoesNotThrow()
     {
         const string ordinarySource = """
             struct Payload { uint value; };
@@ -159,9 +160,9 @@ public sealed class WarpRayTracingTests
             new("rayGenerationMain", SlangStage.RayGeneration),
             new("callableMain", SlangStage.Callable),
         ];
-        D3D12TestShader ordinary = D3D12TestShader.Compile(
+        D3D12TestShader ordinary = shaderCompiler.Compile(
             "dxr_local_ordinary_codegen_limit", ordinarySource, entries, "lib_6_5");
-        D3D12TestShader descriptors = D3D12TestShader.Compile(
+        D3D12TestShader descriptors = shaderCompiler.Compile(
             "dxr_local_descriptor_codegen_limit", descriptorSource, entries, "lib_6_5");
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -188,7 +189,7 @@ public sealed class WarpRayTracingTests
         [
             new("rayGenerationA", SlangStage.RayGeneration),
         ];
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "dxr_local_ordinary_records", source, entries, "sm_6_5");
         EntryPointReflection rayGenerationA = shader.GetEntryPoint(0);
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
@@ -281,7 +282,7 @@ public sealed class WarpRayTracingTests
             new("closestMain", SlangStage.ClosestHit),
             new("anyMain", SlangStage.AnyHit),
         ];
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "dxr_hit_group_layout_identity", source, entries, "sm_6_5");
         Assert.NotEqual(shader.GetEntryPoint(1).VarLayout, shader.GetEntryPoint(2).VarLayout);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
@@ -681,7 +682,7 @@ public sealed class WarpRayTracingTests
             [shader("raygeneration")]
             void rayGenerationMain() { }
             """;
-        D3D12TestShader shader = D3D12TestShader.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "dxr_pipeline_ownership_failure",
             source,
             [new D3D12TestEntry("rayGenerationMain", SlangStage.RayGeneration)]);

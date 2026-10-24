@@ -39,6 +39,9 @@ public sealed class GpuPoseReadbackRequest
 
     /// <summary>Called by the extracted GPU producer after the accepted copy's queue completion.</summary>
     public void Deliver(GpuPoseReadback result) => _completion.SetResult(result);
+
+    /// <summary>Called by the extracted GPU producer when this input's copy is abandoned before submission.</summary>
+    public void Cancel() => _completion.SetCanceled();
 }
 
 public static partial class GpuPoseAnimation

@@ -1,0 +1,84 @@
+{
+  "ProcessId": 73964,
+  "ProcessStartedAtUtc": "2026-10-20T00:26:37.6748060Z",
+  "ObservationStartedAtUtc": "2026-10-20T00:26:38.2806146Z",
+  "ObservationEndedAtUtc": "2026-10-20T00:26:39.1662428Z",
+  "Master": null,
+  "ControlFacts": [
+    {
+      "Name": "preparation.json",
+      "Exists": false,
+      "Data": null
+    },
+    {
+      "Name": "native-reader-stage.json",
+      "Exists": true,
+      "Data": {
+        "Id": "15e3f6f0e9904c3dbf3e5d958197d7aa",
+        "ExitCode": 0,
+        "StartedAtUtc": "2026-10-20T00:22:11.9565369Z",
+        "FinishedAtUtc": "2026-10-20T00:22:14.3451251Z"
+      }
+    },
+    {
+      "Name": "native-reader-released.json",
+      "Exists": false,
+      "Data": null
+    },
+    {
+      "Name": "watcher-ready.json",
+      "Exists": true,
+      "Data": {
+        "ProcessId": 26900,
+        "SourceCommit": "73f7e089990e65cf4fc5517593e31aaeee03298a",
+        "InitialObservationStartedAtUtc": "2026-10-20T00:22:15.7429846Z",
+        "InitialObservationEndedAtUtc": "2026-10-20T00:22:15.7603168Z",
+        "CaseQueueIds": [
+          "730530cb5d3d4039bb86067bc2b2fed7",
+          "0a5aaf682ca1435c85125c742167661c"
+        ],
+        "AnalysisQueueIds": [
+          "e67cd8d6286d474bb06bac458d4755e0"
+        ],
+        "FinalQueueId": "e67cd8d6286d474bb06bac458d4755e0",
+        "FinalReceipt": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\e67cd8d6286d474bb06bac458d4755e0\\result.json"
+      }
+    },
+    {
+      "Name": "root-host-released.json",
+      "Exists": true,
+      "Data": {
+        "SourceCommit": "73f7e089990e65cf4fc5517593e31aaeee03298a",
+        "RootHostReadEndedAtUtc": "2026-10-20T00:23:00Z",
+        "StandardsReadEndedAtUtc": "2026-10-20T00:22:17Z",
+        "RecordedAtUtc": "2026-10-20T00:23:27.6215661Z"
+      }
+    }
+  ],
+  "ExecutorChildren": [
+    {
+      "ProcessId": 90944,
+      "ParentProcessId": 81812,
+      "Name": "conhost.exe",
+      "CreationDate": "2026-10-19T16:23:27.762154+08:00",
+      "CommandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+    },
+    {
+      "ProcessId": 98636,
+      "ParentProcessId": 81812,
+      "Name": "pwsh.exe",
+      "CreationDate": "2026-10-20T08:22:11.038825+08:00",
+      "CommandLine": "\"pwsh\" -NoProfile -File F:/.codex/worktrees/ecs-relations-worker-3/SomeEngine.Next/artifacts/relations-measurements/focused-native-r43/master.ps1"
+    }
+  ],
+  "Cases": [
+    {
+      "Id": "730530cb5d3d4039bb86067bc2b2fed7",
+      "ResultExists": false
+    },
+    {
+      "Id": "0a5aaf682ca1435c85125c742167661c",
+      "ResultExists": false
+    }
+  ]
+}

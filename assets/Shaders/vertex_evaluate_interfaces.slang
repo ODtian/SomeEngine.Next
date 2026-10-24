@@ -2,7 +2,7 @@
 #define VERTEX_EVALUATE_INTERFACES_SLANG
 
 #include "common.slang"
-#include "cluster_common.slang"
+#include "render_instance_transform.slang"
 
 struct VertexEvalContext
 {

@@ -244,10 +244,10 @@ public sealed class FrameAnalysisReuseTests
         invalid.BindExternalBuffer(sourceId, source,
             [new BufferBoundaryState(new BufferRange(0, 16), source.InitialSync,
                 source.InitialAccess, ResourceContentState.Undefined)]);
-        InvalidOperationException? failure = null;
+        bool rejected = false;
         try { invalid.Execute(completions); }
-        catch (InvalidOperationException exception) { failure = exception; }
-        Assert.IsType<InvalidOperationException>(failure);
+        catch (UndefinedResourceReadException) { rejected = true; }
+        Assert.True(rejected);
         void Capture(in RenderGraphDiagnosticsView diagnostics) => reused = diagnostics.Statistics.AnalysisReused;
     }
 

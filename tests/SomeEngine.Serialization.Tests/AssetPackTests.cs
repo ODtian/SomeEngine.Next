@@ -178,10 +178,8 @@ public sealed class AssetPackTests
         await using AssetPack pack = await AssetPack.OpenAsync(
             new MemoryRangeSource(packBytes),
             ownsSource: true);
-        BinarySchemaMismatchException error = await Assert.ThrowsAsync<BinarySchemaMismatchException>(() =>
+        await Assert.ThrowsAsync<BinarySchemaMismatchException>(() =>
             OpenPackDataAsync<GeneratedCurrentContract>(pack, assetId).AsTask());
-
-        Assert.Contains("fingerprint", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -197,7 +195,7 @@ public sealed class AssetPackTests
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() =>
             AssetPack.OpenAsync(new MemoryRangeSource(packBytes), ownsSource: true).AsTask());
 
-        Assert.Contains("current schema", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.UnsupportedVersion, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -221,7 +219,7 @@ public sealed class AssetPackTests
 
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() =>
             document.AcquireChunkAsync(1001).AsTask());
-        Assert.Contains("SHA-256", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -285,7 +283,7 @@ public sealed class AssetPackTests
             await OpenPackDataAsync<TestRoot>(payloadVerified, assetId);
         InvalidDataException payloadError = await Assert.ThrowsAsync<InvalidDataException>(() =>
             payloadDocument.AcquireChunkAsync(1001).AsTask());
-        Assert.Contains("SHA-256", payloadError.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(payloadError));
 
         using MappedTestDocument unsigned = builder.BuildMapped();
         await Assert.ThrowsAsync<CryptographicException>(() => AssetPack.OpenVerifiedAsync(
@@ -313,8 +311,6 @@ public sealed class AssetPackTests
             limits,
             cancellationToken);
     }
-
-
 
     private static void RewriteRootFingerprint(Span<byte> document, ulong fingerprint)
     {

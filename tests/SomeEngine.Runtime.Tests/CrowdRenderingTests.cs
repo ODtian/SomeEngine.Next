@@ -1,6 +1,5 @@
-using Game.App;
-using Game.Build;
-using Game.Content;
+using DefaultGame;
+using DefaultGame.Content;
 using SomeEngine.Render.Cluster.Pipeline;
 using System.Text.Json;
 

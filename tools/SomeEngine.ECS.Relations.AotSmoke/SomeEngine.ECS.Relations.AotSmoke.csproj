@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishAot>true</PublishAot>
+    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <SomeEnginePackageVersion>0.1.0-relations.231</SomeEnginePackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SomeEngine.ECS" Version="$(SomeEnginePackageVersion)" />
+    <PackageReference Include="SomeEngine.ECS.Relations" Version="$(SomeEnginePackageVersion)" />
+    <PackageReference Include="SomeEngine.ECS.Systems" Version="$(SomeEnginePackageVersion)" />
+    <PackageReference Include="SomeEngine.Job" Version="$(SomeEnginePackageVersion)" />
+    <PackageReference Include="SomeEngine.Physics" Version="$(SomeEnginePackageVersion)" />
+    <PackageReference Include="SomeEngine.ECS.SourceGen" Version="$(SomeEnginePackageVersion)" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

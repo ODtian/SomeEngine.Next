@@ -1,0 +1,193 @@
+[
+  {
+    "Queue": {
+      "Id": "f9b1c7d4aa0c4f3a8121445936300d7c",
+      "Executable": "dotnet",
+      "Arguments": [
+        "publish",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+        "-c",
+        "Release",
+        "-r",
+        "win-x64",
+        "--no-restore",
+        "-p:SourceRevisionId=5bf03d44ee66803ea635d0672220ba9f36e695d4",
+        "-o",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T10:29:19.9951324+08:00",
+      "StartedAtUtc": "2026-10-19T10:29:20.0854964+08:00",
+      "FinishedAtUtc": "2026-10-19T10:29:55.0936088+08:00"
+    },
+    "Stdout": "  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\n  SomeEngine.ECS.Relations -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.dll\r\n  SomeEngine.Physics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Physics\\bin\\Release\\net10.0\\SomeEngine.Physics.dll\r\n  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.Benchmarks.dll\r\n  Generating native code\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\Registry\\JobStorageTypeMetadata.cs(77): Trim analysis warning IL2070: SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>): 'this' argument does not satisfy 'DynamicallyAccessedMemberTypes.PublicFields', 'DynamicallyAccessedMemberTypes.NonPublicFields' in call to 'System.Type.GetFields(BindingFlags)'. The parameter 'type' of method 'SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>)' does not have matching annotations. The source value must declare at least the same requirements as those declared on the target location it is assigned to. [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\SomeEngine.ECS.Relations.Benchmarks.csproj]\r\n  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "29cc1a65b7574a508abb28b53516c9c0",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-Command",
+        "$ErrorActionPreference='Stop'\n$obj='benchmarks/SomeEngine.ECS.Relations.Benchmarks/obj/Release/net10.0/win-x64/native/SomeEngine.ECS.Relations.Benchmarks.obj'\n$llvm='C:\\Program Files\\LLVM\\bin\\llvm-objdump.exe'\nGet-Item -LiteralPath $obj | Select-Object Length,LastWriteTimeUtc | Format-List\n$symbols=@(& $llvm -t $obj | ForEach-Object { if($_ -match '\\(sec\\s+2\\).* 0x[0-9a-f]+ (.+)$') { $Matches[1] } })\n$relation=@($symbols | Where-Object {$_ -match 'RelationArraySide_1<.*ComponentPairsWithin_3<.*DefaultContacts.*>__Query$'})\n$hand=@($symbols | Where-Object {$_ -match 'HandwrittenDefaultPairs__Enumerate<.*SpatialPairOutput>$'})\n$handQuery=@($symbols | Where-Object {$_ -match 'HandwrittenDefaultSide__Query$'})\n$single=@($symbols | Where-Object {$_ -match 'RelationQuery_2<.*ComponentPairsWithin_3<.*DefaultContacts.*__EnumerateSingle<.*SpatialPairOutput'})\n'MATCHCOUNTS relation='+$relation.Count+' hand='+$hand.Count+' handQuery='+$handQuery.Count+' single='+$single.Count\n$targets=@($relation)+@($hand)+@($handQuery)+@($single)\n$targets | ForEach-Object { 'TARGET '+$_ }\nif($relation.Count -ne 1 -or $hand.Count -ne 1 -or $handQuery.Count -ne 1 -or $single.Count -gt 1) { throw 'Exact outer symbol selection requires one target for each comparison role.' }\n& $llvm -d -r --no-show-raw-insn ('--disassemble-symbols='+($targets -join ',')) $obj\nif($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a1506e-4049-74f2-90ad-d601e670d899",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T10:31:24.2422365+08:00",
+      "StartedAtUtc": "2026-10-19T10:31:55.049718+08:00",
+      "FinishedAtUtc": "2026-10-19T10:31:58.0193844+08:00"
+    },
+    "Stdout": "\r\nLength           : 24433928\r\nLastWriteTimeUtc : 2026/10/19 2:29:53\r\n\r\nMATCHCOUNTS relation=1 hand=1 handQuery=1 single=0\r\nTARGET SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_RelationArraySide_1<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentPairsWithin_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>>__Query\r\nTARGET SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HandwrittenDefaultPairs__Enumerate<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SpatialPairOutput>\r\nTARGET SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_HandwrittenDefaultSide__Query\r\n\nbenchmarks/SomeEngine.ECS.Relations.Benchmarks/obj/Release/net10.0/win-x64/native/SomeEngine.ECS.Relations.Benchmarks.obj:\tfile format coff-x86-64\n\nDisassembly of section .managedcode$I:\n\n0000000000044730 <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_HandwrittenDefaultSide__Query>:\n   44730:      \tpushq\t%rbx\n   44731:      \tsubq\t$0x40, %rsp\n   44735:      \txorps\t%xmm4, %xmm4\n   44738:      \tmovups\t%xmm4, 0x28(%rsp)\n   4473d:      \txorl\t%eax, %eax\n   4473f:      \tmovq\t%rax, 0x38(%rsp)\n   44744:      \tmovq\t%rcx, %rbx\n   44747:      \tmovq\t0x8(%rbx), %rdx\n   4474b:      \tmovq\t0x48(%rdx), %rcx\n   4474f:      \ttestq\t%rcx, %rcx\n   44752:      \tje\t0x4475d <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_HandwrittenDefaultSide__Query+0x2d>\n   44754:      \tleaq\t0x10(%rcx), %r8\n   44758:      \tmovl\t0x8(%rcx), %ecx\n   4475b:      \tjmp\t0x44762 <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_HandwrittenDefaultSide__Query+0x32>\n   4475d:      \txorl\t%r8d, %r8d\n   44760:      \txorl\t%ecx, %ecx\n   44762:      \txorl\t%eax, %eax\n   44764:      \tmovl\t%eax, 0x38(%rsp)\n   44768:      \tmovq\t%r8, 0x28(%rsp)\n   4476d:      \tmovl\t%ecx, 0x30(%rsp)\n   44771:      \tmovq\t0x30(%rdx), %rcx\n   44775:      \tmovq\t0x68(%rdx), %rdx\n   44779:      \tleaq\t0x28(%rsp), %r8\n   4477e:      \tcallq\t0x1b45a0 <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HandwrittenDefaultPairs__Enumerate<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SpatialPairOutput>>\n   44783:      \tmovl\t0x38(%rsp), %eax\n   44787:      \tmovl\t%eax, 0x40(%rbx)\n   4478a:      \taddq\t$0x40, %rsp\n   4478e:      \tpopq\t%rbx\n   4478f:      \tretq\n\n000000000017c3f0 <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_RelationArraySide_1<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentPairsWithin_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>>__Query>:\n  17c3f0:      \tpushq\t%rbp\n  17c3f1:      \tpushq\t%rdi\n  17c3f2:      \tpushq\t%rsi\n  17c3f3:      \tpushq\t%rbx\n  17c3f4:      \tsubq\t$0xe8, %rsp\n  17c3fb:      \tleaq\t0x100(%rsp), %rbp\n  17c403:      \txorl\t%eax, %eax\n  17c405:      \tmovq\t%rax, -0xc8(%rbp)\n  17c40c:      \txorps\t%xmm4, %xmm4\n  17c40f:      \tmovaps\t%xmm4, -0xc0(%rbp)\n  17c416:      \tmovabsq\t$-0x90, %rax\n  17c420:      \tmovaps\t%xmm4, -0x20(%rbp,%rax)\n  17c425:      \tmovaps\t%xmm4, -0x10(%rbp,%rax)\n  17c42a:      \tmovaps\t%xmm4, (%rax,%rbp)\n  17c42e:      \taddq\t$0x30, %rax\n  17c432:      \tjne\t0x17c420 <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_RelationArraySide_1<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentPairsWithin_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>>__Query+0x30>\n  17c434:      \tmovq\t%rax, -0x20(%rbp)\n  17c438:      \tmovq\t%rcx, %rbx\n  17c43b:      \tmovq\t0x8(%rbx), %rcx\n  17c43f:      \tmovq\t0x48(%rcx), %rcx\n  17c443:      \ttestq\t%rcx, %rcx\n  17c446:      \tje\t0x17c451 <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_RelationArraySide_1<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentPairsWithin_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>>__Query+0x61>\n  17c448:      \tleaq\t0x10(%rcx), %rdx\n  17c44c:      \tmovl\t0x8(%rcx), %ecx\n  17c44f:      \tjmp\t0x17c455 <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_RelationArraySide_1<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentPairsWithin_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>>__Query+0x65>\n  17c451:      \txorl\t%edx, %edx\n  17c453:      \txorl\t%ecx, %ecx\n  17c455:      \tleaq\t0x48(%rbx), %rsi\n  17c459:      \tmovq\t%rdx, -0x30(%rbp)\n  17c45d:      \tmovl\t%ecx, -0x28(%rbp)\n  17c460:      \txorl\t%ecx, %ecx\n  17c462:      \tmovl\t%ecx, -0x20(%rbp)\n  17c465:      \tmovq\t0x8(%rsi), %rdi\n  17c469:      \tmovups\t(%rsi), %xmm0\n  17c46c:      \tmovups\t%xmm0, -0x50(%rbp)\n  17c470:      \tmovups\t0x10(%rsi), %xmm0\n  17c474:      \tmovups\t%xmm0, -0x40(%rbp)\n  17c478:      \tmovq\t%rdi, %rcx\n  17c47b:      \tmovq\t-0x40(%rbp), %rdx\n  17c47f:      \tcmpl\t%ecx, (%rcx)\n  17c481:      \tcallq\t0x7220 <SomeEngine_ECS_SomeEngine_ECS_World__GetQueryDefinition>\n  17c486:      \tmovq\t%rax, %rcx\n  17c489:      \tcmpl\t%ecx, (%rcx)\n  17c48b:      \tcallq\t0x1b6620 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryDefinition__WithOptionalRead<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>>\n  17c490:      \tcmpb\t$0x0, 0x29(%rax)\n  17c494:      \tje\t0x17c4be <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_RelationArraySide_1<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentPairsWithin_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>>__Query+0xce>\n  17c496:      \txorl\t%r9d, %r9d\n  17c499:      \txorl\t%ecx, %ecx\n  17c49b:      \tmovb\t%r9b, 0x20(%rsp)\n  17c4a0:      \tmovl\t%ecx, 0x24(%rsp)\n  17c4a4:      \tleaq\t-0x30(%rbp), %r9\n  17c4a8:      \tmovq\t%rsi, %rcx\n  17c4ab:      \tmovq\t%rdi, %rdx\n  17c4ae:      \tmovl\t$0x1, %r8d\n  17c4b4:      \tcallq\t0x1ead00 <SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_RelationQuery_2<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentPairsWithin_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__S_P_CoreLib_System_ValueTuple_2<SomeEngine_ECS_SomeEngine_ECS_Entities_Entity__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>>__EnumerateQueries<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_QueryIdentityOutput_2<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SpatialPairOutput__S_P_CoreLib_System_ValueTuple_2<SomeEngine_ECS_SomeEngine_ECS_Entities_Entity__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>>>>\n  17c4b9:      \tjmp\t0x17c59a <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Relations_Benchmarks_RelationArraySide_1<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentPairsWithin_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>>__Query+0x1aa>\n  17c4be:      \tmovq\t0x8(%rsi), %rcx\n  17c4c2:      \tmovq\t%rcx, -0xd8(%rbp)\n  17c4c9:      \tcmpb\t%cl, (%rcx)\n  17c4cb:      \tmovq\t%rax, %rdx\n  17c4ce:      \tcallq\t0x6ed0 <SomeEngine_ECS_SomeEngine_ECS_World__AcquireQueryRecord>\n  17c4d3:      \tmovl\t0x20(%rax), %edx\n  17c4d6:      \tmovl\t%edx, -0xcc(%rbp)\n  17c4dc:      \tmovl\t0x24(%rax), %r8d\n  17c4e0:      \tmovl\t%r8d, -0xd0(%rbp)\n  17c4e7:      \tmovups\t(%rsi), %xmm0\n  17c4ea:      \tmovups\t%xmm0, -0xb0(%rbp)\n  17c4f1:      \tmovups\t0x10(%rsi), %xmm0\n  17c4f5:      \tmovups\t%xmm0, -0xa0(%rbp)\n  17c4fc:      \tmovups\t-0x30(%rbp), %xmm0\n  17c500:      \tmovups\t%xmm0, -0xc8(%rbp)\n  17c507:      \tmovq\t-0x20(%rbp), %rcx\n  17c50b:      \tmovq\t%rcx, -0xb8(%rbp)\n  17c512:      \tmovups\t-0xb0(%rbp), %xmm0\n  17c519:      \tmovups\t%xmm0, -0x88(%rbp)\n  17c520:      \tmovups\t-0xa0(%rbp), %xmm0\n  17c527:      \tmovups\t%xmm0, -0x78(%rbp)\n  17c52b:      \tmovb\t$0x0, -0x90(%rbp)\n  17c532:      \tmovups\t-0xc8(%rbp), %xmm0\n  17c539:      \tmovups\t%xmm0, -0x68(%rbp)\n  17c53d:      \tmovq\t-0xb8(%rbp), %rcx\n  17c544:      \tmovq\t%rcx, -0x58(%rbp)\n  17c548:      \tmovl\t%r8d, %ecx\n  17c54b:      \tshlq\t$0x20, %rcx\n  17c54f:      \tmovl\t%edx, %eax\n  17c551:      \tmovq\t%rax, %rdx\n  17c554:      \torq\t%rcx, %rdx\n  17c557:      \tleaq\t-0x90(%rbp), %r8\n  17c55e:      \tmovq\t-0xd8(%rbp), %rcx\n  17c565:      \tcallq\t0x201260 <SomeEngine_ECS_SomeEngine_ECS_World__ExecuteQuery_2<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_RelationQuery_2_SingleExecution_1<SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_ComponentPairsWithin_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__S_P_CoreLib_System_ValueTuple_2<SomeEngine_ECS_SomeEngine_ECS_Entities_Entity__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>__SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_QueryIdentityOutput_2<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SpatialPairOutput__S_P_CoreLib_System_ValueTuple_2<SomeEngine_ECS_SomeEngine_ECS_Entities_Entity__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>>>>>\n  17c56a:      \tnop\n  17c56b:      \tmovups\t-0x68(%rbp), %xmm0\n  17c56f:      \tmovups\t%xmm0, -0x30(%rbp)\n  17c573:      \tmovq\t-0x58(%rbp), %rdx\n  17c577:      \tmovq\t%rdx, -0x20(%rbp)\n  17c57b:      \tmovl\t-0xd0(%rbp), %edx\n  17c581:      \tshlq\t$0x20, %rdx\n  17c585:      \tmovl\t-0xcc(%rbp), %ecx\n  17c58b:      \torq\t%rcx, %rdx\n  17c58e:      \tmovq\t-0xd8(%rbp), %rcx\n  17c595:      \tcallq\t0x70d0 <SomeEngine_ECS_SomeEngine_ECS_World__ReleaseQuery>\n  17c59a:      \tmovl\t-0x20(%rbp), %eax\n  17c59d:      \tmovl\t%eax, 0x40(%rbx)\n  17c5a0:      \taddq\t$0xe8, %rsp\n  17c5a7:      \tpopq\t%rbx\n  17c5a8:      \tpopq\t%rsi\n  17c5a9:      \tpopq\t%rdi\n  17c5aa:      \tpopq\t%rbp\n  17c5ab:      \tretq\n  17c5ac:      \tsubq\t$0x28, %rsp\n  17c5b0:      \tmovups\t-0x68(%rbp), %xmm0\n  17c5b4:      \tmovups\t%xmm0, -0x30(%rbp)\n  17c5b8:      \tmovq\t-0x58(%rbp), %rdx\n  17c5bc:      \tmovq\t%rdx, -0x20(%rbp)\n  17c5c0:      \tmovl\t-0xd0(%rbp), %edx\n  17c5c6:      \tshlq\t$0x20, %rdx\n  17c5ca:      \tmovl\t-0xcc(%rbp), %ecx\n  17c5d0:      \torq\t%rcx, %rdx\n  17c5d3:      \tmovq\t-0xd8(%rbp), %rcx\n  17c5da:      \tcmpl\t%ecx, (%rcx)\n  17c5dc:      \tcallq\t0x70d0 <SomeEngine_ECS_SomeEngine_ECS_World__ReleaseQuery>\n  17c5e1:      \tnop\n  17c5e2:      \taddq\t$0x28, %rsp\n  17c5e6:      \tretq\n  17c5e7:      \tnop\n  17c5e8:      \tnop\n  17c5e9:      \tnop\n  17c5ea:      \tnop\n  17c5eb:      \tnop\n  17c5ec:      \tnop\n  17c5ed:      \tnop\n  17c5ee:      \tnop\n  17c5ef:      \tnop\n\n00000000001b45a0 <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HandwrittenDefaultPairs__Enumerate<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SpatialPairOutput>>:\n  1b45a0:      \tpushq\t%rbp\n  1b45a1:      \tpushq\t%rbx\n  1b45a2:      \tsubq\t$0x68, %rsp\n  1b45a6:      \tleaq\t0x70(%rsp), %rbp\n  1b45ab:      \txorps\t%xmm4, %xmm4\n  1b45ae:      \tmovaps\t%xmm4, -0x40(%rbp)\n  1b45b2:      \tmovaps\t%xmm4, -0x30(%rbp)\n  1b45b6:      \tmovaps\t%xmm4, -0x20(%rbp)\n  1b45ba:      \txorl\t%eax, %eax\n  1b45bc:      \tmovq\t%rax, -0x10(%rbp)\n  1b45c0:      \tmovq\t%rcx, 0x10(%rbp)\n  1b45c4:      \tmovq\t%r8, 0x20(%rbp)\n  1b45c8:      \tcmpl\t%ecx, (%rcx)\n  1b45ca:      \tcallq\t0x7220 <SomeEngine_ECS_SomeEngine_ECS_World__GetQueryDefinition>\n  1b45cf:      \tmovq\t%rax, %rcx\n  1b45d2:      \tcmpl\t%ecx, (%rcx)\n  1b45d4:      \tcallq\t0x1b6620 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryDefinition__WithOptionalRead<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>>\n  1b45d9:      \ttestq\t%rax, %rax\n  1b45dc:      \tje\t0x1b4676 <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HandwrittenDefaultPairs__Enumerate<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SpatialPairOutput>+0xd6>\n  1b45e2:      \tmovq\t0x10(%rbp), %rcx\n  1b45e6:      \tmovq\t%rax, %rdx\n  1b45e9:      \tcallq\t0x6ed0 <SomeEngine_ECS_SomeEngine_ECS_World__AcquireQueryRecord>\n  1b45ee:      \tmovl\t0x20(%rax), %edx\n  1b45f1:      \tmovl\t%edx, -0x44(%rbp)\n  1b45f4:      \tmovl\t0x24(%rax), %r8d\n  1b45f8:      \tmovl\t%r8d, -0x48(%rbp)\n  1b45fc:      \tmovq\t0x20(%rbp), %rax\n  1b4600:      \tmovups\t(%rax), %xmm0\n  1b4603:      \tmovups\t%xmm0, -0x40(%rbp)\n  1b4607:      \tmovq\t0x10(%rax), %rcx\n  1b460b:      \tmovq\t%rcx, -0x30(%rbp)\n  1b460f:      \tmovb\t$0x0, -0x10(%rbp)\n  1b4613:      \tmovups\t-0x40(%rbp), %xmm0\n  1b4617:      \tmovups\t%xmm0, -0x28(%rbp)\n  1b461b:      \tmovq\t-0x30(%rbp), %rcx\n  1b461f:      \tmovq\t%rcx, -0x18(%rbp)\n  1b4623:      \tmovl\t%r8d, %ecx\n  1b4626:      \tshlq\t$0x20, %rcx\n  1b462a:      \tmovl\t%edx, %r10d\n  1b462d:      \tmovq\t%r10, %rdx\n  1b4630:      \torq\t%rcx, %rdx\n  1b4633:      \tleaq\t-0x28(%rbp), %r8\n  1b4637:      \tmovq\t0x10(%rbp), %rcx\n  1b463b:      \tcallq\t0x1e6c60 <SomeEngine_ECS_SomeEngine_ECS_World__ExecuteQuery_2<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HandwrittenDefaultPairs_PairExecution_1<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SpatialPairOutput>>>\n  1b4640:      \tmovzbl\t-0x10(%rbp), %ebx\n  1b4644:      \tmovq\t0x20(%rbp), %rax\n  1b4648:      \tmovups\t-0x28(%rbp), %xmm0\n  1b464c:      \tmovups\t%xmm0, (%rax)\n  1b464f:      \tmovq\t-0x18(%rbp), %rdx\n  1b4653:      \tmovq\t%rdx, 0x10(%rax)\n  1b4657:      \tmovl\t-0x48(%rbp), %edx\n  1b465a:      \tshlq\t$0x20, %rdx\n  1b465e:      \tmovl\t-0x44(%rbp), %ecx\n  1b4661:      \torq\t%rcx, %rdx\n  1b4664:      \tmovq\t0x10(%rbp), %rcx\n  1b4668:      \tcallq\t0x70d0 <SomeEngine_ECS_SomeEngine_ECS_World__ReleaseQuery>\n  1b466d:      \tmovl\t%ebx, %eax\n  1b466f:      \taddq\t$0x68, %rsp\n  1b4673:      \tpopq\t%rbx\n  1b4674:      \tpopq\t%rbp\n  1b4675:      \tretq\n  1b4676:      \tleaq\t(%rip), %rcx            # 0x1b467d <SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HandwrittenDefaultPairs__Enumerate<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SpatialPairOutput>+0xdd>\n\t\t00000000001b4679:  IMAGE_REL_AMD64_REL32\t__Str_definition\n  1b467d:      \tcallq\t0x7ded0 <S_P_CoreLib_System_ArgumentNullException__Throw>\n  1b4682:      \tint3\n  1b4683:      \tsubq\t$0x28, %rsp\n  1b4687:      \tmovq\t0x20(%rbp), %rax\n  1b468b:      \tmovups\t-0x28(%rbp), %xmm0\n  1b468f:      \tmovups\t%xmm0, (%rax)\n  1b4692:      \tmovq\t-0x18(%rbp), %rdx\n  1b4696:      \tmovq\t%rdx, 0x10(%rax)\n  1b469a:      \tmovl\t-0x48(%rbp), %edx\n  1b469d:      \tshlq\t$0x20, %rdx\n  1b46a1:      \tmovl\t-0x44(%rbp), %ecx\n  1b46a4:      \torq\t%rcx, %rdx\n  1b46a7:      \tmovq\t0x10(%rbp), %rcx\n  1b46ab:      \tcmpl\t%ecx, (%rcx)\n  1b46ad:      \tcallq\t0x70d0 <SomeEngine_ECS_SomeEngine_ECS_World__ReleaseQuery>\n  1b46b2:      \tnop\n  1b46b3:      \taddq\t$0x28, %rsp\n  1b46b7:      \tretq\n  1b46b8:      \tnop\n  1b46b9:      \tnop\n  1b46ba:      \tnop\n  1b46bb:      \tnop\n  1b46bc:      \tnop\n  1b46bd:      \tnop\n  1b46be:      \tnop\n  1b46bf:      \tnop\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "5b97d35094724620a72e63a1a6a06398",
+      "Executable": "dotnet",
+      "Arguments": [
+        "test",
+        "tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "--filter",
+        "FullyQualifiedName~PointReadsBorrowOptionalManagedComponentsFromChangedMembers"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 1,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T10:31:07.05769+08:00",
+      "StartedAtUtc": "2026-10-19T10:32:00.0377108+08:00",
+      "FinishedAtUtc": "2026-10-19T10:32:21.5344068+08:00"
+    },
+    "Stdout": "  正在确定要还原的项目…\r\n  所有项目均是最新的，无法还原。\r\n  SomeEngine.TestRules -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\TestRules\\bin\\Release\\net10.0\\SomeEngine.TestRules.dll\r\n  Test rules: SomeEngine.ECS.Tests; 0 violations.\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tests\\SomeEngine.ECS.Tests\\GenericQueryExecutionTests.cs(254,41): error CS1061: “QueryCursor”未包含“TryReadRef”的定义，并且找不到可接受第一个“QueryCursor”类型参数的可访问扩展方法“TryReadRef”(是否缺少 using 指令或程序集引用?) [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tests\\SomeEngine.ECS.Tests\\SomeEngine.ECS.Tests.csproj]\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "d1f56e6fe2484602950f347998c941ed",
+      "Executable": "dotnet",
+      "Arguments": [
+        "test",
+        "tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "--filter",
+        "FullyQualifiedName~PointReadsBorrowOptionalManagedComponentsFromChangedMembers"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T10:34:45.2765795+08:00",
+      "StartedAtUtc": "2026-10-19T10:34:45.3654558+08:00",
+      "FinishedAtUtc": "2026-10-19T10:35:13.6375762+08:00"
+    },
+    "Stdout": "  正在确定要还原的项目…\r\n  所有项目均是最新的，无法还原。\r\n  SomeEngine.TestRules -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\TestRules\\bin\\Release\\net10.0\\SomeEngine.TestRules.dll\r\n  Test rules: SomeEngine.ECS.Tests; 0 violations.\r\n  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Tests -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tests\\SomeEngine.ECS.Tests\\bin\\Release\\net10.0\\SomeEngine.ECS.Tests.dll\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tests\\SomeEngine.ECS.Tests\\bin\\Release\\net10.0\\SomeEngine.ECS.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行\r\nVSTest 版本 18.0.2 (x64)\r\n\r\n正在启动测试执行，请稍候...\r\n总共 1 个测试文件与指定模式相匹配。\r\n\r\n已通过! - 失败:     0，通过:     1，已跳过:     0，总计:     1，持续时间: 742 ms - SomeEngine.ECS.Tests.dll (net10.0)\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "7b766e27a4a240ecb196ce6d895a475b",
+      "Executable": "dotnet",
+      "Arguments": [
+        "test",
+        "tests/SomeEngine.ECS.Relations.Tests/SomeEngine.ECS.Relations.Tests.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "--filter",
+        "FullyQualifiedName~BitmapRelationTests"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T10:39:17.1564178+08:00",
+      "StartedAtUtc": "2026-10-19T10:39:17.2464613+08:00",
+      "FinishedAtUtc": "2026-10-19T10:39:38.940413+08:00"
+    },
+    "Stdout": "  正在确定要还原的项目…\r\n  所有项目均是最新的，无法还原。\r\n  SomeEngine.TestRules -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\TestRules\\bin\\Release\\net10.0\\SomeEngine.TestRules.dll\r\n  Test rules: SomeEngine.ECS.Relations.Tests; 0 violations.\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Relations -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\n  SomeEngine.ECS.Relations.Tests -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tests\\SomeEngine.ECS.Relations.Tests\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.Tests.dll\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tests\\SomeEngine.ECS.Relations.Tests\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行\r\nVSTest 版本 18.0.2 (x64)\r\n\r\n正在启动测试执行，请稍候...\r\n总共 1 个测试文件与指定模式相匹配。\r\n\r\n已通过! - 失败:     0，通过:     7，已跳过:     0，总计:     7，持续时间: 950 ms - SomeEngine.ECS.Relations.Tests.dll (net10.0)\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "9856db82c19346b68628a35ed8cc9fca",
+      "Executable": "dotnet",
+      "Arguments": [
+        "test",
+        "tests/SomeEngine.ECS.Relations.Tests/SomeEngine.ECS.Relations.Tests.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "--filter",
+        "FullyQualifiedName~ReadOnlyRelationsKeepTheComponentChangeBaseline|FullyQualifiedName~ChainedRulesForwardRefStructOutputAndStopState|FullyQualifiedName~WithinBindsDifferentOptionalComponentsByOutputPosition"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 1,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T10:40:33.9480714+08:00",
+      "StartedAtUtc": "2026-10-19T10:40:34.0385522+08:00",
+      "FinishedAtUtc": "2026-10-19T10:40:51.0930354+08:00"
+    },
+    "Stdout": "  正在确定要还原的项目…\r\n  所有项目均是最新的，无法还原。\r\n  SomeEngine.TestRules -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\TestRules\\bin\\Release\\net10.0\\SomeEngine.TestRules.dll\r\n  Test rules: SomeEngine.ECS.Relations.Tests; 0 violations.\r\n  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\RelationQuery.cs(108,22): error CS8352: 不能在此上下文中使用变量 \"execution\"，因为它可能会在其声明范围以外公开所引用的变量 [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\SomeEngine.ECS.Relations.csproj]\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "880e93bf550345ac95dc7badca4c5784",
+      "Executable": "dotnet",
+      "Arguments": [
+        "test",
+        "tests/SomeEngine.ECS.Relations.Tests/SomeEngine.ECS.Relations.Tests.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "--filter",
+        "FullyQualifiedName~ReadOnlyRelationsKeepTheComponentChangeBaseline|FullyQualifiedName~ChainedRulesForwardRefStructOutputAndStopState|FullyQualifiedName~WithinBindsDifferentOptionalComponentsByOutputPosition"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 1,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T10:41:40.6610884+08:00",
+      "StartedAtUtc": "2026-10-19T10:41:40.7523257+08:00",
+      "FinishedAtUtc": "2026-10-19T10:41:57.8860122+08:00"
+    },
+    "Stdout": "  正在确定要还原的项目…\r\n  所有项目均是最新的，无法还原。\r\n  SomeEngine.TestRules -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\TestRules\\bin\\Release\\net10.0\\SomeEngine.TestRules.dll\r\n  Test rules: SomeEngine.ECS.Relations.Tests; 0 violations.\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\RelationQuery.cs(109,22): error CS8352: 不能在此上下文中使用变量 \"execution\"，因为它可能会在其声明范围以外公开所引用的变量 [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\SomeEngine.ECS.Relations.csproj]\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "659daaa49bb642589920ed614a4b1883",
+      "Executable": "dotnet",
+      "Arguments": [
+        "test",
+        "tests/SomeEngine.ECS.Relations.Tests/SomeEngine.ECS.Relations.Tests.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "--filter",
+        "FullyQualifiedName~ReadOnlyRelationsKeepTheComponentChangeBaseline|FullyQualifiedName~ChainedRulesForwardRefStructOutputAndStopState|FullyQualifiedName~WithinBindsDifferentOptionalComponentsByOutputPosition"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T10:42:50.1002375+08:00",
+      "StartedAtUtc": "2026-10-19T10:42:50.189939+08:00",
+      "FinishedAtUtc": "2026-10-19T10:43:11.5585637+08:00"
+    },
+    "Stdout": "  正在确定要还原的项目…\r\n  所有项目均是最新的，无法还原。\r\n  SomeEngine.TestRules -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\TestRules\\bin\\Release\\net10.0\\SomeEngine.TestRules.dll\r\n  Test rules: SomeEngine.ECS.Relations.Tests; 0 violations.\r\n  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\n  SomeEngine.ECS.Relations -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.dll\r\n  SomeEngine.ECS.Relations.Tests -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tests\\SomeEngine.ECS.Relations.Tests\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.Tests.dll\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tests\\SomeEngine.ECS.Relations.Tests\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行\r\nVSTest 版本 18.0.2 (x64)\r\n\r\n正在启动测试执行，请稍候...\r\n总共 1 个测试文件与指定模式相匹配。\r\n\r\n已通过! - 失败:     0，通过:     3，已跳过:     0，总计:     3，持续时间: 752 ms - SomeEngine.ECS.Relations.Tests.dll (net10.0)\r\n",
+    "Stderr": ""
+  }
+]

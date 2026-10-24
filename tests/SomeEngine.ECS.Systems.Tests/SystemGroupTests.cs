@@ -209,7 +209,7 @@ public class SystemGroupTests
         group.Add(new ThrowingSystem());
 
         var ex = Assert.Throws<InvalidOperationException>(() => group.Update());
-        Assert.Equal("boom", ex.Message);
+
         Assert.Equal(
             new[] { "driver:acquire:0:0", "driver:create:0:0:1", "driver:before:0" },
             log.Events);

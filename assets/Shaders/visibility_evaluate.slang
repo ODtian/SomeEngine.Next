@@ -1,11 +1,15 @@
 #ifndef VISIBILITY_EVALUATE_SLANG
 #define VISIBILITY_EVALUATE_SLANG
 
+#include "common.slang"
+#include "cluster_structures.slang"
+
+[__AttributeUsage(_AttributeTargets.Struct)]
+struct VisibilityDepthAttribute { string behavior; };
+
 struct VisibilityVertexInput
 {
-    uint VisibleClusterIndex;
-    uint InstanceID;
-    uint ViewIndex;
+    DrawRequest Source;
     uint LocalVertexIndex;
 };
 
@@ -25,8 +29,14 @@ struct VisibilityInterpolationInput
 struct VisibilityPixelInput
 {
     uint3 PixelCoord;
+    // Public material depth is forward even when the target raster uses reverse-Z.
     float Depth;
-    uint VisibleClusterIndex;
+    // Incoming depth in the same reversed integer representation as the target.
+    uint EncodedDepth;
+    // Reversed integer depth already stored at the resolved target pixel.
+    // A shader retaining input.Depth can reject covered target pixels itself.
+    uint EncodedTargetDepth;
+    DrawRequest Source;
     uint TriangleID;
     uint ViewIndex;
     uint TargetPolicy;
@@ -72,6 +82,8 @@ struct EmptyVisibilityVarying
 {
 };
 
+[VisibilityDepth("opaque")]
+[MaterialDepthInputs("")]
 struct OpaqueVisibilityEvaluate<TVertex> : IVisibilityEvaluate<TVertex>
 {
     typealias Varying = EmptyVisibilityVarying;
@@ -107,7 +119,8 @@ struct OpaqueVisibilityEvaluate<TVertex> : IVisibilityEvaluate<TVertex>
     VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
     {
         VisibilityPixelResult result;
-        result.Visible = 1u;
+        result.Visible = input.TargetPolicy == 0u ||
+            input.EncodedTargetDepth < input.EncodedDepth ? 1u : 0u;
         result.Depth = input.Depth;
         return result;
     }

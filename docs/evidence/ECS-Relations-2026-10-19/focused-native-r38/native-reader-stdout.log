@@ -1,0 +1,23 @@
+SOURCE 51c8ce75949cf16d7190e14028c655f526d5697b OBJECT UTC=2026-10-19T21:35:48.1647902Z Length=26164795
+CANDIDATE OneWayCaller count=1
+CANDIDATE OneWayHand count=1
+CANDIDATE MutualCaller count=1
+CANDIDATE MutualHand count=1
+CANDIDATE Point count=1
+TARGET OneWayCaller count=1
+TARGET OneWayHand count=1
+TARGET MutualCaller count=1
+TARGET MutualHand count=1
+TARGET Point count=1
+HOT {"Role":"OneWayCaller","Start":"0x22486f","EndExclusive":"0x2248db","Bytes":108,"Instructions":29,"PointCalls":["0x224883","0x22489a"]}
+HOT {"Role":"OneWayHand","Start":"0x16049f","EndExclusive":"0x160503","Bytes":100,"Instructions":29,"PointCalls":["0x1604b1","0x1604c6"]}
+HOT {"Role":"MutualCaller","Start":"0x22554f","EndExclusive":"0x2255c5","Bytes":118,"Instructions":32,"PointCalls":["0x225563","0x22557a"]}
+HOT {"Role":"MutualHand","Start":"0x16053f","EndExclusive":"0x1605ac","Bytes":109,"Instructions":32,"PointCalls":["0x160551","0x160566"]}
+FUNCTION {"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"OneWayHand","Start":"0x160480","EndExclusive":"0x16051a","Bytes":154,"Instructions":54,"StackBytes":104,"InitialXmm4Bytes":0,"DirectXmm4Clears":0,"LoopInitial":0,"LoopStep":0,"IndexedClears":0,"CopyCallSites":0,"CallSites":3,"StartMod32":0,"StartMod64":0}
+FUNCTION {"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"MutualHand","Start":"0x160520","EndExclusive":"0x1605c3","Bytes":163,"Instructions":57,"StackBytes":104,"InitialXmm4Bytes":0,"DirectXmm4Clears":0,"LoopInitial":0,"LoopStep":0,"IndexedClears":0,"CopyCallSites":0,"CallSites":3,"StartMod32":0,"StartMod64":32}
+FUNCTION {"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"Point","Start":"0x1db3a0","EndExclusive":"0x1db7bc","Bytes":1052,"Instructions":306,"StackBytes":120,"InitialXmm4Bytes":32,"DirectXmm4Clears":2,"LoopInitial":0,"LoopStep":0,"IndexedClears":0,"CopyCallSites":0,"CallSites":16,"StartMod32":0,"StartMod64":32}
+FUNCTION {"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"OneWayCaller","Start":"0x2246e0","EndExclusive":"0x224ac4","Bytes":996,"Instructions":263,"StackBytes":216,"InitialXmm4Bytes":0,"DirectXmm4Clears":0,"LoopInitial":96,"LoopStep":48,"IndexedClears":0,"CopyCallSites":0,"CallSites":36,"StartMod32":0,"StartMod64":32}
+FUNCTION {"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"MutualCaller","Start":"0x2253c0","EndExclusive":"0x2257ae","Bytes":1006,"Instructions":266,"StackBytes":216,"InitialXmm4Bytes":0,"DirectXmm4Clears":0,"LoopInitial":96,"LoopStep":48,"IndexedClears":0,"CopyCallSites":0,"CallSites":36,"StartMod32":0,"StartMod64":0}
+EVIDENCE F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\docs\evidence\ECS-Relations-2026-10-19\focused-native-r38
+OBJECT AFTER UTC=2026-10-19T21:35:48.1647902Z Length=26164795
+AUDIT END UTC=2026-10-19T21:58:13.6521638Z

@@ -2,33 +2,36 @@ using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster;
 
+[StructLayout(LayoutKind.Sequential)]
+internal readonly record struct ClusterPageRequest(uint LeafNodeIndex, uint FirstPageId, uint PageCount, uint Priority);
+
 internal readonly ref struct PageFaultRead
 {
     public PageFaultRead(
         ClusterEpochId epochId,
         uint reportedCount,
-        ReadOnlySpan<uint> leafNodeIndices)
+        ReadOnlySpan<ClusterPageRequest> requests)
     {
         if (!epochId.IsValid)
             throw new ArgumentException("A page-fault read requires a valid Cluster epoch id.", nameof(epochId));
-        if (reportedCount < checked((uint)leafNodeIndices.Length))
+        if (reportedCount < checked((uint)requests.Length))
             throw new ArgumentOutOfRangeException(nameof(reportedCount), "Reported fault count cannot be smaller than the stored page count.");
         EpochId = epochId;
         ReportedCount = reportedCount;
-        LeafNodeIndices = leafNodeIndices;
+        Requests = requests;
     }
 
     public ClusterEpochId EpochId { get; }
     public uint ReportedCount { get; }
-    public ReadOnlySpan<uint> LeafNodeIndices { get; }
-    public uint StoredCount => checked((uint)LeafNodeIndices.Length);
+    public ReadOnlySpan<ClusterPageRequest> Requests { get; }
+    public uint StoredCount => checked((uint)Requests.Length);
     public uint DroppedCount => ReportedCount - StoredCount;
     public bool WasTruncated => DroppedCount != 0;
 }
 
 /// <summary>
-/// Decodes the GPU fault queue. Entries are global BVH leaf-node indices borrowed from the input
-/// readback span; the Cluster BVH translates admitted faults to stable CPU page ids.
+/// Borrows complete GPU page requests from the readback span. Each request carries
+/// its selected leaf, page range and the strongest view/category priority.
 /// </summary>
 internal sealed class PageFaults
 {
@@ -56,7 +59,7 @@ internal sealed class PageFaults
 
         uint reportedCount = words[0];
         uint storageLimit = checked((uint)_capacity);
-        uint availableCount = checked((uint)(words.Length - 1));
+        uint availableCount = checked((uint)(words.Length - 1) / 4u);
         uint count = Math.Min(reportedCount, Math.Min(storageLimit, availableCount));
         if (count == 0)
             return new PageFaultRead(_epochId, reportedCount, []);
@@ -64,6 +67,6 @@ internal sealed class PageFaults
         return new PageFaultRead(
             _epochId,
             reportedCount,
-            words.Slice(1, checked((int)count)));
+            MemoryMarshal.Cast<uint, ClusterPageRequest>(words.Slice(1, checked((int)count * 4))));
     }
 }

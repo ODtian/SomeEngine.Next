@@ -1,0 +1,37 @@
+{
+  "SourceCommit": "73f7e089990e65cf4fc5517593e31aaeee03298a",
+  "ChangedFiles": [
+    "src/SomeEngine.Physics/SpatialCandidates.cs"
+  ],
+  "BehaviorStartedAtUtc": "2026-10-20T00:19:09.8148481Z",
+  "BehaviorFinishedAtUtc": "2026-10-20T00:19:43.6840599Z",
+  "BehaviorExitCode": 0,
+  "PushExitCode": 0,
+  "PublishArguments": [
+    "publish",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+    "-c",
+    "Release",
+    "-r",
+    "win-x64",
+    "-p:PublishAot=true",
+    "-p:SelfContained=true",
+    "-p:SourceRevisionId=73f7e089990e65cf4fc5517593e31aaeee03298a",
+    "-o",
+    "benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish"
+  ],
+  "PublishStartedAtUtc": "2026-10-20T00:19:50.0033024Z",
+  "PublishFinishedAtUtc": "2026-10-20T00:20:28.3102146Z",
+  "PublishExitCode": 0,
+  "SourceCheckExitCode": 0,
+  "Object": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.Benchmarks.obj",
+    "LastWriteTimeUtc": "2026-10-20T00:20:26.9187667Z",
+    "Length": 26079895
+  },
+  "Executable": {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+    "LastWriteTimeUtc": "2026-10-20T00:20:27.7173552Z",
+    "Length": 4933120
+  }
+}

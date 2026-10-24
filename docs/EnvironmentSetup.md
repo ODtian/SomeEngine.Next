@@ -96,7 +96,7 @@ Graphics Tools installed and pass the native D3D12 suite with the variable above
 The hello-triangle definition selects the WARP-compatible D3D12 SM 6.2 cook profile. Rebuild its output through the cook tool; source identity and compiler settings live in the editable `.shader` file:
 
 ```powershell
-dotnet run --project tools\SomeEngine.AssetCook\SomeEngine.AssetCook.csproj -- shader assets/Shaders/hello_triangle.shader
+dotnet run --project samples/DefaultGame/DefaultGame.csproj -- build assets/Shaders/hello_triangle.shader
 ```
 
 

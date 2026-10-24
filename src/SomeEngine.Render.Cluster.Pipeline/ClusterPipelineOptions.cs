@@ -13,24 +13,39 @@ public enum ClusterVisibilityMode : byte
     HardwareOnly,
 }
 
+/// <summary>How visible material data reaches lighting.</summary>
+public enum ClusterShadingPath : byte
+{
+    Deferred,
+    Forward,
+}
+
+/// <summary>The candidate source used by transparent coverage and compositing.</summary>
+public enum ClusterBlendIndex : byte
+{
+    FullScan,
+    Xyz,
+    Xy,
+}
+
 /// <summary>Capacity and quality policy for Cluster visibility graph construction.</summary>
 public sealed record ClusterPipelineOptions
 {
+    public const uint DefaultBlendTriangleCapacity = 524_288;
     private const uint CandidateThreadsPerGroup = 64;
     private const uint PortableDispatchDimension = 65_535;
 
     /// <summary>
-    /// Bounds visibility candidates, the final tessellation pool, and each level of
-    /// a compatible tessellation group's shared work queue. Overflow is counted;
-    /// increasing material count does not multiply the available work memory.
+    /// Bounds candidates, visible geometry items/page windows, the final surface-patch pool,
+    /// and each level of a compatible surface group's work queue. Raster-batch storage uses
+    /// the largest per-cluster batch count in resident geometry. Rejected required work
+    /// fails the frame through ClusterWorkOverflowException.
     /// </summary>
     public uint MaxCandidates { get; init; } = 1_048_576;
-
-    /// <summary>Fixed byte capacity shared by user deformation regions across all views of a frame.</summary>
     public uint MaxDeformCacheBytes { get; init; } = 64u * 1024 * 1024;
 
 
-    public float LodThreshold { get; init; } = 1.0f;
+    public float LodThreshold { get; init; } = 0.25f;
 
     public uint MaxTessellationFactor { get; init; } = 256;
 
@@ -38,24 +53,41 @@ public sealed record ClusterPipelineOptions
 
     public bool EnableAsyncCompute { get; init; }
 
+    public ClusterShadingPath ShadingPath { get; init; } = ClusterShadingPath.Deferred;
+
+    /// <summary>Exports complete receiver records for consumers across either shading path.</summary>
+    public bool ExportSurfaceReceivers { get; init; }
+
+    /// <summary>Saved shader specialization to display. Zero selects normal shading.</summary>
+    public uint DebugMode { get; init; }
+
     public bool ForceHardwareRaster { get; init; }
 
     /// <summary>Tests spatial groups before individual instances. Disabled to avoid maintaining groups unless their culling benefit warrants it.</summary>
     public bool UseInstanceGroups { get; init; }
 
     /// <summary>
-    /// Maximum projected Cluster edge length routed to software rasterization.  The hard
-    /// 64-pixel software bounding-box limit remains authoritative.
+    /// Maximum projected triangle edge routed to software rasterization in every Cluster view.
     /// </summary>
-    public float SoftwareRasterEdgeThreshold { get; init; } = 4.0f;
+    public float SoftwareRasterEdgeThreshold { get; init; } = 32.0f;
+
+    /// <summary>Order pixel-programmable raster work by logarithmic view-depth buckets.</summary>
+    public bool EnableDepthBuckets { get; init; } = true;
 
     public bool EnableFrameMetricsReadback { get; init; }
+    /// <summary>Measures blend phases on the graphics queue and reads back their work and resource sizes.</summary>
+    public bool MeasureBlending { get; init; }
+    public ClusterBlendIndex BlendIndex { get; init; } = ClusterBlendIndex.Xyz;
+    /// <summary>Projected primitives retained together; remaining primitives continue through the source batches.</summary>
+    public uint BlendTriangleCapacity { get; init; } = DefaultBlendTriangleCapacity;
+    /// <summary>Continuous cell references retained together; remaining cells continue through the source batches.</summary>
+    public uint BlendReferenceCapacity { get; init; } = 1_048_576;
 
     internal void Validate()
     {
-        ArgumentOutOfRangeException.ThrowIfZero(MaxDeformCacheBytes);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxDeformCacheBytes, 0xFFFFFFFCu);
         ArgumentOutOfRangeException.ThrowIfZero(MaxCandidates);
+        if (ShadingPath != ClusterShadingPath.Deferred && ShadingPath != ClusterShadingPath.Forward)
+            throw new ArgumentOutOfRangeException(nameof(ShadingPath));
         if (MaxCandidates > CandidateThreadsPerGroup * PortableDispatchDimension)
         {
             throw new ArgumentOutOfRangeException(

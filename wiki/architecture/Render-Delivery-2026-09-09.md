@@ -1,5 +1,7 @@
 ﻿# 渲染审查交付记录 — 2026-09-09
 
+**历史范围更新（2026-10-04，#88）：** 本页提及的实例集合、过程式实例来源、CPU 队列、实体分类与 Translucency、Debug、几何导出 Feature 已删除，核对证据见 [[history/Rendering/Removed-Code-2026-10-04|删除记录]]。下文保留 2026-09-09 当时的实现与验收范围。
+
 工作目录：`F:/SomeEngine.Next-render-enhancement`；分支：`codex/render-enhancement`。
 
 本记录对应三份独立审查汇总的 A/B/S/M/G 项。架构责任划分与适用边界见 [整体架构核查](Render-Architecture-Closure-2026-09-09.md)。原始报告保留原文，本文件记录本次实现结果，避免把历史复现结果当成当前测试结果。

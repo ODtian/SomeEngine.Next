@@ -23,7 +23,7 @@ if ($projectRoot.StartsWith($templatePrefix, [StringComparison]::OrdinalIgnoreCa
 }
 $copies = @()
 foreach ($source in Get-ChildItem -LiteralPath $templateRoot -Recurse -File -Force) {
-    if ($source.FullName -match '[\\/](bin|obj|Library|CrowdInline|CrowdCache|\.git)[\\/]' -or
+    if ($source.FullName -match '[\\/](bin|obj|Library|\.git)[\\/]' -or
         $source.FullName -match '[\\/]assets[\\/]Shaders[\\/]generated[\\/]' -or
         $source.Name -match '\.asset$|\.import\.json$|\.(tmp|temp|bak)$|~$' -or
         $source.Name -eq 'EnginePath.props' -or $source.Name -eq 'NuGet.config') { continue }
@@ -55,13 +55,9 @@ $nuget.Save((Join-Path $projectRoot 'NuGet.config'))
 if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'Game.slnx'))) {
     [IO.File]::WriteAllText((Join-Path $projectRoot 'Game.slnx'), @'
 <Solution>
-  <Project Path="Game/Game.csproj" />
-  <Project Path="Game.Assets/Game.Assets.csproj" />
-  <Project Path="Game.Importing/Game.Importing.csproj" />
-  <Project Path="Game.Build/Game.Build.csproj" />
-  <Project Path="Game.App/Game.App.csproj" />
+  <Project Path="Game.csproj" />
 </Solution>
 '@)
 }
 Write-Output "Created project sources in $projectRoot"
-Write-Output 'Build Game.Build with --project and --engine, then run Game.App. Engine updates do not replace these sources.'
+Write-Output 'Game.csproj compiles the game and its development tools. Use its import, build and list commands for assets.'

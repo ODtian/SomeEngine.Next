@@ -1,161 +1,70 @@
-using SomeEngine.Job;
-using System.Threading;
-
 namespace SomeEngine.Job.Tests;
 
-public class JobSystemTests
+public sealed class JobSystemTests
 {
-    public JobSystemTests()
+    public JobSystemTests() => JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+
+    [Fact]
+    public void SchedulingOneJobIncrementsItsResultOnce()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        int[] counts = [0];
+        JobSystem.Schedule(new IncrementJob(counts)).Complete();
+        Assert.Equal(1, counts[0]);
     }
 
-
-    struct SimpleJob : IJob
+    [Fact]
+    public void ParallelDispatchWritesEveryIndex()
     {
-        public static int ExecutedCount;
+        var values = new int[100];
+        JobSystem.ScheduleParallel(new WriteIndexJob(values), values.Length, 10).Complete();
+        Assert.Equal(Enumerable.Range(0, values.Length).Select(index => index * 2), values);
+    }
 
+    [Fact]
+    public void RecursiveCompletionWaitsForEveryChild()
+    {
+        int[] counts = [0];
+        JobSystem.Schedule(new RecursiveJob(counts, 10)).Complete();
+        Assert.Equal(11, counts[0]);
+    }
+
+    [Fact]
+    public void CompletingSequentialJobsAllowsFurtherScheduling()
+    {
+        int[] counts = [0];
+        for (int index = 0; index < 17_000; index++)
+            JobSystem.Schedule(new IncrementJob(counts)).Complete();
+        Assert.Equal(17_000, counts[0]);
+    }
+
+    [Fact]
+    public void CompletingDependencyChainsAllowsFurtherScheduling()
+    {
+        int[] counts = [0];
+        for (int index = 0; index < 17_000; index++)
+        {
+            JobHandle first = JobSystem.Schedule(new IncrementJob(counts));
+            JobSystem.Schedule(new IncrementJob(counts), first).Complete();
+        }
+        Assert.Equal(34_000, counts[0]);
+    }
+
+    private readonly struct IncrementJob(int[] counts) : IJob
+    {
+        public void Execute() => Interlocked.Increment(ref counts[0]);
+    }
+
+    private readonly struct WriteIndexJob(int[] values) : IJobParallelFor
+    {
+        public void Execute(int index) => values[index] = index * 2;
+    }
+
+    private readonly struct RecursiveJob(int[] counts, int depth) : IJob
+    {
         public void Execute()
         {
-            Interlocked.Increment(ref ExecutedCount);
+            Interlocked.Increment(ref counts[0]);
+            if (depth > 0) JobSystem.Schedule(new RecursiveJob(counts, depth - 1)).Complete();
         }
-    }
-
-    private const int CounterPoolPressureCount = 17000;
-
-    [Fact]
-    public void TestSimpleSchedule()
-    {
-        SimpleJob.ExecutedCount = 0;
-        var job = new SimpleJob();
-        var handle = JobSystem.Schedule(job);
-
-        handle.Complete();
-
-        Assert.Equal(1, SimpleJob.ExecutedCount);
-    }
-
-    struct DependencyJob : IJob
-    {
-        public static int Step;
-        public bool IsSecond;
-
-        public void Execute()
-        {
-            // If IsSecond is true, Step must be 1.
-            if (IsSecond)
-            {
-                if (Step == 1) Step = 2;
-            }
-            else
-            {
-                Thread.Sleep(10); // Ensure delay to test dependency
-                Step = 1;
-            }
-        }
-    }
-
-    [Fact]
-    public void TestDependency()
-    {
-        DependencyJob.Step = 0;
-
-        var job1 = new DependencyJob { IsSecond = false };
-        var job2 = new DependencyJob { IsSecond = true };
-
-        var handle1 = JobSystem.Schedule(job1);
-        var handle2 = JobSystem.Schedule(job2, handle1);
-
-        handle2.Complete();
-        handle1.Complete();
-
-        Assert.Equal(2, DependencyJob.Step);
-    }
-
-    struct ParallelJob : IJobParallelFor
-    {
-        public static int[] Data = Array.Empty<int>();
-
-        public void Execute(int index)
-        {
-            Data[index] = index * 2;
-        }
-    }
-
-    [Fact]
-    public void TestDispatch()
-    {
-        int count = 100;
-        ParallelJob.Data = new int[count];
-
-        var job = new ParallelJob();
-        var handle = JobSystem.ScheduleParallel(job, count, 10);
-
-        handle.Complete();
-
-        for (int i = 0; i < count; i++)
-        {
-            Assert.Equal(i * 2, ParallelJob.Data[i]);
-        }
-    }
-
-    struct RecursiveJob : IJob
-    {
-        public int Depth;
-        public static int TotalExecuted;
-
-        public void Execute()
-        {
-            Interlocked.Increment(ref TotalExecuted);
-            if (Depth > 0)
-            {
-                var child = new RecursiveJob { Depth = Depth - 1 };
-                var handle = JobSystem.Schedule(child);
-                handle.Complete();
-            }
-        }
-    }
-
-    [Fact]
-    public void TestRecursiveWait()
-    {
-        RecursiveJob.TotalExecuted = 0;
-        int depth = 10;
-
-        var rootJob = new RecursiveJob { Depth = depth };
-        var handle = JobSystem.Schedule(rootJob);
-        handle.Complete();
-
-        // Depth 10 -> 10, 9, 8... 0 = 11 jobs
-        Assert.Equal(depth + 1, RecursiveJob.TotalExecuted);
-    }
-
-    [Fact]
-    public void CompleteDoesNotExhaustCounterPool()
-    {
-        SimpleJob.ExecutedCount = 0;
-
-        for (int i = 0; i < CounterPoolPressureCount; i++)
-        {
-            JobSystem.Schedule(new SimpleJob()).Complete();
-        }
-
-        Assert.Equal(CounterPoolPressureCount, SimpleJob.ExecutedCount);
-    }
-
-    [Fact]
-    public void CompletingFinalDependencyReleasesParentCounters()
-    {
-        SimpleJob.ExecutedCount = 0;
-
-        for (int i = 0; i < CounterPoolPressureCount; i++)
-        {
-            var first = JobSystem.Schedule(new SimpleJob());
-            var second = JobSystem.Schedule(new SimpleJob(), first);
-
-            second.Complete();
-        }
-
-        Assert.Equal(CounterPoolPressureCount * 2, SimpleJob.ExecutedCount);
     }
 }

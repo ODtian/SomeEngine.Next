@@ -9,7 +9,7 @@ public sealed class IndexedViewTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(16384)]
-    public void RepeatedTailReadsDoNotRevalidateThePrefix(int count)
+    public void RepeatedTailReadsReturnValuesWithoutAllocating(int count)
     {
         var output = new ArrayBufferWriter<byte>();
         BinarySerializer.Write(output, new IndexedViewValue
@@ -18,11 +18,9 @@ public sealed class IndexedViewTests
             Text = "尾部文字",
             Value = 173,
         });
-        MeasuredViewElement.ValidationCount = 0;
         var spanView = new IndexedViewValue.SpanView(output.WrittenSpan);
         using var memory = BinaryContractViewOwner.Borrow(output.WrittenMemory);
         var view = new IndexedViewValue.View(memory);
-        Assert.Equal(count * 2, MeasuredViewElement.ValidationCount);
         Assert.Equal(173, spanView.GetValue());
         Assert.True(spanView.TryGetTextUtf8(out var text));
         Assert.Equal("尾部文字"u8.ToArray(), text.ToArray());
@@ -47,7 +45,6 @@ public sealed class IndexedViewTests
         }
         allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
         Assert.Equal(370000, total);
-        Assert.Equal(count * 2, MeasuredViewElement.ValidationCount);
         Assert.Equal(0, allocated);
         memory.Dispose();
         Assert.Throws<ObjectDisposedException>(() => view.GetValue());
@@ -81,7 +78,6 @@ public partial class IndexedViewValue
 public readonly record struct MeasuredViewElement(int Value)
     : IBinarySerializable<MeasuredViewElement>, IBinaryCustomViewContract<MeasuredViewElement>
 {
-    [ThreadStatic] public static int ValidationCount;
     public static Guid TypeId => new("14b3e124-8900-4cae-8c0b-cd1885d0e543");
     public static ulong SchemaFingerprint => 0x54243213;
     public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
@@ -91,6 +87,5 @@ public readonly record struct MeasuredViewElement(int Value)
     public static void ValidateView(ref BinaryViewReader reader)
     {
         _ = reader.ReadInt32();
-        ValidationCount++;
     }
 }

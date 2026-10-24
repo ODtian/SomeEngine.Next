@@ -6,27 +6,19 @@
     <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Elements'))" />
     <ProjectReference Include="$(SomeEngineRepositoryRoot)src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
                       Condition="'@(_FieldReference)' != '' and '$(MSBuildProjectName)' != 'SomeEngine.ECS'"
-                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="PublishAot" />
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot" />
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views'))" />
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views.Compose'))" />
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views.SwiftUI'))" />
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views.Solid'))" />
     <ProjectReference Include="$(SomeEngineRepositoryRoot)src/SomeEngine.Views.Generators/SomeEngine.Views.Generators.csproj"
                       Condition="'@(_ViewsReference)' != ''"
-                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="PublishAot" />
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot" />
   </ItemGroup>
   <PropertyGroup>
     <SomeEngineViewsCompilerPath>$(SomeEngineRepositoryRoot)src/SomeEngine.Views.Compiler/bin/$(Configuration)/netstandard2.0/SomeEngine.Views.Compiler.dll</SomeEngineViewsCompilerPath>
   </PropertyGroup>
   <Import Project="$(SomeEngineRepositoryRoot)src/SomeEngine.Views/buildTransitive/SomeEngine.Views.targets" />
-  <Target Name="BuildTestRuleChecker">
-    <MSBuild Projects="$(SomeEngineRepositoryRoot)tools/TestRules/SomeEngine.TestRules.csproj"
-             Targets="Restore;Build" Properties="Configuration=$(Configuration)"
-             RemoveProperties="TargetFramework;TargetFrameworks;RuntimeIdentifier;SelfContained;PublishAot" />
-  </Target>
-  <Target Name="CheckTestRules" BeforeTargets="VSTest" DependsOnTargets="BuildTestRuleChecker" Condition="'$(IsTestProject)' == 'true'">
-    <Exec Command="dotnet &quot;$(SomeEngineRepositoryRoot)tools/TestRules/bin/$(Configuration)/net10.0/SomeEngine.TestRules.dll&quot; &quot;$(SomeEngineRepositoryRoot).&quot; &quot;$(MSBuildProjectDirectory)&quot; &quot;$(AssemblyName)&quot;" />
-  </Target>
   <Target Name="ValidateSlangToolchainIdentity" BeforeTargets="PrepareForBuild" Condition="'$(MSBuildProjectName)' == 'SomeEngine.Graphics' or '$(MSBuildProjectName)' == 'SomeEngine.Graphics.Direct3D12.Tests'">
     <Error Condition="'$(_RequestedSlangToolchainVersion)' != '' and '$(_RequestedSlangToolchainVersion)' != '$(SlangToolchainVersion)'"
            Text="SlangToolchainVersion is pinned by the product and cannot be overridden (requested '$(_RequestedSlangToolchainVersion)', pinned '$(SlangToolchainVersion)')." />
@@ -36,5 +28,26 @@
            Text="SlangStandardModuleDirectory must be derived from SlangToolchainVersion." />
     <Error Condition="'$(SlangTestFixtureDirectory)' != 'SlangStandardModule$(SlangToolchainVersion)'"
            Text="SlangTestFixtureDirectory must be derived from SlangToolchainVersion." />
+  </Target>
+  <!-- dotnet test, just test and CI share this default selection. An explicit filter overrides it. -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <EngineTestCategory>Software</EngineTestCategory>
+    <EngineTestCategory Condition="'$(MSBuildProjectName)' == 'SomeEngine.Graphics.Vulkan.Tests'">Hardware</EngineTestCategory>
+    <EngineTestCategory Condition="$([System.String]::Copy('$(MSBuildProjectName)').Contains('.Benchmarks.Tests'))">Performance</EngineTestCategory>
+    <VSTestTestCaseFilter Condition="'$(VSTestTestCaseFilter)' == ''">(Category=Software)&amp;(Category!=Hardware)&amp;(Category!=LongFuzz)&amp;(Category!=Performance)&amp;(Isolation!=PresentationProcess)&amp;(Isolation!=DeviceLossProcess)</VSTestTestCaseFilter>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <AssemblyAttribute Include="Xunit.AssemblyTraitAttribute">
+      <_Parameter1>Category</_Parameter1>
+      <_Parameter2>$(EngineTestCategory)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <Target Name="BuildTestRuleChecker">
+    <MSBuild Projects="$(SomeEngineRepositoryRoot)tools/TestRules/SomeEngine.TestRules.csproj"
+             Targets="Restore;Build" Properties="Configuration=$(Configuration)"
+             RemoveProperties="TargetFramework;TargetFrameworks;RuntimeIdentifier;SelfContained;PublishAot" />
+  </Target>
+  <Target Name="CheckTestRules" BeforeTargets="VSTest" DependsOnTargets="BuildTestRuleChecker" Condition="'$(IsTestProject)' == 'true'">
+    <Exec Command="dotnet &quot;$(SomeEngineRepositoryRoot)tools/TestRules/bin/$(Configuration)/net10.0/SomeEngine.TestRules.dll&quot; &quot;$(SomeEngineRepositoryRoot).&quot; &quot;$(MSBuildProjectDirectory)&quot; &quot;$(AssemblyName)&quot;" />
   </Target>
 </Project>

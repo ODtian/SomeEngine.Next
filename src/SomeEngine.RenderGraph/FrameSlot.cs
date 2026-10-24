@@ -6,6 +6,13 @@ internal sealed class FrameSlot : IDisposable
     private readonly List<QueueCompletion> _completions = [];
     private RenderGraphFrameState? _state;
     private readonly List<GraphEditChanges> _edits = [];
+    private FrameBufferTransfers? _bufferTransfers;
+
+    internal FrameBufferTransfers GetBufferTransfers(RenderGraph graph) =>
+        _bufferTransfers ??= new FrameBufferTransfers(graph.Backend, graph.Device, graph.HeapByteBudget);
+
+    internal void SaveBufferTransferStates(RenderGraphFrameResult result) =>
+        _bufferTransfers?.SaveBufferStates(result);
 
     internal void ApplyEdit(GraphEditChanges changes)
     {
@@ -16,6 +23,7 @@ internal sealed class FrameSlot : IDisposable
         _state?.ChangeProperty(identity, kind, refreshViews);
     internal void BoundaryChanged(GraphIdentity identity, GraphStoreKind kind) => _state?.BoundaryChanged(identity, kind);
     internal void CommandDataChanged(GraphIdentity identity) => _state?.CommandDataChanged(identity);
+    internal void ParameterInputChanged(GraphParameterInput input) => _state?.ParameterInputChanged(input);
 
     internal FrameSlot(int index)
     {
@@ -23,6 +31,7 @@ internal sealed class FrameSlot : IDisposable
     }
 
     internal int Index { get; }
+    internal ulong FrameIdentity => _state?.Identity ?? 0;
     internal IReadOnlyList<QueueCompletion> Completions => _completions;
     internal FrameTransientResourceAllocator? TransientResources { get; private set; }
 
@@ -83,6 +92,8 @@ internal sealed class FrameSlot : IDisposable
             _objects.RemoveAt(i);
         }
         _completions.Clear();
+        _bufferTransfers?.CollectReadbacks();
+        _bufferTransfers?.ResetUploads();
     }
 
     internal void Own(IDisposable value) => _objects.Add(value);
@@ -120,5 +131,6 @@ internal sealed class FrameSlot : IDisposable
         }
         _completions.Clear();
         TransientResources?.Dispose();
+        _bufferTransfers?.Dispose();
     }
 }

@@ -10,6 +10,8 @@ Asset 是身份、引用和生命周期单位。`MeshAsset`、`SkeletonAsset`、
 
 `AnimationClipAsset` 可同时持有编码片段和 `FootMotionBlock`。足部 Block 编码其就绪 `FootMotion`，`CreateMotion` 返回同一对象，选定路径通过普通引用保持轨迹与接触数据，见 [Foot Motion](../animation/Foot-Motion.md)。
 
+`AnimationModelAsset` 保存学习式动画模型的身份和 Block 目录。`FlowMatchingBlock` 编码具体网络、归一化及控制格式，`CreateModel` 返回只读的 ready 模型；逐角色历史与工作区由姿势算法实例持有，见 [Flow Matching](../animation/Flow-Matching.md)。
+
 Block 是 Asset 内部开放、强类型的数据单位。一个 MeshAsset 可同时包含 `MeshBlock`、`MeshMaterialsBlock`、`ClusterGeometryBlock`、`ClusterVertexAttributesBlock`，以后也可加入其他管线的 Block。Scene 引用 `AssetId<MeshAsset>`，不引用某个管线的几何表示。添加一个 Block 不要求新增一个语义资产身份。
 
 Asset 不分“文本资产”和“二进制资产”。Block 自己选择文本字段、二进制负载、外部来源、磁盘描述、延迟读取或仅在进程中存在的数据。一个逻辑资产可以组合多个不同存储方式的 Block；这不是“每个资产都有可读主文件，再引用二进制资产”的模型，也不要求每个资产都提供可读格式。现有文档容器可以同时包含文本编码元数据与二进制数据块，Block 的自定义读取也可以接入网络或生成内容。仅进程内 Block 不被伪装成可持久内容。
@@ -46,6 +48,8 @@ Asset 和 Block 关闭它们明确取得的来源；实际读取保持来源有�
 ## 从 Block 到使用对象
 
 具体系统直接请求认识的 Block，以强类型代码完成必要读取、解码、依赖解析和资源创建。完成后的对象保证当前承诺可用的数据能够直接使用，不再通过 Asset 的异步接口访问这些数据。
+
+MaterialAsset 的具体对象创建由 `CreateAsync<TMaterial>` 选择。AssetLoader 持有文件访问能力；ShaderAsset、TextureBlock 的具体方法创建完整资源，业务提供的实际 Shader、Texture 引用决定材质的资源共用。材料字段与资源依赖的具体行为见 [材质资产](Asset-Materials.md)。
 
 Asset 和使用对象可以复用编码或读取能力，但不要求绑定同一个对象生命周期。Asset 可部分驻留，小字段在异步创建完成前就绪，大数据通过显式异步操作取得；使用对象以普通引用持有全部必需数据，普通读取无需回到 Asset。Shader 使用普通 GC 引用和直接 Slang 对象，Texture tile 与 Mesh 几何范围则可以保留自己的业务分页。
 

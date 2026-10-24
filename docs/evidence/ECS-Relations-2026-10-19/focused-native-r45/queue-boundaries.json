@@ -1,0 +1,690 @@
+{
+  "Summary": {
+    "Series": "focused-native-r45",
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "CaseCount": 2,
+    "PreparationExitCode": 0,
+    "CaseExitCodes": [
+      0
+    ],
+    "AnalysisExitCodes": [
+      0
+    ],
+    "LastCaseSubmittedAtUtc": "2026-10-20T01:10:27.0429254Z",
+    "PreparationFinishedAtUtc": "2026-10-20T09:10:28.0164862+08:00",
+    "FirstCaseStartedAtUtc": "2026-10-20T09:14:48.0808897+08:00",
+    "LastCaseFinishedAtUtc": "2026-10-20T09:22:07.2615292+08:00",
+    "FirstAnalysisStartedAtUtc": "2026-10-20T09:22:07.2625842+08:00",
+    "AllCasesSubmittedBeforeExecution": true,
+    "PreparationFinishedBeforeExecution": true,
+    "AnalysisStartedAfterExecution": true,
+    "QuietPassed": true,
+    "CaseExecutionSeconds": 0.8260352,
+    "BetweenCasesSeconds": 438.3546043,
+    "AnalysisExecutionSeconds": 5.2236288,
+    "SubmissionToAnalysisFinishedSeconds": 1558.4311124
+  },
+  "Preparation": {
+    "Id": "9f5c43b1a369427f9d1b9619a17d0508",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\focused-native-r45\\master.ps1"
+    ],
+    "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+    "ExitCode": 0,
+    "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+    "Kind": "Exclusive",
+    "SubmittedAtUtc": "2026-10-20T08:56:14.0551006+08:00",
+    "StartedAtUtc": "2026-10-20T09:10:24.5796289+08:00",
+    "FinishedAtUtc": "2026-10-20T09:10:28.0164862+08:00"
+  },
+  "BatchPreparation": {
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "PublishQueueId": "45457c0a0ea343458c8de1c83d1ba0f8",
+    "StartedAtUtc": "2026-10-20T01:10:25.6802441Z",
+    "LastCaseSubmittedAtUtc": "2026-10-20T01:10:27.0429254Z",
+    "InitialObservationEndedAtUtc": "2026-10-20T01:10:27.7989502Z",
+    "WatcherInitialObservationEndedAtUtc": "2026-10-20T01:10:27.7756829Z",
+    "RootHostRelease": {
+      "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "RootHostReadEndedAtUtc": "2026-10-20T00:53:06.2645976Z",
+      "RecordedAtUtc": "2026-10-20T01:10:25.6478471Z"
+    },
+    "PreparationEndAtUtc": "2026-10-20T01:10:27.7989502Z",
+    "CaseCount": 2,
+    "NativeSourceCheckExitCode": 0,
+    "FinalQueueId": "9f98fc9d4e9b4f7eb48ae39a4c76ed0a"
+  },
+  "Cases": [
+    {
+      "CaseId": "threads-small-sparse-parallel",
+      "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "Queue": {
+        "Id": "d00b365df16145519b6be626374ae9b5",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "threads",
+          "--size",
+          "small",
+          "--variant",
+          "sparse-parallel",
+          "--source",
+          "c0effa290eee225c296f779a85b9d79109d789a5",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\threads-small-sparse-parallel.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T09:10:26.0774062+08:00",
+        "StartedAtUtc": "2026-10-20T09:14:48.0808897+08:00",
+        "FinishedAtUtc": "2026-10-20T09:14:48.4324801+08:00"
+      }
+    },
+    {
+      "CaseId": "threads-small-uniform-parallel",
+      "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "Queue": {
+        "Id": "6f3f2b4cccdf4406aae5e784bc7a971d",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "threads",
+          "--size",
+          "small",
+          "--variant",
+          "uniform-parallel",
+          "--source",
+          "c0effa290eee225c296f779a85b9d79109d789a5",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--comparison",
+          "RelationHandwritten",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\threads-small-uniform-parallel.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T09:10:26.5176034+08:00",
+        "StartedAtUtc": "2026-10-20T09:22:06.7870844+08:00",
+        "FinishedAtUtc": "2026-10-20T09:22:07.2615292+08:00"
+      }
+    }
+  ],
+  "Analyses": [
+    {
+      "Id": "9f98fc9d4e9b4f7eb48ae39a4c76ed0a",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Complete-Measurements.ps1",
+        "-Series",
+        "focused-native-r45"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-20T09:10:26.82422+08:00",
+      "StartedAtUtc": "2026-10-20T09:22:07.2625842+08:00",
+      "FinishedAtUtc": "2026-10-20T09:22:12.486213+08:00"
+    }
+  ],
+  "PostprocessStages": [
+    {
+      "Script": "Collect-Measurements.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1",
+        "-Series",
+        "focused-native-r45"
+      ],
+      "StartedAtUtc": "2026-10-20T01:22:08.0802852Z",
+      "FinishedAtUtc": "2026-10-20T01:22:09.4650532Z",
+      "ExitCode": 0
+    },
+    {
+      "Script": "Export-Evidence.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1",
+        "-Series",
+        "focused-native-r45"
+      ],
+      "StartedAtUtc": "2026-10-20T01:22:09.5528369Z",
+      "FinishedAtUtc": "2026-10-20T01:22:10.8177137Z",
+      "ExitCode": 0
+    },
+    {
+      "Script": "Write-MeasurementReport.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1",
+        "-Series",
+        "focused-native-r45"
+      ],
+      "StartedAtUtc": "2026-10-20T01:22:10.8245407Z",
+      "FinishedAtUtc": "2026-10-20T01:22:12.2805459Z",
+      "ExitCode": 0
+    }
+  ],
+  "BetweenCases": [
+    {
+      "BeforeCaseId": "threads-small-sparse-parallel",
+      "AfterCaseId": "threads-small-uniform-parallel",
+      "Seconds": 438.3546043
+    }
+  ],
+  "WatcherReady": {
+    "ProcessId": 32968,
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "InitialObservationStartedAtUtc": "2026-10-20T01:10:27.7593256Z",
+    "InitialObservationEndedAtUtc": "2026-10-20T01:10:27.7756829Z",
+    "CaseQueueIds": [
+      "d00b365df16145519b6be626374ae9b5",
+      "6f3f2b4cccdf4406aae5e784bc7a971d"
+    ],
+    "AnalysisQueueIds": [
+      "9f98fc9d4e9b4f7eb48ae39a4c76ed0a"
+    ],
+    "FinalQueueId": "9f98fc9d4e9b4f7eb48ae39a4c76ed0a",
+    "FinalReceipt": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\9f98fc9d4e9b4f7eb48ae39a4c76ed0a\\result.json"
+  },
+  "ControlObservations": [
+    {
+      "StartedAtUtc": "2026-10-20T01:22:25.1244316Z",
+      "FinishedAtUtc": "2026-10-20T01:22:25.3245678Z",
+      "ApprovedSummary": {
+        "Series": "focused-native-r45",
+        "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+        "ApprovedRatioLimit": 1.01,
+        "StrictRatioLimit": 1.0,
+        "Cases": 2,
+        "Equal": 2,
+        "Required": 2,
+        "StrictPassed": 2,
+        "ApprovedPassed": 2,
+        "ApprovedUnmet": 0
+      },
+      "Cases": [
+        {
+          "CaseId": "threads-small-sparse-parallel",
+          "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+          "Equal": true,
+          "Queue": {
+            "Id": "d00b365df16145519b6be626374ae9b5",
+            "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+            "Arguments": [
+              "--mode",
+              "measure",
+              "--case",
+              "threads",
+              "--size",
+              "small",
+              "--variant",
+              "sparse-parallel",
+              "--source",
+              "c0effa290eee225c296f779a85b9d79109d789a5",
+              "--backend",
+              "NativeAOT",
+              "--machine",
+              "Fixed",
+              "--comparison",
+              "RelationHandwritten",
+              "--output",
+              "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\threads-small-sparse-parallel.json"
+            ],
+            "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+            "ExitCode": 0,
+            "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+            "Kind": "Exclusive",
+            "SubmittedAtUtc": "2026-10-20T09:10:26.0774062+08:00",
+            "StartedAtUtc": "2026-10-20T09:14:48.0808897+08:00",
+            "FinishedAtUtc": "2026-10-20T09:14:48.4324801+08:00"
+          },
+          "Comparisons": [
+            {
+              "Boundary": "ScheduledPairOutput",
+              "Required": true,
+              "RelationMedianTicks": 555,
+              "HandwrittenMedianTicks": 742.5,
+              "MedianRatio": 0.7474747474747475,
+              "RelationP95Ticks": 883.25,
+              "HandwrittenP95Ticks": 1225,
+              "P95Ratio": 0.7210204081632653,
+              "Passed": true
+            },
+            {
+              "Boundary": "Consume",
+              "Required": false,
+              "RelationMedianTicks": 457,
+              "HandwrittenMedianTicks": 467.5,
+              "MedianRatio": 0.9775401069518717,
+              "RelationP95Ticks": 603.75,
+              "HandwrittenP95Ticks": 606.75,
+              "P95Ratio": 0.9950556242274413,
+              "Passed": true
+            }
+          ]
+        },
+        {
+          "CaseId": "threads-small-uniform-parallel",
+          "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+          "Equal": true,
+          "Queue": {
+            "Id": "6f3f2b4cccdf4406aae5e784bc7a971d",
+            "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+            "Arguments": [
+              "--mode",
+              "measure",
+              "--case",
+              "threads",
+              "--size",
+              "small",
+              "--variant",
+              "uniform-parallel",
+              "--source",
+              "c0effa290eee225c296f779a85b9d79109d789a5",
+              "--backend",
+              "NativeAOT",
+              "--machine",
+              "Fixed",
+              "--comparison",
+              "RelationHandwritten",
+              "--output",
+              "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\threads-small-uniform-parallel.json"
+            ],
+            "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+            "ExitCode": 0,
+            "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+            "Kind": "Exclusive",
+            "SubmittedAtUtc": "2026-10-20T09:10:26.5176034+08:00",
+            "StartedAtUtc": "2026-10-20T09:22:06.7870844+08:00",
+            "FinishedAtUtc": "2026-10-20T09:22:07.2615292+08:00"
+          },
+          "Comparisons": [
+            {
+              "Boundary": "ScheduledPairOutput",
+              "Required": true,
+              "RelationMedianTicks": 1735,
+              "HandwrittenMedianTicks": 2176,
+              "MedianRatio": 0.7973345588235294,
+              "RelationP95Ticks": 2637.75,
+              "HandwrittenP95Ticks": 3307,
+              "P95Ratio": 0.7976262473540974,
+              "Passed": true
+            },
+            {
+              "Boundary": "Consume",
+              "Required": false,
+              "RelationMedianTicks": 623.5,
+              "HandwrittenMedianTicks": 631,
+              "MedianRatio": 0.9881141045958796,
+              "RelationP95Ticks": 822.75,
+              "HandwrittenP95Ticks": 790.25,
+              "P95Ratio": 1.0411262258778868,
+              "Passed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "StartedAtUtc": "2026-10-20T01:16:10.1714471Z",
+      "FinishedAtUtc": "2026-10-20T01:16:10.307153Z",
+      "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "Equal": true,
+      "Comparisons": [
+        {
+          "Boundary": "ScheduledPairOutput",
+          "Required": true,
+          "RelationMedianTicks": 555,
+          "HandwrittenMedianTicks": 742.5,
+          "MedianRatio": 0.7474747474747475,
+          "RelationP95Ticks": 883.25,
+          "HandwrittenP95Ticks": 1225,
+          "P95Ratio": 0.7210204081632653,
+          "Passed": true
+        },
+        {
+          "Boundary": "Consume",
+          "Required": false,
+          "RelationMedianTicks": 457,
+          "HandwrittenMedianTicks": 467.5,
+          "MedianRatio": 0.9775401069518717,
+          "RelationP95Ticks": 603.75,
+          "HandwrittenP95Ticks": 606.75,
+          "P95Ratio": 0.9950556242274413,
+          "Passed": true
+        }
+      ]
+    },
+    {
+      "StartedAtUtc": "2026-10-20T01:04:29.7911619Z",
+      "FinishedAtUtc": "2026-10-20T01:04:30.5172462Z",
+      "Children": [
+        {
+          "ProcessId": 90944,
+          "Name": "conhost.exe",
+          "StartedAtUtc": "2026-10-19T08:23:27.762154Z",
+          "ElapsedSeconds": 60062.662095,
+          "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+        },
+        {
+          "ProcessId": 79380,
+          "Name": "python.exe",
+          "StartedAtUtc": "2026-10-20T01:00:59.29837Z",
+          "ElapsedSeconds": 211.1459271,
+          "Command": "\"C:/Users/boqi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe\" -B F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/compare_frames.py --scene bistro --scene-cache F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/bistro.npz --scene-layout F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/loads/bistro-sparse-motion.json"
+        }
+      ],
+      "Receipts": [
+        {
+          "Id": "45457c0a0ea343458c8de1c83d1ba0f8",
+          "DirectoryExists": true,
+          "Result": {
+            "Id": "45457c0a0ea343458c8de1c83d1ba0f8",
+            "Executable": "pwsh",
+            "Arguments": [
+              "-NoProfile",
+              "-File",
+              "F:/.codex/worktrees/ecs-relations-worker-3/SomeEngine.Next/artifacts/relations-measurements/focused-native-r45/producer.ps1"
+            ],
+            "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+            "ExitCode": 0,
+            "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+            "Kind": "Exclusive",
+            "SubmittedAtUtc": "2026-10-20T08:53:02.3017844+08:00",
+            "StartedAtUtc": "2026-10-20T08:59:35.8719394+08:00",
+            "FinishedAtUtc": "2026-10-20T09:00:59.2955702+08:00"
+          },
+          "StdoutTail": [
+            "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\Registry\\JobStorageTypeMetadata.cs(77): Trim analysis warning IL2070: SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>): 'this' argument does not satisfy 'DynamicallyAccessedMemberTypes.PublicFields', 'DynamicallyAccessedMemberTypes.NonPublicFields' in call to 'System.Type.GetFields(BindingFlags)'. The parameter 'type' of method 'SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>)' does not have matching annotations. The source value must declare at least the same requirements as those declared on the target location it is assigned to. [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\SomeEngine.ECS.Relations.Benchmarks.csproj]",
+            "  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\",
+            "SOURCE_NATIVE {\"SourceCommit\":\"c0effa290eee225c296f779a85b9d79109d789a5\",\"ChangedFiles\":[\"src/SomeEngine.Physics/CollisionPartitions.cs\"],\"BehaviorStartedAtUtc\":\"2026-10-20T00:59:37.0047257Z\",\"BehaviorFinishedAtUtc\":\"2026-10-20T01:00:10.3439367Z\",\"BehaviorExitCode\":0,\"PushExitCode\":0,\"PublishArguments\":[\"publish\",\"benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj\",\"-c\",\"Release\",\"-r\",\"win-x64\",\"-p:PublishAot=true\",\"-p:SelfContained=true\",\"-p:SourceRevisionId=c0effa290eee225c296f779a85b9d79109d789a5\",\"-o\",\"benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish\"],\"PublishStartedAtUtc\":\"2026-10-20T01:00:17.2784491Z\",\"PublishFinishedAtUtc\":\"2026-10-20T01:00:59.0737718Z\",\"PublishExitCode\":0,\"SourceCheckExitCode\":0,\"Object\":{\"Path\":\"F:\\\\.codex\\\\worktrees\\\\ecs-relations-worker-3\\\\SomeEngine.Next\\\\benchmarks\\\\SomeEngine.ECS.Relations.Benchmarks\\\\obj\\\\Release\\\\net10.0\\\\win-x64\\\\native\\\\SomeEngine.ECS.Relations.Benchmarks.obj\",\"LastWriteTimeUtc\":\"2026-10-20T01:00:57.8540395Z\",\"Length\":26077547},\"Executable\":{\"Path\":\"F:\\\\.codex\\\\worktrees\\\\ecs-relations-worker-3\\\\SomeEngine.Next\\\\benchmarks\\\\SomeEngine.ECS.Relations.Benchmarks\\\\bin\\\\Release\\\\net10.0\\\\win-x64\\\\native-publish\\\\SomeEngine.ECS.Relations.Benchmarks.exe\",\"LastWriteTimeUtc\":\"2026-10-20T01:00:58.5835185Z\",\"Length\":4932096}}"
+          ]
+        },
+        {
+          "Id": "9f5c43b1a369427f9d1b9619a17d0508",
+          "DirectoryExists": false,
+          "Result": null,
+          "StdoutTail": null
+        }
+      ]
+    },
+    {
+      "StartedAtUtc": "2026-10-20T01:10:00Z",
+      "FinishedAtUtc": "2026-10-20T01:10:50.8161826Z",
+      "PreviousRead": "Active stderr was held by the queue writer; status continued using metadata.",
+      "Master": {
+        "Id": "9f5c43b1a369427f9d1b9619a17d0508",
+        "Executable": "pwsh",
+        "Arguments": [
+          "-NoProfile",
+          "-File",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\focused-native-r45\\master.ps1"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T08:56:14.0551006+08:00",
+        "StartedAtUtc": "2026-10-20T09:10:24.5796289+08:00",
+        "FinishedAtUtc": "2026-10-20T09:10:28.0164862+08:00"
+      },
+      "MasterFiles": [
+        {
+          "Name": "result.json",
+          "Length": 544,
+          "LastWriteTimeUtc": "2026-10-20T01:10:28.0167821Z"
+        },
+        {
+          "Name": "stderr.log",
+          "Length": 0,
+          "LastWriteTimeUtc": "2026-10-20T01:10:24.5801868Z"
+        },
+        {
+          "Name": "stdout.log",
+          "Length": 1967,
+          "LastWriteTimeUtc": "2026-10-20T01:10:28.0162184Z"
+        }
+      ],
+      "Manifest": {
+        "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+        "Submissions": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\submissions.json",
+        "QueueSubmission": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\queue-submission.json",
+        "CaseQueueIds": [
+          "d00b365df16145519b6be626374ae9b5",
+          "6f3f2b4cccdf4406aae5e784bc7a971d"
+        ],
+        "AnalysisQueueIds": [
+          "9f98fc9d4e9b4f7eb48ae39a4c76ed0a"
+        ],
+        "SubmissionFinishedAtUtc": "2026-10-20T01:10:27.0429254Z"
+      },
+      "Children": null,
+      "Cases": [
+        {
+          "Id": "d00b365df16145519b6be626374ae9b5",
+          "ResultExists": false
+        },
+        {
+          "Id": "6f3f2b4cccdf4406aae5e784bc7a971d",
+          "ResultExists": false
+        }
+      ],
+      "PackageSubmissions": [
+        {
+          "Id": "b29fc3fd3ed94505adb27bead7eed42c",
+          "OutputDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\b29fc3fd3ed94505adb27bead7eed42c",
+          "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+          "Kind": "Exclusive",
+          "SubmittedAtUtc": "2026-10-20T09:10:27.2558803+08:00",
+          "WorkerProcessId": 81812
+        },
+        {
+          "Id": "0943bc78afa94cbd816e22a2a2350079",
+          "OutputDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\0943bc78afa94cbd816e22a2a2350079",
+          "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+          "Kind": "Exclusive",
+          "SubmittedAtUtc": "2026-10-20T09:10:27.6217565+08:00",
+          "WorkerProcessId": 81812
+        }
+      ],
+      "SuccessfulObservationStartedAtUtc": "2026-10-20T01:10:50.7542719Z"
+    },
+    {
+      "StartedAtUtc": "2026-10-20T01:15:38.8646135Z",
+      "FinishedAtUtc": "2026-10-20T01:15:40.071359Z",
+      "Worker": {
+        "ProcessId": 81812,
+        "CommandLine": "\"C:\\Program Files\\dotnet\\dotnet.exe\" F:\\SomeEngine.Next\\tools\\BenchmarkQueue\\bin\\Release\\net10.0\\SomeEngine.BenchmarkQueue.dll --worker",
+        "CreationDate": "2026-10-19T16:23:27.742435+08:00"
+      },
+      "Children": [
+        {
+          "ProcessId": 90944,
+          "Name": "conhost.exe",
+          "StartedAtUtc": "2026-10-19T08:23:27.762154Z",
+          "ElapsedSeconds": 60732.2090114,
+          "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+        },
+        {
+          "ProcessId": 66472,
+          "Name": "python.exe",
+          "StartedAtUtc": "2026-10-20T01:14:48.469475Z",
+          "ElapsedSeconds": 51.5222846,
+          "Command": "\"C:/Users/boqi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe\" -B F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/compare_frames.py --scene sponza --scene-cache F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/sponza.npz --scene-layout F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/loads/sponza-double-motion.json --width 960 --height 540 --warmup 80 --frames 48 --variants screen_grid_ray screen_sparse_cards_grid_ray screen_emissive_surfel_grid_ray --profiles static camera moving turn_lights --primary-query raster --geometry-query cells --object-query cell --object-walk lists --object-update split --object-covers --object-grid 32 --dense-grid 4 --pointer-seeds 0 --cell-ray-bounds --triangle-data aos --cell-triangle-indices packed --tail-cache sharc_nrc --neural-coordinates world --neural-weights uniform --probe-sampling history --probe-spacing 16 --probe-rays 1 --pixel-rays quad --surfel-history --surfel-capacity 65536 --surfel-read center-chain --lighting-history 4 --training 128 --training-stride 4 --training-width 1 --training-sampling scan --raster-bucket 128 --temporal-frames 16 --temporal-width 64 --temporal-spp 256 --temporal-reference-repeats 2 --quality-checks 1 --query-rays 2048 --combi"
+        }
+      ],
+      "Cases": [
+        {
+          "CaseId": "threads-small-sparse-parallel",
+          "QueueId": "d00b365df16145519b6be626374ae9b5",
+          "Result": {
+            "Id": "d00b365df16145519b6be626374ae9b5",
+            "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+            "Arguments": [
+              "--mode",
+              "measure",
+              "--case",
+              "threads",
+              "--size",
+              "small",
+              "--variant",
+              "sparse-parallel",
+              "--source",
+              "c0effa290eee225c296f779a85b9d79109d789a5",
+              "--backend",
+              "NativeAOT",
+              "--machine",
+              "Fixed",
+              "--comparison",
+              "RelationHandwritten",
+              "--output",
+              "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\focused-native-r45\\threads-small-sparse-parallel.json"
+            ],
+            "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+            "ExitCode": 0,
+            "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+            "Kind": "Exclusive",
+            "SubmittedAtUtc": "2026-10-20T09:10:26.0774062+08:00",
+            "StartedAtUtc": "2026-10-20T09:14:48.0808897+08:00",
+            "FinishedAtUtc": "2026-10-20T09:14:48.4324801+08:00"
+          },
+          "RawReportExists": true
+        },
+        {
+          "CaseId": "threads-small-uniform-parallel",
+          "QueueId": "6f3f2b4cccdf4406aae5e784bc7a971d",
+          "Result": null,
+          "RawReportExists": false
+        }
+      ]
+    },
+    {
+      "StartedAtUtc": "2026-10-20T01:21:26.2604732Z",
+      "FinishedAtUtc": "2026-10-20T01:21:26.8552527Z",
+      "WorkerProcessId": 81812,
+      "Children": [
+        {
+          "ProcessId": 90944,
+          "Name": "conhost.exe",
+          "StartedAtUtc": "2026-10-19T08:23:27.762154Z",
+          "ElapsedSeconds": 61079.0251798,
+          "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+        },
+        {
+          "ProcessId": 66472,
+          "Name": "python.exe",
+          "StartedAtUtc": "2026-10-20T01:14:48.469475Z",
+          "ElapsedSeconds": 398.338154,
+          "Command": "\"C:/Users/boqi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe\" -B F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/compare_frames.py --scene sponza --scene-cache F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/sponza.npz --scene-layout F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/loads/sponza-double-motion.json --width 960 --height 540 --warmup 80 --frames 48 --variants screen_grid_ray screen_sparse_cards_grid_ray screen_emissive_surfel_grid_ray --profiles static camera moving turn_lights --primary-query raster --geometry-query cells --object-query cell --object-walk lists --object-update split --object-covers --object-grid 32 --dense-grid 4 --pointer-seeds 0 --cell-ray-bounds --triangle-data aos --cell"
+        }
+      ],
+      "UniformQueueId": "6f3f2b4cccdf4406aae5e784bc7a971d",
+      "UniformReceipt": null,
+      "UniformRawExists": false
+    },
+    {
+      "StartedAtUtc": "2026-10-20T00:57:55.1956878Z",
+      "FinishedAtUtc": "2026-10-20T00:57:55.2729366Z",
+      "Receipts": [
+        {
+          "Name": "r44-report",
+          "Id": "914c2db70ab949bb81a2b11790accd11",
+          "ExitCode": 0,
+          "StartedAtUtc": "2026-10-20T08:47:19.8976444+08:00",
+          "FinishedAtUtc": "2026-10-20T08:47:25.3324022+08:00"
+        },
+        {
+          "Name": "r44-archive",
+          "Id": "1244cdec74a04e50b62ffef3d34261b9",
+          "ExitCode": 0,
+          "StartedAtUtc": "2026-10-20T08:52:47.4486095+08:00",
+          "FinishedAtUtc": "2026-10-20T08:52:49.9144647+08:00"
+        },
+        {
+          "Name": "r45-producer",
+          "Id": "45457c0a0ea343458c8de1c83d1ba0f8",
+          "ResultExists": false
+        },
+        {
+          "Name": "r45-master",
+          "Id": "9f5c43b1a369427f9d1b9619a17d0508",
+          "ResultExists": false
+        }
+      ],
+      "Source": null
+    },
+    {
+      "StartedAtUtc": "2026-10-20T00:59:12.028385Z",
+      "FinishedAtUtc": "2026-10-20T00:59:12.7352406Z",
+      "WorkerProcessId": 81812,
+      "Children": [
+        {
+          "ProcessId": 90944,
+          "ParentProcessId": 81812,
+          "Name": "conhost.exe",
+          "CreationDate": "2026-10-19T16:23:27.762154+08:00",
+          "Command": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+        },
+        {
+          "ProcessId": 40224,
+          "ParentProcessId": 81812,
+          "Name": "python.exe",
+          "CreationDate": "2026-10-20T08:52:49.917294+08:00",
+          "Command": "\"C:/Users/boqi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe\" -B F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/compare_frames.py --scene sponza --scene-cache F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/sponza.npz --scene-layout F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/loads/sponza-sparse-motion.json --width 960 --height 540 --warmup 80 --frames 48 --variants screen_grid_ray screen_sparse_cards_grid_ray screen_emissive_surfel_grid_ray --profiles static camera moving turn_lights --primary-query raster --geometry-query cells --object-query cell --object-walk lists --object-update split --object-c"
+        }
+      ],
+      "ProducerFiles": null,
+      "ProducerTail": null
+    },
+    {
+      "StartedAtUtc": "2026-10-20T01:17:00Z",
+      "FinishedAtUtc": "2026-10-20T01:17:57Z",
+      "ProcessId": 94096,
+      "Activity": "API/Wiki and four static Markdown edits; conservative range includes process start and patch completion."
+    }
+  ],
+  "ControlObservationOverlaps": [],
+  "RootHostRelease": {
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "RootHostReadEndedAtUtc": "2026-10-20T00:53:06.2645976Z",
+    "RecordedAtUtc": "2026-10-20T01:10:25.6478471Z"
+  },
+  "PackagePreparation": {
+    "StartedAtUtc": "2026-10-20T01:00:26.9050269Z",
+    "FinishedAtUtc": "2026-10-20T01:00:26.9805092Z",
+    "MasterPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\focused-native-r45\\master.ps1",
+    "ParserErrors": 0,
+    "PackageOrder": "Case1,Case2,Analysis,Libraries,Consumer",
+    "PackageReader": "Consumer after 14 stages",
+    "MasterResultExists": false
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "ProcessStartedAtUtc": "2026-10-20T00:13:02Z",
+  "ObservationStartedAtUtc": "2026-10-20T00:13:02Z",
+  "ObservationEndedAtUtc": "2026-10-20T00:13:21Z",
+  "Kind": "Root queue control metadata",
+  "Detail": "External Bistro python64744 started00:10:29.519790Z and remained running00:13:20.2195364Z; both selected cases were queued."
+}

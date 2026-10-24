@@ -1,0 +1,74 @@
+$ErrorActionPreference='Stop'
+$taskRoot='F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next'
+Set-Location -LiteralPath $taskRoot
+$observed=[DateTime]::UtcNow
+$source='c0effa290eee225c296f779a85b9d79109d789a5'
+$evidence='docs/evidence/ECS-Relations-2026-10-19/final-packages-r45'
+$consumer='tools/SomeEngine.ECS.Relations.AotSmoke'
+[xml]$project=Get-Content -LiteralPath "$consumer/SomeEngine.ECS.Relations.AotSmoke.csproj" -Raw
+$direct=@($project.SelectNodes('//PackageReference')|ForEach-Object{[pscustomobject]@{Include=$_.Include;Version=$_.Version}})
+$assets=Get-Content -LiteralPath "$consumer/obj/project.assets.json" -Raw|ConvertFrom-Json
+$packages=@(foreach($property in $assets.libraries.PSObject.Properties){
+ if($property.Value.type -ne 'package' -or $property.Name -notlike 'SomeEngine.*'){continue}
+ $parts=$property.Name.Split('/')
+ $path=[IO.Path]::GetFullPath("artifacts/ecs-relations/feed/$($parts[0]).$($parts[1]).nupkg")
+ $zip=[IO.Compression.ZipFile]::OpenRead($path)
+ try{
+  $entry=@($zip.Entries|Where-Object FullName -like '*.nuspec')[0]
+  $reader=[IO.StreamReader]::new($entry.Open())
+  try{[xml]$nuspec=$reader.ReadToEnd()}finally{$reader.Dispose()}
+  [pscustomobject]@{Package=$property.Name;Path=$path;RepositoryCommit=$nuspec.GetElementsByTagName('repository')[0].GetAttribute('commit')}
+ }finally{$zip.Dispose()}
+})
+$generatedRoot="$consumer/obj/Release/net10.0/win-x64/generated"
+$generated=@(Get-ChildItem -LiteralPath $generatedRoot -Recurse -File -Filter '*.cs')
+$groups=@(foreach($group in @($generated|Group-Object{$_.Directory.Name}|Sort-Object Name)){
+ $thin=0
+ if($group.Name -match '^SomeEngine\.ECS\.SourceGen\.(BitmapRelation|RelationEdge|Relation|RelationImplementation|SpatialRelation)Generator$'){
+  foreach($file in $group.Group){$thin += [regex]::Matches([IO.File]::ReadAllText($file.FullName),'(?m)^\s*public static (?!partial class\b|class\b)').Count}
+ }
+ [pscustomobject]@{Generator=$group.Name;Files=$group.Count;ThinEntries=$thin}
+})
+$registration=[IO.File]::ReadAllText([IO.Path]::GetFullPath("$generatedRoot/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.EcsTypeGenerator/EcsTypeRegistration.g.cs"))
+$library=@(Get-ChildItem -LiteralPath 'src/SomeEngine.ECS.Relations/obj/Release/net10.0/generated' -Recurse -File -Filter '*.cs')
+$fixedCount=0
+foreach($file in $library){$fixedCount += [regex]::Matches([IO.File]::ReadAllText($file.FullName),'(?m)^\s*public\s+(?:(?:readonly|ref)\s+)*(?:struct|interface)\b').Count}
+$stages=@(Get-Content -LiteralPath "artifacts/ecs-relations/package-stages-$source.json" -Raw|ConvertFrom-Json)
+$products=Get-Content -LiteralPath 'artifacts/relations-measurements/final-packages-r45/products.json' -Raw|ConvertFrom-Json
+$facts=[pscustomobject]@{
+ SourceCommit=$source;ObservedAtUtc=$observed;StageCount=$stages.Count
+ PublicJobCount=@($stages.QueueId|Select-Object -Unique).Count
+ AllStagesPassed=(@($stages|Where-Object ExitCode -ne 0).Count -eq 0)
+ DirectPackageCount=$direct.Count;DirectPackageReferences=$direct
+ PackageScope='SomeEngine packages in the restored project.assets.json'
+ ActualPackageCount=$packages.Count;Packages=$packages
+ GeneratedFileCount=$generated.Count;Generators=$groups;ThinEntryCount=($groups.ThinEntries|Measure-Object -Sum).Sum
+ JobStorageRegistrationCount=[regex]::Matches($registration,'\.RegisterJobStorage<').Count
+ RelationSchemaRegistrationCount=[regex]::Matches($registration,'\.RegisterRelationSchema<').Count
+ LibraryGeneratedFileCount=$library.Count;LibraryFixedTypeCount=$fixedCount;Artifacts=$products.Products
+ EvidenceQueueId='5bc38d23ffdd4c2fa48b9a115101dbbb';InitialReaderExitCode=2;ResumedEvidenceExitCode=0
+}
+$facts|ConvertTo-Json -Depth 10|Set-Content -LiteralPath "$evidence/package-facts.json" -Encoding utf8
+[pscustomobject]@{
+ SourceCommit=$source
+ ConsumerFiles=@($generated|ForEach-Object{[pscustomobject]@{Path=[IO.Path]::GetRelativePath($taskRoot,$_.FullName);Length=$_.Length;LastWriteTimeUtc=$_.LastWriteTimeUtc}})
+ LibraryFiles=@($library|ForEach-Object{[pscustomobject]@{Path=[IO.Path]::GetRelativePath($taskRoot,$_.FullName);Length=$_.Length;LastWriteTimeUtc=$_.LastWriteTimeUtc}})
+}|ConvertTo-Json -Depth 6|Set-Content -LiteralPath "$evidence/generated-files.json" -Encoding utf8
+Copy-Item -LiteralPath "artifacts/ecs-relations/package-stages-$source.json" -Destination "$evidence/package-stages.json" -Force
+Copy-Item -LiteralPath 'artifacts/relations-measurements/final-packages-r45/products.json' -Destination "$evidence/products.json" -Force
+$stageLogMap=@(foreach($stage in $stages){foreach($stream in @('Stdout','Stderr')){
+ $target="stage-logs/$([IO.Path]::GetFileName($stage.$stream))"
+ New-Item -ItemType Directory -Path "$evidence/stage-logs" -Force|Out-Null
+ Copy-Item -LiteralPath $stage.$stream -Destination "$evidence/$target" -Force
+ [pscustomobject]@{Stage=$stage.Stage;Stream=$stream;OriginalPath=$stage.$stream;ArchivedPath=$target}
+}})
+$stageLogMap|ConvertTo-Json -Depth 4|Set-Content -LiteralPath "$evidence/stage-log-map.json" -Encoding utf8
+foreach($queueId in @('b29fc3fd3ed94505adb27bead7eed42c','0943bc78afa94cbd816e22a2a2350079','5bc38d23ffdd4c2fa48b9a115101dbbb')){
+ $destination="$evidence/queues/$queueId"
+ New-Item -ItemType Directory -Path $destination -Force|Out-Null
+ foreach($name in @('result.json','stdout.log','stderr.log')){Copy-Item -LiteralPath "artifacts/benchmark-queue/$queueId/$name" -Destination $destination -Force}
+}
+foreach($name in @('package-input-scripts.json','package-reader-stage.json','evidence-input.json','evidence-stages.json','evidence-submission.json','evidence-preparation.json')){
+ Copy-Item -LiteralPath "artifacts/relations-measurements/final-packages-r45/$name" -Destination "$evidence/$name" -Force
+}
+$facts|Select-Object SourceCommit,StageCount,PublicJobCount,AllStagesPassed,DirectPackageCount,ActualPackageCount,GeneratedFileCount,ThinEntryCount,JobStorageRegistrationCount,RelationSchemaRegistrationCount,LibraryGeneratedFileCount,LibraryFixedTypeCount,@{Name='PackageCommits';Expression={@($_.Packages.RepositoryCommit|Select-Object -Unique)}}|ConvertTo-Json -Depth 5

@@ -26,14 +26,14 @@ public struct PhysicsPoseSystem : ISystem<PoseNodeContext>
     {
         _jobs.Clear();
         var frame = new PhysicsPoseFrame(context.Frame.World, context.Level, _jobs);
-        frame.World.ExecuteQuery(_instances, ref frame, static (QueryCursor rows, ref PhysicsPoseFrame frame) =>
+        frame.World.ExecuteQuery(_instances, ref frame, static (scoped QueryCursor rows, ref PhysicsPoseFrame frame) =>
         {
             foreach (QueryRow row in rows.Rows)
                 foreach (ref PhysicsPoseInstance instance in row.Buffer<PhysicsPoseInstance>().AsSpan())
                     if (instance.Node.Level == frame.Level) Gather(frame.World, row.Entity, ref instance, frame.Jobs);
         });
         foreach (JobHandle job in _jobs) job.Complete();
-        frame.World.ExecuteQuery(_instances, ref frame, static (QueryCursor rows, ref PhysicsPoseFrame frame) =>
+        frame.World.ExecuteQuery(_instances, ref frame, static (scoped QueryCursor rows, ref PhysicsPoseFrame frame) =>
         {
             foreach (QueryRow row in rows.Rows)
                 foreach (ref PhysicsPoseInstance instance in row.Buffer<PhysicsPoseInstance>().AsSpan())

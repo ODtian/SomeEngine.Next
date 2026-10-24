@@ -21,6 +21,8 @@ Rendering world 从共享骨骼缓冲中复制选定 current、previous 范围�
 
 结果持有只读内存，使用期独立于读回缓冲、后续播放与图形设备。Rendering world 释放完成的读回缓冲；feature 释放时排空已经提交的复制。播放重新开始后，先前请求继续持有其原执行身份，新请求记录新的启动标记。
 
+copy 所在帧在提交前取消时，选骨请求的 `Completion` 转为取消，并释放对应读回缓冲。消费者在下次 Game 更新为当前输入重新请求。feature 关闭时同样取消尚未提交的请求；已提交的 copy 按其完成点交付。
+
 `Presentation` 保留视觉局部姿势的两端计算时钟、来源身份及呈现权重，`SourceSamples` 保留逐骨骼两端实际来源样本时间。`SampledBones` 给出范围内已解析的 GPU 来源采样骨骼。插值规则、LOD 与混合 CPU 当前结果的时间职责见 [GPU Pose Frequency](GPU-Pose-Frequency.md)。
 
 ## 在共同图中消费反馈
@@ -32,7 +34,8 @@ Rendering world 把安装标记变化纳入来源身份，并重置对应 GPU �
 以下是消费者算法系统中的调用示例，属于公共扩展用法。`request` 由该叶实例持有，`Converged` 表达调用方算法对完成结果的判断。
 
 ```csharp
-request ??= GpuPoseAnimation.RequestReadback(world, target, requiredBones);
+if (request is null || request.Completion.IsCanceled)
+    request = GpuPoseAnimation.RequestReadback(world, target, requiredBones);
 bool finished = request.Completion.IsCompletedSuccessfully
     && Converged(request.Completion.Result);
 bool accepted = GpuPoseAnimation.SubmitFeedback(
@@ -48,5 +51,7 @@ Game 侧在正常更新窗口读取 Task 的完成值并写入 ECS。Renderer �
 ## 应用诊断入口
 
 `SceneEdit.ReadGpuPose(target, receive)` 与 `SkinningFeature.RequestReadback(section, receive)` 请求完整自身区段，复用相同范围复制与完成实现。应用在帧提交后轮询，GPU 已完成时交付 callback；返回数据采用相同身份、范围和计算信息。
+
+诊断 callback 沿下一次实际提交交付；取消帧后重录时，结果的身份、计算时间和版本来自该次提交。
 
 公共应用示例见 [GpuPoseFeedbackTests](../../../tests/SomeEngine.Runtime.Tests/GpuPoseFeedbackTests.cs)。同步关键骨骼的当次 Game 完成点见 [CPU/GPU Pose Handoff](CPU-GPU-Pose-Handoff.md)。

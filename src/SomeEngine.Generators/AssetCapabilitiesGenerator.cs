@@ -254,7 +254,6 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         code.Append("public const string BuildVersion = ").Append(Literal(buildVersion)).AppendLine(";");
         EmitBlockIdentity(code);
         EmitSelections(code, blocks, importers);
-        code.AppendLine("private sealed class AssetServicesAdded { }");
         code.AppendLine("public static global::System.Collections.Generic.IReadOnlyList<global::SomeEngine.Assets.AssetBlockCapability> BlockCapabilities { get; } = global::System.Array.AsReadOnly(new global::SomeEngine.Assets.AssetBlockCapability[] {");
         foreach (INamedTypeSymbol block in blocks)
             code.Append("new(GetAssetBlockIdentity<").Append(Type(block)).Append(">(), typeof(").Append(Type(block)).AppendLine(")),");
@@ -262,24 +261,16 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         code.AppendLine("public static global::System.Collections.Generic.IReadOnlyList<global::SomeEngine.Assets.AssetImporterCapability> ImporterCapabilities { get; } = global::System.Array.AsReadOnly(new global::SomeEngine.Assets.AssetImporterCapability[] {");
         foreach (Importer importer in importers)
         {
-            code.Append("new(new global::System.Guid(").Append(Literal(importer.Id.ToString())).Append("), typeof(").Append(Type(importer.Type))
-                .Append("), typeof(").Append(Type(importer.Service.TypeArguments[0])).Append("), typeof(").Append(Type(importer.Service.TypeArguments[1]))
+            code.Append("new global::SomeEngine.Assets.AssetImporterCapability<").Append(Type(importer.Type)).Append(", ")
+                .Append(Type(importer.Service.TypeArguments[0])).Append(", ").Append(Type(importer.Service.TypeArguments[1]))
+                .Append(">(new global::System.Guid(").Append(Literal(importer.Id.ToString()))
                 .Append("), global::System.Array.AsReadOnly(new global::SomeEngine.Assets.AssetBlockCapability[] {");
             foreach (INamedTypeSymbol block in importer.Blocks)
                 code.Append("new(GetAssetBlockIdentity<").Append(Type(block)).Append(">(), typeof(").Append(Type(block)).Append(")),");
-            code.Append("}), ").Append(Literal(importer.ImplementationVersion));
-            if (importer.SettingsProvider is { } provider)
-            {
-                code.Append(", static (services, settings) => global::SomeEngine.Assets.Importing.AssetImporter.Bind<")
-                    .Append(Type(importer.Service.TypeArguments[0])).Append(", ").Append(Type(importer.Service.TypeArguments[1]))
-                    .Append(">(new global::System.Guid(").Append(Literal(importer.Id.ToString()))
-                    .Append("), global::System.Array.AsReadOnly(new global::System.Guid[] {");
-                foreach (INamedTypeSymbol block in importer.Blocks)
-                    code.Append("GetAssetBlockIdentity<").Append(Type(block)).Append(">(),");
-                code.Append("}), global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<")
-                    .Append(Type(importer.Type)).Append(">(services), new ").Append(Type(provider)).Append("(), settings)");
-            }
-            code.AppendLine("),");
+            code.Append("}), ");
+            if (importer.SettingsProvider is { } provider) code.Append("new ").Append(Type(provider)).Append("()");
+            else code.Append("null");
+            code.Append(", ").Append(Literal(importer.ImplementationVersion)).AppendLine("),");
         }
         code.AppendLine("});");
         code.AppendLine("public static global::System.Collections.Generic.IReadOnlyList<global::SomeEngine.Assets.AssetImporterSetCapability> ImporterSetCapabilities { get; } = global::System.Array.AsReadOnly(new global::SomeEngine.Assets.AssetImporterSetCapability[] {");
@@ -295,19 +286,10 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         code.AppendLine("});");
         code.AppendLine("public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddAssetCapabilities(global::Microsoft.Extensions.DependencyInjection.IServiceCollection services) {");
         code.AppendLine("global::System.ArgumentNullException.ThrowIfNull(services);");
-        code.AppendLine("foreach (var existing in services) if (existing.ServiceType == typeof(AssetServicesAdded)) return services;");
-        code.AppendLine("var blockIdentities = new global::System.Collections.Generic.Dictionary<global::System.Guid, global::SomeEngine.Assets.AssetBlockCapability>();");
-        code.AppendLine("foreach (var block in BlockCapabilities) {");
-        code.AppendLine("if (block.Id == global::System.Guid.Empty) throw new global::System.InvalidOperationException($\"Block {block.BlockType} has an empty persistent identity.\");");
-        code.AppendLine("if (blockIdentities.TryGetValue(block.Id, out var previous)) throw new global::System.InvalidOperationException($\"Block identity {block.Id} is shared by {previous.BlockType} and {block.BlockType}.\");");
-        code.AppendLine("blockIdentities.Add(block.Id, block);");
-        code.AppendLine("}");
-        code.AppendLine("foreach (var existing in services) { if (existing.ImplementationInstance is global::SomeEngine.Assets.AssetBlockCapability registeredBlock && blockIdentities.TryGetValue(registeredBlock.Id, out var declared) && registeredBlock.BlockType != declared.BlockType) throw new global::System.InvalidOperationException($\"Block identity {registeredBlock.Id} is shared by {registeredBlock.BlockType} and {declared.BlockType}.\"); }");
-        code.AppendLine("var installedBlocks = new global::System.Collections.Generic.HashSet<global::System.Guid>();");
         code.AppendLine("var installedImporters = new global::System.Collections.Generic.Dictionary<global::System.Guid, global::SomeEngine.Assets.AssetImporterCapability>();");
-        code.AppendLine("foreach (var existing in services) { if (existing.ImplementationInstance is global::SomeEngine.Assets.AssetBlockCapability block) installedBlocks.Add(block.Id); if (existing.ImplementationInstance is global::SomeEngine.Assets.AssetImporterCapability importer) installedImporters[importer.Id] = importer; }");
+        code.AppendLine("var installedSets = new global::System.Collections.Generic.HashSet<global::System.Guid>();");
+        code.AppendLine("foreach (var existing in services) { if (existing.ImplementationInstance is global::SomeEngine.Assets.AssetImporterCapability importer) installedImporters[importer.Id] = importer; if (existing.ImplementationInstance is global::SomeEngine.Assets.AssetImporterSetCapability set) installedSets.Add(set.Id); }");
         code.AppendLine("foreach (var importer in ImporterCapabilities) if (installedImporters.TryGetValue(importer.Id, out var previous) && previous.ImporterType != importer.ImporterType) throw new global::System.InvalidOperationException($\"Importer identity {importer.Id} is shared by {previous.ImporterType} and {importer.ImporterType}.\");");
-        code.AppendLine("services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton(new AssetServicesAdded()));");
         foreach (Importer importer in importers)
         {
             code.Append("if (!installedImporters.ContainsKey(new global::System.Guid(").Append(Literal(importer.Id.ToString())).AppendLine("))) {");
@@ -318,7 +300,6 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
                 .Append(Type(importer.Type)).AppendLine(">(services)));");
             code.AppendLine("}");
         }
-        code.AppendLine("foreach (var block in BlockCapabilities) if (!installedBlocks.Contains(block.Id)) services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton(block));");
         code.AppendLine("foreach (var importer in ImporterCapabilities) if (!installedImporters.ContainsKey(importer.Id)) services.Add(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton(importer));");
         code.AppendLine("foreach (var set in ImporterSetCapabilities) {");
         code.AppendLine("int installed = -1;");

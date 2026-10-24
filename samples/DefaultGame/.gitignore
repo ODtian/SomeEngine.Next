@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+Library/
+*.import.json
+assets/**/*.asset
+assets/Shaders/generated/
+CrowdInline/
+CrowdCache/

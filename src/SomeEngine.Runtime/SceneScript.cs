@@ -3,7 +3,11 @@ using SomeEngine.Animation.Pose;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Resources;
+using SomeEngine.Render.Components;
+using SomeEngine.Render.Frame;
+using SomeEngine.Render.Shadows;
 using SomeEngine.Render.Features.Skinning;
+using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Runtime;
 
@@ -30,8 +34,20 @@ public sealed class SceneScript
         Actions = Array.AsReadOnly(ordered);
     }
 
+    public ClusterShadingPath? ShadingPath { get; init; }
     public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
+    /// <summary>Maximum hierarchy, candidate and deferred entries retained by the geometry pipeline.</summary>
+    public uint ClusterWorkCapacity { get; init; } = 1_048_576;
+    public uint BlendTriangleCapacity { get; init; } = ClusterPipelineOptions.DefaultBlendTriangleCapacity;
+    public uint BlendReferenceCapacity { get; init; } = 1_048_576;
+    public Action<ClusterBlendMetrics>? BlendFrameCompleted { get; init; }
+    public Func<ApplicationRendering, IApplicationColorFeature>? CreateColorFeature { get; init; }
     public bool WaitForFrames { get; init; } = true;
+    public float RasterEdgePixels { get; init; } = 4;
+    public bool UseCameraHistory { get; init; } = true;
+    public VirtualShadowMapSettings ShadowSettings { get; init; } = new();
+    public TemporalResolveSettings TemporalSettings { get; init; } = TemporalResolveSettings.Default;
+
 
     public ApplicationScene Application { get; }
     public string ContentDirectory => Application.ContentDirectory;
@@ -82,22 +98,50 @@ public sealed record SceneImage(int Frame, int Width, int Height, ReadOnlyMemory
     }
 }
 
-/// <summary>Scene operations available during a script action, before extraction of that frame.</summary>
+/// <summary>Scene operations available during a frame action.</summary>
 public sealed class SceneEdit
 {
     private readonly RuntimeScene _scene;
     private readonly NativeWindow _window;
     private readonly List<Action<SceneImage>> _images = [];
+    private readonly List<Action<SceneLinearImage>> _linearImages = [];
     private readonly List<(Entity Target, Action<GpuPoseReadback> Receive)> _poseReads = [];
     private bool _active;
 
     internal SceneEdit(RuntimeScene scene, NativeWindow window) => (_scene, _window) = (scene, window);
     internal IReadOnlyList<Action<SceneImage>> Images => _images;
+    internal IReadOnlyList<Action<SceneLinearImage>> LinearImages => _linearImages;
     internal IReadOnlyList<(Entity Target, Action<GpuPoseReadback> Receive)> PoseReads => _poseReads;
-    internal void Begin(bool clearImages = true) { if (clearImages) { _images.Clear(); _poseReads.Clear(); } _active = true; }
+    internal bool FrameCanceled { get; private set; }
+    internal bool CameraCut { get; private set; }
+    internal bool ShadowMapRefreshRequested { get; private set; }
+    internal ClusterShadingPath? ShadingPath { get; private set; }
+    internal void Begin()
+    {
+        _images.Clear();
+        _linearImages.Clear();
+        _poseReads.Clear();
+        ShadingPath = null;
+        FrameCanceled = CameraCut = ShadowMapRefreshRequested = false;
+        _active = true;
+    }
     internal void End() => _active = false;
 
     public IReadOnlyList<Entity> MeshEntities { get { RequireAction(); return _scene.GetMeshEntities(); } }
+    public Matrix4x4 CameraView { get { RequireAction(); return _scene.Camera.View; } }
+
+    public void SetShadingPath(ClusterShadingPath path)
+    {
+        RequireAction();
+        ShadingPath = path;
+    }
+
+    public void SetWorldOrigin(WorldOrigin origin)
+    {
+        RequireAction();
+        _scene.SetWorldOrigin(origin);
+        CameraCut = true;
+    }
 
     public void SetOutputSize(int width, int height)
     {
@@ -117,6 +161,18 @@ public sealed class SceneEdit
         return _scene.GetMaterial(entity, index);
     }
 
+    public Mesh GetMesh(Entity entity)
+    {
+        RequireAction();
+        return _scene.GetMesh(entity);
+    }
+
+    public void ReplaceMesh(Entity entity, Mesh mesh)
+    {
+        RequireAction();
+        _scene.ReplaceMesh(entity, mesh);
+    }
+
     public void ReplaceMaterial(Entity entity, Material material, int index = 0)
     {
         RequireAction();
@@ -131,6 +187,62 @@ public sealed class SceneEdit
         return _scene.AddEntity(source, transform);
     }
 
+    /// <summary>Adds generated geometry with its material bindings to the game world.</summary>
+    public Entity AddEntity(Mesh mesh, IReadOnlyList<Material> materials, TransformQvvs transform, float boundsExpansion = 0)
+    {
+        RequireAction();
+        return _scene.AddEntity(mesh, materials, transform, boundsExpansion);
+    }
+
+    public Entity AddMaterialDecal(Material material, TransformQvvs transform, int order = 0)
+    {
+        RequireAction();
+        return _scene.AddMaterialDecal(material, transform, order);
+    }
+
+    public void SetMaterialDecal(Entity entity, Material material, int order = 0)
+    {
+        RequireAction();
+        _scene.SetMaterialDecal(entity, material, order);
+    }
+
+    public void SetEntityTransform(Entity entity, TransformQvvs transform)
+    {
+        RequireAction();
+        _scene.SetEntityTransform(entity, transform);
+    }
+
+    public void SetXray(Entity entity, Xray effect)
+    {
+        RequireAction();
+        _scene.SetXray(entity, effect);
+    }
+
+    public void RemoveXray(Entity entity)
+    {
+        RequireAction();
+        _scene.RemoveXray(entity);
+    }
+
+    public IReadOnlyList<Entity> PointLights { get { RequireAction(); return _scene.GetPointLights(); } }
+
+    public void SetPointLight(Entity entity, PointLight light)
+    {
+        RequireAction();
+        _scene.SetPointLight(entity, light);
+    }
+
+    public void SetDirectionalLight(Entity entity, DirectionalLight light)
+    {
+        RequireAction();
+        _scene.SetDirectionalLight(entity, light);
+    }
+
+    /// <summary>Records this frame and discards it before GPU submission.</summary>
+    public void CancelFrame() { RequireAction(); FrameCanceled = true; }
+    public void ResetCameraHistory() { RequireAction(); CameraCut = true; }
+    public void RefreshShadowMaps() { RequireAction(); ShadowMapRefreshRequested = true; }
+
     public void DeleteEntity(Entity entity)
     {
         RequireAction();
@@ -144,6 +256,12 @@ public sealed class SceneEdit
         _images.Add(receive);
     }
 
+    public void CaptureLinearImage(Action<SceneLinearImage> receive)
+    {
+        RequireAction();
+        _linearImages.Add(receive);
+    }
+
     /// <summary>Reads this frame's GPU model-space section after rendering has produced its history pair.</summary>
     public void ReadGpuPose(Entity target, Action<GpuPoseReadback> receive)
     {
@@ -153,6 +271,6 @@ public sealed class SceneEdit
 
     private void RequireAction()
     {
-        if (!_active) throw new InvalidOperationException("Scene editing requires an executing script action.");
+        if (!_active) throw new InvalidOperationException("Scene editing requires an executing frame action.");
     }
 }

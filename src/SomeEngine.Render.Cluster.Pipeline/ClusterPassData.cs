@@ -14,6 +14,7 @@ internal struct ClusterTraversalSeedUniforms
     internal uint MaxNodes;
     internal uint ArgsOffset;
     internal uint UseInstanceGroups;
+    internal uint InvocationCountIndex;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
@@ -127,7 +128,6 @@ internal readonly record struct ClusterTessellationResetParameters(GraphBufferId
 internal readonly record struct ClusterContinuationResetParameters(
     GraphBufferId CandidateCount,
     GraphBufferId TraversalArguments0,
-    GraphBufferId TraversalArguments1,
     GraphBufferId CandidateArgsInitialization,
     GraphBufferId CandidateArgs,
     GraphBufferId DrawArgs,
@@ -147,12 +147,6 @@ internal readonly record struct ClusterContinuationResetParameters(
             WriteCoverage.Complete);
         _ = access.Write(
             data.TraversalArguments0,
-            BufferRange.Whole,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            WriteCoverage.Complete);
-        _ = access.Write(
-            data.TraversalArguments1,
             BufferRange.Whole,
             PipelineSync.Copy,
             ResourceAccess.CopyDestination,
@@ -200,14 +194,12 @@ internal readonly record struct ClusterContinuationResetParameters(
     {
         Buffer candidateCount = commands.GetBuffer(data.CandidateCount);
         Buffer traversal0 = commands.GetBuffer(data.TraversalArguments0);
-        Buffer traversal1 = commands.GetBuffer(data.TraversalArguments1);
         Buffer drawArgs = commands.GetBuffer(data.DrawArgs);
         Buffer phaseTwoCandidateCount = commands.GetBuffer(data.PhaseTwoCandidateCount);
         Buffer phaseTwoCandidateArgs = commands.GetBuffer(data.PhaseTwoCandidateArgs);
         Buffer postDrawArgs = commands.GetBuffer(data.PostDrawArgs);
         commands.ClearBuffer(candidateCount, new BufferRange(0, sizeof(uint)));
         commands.ClearBuffer(traversal0, new BufferRange(0, traversal0.Info.Size));
-        commands.ClearBuffer(traversal1, new BufferRange(0, traversal1.Info.Size));
         commands.ClearBuffer(drawArgs, new BufferRange(0, drawArgs.Info.Size));
         commands.ClearBuffer(
             phaseTwoCandidateCount,
@@ -230,7 +222,6 @@ internal readonly record struct ClusterDeferredResumeResetParameters(
     GraphBufferId CandidateArgsInitialization,
     GraphBufferId CandidateArgs,
     GraphBufferId TraversalArguments0,
-    GraphBufferId TraversalArguments1,
     GraphBufferId DrawArgs)
 {
     internal static void Declare(
@@ -245,7 +236,6 @@ internal readonly record struct ClusterDeferredResumeResetParameters(
             ResourceAccess.CopySource);
         Write(ref access, data.CandidateArgs, new BufferRange(0, 16));
         Write(ref access, data.TraversalArguments0, BufferRange.Whole);
-        Write(ref access, data.TraversalArguments1, BufferRange.Whole);
         Write(ref access, data.DrawArgs, new BufferRange(0, 16));
     }
 
@@ -255,7 +245,6 @@ internal readonly record struct ClusterDeferredResumeResetParameters(
     {
         Clear(ref commands, data.CandidateCount);
         Clear(ref commands, data.TraversalArguments0);
-        Clear(ref commands, data.TraversalArguments1);
         Clear(ref commands, data.DrawArgs);
         commands.CopyBuffer(new BufferCopy(
             commands.GetBuffer(data.CandidateArgsInitialization),
@@ -323,7 +312,7 @@ internal readonly record struct ClusterFrameMetricsSourceResetParameters(
     GraphBufferId PhaseTwoTessellationCounters)
 {
     private static readonly BufferRange RasterReserveRange =
-        new(0, 6 * sizeof(uint));
+        new(0, 4 * sizeof(uint));
     private static readonly BufferRange ScalarRange = new(0, sizeof(uint));
     private static readonly BufferRange TessellationRange = new(0, 8 * sizeof(uint));
 
@@ -558,6 +547,7 @@ internal struct ClusterFrameMetricsReadbackParameters
     internal GraphBufferId SoftwareDebug;
     internal GraphBufferId PhaseOneTessellationCounters;
     internal GraphBufferId PhaseTwoTessellationCounters;
+    internal GraphBufferId WorkStatus;
     internal GraphTextureId Visibility;
     internal uint VisibilityProbeX;
     internal uint VisibilityProbeY;
@@ -574,10 +564,8 @@ internal struct ClusterFrameMetricsReadbackParameters
         Copy(ref commands, parameters.RasterReserve, 2 * sizeof(uint),
             parameters.Destination, ClusterPipelineSystem.RasterReserveReadbackOffset,
             2 * sizeof(uint));
-        Copy(ref commands, parameters.RasterReserve, 4 * sizeof(uint),
-            parameters.Destination, ClusterPipelineSystem.GeometryWorkReadbackOffset, 2 * sizeof(uint));
         Copy(ref commands, parameters.DeformAllocation, 0,
-            parameters.Destination, ClusterPipelineSystem.GeometryWorkReadbackOffset + 2 * sizeof(uint), sizeof(uint));
+            parameters.Destination, ClusterPipelineSystem.DeformAllocationReadbackOffset, sizeof(uint));
         Copy(ref commands, parameters.ShadeCount, 0,
             parameters.Destination, ClusterPipelineSystem.ShadeBinCountReadbackOffset,
             sizeof(uint));
@@ -593,6 +581,9 @@ internal struct ClusterFrameMetricsReadbackParameters
         Copy(ref commands, parameters.PhaseTwoTessellationCounters, 0,
             parameters.Destination, ClusterPipelineSystem.PhaseTwoTessellationCountersReadbackOffset,
             8 * sizeof(uint));
+        Copy(ref commands, parameters.WorkStatus, 0,
+            parameters.Destination, ClusterPipelineSystem.WorkMetricsReadbackOffset,
+            ClusterPipelineSystem.WorkMetricsByteSize);
         Buffer destination = commands.GetBuffer(parameters.Destination);
         Texture visibility = commands.GetTexture(parameters.Visibility);
         commands.CopyTextureToBuffer(new BufferTextureCopy(

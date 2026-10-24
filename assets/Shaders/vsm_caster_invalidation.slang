@@ -1,4 +1,6 @@
+#define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
+#include "vsm_depth_cache.slang"
 #include "resource_effects.slang"
 
 struct VirtualShadowInvalidationUniforms
@@ -10,20 +12,24 @@ struct VirtualShadowInvalidationUniforms
     uint FrameIndex;
     uint HierarchyWordsPerView;
     uint MipLevelCount;
-    uint Pad2;
+    uint DeferredChangedInstanceCount;
 };
 
 ConstantBuffer<VirtualShadowInvalidationUniforms> Invalidation;
 StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
 StructuredBuffer<float4> InstanceWorldBounds;
 StructuredBuffer<uint> ChangedInstances;
+#include "cluster_depth_cache.slang"
+StructuredBuffer<uint> PreviousDepthCacheClasses;
+StructuredBuffer<float4> LodWorldBounds;
 StructuredBuffer<uint> RequestedShadowPages;
 StructuredBuffer<uint> RequestedPageFlags;
-StructuredBuffer<uint4> PageMetadata;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<VirtualShadowPageMetadata> PageMetadata;
 StructuredBuffer<uint> AllocatedPageHierarchy;
 StructuredBuffer<uint4> AllocatedPageRectBounds;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint4> ShadowPageTable;
+RWStructuredBuffer<uint> ShadowPageTable;
 
 bool OverlapsAllocatedPages(
     uint viewIndex,
@@ -87,7 +93,7 @@ bool ProjectShadowBounds(
             (corner & 1u) != 0u ? worldMax.x : worldMin.x,
             (corner & 2u) != 0u ? worldMax.y : worldMin.y,
             (corner & 4u) != 0u ? worldMax.z : worldMin.z);
-        float4 clip = mul(float4(position, 1.0), view.LightViewProjection);
+        float4 clip = ProjectVirtualShadowClip(view, position);
         minW = min(minW, clip.w);
         maxW = max(maxW, clip.w);
         sideDistances = min(sideDistances, float4(clip.xy, -clip.xy) - clip.w);
@@ -136,8 +142,10 @@ void InvalidateBoundsInView(
     uint viewIndex,
     VirtualShadowMapParameters view,
     float3 worldMin,
-    float3 worldMax)
+    float3 worldMax, uint depthCacheClass, bool deferred)
 {
+    if ((view.Flags & VSM_VIEW_CACHED_DISTANT_LIGHT) != 0u) return;
+    if (depthCacheClass == 0u && (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u) return;
     if (any(worldMin > worldMax) || BoundsOutsideLocalLight(view, worldMin, worldMax))
         return;
     float2 uvMin;
@@ -145,10 +153,9 @@ void InvalidateBoundsInView(
     if (!ProjectShadowBounds(view, worldMin, worldMax, uvMin, uvMax))
         return;
 
-    uint firstMip = view.LightKind == VSM_LIGHT_DIRECTIONAL ? 0u : view.MinMipLevel;
-    uint mipCount = view.LightKind == VSM_LIGHT_DIRECTIONAL
-        ? 1u
-        : max(view.MipLevelCount, 1u);
+    uint firstMip = VirtualShadowFirstMip(view);
+    // Casters affect the view's mip domain: directional mip zero or local mips.
+    uint mipCount = max(view.MipLevelCount, 1u);
 
     [loop]
     for (uint mip = firstMip; mip < mipCount; mip++)
@@ -175,20 +182,33 @@ void InvalidateBoundsInView(
                 if (tableIndex >= Invalidation.PageTableEntryCount)
                     continue;
                 int2 worldPage = VirtualShadowWorldPage(view, mip, localPage);
-                uint4 entry = ShadowPageTable[tableIndex];
-                if (!IsVirtualShadowPageTag(entry, worldPage) ||
-                    entry.x == VSM_PAGE_UNMAPPED || entry.x == VSM_PAGE_LOCKED)
+                uint entry = ShadowPageTable[tableIndex];
+                if ((entry & VSM_PAGE_RENDERING) == 0u ||
+                    entry == VSM_PAGE_UNMAPPED || entry == VSM_PAGE_LOCKED)
                 {
                     continue;
                 }
                 uint atlasPage;
-                if (!DecodeVirtualShadowPage(entry.x, atlasPage))
+                if (!DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, atlasPage))
                     continue;
-                uint requestFlags = PageMetadata[atlasPage].z;
+                if (PageMetadata[atlasPage].Generation != view.CacheGeneration || any(PageMetadata[atlasPage].WorldPage != worldPage)) continue;
+                uint requestFlags = PageMetadata[atlasPage].RequestFlags;
                 if (RequestedShadowPages[tableIndex] == Invalidation.FrameIndex)
                     requestFlags = RequestedPageFlags[tableIndex];
                 uint ignored;
-                InterlockedExchange(ShadowPageTable[tableIndex].w, 0u, ignored);
+                if (deferred)
+                {
+                    InterlockedOr(PageMetadata[atlasPage].Flags, VSM_PAGE_DEFERRED_INVALIDATION, ignored);
+                    continue;
+                }
+                uint invalidation = depthCacheClass == 1u ? VSM_PAGE_INVALIDATE_STATIC | VSM_PAGE_INVALIDATE_DYNAMIC
+                    : VSM_PAGE_INVALIDATE_DYNAMIC;
+                // Dynamic-only coarse retention is an explicit per-view policy.
+                if (depthCacheClass == 0u && (view.Flags & VSM_VIEW_FORCE_CACHE_DYNAMIC_COARSE) != 0u &&
+                    (requestFlags & VSM_PAGE_REQUEST_DETAIL) == 0u) continue;
+                InterlockedOr(PageMetadata[atlasPage].Flags, invalidation, ignored);
+                if (depthCacheClass == 1u) InterlockedExchange(PageMetadata[atlasPage].StaticDepthGeneration, 0u, ignored);
+                InterlockedAnd(ShadowPageTable[tableIndex], ~VSM_PAGE_ANY_DEPTH, ignored);
             }
         }
     }
@@ -202,6 +222,19 @@ void InvalidateMovedVirtualShadowCasters(uint3 group : SV_GroupID, uint lane : S
     if (changedIndex >= Invalidation.ChangedInstanceCount)
         return;
     uint instanceId = ChangedInstances[changedIndex];
+    bool deferred = changedIndex >= Invalidation.ChangedInstanceCount - Invalidation.DeferredChangedInstanceCount;
+    if ((instanceId & 0x80000000u) != 0u)
+    {
+        uint index = instanceId & 0x7fffffffu;
+        float3 low = LodWorldBounds[index * 2u].xyz;
+        float3 high = LodWorldBounds[index * 2u + 1u].xyz;
+        uint depthClass = LoadTargetDepthCacheClass(uint(LodWorldBounds[index * 2u].w));
+        for (uint viewIndex = lane; viewIndex < Invalidation.ViewCount; viewIndex += 64u)
+            InvalidateBoundsInView(viewIndex, ShadowViews[viewIndex], low, high, depthClass, true);
+        return;
+    }
+    bool rasterInputsChanged = (instanceId & 0x40000000u) != 0u;
+    instanceId &= 0x3fffffffu;
     float3 currentMin = InstanceWorldBounds[instanceId * 4u].xyz;
     float3 currentMax = InstanceWorldBounds[instanceId * 4u + 1u].xyz;
     float3 previousMin = InstanceWorldBounds[instanceId * 4u + 2u].xyz;
@@ -210,7 +243,9 @@ void InvalidateMovedVirtualShadowCasters(uint3 group : SV_GroupID, uint lane : S
     for (uint viewIndex = lane; viewIndex < Invalidation.ViewCount; viewIndex += 64u)
     {
         VirtualShadowMapParameters view = ShadowViews[viewIndex];
-        InvalidateBoundsInView(viewIndex, view, currentMin, currentMax);
-        InvalidateBoundsInView(viewIndex, view, previousMin, previousMax);
+        uint currentClass = rasterInputsChanged ? 1u : LoadTargetDepthCacheClass(instanceId);
+        InvalidateBoundsInView(viewIndex, view, currentMin, currentMax, currentClass, deferred);
+        uint previousClass = rasterInputsChanged ? 1u : (PreviousDepthCacheClasses[instanceId >> 5u] >> (instanceId & 31u)) & 1u;
+        InvalidateBoundsInView(viewIndex, view, previousMin, previousMax, previousClass, deferred);
     }
 }
