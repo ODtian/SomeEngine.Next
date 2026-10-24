@@ -27,9 +27,9 @@ internal readonly record struct RenderMeshSkin(SkinBinding Binding, RenderSkinJo
 internal readonly record struct RenderBoneSectionData(Skeleton Skeleton, RenderBoneParent[] Parents,
     Matrix4x4[] Current, ulong Version, ulong BindingVersion, QuantizedClipData? Clip,
     uint Starts, ulong InputNumber, double CalculationTime, float SampleTime,
-    GpuPoseStateMachine? StateMachine, float[] Controls, float PlaybackTime, bool Playing) : IComponent
+    GpuPoseStateMachine? StateMachine, GpuPoseBlend? Blend, float[] Controls, float PlaybackTime, bool Playing) : IComponent
 {
-    internal bool IsGpu => Clip is not null || StateMachine is not null;
+    internal bool IsGpu => Clip is not null || StateMachine is not null || Blend is not null;
 }
 
 /// <summary>Copies pose controls and completed CPU sections through the shared extraction window.</summary>
@@ -103,7 +103,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
             if (section.Input != _input) { _removedSections.Add(source); continue; }
             _gpuControls.TryGetValue(source, out GpuPoseTarget gpu);
             ModelPose model = source.ModelPose;
-            bool isGpu = gpu.Clip is not null || gpu.StateMachine is not null;
+            bool isGpu = gpu.Clip is not null || gpu.StateMachine is not null || gpu.Blend is not null;
             bool copied = !isGpu && (section.CpuVersion != model.Version || section.Data.IsGpu);
             if (copied)
             {
@@ -114,9 +114,9 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                 }
                 model.GetSection(model.SectionCount - 1).Transforms.CopyTo(section.Capture);
             }
-            if (gpu.StateMachine is not null)
+            if (gpu.StateMachine is not null || gpu.Blend is not null)
             {
-                int count = gpu.StateMachine.InputCount;
+                int count = gpu.StateMachine?.InputCount ?? gpu.Blend!.InputCount;
                 if (section.ControlCapture.Length != count)
                 {
                     section.ControlCapture = new float[count];
@@ -130,7 +130,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                 isGpu ? gpu.InputNumber : _input,
                 isGpu ? gpu.CalculationTime : model.Time,
                 isGpu ? gpu.SampleTime : (float)model.SampleTime,
-                gpu.StateMachine, section.ControlValues, gpu.PlaybackTime, gpu.Playing);
+                gpu.StateMachine, gpu.Blend, section.ControlValues, gpu.PlaybackTime, gpu.Playing);
         }
         _removedMeshes.Clear();
         foreach (Entity source in _meshes.Keys) if (!_meshSources.Contains(source)) _removedMeshes.Add(source);
@@ -210,7 +210,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                 (section.Current, section.Capture) = (section.Capture, section.Current);
                 section.CpuVersion = data.Version;
             }
-            if (data.StateMachine is not null)
+            if (data.StateMachine is not null || data.Blend is not null)
                 (section.ControlValues, section.ControlCapture) = (section.ControlCapture, section.ControlValues);
             data = data with { Current = data.IsGpu ? [] : section.Current, Controls = section.ControlValues };
             context.Upsert(section.Entity, data);
