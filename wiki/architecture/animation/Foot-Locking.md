@@ -6,7 +6,7 @@
 
 `FootLockRig` 保存骨盆编号及 `FootLockLeg`。腿的顺序对应选定路径的足部轨道；每项引用同一骨架的 `GpuTwoBoneChain`、GPU 目标编号、根骨骼局部弯曲方向和末端局部足底法线。`PelvisBone` 同时提供来源高度与 `GpuTwoBoneParameters.TranslationBone` 的配置。
 
-`FootLockParameters.Source` 是描述实际 GPU 来源的选定路径及时间映射。来源姿势通过 `PosePredictionBatch` 一次采样骨盆、各腿的根/中间/末端及脚跟/脚尖，接触种类通过 `FootPrediction` 复用已有动作数据。`ContactWindow` 是绑定接触窗口的叶节点时钟秒数；窗口推进时重新绑定，有限路径的终点继续复用末段数据。
+`FootLockParameters.Source` 是描述实际 GPU 来源的初始选定路径及时间映射，安装后由 `FootLockInstance.Source` 保存当前选择。来源姿势通过 `PosePredictionBatch` 一次采样骨盆、各腿的根/中间/末端及脚跟/脚尖，接触种类通过 `FootPrediction` 复用已有动作数据。`ContactWindow` 是绑定接触窗口的叶节点时钟秒数；窗口推进时重新绑定，有限路径的终点继续复用末段数据。
 
 每次安装分配该角色自己的连续采样、查询、目标和接触数组。`FootLockInstance.Contacts` 提供当前接触种类和完整 `FootContactTarget`，其中包括支撑实体、局部锚点、法线、当前变换及表面版本。共同启动标记变化时重新建立接触历史。
 
@@ -71,3 +71,5 @@ AnimationSystems.Add(systems, new FootLockSystem(), AnimationPhase.Composition);
 `FootLockSystem` 注册在 GPU 来源系统之后。它先收集活动叶节点，随后在各自的 World 查询范围中读取实际几何并发布目标。Game 阶段完成移动和碰撞树维护后，动画阶段取得同一帧的变换；提取复制目标和骨盆位移，Rendering world 据此求解。
 
 动作接触与时间映射见 [Foot Motion](Foot-Motion.md)，实际地表与锚点接口见 [Foot Support](Foot-Support.md)。公开应用消费见 [FootLockRenderingTests](../../../tests/SomeEngine.Runtime.Tests/FootLockRenderingTests.cs)。
+
+提前摆腿、未来根/移动与落点、动作切换接续和分项成本见 [Future Foot Placement](Future-Foot-Placement.md)。

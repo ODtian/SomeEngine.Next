@@ -64,13 +64,27 @@ public sealed class FootSupportQueries(ICollisionQueries scene, FootSupportSetti
             _sweeps[index] = new(position + settings.Up * settings.Above, stride.Radius,
                 -settings.Up, settings.Above + settings.Below);
         }
+        SweepEnvelope(samples);
+    }
+
+    /// <summary>Samples an ordered world-space foot path; fractions follow the supplied sample order.</summary>
+    public void SampleEnvelope(ReadOnlySpan<Vector3> path, float radius, Span<FootTerrainSample> samples)
+    {
+        for (int index = 0; index < samples.Length; index++)
+            _sweeps[index] = new(path[index] + settings.Up * settings.Above, radius,
+                -settings.Up, settings.Above + settings.Below);
+        SweepEnvelope(samples);
+    }
+
+    private void SweepEnvelope(Span<FootTerrainSample> samples)
+    {
         scene.SweepSphere(_sweeps.AsSpan(0, samples.Length), _hits.AsSpan(0, samples.Length), _found.AsSpan(0, samples.Length));
         for (int index = 0; index < samples.Length; index++)
         {
             float fraction = (float)index / (samples.Length - 1);
             Vector3 center = _found[index]
                 ? _sweeps[index].Center + _sweeps[index].Direction * _hits[index].Distance
-                : Vector3.Lerp(stride.Start, stride.Landing, fraction);
+                : _sweeps[index].Center - settings.Up * settings.Above;
             samples[index] = new(fraction, _found[index], center, _hits[index]);
         }
     }
