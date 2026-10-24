@@ -81,6 +81,23 @@ internal static class QueryMembersChecks
             throw new InvalidOperationException("Bound columns must retain the query selection and write versions while reading row buffers.");
         world.ReleaseQuery(columns);
 
+        QueryHandle buffers = world.Query(world.QueryDefinition().Read<Visibility>().WriteBuffer<Visits>());
+        world.ExecuteQuery(buffers, static (scoped QueryCursor rows) =>
+        {
+            foreach (QueryChunkView chunk in rows.Chunks)
+            {
+                var enabled = chunk.ReadEnabledColumn<Visibility>();
+                var visits = chunk.WriteBufferColumn<Visits>();
+                foreach (int row in chunk.RowIndices)
+                    if (enabled[row]) visits[row][0].Count++;
+            }
+        });
+        world.ExecuteBufferRead<Visits, int>(first, ref visited, static (values, ref visited) => visited = values[0].Count);
+        if (visited != 4) throw new InvalidOperationException("Bound writable buffer columns must retain the enabled updates.");
+        world.ExecuteBufferRead<Visits, int>(held, ref visited, static (values, ref visited) => visited = values[0].Count);
+        if (visited != 1) throw new InvalidOperationException("Bound enable columns must read each row's actual enable bit.");
+        world.ReleaseQuery(buffers);
+
         Entity Create()
         {
             Entity entity = world.CreateEntity(new Visibility());
