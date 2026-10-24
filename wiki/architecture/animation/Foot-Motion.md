@@ -69,6 +69,8 @@ var feet = new FootPrediction(request, lookAhead: 1.1f);
 
 `SamplePose` 按需经同一个选定路径返回根、脚跟、脚尖三个模型矩阵，用于需要当次完整姿势采样精度的消费者。窗口查询复用已绑定数据和工作区。选择新路径、混合曲线或时间基准时，以新的请求绑定窗口。
 
+`FootPrediction` 的可选 `parentPose` 参数将父骨架已经就绪的模型结果传入窗口分析与精确采样。未来接触到摆腿包络、骨盆及当前支撑的连接见 [Future Foot Placement](Future-Foot-Placement.md)。
+
 源码：[FootMotion](../../../src/SomeEngine.Animation.Pose/FootMotion.cs)、[FootMotionBlock](../../../src/SomeEngine.Animation.Pose/FootMotionBlock.cs)、[FootMotionImporter](../../../src/SomeEngine.Animation.Pose.Importers/FootMotionImporter.cs)、[FootPrediction](../../../src/SomeEngine.Animation.Pose/FootPrediction.cs)。
 
 选定足部轨迹与真实场景几何之间的支撑目标转换见 [Foot Support](Foot-Support.md)。
