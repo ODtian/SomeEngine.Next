@@ -81,11 +81,11 @@ public static partial class GpuPoseAnimation
 
     public static void AddSystems(SystemGroup<ImmediateSystemContext> systems)
     {
-        AnimationSystems.Add(systems, new GpuPoseFrameSystem(), AnimationPhase.Properties);
-        AnimationSystems.Add(systems, new GpuClipSystem(), AnimationPhase.Properties);
-        AnimationSystems.Add(systems, new GpuStateSystem(), AnimationPhase.Properties);
-        AnimationSystems.Add(systems, new GpuBlendSystem(), AnimationPhase.Properties);
-        AnimationSystems.Add(systems, new GpuRigSystem(), AnimationPhase.Properties);
+        AnimationSystems.Add(systems, new GpuPoseFrameSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuClipSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuStateSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuBlendSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuRigSystem(), AnimationPhase.CompositionInputs);
         AnimationSystems.Add(systems, new CpuBoneSystem(), AnimationPhase.Completion);
     }
 }

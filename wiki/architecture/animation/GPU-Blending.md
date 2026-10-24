@@ -14,7 +14,7 @@
 
 `GpuBlendSpace` 在构造时按 `sampleRate` 对其来源片段进行均匀量化，保留 `BlendSpace` 的坐标、区间、三角形与相位偏移。`Clips` 提供这些就绪量化数据，可通过 `CreateClip` 取得相同编码的 CPU 采样入口。
 
-`GpuPoseBlend(skeleton, output)` 沿输出节点的基础与来源关系排列共享步骤，并将引用解析为步骤编号。同一个节点引用只保存一份步骤。每个安装实例拥有自己的控制数组；Game world 的共同 Properties 阶段将 `GraphParameters` 复制到该数组，提取窗口再复制到 Rendering world。
+`GpuPoseBlend(skeleton, output)` 沿输出节点的基础与来源关系排列共享步骤，并将引用解析为步骤编号。同一个节点引用只保存一份步骤。每个安装实例拥有自己的控制数组；Game world 的共同 CompositionInputs 阶段在属性最终合成之后将当前 `GraphParameters` 复制到该数组，提取窗口再复制到 Rendering world。
 
 ## 选择、相位与逐骨合成
 

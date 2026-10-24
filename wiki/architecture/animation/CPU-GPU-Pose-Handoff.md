@@ -13,7 +13,7 @@
 
 所需自身祖先在安装或显式修改时展开。继承根继续要求实际父实例的对应模型骨骼；普通 GPU clip 父来源使用其量化数据的 ready CPU sampler。其它 GPU 父来源可通过空骨骼集合声明自己的 ready CPU clip 或 CPU result，供子需求展开使用。
 
-CPU 节点的 `ModelBones` 声明模型空间算法连接的骨骼。来源依赖中的该组骨骼参与同步结果时，需求同时展开整组及其祖先。内置 FABRIK 和 PBIK 在安装时提供对应链与连接体。自定义具体叶节点可向 `PoseAnimation.RegisterNode` 传入 `modelBones`，继续使用共同节点依赖与完成路径。
+CPU 节点的 `ModelBones` 声明模型空间算法连接的骨骼。来源依赖中的该组骨骼参与同步结果时，需求同时展开整组及其祖先。内置 FABRIK、PBIK 和 PhysicsPose 在安装时提供对应链、连接体或映射骨骼。自定义具体叶节点可向 `PoseAnimation.RegisterNode` 传入 `modelBones`，继续使用共同节点依赖与完成路径。
 
 以下是直接片段的公共调用示例。`instance` 与 `data` 是调用方已取得的骨架实例和量化片段。
 
@@ -32,7 +32,7 @@ CPU 图来源使用 `PoseAnimation.Resolve(world, cpuTarget, resultId)` 取得�
 
 ## 本次更新的完成顺序
 
-共同 Properties 阶段形成 GPU 来源时钟与控制，Composition 阶段生成 CPU 局部结果。安装的节点依赖同时包含当前继承父模型来源。执行每个节点层之前，复制就绪的 CPU 局部输入，完成该层所需父 G，再执行具体求解器。父节点结果因此先于子 FABRIK/PBIK 的父矩阵读取。
+属性最终合成后的共同 CompositionInputs 阶段形成 GPU 来源时钟与控制，Composition 阶段生成 CPU 局部结果。安装的节点依赖同时包含当前继承父模型来源。执行每个节点层之前，复制就绪的 CPU 局部输入，完成该层所需父 G，再执行具体求解器。父节点结果因此先于子 FABRIK/PBIK 的父矩阵读取。
 
 同步骨骼使用保留的选骨采样器、连续局部工作区和具体 Job。父结果完成后，Job 只写本实例展开集合内的 G。`GpuPoseAnimation.AddSystems` 注册的 Completion 系统完成最终 CPU 工作及其 CPU 后代传播；随后注册的 Completion 消费者在同次 Game 更新内读取 `BonePose`。提取读取这次完成后的数据。
 
