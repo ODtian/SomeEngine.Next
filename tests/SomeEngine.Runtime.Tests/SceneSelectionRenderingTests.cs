@@ -24,8 +24,8 @@ public sealed partial class SkinningRenderingTests
         Assert.Equal(4, costs.GetProperty("Frames").GetInt32());
         Assert.Equal(32, costs.GetProperty("FrameRange").GetProperty("First").GetInt32());
         Assert.Equal(35, costs.GetProperty("FrameRange").GetProperty("Last").GetInt32());
-        Assert.Equal(33d / 60, costs.GetProperty("SimulationSeconds").GetProperty("First").GetDouble(), precision: 6);
-        Assert.Equal(36d / 60, costs.GetProperty("SimulationSeconds").GetProperty("Last").GetDouble(), precision: 6);
+        Assert.Equal(32d / 60, costs.GetProperty("SimulationSeconds").GetProperty("First").GetDouble(), precision: 6);
+        Assert.Equal(35d / 60, costs.GetProperty("SimulationSeconds").GetProperty("Last").GetDouble(), precision: 6);
         File.Delete(platform.LastReport!);
         File.Delete(Path.Combine(Path.GetDirectoryName(platform.LastReport!)!, "frame-samples.json"));
         Directory.Delete(Path.GetDirectoryName(platform.LastReport!)!);
@@ -47,11 +47,19 @@ public sealed partial class SkinningRenderingTests
             FrameMeasured = measured.Add,
         };
         var platform = new SceneTestPlatform([selected], RuntimeStartupOptions.Parse(options));
+        SceneImage? image = null;
+        Action<ApplicationFrame> completed = platform.Application.FrameCompleted!;
+        platform.Application.FrameCompleted = frame =>
+        {
+            completed(frame);
+            if (frame.Index == 0) platform.Application.CaptureImage(value => image = value);
+        };
         int result = await Application.RunAsync(options, animateMaterial: null, platform.Application);
         Assert.Equal(1, starts);
         Assert.Equal(0, result);
         Assert.Equal(4, updates);
         Assert.Equal(4, measured.Count);
         Assert.All(measured, frame => Assert.True(frame.Gpu.ElapsedMs > 0));
+        Assert.Equal(1, Assert.IsType<SceneImage>(image).Frame);
     }
 }

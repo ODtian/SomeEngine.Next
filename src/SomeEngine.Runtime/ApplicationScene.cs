@@ -10,6 +10,7 @@ namespace SomeEngine.Runtime;
 public sealed class ApplicationScene(string contentDirectory)
 {
     private readonly List<IApplicationGeometryFeature> _geometryFeatures = [];
+    private readonly List<Action<SceneImage>> _images = [];
     internal IReadOnlyList<IApplicationGeometryFeature> GeometryFeatures => _geometryFeatures;
 
     public string ContentDirectory { get; set; } = contentDirectory;
@@ -27,6 +28,7 @@ public sealed class ApplicationScene(string contentDirectory)
     public bool InterfaceEnabled { get; set; }
     public Action<ApplicationFrame>? UpdateFrame { get; set; }
     public Action? DrawDebugUi { get; set; }
+    /// <summary>Receives the presented frame on the application thread before the next Game update is scheduled.</summary>
     public Action<ApplicationFrame>? FrameCompleted { get; set; }
     /// <summary>Receives this frame's Cluster results after GPU completion. Supplying this callback enables synchronous frame diagnostics.</summary>
     public Action<ClusterFrameMetrics>? FrameRendered { get; set; }
@@ -45,6 +47,15 @@ public sealed class ApplicationScene(string contentDirectory)
     public void Reload() => ReloadRequested = true;
     /// <summary>Finishes the current frame and returns from the application.</summary>
     public void Exit() => ExitRequested = true;
+
+    /// <summary>Captures the next presented frame through the application's normal image readback.</summary>
+    public void CaptureImage(Action<SceneImage> receive) => _images.Add(receive);
+
+    internal void ApplyImageRequests(SceneEdit scene)
+    {
+        foreach (Action<SceneImage> receive in _images) scene.CaptureImage(receive);
+        _images.Clear();
+    }
 }
 
 /// <summary>Access to the application's current frame; rendering diagnostics are read on request.</summary>

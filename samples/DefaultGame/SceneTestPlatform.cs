@@ -75,7 +75,7 @@ public sealed partial class SceneTestPlatform
                 InitializeScene?.Invoke(frame.Scene, Current);
             },
             SceneStarted = BeginScene,
-            UpdateFrame = UpdateFrame,
+            UpdateFrame = scenes[0].UpdateFrame is null ? null : UpdateFrame,
             DrawDebugUi = Draw,
             FrameCompleted = FrameCompleted,
             BlendFrameCompleted = RecordBlendFrame,
@@ -89,7 +89,17 @@ public sealed partial class SceneTestPlatform
     public int SelectedScene { get; private set; }
     public ApplicationScene Application { get; }
     public Action<SceneEdit, TestScene>? InitializeScene { get; init; }
-    public Action<SceneEdit, TestScene, int>? UpdateScene { get; init; }
+    private Action<SceneEdit, TestScene, int>? _updateScene;
+    public Action<SceneEdit, TestScene, int>? UpdateScene
+    {
+        get => _updateScene;
+        init
+        {
+            _updateScene = value;
+            Application.UpdateFrame = SceneUpdate;
+        }
+    }
+    private Action<ApplicationFrame>? SceneUpdate => Current.UpdateFrame is not null || _updateScene is not null ? UpdateFrame : null;
     private Func<ApplicationRendering, TestScene, IApplicationColorFeature>? _createColorFeature;
     public Func<ApplicationRendering, TestScene, IApplicationColorFeature>? CreateColorFeature
     {
@@ -165,7 +175,12 @@ public sealed partial class SceneTestPlatform
     {
         Current.UpdateFrame?.Invoke(frame);
         UpdateScene?.Invoke(frame.Scene, Current, frame.Index);
+    }
+
+    private void FrameCompleted(ApplicationFrame frame)
+    {
         SetRenderingInfo(frame.Width, frame.Height, frame.Adapter.Name, frame.Adapter.DriverVersion);
+        if (Startup is null && frame.Startup is { } times) RecordStartup(times);
         if (!IsMeasuring)
         {
             for (int index = 0; index < Math.Min(Scenes.Count, 3); index++)
@@ -176,17 +191,12 @@ public sealed partial class SceneTestPlatform
             if (frame.WasKeyPressed(0x79)) StartMeasurements(recordTrace: true);
         }
         if (ImageRequested)
-            frame.Scene.CaptureImage(image =>
+            Application.CaptureImage(image =>
             {
                 string path = ImageDestination();
                 image.SaveBmp(path);
                 ImageSaved(path);
             });
-    }
-
-    private void FrameCompleted(ApplicationFrame frame)
-    {
-        if (Startup is null && frame.Startup is { } times) RecordStartup(times);
         if (IsMeasuring && !ReloadRequested) RecordFrame(frame.Timing, frame.GetRenderingDiagnostics());
     }
 
@@ -259,6 +269,7 @@ public sealed partial class SceneTestPlatform
         Application.ContentDirectory = Current.ContentDirectory;
         Application.DeformCacheBytes = Current.DeformCacheBytes;
         Application.FrameMeasured = IsMeasuring ? RecordCompletedFrame : Current.FrameMeasured;
+        Application.UpdateFrame = SceneUpdate;
         Options = Options with { DynamicScene = Current.Animate };
         Application.Reload();
     }
@@ -517,6 +528,7 @@ public sealed partial class SceneTestPlatform
         SelectedScene = _interactiveScene;
         Application.ContentDirectory = Current.ContentDirectory;
         Application.FrameMeasured = Current.FrameMeasured;
+        Application.UpdateFrame = SceneUpdate;
         _interactiveOptions = null;
         if (ExitAfterMeasurements) Application.Exit();
     }

@@ -516,7 +516,7 @@ internal static class RuntimeApplication
         GameUpdateTiming gameTiming = default;
         double simulationSeconds = 0;
         long gameStarted = 0, nextGameStarted = 0;
-        bool synchronousGame = options.SynchronousFrames || script is not null || application?.UpdateFrame is not null || application?.FrameCompleted is not null;
+        bool synchronousGame = options.SynchronousFrames || script is not null || application?.UpdateFrame is not null;
 
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
             scene.Camera.View,
@@ -952,6 +952,7 @@ internal static class RuntimeApplication
                 sceneEdit.Begin();
                 try
                 {
+                    application?.ApplyImageRequests(sceneEdit);
                     while (script is not null && actionIndex < script.Actions.Count && script.Actions[actionIndex].Frame == frameIndex)
                         script.Actions[actionIndex++].Execute(sceneEdit);
                     applicationFrame.Index = frameIndex;
@@ -1225,35 +1226,6 @@ internal static class RuntimeApplication
                         metrics.PhaseTwoSoftwareClusters + metrics.PhaseTwoHardwareClusters);
                 }
 
-                bool hasFutureFrame =
-                    options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit;
-                if (hasFutureFrame && !synchronousGame)
-                {
-                    bool updateScene = animateScene;
-                    float nextSceneTime = options.FixedFrameSeconds > 0 ? (frameIndex + 1) * options.FixedFrameSeconds : (float)Stopwatch.GetElapsedTime(
-                        runtimeStarted,
-                        Stopwatch.GetTimestamp()).TotalSeconds;
-                    TraceContext gameTrace = EngineTrace.Context with { Frame = traceFrameIndex + 1 };
-                    int nextCanvasWidth = width;
-                    int nextCanvasHeight = height;
-                    int nextFrameNumber = frameIndex + 1;
-                    nextGameStarted = Stopwatch.GetTimestamp();
-                    nextGameUpdate = Task.Run(() =>
-                    {
-                        long updateStarted = Stopwatch.GetTimestamp();
-                        using var association = EngineTrace.Associate(gameTrace);
-                        using var trace = EngineTrace.Begin(ApplicationTrace.GameUpdate);
-                        // CPU rendering has finished reading shared resources. Apply next-frame
-                        // resource edits here while submitted GPU work retains its device data.
-                        if (options.ScenePlayback is not null)
-                            scene.Play(nextSceneTime, options.ScenePlayback is "materials" or "camera", animateMaterial,
-                                orbitCamera: options.ScenePlayback == "camera");
-                        else if (updateScene)
-                            scene.Update(nextSceneTime);
-                        return UpdateInterface(nextFrameNumber, nextCanvasWidth, nextCanvasHeight, deltaSeconds, updateStarted);
-                    });
-                }
-
                 if (reportMilestones)
                     Console.WriteLine("First frame: presenting.");
                 PresentStatus present = backend.Present(
@@ -1285,6 +1257,34 @@ internal static class RuntimeApplication
                     cpuMs,
                     gameTiming.GameMs, gameTiming.Views.AnimationMs, gameTiming.ExtractionMs,
                     prepareMs, reconcileMs, executeMs);
+                bool hasFutureFrame = (options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit)
+                    && application?.ReloadRequested != true && application?.ExitRequested != true;
+                if (hasFutureFrame && !synchronousGame)
+                {
+                    bool updateScene = animateScene;
+                    float nextSceneTime = options.FixedFrameSeconds > 0 ? (frameIndex + 1) * options.FixedFrameSeconds : (float)Stopwatch.GetElapsedTime(
+                        runtimeStarted,
+                        Stopwatch.GetTimestamp()).TotalSeconds;
+                    TraceContext gameTrace = EngineTrace.Context with { Frame = traceFrameIndex + 1 };
+                    int nextCanvasWidth = width;
+                    int nextCanvasHeight = height;
+                    int nextFrameNumber = frameIndex + 1;
+                    nextGameStarted = Stopwatch.GetTimestamp();
+                    nextGameUpdate = Task.Run(() =>
+                    {
+                        long updateStarted = Stopwatch.GetTimestamp();
+                        using var association = EngineTrace.Associate(gameTrace);
+                        using var trace = EngineTrace.Begin(ApplicationTrace.GameUpdate);
+                        // CPU rendering and application callbacks have finished reading shared resources.
+                        // Submitted GPU work retains its device data while the next Game update runs.
+                        if (options.ScenePlayback is not null)
+                            scene.Play(nextSceneTime, options.ScenePlayback is "materials" or "camera", animateMaterial,
+                                orbitCamera: options.ScenePlayback == "camera");
+                        else if (updateScene)
+                            scene.Update(nextSceneTime);
+                        return UpdateInterface(nextFrameNumber, nextCanvasWidth, nextCanvasHeight, deltaSeconds, updateStarted);
+                    });
+                }
                 frameIndex++;
                 if (application?.ReloadRequested == true || application?.ExitRequested == true) break;
             }

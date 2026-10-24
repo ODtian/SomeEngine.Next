@@ -15,41 +15,36 @@ public sealed class CrowdScene(CrowdExample example) : IDisposable
 {
     private readonly SkeletonInstance[] _characters = new SkeletonInstance[CrowdExample.CharacterCount];
     private readonly Entity[] _targets = new Entity[CrowdExample.CharacterCount];
-    private readonly List<CrowdPoseSample> _poses = [];
+    private readonly List<(int Character, GpuPoseReadbackRequest Request)> _poseRequests = [];
     private CrowdControls _controls = null!;
     public IReadOnlyList<Entity> Targets => _targets;
-    public IReadOnlyList<CrowdPoseSample> Poses => _poses;
+    public IReadOnlyList<CrowdPoseSample> Poses => _poseRequests
+        .Where(sample => sample.Request.Completion.IsCompletedSuccessfully)
+        .Select(sample => new CrowdPoseSample(sample.Character, sample.Request.Completion.Result)).ToArray();
 
     public ApplicationScene CreateApplication(string contentDirectory, Action<ApplicationFrameTiming>? measured = null) => new(contentDirectory)
     {
         LodThreshold = 1,
         DeformCacheBytes = 256u * 1024 * 1024,
         Initialize = Initialize,
-        UpdateFrame = Update,
         FrameMeasured = measured,
     };
 
     public TestScene CreateScene(string name, string contentDirectory) => new(name, contentDirectory)
     {
-        Initialize = Initialize, UpdateFrame = Update, DescribeWorkload = Describe,
+        Initialize = Initialize, DescribeWorkload = Describe,
         MeasurementFrames = new(64, 128), DeformCacheBytes = 256u * 1024 * 1024,
     };
-
-    private void Update(ApplicationFrame frame)
-    {
-        if (frame.Index != 8) return;
-        foreach (int character in new[] { 0, 35, 70, 105 })
-            frame.Scene.ReadGpuPose(_targets[character], pose => _poses.Add(new(character, pose)));
-    }
 
     private void Initialize(ApplicationFrame frame)
     {
         Dispose();
-        _poses.Clear();
+        _poseRequests.Clear();
         var storage = new PoseStorage();
         GpuPoseAnimation.AddSystems(frame.Systems.Animation);
         _controls = new CrowdControls();
         frame.Systems.AddGameSystem(_controls);
+        AnimationSystems.Add(frame.Systems.Animation, new CrowdReadbacks(_targets, _poseRequests, _controls), AnimationPhase.Completion);
         using var builder = new AnimationBuilder(frame.World);
         builder.Leaf<GpuStateParameters, GpuStateLeaf>(Entity.Null, new(example.Machine));
         using CompiledGraph graph = builder.Compile();
@@ -87,7 +82,7 @@ public sealed class CrowdScene(CrowdExample example) : IDisposable
             ["BaseColorTint"] = new JsonArray(1, 1, 1, 1), ["EmissiveFactor"] = new JsonArray(0, 0, 0) },
         ["DirectionalLight"] = new JsonObject { ["Direction"] = new JsonArray(.35f, -.85f, .4f),
             ["Color"] = new JsonArray(1, .96f, .9f), ["Intensity"] = 3 },
-        ["PoseSamples"] = new JsonArray(_poses.Select(sample => (JsonNode)new JsonObject
+        ["PoseSamples"] = new JsonArray(Poses.Select(sample => (JsonNode)new JsonObject
         {
             ["Character"] = sample.Character, ["InputNumber"] = sample.Pose.InputNumber,
             ["CalculationTime"] = sample.Pose.CalculationTime, ["SampleTime"] = sample.Pose.SampleTime,
@@ -109,6 +104,17 @@ public sealed class CrowdScene(CrowdExample example) : IDisposable
     }
 
     private readonly record struct CrowdCharacter(int Index) : IComponent;
+
+    private sealed class CrowdReadbacks(Entity[] targets,
+        List<(int Character, GpuPoseReadbackRequest Request)> requests, CrowdControls controls) : ISystem<ImmediateSystemContext>
+    {
+        public void OnUpdate(ref ImmediateSystemContext context)
+        {
+            if (requests.Count != 0 || controls.Seconds < 8d / 60) return;
+            foreach (int character in new[] { 0, 35, 70, 105 })
+                requests.Add((character, GpuPoseAnimation.RequestReadback(context.World, targets[character], new(0, CrowdExample.BoneCount))));
+        }
+    }
 
     private sealed class CrowdControls : ISystem<ImmediateSystemContext>
     {

@@ -1,7 +1,7 @@
 # Crowd Example
 
 DefaultGame 的统一 `SceneTestPlatform` 提供 `1000 characters / inline` 和
-`1000 characters / cache` 两个场景。`CrowdScene.CreateScene` 提供 `TestScene` 的初始化、更新和
+`1000 characters / cache` 两个场景。`CrowdScene.CreateScene` 提供 `TestScene` 的初始化和
 工作量回调，平台持有共同的 `ApplicationScene`。普通 Game world 系统推进控制，再通过既有提取和 Cluster 路径渲染。
 
 ## 示例素材
@@ -78,9 +78,10 @@ Crowd 使用固定帧窗口完成两条路径，普通三场景入口使用 45 �
 报告还包含各阶段软件/硬件 cluster 数、candidate 数、着色 work item 数及
 `DeformCacheBytes` 的实际区域分配量（含对齐）。源 LOD0 规模和实际选中工作量分别列出。
 
-第八帧通过公开 GPU pose readback 采集角色 `0,35,70,105` 的实际状态、相位、过渡权重和
-96 根模型骨骼，作为示例的状态多样性数据。`TestScene.DescribeWorkload` 在场景测量完成时
-将该信息连同场景参数写入平台报告。
+Game 时钟达到 `8/60` 秒后，动画 Completion 阶段通过 `GpuPoseAnimation.RequestReadback`
+请求角色 `0,35,70,105` 的实际状态、相位、过渡权重和 96 根模型骨骼。
+平台按普通异步 Game update 推进这些系统；完成后的请求作为示例的状态多样性数据。
+`TestScene.DescribeWorkload` 在场景测量完成时将该信息连同场景参数写入平台报告。
 
 行为入口见 [`CrowdRenderingTests`](../../../tests/SomeEngine.Runtime.Tests/CrowdRenderingTests.cs)，
 选择器回调入口见 [`SceneSelectionRenderingTests`](../../../tests/SomeEngine.Runtime.Tests/SceneSelectionRenderingTests.cs)。
