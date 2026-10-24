@@ -1,4 +1,4 @@
-struct SkinBoundsBox { float4 minimum; float4 maximum; uint joint; uint3 padding; };
+struct SkinBoundsBox { float3 center; uint joint; float3 extent; uint padding; };
 struct SkinBoundsControl
 {
     uint joints;
@@ -12,8 +12,12 @@ struct SkinBoundsControl
 };
 struct SkinBoundsTransform
 {
-    float4x4 current;
-    float4x4 previous;
+    float4 currentX;
+    float4 currentY;
+    float4 currentZ;
+    float4 previousX;
+    float4 previousY;
+    float4 previousZ;
     float2 stretch;
     float2 padding;
 };
@@ -48,12 +52,11 @@ RWStructuredBuffer<SkinBoundsTransform> SkinJointTransforms;
 RWByteAddressBuffer SkinCurrentBounds;
 RWByteAddressBuffer SkinPreviousBounds;
 
-void IncludeBox(SkinBoundsBox box, float4x4 transform, inout float3 minimum, inout float3 maximum)
+void IncludeBox(SkinBoundsBox box, float4 x, float4 y, float4 z, inout float3 minimum, inout float3 maximum)
 {
-    float3 center = (box.minimum.xyz + box.maximum.xyz) * 0.5;
-    float3 extent = (box.maximum.xyz - box.minimum.xyz) * 0.5;
-    float3 transformed = mul(float4(center, 1.0), transform).xyz;
-    float3 radius = abs(transform[0].xyz) * extent.x + abs(transform[1].xyz) * extent.y + abs(transform[2].xyz) * extent.z;
+    float4 center = float4(box.center, 1.0);
+    float3 transformed = float3(dot(center, x), dot(center, y), dot(center, z));
+    float3 radius = float3(dot(abs(x.xyz), box.extent), dot(abs(y.xyz), box.extent), dot(abs(z.xyz), box.extent));
     minimum = min(minimum, transformed - radius);
     maximum = max(maximum, transformed + radius);
 }
@@ -80,10 +83,16 @@ void TransformSkinJoints(uint3 thread : SV_DispatchThreadID)
     uint joint = control.joints + thread.x;
     uint bone = SkinJointIndices[joint];
     float4x4 inverseBind = SkinInverseBind[control.inverseBind + thread.x];
+    float4x4 current = mul(inverseBind, SkinCurrentBones[bone]);
+    float4x4 previous = mul(inverseBind, SkinPreviousBones[bone]);
     SkinBoundsTransform result;
-    result.current = mul(inverseBind, SkinCurrentBones[bone]);
-    result.previous = mul(inverseBind, SkinPreviousBones[bone]);
-    result.stretch = float2(SkinTransformStretch(result.current), SkinTransformStretch(result.previous));
+    result.currentX = float4(current[0].x, current[1].x, current[2].x, current[3].x);
+    result.currentY = float4(current[0].y, current[1].y, current[2].y, current[3].y);
+    result.currentZ = float4(current[0].z, current[1].z, current[2].z, current[3].z);
+    result.previousX = float4(previous[0].x, previous[1].x, previous[2].x, previous[3].x);
+    result.previousY = float4(previous[0].y, previous[1].y, previous[2].y, previous[3].y);
+    result.previousZ = float4(previous[0].z, previous[1].z, previous[2].z, previous[3].z);
+    result.stretch = float2(SkinTransformStretch(current), SkinTransformStretch(previous));
     result.padding = 0.0.xx;
     SkinJointTransforms[joint] = result;
 }
@@ -107,8 +116,8 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
     {
         SkinBoundsBox box = SkinBoundsBoxes[work.firstBox + index];
         SkinBoundsTransform transform = SkinJointTransforms[control.joints + box.joint];
-        IncludeBox(box, transform.current, currentMin, currentMax);
-        IncludeBox(box, transform.previous, previousMin, previousMax);
+        IncludeBox(box, transform.currentX, transform.currentY, transform.currentZ, currentMin, currentMax);
+        IncludeBox(box, transform.previousX, transform.previousY, transform.previousZ, previousMin, previousMax);
         currentStretch = max(currentStretch, transform.stretch.x);
         previousStretch = max(previousStretch, transform.stretch.y);
     }
