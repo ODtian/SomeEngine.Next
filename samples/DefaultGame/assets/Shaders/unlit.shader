@@ -15,6 +15,7 @@
         "Inputs": [],
         "Specializations": [],
         "SourceNames": [
+          "cluster_transparency.slang",
           "unlit.slang"
         ]
       },
