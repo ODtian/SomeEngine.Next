@@ -31,6 +31,10 @@
 组件引用、buffer 和枚举器的使用期为当前查询回调，成员与版本筛选由原查询持有。
 源码：[列绑定枚举](../../../src/SomeEngine.ECS/Queries/ComponentBufferRowEnumerator.cs)、[查询入口](../../../src/SomeEngine.ECS/Queries/QueryCursor.cs)。
 
+`QueryChunkView.ReadWriteColumn<T>()` 与 `ReadBufferColumn<T>()` 在当前 chunk 绑定访问权限和列。
+调用方沿原 `RowIndices` 取得选中行，再索引 `ComponentWriteColumn<T>` 与 `BufferReadColumn<T>`；索引组件写列时沿同一 `WriteRef` 发布该行版本，索引只读 buffer 列时取得现有 `BufferView<T>`。
+列视图的有效期为当前查询回调。源码：[chunk 列入口](../../../src/SomeEngine.ECS/Queries/QueryChunkView.Columns.cs)。
+
 `ExecuteQuery` 的 managed 函数指针重载提供相同的无状态、`ref TState` 和显式系统基线形式，复用查询权限、当前版本和关系提交边界。一次查询回调分发一次，具体数据循环由回调保存类型。
 
 ## 组件类型写版本

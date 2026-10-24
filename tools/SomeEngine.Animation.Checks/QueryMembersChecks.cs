@@ -64,6 +64,23 @@ internal static class QueryMembersChecks
         if (visited != 3) throw new InvalidOperationException("Writable row buffers must retain both updates.");
         world.ReleaseQuery(query);
 
+        world.Disable<Visibility>(held);
+        heldVersion = world.WriteVersion<Visibility>(held);
+        QueryHandle columns = world.Query(world.QueryDefinition().ReadWrite<Visibility>().Enabled<Visibility>().Buffer<Visits>(QueryAccess.Read));
+        world.ExecuteQuery(columns, static (scoped QueryCursor rows) =>
+        {
+            foreach (QueryChunkView chunk in rows.Chunks)
+            {
+                var values = chunk.ReadWriteColumn<Visibility>();
+                var visits = chunk.ReadBufferColumn<Visits>();
+                foreach (int row in chunk.RowIndices) values[row].Count += visits[row][0].Count;
+            }
+        });
+        if ((world.Read<Visibility>(first).Count, world.Read<Visibility>(second).Count, world.Read<Visibility>(held).Count)
+            != (5, 5, 1) || world.WriteVersion<Visibility>(held) != heldVersion)
+            throw new InvalidOperationException("Bound columns must retain the query selection and write versions while reading row buffers.");
+        world.ReleaseQuery(columns);
+
         Entity Create()
         {
             Entity entity = world.CreateEntity(new Visibility());
