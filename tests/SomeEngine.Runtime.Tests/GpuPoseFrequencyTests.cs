@@ -24,9 +24,15 @@ public sealed partial class SkinningRenderingTests
         AnimationClip clip = data.CreateClip(skeleton);
         var storage = new PoseStorage();
         using SkeletonInstance body = storage.CreateInstance(skeleton), referenceBody = storage.CreateInstance(skeleton);
-        Entity target = default, animation = default;
+        var parentDefinition = new Skeleton([-1, 0, 0], [identity, identity, identity], [5, 6, 7]);
+        var childDefinition = new Skeleton(parentDefinition, [-1, 0], [identity, identity], [8, 9], [1, -1]);
+        QuantizedClipData parentData = QuantizedClipData.Encode(GpuPoseExamples.Clip(parentDefinition, 0), 4);
+        QuantizedClipData childData = QuantizedClipData.Encode(GpuPoseExamples.Clip(childDefinition, 1), 4);
+        using SkeletonInstance parent = storage.CreateInstance(parentDefinition), child = storage.CreateInstance(childDefinition, parent);
+        Entity target = default, animation = default, parentTarget = default, childTarget = default;
         var signals = new FrequencySignals(body);
         var reads = new List<GpuPoseReadback>();
+        var parentReads = new List<GpuPoseReadback>();
         SceneImage? actual = null, expected = null;
         var application = new ApplicationScene(content.Project.RootPath)
         {
@@ -35,25 +41,39 @@ public sealed partial class SkinningRenderingTests
                 GpuPoseAnimation.AddSystems(frame.Systems.Animation);
                 AnimationSystems.Add(frame.Systems.Animation, signals, AnimationPhase.Completion);
                 target = GpuPoseAnimation.CreateTarget(frame.World, body);
+                parentTarget = GpuPoseAnimation.CreateTarget(frame.World, parent);
+                childTarget = GpuPoseAnimation.CreateTarget(frame.World, child);
                 signals.Target = target;
                 using var builder = new AnimationBuilder(frame.World);
-                builder.Leaf<GpuClipParameters, GpuClipLeaf>(target, new(data, Loop: true, RootMotion: RootMotionMode.Extract));
+                using (builder.Parallel())
+                {
+                    builder.Leaf<GpuClipParameters, GpuClipLeaf>(target, new(data, Loop: true, RootMotion: RootMotionMode.Extract));
+                    builder.Leaf<GpuClipParameters, GpuClipLeaf>(parentTarget, new(parentData));
+                    builder.Leaf<GpuClipParameters, GpuClipLeaf>(childTarget, new(childData));
+                }
                 animation = builder.Play();
                 signals.Animation = animation;
                 GpuPoseAnimation.SetEvaluation(frame.World, target, new GpuPoseEvaluation(.5f, [2]));
                 GpuPoseAnimation.SetCpuBones(frame.World, target, new CpuBoneDemand(clip, [1]));
+                GpuPoseAnimation.SetEvaluation(frame.World, parentTarget, new GpuPoseEvaluation(10, [0]));
+                GpuPoseAnimation.SetEvaluation(frame.World, childTarget, new GpuPoseEvaluation(0, []));
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                     frame.World.Add(mesh, new MeshSkin(body, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [2, 3])));
             },
             UpdateFrame = frame =>
             {
-                if (frame.Index == 4) GpuPoseAnimation.SetEvaluation(frame.World, target, new GpuPoseEvaluation(.25f, [3]));
+                if (frame.Index == 4)
+                {
+                    GpuPoseAnimation.SetEvaluation(frame.World, target, new GpuPoseEvaluation(.25f, [3]));
+                    GpuPoseAnimation.SetEvaluation(frame.World, childTarget, new GpuPoseEvaluation(0, [1]));
+                }
             },
         };
         await SceneImages.RunAsync("d3d12", new SceneScript(application, 8,
             Enumerable.Range(0, 8).Select(index => new SceneAction(index, edit =>
             {
                 edit.ReadGpuPose(target, reads.Add);
+                if (index is 3 or 4) edit.ReadGpuPose(parentTarget, parentReads.Add);
                 if (index == 7) edit.CaptureImage(value => actual = value);
             }))), "--fixed-step", "0.25", "--no-taa", "--no-vsm");
         Assert.Equal(8, reads.Count);
@@ -79,6 +99,19 @@ public sealed partial class SkinningRenderingTests
             referenceBody.Update(local, time);
             for (int bone = 0; bone < 4; bone++)
                 GpuPoseExamples.Near(referenceBody.ModelPose.GetBone(bone).Transform, result.Current.Span[bone]);
+        }
+        Assert.Equal(new short[] { 0 }, parentReads[0].SampledBones.ToArray());
+        Assert.Equal(new short[] { 0, 1 }, parentReads[1].SampledBones.ToArray());
+        Assert.Equal(1.25, parentReads[1].Presentation.PreviousTime);
+        Assert.Equal(1.25, parentReads[1].Presentation.CurrentTime);
+        var parentLocal = new BoneTransform[3];
+        parentData.CreateClip(parentDefinition).SampleLocal(1.25f, parentLocal);
+        parentLocal[2] = parentDefinition.ReferencePose[2];
+        using (SkeletonInstance referenceParent = storage.CreateInstance(parentDefinition))
+        {
+            referenceParent.Update(parentLocal, 1.25);
+            for (int bone = 0; bone < 3; bone++)
+                GpuPoseExamples.Near(referenceParent.ModelPose.GetBone(bone).Transform, parentReads[1].Current.Span[bone]);
         }
         using (var referenceWorld = new World())
         using (SkeletonInstance signalBody = storage.CreateInstance(skeleton))

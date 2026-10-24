@@ -218,7 +218,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             RenderBoneSectionData data = section.Data;
             section.FrameInput = new(data.InputNumber, data.Starts, data.Identity.AnimationStarts, data.Clip, data.StateMachine, data.Blend, data.Rig);
             section.AdvanceSource = !section.HasResult || section.AcceptedInput != section.FrameInput;
-            bool changed = section.AdvanceSource || section.AcceptedBinding != data.BindingVersion
+            bool changed = section.AdvanceSource || data.IsGpu && !section.HasSamples || section.AcceptedBinding != data.BindingVersion
                 || !ReferenceEquals(section.AcceptedEvaluation, data.Evaluation) || section.AcceptedExtractRoot != data.ExtractRootMotion
                 || !section.AcceptedCpuBones.Equals(data.CpuBones)
                 || (!data.IsGpu || data.CpuBones.Length != 0) && section.CpuVersion != data.Version;

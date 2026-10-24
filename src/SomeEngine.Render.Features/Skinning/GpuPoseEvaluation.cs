@@ -7,6 +7,7 @@ public sealed partial class SkinningFeature
 {
     private void WriteEvaluation(BinaryWriter writer)
     {
+        bool[][] before = _sectionOrder.Select(section => section.SelectedBones).ToArray();
         foreach (Section section in _sectionOrder)
         {
             section.SelectedBones = new bool[section.Range.Count];
@@ -30,8 +31,10 @@ public sealed partial class SkinningFeature
         foreach (Section section in _sectionOrder)
             for (int bone = 0; bone < section.Range.Count; bone++)
                 if (section.SelectedBones[bone]) RequireParents(section, bone);
-        foreach (Section section in _sectionOrder)
+        for (int index = 0; index < _sectionOrder.Length; index++)
         {
+            Section section = _sectionOrder[index];
+            if (!section.SelectedBones.AsSpan().SequenceEqual(before[index])) section.HasSamples = false;
             var sampled = new List<short>();
             Align(writer, 16);
             section.ReferenceOffset = (uint)writer.BaseStream.Position;
