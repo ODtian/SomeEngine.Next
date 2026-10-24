@@ -10,7 +10,7 @@
   "Blocks": [
     {
       "TypeId": "def46de0-7af8-87e0-75b9-660aaa202b94",
-      "Schema": "68AF469430D4B902",
+      "Schema": "163D4CAD0FD3CEDB",
       "Fields": {
         "SourceNames": [
           "material_decal_cells.slang"
