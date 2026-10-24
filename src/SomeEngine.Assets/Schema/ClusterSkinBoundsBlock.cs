@@ -11,6 +11,11 @@ public readonly partial record struct ClusterSkinJointBox(uint Joint, Vec3 Minim
 public sealed partial record ClusterSkinBoxSet
 {
     public ImmutableArray<ClusterSkinJointBox> Joints { get; init; } = [];
+    public int Group { get; init; }
+    public int ParentGroup { get; init; }
+    public int Level { get; init; }
+    public float Error { get; init; }
+    public float PositionError { get; init; }
 }
 
 /// <summary>LBS influence boxes following the shared geometry vertex identity.</summary>
@@ -24,5 +29,6 @@ public sealed partial class ClusterSkinBoundsBlock : AssetBlock
     public ClusterSkinBounds CreateBounds() => new(Clusters.Select(cluster => cluster.Joints.Select(joint =>
         new SkinJointBounds(joint.Joint,
             new Vector3(joint.Minimum.X, joint.Minimum.Y, joint.Minimum.Z),
-            new Vector3(joint.Maximum.X, joint.Maximum.Y, joint.Maximum.Z)))));
+            new Vector3(joint.Maximum.X, joint.Maximum.Y, joint.Maximum.Z)))),
+        Clusters.Select(cluster => new SkinClusterLod(cluster.Group, cluster.ParentGroup, cluster.Level, cluster.Error, cluster.PositionError)));
 }

@@ -94,7 +94,8 @@ PackedCluster LoadCluster(uint pageOffset, uint clusterIndex)
 bool PassesLODFilter(
     PackedCluster cluster,
     RenderInstanceTransform t,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view,
+    float lodError)
 {
     // Without a conservative deformation error we cannot select an approximate
     // mesh LOD. Emit the original level once instead of overlapping every LOD.
@@ -104,7 +105,6 @@ bool PassesLODFilter(
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
-    float lodError = DecodeClusterLODError(cluster);
     return ClusterSphereError(worldCenter, worldRadius, lodError * maxScale, view) <= view.LodThreshold;
 }
 
@@ -347,7 +347,7 @@ bool LoadAndFilterCandidate(
         return false;
 
     cluster = LoadCluster(pageOffset, clusterID);
-    ApplyDrawClusterBounds(cluster, PageHeap.Load(pageOffset + 44u) + clusterID, instanceID, false);
+    float lodError = ApplyDrawClusterBounds(cluster, PageHeap.Load(pageOffset + 44u) + clusterID, instanceID, false);
     t = LoadRenderTransform(
         InstanceData,
         LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD),
@@ -360,7 +360,7 @@ bool LoadAndFilterCandidate(
             instanceID));
 
     if (!(work.KeepCoarseGeometry != 0u && view.CullingEnabled != 0u) &&
-        !PassesLODFilter(cluster, t, view))
+        !PassesLODFilter(cluster, t, view, lodError))
         return false;
 
 #if CLUSTER_CULL_PHASE == 2

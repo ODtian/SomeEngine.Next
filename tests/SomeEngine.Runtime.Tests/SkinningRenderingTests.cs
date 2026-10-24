@@ -292,7 +292,7 @@ public sealed partial class SkinningRenderingTests
         return bytes;
     }
 
-    private sealed class SkinContent(AssetProject project, string shader) : IDisposable
+    private sealed partial class SkinContent(AssetProject project, string shader) : IDisposable
     {
         private readonly SourceMeta _source = new() { SourceGuid = SourceGuid.New() };
         public AssetProject Project => project;

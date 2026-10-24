@@ -1,4 +1,5 @@
 using SomeEngine.ECS;
+using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Runtime;
 
@@ -7,8 +8,11 @@ public sealed class ApplicationScene(string contentDirectory)
 {
     public string ContentDirectory { get; } = Path.GetFullPath(contentDirectory);
     public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
+    public float LodThreshold { get; init; } = 1;
     public Action<ApplicationFrame>? Initialize { get; init; }
     public Action<ApplicationFrame>? UpdateFrame { get; init; }
+    /// <summary>Receives this frame's Cluster results after GPU completion. Supplying this callback enables synchronous frame diagnostics.</summary>
+    public Action<ClusterFrameMetrics>? FrameRendered { get; init; }
 }
 
 /// <summary>The game world and ordered systems available before the frame's extraction.</summary>
