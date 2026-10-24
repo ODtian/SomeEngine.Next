@@ -367,7 +367,8 @@ internal static class JobSubmissionTracker
         }
         catch
         {
-            reservation.Rollback();
+            try { reservation.Rollback(); }
+            finally { reservation.Release(); }
             throw;
         }
     }
@@ -388,14 +389,17 @@ internal struct JobSubmissionReservation
             return;
 
         bool reserved = observer.TryBeginSubmission(currentScope);
+        JobUse? use = null;
         try
         {
-            Store(new Entry(observer, reserved ? new JobUse(observer) : null));
+            use = reserved ? JobUse.Rent(observer) : null;
+            Store(new Entry(observer, use));
         }
         catch
         {
             if (reserved)
                 observer.RollbackSubmission(default);
+            use?.ReleaseReference();
             throw;
         }
     }
@@ -410,6 +414,12 @@ internal struct JobSubmissionReservation
     {
         for (int i = _count - 1; i >= 0; i--)
             Get(i).Use?.Rollback();
+    }
+
+    internal void Release()
+    {
+        for (int i = 0; i < _count; i++) Get(i).Use?.ReleaseReference();
+        _count = 0;
     }
 
     private bool Contains(IJobSubmissionObserver observer)
@@ -462,32 +472,62 @@ internal struct JobSubmissionReservation
 }
 
 /// <summary>One accepted use, ended exactly once by completion or failed submission.</summary>
-internal sealed class JobUse(IJobSubmissionObserver observer)
+internal sealed class JobUse
 {
+    private static readonly Lock PoolGate = new();
+    private static readonly Stack<JobUse> Pool = new();
+    private IJobSubmissionObserver? _observer;
     private JobHandle _handle;
-    private int _ended;
+    private int _ended, _references;
+
+    private JobUse() { }
+
+    internal static JobUse Rent(IJobSubmissionObserver observer)
+    {
+        JobUse use;
+        lock (PoolGate) use = Pool.Count > 0 ? Pool.Pop() : new();
+        use._observer = observer;
+        use._handle = default;
+        use._ended = 0;
+        use._references = 1; // The submission retains the record until scheduling or rollback finishes.
+        return use;
+    }
 
     internal void Bind(JobHandle handle)
     {
+        IJobSubmissionObserver observer = _observer!;
         observer.CommitSubmission(handle);
         _handle = handle;
         handle.Scheduler!.AddUse(handle, observer);
-        handle.Scheduler.OnCompleted(handle, static (_, state) => ((JobUse)state!).Complete(), this);
+        Interlocked.Increment(ref _references); // The completion callback holds its own reference.
+        try { handle.Scheduler.OnCompleted(handle, static (_, state) => ((JobUse)state!).Complete(), this); }
+        catch { ReleaseReference(); throw; }
     }
 
     internal void Rollback()
     {
         if (Interlocked.Exchange(ref _ended, 1) != 0)
             return;
-        _handle.Scheduler?.RemoveUse(_handle, observer);
-        observer.RollbackSubmission(_handle);
+        _handle.Scheduler?.RemoveUse(_handle, _observer!);
+        _observer!.RollbackSubmission(_handle);
     }
 
     private void Complete()
     {
-        if (Interlocked.Exchange(ref _ended, 1) != 0)
-            return;
-        _handle.Scheduler!.RemoveUse(_handle, observer);
-        observer.CompleteSubmission(_handle);
+        try
+        {
+            if (Interlocked.Exchange(ref _ended, 1) != 0) return;
+            _handle.Scheduler!.RemoveUse(_handle, _observer!);
+            _observer!.CompleteSubmission(_handle);
+        }
+        finally { ReleaseReference(); }
+    }
+
+    internal void ReleaseReference()
+    {
+        if (Interlocked.Decrement(ref _references) != 0) return;
+        _observer = null;
+        _handle = default;
+        lock (PoolGate) Pool.Push(this);
     }
 }

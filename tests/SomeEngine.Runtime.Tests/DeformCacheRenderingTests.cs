@@ -133,6 +133,7 @@ public sealed class DeformCacheRenderingTests
             typedef Triangle TriangleData;
             typedef SurfaceEval Surface;
             LinearSurface source;
+            TriangleData readLane(TriangleData value, uint lane) { return source.readLane(value, lane); }
             TriangleData makeTriangle(UserVertex a, UserVertex b, UserVertex c, uint materialIndex)
             { return source.makeTriangle(a.Surface, b.Surface, c.Surface, materialIndex); }
             float3 cornerPosition(TriangleData value, uint corner) { return source.cornerPosition(value, corner); }

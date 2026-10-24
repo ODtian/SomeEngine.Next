@@ -385,7 +385,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new InvalidOperationException("The Cluster graph has been uninstalled.");
         ClusterMaterialAssignmentSet sourceAssignments = _materialAssignments.Current;
         ClusterMaterialAssignmentSet assignments = sourceAssignments.ChangesSince(_consumedMaterialAssignments);
-        RefreshMaterialTextures();
         bool decalResourcesChanged = UpdateMaterialDecals();
         if (_graphInstalled && _resources.GeometryPageCount > GraphData.Resources.PagePriorityCapacity)
             EditGraph((ref RenderGraphEdit edit) => GrowPageRequestPriorities(ref edit));
@@ -394,25 +393,16 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool assignmentsChanged = !_graphInstalled ||
             _installedMaterialTopologyVersion != assignments.TopologyVersion;
         bool materialResourcesChanged = CollectMaterialChanges(assignments, assignmentsChanged) || decalResourcesChanged;
-        bool forward = _options.ShadingPath == ClusterShadingPath.Forward;
-        if (forward && (assignmentsChanged || materialResourcesChanged || _installedShadeStages is null ||
-            _installedShadeStages.ShadingPath != _options.ShadingPath ||
-            _installedShadeStages.DebugMode != _options.DebugMode))
-            _primaryDepthMaterialsSupported = _shadeStages!.SupportsPrimaryDepthReceivers(
-                assignments, _options.DebugMode, _options.ExportSurfaceReceivers);
-        if (forward && _surfaceReceiverRegion != default && !_evaluateSurfaceReceivers)
-            RefreshCasterInputs();
-        bool evaluateReceivers = !forward || (_surfaceReceiverRegion != default &&
-            (_evaluateSurfaceReceivers || !_primaryDepthMaterialsSupported || _hasFirstPersonReceiverMeshes));
         bool shadingChanged = _installedShadeStages is null ||
             _installedShadeStages.ShadingPath != _options.ShadingPath ||
             _installedShadeStages.DebugMode != _options.DebugMode ||
-            _installedShadeStages.HasReceiverEvaluation != evaluateReceivers;
+            _installedShadeStages.HasShadowRequests != (_shadowRequestRegion != default);
         // Unknown evaluators remain conservative. Complete declarations let shading-only
         // edits preserve depth while the ordinary scalar upload still carries their new values.
         bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
         if (!assignmentsChanged && !materialResourcesChanged && !shadingChanged)
         {
+            RefreshMaterialTextures();
             ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments,
                 _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
             if (!ReferenceEquals(updated, _materialScalars))
@@ -448,7 +438,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             else rasterStages = _installedRasterStages!;
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ShadeStagesTrace))
                 shadeStages = _shadeStages!.Resolve(assignments, _options.ShadingPath, _options.DebugMode,
-                    _options.ExportSurfaceReceivers, evaluateReceivers);
+                    _shadowRequestRegion != default);
             scalars = _materialScalars.Update(shadeStages, assignments,
                 _renderDevice.GetTextureDescriptorIndex, shadingChanged
                     ? assignments.ActiveOffsets.Concat(_textureScalarChanges) : _textureScalarChanges);
@@ -500,6 +490,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         AcceptMaterialChanges(assignments, sourceAssignments);
         _installedRasterStages = rasterStages;
         _installedShadeStages = shadeStages;
+        RefreshMaterialTextures();
         _rasterStages!.AcceptChanges();
         _shadeStages!.AcceptChanges();
         _cullingEnabled = cullingEnabled;

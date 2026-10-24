@@ -46,6 +46,30 @@
       "importer_id": "ce474674-bd5e-4ae0-b72e-2d50d64e6413",
       "enabled": true,
       "set_member_id": "ce474674-bd5e-4ae0-b72e-2d50d64e6413"
+    },
+    {
+      "importer_id": "16ee2d99-92a6-4529-803f-6535b768c327",
+      "settings": {
+        "generate_tangents": false
+      },
+      "enabled": true,
+      "set_member_id": "16ee2d99-92a6-4529-803f-6535b768c327"
+    },
+    {
+      "importer_id": "5481ec15-2c89-437b-8d26-03cb72937d08",
+      "settings": {
+        "generate_tangents": false
+      },
+      "enabled": true,
+      "set_member_id": "5481ec15-2c89-437b-8d26-03cb72937d08"
+    },
+    {
+      "importer_id": "99da2dee-eeb5-4442-8b0c-501c3fa55650",
+      "settings": {
+        "generate_tangents": false
+      },
+      "enabled": true,
+      "set_member_id": "99da2dee-eeb5-4442-8b0c-501c3fa55650"
     }
   ],
   "importer_sets": [

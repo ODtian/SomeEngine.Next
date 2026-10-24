@@ -6,7 +6,7 @@ struct VirtualShadowStateInitUniforms
 {
     uint PageTableEntryCount;
     uint MaxPhysicalPages;
-    uint RequestEpochEntryCount;
+    uint RequestFlagEntryCount;
     uint Pad0;
     uint Pad1;
     uint Pad2;
@@ -20,8 +20,6 @@ RWStructuredBuffer<uint> PhysicalPageOwners;
 #include "vsm_page_lists.slang"
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<VirtualShadowPageMetadata> PageMetadata;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> RequestedShadowPages;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> RequestedPageFlags;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
@@ -61,9 +59,8 @@ void InitializeVirtualShadowState(uint3 group : SV_GroupID, uint lane : SV_Group
 
     if (index < StateInit.PageTableEntryCount)
         ShadowPageTable[index] = VSM_PAGE_UNMAPPED;
-    if (index < StateInit.RequestEpochEntryCount)
+    if (index < StateInit.RequestFlagEntryCount)
     {
-        RequestedShadowPages[index] = 0u;
         RequestedPageFlags[index] = 0u;
     }
     if (index == 0u)

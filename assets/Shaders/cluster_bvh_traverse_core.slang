@@ -31,9 +31,9 @@ globallycoherent RWStructuredBuffer<uint> CandidateCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer PageFaultBuffer;
 
-// A single-view 64-thread group expands four sixteen-child nodes.
+// A single-view 64-thread group evaluates four slices of sixteen parents.
 static const uint CLUSTER_TRAVERSAL_THREADS = 64u;
-static const uint CLUSTER_BVH_FANOUT = 16u;
+static const uint CLUSTER_BVH_FANOUT = 4u;
 static const uint CLUSTER_BVH_PARENTS_PER_GROUP =
     CLUSTER_TRAVERSAL_THREADS / CLUSTER_BVH_FANOUT;
 static const uint CLUSTER_NODE_ARG_STRIDE = 32u;
@@ -220,13 +220,11 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     uint viewLane = 0u, uint viewLanes = 1u, uint groupChild = 0u,
     bool targetFilters = true, bool multipleViews = true)
 {
-    uint parentIndex = ClusterTraversalNodeIndex(parent);
-    ClusterBVHNode parentNode = validParent ? LoadClusterNode(GlobalBVH, parentIndex) : (ClusterBVHNode)0;
-    bool direct = ClusterTraversalIsDirect(parent);
-    bool validNode = validParent && (direct || parentNode.NodeType != 0u
-        ? childIndex == 0u : childIndex < parentNode.ChildCount);
-    uint nodeIndex = direct || parentNode.NodeType != 0u ? parentIndex : parentNode.ChildPointer + childIndex;
-    ClusterBVHNode node = validNode ? LoadClusterNode(GlobalBVH, nodeIndex) : (ClusterBVHNode)0;
+    uint nodeIndex = ClusterTraversalNodeIndex(parent);
+    ClusterHierarchySlice node = (ClusterHierarchySlice)0;
+    if (validParent) node = LoadClusterNode(GlobalBVH, nodeIndex, childIndex);
+    bool validNode = validParent && ClusterSliceEnabled(node) &&
+        (!ClusterTraversalHasSlice(parent) || childIndex == ClusterTraversalSliceIndex(parent));
     uint instanceID = parent.InstanceID;
     uint viewBase = ClusterTraversalViewIndex(parent);
     ClusterViewUniforms firstView = validNode
@@ -240,7 +238,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     bool computeBounds = viewLanes == 1u || WaveGetLaneIndex() == firstViewLane;
     if (validNode && computeBounds)
     {
-        ApplyClusterNodeBounds(node, nodeIndex, instanceID, false);
+        ApplyClusterNodeBounds(node, nodeIndex, childIndex, instanceID, false);
         transform = LoadRenderTransform(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD), instanceID);
         boundsExpansion = max(0.0, LoadClusterBoundsExpansion(InstanceData,
@@ -259,8 +257,8 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     float3 historyMin = worldMin, historyMax = worldMax;
     if (validNode && computeBounds && TraversalLevel.TraversalMode != 2u)
     {
-        ClusterBVHNode previousNode = LoadClusterNode(GlobalBVH, nodeIndex);
-        ApplyClusterNodeBounds(previousNode, nodeIndex, instanceID, true);
+        ClusterHierarchySlice previousNode = LoadClusterNode(GlobalBVH, nodeIndex, childIndex);
+        ApplyClusterNodeBounds(previousNode, nodeIndex, childIndex, instanceID, true);
         RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instanceID);
         ClusterNodeWorldBounds(previousNode, previous, boundsExpansion, historyMin, historyMax);
@@ -274,6 +272,8 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         lodBounds.Center = WaveReadLaneAt(lodBounds.Center, firstViewLane);
         lodBounds.Radius = WaveReadLaneAt(lodBounds.Radius, firstViewLane);
         lodBounds.ErrorScale = WaveReadLaneAt(lodBounds.ErrorScale, firstViewLane);
+        node.MinLODError = WaveReadLaneAt(node.MinLODError, firstViewLane);
+        node.MaxParentLODError = WaveReadLaneAt(node.MaxParentLODError, firstViewLane);
     }
     uint inputViews = validNode ? parent.ViewMask : 0u;
     if (!multipleViews) inputViews &= 1u;
@@ -301,11 +301,11 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
             view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u, instanceID);
         if (state == 2u)
             AppendDeferredTraversalNode(
-                MakeClusterTraversalNode(ClusterTraversalDirect(nodeIndex), instanceID, viewIndex, 1u), TraversalLevel.MaxNodes);
+                MakeClusterTraversalNode(ClusterTraversalSlice(nodeIndex, childIndex), instanceID, viewIndex, 1u), TraversalLevel.MaxNodes);
         else if (state != 0u)
         {
             activeViews |= 1u << bit;
-            float error = ClusterSphereError(lodBounds.Center, lodBounds.Radius, abs(node.LODError) * lodBounds.ErrorScale, view);
+            float error = ClusterSphereError(lodBounds.Center, lodBounds.Radius, abs(node.MinLODError) * lodBounds.ErrorScale, view);
             streamingPriority = max(streamingPriority,
                 PackClusterStreamingPriority(error, view.LodThreshold, view.StreamingPriorityCategory));
         }
@@ -337,13 +337,13 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     }
 #endif
 
-    bool leaf = validNode && node.NodeType == 1u;
-    bool pageFault = activeViews != 0u && leaf && node.ChildPointer == 0xFFFFFFFFu;
-    uint leafFlags = uint(node.BoundMin.w);
+    bool leaf = validNode && ClusterSliceLeaf(node);
+    bool pageFault = activeViews != 0u && leaf && !ClusterSliceAvailable(node);
     if (activeViews != 0u && leaf)
     {
-        uint page = asuint(node.BoundMax.w);
-        if (page != 0xFFFFFFFFu)
+        uint firstPage = ClusterSliceFirstPage(node);
+        uint pageCount = ClusterSlicePageCount(node);
+        for (uint page = firstPage; page < firstPage + pageCount; page++)
         {
             uint previous;
             PageFaultBuffer.InterlockedMax(ClusterPageRequestPriorityOffset(firstView.MaxPageFaults, page),
@@ -352,19 +352,8 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
             {
                 PublishClusterPageDemand(page, firstView.MaxPageFaults);
                 if (pageFault)
-                    PublishClusterPageFault(nodeIndex, page, firstView.MaxPageFaults);
+                    PublishClusterPageFault(nodeIndex * 4u + childIndex, page, firstView.MaxPageFaults);
             }
-        }
-    }
-    if (leaf && (leafFlags & 1u) != 0u)
-    {
-        uint remaining = activeViews;
-        while (remaining != 0u)
-        {
-            uint bit = firstbitlow(remaining);
-            remaining &= remaining - 1u;
-            if (LoadClusterCullView(Views, PolicyClusterViews, viewBase + bit, targetFilters).CullingEnabled != 0u)
-                activeViews &= ~(1u << bit);
         }
     }
 
@@ -405,20 +394,20 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         if (outputIndex < TraversalLevel.MaxNodes)
         {
 #ifdef CLUSTER_PERSISTENT_CULL
-            TraversalNodes[outputIndex] = MakeClusterTraversalNode(nodeIndex, instanceID, viewBase, activeViews);
+            TraversalNodes[outputIndex] = MakeClusterTraversalNode(node.ChildReference, instanceID, viewBase, activeViews);
             DeviceMemoryBarrier();
             uint ignored;
             InterlockedExchange(TraversalReady[outputIndex], 1u, ignored);
 #else
             NextTraversalNodes[outputIndex] = MakeClusterTraversalNode(
-                nodeIndex, instanceID, viewBase, activeViews);
+                node.ChildReference, instanceID, viewBase, activeViews);
 #endif
         }
     }
 
     bool outputLeaf = activeViews != 0u && leaf && !pageFault;
-    uint clusterCount = outputLeaf ? node.ChildCount >> 12u : 0u;
-    uint firstCluster = node.ChildCount & 0xFFFu;
+    uint clusterCount = outputLeaf ? ClusterSliceClusterCount(node) : 0u;
+    uint firstCluster = ClusterSliceFirstCluster(node);
     uint leafCount = clusterCount * countbits(activeViews);
     uint waveLeafCount = WaveActiveSum(leafCount);
 #ifdef CLUSTER_PERSISTENT_CULL
@@ -444,7 +433,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         for (uint cluster = 0u; cluster < clusterCount; cluster++)
         {
             ClusterCandidate candidate = MakeClusterCandidate(MakeDrawRequest(
-                node.ChildPointer, firstCluster + cluster, instanceID, viewBase + bit), (leafFlags & 2u) != 0u ? 1u : 0u);
+                ClusterSlicePageOffset(node), firstCluster + cluster, instanceID, viewBase + bit), 1u);
 #ifdef CLUSTER_PERSISTENT_CULL
             CullClusterCandidateData(candidate, targetFilters);
 #else

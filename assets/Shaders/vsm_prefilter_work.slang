@@ -8,7 +8,6 @@ StructuredBuffer<VirtualShadowMapParameters> FilterViews;
 StructuredBuffer<uint> FilterPageReferences;
 StructuredBuffer<uint> FilterPageTable;
 StructuredBuffer<uint> FilterRequestFlags;
-StructuredBuffer<uint> FilterRequestFrames;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> FilterPreviousPageTable;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
@@ -44,8 +43,7 @@ void SelectVirtualShadowFilterPages(uint3 group : SV_GroupID, uint lane : SV_Gro
     if (!ResolveVirtualShadowFilterPage(FilterViews, FilterPageReferences, FilterPageTable,
         Prefilter.ViewCount, Prefilter.EntryCount, atlasPage, view, viewIndex, page)) return;
     uint tableIndex = FilterPageReferences[atlasPage];
-    if (FilterRequestFrames[tableIndex] != Prefilter.FrameIndex ||
-        (FilterRequestFlags[tableIndex] & VSM_PAGE_REQUEST_SECONDARY) == 0u) return;
+    if ((FilterRequestFlags[tableIndex] & VSM_PAGE_REQUEST_SECONDARY) == 0u) return;
     uint listIndex;
     FilterArguments.InterlockedAdd(12u, 1u, listIndex);
     SelectedFilterPages[listIndex] = atlasPage;

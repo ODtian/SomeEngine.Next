@@ -515,7 +515,8 @@ internal sealed class ParallelJobGroup<T>
     where T : struct, IJobParallelFor
 {
     private const int ClaimQuantum = 16;
-    private static readonly ConcurrentStack<ParallelJobGroup<T>> Pool = new();
+    private static readonly Lock PoolGate = new();
+    private static readonly Stack<ParallelJobGroup<T>> Pool = new();
 
     private T _job;
     private int _length;
@@ -536,8 +537,8 @@ internal sealed class ParallelJobGroup<T>
         int batchCount,
         bool measureCost)
     {
-        if (!Pool.TryPop(out ParallelJobGroup<T>? group))
-            group = new ParallelJobGroup<T>();
+        ParallelJobGroup<T> group;
+        lock (PoolGate) group = Pool.Count > 0 ? Pool.Pop() : new();
 
         group._job = job;
         group._length = length;
@@ -565,7 +566,7 @@ internal sealed class ParallelJobGroup<T>
         _batchCount = 0;
         _nextBatch = 0;
         _measureCost = false;
-        Pool.Push(this);
+        lock (PoolGate) Pool.Push(this);
     }
 
     internal WorkItemExecutionResult ExecuteClaimQuantum()

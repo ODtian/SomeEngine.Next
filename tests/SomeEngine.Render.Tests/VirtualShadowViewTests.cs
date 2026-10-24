@@ -68,7 +68,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
             new VirtualShadowMapSettings
             {
                 VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 1,
-                DirectionalClipmapLevels = 2, DirectionalFirstClipmapLevel = 0,
+                DirectionalClipmapLevels = 2, DirectionalFirstClipmapLevel = 7,
             });
         using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
             [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);
@@ -94,7 +94,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
             shadows.BeginFrame();
             VirtualShadowView view = shadows.PrepareViews(lights, receiver, 1, 1, 1)[0];
             shadows.AcquireFrameResources();
-            Vector4 clip = Vector4.Transform(new Vector4(.5f, 0, .5f, 1), view.LightViewProjection);
+            Vector4 clip = view.ProjectPosition(new(.5f, 0, .5f));
             Vector2 uv = new Vector2(clip.X, -clip.Y) / (2 * clip.W) + new Vector2(.5f);
             Assert.InRange(uv.X, 0, .99999f);
             Assert.InRange(uv.Y, 0, .99999f);
@@ -128,16 +128,16 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         return new VirtualShadowMapShaders
         {
             ResetFrameShader = shader, ResetReceiverMasksShader = shader,
-            MarkPagesShader = shader, MarkCoarsePagesShader = shader,
+            MarkCoarsePagesShader = shader,
             AllocatePagesShader = shader, ClearPagesShader = shader,
             InitializeStateShader = shader, InvalidateCastersShader = shader,
             BuildPagePoolShader = shader, CompactViewsShader = shader,
-            InitializePageHiZShader = shader, ReducePageHiZShader = shader,
+            InitializePageHiZShader = shader, ReducePageHiZShader = shader, CompletePageDepthShader = shader,
             DynamicResolutionShader = shader,
-            ResetFrame = entry, ResetReceiverMasks = entry, MarkPages = entry, MarkCoarsePages = entry,
+            ResetFrame = entry, ResetReceiverMasks = entry, MarkCoarsePages = entry,
             AllocatePages = entry, ClearPages = entry, InitializeState = entry, InvalidateCasters = entry,
             BuildPagePool = entry, CompactViews = entry, InitializePageHiZ = entry,
-            ReducePageHiZ = entry, DynamicResolution = entry,
+            ReducePageHiZ = entry, CompletePageDepth = entry, DynamicResolution = entry,
         };
     }
 

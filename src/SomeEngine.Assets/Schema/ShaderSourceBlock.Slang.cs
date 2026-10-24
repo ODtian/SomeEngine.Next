@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 using SomeEngine.Resources;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
@@ -216,6 +217,7 @@ public sealed partial class ShaderSourceBlock
                     throw new InvalidDataException(
                         $"Slang could not load source '{paths[sourceIndex]}': {diagnosticText}");
                 }
+                SlangShaderData.RetainSession(session, sourceUnit);
                 sourceUnits.Add(sourceUnit);
             }
 
@@ -226,6 +228,7 @@ public sealed partial class ShaderSourceBlock
                     SlangResult entryResult = sourceUnit.GetDefinedEntryPoint(entryIndex, out IEntryPoint entry);
                     if (entryResult.Failed || entry is null)
                         throw new InvalidDataException("Slang could not return a declared shader entry point.");
+                    SlangShaderData.RetainSession(session, entry);
                     if (entryPoint is null || entry.GetFunctionReflection().Name == entryPoint)
                         entries.Add(entry);
                 }
@@ -239,7 +242,7 @@ public sealed partial class ShaderSourceBlock
             {
                 IComponentType component = entry;
                 if (entryPoint is not null && !specializations.IsEmpty)
-                    component = Specialize(entry, specializations);
+                    component = Specialize(session, entry, specializations);
                 components.Add(component);
             }
             SlangResult combineResult = session.CreateCompositeComponentType(
@@ -249,9 +252,10 @@ public sealed partial class ShaderSourceBlock
             string combineText = DiagnosticText(combineDiagnostics);
             if (combineResult.Failed || combinedCode is null)
                 throw new InvalidDataException("Slang composition failed: " + combineText);
+            SlangShaderData.RetainSession(session, combinedCode);
 
             IComponentType codeToLink = entryPoint is null && !specializations.IsEmpty
-                ? Specialize(combinedCode, specializations)
+                ? Specialize(session, combinedCode, specializations)
                 : combinedCode;
 
             SlangResult linkResult = codeToLink.Link(
@@ -260,6 +264,7 @@ public sealed partial class ShaderSourceBlock
             string linkText = DiagnosticText(linkDiagnostics);
             if (linkResult.Failed || linkedCode is null)
                 throw new InvalidDataException("Slang link failed: " + linkText);
+            SlangShaderData.RetainSession(session, linkedCode);
 
             cancellationToken.ThrowIfCancellationRequested();
             Shader shader = Shader.CreateFromSlang(
@@ -282,12 +287,13 @@ public sealed partial class ShaderSourceBlock
         }
     }
 
-    private static IComponentType Specialize(IComponentType code, ReadOnlyMemory<SpecializationArg> arguments)
+    private static IComponentType Specialize(ISession session, IComponentType code, ReadOnlyMemory<SpecializationArg> arguments)
     {
         SlangResult result = code.Specialize(arguments.ToArray(), out IComponentType specialized,
             out ISlangBlob? diagnostics);
         if (result.Failed || specialized is null)
             throw new InvalidDataException("Slang specialization failed: " + DiagnosticText(diagnostics));
+        SlangShaderData.RetainSession(session, specialized);
         return specialized;
     }
 

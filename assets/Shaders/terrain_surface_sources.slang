@@ -18,7 +18,9 @@ struct TerrainScalarSource
     float InitialValue;
     int SamplesStart;
     int PageOffsetsStart;
-    int3 Padding;
+    int Padding0;
+    int Padding1;
+    int Padding2;
 };
 
 StructuredBuffer<TerrainScalarSource> TerrainSources;

@@ -27,14 +27,7 @@
             ]
           },
           {
-            "EntryPoint": "RequestTransparentShadows",
-            "Arguments": [
-              "0",
-              "true"
-            ]
-          },
-          {
-            "EntryPoint": "RequestProjectedTransparentShadows",
+            "EntryPoint": "RequestTransparentPages",
             "Arguments": [
               "0",
               "true"
@@ -55,7 +48,7 @@
             ]
           },
           {
-            "EntryPoint": "ClusterShadowReceiver",
+            "EntryPoint": "ClusterShadowRequests",
             "Arguments": [
               "0",
               "0"
@@ -65,16 +58,7 @@
             "EntryPoint": "ClusterForwardShade",
             "Arguments": [
               "0",
-              "0",
-              "false"
-            ]
-          },
-          {
-            "EntryPoint": "ClusterForwardShade",
-            "Arguments": [
-              "0",
-              "0",
-              "true"
+              "0"
             ]
           },
           {
@@ -84,7 +68,7 @@
             ]
           },
           {
-            "EntryPoint": "ClusterShadowReceiver",
+            "EntryPoint": "ClusterShadowRequests",
             "Arguments": [
               "0",
               "8"
@@ -94,16 +78,7 @@
             "EntryPoint": "ClusterForwardShade",
             "Arguments": [
               "0",
-              "8",
-              "false"
-            ]
-          },
-          {
-            "EntryPoint": "ClusterForwardShade",
-            "Arguments": [
-              "0",
-              "8",
-              "true"
+              "8"
             ]
           },
           {
@@ -113,7 +88,7 @@
             ]
           },
           {
-            "EntryPoint": "ClusterShadowReceiver",
+            "EntryPoint": "ClusterShadowRequests",
             "Arguments": [
               "0",
               "9"
@@ -123,16 +98,7 @@
             "EntryPoint": "ClusterForwardShade",
             "Arguments": [
               "0",
-              "9",
-              "false"
-            ]
-          },
-          {
-            "EntryPoint": "ClusterForwardShade",
-            "Arguments": [
-              "0",
-              "9",
-              "true"
+              "9"
             ]
           },
           {
@@ -142,7 +108,7 @@
             ]
           },
           {
-            "EntryPoint": "ClusterShadowReceiver",
+            "EntryPoint": "ClusterShadowRequests",
             "Arguments": [
               "0",
               "10"
@@ -152,16 +118,7 @@
             "EntryPoint": "ClusterForwardShade",
             "Arguments": [
               "0",
-              "10",
-              "false"
-            ]
-          },
-          {
-            "EntryPoint": "ClusterForwardShade",
-            "Arguments": [
-              "0",
-              "10",
-              "true"
+              "10"
             ]
           },
           {
@@ -171,7 +128,7 @@
             ]
           },
           {
-            "EntryPoint": "ClusterShadowReceiver",
+            "EntryPoint": "ClusterShadowRequests",
             "Arguments": [
               "0",
               "11"
@@ -181,16 +138,7 @@
             "EntryPoint": "ClusterForwardShade",
             "Arguments": [
               "0",
-              "11",
-              "false"
-            ]
-          },
-          {
-            "EntryPoint": "ClusterForwardShade",
-            "Arguments": [
-              "0",
-              "11",
-              "true"
+              "11"
             ]
           },
           {

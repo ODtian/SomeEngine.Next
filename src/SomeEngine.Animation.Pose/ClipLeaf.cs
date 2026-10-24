@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose;
 
@@ -21,6 +22,10 @@ public struct ClipInstance : IBufferElement
     public BoneTransform[] Samples;
     public float PreviousTime;
     public Matrix4x4 PreviousMotion;
+    internal AnimationLeafTime Time;
+    internal float Weight;
+    internal bool Active, Sampled;
+    internal JobResourceAccess SampleAccess;
 }
 
 public readonly struct ClipLeaf : IAnimationLeaf<ClipParameters>
@@ -48,6 +53,7 @@ public readonly struct ClipLeaf : IAnimationLeaf<ClipParameters>
             Output = PoseAnimation.Resolve(world, target, definitions.Parameters[index].Output),
             Samples = new BoneTransform[definitions.Parameters[index].Clip.Skeleton.BoneCount],
         };
+        instance.SampleAccess = JobResourceAccess.Write(instance.Samples);
         world.ExecuteBufferWrite<ClipInstance, ClipInstance>(animation, ref instance, static (instances, ref instance) =>
         {
             if (instances.Count > 0 && instances.Read(0).Placement.Starts != instance.Placement.Starts) instances.Clear();

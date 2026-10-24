@@ -5,6 +5,8 @@ system callbacks 按显式 order 和 registration tie-break 在 coordinator thre
 
 `SystemGroup` 的提交观察者由当前线程持有可复用栈。每个生命周期回调进入作用域时压入自己的观察者，退出时按嵌套顺序移除；提交仍登记到各层作用域与资源关联的生命周期。正常结束与异常退出沿同一清理边界恢复栈。容量预热后，持续帧更新的作用域进入和退出使用已有存储。
 
+每份接受的 Job 使用登记在提交期间与完成回调期间分别保持引用，完成或回滚只结束一次；两个引用释放后，登记对象进入共享池。完成分派借用数组池中的回调数组，调用完毕后清除引用并归还。具体并行工作组使用带锁的连续栈复用组对象。数据和回收入口见 [JobSubmissionLifetime](../../../src/SomeEngine.Job/JobSubmissionLifetime.cs)、[Scheduler.ExecutionStore](../../../src/SomeEngine.Job/Scheduler.ExecutionStore.cs) 与 [JobWorkStreams](../../../src/SomeEngine.Job/JobWorkStreams.cs)。
+
 `ISystem<TContext>` 作为公开系统扩展入口。注册系统时，具体 `TSystem` 为更新建立 managed 函数指针；`SystemGroup` 每次系统更新通过该入口调用具体系统。`OnCreate`、`OnDestroy` 继续沿生命周期扩展分发。每系统上下文、提交作用域和成功回调后的版本写回沿现有 `SystemSlot` 维护。
 
 函数地址保存在完整 `SystemFunctions<TSystem, TContext>` 类型的共享静态表中，注册时写入节点。节点持有实际系统值，更新入口按该完整类型取得系统并调用 `OnUpdate`。热帧使用节点已经确定的地址，实例状态继续由各自节点持有。具体 struct 系统、class 系统的共享泛型与接口调用形状，连同驱动、查询和字段路径的实测成本，见 [类型化动画执行证据](../../evidence/Animation/2026-10-16/Typed-Execution.md)。
