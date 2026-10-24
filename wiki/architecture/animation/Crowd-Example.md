@@ -23,6 +23,8 @@ API 的程序生成示例夹具。24 段人体表面各连接四根骨骼，共 
 示例材质把四个 16 位 joint 和四个 8 位权重附加在标准表面属性后，使用自己的
 `someengine.example.crowd.lbs4.v1` 编码标识。两条路径共用同一个 `CrowdSkin.evaluate`，
 它通过 `LoadSkinTransform` 读取当前或上一帧模型骨骼，并求值位置和法线。
+示例的 `.shader` 源码组合同时声明自己的顶点编码和 `CrowdSkin` 求值器，并预编译
+`ClusterShadeMode`、`ClusterShadowReceiver` 和 `ClusterForwardShade` 的实际材质变体。
 缓存实现选择每个选中顶点 48 字节，分别保存当前及上一帧的世界位置和法线，按 16 字节对齐。
 示例应用通过 `ApplicationScene.DeformCacheBytes` 为两条路径都选择 256 MiB 容量。
 
