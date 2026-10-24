@@ -53,11 +53,14 @@ internal sealed class CpuBoneDemands(World world)
     private static readonly ConditionalWeakTable<World, CpuBoneDemands> Worlds = new();
     private readonly Dictionary<SkeletonInstance, Source> _sources = [];
     private readonly List<Work> _work = [];
+    private (SkeletonInstance Skeleton, ulong Version)[] _bindings = [];
     internal bool Changed;
     internal static CpuBoneDemands For(World world) => Worlds.GetValue(world, static world => new(world));
 
     internal void EnsureBound()
     {
+        foreach (var binding in _bindings)
+            if (binding.Skeleton.BindingVersion != binding.Version) { Changed = true; break; }
         if (!Changed)
             foreach (Work work in _work)
                 if (!world.IsAlive(work.Target) || work.BindingVersion != work.Skeleton.BindingVersion
@@ -134,6 +137,8 @@ internal sealed class CpuBoneDemands(World world)
         world.ReleaseQuery(targets);
         Dictionary<PoseResultReference, PoseNode> nodes = PoseAnimation.ReadNodes(world);
         Dictionary<SkeletonInstance, PoseResultReference> modelSources = PoseAnimation.ReadModelSources(world);
+        _bindings = modelSources.Keys.Concat(_sources.Keys).Distinct()
+            .Select(static skeleton => (skeleton, skeleton.BindingVersion)).ToArray();
         foreach (Source source in _sources.Values)
             if (source.Input.CpuBones is { } demand)
             {
