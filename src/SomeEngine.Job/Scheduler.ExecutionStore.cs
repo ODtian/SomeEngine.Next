@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Buffers;
 using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
@@ -48,6 +49,7 @@ public sealed partial class Scheduler
         internal readonly bool Completed;
         internal readonly DependencyContinuation[]? Continuations;
         internal readonly ExternalCompletionContinuation[]? ExternalContinuations;
+        internal readonly int ExternalContinuationCount;
         internal readonly CompletionLease ExternalContinuationLease;
         internal readonly ScopeToken Parent;
         internal readonly ExceptionDispatchInfo? Fault;
@@ -56,6 +58,7 @@ public sealed partial class Scheduler
             bool completed,
             DependencyContinuation[]? continuations,
             ExternalCompletionContinuation[]? externalContinuations,
+            int externalContinuationCount,
             CompletionLease externalContinuationLease,
             ScopeToken parent,
             ExceptionDispatchInfo? fault)
@@ -63,6 +66,7 @@ public sealed partial class Scheduler
             Completed = completed;
             Continuations = continuations;
             ExternalContinuations = externalContinuations;
+            ExternalContinuationCount = externalContinuationCount;
             ExternalContinuationLease = externalContinuationLease;
             Parent = parent;
             Fault = fault;
@@ -263,6 +267,7 @@ public sealed partial class Scheduler
                 ScopeToken parent = state.Parent;
                 DependencyContinuation[]? continuations;
                 ExternalCompletionContinuation[]? externalContinuations;
+                int externalContinuationCount = state.ExternalContinuations?.Count ?? 0;
                 CompletionLease externalContinuationLease = default;
 
                 if (state.Continuations.Count == 0)
@@ -281,7 +286,8 @@ public sealed partial class Scheduler
                 }
                 else
                 {
-                    externalContinuations = state.ExternalContinuations.ToArray();
+                    externalContinuations = ArrayPool<ExternalCompletionContinuation>.Shared.Rent(externalContinuationCount);
+                    state.ExternalContinuations.CopyTo(externalContinuations);
                     state.ExternalContinuations.Clear();
                     state.ActiveCompleters++;
                     externalContinuationLease = new CompletionLease(state, handle);
@@ -291,6 +297,7 @@ public sealed partial class Scheduler
                     completed: true,
                     continuations,
                     externalContinuations,
+                    externalContinuationCount,
                     externalContinuationLease,
                     parent,
                     fault);
