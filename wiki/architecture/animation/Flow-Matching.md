@@ -30,7 +30,7 @@ FlowMatchingModel model = (await asset.GetBlockAsync<FlowMatchingBlock>()).Creat
 
 ## 输入与自回归推进
 
-实例从共享初始历史建立自己的 previous latent、控制、噪声、生成姿势、根平移和根旋转。重新开始时，叶的实际 `Starts` 重建这些状态；`InitialHistory` 参数可以提供调用方选择的初始历史。
+实例从共享初始历史建立自己的 previous latent、控制、噪声、生成姿势、根平移和根旋转。重新开始时，叶的实际 `Starts` 重建历史、生成姿势、根变换及随机种子，当前控制输入继续保存在实例数组中；`InitialHistory` 参数可以提供调用方选择的初始历史。
 
 控制字段沿导出顺序连接。`FlowControlField.Offset`、`Width` 给出其编码范围，Vector3 按 XYZ 排列；Rotation6D 按两条矩阵轴的交错分量排列。固定数组依次展开元素，`Encode(value, product, element)` 写入选定元素。
 
