@@ -41,3 +41,5 @@ feet.SampleEnvelope(new FootStride(departure, landing, Radius: 0.12f), terrain);
 ```
 
 公共消费入口位于 `tests/SomeEngine.Animation.Pose.Tests/FootSupportBehaviorTests.cs`。
+
+[Foot Locking](Foot-Locking.md) 将接触目标接到脚跟/脚尖锚点、滑动与骨盆可达补偿，并通过公开 GPU 腿部目标进入普通最终姿势。
