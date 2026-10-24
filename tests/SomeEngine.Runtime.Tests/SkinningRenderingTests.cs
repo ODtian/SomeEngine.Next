@@ -376,10 +376,10 @@ public sealed partial class SkinningRenderingTests
             scene.WriteWorld(world, SceneSerialization.CreateRegistry());
             project.RegisterAsset(await scene.SaveAsync(Path.Combine(project.RootPath, entry.Path)));
         }
-        private string SkinShader(string reader, string encoding) => shader
+        private string SkinShader(string reader, string encoding) =>
+            "#define CLUSTER_VERTEX_ENCODING \"someengine.cluster.positions.uint16.v1+" + encoding + "\"\n" + shader
             .Replace("typedef StaticVertexEval VertexEvaluate;", SkinEvaluator.Replace("USER_READER", reader) + "\ntypedef PanelSkin VertexEvaluate;")
-            .Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef PanelSkin RasterVertexEvaluate;")
-            .Replace("#define CLUSTER_POSITION_RASTER 1", "#define CLUSTER_POSITION_RASTER 1\n#define CLUSTER_VERTEX_ENCODING \"someengine.cluster.positions.uint16.v1+" + encoding + "\"");
+            .Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef PanelSkin RasterVertexEvaluate;");
 
         public Task WriteMeshesAsync(Func<ClusterVertexAttributes, ClusterVertexAttributes, bool, byte[]> encode) =>
             WriteSceneAsync(async (index, previous, right) =>

@@ -12,6 +12,8 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Resources;
 using SomeEngine.Render.Cluster;
+using SomeEngine.Render.Instances;
+using SomeEngine.Render.Features.Skinning;
 using SomeEngine.Serialization.Containers;
 
 namespace DefaultGame.Content;
@@ -30,8 +32,7 @@ public static class SampleContent
         projectRoot = Path.GetFullPath(projectRoot);
         string shaders = Path.Combine(projectRoot, "assets", "Shaders");
         string engineShaders = Path.Combine(Path.GetFullPath(engineRoot), "assets", "Shaders");
-        WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"),
-            ClusterShaderSources.BuildInstanceLayout(ClusterRenderFeature.InstanceLayout));
+        WriteInstanceLayout(shaders);
         WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
             File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
         var project = new AssetProject(projectRoot, [], shaderIncludeDirectories: [engineShaders]);
@@ -46,8 +47,7 @@ public static class SampleContent
         engineRoot = Path.GetFullPath(engineRoot);
         string shaders = Path.Combine(projectRoot, "assets", "Shaders");
         string engineShaders = Path.Combine(engineRoot, "assets", "Shaders");
-        WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"),
-            ClusterShaderSources.BuildInstanceLayout(ClusterRenderFeature.InstanceLayout));
+        WriteInstanceLayout(shaders);
         WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
             File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
@@ -72,6 +72,17 @@ public static class SampleContent
         if (errors.Length != 0) throw new InvalidDataException(string.Join(Environment.NewLine, errors.Select(static error => error.Message)));
         Console.WriteLine($"Built {project.Manifest.Assets.Count} project assets from project sources and the engine shader library.");
     }
+    private static void WriteInstanceLayout(string shaders)
+    {
+        RenderInstancePropertyLayout layout = RenderInstancePropertyLayout.Compose(
+            ClusterRenderFeature.InstanceLayout, SkinInstanceProducer.Layout);
+        int skinBinding = layout.Resolve<RenderSkinBinding>(SkinInstanceProducer.BindingKey)
+            .Descriptor.MetadataWordOffset;
+        string source = ClusterShaderSources.BuildInstanceLayout(layout).Replace("#endif",
+            $"static const uint SKIN_BINDING_METADATA_WORD = {skinBinding}u;\n\n#endif", StringComparison.Ordinal);
+        WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"), source);
+    }
+
     private static void WriteGeneratedFile(string path, string content)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
