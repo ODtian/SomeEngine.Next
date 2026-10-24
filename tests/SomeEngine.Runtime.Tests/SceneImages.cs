@@ -74,6 +74,7 @@ internal static class SceneImages
         {
             Assert.Equal(expected.Width, actual.Width);
             Assert.Equal(expected.Height, actual.Height);
+            Assert.Equal(expected.Pixels.Length, actual.Pixels.Length);
             Compare(expected, actual);
             Compare(actual, expected);
         }
@@ -103,6 +104,10 @@ internal static class SceneImages
             }
         }
     }
+
+    internal static void AssertEqualWithinPixel(SceneImage expected, SceneImage actual, int tolerance = 2,
+        [CallerMemberName] string test = "") =>
+        AssertWithinPixelError(expected, actual, pixelRadius: 1, colorTolerance: tolerance, test);
 
     internal static void AssertColorRegion(SceneImage image, int left, int top, int width, int height,
         byte red, byte green, byte blue, int tolerance = 2, [CallerMemberName] string test = "")

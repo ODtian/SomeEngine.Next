@@ -36,9 +36,10 @@
 | `Clip` | 当前均匀量化片段 |
 | `SampleTime` | 当前源样本时间，已应用播放速度和循环 |
 | `StateMachine` | 共享 GPU 状态与过渡定义 |
+| `Blend` | 共享 GPU 片段、Blend Space 与逐骨层组合 |
 | `Controls` | 各实例的浮点控制值 |
-| `PlaybackTime` | 共同状态机叶节点的时间 |
-| `Playing` | 本次更新是否推进状态机播放 |
+| `PlaybackTime` | 共同 GPU 叶节点的时间 |
+| `Playing` | 本次更新是否推进 GPU 状态或混合相位 |
 | `CalculationTime` | Game 更新累积的计算时间 |
 | `Starts` | 共同时间轴的开始次数 |
 | `InputNumber` | 每次 Game 更新递增的目标输入编号 |
@@ -83,6 +84,8 @@ G 范围、GPU 播放行及 `InputTime` 控制时钟。图消费者使用 `Skinn
 prepare 后解析提取映射，并在帧提交后交付结果。
 
 共享状态机、逐实例控制值与交叉过渡通过 `GpuStateLeaf` 接入，实际状态、来源时间和过渡权重见 [GPU State Machines](GPU-State-Machines.md)。
+
+1D/2D Blend Space、遮罩和参考姿势差叠加通过 `GpuBlendLeaf` 接入，实例参数及相位规则见 [GPU Blending](GPU-Blending.md)。
 
 公共应用示例位于 [SkinningRenderingTests](../../../tests/SomeEngine.Runtime.Tests/SkinningRenderingTests.cs)。
 示例使用共享父实例、两个播放速度及每顶点两个影响；数值读取和可见几何都经过普通 App、
