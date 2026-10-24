@@ -44,8 +44,9 @@ public sealed partial class NavigationMeshBlock : AssetBlock, IAssetBlockWriter
             lock (entry)
             {
                 if (entry.Mesh is { } mesh) return ValueTask.FromResult(mesh);
-                entry.Read ??= ReadMeshAsync(entry, RetainSource()!);
-                return new(entry.Read.WaitAsync(cancellationToken));
+                Task<NavigationMesh> read = entry.Read ??= ReadMeshAsync(entry, RetainSource()!);
+                if (read.IsCompleted) entry.Read = null;
+                return new(read.WaitAsync(cancellationToken));
             }
         }
     }
@@ -85,28 +86,32 @@ public sealed partial class NavigationMeshBlock : AssetBlock, IAssetBlockWriter
 
     private static async Task<NavigationMesh> ReadMeshAsync(MeshEntry entry, AssetBlockSource source)
     {
-        using (source)
+        try
         {
-            NavigationMesh mesh;
-            if (entry.Graph is null)
-                mesh = NavigationMeshTileSource.DecodeMeshOnWorker(await NavigationMeshTileSource.ReadChunksAsync(source,
-                    entry.Description.FirstChunkKey, default).ConfigureAwait(false), entry.Description.ContentVersion, entry.Description.BakedRadius);
-            else
+            using (source)
             {
-                var tiles = new NavigationMeshTile[entry.Description.Tiles.Count];
-                for (int index = 0; index < tiles.Length; index++)
+                NavigationMesh mesh;
+                if (entry.Graph is null)
+                    mesh = NavigationMeshTileSource.DecodeMeshOnWorker(await NavigationMeshTileSource.ReadChunksAsync(source,
+                        entry.Description.FirstChunkKey, default).ConfigureAwait(false), entry.Description.ContentVersion, entry.Description.BakedRadius);
+                else
                 {
-                    NavigationMeshTileDescription tile = entry.Description.Tiles[index];
-                    NavigationTileBytes bytes = await NavigationMeshTileSource.ReadChunksAsync(source, tile.FirstChunkKey, default).ConfigureAwait(false);
-                    tiles[index] = new(new(tile.X, tile.Z), NavigationMeshTileSource.DecodeMeshOnWorker(bytes, tile.ContentVersion, tile.BakedRadius));
+                    var tiles = new NavigationMeshTile[entry.Description.Tiles.Count];
+                    for (int index = 0; index < tiles.Length; index++)
+                    {
+                        NavigationMeshTileDescription tile = entry.Description.Tiles[index];
+                        NavigationTileBytes bytes = await NavigationMeshTileSource.ReadChunksAsync(source, tile.FirstChunkKey, default).ConfigureAwait(false);
+                        tiles[index] = new(new(tile.X, tile.Z), NavigationMeshTileSource.DecodeMeshOnWorker(bytes, tile.ContentVersion, tile.BakedRadius));
+                    }
+                    NavigationTilePortal[] portals = NavigationArrayData.Decode<NavigationTilePortal>(
+                        await source.ReadBytesAsync(entry.Description.GraphChunkKey + 4).ConfigureAwait(false));
+                    mesh = NavigationMeshTileSource.Join(tiles, portals, entry.Graph, entry.Description.ContentVersion, entry.Description.BakedRadius);
                 }
-                NavigationTilePortal[] portals = NavigationArrayData.Decode<NavigationTilePortal>(
-                    await source.ReadBytesAsync(entry.Description.GraphChunkKey + 4).ConfigureAwait(false));
-                mesh = NavigationMeshTileSource.Join(tiles, portals, entry.Graph, entry.Description.ContentVersion, entry.Description.BakedRadius);
+                lock (entry) entry.Mesh = mesh;
+                return mesh;
             }
-            lock (entry) entry.Mesh = mesh;
-            return mesh;
         }
+        finally { lock (entry) entry.Read = null; }
     }
 
     public async ValueTask WriteAsync(AssetBlockWriter writer, CancellationToken cancellationToken = default)

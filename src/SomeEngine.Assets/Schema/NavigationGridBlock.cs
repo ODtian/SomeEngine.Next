@@ -49,8 +49,9 @@ public sealed partial class NavigationGridBlock : AssetBlock, IAssetBlockWriter
             lock (entry)
             {
                 if (entry.Grid is { } grid) return ValueTask.FromResult(grid);
-                entry.Read ??= ReadGridAsync(entry, RetainSource()!);
-                return new(entry.Read.WaitAsync(cancellationToken));
+                Task<NavigationGrid> read = entry.Read ??= ReadGridAsync(entry, RetainSource()!);
+                if (read.IsCompleted) entry.Read = null;
+                return new(read.WaitAsync(cancellationToken));
             }
         }
     }
@@ -95,44 +96,48 @@ public sealed partial class NavigationGridBlock : AssetBlock, IAssetBlockWriter
 
     private static async Task<NavigationGrid> ReadGridAsync(GridEntry entry, AssetBlockSource source)
     {
-        using (source)
+        try
         {
-            NavigationGrid grid;
-            if (entry.Graph is not { } graph)
+            using (source)
             {
-                NavigationGridVariantData data = entry.Description;
-                NavigationTileBytes bytes = await NavigationGridTileSource.ReadChunksAsync(source, data.FirstChunkKey, default).ConfigureAwait(false);
-                grid = NavigationGridTileSource.DecodeOnWorker(bytes, new(ToVector(data.Minimum), ToVector(data.Maximum)),
-                    data.CellSize, entry.Shape, data.ContentVersion);
-            }
-            else
-            {
-                var tiles = new NavigationGridTile[entry.Description.Tiles.Count];
-                for (int index = 0; index < tiles.Length; index++)
+                NavigationGrid grid;
+                if (entry.Graph is not { } graph)
                 {
-                    NavigationGridTileDescription tile = entry.Description.Tiles[index];
-                    NavigationRegionTile description = graph.Tiles.Span.Find(new(tile.X, tile.Z));
-                    NavigationTileBytes bytes = await NavigationGridTileSource.ReadChunksAsync(source, tile.FirstChunkKey, default).ConfigureAwait(false);
-                    tiles[index] = new(description.Tile, NavigationGridTileSource.DecodeOnWorker(bytes,
-                        description.Bounds, graph.CellSize, graph.Shape, description.ContentVersion));
+                    NavigationGridVariantData data = entry.Description;
+                    NavigationTileBytes bytes = await NavigationGridTileSource.ReadChunksAsync(source, data.FirstChunkKey, default).ConfigureAwait(false);
+                    grid = NavigationGridTileSource.DecodeOnWorker(bytes, new(ToVector(data.Minimum), ToVector(data.Maximum)),
+                        data.CellSize, entry.Shape, data.ContentVersion);
                 }
-                var result = new NavigationGrid[1];
-                var accesses = new List<JobResourceAccess>
+                else
                 {
-                    JobResourceAccess.Read(graph.Tiles), JobResourceAccess.Read(graph.Entrances), JobResourceAccess.Read(graph.Edges),
-                    JobResourceAccess.Read(graph.Crossings), JobResourceAccess.Write(result),
-                };
-                foreach (NavigationGridTile tile in tiles)
-                {
-                    accesses.Add(JobResourceAccess.Read(tile.Grid.Cells));
-                    accesses.Add(JobResourceAccess.Read(tile.Grid.Edges));
+                    var tiles = new NavigationGridTile[entry.Description.Tiles.Count];
+                    for (int index = 0; index < tiles.Length; index++)
+                    {
+                        NavigationGridTileDescription tile = entry.Description.Tiles[index];
+                        NavigationRegionTile description = graph.Tiles.Span.Find(new(tile.X, tile.Z));
+                        NavigationTileBytes bytes = await NavigationGridTileSource.ReadChunksAsync(source, tile.FirstChunkKey, default).ConfigureAwait(false);
+                        tiles[index] = new(description.Tile, NavigationGridTileSource.DecodeOnWorker(bytes,
+                            description.Bounds, graph.CellSize, graph.Shape, description.ContentVersion));
+                    }
+                    var result = new NavigationGrid[1];
+                    var accesses = new List<JobResourceAccess>
+                    {
+                        JobResourceAccess.Read(graph.Tiles), JobResourceAccess.Read(graph.Entrances), JobResourceAccess.Read(graph.Edges),
+                        JobResourceAccess.Read(graph.Crossings), JobResourceAccess.Write(result),
+                    };
+                    foreach (NavigationGridTile tile in tiles)
+                    {
+                        accesses.Add(JobResourceAccess.Read(tile.Grid.Cells));
+                        accesses.Add(JobResourceAccess.Read(tile.Grid.Edges));
+                    }
+                    JobSystem.Schedule(new JoinGrid(graph, tiles, result), accesses.ToArray()).Complete();
+                    grid = result[0];
                 }
-                JobSystem.Schedule(new JoinGrid(graph, tiles, result), accesses.ToArray()).Complete();
-                grid = result[0];
+                lock (entry) entry.Grid = grid;
+                return grid;
             }
-            lock (entry) entry.Grid = grid;
-            return grid;
         }
+        finally { lock (entry) entry.Read = null; }
     }
 
     private readonly struct JoinGrid(NavigationGridRegionGraph graph, NavigationGridTile[] tiles, NavigationGrid[] result) : IJob
