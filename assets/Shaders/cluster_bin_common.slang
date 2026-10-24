@@ -137,7 +137,7 @@ void ReadClusterBinData(
     out uint4 vertReuseBatchWords,
     out uint vertexCount,
     out uint triangleCount,
-    out uint packedMaterials,
+    out uint3 packedMaterials,
     out uint packedRanges)
 {
     uint clusterOffset =
@@ -146,7 +146,7 @@ void ReadClusterBinData(
     uint packedCounts = pageHeap.Load(clusterOffset + 60u);
     vertexCount = packedCounts & 0xFFu;
     triangleCount = (packedCounts >> 8u) & 0xFFu;
-    packedMaterials = pageHeap.Load(clusterOffset + 68u);
+    packedMaterials = LoadClusterMaterials(pageHeap, entry.PageOffset, clusterOffset);
     packedRanges = pageHeap.Load(clusterOffset + 72u);
     vertReuseBatchWords = LoadVertReuseBatchWords(pageHeap, clusterOffset);
 }
@@ -154,7 +154,7 @@ void ReadClusterBinData(
 // Existing callers that need material ranges can ignore the vertex count.
 void ReadClusterBinData(
     ByteAddressBuffer pageHeap, DrawRequest entry, out uint4 vertReuseBatchWords,
-    out uint triangleCount, out uint packedMaterials, out uint packedRanges)
+    out uint triangleCount, out uint3 packedMaterials, out uint packedRanges)
 {
     uint vertexCount;
     ReadClusterBinData(pageHeap, entry, vertReuseBatchWords, vertexCount,

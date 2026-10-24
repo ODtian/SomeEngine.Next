@@ -33,11 +33,6 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         "Derived relationship components are read-only",
         "Parameter '{0}' on job entity '{1}' requests writable access to derived relationship component '{2}'");
 
-    private static readonly DiagnosticDescriptor ManagedField = Create(
-        "SECSSG104",
-        "IJobEntity fields must be unmanaged by-value configuration",
-        "Field '{0}' on job entity '{1}' is not unmanaged; indirect/reference aliases require a future declared lookup or certified external resource surface");
-
     private static readonly DiagnosticDescriptor NestedJob = Create(
         "SECSSG105",
         "Nested IJobEntity types are not supported",
@@ -170,17 +165,7 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         {
             if (field.IsStatic || field.IsConst)
                 continue;
-            ISymbol diagnosticMember = field.AssociatedSymbol ?? field;
-            if (!IsSafeDirectType(field.Type))
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    ManagedField,
-                    diagnosticMember.Locations.FirstOrDefault(),
-                    diagnosticMember.Name,
-                    job.ToDisplayString()));
-                valid = false;
-            }
-            else if (!field.IsReadOnly && !field.IsImplicitlyDeclared)
+            if (!field.IsReadOnly && !field.IsImplicitlyDeclared)
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     PacketLocalFieldMutation,
@@ -423,6 +408,25 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
 {{constraints}}
         => global::SomeEngine.ECS.Systems.JobEntityRuntime.ScheduleParallel(
             world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, options, dependency);
+
+    public static global::SomeEngine.Job.JobHandle ScheduleParallel{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.ScheduleParallel(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, default, dependency);
+
+    public static global::SomeEngine.Job.JobHandle ScheduleParallel{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.ECS.Systems.JobEntityScheduleOptions options,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.ScheduleParallel(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, options, dependency);
 """
             : string.Empty;
 
@@ -462,6 +466,25 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         => global::SomeEngine.ECS.Systems.JobEntityRuntime.Schedule(
             world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, options, dependency);
 
+    public static global::SomeEngine.Job.JobHandle Schedule{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Schedule(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, default, dependency);
+
+    public static global::SomeEngine.Job.JobHandle Schedule{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.ECS.Systems.JobEntityScheduleOptions options,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Schedule(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, options, dependency);
+
     public static void Execute{{methodTypeParameters}}(
         this in {{jobType}} job,
         global::SomeEngine.ECS.World world,
@@ -478,6 +501,25 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
 {{constraints}}
         => global::SomeEngine.ECS.Systems.JobEntityRuntime.Execute(
             world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, options, dependency);
+
+    public static void Execute{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Execute(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, default, dependency);
+
+    public static void Execute{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.ECS.Systems.JobEntityScheduleOptions options,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Execute(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, options, dependency);
 {{parallelMethods}}
     [global::System.Runtime.CompilerServices.UnsafeAccessor(
         global::System.Runtime.CompilerServices.UnsafeAccessorKind.StaticMethod,

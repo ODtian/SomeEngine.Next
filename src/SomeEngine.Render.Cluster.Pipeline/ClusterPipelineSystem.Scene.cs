@@ -71,6 +71,7 @@ public sealed partial class ClusterPipelineSystem
             GraphAccessMode.Write, WriteCoverage.Partial, ResourceContentState.Defined, BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(graph.CreateBufferUav(_instanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
+        BindDeformBounds(ref graph, ref pass);
         _sceneBatch = null;
         _geometryPassesEnabled = null;
     }
@@ -78,7 +79,8 @@ public sealed partial class ClusterPipelineSystem
     private void BindSceneBounds(ref RenderGraphFrame graph, RenderInstanceBatch batch, bool hasTargetViews)
     {
         bool hasPrevious = ReferenceEquals(_sceneBatch, batch);
-        bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision || _sceneGeometryRevision != GeometryRevision;
+        bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision || _sceneGeometryRevision != GeometryRevision
+            || _sceneDeformRevision != (_deformBounds?.Revision ?? 0);
         // Movement changes bounds, not the instance membership of the spatial groups.
         // Keep their order until batch replacement changes the row mapping; the GPU refits
         // the existing groups below. Geometry residency changes also preserve that mapping.
@@ -159,6 +161,8 @@ public sealed partial class ClusterPipelineSystem
         foreach (RasterEpoch epoch in _rasterEpochs.Values)
         {
             bool enabled = epoch.PolicyTarget ? hasTargetGeometry : hasGeometry;
+            foreach (GraphPassId pass in epoch.Deformation.Passes)
+                graph.SetPassEnabled(pass, enabled);
             if (epoch.PolicyTarget)
                 foreach (GraphPassId pass in epoch.Work.Passes)
                     graph.SetPassEnabled(pass, enabled);

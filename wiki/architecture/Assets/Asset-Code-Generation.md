@@ -32,7 +32,7 @@ Block 的持久类型 ID 由 `[AssetBlock]` 的语义名称静态生成，与文
 
 Importer 使用 `[AssetImporter]` 声明持久 ID、生产的 Block 以及可选的强类型设置提供者，并实现 `IAssetImporter<TSource, TSettings>`。项目声明 `[AssetCapabilities]` 的 partial 静态类型后，SG 检查本项目及其引用中的扩展，生成 `AddAssetCapabilities(IServiceCollection)`。
 
-生成代码注册 Importer、强类型设置工厂和能力描述，使用 Microsoft DI 的正常构造注入与作用域；重复注册保持幂等。能力描述可供编辑器显示来源类型、设置类型、产出 Block 和实现版本。安装多个替代生产者是合法项目能力，不等于一次导入同时启用它们。
+生成代码注册 Importer 与能力描述，强类型设置工厂保存在 Importer 能力描述中。`[AssetImporterSet]` 声明成员与中立标记；`[AssetCapabilities(params string[] defaultImporterSets)]` 按持久 ID 指定项目默认组合。生成的 `ImporterSetCapabilities` 提供组合 ID、名称、成员 ID、`Neutral` 与 `Default`，并在 DI 中按 ID 合并。组合声明的错误使用 `SEAC001`、重复身份使用 `SEAC002`、不可用默认组合使用 `SEAC003`。来源展开与逐项替换见 [Importer Sets](Importer-Sets.md)。Microsoft DI 用于 Importer 互相发现与按导入作用域共享实例；Importer 具有公开无参构造函数，任一带参数的构造函数使生成器报告 `SEAC004` 编译错误（ADR 0015）。诊断同时覆盖本项目与引用程序集的 Importer，包括可选参数、主构造函数和私有重载。重复注册保持幂等。能力描述可供编辑器显示来源类型、设置类型、产出 Block 和实现版本。安装多个替代生产者是合法项目能力，不等于一次导入同时启用它们。
 
 SG 不遍历来源文件，不创建完整流程，不决定默认选择，不生成依赖业务调用或保存登记。来源持久设置与单次覆盖由项目流程解释，生产者竞争由 Context 在一次调用内检查。
 
@@ -44,7 +44,7 @@ var selection = ProjectAssetCapabilities.SelectImporter(
 var choices = ProjectAssetCapabilities.ImporterChoices;
 ```
 
-Importer 是在库中完整编译的普通类，不要求 partial，也不由消费项目 SG 补全。glTF 来源遍历及各 Block 的通用转换均由 Importers 库实现；项目仅提供自己的材质解释和明确的顶点编码服务。
+Importer 是在库中完整编译的普通类，glTF 来源遍历及各 Block 的通用转换由 Importers 库实现；项目提供自己的材质解释，顶点编码规则由产出对应 Block 的 Importer 持有。来源设置经 [导入上下文](Asset-Import-and-Storage.md) 读取。
 
 ## 材质与使用边界
 

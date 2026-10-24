@@ -8,6 +8,9 @@
   <Project Path="src\SomeEngine.Typography\SomeEngine.Typography.csproj" />
   <Project Path="tests\SomeEngine.Typography.Tests\SomeEngine.Typography.Tests.csproj" />
   <Project Path="tools\SomeEngine.Typography.AotSmoke\SomeEngine.Typography.AotSmoke.csproj" />
+  <Project Path="src\SomeEngine.Animation.Pose\SomeEngine.Animation.Pose.csproj" />
+  <Project Path="src\SomeEngine.Animation.Pose.Importers\SomeEngine.Animation.Pose.Importers.csproj" />
+  <Project Path="tests\SomeEngine.Animation.Pose.Tests\SomeEngine.Animation.Pose.Tests.csproj" />
   <Project Path="src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
   <Project Path="src\SomeEngine.Resources\SomeEngine.Resources.csproj" />
   <Project Path="tests\SomeEngine.Resources.Tests\SomeEngine.Resources.Tests.csproj" />
@@ -19,6 +22,8 @@
   <Project Path="tools\SomeEngine.ECS.AotSmoke\SomeEngine.ECS.AotSmoke.csproj" />
   <Project Path="tools\SomeEngine.Views.AotSmoke\SomeEngine.Views.AotSmoke.csproj" />
   <Project Path="src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
+  <Project Path="src\SomeEngine.ECS.Relations\SomeEngine.ECS.Relations.csproj" />
+  <Project Path="src\SomeEngine.Physics\SomeEngine.Physics.csproj" />
   <Project Path="src\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
   <Project Path="src/SomeEngine.Animation/SomeEngine.Animation.csproj" />
   <Project Path="tests/SomeEngine.Animation.Tests/SomeEngine.Animation.Tests.csproj" />
@@ -48,6 +53,8 @@
   <Project Path="src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" />
   <Project Path="tests\SomeEngine.Runtime.Tests\SomeEngine.Runtime.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Tests\SomeEngine.ECS.Tests.csproj" />
+  <Project Path="tests\SomeEngine.ECS.Relations.Tests\SomeEngine.ECS.Relations.Tests.csproj" />
+  <Project Path="tests\SomeEngine.Physics.Tests\SomeEngine.Physics.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Systems.Tests\SomeEngine.ECS.Systems.Tests.csproj" />
   <Project Path="tests\SomeEngine.Views.Tests\SomeEngine.Views.Tests.csproj" />
   <Project Path="tests\SomeEngine.Views.Solid.Tests\SomeEngine.Views.Solid.Tests.csproj" />
@@ -92,6 +99,7 @@
     <Project Path="tests/SomeEngine.Assets.Consumer.Tests/SomeEngine.Assets.Consumer.Tests.csproj" />
     <Project Path="tests/SomeEngine.ECS.Benchmarks.Tests/SomeEngine.ECS.Benchmarks.Tests.csproj" />
     <Project Path="tests/SomeEngine.Graphics.Benchmarks.Tests/SomeEngine.Graphics.Benchmarks.Tests.csproj" />
+    <Project Path="tests/SomeEngine.Assets.ImporterSets.Tests/SomeEngine.Assets.ImporterSets.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/TestRules/SomeEngine.TestRules.csproj" />

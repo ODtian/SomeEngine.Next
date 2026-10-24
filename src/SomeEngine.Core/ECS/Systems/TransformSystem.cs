@@ -259,7 +259,7 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
             }
         });
 
-        RemoveStaleKnownParents(markChangesDirty);
+        RemoveStaleKnownParents(world, markChangesDirty);
     }
 
     private void RefreshKnownParent(
@@ -293,7 +293,7 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
             _knownParents[entity] = parent;
     }
 
-    private void RemoveStaleKnownParents(bool markChangesDirty)
+    private void RemoveStaleKnownParents(World world, bool markChangesDirty)
     {
         _staleParentScratch.Clear();
         foreach (EntityId entity in _knownParents.Keys)
@@ -305,7 +305,7 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
         for (int i = 0; i < _staleParentScratch.Count; i++)
         {
             EntityId entity = _staleParentScratch[i];
-            if (markChangesDirty)
+            if (markChangesDirty && world.IsAlive(entity))
                 AddDirtyRoot(entity);
             _knownParents.Remove(entity);
         }

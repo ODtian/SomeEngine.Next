@@ -50,8 +50,8 @@ public sealed class AssetImportTests
         using ShaderAsset shader = await ShaderAsset.OpenAsync(files.Path("shader0.shader.asset"));
         Assert.Contains(mesh.Id, first);
         Assert.Contains(shader.Id, first);
-        var bytes = await mesh.GetBlock<ClusterMeshBlock>().ReadBytesAsync(ClusterMeshBlock.PayloadChunkKey);
-        Assert.True(bytes.Length > 0);
+        Assert.NotEmpty((await mesh.GetBlockAsync<ClusterGeometryBlock>()).Clusters);
+        Assert.NotEmpty((await mesh.GetBlockAsync<ClusterVertexAttributesBlock>()).Clusters);
         Assert.All(project.List(), entry => Assert.NotEqual(Guid.Empty, entry.Version));
         File.WriteAllText(files.Source, "renamed source content");
         Assert.Equal(first, await project.ImportAsync(files.Source, importer));
@@ -418,7 +418,7 @@ public sealed class AssetImportTests
                     (_, _) => "mesh.mesh.asset", static (asset, path, cancellation) => asset.SaveAsync(path, cancellation));
                 context.EnableImporter<string, MeshAsset>(new AssetImporter<string, int>(
                     new Guid("c698a681-8c3a-4e20-965e-f8d321f6bda9"),
-                    [MeshBlock.BlockTypeId, ClusterMeshBlock.BlockTypeId, MeshMaterialsBlock.BlockTypeId], new MeshConversion(), 0));
+                    [MeshBlock.BlockTypeId, ClusterGeometryBlock.BlockTypeId, ClusterVertexAttributesBlock.BlockTypeId, MeshMaterialsBlock.BlockTypeId], new MeshConversion(), 0));
             }
             for (int index = 0; index < ShaderCount; index++)
                 await context.GetAssetAsync<ShaderPart, ShaderAsset>(new(index, source), token);
@@ -443,7 +443,8 @@ public sealed class AssetImportTests
             var (positions, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(0);
             using MeshAsset mesh = ClusterBuilder.ProcessRaw(positions, attributes, indices, [new MeshMaterialSlot(Guid.Empty)], source);
             output.SetBlock(mesh.GetBlock<MeshBlock>().Duplicate());
-            output.SetBlock(mesh.GetBlock<ClusterMeshBlock>().Duplicate());
+            output.SetBlock(mesh.GetBlock<ClusterGeometryBlock>().Duplicate());
+            output.SetBlock(mesh.GetBlock<ClusterVertexAttributesBlock>().Duplicate());
             output.SetBlock(mesh.GetBlock<MeshMaterialsBlock>().Duplicate());
             return ValueTask.CompletedTask;
         }

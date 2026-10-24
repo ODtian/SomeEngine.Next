@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SomeEngine.Animation/SomeEngine.Animation.csproj" />
+    <ProjectReference Include="../SomeEngine.Assets/SomeEngine.Assets.csproj" />
+    <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
+    <ProjectReference Include="../SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <AclNativeSource Include="Native/**/*;../../external/acl/includes/**/*;../../external/rtm/includes/**/*" />
+    <Content Include="$(MSBuildProjectDirectory)/obj/native/Release/SomeEngineAcl.dll"
+             Link="SomeEngineAcl.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../external/acl/LICENSE" Link="licenses/ACL-LICENSE.txt"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../external/rtm/LICENSE" Link="licenses/RTM-LICENSE.txt"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildAclNative" BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems"
+          Inputs="@(AclNativeSource)" Outputs="$(MSBuildProjectDirectory)/obj/native/Release/SomeEngineAcl.dll">
+    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/Native&quot; -B &quot;$(MSBuildProjectDirectory)/obj/native&quot; -A x64" />
+    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/obj/native&quot; --config Release --parallel 1 -- /nodeReuse:false" />
+  </Target>
+</Project>

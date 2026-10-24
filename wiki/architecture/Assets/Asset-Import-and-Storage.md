@@ -16,13 +16,15 @@
 
 | 作用域 | 保存的事实 | 生效位置 |
 | --- | --- | --- |
-| 项目引用与能力 | 当前项目有哪些 Block、Importer、依赖服务和编解码能力 | 编译时发现，生成 Microsoft DI 注册及能力描述 |
-| 来源文件配置 | 实际启用的 Importer、各自参数、来源身份及输出身份对应关系 | 完整源文件名加 `.meta`，参与重新导入 |
+| 项目引用与能力 | 当前项目有哪些 Block、Importer、导入组合和编解码能力 | 编译时发现，生成 Microsoft DI 注册及能力描述；DI 只用于 Importer 互相发现（[Importer Discovery](Importer-Discovery.md)） |
+| 来源文件配置 | 导入组合、展开后的 Importer 与原始成员 ID、各自参数、来源身份及输出身份对应关系 | 完整源文件名加 `.meta`，参与重新导入 |
 | 单次调用覆盖 | 本次调用选择或参数覆盖 | 只作用于本次执行，不自动改写持久设置 |
+
+来源集成通过 `context.ConfigureSettings<T>(Guid importerId, T settings)` 在首个资产请求前配置本次覆盖。局部 Importer 通过 `context.GetSettings<T>(Guid importerId, T defaults, JsonTypeInfo<T> typeInfo, AssetImportSettings<T>? overrides = null)` 读取设置，优先级为显式读取覆盖、本次上下文配置、`.meta` 与默认值。glTF 来源设置使用 `GltfSourceImporter.SourceImporterId`；场景 Importer 由该入口读取材质模板路径，实际产出与来源配置和单次调用一致。
 
 SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩展调用或执行顺序。编辑器读取生成的能力描述，向用户呈现可选能力；这些描述不是业务载荷的弱类型解释器。设置的 JSON 只是持久表达，经对应静态设置读取器成为强类型参数，再进入 Importer。
 
-新增来源、Importer 或 Block 不需要修改引擎中央类型分支。依赖服务通过普通 Microsoft DI 构造注入。每次导入使用明确的服务作用域，同一作用域解析到同一 Importer；作用域与来源内容的释放跟随该次导入。
+新增来源、Importer 或 Block 通过包能力描述发现。Importer 具有公开无参构造函数，设置经 ImportContext 读取，算法与编码规则由各自实现持有。每次导入使用明确的服务作用域，同一作用域解析到同一 Importer；作用域与来源内容的释放跟随该次导入。
 
 该服务作用域保持到输出保存完成。`AssetProject.ImportAsync` 在保存和提交期间保留 `ImportContext`；Context 关闭时先取消并等待真实执行结束，再释放资产草稿和通过 `Hold` 保留的本次服务。来源对象在 Context 关闭后释放。Block 可以在保存时才取得来源数据，失败及取消也沿用这个清理顺序。
 
@@ -34,9 +36,13 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 同一个 Context 的并发或重复 `DisposeAsync` 等待同一次关闭完成，不能仅因为已经拒绝新调用就提前返回。仍在执行的转换可以继续结束自己的工作；其输出在实际执行停止前不会被清理。关闭期间的清理错误也由同一次关闭结果报告。
 
-几何生产者提供 `MeshBlock`，Cluster 生产者提供 `ClusterMeshBlock`。需要依赖的生产者可以通过 `context.GetBlockAsync<TBlock>(output.Target)` 请求对应数据；Context 按需执行生产者，执行顺序不依赖来源遍历顺序。当前 Cluster 转换直接读取原生 glTF 几何。每个生产者通过 `output.SetBlock` 交付自己的 Block，完整来源流程通过 `GetAssetAsync` 取得完成的语义资产。
+几何生产者提供 `MeshBlock`，Cluster 几何与属性生产者分别提供 `ClusterGeometryBlock`、`ClusterVertexAttributesBlock`。需要依赖的生产者可以通过 `context.GetBlockAsync<TBlock>(output.Target)` 请求对应数据；Context 按需执行生产者，执行顺序不依赖来源遍历顺序。Cluster 生产者显式取得准备后的顶点流，属性生产者取得几何的来源映射。每个生产者通过 `output.SetBlock` 交付自己的 Block，完整来源流程通过 `GetAssetAsync` 取得完成的语义资产。
 
-`IClusterVertexEncoder` 由项目通过 Microsoft DI 明确提供，管线不据此引入默认顶点属性布局。替换只针对本次隔离的资产草稿，失败不登记输出。
+Importer 的 `ProducedBlocks` 声明可产出的类型，一个来源元素可以只交付其中适用的 Block。`context.TryGetBlockAsync<T>(Asset asset, CancellationToken cancellationToken = default)` 返回 `ValueTask<T?>`：先完成选中的生产者，再取得实际结果；省略输出或类型缺失时返回 `null`。导入失败、读取失败、依赖环与取消继续传播。需要必选数据的读者使用 `GetBlockAsync<T>`，缺失时得到 `KeyNotFoundException`。
+
+中间结果通过 `ImportOutput.SetBlock` 交付给同一 Asset，并由其它 Importer 通过 Context 请求。持久性按 [Block 类型声明](Asset-Objects.md) 参与保存，划分原则见 [Block Division](Block-Division.md)。
+
+顶点编码是产出顶点属性 Block 的 Importer 的内部规则，不作为 DI 服务提供；换编码就是换产出该 Block 的 Importer（[Block Division](Block-Division.md)、[glTF Mesh Import](Gltf-Mesh-Import.md)）。管线不因此引入默认顶点属性布局。替换只针对本次隔离的资产草稿，失败不登记输出。`ClusterGeometryImporter` 与 `ClusterVertexAttributesImporter` 具有无参构造函数。几何决定顶点身份，属性保存全部来源值并生成匹配材质 Shader 的字节；两者通过同一几何映射对应。`IClusterVertexEncoder` 继续作为程序生成网格的显式库参数。
 
 ## 完整流程与失败处理
 
@@ -44,7 +50,7 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 `AssetProject.ImportAsync` 选择来源及配置，读取来源，执行遍历和递归依赖，检查实际输入仍与本次读取一致，然后保存全部草稿。实现位于该 partial 类型的 `Importing/AssetImportProject.cs`。来源、设置、工具或扩展版本变化均参与重新导入判断。实际读取产生的依赖与构建记录分开保存，失败任务的依赖不冒充成功构建结果。
 
-`.meta` 仅保存人工来源身份、Importer 选择、参数和元素 ID 映射；`.import.json` 保存可丢弃的输入及输出验证记录。删除或损坏后者不得改变来源或已保存元素身份，也不得从构建输出补回人工身份。目录重建从 .meta 的 ElementIds 恢复产物归属；来源保存直接维护主要身份映射。每个被选择的 Importer 都由本项目已注册能力解析。设置必须不可变，并以完整导入语义实现值相等。
+`.meta` 仅保存人工来源身份、导入组合、展开后的 Importer 选择与成员 ID、参数和元素 ID 映射；`.import.json` 保存可丢弃的输入及输出验证记录。删除或损坏后者不得改变来源或已保存元素身份，也不得从构建输出补回人工身份。目录重建从 .meta 的 ElementIds 恢复产物归属；来源保存直接维护主要身份映射。每个被选择的 Importer 都由本项目已注册能力解析。设置必须不可变，并以完整导入语义实现值相等。
 
 输出、来源描述、构建记录和目录先在临时位置生成，检查身份与冲突，再沿现有文件替换流程提交。失败或取消会回退本次已经替换的文件，旧的有效目录保持可用。该保证覆盖进程内可观察的失败；不声称多个独立文件在断电或并发外部写入下具有文件系统整体原子性。
 
@@ -52,7 +58,7 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 ## 当前 glTF 项目集成
 
-通用 `GltfMeshImporter` 只生产 `MeshBlock`，`ClusterGltfMeshImporter` 只生产 `ClusterMeshBlock`，`GltfTextureImporter` 生产 `TextureBlock`。选中的项目 `GltfSceneImporter` 遍历 primitive，直接请求纹理、生成或复用材质，并按 primitive 顺序组成 `MeshMaterialsBlock`。三个 Mesh 分支在 `MeshAsset` 汇合；节点结构、变换和 Mesh 引用在 `WorldAsset` 汇合。
+通用 `GltfMeshImporter` 只生产 `MeshBlock`，`ClusterGeometryImporter`、`ClusterVertexAttributesImporter` 分别生产 Cluster 几何与属性，`GltfTextureImporter` 生产 `TextureBlock`。选中的项目 `GltfSceneImporter` 根据共享顶点流中的三角形区域请求材质，并按原始 primitive 顺序组成 `MeshMaterialsBlock`。跳过区域保留空引用，默认场景加载只读取 Cluster 三角形实际使用的区域材质，绑定保持原始区域编号。场景 Mesh 引用根据共享流的可绘制几何建立；MeshBlock.Bounds 是可选的中立包围描述。各 Mesh 分支在 `MeshAsset` 汇合；节点结构、变换和 Mesh 引用在 `WorldAsset` 汇合。
 
 `GltfSourceImporter` 只读取原生 glTF `ModelRoot`、建立来源元素身份并选择一个 `IAssetImporter<Scene, GltfSceneSettings>`。同一来源 Mesh、材质和纹理由 `ImportContext` 按各自的来源元素身份复用。`GltfSceneImporter` 给出节点遍历、层级、变换、Mesh 请求以及默认相机和灯光的公共组装；项目的具体场景 importer 只实现项目材质资产及必要的场景内容替换。不存在独立的材质选择器、材质转换接口或 importer 工厂。Scene 最终引用 `MeshAsset`；增加其他几何表示不改写 Scene 引用。图中的分支表达数据依赖，不承诺同时执行。
 

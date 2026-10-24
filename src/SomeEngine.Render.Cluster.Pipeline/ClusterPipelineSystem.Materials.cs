@@ -152,6 +152,7 @@ public sealed partial class ClusterPipelineSystem
                     $"'{resource.Name}[{resource.Element}]'.");
             }
             ClusterTessellationCoreResource core = stage.CoreResources[resourceIndex];
+            if (BindDeformRead(ref graph, ref pass, resource, sync)) continue;
             if (core == ClusterTessellationCoreResource.PolicyViews)
             {
                 BindPolicyClusterViews(ref graph, ref pass, sync, policyTarget);
@@ -449,6 +450,7 @@ public sealed partial class ClusterPipelineSystem
                     $"'{resource.Name}[{resource.Element}]'.");
             }
             ClusterSoftwareRasterCoreResource core = stage.CoreResources[resourceIndex];
+            if (BindDeformRead(ref graph, ref pass, resource, PipelineSync.ComputeShading)) continue;
             if (core == ClusterSoftwareRasterCoreResource.PolicyViews)
             {
                 BindPolicyClusterViews(ref graph, ref pass, PipelineSync.ComputeShading, policyTarget);
@@ -508,6 +510,7 @@ public sealed partial class ClusterPipelineSystem
                     $"'{resource.Name}[{resource.Element}]'.");
             }
             ClusterHardwareRasterCoreResource core = stage.CoreResources[resourceIndex];
+            if (BindDeformRead(ref graph, ref pass, resource, PipelineSync.AllShading)) continue;
             if (core == ClusterHardwareRasterCoreResource.PolicyViews)
             {
                 BindPolicyClusterViews(ref graph, ref pass, PipelineSync.AllShading, policyTarget);
@@ -898,6 +901,7 @@ public sealed partial class ClusterPipelineSystem
                     $"Cluster material resource arrays are not supported: '{resource.Name}[{resource.Element}]'.");
             }
             ClusterShadeCoreResource coreResource = invocation.CoreResources[resourceIndex];
+            if (BindDeformRead(ref graph, ref pass, resource, PipelineSync.ComputeShading)) continue;
             if (coreResource != ClusterShadeCoreResource.None)
             {
                 BindShadeCoreResource(

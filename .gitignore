@@ -46,7 +46,6 @@ external/DiligentCore/
 external/Diligent-SharpGenTools/
 external/UnrealEnigne/
 src/SomeEngine.Editor/
-src/SomeEngine.Physics/
 src/SomeEngine.Rhi/
 src/SomeEngine.Rhi.D3D12/
 tests/SomeEngine.Rhi.Tests/

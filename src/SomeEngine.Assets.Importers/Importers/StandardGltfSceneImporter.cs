@@ -9,7 +9,7 @@ namespace SomeEngine.Assets.Importers;
 
 /// <summary>Builds Standard and Unlit materials while the base importer assembles glTF nodes.</summary>
 [AssetImporter("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
-public sealed class StandardGltfSceneImporter(GltfImporterSettings sourceSettings) : GltfSceneImporter
+public sealed class StandardGltfSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b");
     public static GltfSourceImporter CreateSourceImporter(Action<IServiceCollection>? configureServices = null,

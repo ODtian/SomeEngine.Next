@@ -39,6 +39,8 @@ public sealed partial class ClusterPipelineSystem
         TessellationSplitKey? Next);
     private sealed record RasterEpoch(
         RasterPassGroup Work,
+        RasterPassGroup Deformation,
+        DeformDrawData DrawData,
         RasterPassGroup Patches,
         ImmutableDictionary<uint, RasterBin> Bins,
         ImmutableDictionary<TessellationSplitKey, TessellationGroup> Splits,
@@ -46,7 +48,10 @@ public sealed partial class ClusterPipelineSystem
         TessellationSplitKey? LastSplit,
         ImmutableHashSet<GraphPassId> Consumers,
         bool PhaseOne,
-        bool PolicyTarget);
+        bool PolicyTarget)
+    {
+        internal GraphPassId WorkReady => Deformation.Passes.Count == 0 ? Work.Last : Deformation.Last;
+    }
 
     private void RemoveRasterPasses(ref RenderGraphEdit graph, RasterPassGroup group)
     {
@@ -76,7 +81,7 @@ public sealed partial class ClusterPipelineSystem
     {
         RasterEpoch data = _rasterEpochs[epoch];
         if (data.Consumers.Contains(consumer)) return;
-        graph.OrderAfter(consumer, data.Patches.Passes.Count == 0 ? data.Work.Last : data.Patches.Last);
+        graph.OrderAfter(consumer, data.Patches.Passes.Count == 0 ? data.WorkReady : data.Patches.Last);
         foreach (RasterBin bin in data.Bins.Values)
             foreach (GraphPassId pass in bin.Passes.Passes)
                 graph.OrderAfter(consumer, pass);
@@ -87,6 +92,7 @@ public sealed partial class ClusterPipelineSystem
     {
         RasterEpoch data = _rasterEpochs[epoch];
         IEnumerable<uint> changes = initial ? stages.Invocations.Select(static stage => stage.BinIndex) : stages.ChangedBins;
+        data = UpdateDeformation(ref graph, data, stages);
         var changedSplits = new HashSet<TessellationSplitKey>();
         foreach (uint bin in changes)
         {
@@ -126,7 +132,7 @@ public sealed partial class ClusterPipelineSystem
             finally { _rasterGroup = null; }
             foreach (GraphPassId pass in passes.Passes)
             {
-                graph.OrderAfter(pass, stage.Tessellation is null ? data.Work.Last : data.Patches.Last);
+                graph.OrderAfter(pass, stage.Tessellation is null ? data.WorkReady : data.Patches.Last);
                 foreach (GraphPassId consumer in data.Consumers) graph.OrderAfter(consumer, pass);
             }
             data = data with { Bins = data.Bins.SetItem(bin, new RasterBin(stage, passes)) };
@@ -158,10 +164,10 @@ public sealed partial class ClusterPipelineSystem
                         2u * sizeof(uint), data.PhaseOne ? "phase one final patches" : "phase two final patches");
                 }
                 finally { _rasterGroup = null; }
-                OrderRasterPasses(ref graph, patches, data.Work.Last);
+                OrderRasterPasses(ref graph, patches, data.WorkReady);
                 foreach (GraphPassId consumer in data.Consumers)
                 {
-                    graph.RemoveOrder(consumer, data.Work.Last);
+                    graph.RemoveOrder(consumer, data.WorkReady);
                     graph.OrderAfter(consumer, patches.Last);
                 }
                 data = data with { Patches = patches };
@@ -177,7 +183,7 @@ public sealed partial class ClusterPipelineSystem
                     data.PhaseOne, data.PolicyTarget, false);
             }
             finally { _rasterGroup = null; }
-            GraphPassId predecessor = data.LastSplit is { } last ? data.Splits[last].Split.Last : data.Work.Last;
+            GraphPassId predecessor = data.LastSplit is { } last ? data.Splits[last].Split.Last : data.WorkReady;
             graph.RemoveOrder(data.Patches.First, predecessor);
             graph.OrderAfter(reset.First, predecessor);
             graph.OrderAfter(data.Patches.First, split.Last);
@@ -226,7 +232,7 @@ public sealed partial class ClusterPipelineSystem
     private RasterEpoch RemoveTessellationGroup(ref RenderGraphEdit graph, RasterEpoch data, TessellationSplitKey key)
     {
         TessellationGroup group = data.Splits[key];
-        GraphPassId before = group.Previous is { } previous ? data.Splits[previous].Split.Last : data.Work.Last;
+        GraphPassId before = group.Previous is { } previous ? data.Splits[previous].Split.Last : data.WorkReady;
         GraphPassId after = group.Next is { } next ? data.Splits[next].Reset.First : data.Patches.First;
         graph.OrderAfter(after, before);
         RemoveRasterPasses(ref graph, group.Reset);
@@ -243,7 +249,7 @@ public sealed partial class ClusterPipelineSystem
         if (groups.Count == 0)
         {
             RemoveRasterPasses(ref graph, data.Patches);
-            foreach (GraphPassId consumer in data.Consumers) graph.OrderAfter(consumer, data.Work.Last);
+            foreach (GraphPassId consumer in data.Consumers) graph.OrderAfter(consumer, data.WorkReady);
             data = data with { Patches = new RasterPassGroup() };
         }
         return data;

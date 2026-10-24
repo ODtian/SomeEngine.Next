@@ -73,7 +73,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
         int rowsPerPacket = 0)
     {
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));
-        _entities = entities ?? throw new ArgumentNullException(nameof(entities));
+        _entities = (entities ?? throw new ArgumentNullException(nameof(entities))).WithOptionalRead<RenderDeformBounds>();
         ArgumentNullException.ThrowIfNull(exactShaderLayout);
         var combined = new RenderInstanceProducerBundle<
             ClusterRenderResources.ClusterGeometryProducer,
@@ -219,7 +219,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
                 int fields = 0;
                 if (packet.ChangedSince<RenderTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.CurrentTransform;
                 if (packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.PreviousTransform;
-                if (packet.ChangedSince<RenderMesh>(lastSystemVersion)) fields |= InstanceColumnChanges.Mesh;
+                if (packet.ChangedSince<RenderMesh>(lastSystemVersion) ||
+                    packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastSystemVersion)) fields |= InstanceColumnChanges.Mesh;
                 if (producer.Second.GetChanges(packet, lastSystemVersion) != RenderInstanceChanges.None)
                     fields |= InstanceColumnChanges.Additional;
                 columns.Add(fields);
@@ -293,7 +294,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
             producer.First.Write(destination.Restrict(producer.First.Properties), packet,
                 all || (fields & InstanceColumnChanges.CurrentTransform) != 0 && packet.ChangedSince<RenderTransform>(lastVersion),
                 all || (fields & InstanceColumnChanges.PreviousTransform) != 0 && packet.ChangedSince<RenderPreviousTransform>(lastVersion),
-                all || (fields & InstanceColumnChanges.Mesh) != 0 && packet.ChangedSince<RenderMesh>(lastVersion));
+                all || (fields & InstanceColumnChanges.Mesh) != 0 && (packet.ChangedSince<RenderMesh>(lastVersion) ||
+                    packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastVersion)));
             if (all || (fields & InstanceColumnChanges.Additional) != 0 &&
                 producer.Second.GetChanges(packet, lastVersion) != RenderInstanceChanges.None)
                 producer.Second.Write(destination.Restrict(producer.Second.Properties), packet);

@@ -579,10 +579,12 @@ internal sealed partial class ClusterMeshes : IDisposable
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} cluster {index} has invalid bounds or LOD data.");
             }
-            if (cluster.MaterialTableOffset != uint.MaxValue)
+            if (cluster.MaterialTableOffset != uint.MaxValue &&
+                ((cluster.MaterialTableOffset & 3u) != 0 || cluster.MaterialTableOffset < header.VertexBlobsOffset ||
+                 (ulong)cluster.MaterialTableOffset + 12 > header.IndicesOffset))
             {
                 throw new InvalidDataException(
-                    $"Cluster page at byte {payloadOffset} cluster {index} requests an undefined slow material-table path.");
+                    $"Cluster page at byte {payloadOffset} cluster {index} has a material table outside its geometry stream.");
             }
             ValidateExtensionRange(cluster, header, payloadOffset, index);
             if ((cluster.PackedGroup & 0xFFFF0000u) != 0)

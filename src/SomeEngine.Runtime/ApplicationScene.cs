@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster;
 
@@ -13,6 +14,9 @@ public sealed class ApplicationScene(string contentDirectory)
     public bool DebugUiEnabled { get; set; } = true;
     public bool MeasureInterface { get; set; }
     public Action<long>? SceneStarted { get; set; }
+    public Action<ApplicationFrame>? Initialize { get; set; }
+    public Action<ApplicationFrame>? Shutdown { get; set; }
+    public bool InterfaceEnabled { get; set; }
     public Action<ApplicationFrame>? UpdateFrame { get; set; }
     public Action? DrawDebugUi { get; set; }
     public Action<ApplicationFrame>? FrameCompleted { get; set; }
@@ -30,10 +34,13 @@ public sealed class ApplicationFrame
     private readonly ClusterRenderResources _rendering;
     private readonly ApplicationStartupTiming _startup;
 
-    internal ApplicationFrame(SceneEdit scene, RuntimeInput input, ClusterRenderResources rendering,
+    internal ApplicationFrame(World world, GameFrameSystems systems, SceneEdit scene, RuntimeInput input, ClusterRenderResources rendering,
         ApplicationStartupTiming startup, AdapterInfo adapter)
-        => (Scene, _input, _rendering, _startup, Adapter) = (scene, input, rendering, startup, adapter);
+        => (World, Systems, Scene, _input, _rendering, _startup, Adapter) = (world, systems, scene, input, rendering, startup, adapter);
 
+    public World World { get; }
+    public GameFrameSystems Systems { get; }
+    public double DeltaSeconds { get; internal set; }
     public SceneEdit Scene { get; }
     public AdapterInfo Adapter { get; }
     public int Index { get; internal set; }

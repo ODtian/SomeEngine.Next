@@ -5,7 +5,7 @@
 | 家族 | 当前数据边界 |
 |---|---|
 | Texture | `TextureAsset` + `TextureBlock`；`Texture` 保留已取得像素数组和设备资源 |
-| Mesh | `MeshAsset` + `MeshBlock` + `MeshMaterialsBlock` + `ClusterMeshBlock`；场景只引用 `MeshAsset` |
+| Mesh | `MeshAsset` + `MeshBlock` + `MeshMaterialsBlock` + `ClusterGeometryBlock` + `ClusterVertexAttributesBlock`；场景只引用 `MeshAsset` |
 | Material | `MaterialAsset` + `MaterialBlock`；项目定义具体材质类型与参数 |
 | Shader | `ShaderAsset` + `ShaderSourceBlock` + `ShaderBlock`；`Shader` 保留直接 Slang 对象及代码存储 |
 | 管线配置 | `ClusterShadersAsset`、`VirtualShadowMapShadersAsset` 保存角色到 `ShaderRef`，不保存 Shader 数据 |

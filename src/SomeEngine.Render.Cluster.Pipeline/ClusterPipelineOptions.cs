@@ -26,6 +26,9 @@ public sealed record ClusterPipelineOptions
     /// </summary>
     public uint MaxCandidates { get; init; } = 1_048_576;
 
+    /// <summary>Fixed byte capacity shared by user deformation regions across all views of a frame.</summary>
+    public uint MaxDeformCacheBytes { get; init; } = 64u * 1024 * 1024;
+
 
     public float LodThreshold { get; init; } = 1.0f;
 
@@ -50,6 +53,8 @@ public sealed record ClusterPipelineOptions
 
     internal void Validate()
     {
+        ArgumentOutOfRangeException.ThrowIfZero(MaxDeformCacheBytes);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxDeformCacheBytes, 0xFFFFFFFCu);
         ArgumentOutOfRangeException.ThrowIfZero(MaxCandidates);
         if (MaxCandidates > CandidateThreadsPerGroup * PortableDispatchDimension)
         {

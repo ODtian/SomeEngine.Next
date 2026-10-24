@@ -4,13 +4,28 @@
 姿势动画以整套骨骼姿势为数据单位，是引擎动画子系统的数据形态。它与属性动画共用时间线、层与混合规则、图的构建与融合；骨架、压缩片段、姿势缓冲、按骨骼遮罩混合、IK 与物理控制、根运动和蒙皮输出由它自己负责。
 
 ## Current design
-- 状态：规格已确定，待实现。规格见 `docs/Pose-Animation-Spec.md`。
+- 状态：骨架资产、GLB skin 导入、原始片段采样、骨架实例、共同图播放和 Cluster inline 蒙皮已实现。规格见 `docs/Pose-Animation-Spec.md`。
+- 骨架数据、公开 API、关节映射与 GLB 层级规则见 [[architecture/animation/Skeleton-Assets|Skeleton Assets]]。
 - 混合使用 `IValueOps<T>` 的批量版本，按骨骼数组做 SIMD。
 - 蒙皮输出作为一种 Deform 实现接入 cluster 渲染（[[architecture/cluster/Deform-Cache|Deform Cache]]）。
+- 骨骼通过既有提取进入 Rendering world，当前与上一帧 G 按产生结果的实例区段上传；应用回调、实例绑定和用户编码接口见 [Skinning](Skinning.md)。
 - 每种片段方案由 Importer 与 `AnimationClipBlock` 子类组成，来源 `.meta` 选择具体组合。`RawClipBlock`、`AclClipBlock` 和用户 Block 经同一 `Sampler` 提供采样函数及共享数据；公共 glTF 曲线读取由普通库函数提供。
-- 骨骼按数组存储，挂点按需成为实体。最终局部姿势、模型姿势和蒙皮矩阵存于世界级连续姿势存储，实例以 `PoseRange` 引用，唯一写入方是姿势求值系统。
-- 读取口子：`PoseAnimation.ModelPose(world, entity)` 提供只读模型空间姿势及版本。
+- 原始片段通过 `RawClipImporter` 与 `RawClipBlock` 接入；ACL 压缩片段通过 `AclClipImporter` 与 `AclClipBlock` 接入，导入设置持有采样率与误差参数。两者共用 `AnimationClip.SampleLocal`、批量采样和 `ClipLeaf` 播放入口；来源插值及用户编码扩展见 [Clip Assets](Clip-Assets.md)，压缩与原生分发见 [ACL Clips](ACL-Clips.md)。
+- 片段通过共同 Leaf、Timeline 和 Composition 播放，具名结果 buffer 支持用户节点交接、事件与根运动；公开调用见 [Pose Graphs](Pose-Graphs.md)。
+- 权重混合通过 `BoneTransformOps` 的具体批量运算和 `PoseBlendLeaf` 接入；1D/2D Blend Space 保存插值范围和片段相位，数据与调用见 [Pose Blending](Pose-Blending.md)。
+- 动作状态、用户条件与交叉淡入沿共同 `StateMachine` 和姿势结果组合，调用与数据归属见 [Pose State Machines](Pose-State-Machines.md)。
+- 逐骨 Override 与参考姿势 Additive 使用就绪 `BoneMask` 和共同层权重，Layer、Blend 与 Warp 按图内结果依赖求值；资源与调用见 [Pose Layers](Pose-Layers.md)。
+- 骨骼按数组存储，挂点按需成为实体。`PoseStorage` 持有连续的局部姿势和模型空间 G，`SkeletonInstance` 通过 `PoseRange` 引用自身区段；对应求值阶段通过公开 `Update` 写入结果。
+- 挂点通过实时骨骼视图、调用方偏移和普通角色父关系更新实体变换；绑定、消费顺序与释放规则见 [Bone Attachments](Bone-Attachments.md)。
+- `SkeletonInstance.ModelPose` 提供只读模型空间 G、求值版本和计算时刻；创建、更新与使用期见 [[architecture/animation/Skeleton-Instances|Skeleton Instances]]。
+- 单父骨架继承通过独立创建或挂接直接共享父实例 G，模型区段分别保存计算时刻与采样时刻；连接、拆卸和蒙皮绑定见 [Skeleton Inheritance](Skeleton-Inheritance.md)。
 - 根运动输出 `RootMotionDelta`，由移动系统决定如何应用。
+- Motion Warping 通过共享来源轨迹与窗口、逐角色目标输入修正根运动，查询与播放共用累计轨迹，见 [Motion Warping](Motion-Warping.md)。
+- 选定片段、序列与带曲线的混合/遮罩路径通过显式时间基准批量预测根和骨骼，结果带播放条件与计算时刻，见 [Pose Prediction](Pose-Prediction.md)。
+- 根、脚跟和脚尖轨迹与四类接触区段通过导入分析和动作标记取得，已选定路径提供下一接触与预测窗口，见 [Foot Motion](Foot-Motion.md)。
+- FABRIK 通过共同叶节点消费来源姿势，按实例目标进行定长链投影与关节圆锥限制，见 [FABRIK](FABRIK.md)。
+- PBIK 将骨盆、躯干和四肢放在同一全身约束求解中，按多末端目标、骨骼刚度、优先角度与关节限制生成姿势，见 [PBIK](PBIK.md)。
+- GPU 状态机共享紧凑状态与过渡表，各实例独立推进播放时间和交叉过渡，实际播放结果随 G 一起读回，见 [GPU State Machines](GPU-State-Machines.md)。
 
 ## Non-goals
 - 不把每根骨骼表示为一条属性动画轨道。

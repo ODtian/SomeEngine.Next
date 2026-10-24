@@ -26,15 +26,19 @@ public static partial class AnimationGraph
     public static AnimationLeafTime ReadTime(World world, Entity animation, in AnimationLeafPlacement placement)
     {
         Timeline timeline = world.Read<Timeline>(animation);
-        var time = (Stage: (int)timeline.Stage, Time: timeline.Time, Weight: 1f, Starts: timeline.Starts);
+        var phase = new LeafPhase
+        {
+            Stage = timeline.Stage, Time = timeline.Time, Delta = timeline.Delta,
+            Paused = timeline.Paused, Target = placement.Stage, Start = placement.Start,
+        };
+        float weight = 1;
+        uint starts = timeline.Starts;
         if (placement.Motion == 0)
         {
-            var phase = (Stage: time.Stage, Time: time.Time);
             if (world.HasBuffer<TimelineStage>(animation))
-                world.ExecuteBufferRead<TimelineStage, (int Stage, float Time)>(animation, ref phase,
-                    static (stages, ref phase) => phase = GraphTimes.Project(stages.AsSpan(), phase.Stage, phase.Time));
-            time.Stage = phase.Stage;
-            time.Time = phase.Time;
+                world.ExecuteBufferRead<TimelineStage, LeafPhase>(animation, ref phase,
+                    static (stages, ref phase) => phase.Select(stages.AsSpan()));
+            else phase.Select(default);
         }
         else
         {
@@ -43,13 +47,37 @@ public static partial class AnimationGraph
                 static (motions, ref motion) => motion.Value = motions[motion.Index]);
             GraphData[] graph = world.Read<GraphInstance>(animation).Data!;
             GraphMotionData definition = graph[0].Motions![placement.Motion - 1];
-            var phase = GraphTimes.Project(definition.Stages.AsSpan(0, definition.StageCount), motion.Value.Stage, motion.Value.Time);
-            time = (phase.Stage, phase.Time, motion.Value.Weight, motion.Value.Starts);
+            phase.Stage = motion.Value.Stage;
+            phase.Time = motion.Value.Time;
+            phase.Target = placement.MotionStage;
+            phase.Select(definition.Stages.AsSpan(0, definition.StageCount));
+            weight = motion.Value.Weight;
+            starts = motion.Value.Starts;
         }
-        int stage = placement.Motion == 0 ? placement.Stage : placement.MotionStage;
-        bool active = world.IsEnabled<Timeline>(animation) && time.Stage == stage && time.Time >= placement.Start && time.Weight > 0;
-        float elapsed = Math.Max(0, time.Time - placement.Start);
-        return new(new MotionTime(elapsed, timeline.Paused ? 0 : Math.Min(timeline.Delta, elapsed)), time.Weight, time.Starts, active);
+        bool active = world.IsEnabled<Timeline>(animation) && phase.Active && weight > 0;
+        return new(phase.Sample, weight, starts, active);
+    }
+
+    private struct LeafPhase
+    {
+        public int Stage, Target;
+        public float Time, Delta, Start;
+        public bool Paused, Active;
+        public MotionTime Sample;
+
+        public void Select(ReadOnlySpan<TimelineStage> stages)
+        {
+            int last = Paused ? Stage : GraphTimes.Project(stages, Stage, Time).Stage;
+            if (Target < Stage || Target > last) return;
+            float time = Time;
+            for (int stage = Stage; stage < Target; stage++) time -= stages[stage].Duration;
+            float previous = Math.Max(0, time - Delta - Start);
+            if (Target < stages.Length && stages[Target].End == StageEnd.Duration)
+                time = Math.Min(time, stages[Target].Duration);
+            float elapsed = Math.Max(0, time - Start);
+            Sample = new MotionTime(elapsed, Paused ? 0 : Math.Max(0, elapsed - previous));
+            Active = time >= Start;
+        }
     }
 
     /// <summary>Submits a public leaf's current running result to its shared stage.</summary>

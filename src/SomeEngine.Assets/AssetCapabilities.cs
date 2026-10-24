@@ -5,7 +5,26 @@ namespace SomeEngine.Assets;
 
 /// <summary>Generates registrations for the public asset extensions referenced by this project.</summary>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
-public sealed class AssetCapabilitiesAttribute : Attribute;
+public sealed class AssetCapabilitiesAttribute(params string[] defaultImporterSets) : Attribute
+{
+    public IReadOnlyList<string> DefaultImporterSets { get; } = Array.AsReadOnly(defaultImporterSets);
+}
+
+/// <summary>Declares a package's group of importer choices.</summary>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+public sealed class AssetImporterSetAttribute(string id, string name, params Type[] importers) : Attribute
+{
+    public string Id { get; } = id;
+    public string Name { get; } = name;
+    public IReadOnlyList<Type> Importers { get; } = Array.AsReadOnly(importers);
+    public bool Neutral { get; init; }
+}
+
+/// <summary>A package's importer group and its default selection in the project.</summary>
+public sealed record AssetImporterSetCapability(Guid Id, string Name, IReadOnlyList<Guid> Importers, bool Neutral)
+{
+    public bool Default { get; init; }
+}
 
 /// <summary>Declares the persistent identity and data produced by an importer.</summary>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]

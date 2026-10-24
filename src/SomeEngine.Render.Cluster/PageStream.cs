@@ -284,7 +284,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             uint size = resolution.Size;
 
             if (_loadingPages.Count >= _maxInFlightLoads ||
-                checked(_loadingBytes + size) > _maxRetainedBytes)
+                (checked(_loadingBytes + size) > _maxRetainedBytes && _loadingPages.Count != 0))
             {
                 _queuedPages.Enqueue(pageID);
                 _queuedPageSet.Add(pageID);

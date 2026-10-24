@@ -20,7 +20,7 @@ struct PackedCluster
     uint PackedGroup;                   // 64 — GroupId(i16):16 | Reserved:16
     uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
     uint PackedRanges;                  // 72 — [range0End:8][range1End:8][Reserved:16]
-    uint MaterialTableOffset;           // 76 — must be 0xFFFFFFFF
+    uint MaterialTableOffset;           // 76 — page-relative uint32 material table, or 0xFFFFFFFF for inline IDs
     uint VertReuseBatchWord0;           // 80
     uint VertReuseBatchWord1;           // 84
     uint VertReuseBatchWord2;           // 88
@@ -132,6 +132,21 @@ uint GetStageSlot(
         return SLOT_INVALID;
 
     return stageSlots[slotOffset + localMaterialIndex];
+}
+
+uint3 LoadClusterMaterials(ByteAddressBuffer heap, uint pageOffset, uint clusterOffset)
+{
+    uint table = heap.Load(clusterOffset + 76u);
+    if (table != 0xFFFFFFFFu) return heap.Load3(pageOffset + table);
+    uint packed = heap.Load(clusterOffset + 68u);
+    return uint3(packed & 255u, (packed >> 8u) & 255u, (packed >> 16u) & 255u);
+}
+
+uint LocalMaterial(uint3 materials, uint ranges, uint triangle)
+{
+    uint firstEnd = ranges & 255u;
+    uint secondEnd = (ranges >> 8u) & 255u;
+    return triangle < firstEnd ? materials.x : triangle < secondEnd ? materials.y : materials.z;
 }
 
 uint LocalMaterial(uint packedMaterials, uint packedRanges, uint triStart)

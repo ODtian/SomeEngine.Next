@@ -125,8 +125,7 @@ VertexEvalContext MakeSWRasterVertexEvalContext(
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
-    ctx.vertexBlobAddress = vertexBlobAddress;
-    ctx.vertexBlobSize = vertexBlobSize;
+    LoadVertexData(ctx, vertexBlobAddress);
     ctx.localVertexIndex = localVertIdx;
     ctx.instanceID = instanceID;
     ctx.transform = transform;
@@ -136,10 +135,15 @@ VertexEvalContext MakeSWRasterVertexEvalContext(
 
 // ─── Generic SW Rasterizer Kernel ───
 
+// Geometry crosses repeated triangle batches through group memory. User varyings
+// remain in their producer lanes and use the visibility implementation.
+groupshared float4 SoftwareRasterClipPositions[64];
+
 void SWRasterKernel<
+    TVE : IVertexEvaluate, TVisibility : IVisibilityEvaluate<TVE.Vertex>,
     TOutput : IClusterRasterOutput>(
-    uniform VertexEvaluate evaluator,
-    uniform VisibilityEvaluate visibility,
+    uniform TVE evaluator,
+    uniform TVisibility visibility,
     uniform TOutput rasterOutput,
     uint3 groupID,
     uint groupThreadIndex,
@@ -207,10 +211,8 @@ void SWRasterKernel<
 
     if (allowMaterialRanges && RasterWorkIsRange(binEntry >> 22u))
     {
-        float4 firstClip = 0.0.xxxx;
-        float4 secondClip = 0.0.xxxx;
-        VisibilityEvaluate.Varying firstVarying = {};
-        VisibilityEvaluate.Varying secondVarying = {};
+        TVisibility.Varying firstVarying = {};
+        TVisibility.Varying secondVarying = {};
         [unroll]
         for (uint vertexHalf = 0u; vertexHalf < 2u; vertexHalf++)
         {
@@ -219,18 +221,21 @@ void SWRasterKernel<
             {
                 VertexEvalContext ctx = MakeSWRasterVertexEvalContext(
                     vertexBlobAddress, vertexBlobSize, localVertex, realInstanceID, transform);
-                VertexEvaluate.Vertex vertex = evaluator.evaluate(ctx);
+                ctx.visibleClusterIndex = originalIndex;
+                TVE.Vertex vertex = evaluator.evaluate(ctx);
                 float4 clip = mul(float4(evaluator.getPosition(vertex), 1.0), view.ViewProj);
                 VisibilityVertexInput input;
                 input.VisibleClusterIndex = originalIndex;
                 input.InstanceID = realInstanceID;
                 input.ViewIndex = viewIndex;
                 input.LocalVertexIndex = localVertex;
-                VisibilityEvaluate.Varying varying = visibility.makeVarying(vertex, input);
-                if (vertexHalf == 0u) { firstClip = clip; firstVarying = varying; }
-                else { secondClip = clip; secondVarying = varying; }
+                TVisibility.Varying varying = visibility.makeVarying(vertex, input);
+                SoftwareRasterClipPositions[localVertex] = clip;
+                if (vertexHalf == 0u) firstVarying = varying;
+                else secondVarying = varying;
             }
         }
+        GroupMemoryBarrierWithGroupSync();
         // Keep opaque user varyings in their producer lanes for the entire range.
         // Every lane participates in each triangle batch's wave operations.
         for (uint triangleBase = rangeStart; triangleBase < rangeEnd; triangleBase += 32u)
@@ -238,20 +243,18 @@ void SWRasterKernel<
             uint triangle = triangleBase + groupThreadIndex;
             bool active = triangle < rangeEnd;
             float4 clips[3];
-            VisibilityEvaluate.Varying triangleVaryings[3];
+            TVisibility.Varying triangleVaryings[3];
             [unroll]
             for (uint corner = 0u; corner < 3u; corner++)
             {
                 uint vertex = active ? FetchVertexIndex(pageOffset, idxOffset, tStart, triangle, corner) : 0u;
                 uint lane = vertex & 31u;
-                float4 first = WaveReadLaneAt(firstClip, lane);
-                float4 second = WaveReadLaneAt(secondClip, lane);
-                VisibilityEvaluate.Varying firstValue = visibility.readLane(firstVarying, lane);
-                VisibilityEvaluate.Varying secondValue = visibility.readLane(secondVarying, lane);
-                clips[corner] = vertex < 32u ? first : second;
+                TVisibility.Varying firstValue = visibility.readLane(firstVarying, lane);
+                TVisibility.Varying secondValue = visibility.readLane(secondVarying, lane);
+                clips[corner] = SoftwareRasterClipPositions[vertex];
                 triangleVaryings[corner] = vertex < 32u ? firstValue : secondValue;
             }
-            RasterizeClusterTriangleWave<VertexEvaluate.Vertex, VisibilityEvaluate, TOutput>(
+            RasterizeClusterTriangleWave<TVE.Vertex, TVisibility, TOutput>(
                 visibility, rasterOutput, clips, triangleVaryings, scissor, originalIndex,
                 triangle, viewIndex, view.TargetPolicy, view.TargetViewIndex, active,
                 view.ScreenWidth, view.ScreenHeight);
@@ -296,7 +299,7 @@ void SWRasterKernel<
         producerLocalVertex = SoftwareRasterVertexIndex(usedVertices, groupThreadIndex);
 
     float4 producerClip = 0.0.xxxx;
-    VisibilityEvaluate.Varying producerVarying = {};
+    TVisibility.Varying producerVarying = {};
     if (producerLocalVertex != 0xFFFFFFFFu)
     {
         VertexEvalContext ctx = MakeSWRasterVertexEvalContext(
@@ -305,7 +308,8 @@ void SWRasterKernel<
             producerLocalVertex,
             realInstanceID,
             transform);
-        VertexEvaluate.Vertex vertex = evaluator.evaluate(ctx);
+        ctx.visibleClusterIndex = originalIndex;
+        TVE.Vertex vertex = evaluator.evaluate(ctx);
         producerClip = mul(float4(evaluator.getPosition(vertex), 1.0), view.ViewProj);
         VisibilityVertexInput visibilityInput;
         visibilityInput.VisibleClusterIndex = originalIndex;
@@ -316,7 +320,7 @@ void SWRasterKernel<
     }
 
     float4 clipVerts[3];
-    VisibilityEvaluate.Varying varyings[3];
+    TVisibility.Varying varyings[3];
     [unroll]
     for (uint corner = 0u; corner < 3u; corner++)
     {
@@ -328,8 +332,8 @@ void SWRasterKernel<
     }
 
     RasterizeClusterTriangleWave<
-        VertexEvaluate.Vertex,
-        VisibilityEvaluate,
+        TVE.Vertex,
+        TVisibility,
         TOutput>(
         visibility,
         rasterOutput,

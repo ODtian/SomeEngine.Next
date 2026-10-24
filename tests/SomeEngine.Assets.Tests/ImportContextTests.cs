@@ -8,6 +8,40 @@ public sealed class ImportContextTests
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
+    public async Task ConfiguredSettingsApplyToOneImportAndFreezeAtTheFirstAssetRequest()
+    {
+        Guid importerId = Guid.NewGuid();
+        var defaults = new GltfImporterSettings();
+        var saved = defaults with { BuildVersion = "saved" };
+        var configured = defaults with { BuildVersion = "configured" };
+        var explicitSettings = defaults with { BuildVersion = "explicit" };
+        var typeInfo = GltfSettingsJson.Default.GltfImporterSettings;
+        var metadata = new SourceMeta
+        {
+            SourceGuid = SourceGuid.New(),
+            Importers = [new(importerId, System.Text.Json.JsonSerializer.SerializeToElement(saved, typeInfo))],
+        };
+        await using (var context = Context(metadata))
+        {
+            Assert.Equal(saved, context.GetSettings(importerId, defaults, typeInfo));
+            context.ConfigureSettings(importerId, configured);
+            Assert.Equal(configured, context.GetSettings(importerId, defaults, typeInfo));
+            Assert.Equal(explicitSettings, context.GetSettings(importerId, defaults, typeInfo, new(explicitSettings)));
+            Select(context, [ContextTextBlock.BlockTypeId], (_, imports, output, _) =>
+            {
+                output.SetBlock(new ContextTextBlock(imports.GetSettings(importerId, defaults, typeInfo).BuildVersion));
+                return ValueTask.CompletedTask;
+            });
+            TestAsset asset = await context.GetAssetAsync<Source, TestAsset>(new("mesh"));
+            Assert.Equal("configured", asset.GetBlock<ContextTextBlock>().Text);
+            Assert.Throws<InvalidOperationException>(() => context.ConfigureSettings(importerId, saved));
+        }
+        await using var next = Context(metadata);
+        Assert.Equal(saved, next.GetSettings(importerId, defaults, typeInfo));
+        Assert.Equal(defaults, next.GetSettings(Guid.NewGuid(), defaults, typeInfo));
+    }
+
+    [Fact]
     public async Task ConcurrentAndLaterRequestsReturnOneCompletedAssetAndOneConversion()
     {
         await using var context = Context();

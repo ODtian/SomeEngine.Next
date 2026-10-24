@@ -46,6 +46,7 @@ RWByteAddressBuffer PhaseDrawArgs;
 #endif
 
 StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
+#include "cluster_deform_bounds.slang"
 
 float3 LoadFloat3(ByteAddressBuffer buffer, uint offset)
 {
@@ -346,6 +347,7 @@ bool LoadAndFilterCandidate(
         return false;
 
     cluster = LoadCluster(pageOffset, clusterID);
+    ApplyDrawClusterBounds(cluster, PageHeap.Load(pageOffset + 44u) + clusterID, instanceID, false);
     t = LoadRenderTransform(
         InstanceData,
         LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD),
@@ -471,7 +473,11 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     bool occluded = false;
     if (view.HasPrevHistory != 0u && view.CullingEnabled != 0u)
     {
-        bounds = ProjectClusterScreenBounds(cluster, t, boundsExpansion, true, view);
+        PackedCluster previousCluster = cluster;
+        ApplyDrawClusterBounds(previousCluster, PageHeap.Load(pageOffset + 44u) + clusterID, instanceID, true);
+        RenderInstanceTransform previousTransform = LoadRenderTransform(InstanceData,
+            LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instanceID);
+        bounds = ProjectClusterScreenBounds(previousCluster, previousTransform, boundsExpansion, true, view);
         occluded = IsOccludedByHiZ(bounds, true, viewIndex, view);
     }
     // Missing history cannot occlude geometry. Draw it now; only actual previous-frame

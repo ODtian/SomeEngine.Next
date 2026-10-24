@@ -121,30 +121,20 @@ public sealed class AssetArchitectureAcceptanceTests
     }
 
     [Fact]
-    public async Task MeshPayloadRangeSource_ReadsOnlyRequestedSliceThroughPublicDocument()
+    public async Task MeshBlocksRetainPositionsAndAttributesAfterSaveAndOpen()
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("range.mesh.asset");
-        byte[] payload = CreateMinimalStreamedMeshPayload(out ulong bvhOffset);
-        using var mesh = new MeshAsset(Guid.NewGuid()) { Name = "range-mesh" };
-        using var geometry = new MeshBlock();
-        using var clusters = new ClusterMeshBlock { VertexEncoding = StandardClusterVertexEncoder.EncodingCompatibility };
-        ReadOnlyMemory<byte> bytes = payload;
-        clusters.SetPayload(bytes, bvhOffset);
-        mesh.SetBlock(geometry);
-        mesh.SetBlock(clusters);
-        await mesh.SaveAsync(path);
-
+        using var producedMesh = ClusterBuilder.ProcessRaw([Vector3.Zero, Vector3.UnitX, Vector3.UnitY], [], [0,1,2], ClusterBuilderTestMaterials.Slots(), "range-mesh");
+        await producedMesh.SaveAsync(path);
         using MeshAsset file = await MeshAsset.OpenAsync(path);
-        await using BinaryDocument document = await BinaryDocument.OpenAsync(FileRangeSource.Open(path), MeshAsset.WireType, ownsSource: true);
-        await using IRangeSource rangeSource =
-            await document.OpenChunkRangeSourceAsync(new BinaryChunkRef(
-                file.BlockDescriptions.Single(block => block.BlockTypeId == ClusterMeshBlock.BlockTypeId).GetStorageKey(ClusterMeshBlock.PayloadChunkKey),
-                checked((long)file.GetBlock<ClusterMeshBlock>().PayloadLength)));
-        using RangeLease lease = await rangeSource.AcquireAsync(offset: 17, length: 23);
-
-        Assert.Equal(payload.AsSpan(17, 23).ToArray(), lease.Memory.ToArray());
-        Assert.Equal(payload.Length, rangeSource.Length);
+        ClusterGeometryBlock geometry = file.GetBlock<ClusterGeometryBlock>();
+        ClusterVertexAttributesBlock attributes = await file.GetBlockAsync<ClusterVertexAttributesBlock>();
+        Assert.Equal(geometry.VertexIdentity, attributes.VertexIdentity);
+        Assert.Equal(Vector3.Zero, Assert.Single(geometry.Clusters).DecodePosition(0));
+        using var source = await geometry.OpenPayloadSourceAsync(attributes);
+        Assert.NotEmpty((await source.ReadPageAsync(0)).ToArray());
+        Assert.NotEmpty((await source.ReadBvhAsync()).ToArray());
     }
 
     [Fact]
@@ -179,14 +169,8 @@ public sealed class AssetArchitectureAcceptanceTests
         using var texture = new TextureAsset(textureGuid) { Name = "texture" };
         texture.SetBlock(pixels);
         await texture.SaveAsync(texturePath);
-        byte[] streamedMeshPayload = CreateMinimalStreamedMeshPayload(out ulong bvhOffset);
-        using var mesh = new MeshAsset(meshGuid) { Name = "mesh" };
-        using var geometry = new MeshBlock();
-        using var clusters = new ClusterMeshBlock { VertexEncoding = StandardClusterVertexEncoder.EncodingCompatibility };
-        ReadOnlyMemory<byte> bytes = streamedMeshPayload;
-        clusters.SetPayload(bytes, bvhOffset);
-        mesh.SetBlock(geometry);
-        mesh.SetBlock(clusters);
+        using var producedMesh = ClusterBuilder.ProcessRaw([Vector3.Zero, Vector3.UnitX, Vector3.UnitY], [], [0,1,2], ClusterBuilderTestMaterials.Slots(), "mesh");
+        using var mesh = producedMesh.CreateCopy(meshGuid);
         await mesh.SaveAsync(meshPath);
         using var shader = new ShaderAsset(shaderGuid) { Name = "shader" };
         ShaderBlock code = shader.GetBlock<ShaderBlock>();
@@ -275,42 +259,6 @@ public sealed class AssetArchitectureAcceptanceTests
             ] };
         }
         return result;
-    }
-
-    private static byte[] CreateMinimalStreamedMeshPayload(out ulong bvhOffset)
-    {
-        const int vertexBlobSize = StandardClusterVertexEncoder.HeaderSize;
-        int pageSize = checked(MeshPageHeader.Size + PackedCluster.SizeInBytes + vertexBlobSize + 3);
-        byte[] payload = new byte[checked(pageSize + Marshal.SizeOf<ClusterBVHNode>())];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1,
-            TotalVertexCount = 1,
-            TotalTriangleCount = 1,
-            VertexBlobBytes = vertexBlobSize,
-            ClustersOffset = MeshPageHeader.Size,
-            VertexBlobsOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes,
-            IndicesOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes + vertexBlobSize,
-            ExtensionDataOffset = checked((uint)pageSize),
-            VertexEncodingHash = VertexEncodingCompatibility.Hash(
-                StandardClusterVertexEncoder.EncodingCompatibility),
-        };
-        MemoryMarshal.Write(payload.AsSpan(0, MeshPageHeader.Size), in header);
-        var cluster = new PackedCluster
-        {
-            VertexBlobSize = vertexBlobSize,
-            ExtensionOffset = uint.MaxValue,
-            LODRadius = 1,
-            BoundMax = Vector3.One,
-            PackedCounts = 1u | (1u << 8),
-            PackedRanges = 0x00000101u,
-            MaterialTableOffset = uint.MaxValue,
-        };
-        MemoryMarshal.Write(
-            payload.AsSpan(MeshPageHeader.Size, PackedCluster.SizeInBytes),
-            in cluster);
-        bvhOffset = checked((ulong)pageSize);
-        return payload;
     }
 
     private sealed class TemporaryDirectory : IDisposable

@@ -53,8 +53,8 @@ public sealed partial class MeshAsset : Asset
             // These are small metadata blocks. Geometry pages stay in the document.
             if (result.ContainsBlock<MeshBlock>())
                 await result.GetBlockAsync<MeshBlock>(cancellationToken).ConfigureAwait(false);
-            if (result.ContainsBlock<ClusterMeshBlock>())
-                await result.GetBlockAsync<ClusterMeshBlock>(cancellationToken).ConfigureAwait(false);
+            if (result.ContainsBlock<ClusterGeometryBlock>())
+                await result.GetBlockAsync<ClusterGeometryBlock>(cancellationToken).ConfigureAwait(false);
             if (result.ContainsBlock<MeshMaterialsBlock>())
                 await result.GetBlockAsync<MeshMaterialsBlock>(cancellationToken).ConfigureAwait(false);
             return result;

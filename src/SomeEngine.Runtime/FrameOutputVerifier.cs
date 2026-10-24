@@ -135,17 +135,16 @@ internal sealed class FrameOutputVerifier : IDisposable
             });
     }
 
-    internal FrameOutputMetrics Read()
+    internal void ReadPixels()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         BufferRange range = new(0, checked((ulong)_bytes.Length));
         using MappedBuffer mapping = _backend.Map(_readback, MapType.Read, range);
         mapping.Invalidate(range);
         mapping.Bytes.CopyTo(_bytes);
-        return Analyze();
     }
 
-    private FrameOutputMetrics Analyze()
+    internal FrameOutputMetrics Analyze()
     {
         byte minRed = byte.MaxValue;
         byte minGreen = byte.MaxValue;

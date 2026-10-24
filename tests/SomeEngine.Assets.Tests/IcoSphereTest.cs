@@ -35,44 +35,20 @@ public class IcoSphereTest
             "IcoSphere_LOD5"
         );
 
-        var payloadRead = meshAsset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks[SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey];
-        byte[] payloadBytes = payloadRead.ToArray();
-        Assert.NotEmpty(payloadBytes);
-
-        // The runtime contract is one opaque raw vertex record, not a fixed attribute schema.
-        Assert.Equal(StandardClusterVertexEncoder.EncodingCompatibility, meshAsset.GetBlock<ClusterMeshBlock>().VertexEncoding);
-
-        bool sawPartialWord = false;
-        int pageOffset = 0;
-        while ((ulong)pageOffset < meshAsset.GetBlock<ClusterMeshBlock>().BvhOffset)
-        {
-            ReadOnlySpan<byte> payload = payloadBytes.AsSpan(pageOffset);
-            var header = System.Runtime.InteropServices.MemoryMarshal.Read<SomeEngine.Resources.Geometry.MeshPageHeader>(payload);
-            var clusters = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, SomeEngine.Resources.Geometry.PackedCluster>(
-                payload.Slice((int)header.ClustersOffset, (int)header.ClusterCount * SomeEngine.Resources.Geometry.PackedCluster.SizeInBytes));
-            foreach (ref readonly var cluster in clusters)
-            {
-                int address = checked((int)(header.VertexBlobsOffset + cluster.VertexBlobOffset));
-                Assert.Equal(0, address & 3);
-                Assert.Equal(0u, cluster.VertexBlobSize & 3u);
-                uint vertexCount = BitConverter.ToUInt32(payload.Slice(address + 8, 4));
-                uint stride = BitConverter.ToUInt32(payload.Slice(address + 16, 4));
-                uint bits = BitConverter.ToUInt32(payload.Slice(address + 20, 4)) + vertexCount * stride;
-                sawPartialWord |= (bits & 31u) != 0u;
-                Assert.Equal(((bits + 31u) / 32u) * 4u, cluster.VertexBlobSize);
-            }
-            pageOffset += checked((int)(header.ExtensionDataOffset + header.ExtensionDataSize));
-        }
-        Assert.True(sawPartialWord);
-
+        ClusterGeometryBlock geometry = meshAsset.GetBlock<ClusterGeometryBlock>();
+        ClusterVertexAttributesBlock shading = meshAsset.GetBlock<ClusterVertexAttributesBlock>();
+        Assert.Equal(geometry.VertexIdentity, shading.VertexIdentity);
+        Assert.Equal(20480, geometry.Clusters.Where(cluster => cluster.Level == 0).Sum(cluster => cluster.Indices.Length / 3));
         using var directory = new SomeEngine.Assets.Tests.Assets.AssetTestDirectory();
         string outputPath = directory.File("icosphere.mesh.asset");
 
         await meshAsset.SaveAsync(outputPath);
         using MeshAsset roundTrip = await MeshAsset.OpenAsync(outputPath);
-        var reopenedBytes = await roundTrip.GetBlock<ClusterMeshBlock>().ReadBytesAsync(ClusterMeshBlock.PayloadChunkKey);
-        var reopenedRead = reopenedBytes;
-        Assert.Equal(payloadBytes, reopenedRead.ToArray());
+        ClusterGeometryBlock reopened = roundTrip.GetBlock<ClusterGeometryBlock>();
+        Assert.Equal(geometry.Clusters.Count, reopened.Clusters.Count);
+        for (int cluster = 0; cluster < geometry.Clusters.Count; cluster++)
+            Assert.Equal(geometry.Clusters[cluster].PositionData.ToArray(), reopened.Clusters[cluster].PositionData.ToArray());
+        Assert.Equal(shading.Encoding, (await roundTrip.GetBlockAsync<ClusterVertexAttributesBlock>()).Encoding);
     }
 
 }

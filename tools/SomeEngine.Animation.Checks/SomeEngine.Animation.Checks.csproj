@@ -13,5 +13,6 @@
     <Compile Include="../../tests/SomeEngine.Views.Tests/TypedAnimationChecks.cs" Link="TypedAnimationChecks.cs" />
     <ProjectReference Include="../../src/SomeEngine.Views/SomeEngine.Views.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.Animation/SomeEngine.Animation.csproj" GlobalPropertiesToRemove="PublishAot" />
+    <ProjectReference Include="../../src/SomeEngine.Animation.Pose/SomeEngine.Animation.Pose.csproj" GlobalPropertiesToRemove="PublishAot" />
   </ItemGroup>
 </Project>

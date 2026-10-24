@@ -58,6 +58,7 @@ RWStructuredBuffer<uint> DeferredWorkCount;
 RWByteAddressBuffer DeferredWorkDispatchArgs;
 
 StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
+#include "cluster_deform_bounds.slang"
 
 void PublishCandidateDispatchArgs(uint start, uint count, uint maxCandidates)
 {
@@ -177,6 +178,7 @@ void ProcessTraversalLevel(
     float boundsExpansion = 0.0;
     if (validNode)
     {
+        ApplyClusterNodeBounds(node, nodeIndex, instanceID, false);
         transform = LoadRenderTransform(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD), instanceID);
         boundsExpansion = max(0.0, LoadClusterBoundsExpansion(InstanceData,
@@ -187,6 +189,15 @@ void ProcessTraversalLevel(
     float3 worldMax = 0.0.xxx;
     if (validNode)
         ClusterNodeWorldBounds(node, transform, boundsExpansion, worldMin, worldMax);
+    float3 historyMin = worldMin, historyMax = worldMax;
+    if (validNode && TraversalLevel.TraversalMode != 2u)
+    {
+        ClusterBVHNode previousNode = GlobalBVH[nodeIndex];
+        ApplyClusterNodeBounds(previousNode, nodeIndex, instanceID, true);
+        RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
+            LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instanceID);
+        ClusterNodeWorldBounds(previousNode, previous, boundsExpansion, historyMin, historyMax);
+    }
     uint inputViews = validNode ? parent.ViewMask : 0u;
     ClusterBoundsProjection previousProjection = (ClusterBoundsProjection)0;
     uint remainingViews = WaveActiveBitOr(inputViews);
@@ -202,7 +213,7 @@ void ProcessTraversalLevel(
         bool outside = ProjectWorldAabbForView(worldMin, worldMax, view, previousProjection, projectedBounds);
         if ((view.CullingEnabled != 0u && outside) || !ClusterNodePassesLod(node, transform, view))
             continue;
-        uint state = ClusterHierarchyNodeState(worldMin, worldMax, projectedBounds, viewIndex, view);
+        uint state = ClusterHierarchyNodeState(historyMin, historyMax, projectedBounds, viewIndex, view);
         if (state == 2u)
             AppendDeferredTraversalNode(
                 MakeClusterTraversalNode(nodeIndex, instanceID, viewIndex, 1u), TraversalLevel.MaxNodes);

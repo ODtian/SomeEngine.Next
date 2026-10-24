@@ -56,6 +56,7 @@
 - **资产 Block（按 ADR 0016 划分）：**
   - 中立：`SkeletonBlock`（父索引按父先子后排序、参考姿势、骨骼名称哈希）、片段 Block（见下）、`BoneMaskBlock`（每根骨骼的权重）、蒙皮绑定（逆绑定矩阵、关节到骨架的映射）、形变目标集合（名称、默认权重）。
   - 管线表示：每条渲染管线各自的蒙皮影响 Block（每个顶点全部的关节与权重，数量照搬来源，按该管线的顶点顺序）与形变增量 Block，由该管线导入组合中的 Importer 产出（Wiki `Assets/Gltf-Mesh-Import`）。
+- **骨架资产（#95）：** `SkeletonBlock` 的公开构造函数接收父索引、局部参考姿势、名称哈希和来源关节映射的 spans，并复制数据；读取使用 `BoneCount`、`Parents`、`ReferencePose`、`NameHashes` 和 `JointBones`。`GltfSkeletonImporter` 针对 #117 的 skin 元素生产骨架，保存父先子后的关节与祖先节点，逐节点保留局部 TRS；`JointBones` 按原 `skin.joints` 顺序记录新骨骼索引，供 #121 的蒙皮绑定读取。详细规则与持久格式由 Wiki [Skeleton Assets](../wiki/architecture/animation/Skeleton-Assets.md) 维护。
 - **压缩方案 = 片段 Importer + 片段 Block（ADR 0015）：**
   - 所有片段 Block 继承抽象基类 `AnimationClipBlock`（时长、事件、根运动设置、对应骨架），并以 `Sampler` 属性提供静态采样函数指针与数据；`RawClipBlock`、`AclClipBlock` 是两种实现，各有自己的持久类型 ID。
   - `RawClipImporter`、`AclClipImporter` 各自产出对应的 Block；误差阈值等是 Importer 设置，写在 `.meta` 中。几种方案共用的 glTF 曲线读取是普通库函数。

@@ -49,7 +49,7 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
     uint4 vertReuseBatchWords;
     uint vertexCount;
     uint triangleCount;
-    uint packedMaterials;
+    uint3 packedMaterials;
     uint packedRanges;
     ReadClusterBinData(
         PageHeap,

@@ -9,11 +9,23 @@ struct VertexEvalContext
     ByteAddressBuffer pageHeap;
     uint vertexBlobAddress;
     uint vertexBlobSize;
+    uint attributeBlobAddress;
+    uint attributeBlobSize;
     uint localVertexIndex;
+    uint visibleClusterIndex;
     uint instanceID;
     RenderInstanceTransform transform;
     uint IsPreviousFrame;
 };
+
+void LoadVertexData(inout VertexEvalContext context, uint descriptorAddress)
+{
+    uint4 data = context.pageHeap.Load4(descriptorAddress);
+    context.vertexBlobAddress = descriptorAddress + data.x;
+    context.vertexBlobSize = data.y;
+    context.attributeBlobAddress = descriptorAddress + data.z;
+    context.attributeBlobSize = data.w;
+}
 
 // The evaluated vertex is owned entirely by the user shader. Cluster code may ask
 // only for the geometric position needed by its algorithms and for a wave-lane copy;

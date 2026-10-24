@@ -87,7 +87,13 @@ public abstract partial class Asset
         }
     }
 
-    public ValueTask<T> GetBlockAsync<T>(CancellationToken cancellationToken = default)
+    public async ValueTask<T> GetBlockAsync<T>(CancellationToken cancellationToken = default)
+        where T : AssetBlock, IAssetBlock<T>
+        => await TryGetBlockAsync<T>(cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Block {T.BlockTypeId} is absent.");
+
+    /// <summary>Acquires a block when present; an absent block returns null.</summary>
+    public ValueTask<T?> TryGetBlockAsync<T>(CancellationToken cancellationToken = default)
         where T : AssetBlock, IAssetBlock<T>
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -99,8 +105,8 @@ public abstract partial class Asset
         lock (SyncRoot)
         {
             RequireIdle();
-            entry = _blocks.GetValueOrDefault(T.BlockTypeId) ?? throw new KeyNotFoundException($"Block {T.BlockTypeId} is absent.");
-            if (entry.Content is T value) return ValueTask.FromResult(value);
+            if (!_blocks.TryGetValue(T.BlockTypeId, out entry!)) return ValueTask.FromResult<T?>(null);
+            if (entry.Content is T value) return ValueTask.FromResult<T?>(value);
             if (entry.Content is not null) throw new InvalidDataException("Different block types have the same persistent identity.");
             if (entry.Read is null)
             {
@@ -115,7 +121,7 @@ public abstract partial class Asset
         return AwaitBlock<T>(read, cancellationToken);
     }
 
-    private static async ValueTask<T> AwaitBlock<T>(Task<AssetBlock> read, CancellationToken cancellationToken) where T : AssetBlock
+    private static async ValueTask<T?> AwaitBlock<T>(Task<AssetBlock> read, CancellationToken cancellationToken) where T : AssetBlock
         => (T)await read.WaitAsync(cancellationToken).ConfigureAwait(false);
 
     private async Task ReadBlockAsync<T>(BlockEntry entry, AssetBlockSource source, TaskCompletionSource<AssetBlock> completion,
@@ -137,6 +143,7 @@ public abstract partial class Asset
             {
                 RequireIdle();
                 entry.Content = content;
+                entry.Persistent = T.Persistent;
                 entry.Read = null;
                 completion.SetResult(content);
                 content = null;
@@ -169,7 +176,7 @@ public abstract partial class Asset
                 if (current?.Content is not null && current.Content.GetType() != replacement.GetType())
                     throw new InvalidDataException("Different block types have the same persistent identity.");
                 retired = current?.Content;
-                _blocks[id] = new(replacement);
+                _blocks[id] = new(replacement, T.Persistent);
                 replacement = null!;
             }
         }
@@ -193,7 +200,7 @@ public abstract partial class Asset
         return retired is null ? Array.Empty<Exception>() : ReleaseBlockGroup([retired]);
     }
 
-    internal IReadOnlyList<Exception> ApplyBlocks(IReadOnlyCollection<AssetBlock> blocks)
+    internal IReadOnlyList<Exception> ApplyBlocks(IReadOnlyCollection<(AssetBlock Block, bool Persistent)> blocks)
     {
         lock (SyncRoot) RequireIdle();
         var replacements = new List<(Guid Id, BlockEntry Entry, AssetBlock Source)>();
@@ -201,11 +208,11 @@ public abstract partial class Asset
         bool applied = false;
         try
         {
-            foreach (AssetBlock block in blocks)
+            foreach ((AssetBlock block, bool persistent) in blocks)
             {
                 if (block.BlockId == Guid.Empty) throw new InvalidOperationException("The result contains an empty block identity.");
                 if (!used.Add(block.BlockId)) throw new InvalidOperationException("The result contains a repeated block identity.");
-                replacements.Add((block.BlockId, new BlockEntry(block.Duplicate(SyncRoot)), block));
+                replacements.Add((block.BlockId, new BlockEntry(block.Duplicate(SyncRoot), persistent), block));
             }
 
             var retired = new List<AssetBlock>();
@@ -253,7 +260,8 @@ public abstract partial class Asset
         lock (SyncRoot)
         {
             RequireIdle();
-            return _blocks.Values.SelectMany(static entry => entry.Content?.References() ?? entry.Description!.References)
+            return _blocks.Values.Where(static entry => entry.Persistent)
+                .SelectMany(static entry => entry.Content?.References() ?? entry.Description!.References)
                 .Where(static id => id != Guid.Empty).Distinct().ToArray();
         }
     }
@@ -265,7 +273,7 @@ public abstract partial class Asset
         {
             foreach (var entry in source._blocks)
                 _blocks.Add(entry.Key, entry.Value.Content is { } content
-                    ? new(content.Duplicate(SyncRoot)) : new(entry.Value.Description!));
+                    ? new(content.Duplicate(SyncRoot), entry.Value.Persistent) : new(entry.Value.Description!));
         }
         catch { ReleaseBlocks(); throw; }
     }
@@ -273,7 +281,7 @@ public abstract partial class Asset
     private async ValueTask WriteBlocksAsync(BinaryDocumentWriter writer, List<AssetBlockWriter> retained,
         CancellationToken cancellationToken)
     {
-        var entries = _blocks.Values.ToList();
+        var entries = _blocks.Values.Where(static entry => entry.Persistent).ToList();
         entries.Sort(static (left, right) => CompareBlockIds(left.Id, right.Id));
 
         var descriptions = ImmutableArray.CreateBuilder<AssetBlockDescription>();
@@ -326,10 +334,11 @@ public abstract partial class Asset
     private sealed class BlockEntry
     {
         internal AssetBlockDescription? Description { get; }
+        internal bool Persistent { get; set; }
         internal AssetBlock? Content;
         internal Task<AssetBlock>? Read;
         internal Guid Id => Content?.BlockId ?? Description!.BlockTypeId;
-        internal BlockEntry(AssetBlockDescription description) => Description = description;
-        internal BlockEntry(AssetBlock content) => Content = content;
+        internal BlockEntry(AssetBlockDescription description) { Description = description; Persistent = true; }
+        internal BlockEntry(AssetBlock content, bool persistent) { Content = content; Persistent = persistent; }
     }
 }

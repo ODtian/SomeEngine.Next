@@ -138,6 +138,17 @@ public sealed class StandardClusterVertexEncoder : IClusterVertexEncoder
         return result;
     }
 
+    // The retained combined block uses its v1 fields; the attribute block stores every shading stream.
+    internal static List<RawAttribute> SelectAttributes(List<RawAttribute> attributes)
+    {
+        var selected = new List<RawAttribute>(attributes.Count);
+        foreach (RawAttribute attribute in attributes)
+        {
+            if (attribute.Name is "NORMAL" or "TANGENT" or "TEXCOORD_0") selected.Add(attribute);
+        }
+        return selected;
+    }
+
     private static void ValidateAttributes(
         IReadOnlyList<RawAttribute> attributes,
         RawAttribute? normal,
@@ -152,9 +163,7 @@ public sealed class StandardClusterVertexEncoder : IClusterVertexEncoder
                 !ReferenceEquals(attribute, tangent) &&
                 !ReferenceEquals(attribute, uv0))
             {
-                throw new InvalidDataException(
-                    $"Standard vertex encoding does not consume '{attribute.Name}'. " +
-                    "Select a vertex encoder whose compatibility includes that attribute.");
+                continue;
             }
             int required = checked(vertexCount * attribute.Dimension);
             if (attribute.Dimension <= 0 || attribute.Data.Length < required)

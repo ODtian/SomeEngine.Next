@@ -7,7 +7,7 @@ void BuildRasterBatches(
     uint4 vertReuseBatchWords,
     uint vertexCount,
     uint triangleCount,
-    uint packedMaterials,
+    uint3 packedMaterials,
     uint packedRanges,
     bool isSoftware)
 {

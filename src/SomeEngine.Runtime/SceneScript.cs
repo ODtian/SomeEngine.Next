@@ -5,6 +5,7 @@ using SomeEngine.Resources;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Shadows;
+using SomeEngine.Render.Features.Skinning;
 
 namespace SomeEngine.Runtime;
 
@@ -12,11 +13,14 @@ namespace SomeEngine.Runtime;
 public sealed class SceneScript
 {
     public SceneScript(string contentDirectory, int frameCount, IEnumerable<SceneAction> actions)
+        : this(new ApplicationScene(contentDirectory), frameCount, actions) { }
+
+    public SceneScript(ApplicationScene application, int frameCount, IEnumerable<SceneAction> actions)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentDirectory);
+        ArgumentNullException.ThrowIfNull(application);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(frameCount);
         ArgumentNullException.ThrowIfNull(actions);
-        ContentDirectory = Path.GetFullPath(contentDirectory);
+        Application = application;
         FrameCount = frameCount;
         SceneAction[] ordered = actions.OrderBy(action => action.Frame).ToArray();
         foreach (SceneAction action in ordered)
@@ -35,7 +39,9 @@ public sealed class SceneScript
     public VirtualShadowMapSettings ShadowSettings { get; init; } = new();
     public TemporalResolveSettings TemporalSettings { get; init; } = TemporalResolveSettings.Default;
 
-    public string ContentDirectory { get; }
+
+    public ApplicationScene Application { get; }
+    public string ContentDirectory => Application.ContentDirectory;
     public int FrameCount { get; }
     public IReadOnlyList<SceneAction> Actions { get; }
 }
@@ -89,16 +95,19 @@ public sealed class SceneEdit
     private readonly RuntimeScene _scene;
     private readonly NativeWindow _window;
     private readonly List<Action<SceneImage>> _images = [];
+    private readonly List<(Entity Target, Action<GpuPoseReadback> Receive)> _poseReads = [];
     private bool _active;
 
     internal SceneEdit(RuntimeScene scene, NativeWindow window) => (_scene, _window) = (scene, window);
     internal IReadOnlyList<Action<SceneImage>> Images => _images;
+    internal IReadOnlyList<(Entity Target, Action<GpuPoseReadback> Receive)> PoseReads => _poseReads;
     internal bool FrameCanceled { get; private set; }
     internal bool CameraCut { get; private set; }
     internal bool ShadowMapRefreshRequested { get; private set; }
     internal void Begin()
     {
         _images.Clear();
+        _poseReads.Clear();
         FrameCanceled = CameraCut = ShadowMapRefreshRequested = false;
         _active = true;
     }
@@ -174,6 +183,13 @@ public sealed class SceneEdit
         RequireAction();
         ArgumentNullException.ThrowIfNull(receive);
         _images.Add(receive);
+    }
+
+    /// <summary>Reads this frame's GPU model-space section after rendering has produced its history pair.</summary>
+    public void ReadGpuPose(Entity target, Action<GpuPoseReadback> receive)
+    {
+        RequireAction();
+        _poseReads.Add((target, receive));
     }
 
     private void RequireAction()

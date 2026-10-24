@@ -118,25 +118,6 @@ public static partial class ClusterBuilder
         public float Error;
     }
 
-    private struct ClusterInfo
-    {
-        public Vector3 BoundMin;
-        public Vector3 BoundMax;
-        public Vector4 LODSphere; // xyz: center, w: radius
-        public float LODError;
-        public uint PageIndex;
-        public uint ClusterStart;
-        public int GroupId;
-        public int ParentGroupId;
-    }
-
-    private readonly record struct BvhBounds(
-        Vector3 Min,
-        Vector3 Max,
-        Vector3 Center,
-        float Radius,
-        float Error);
-
     private sealed class MeshAssemblyState
     {
         public List<Vector3> Positions { get; } = [];
@@ -189,172 +170,7 @@ public static partial class ClusterBuilder
         return ExpandBits((uint)p.X) * 4 + ExpandBits((uint)p.Y) * 2 + ExpandBits((uint)p.Z);
     }
 
-    private static List<ClusterBVHNode> BuildBvh(List<ClusterInfo> clusters)
-    {
-        var nodes = new List<ClusterBVHNode>();
-        if (clusters.Count == 0)
-        {
-            return nodes;
-        }
 
-        List<int> currentLevelIndices = CreateBvhLeafNodes(clusters, nodes);
-        AddBvhInternalLevels(nodes, currentLevelIndices);
-        return nodes;
-    }
-
-    private static List<int> CreateBvhLeafNodes(
-        List<ClusterInfo> clusters,
-        List<ClusterBVHNode> nodes)
-    {
-        var currentLevelIndices = new List<int>();
-        int clusterIndex = 0;
-        while (clusterIndex < clusters.Count)
-        {
-            int count = CountLeafClusters(clusters, clusterIndex);
-            nodes.Add(CreateBvhLeafNode(clusters, clusterIndex, count));
-            currentLevelIndices.Add(nodes.Count - 1);
-            clusterIndex += count;
-        }
-
-        return currentLevelIndices;
-    }
-
-    private static int CountLeafClusters(List<ClusterInfo> clusters, int start)
-    {
-        uint currentPage = clusters[start].PageIndex;
-        int currentParent = clusters[start].ParentGroupId;
-        int currentGroup = clusters[start].GroupId;
-        int count = 0;
-        while (start + count < clusters.Count
-            && clusters[start + count].PageIndex == currentPage
-            && clusters[start + count].ParentGroupId == currentParent
-            && clusters[start + count].GroupId == currentGroup
-            && count < 128)
-        {
-            count++;
-        }
-
-        return count;
-    }
-
-    private static ClusterBVHNode CreateBvhLeafNode(
-        List<ClusterInfo> clusters,
-        int start,
-        int count)
-    {
-        BvhBounds bounds = ComputeLeafBounds(clusters, start, count);
-        ClusterInfo first = clusters[start];
-        var node = new ClusterBVHNode
-        {
-            BoundMin = new Vector4(bounds.Min, first.GroupId + 1),
-            BoundMax = new Vector4(bounds.Max, first.ParentGroupId + 1),
-            LODSphere = first.LODSphere,
-            LODError = first.LODError,
-            ChildPointer = first.PageIndex,
-            NodeType = 1,
-        };
-        node.SetLeafData(first.ClusterStart, (uint)count);
-        return node;
-    }
-
-    private static BvhBounds ComputeLeafBounds(
-        List<ClusterInfo> clusters,
-        int start,
-        int count)
-    {
-        Vector3 min = new(float.MaxValue);
-        Vector3 max = new(float.MinValue);
-        for (int offset = 0; offset < count; offset++)
-        {
-            ClusterInfo cluster = clusters[start + offset];
-            min = Vector3.Min(min, cluster.BoundMin);
-            max = Vector3.Max(max, cluster.BoundMax);
-        }
-
-        return new BvhBounds(min, max, Vector3.Zero, 0, 0);
-    }
-
-    private static void AddBvhInternalLevels(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices)
-    {
-        while (currentLevelIndices.Count > 1)
-        {
-            var nextLevelIndices = new List<int>();
-            for (int start = 0; start < currentLevelIndices.Count; start += 16)
-            {
-                int count = Math.Min(16, currentLevelIndices.Count - start);
-                nodes.Add(CreateBvhInternalNode(nodes, currentLevelIndices, start, count));
-                nextLevelIndices.Add(nodes.Count - 1);
-            }
-
-            currentLevelIndices = nextLevelIndices;
-        }
-    }
-
-    private static ClusterBVHNode CreateBvhInternalNode(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
-        int start,
-        int count)
-    {
-        BvhBounds bounds = ComputeInternalBounds(nodes, currentLevelIndices, start, count);
-        return new ClusterBVHNode
-        {
-            ChildPointer = (uint)currentLevelIndices[start],
-            ChildCount = (uint)count,
-            NodeType = 0,
-            BoundMin = new Vector4(bounds.Min, 0),
-            BoundMax = new Vector4(bounds.Max, 0),
-            LODSphere = new Vector4(bounds.Center.X, bounds.Center.Y, bounds.Center.Z, bounds.Radius),
-            LODError = bounds.Error,
-        };
-    }
-
-    private static BvhBounds ComputeInternalBounds(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
-        int start,
-        int count)
-    {
-        Vector3 min = new(float.MaxValue);
-        Vector3 max = new(float.MinValue);
-        float maxError = 0;
-        Vector3 centerSum = Vector3.Zero;
-        for (int offset = 0; offset < count; offset++)
-        {
-            ClusterBVHNode child = nodes[currentLevelIndices[start + offset]];
-            min = Vector3.Min(min, ToVector3(child.BoundMin));
-            max = Vector3.Max(max, ToVector3(child.BoundMax));
-            maxError = Math.Max(maxError, child.LODError);
-            centerSum += ToVector3(child.LODSphere);
-        }
-
-        Vector3 center = centerSum / count;
-        float radius = ComputeInternalLodRadius(nodes, currentLevelIndices, start, count, center);
-        return new BvhBounds(min, max, center, radius, maxError);
-    }
-
-    private static float ComputeInternalLodRadius(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
-        int start,
-        int count,
-        Vector3 center)
-    {
-        float radius = 0;
-        for (int offset = 0; offset < count; offset++)
-        {
-            ClusterBVHNode child = nodes[currentLevelIndices[start + offset]];
-            float distance = Vector3.Distance(center, ToVector3(child.LODSphere)) + child.LODSphere.W;
-            radius = Math.Max(radius, distance);
-        }
-
-        return radius;
-    }
-
-    private static Vector3 ToVector3(Vector4 value)
-        => new(value.X, value.Y, value.Z);
 }
 
 public static partial class ClusterBuilder
@@ -924,13 +740,15 @@ public static partial class ClusterBuilder
         ReadOnlySpan<uint> indices,
         float[] materialIndicesArray,
         List<BuilderMeshlet> clusters,
-        List<uint> globalIndices
+        List<uint> globalIndices,
+        ReadOnlySpan<byte> vertexLocks = default
     )
     {
         var locks = ArrayPool<byte>.Shared.Rent(positions.Length);
         var remap = ArrayPool<uint>.Shared.Rent(positions.Length);
         try
         {
+            if (!vertexLocks.IsEmpty) vertexLocks.CopyTo(locks);
             GeneratePositionRemap(positions, remap.AsSpan(0, positions.Length));
             Clusterize(
                 config,
@@ -948,7 +766,7 @@ public static partial class ClusterBuilder
                 globalIndices,
                 locks.AsSpan(0, positions.Length),
                 remap.AsSpan(0, positions.Length),
-                nextGroupId);
+                nextGroupId, !vertexLocks.IsEmpty);
         }
         finally
         {
@@ -1011,7 +829,7 @@ public static partial class ClusterBuilder
         List<uint> globalIndices,
         Span<byte> locks,
         ReadOnlySpan<uint> remap,
-        int nextGroupId)
+        int nextGroupId, bool sourceLocks)
     {
         List<int> pending = CreatePendingClusters(clusters.Count);
         var workspace = new LodWorkspace();
@@ -1029,7 +847,7 @@ public static partial class ClusterBuilder
                 pending,
                 workspace,
                 ref nextGroupId,
-                depth++);
+                depth++, sourceLocks);
         }
 
         AssignRootParentError(clusters, pending);
@@ -1057,10 +875,10 @@ public static partial class ClusterBuilder
         List<int> pending,
         LodWorkspace workspace,
         ref int nextGroupId,
-        int depth)
+        int depth, bool sourceLocks)
     {
         Partition(config, positions, clusters, globalIndices, pending, remap, workspace.GroupOffsets);
-        LockBoundary(locks, clusters, globalIndices, pending, workspace.GroupOffsets, remap);
+        LockBoundary(locks, clusters, globalIndices, pending, workspace.GroupOffsets, remap, sourceLocks);
         var nextPending = new List<int>();
         Span<int> pendingSpan = CollectionsMarshal.AsSpan(pending);
         for (int groupIndex = 0; groupIndex < workspace.GroupOffsets.Count - 1; groupIndex++)
@@ -2068,7 +1886,8 @@ public static partial class ClusterBuilder
         List<uint> globalIndices,
         List<int> pending,
         List<int> groupOffsets,
-        ReadOnlySpan<uint> remap
+        ReadOnlySpan<uint> remap,
+        bool sourceLocks
     )
     {
         const byte LockBit = 1 << 0;
@@ -2110,7 +1929,8 @@ public static partial class ClusterBuilder
 
         for (int i = 0; i < locks.Length; i++)
         {
-            locks[i] = (byte)((locks[i] & LockBit) | (locks[i] & SimplifyProtect));
+            byte sourceLock = sourceLocks ? (byte)(locks[i] & SourceVertexLockBit) : (byte)0;
+            locks[i] = (byte)((locks[i] & LockBit) | (locks[i] & SimplifyProtect) | sourceLock | (sourceLock != 0 ? LockBit : 0));
         }
     }
 

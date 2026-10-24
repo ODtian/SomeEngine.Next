@@ -148,6 +148,8 @@ public sealed class ClusterGeometryCapabilities
     public GraphBufferId InstanceProperties { get; }
     public BufferRange InstancePropertiesRange { get; }
     public GraphBufferId VisibleClusters { get; }
+    public GraphBufferId DeformCache { get; internal init; }
+    public GraphBufferId DeformRegions { get; internal init; }
     public GraphBufferId PhaseOneCounts { get; }
     public GraphBufferId PhaseTwoCounts { get; }
     public uint VisibleClusterCapacity { get; }

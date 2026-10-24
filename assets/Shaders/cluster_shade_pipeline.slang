@@ -85,7 +85,7 @@ bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
         req.PageOffset + PageHeap.Load(req.PageOffset + 16u) +
         DrawRequestClusterID(req) * PACKED_CLUSTER_STRIDE_BYTES;
     uint localMaterial = LocalMaterial(
-        PageHeap.Load(clusterOffset + 68u),
+        LoadClusterMaterials(PageHeap, req.PageOffset, clusterOffset),
         PageHeap.Load(clusterOffset + 72u),
         tri.triangleID);
     uint slotOffset = LoadClusterMaterialSlotOffset(
@@ -117,8 +117,7 @@ VertexEvalContext makeVertexEvalContext(
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
-    ctx.vertexBlobAddress = tri.vertexBlobAddress;
-    ctx.vertexBlobSize = tri.vertexBlobSize;
+    LoadVertexData(ctx, tri.vertexBlobAddress);
     ctx.localVertexIndex = localVertIdx;
     ctx.instanceID = tri.instanceID;
     ctx.transform = transform;

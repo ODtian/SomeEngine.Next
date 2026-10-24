@@ -151,8 +151,7 @@ VertexEvalContext MakeDrawVertexEvalContext(
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
-    ctx.vertexBlobAddress = vertexBlobAddress;
-    ctx.vertexBlobSize = vertexBlobSize;
+    LoadVertexData(ctx, vertexBlobAddress);
     ctx.localVertexIndex = localVertIdx;
     ctx.instanceID = instanceID;
     ctx.transform = transform;
@@ -300,6 +299,7 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
         if (!fullRange && (mask & (1u << (localVertex & 31u))) == 0u) continue;
         VertexEvalContext context = MakeDrawVertexEvalContext(address, size, localVertex,
             request.InstanceID, transform);
+        context.visibleClusterIndex = visible;
         TVE.Vertex value = evaluator.evaluate(context);
         ClusterRasterVertexData<TVisibility.Varying> output = {};
         output.Pos = mul(float4(evaluator.getPosition(value), 1.0), view.ViewProj);

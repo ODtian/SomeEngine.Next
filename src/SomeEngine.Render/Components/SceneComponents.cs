@@ -14,6 +14,12 @@ public struct MeshSource : IComponent
     public float BoundsExpansion;
 }
 
+/// <summary>Skeleton identity for a skinned mesh node in a saved Game world.</summary>
+public struct SkeletonSource : IComponent
+{
+    public AssetId<SkeletonAsset> Skeleton;
+}
+
 public struct MeshMotion : IComponent
 {
     public Vector3 Amplitude;

@@ -37,11 +37,15 @@ public abstract class GltfSceneImporter : IAssetImporter<Scene, GltfSceneSetting
         var references = new MeshMaterialsBlock();
         try
         {
-            foreach (var primitive in source.Primitives)
+            VertexStreamsBlock? streams = await context.TryGetBlockAsync<VertexStreamsBlock>(output.Target, cancellationToken).ConfigureAwait(false);
+            HashSet<int>? drawableRegions = streams?.Primitives.Where(primitive => !primitive.Indices.IsEmpty)
+                .Select(primitive => primitive.SourcePrimitive).ToHashSet();
+            for (int region = 0; region < source.Primitives.Count; region++)
             {
+                var primitive = source.Primitives[region];
                 cancellationToken.ThrowIfCancellationRequested();
                 AssetId<MaterialAsset> material = default;
-                if (primitive.Material is not null)
+                if ((drawableRegions is null || drawableRegions.Contains(region)) && primitive.Material is not null)
                 {
                     MaterialAsset imported = await context.GetAssetAsync<GltfMaterial, MaterialAsset>(
                         primitive.Material, cancellationToken).ConfigureAwait(false);
@@ -86,7 +90,14 @@ public abstract class GltfSceneImporter : IAssetImporter<Scene, GltfSceneSetting
             if (node.Mesh is GltfMesh mesh)
             {
                 MeshAsset imported = await context.GetAssetAsync<GltfMesh, MeshAsset>(mesh, cancellationToken).ConfigureAwait(false);
-                world.Add(entity, new MeshSource { Mesh = imported.Reference });
+                VertexStreamsBlock? streams = await context.TryGetBlockAsync<VertexStreamsBlock>(imported, cancellationToken).ConfigureAwait(false);
+                if (streams is null || streams.Primitives.Any(primitive => !primitive.Indices.IsEmpty))
+                    world.Add(entity, new MeshSource { Mesh = imported.Reference });
+                if (node.Skin is Skin skin && context.HasImporters<Skin, SkeletonAsset>())
+                {
+                    SkeletonAsset skeleton = await context.GetAssetAsync<Skin, SkeletonAsset>(skin, cancellationToken).ConfigureAwait(false);
+                    world.Add(entity, new SkeletonSource { Skeleton = skeleton.Reference });
+                }
             }
         }
         foreach ((Node node, Entity entity) in nodes)
