@@ -43,7 +43,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
     private readonly HashSet<Entity> _targetSources = [];
     private readonly Dictionary<Entity, SourceMesh> _meshes = [];
     private readonly Dictionary<SkeletonInstance, SourceSection> _sections = [];
-    private readonly Dictionary<SkeletonInstance, GpuPoseTarget> _gpuControls = [];
+    private readonly Dictionary<SkeletonInstance, SourceTarget> _gpuControls = [];
     private readonly Dictionary<Entity, SourceTarget> _targets = [];
     private readonly List<SkeletonInstance> _removedSections = [];
     private readonly List<Entity> _removedMeshes = [];
@@ -88,7 +88,15 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
             }
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) { Collect(chunk); return false; }
+    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+    {
+        ReadOnlySpan<Entity> entities = chunk.Entities;
+        if (chunk.TryRead<MeshSkin>(out ReadOnlySpan<MeshSkin> meshes) && chunk.HasChangedSinceLastSystemVersion<MeshSkin>())
+            for (int index = 0; index < entities.Length; index++) Bind(_meshes[entities[index]], meshes[index].Joints);
+        if (chunk.TryRead<GpuPoseTarget>(out ReadOnlySpan<GpuPoseTarget> targets) && chunk.HasChangedSinceLastSystemVersion<GpuPoseTarget>())
+            for (int index = 0; index < entities.Length; index++) _targets[entities[index]].Data = targets[index];
+        return false;
+    }
 
     public bool CompleteSourceCollection(World world, bool fullCollection)
     {
@@ -106,8 +114,8 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
         foreach (Entity entity in _targetSources)
         {
             SourceTarget sourceTarget = _targets[entity];
-            GpuPoseTarget target = sourceTarget.Data;
-            _gpuControls[target.Skeleton] = target;
+            ref readonly GpuPoseTarget target = ref sourceTarget.Data;
+            _gpuControls[target.Skeleton] = sourceTarget;
             SourceSection section = Section(target.Skeleton);
             sourceTarget.Section = section;
             _canApplyChangesDirect &= section.Entity != Entity.Null && sourceTarget.PublishedSection == section.Entity;
@@ -137,7 +145,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
         {
             if (section.Input != _input) { _removedSections.Add(source); continue; }
             _canApplyChangesDirect &= section.Entity != Entity.Null && !section.Rebound;
-            _gpuControls.TryGetValue(source, out GpuPoseTarget gpu);
+            GpuPoseTarget gpu = _gpuControls.TryGetValue(source, out SourceTarget? target) ? target.Data : default;
             ModelPose model = source.ModelPose;
             bool isGpu = gpu.Clip is not null || gpu.StateMachine is not null || gpu.Blend is not null;
             bool copied = (!isGpu || source.CpuBones.Length != 0)

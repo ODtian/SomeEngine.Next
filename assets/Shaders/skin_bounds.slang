@@ -95,24 +95,38 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
     if (control.update == 0u) return;
     float3 currentMin = 1e30.xxx, currentMax = -1e30.xxx;
     float3 previousMin = 1e30.xxx, previousMax = -1e30.xxx;
+    bool sameBoxes = work.firstBox == work.firstLodBox && work.boxCount == work.lodBoxCount;
+    float currentStretch = 0.0, previousStretch = 0.0;
     for (uint index = lane; index < work.boxCount; index += 4u)
     {
         SkinBoundsBox box = SkinBoundsBoxes[work.firstBox + index];
         SkinBoundsTransform transform = SkinJointTransforms[control.joints + box.joint];
         IncludeBox(box, transform.current, currentMin, currentMax);
         IncludeBox(box, transform.previous, previousMin, previousMax);
+        if (sameBoxes)
+        {
+            currentStretch = max(currentStretch, transform.stretch.x);
+            previousStretch = max(previousStretch, transform.stretch.y);
+        }
     }
     float3 currentLodMin = 1e30.xxx, currentLodMax = -1e30.xxx;
     float3 previousLodMin = 1e30.xxx, previousLodMax = -1e30.xxx;
-    float currentStretch = 0.0, previousStretch = 0.0;
-    for (uint index = lane; index < work.lodBoxCount; index += 4u)
+    if (sameBoxes)
     {
-        SkinBoundsBox box = SkinBoundsBoxes[work.firstLodBox + index];
-        SkinBoundsTransform transform = SkinJointTransforms[control.joints + box.joint];
-        IncludeBox(box, transform.current, currentLodMin, currentLodMax);
-        IncludeBox(box, transform.previous, previousLodMin, previousLodMax);
-        currentStretch = max(currentStretch, transform.stretch.x);
-        previousStretch = max(previousStretch, transform.stretch.y);
+        currentLodMin = currentMin; currentLodMax = currentMax;
+        previousLodMin = previousMin; previousLodMax = previousMax;
+    }
+    else
+    {
+        for (uint index = lane; index < work.lodBoxCount; index += 4u)
+        {
+            SkinBoundsBox box = SkinBoundsBoxes[work.firstLodBox + index];
+            SkinBoundsTransform transform = SkinJointTransforms[control.joints + box.joint];
+            IncludeBox(box, transform.current, currentLodMin, currentLodMax);
+            IncludeBox(box, transform.previous, previousLodMin, previousLodMax);
+            currentStretch = max(currentStretch, transform.stretch.x);
+            previousStretch = max(previousStretch, transform.stretch.y);
+        }
     }
     [unroll]
     for (uint width = 1u; width < 4u; width *= 2u)

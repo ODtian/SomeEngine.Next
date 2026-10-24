@@ -29,6 +29,8 @@ Extraction 把 GameWorld 的渲染相关变化转换成下一次 RenderWorld 更
 
 `SkinRenderExtractor` 在骨架 section、网格绑定及目标映射保持一致时，
 使用一次 `World.ExecuteComponentWrite<RenderBoneSectionData>` 交换各 section 的捕获数组并写入组件。
+来源成员由首次收集和表结构变化维护；普通帧按组件列版本读取网格绑定和 GPU 目标值，
+骨架绑定版本与当前姿势继续在同一补充收集窗口中比较。
 CPU 姿势、计算记录、GPU 控制值和 IK 目标共用 `SourceSection.SwapCapture`；
 新增、移除和重新绑定沿 `Publish` 更新实体关系及绑定。
 实现入口为 `src/SomeEngine.Render.Features/Skinning/MeshSkin.cs`，
