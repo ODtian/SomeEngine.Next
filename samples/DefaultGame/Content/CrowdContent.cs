@@ -73,7 +73,21 @@ public static class CrowdContent
             .Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef VertexEvaluate RasterVertexEvaluate;");
         if (cached) shader += "\n#include \"cluster_deform.slang\"\n";
         await File.WriteAllTextAsync(Path.Combine(project.RootPath, "assets/Shaders/standard.slang"), shader);
-        await SampleMaterials.BuildAsync(project, CancellationToken.None);
+        string definitionPath = Path.Combine(project.RootPath, "assets/Shaders/standard.shader");
+        using (ShaderAsset definition = await ShaderAsset.OpenSourceAsync(definitionPath))
+        {
+            ShaderSourceBlock inputs = await definition.GetBlockAsync<ShaderSourceBlock>();
+            inputs.Specializations.Clear();
+            foreach (string mode in new[] { "0", "8" })
+            {
+                inputs.Specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = [mode] });
+                inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowReceiver", Arguments = ["0", mode] });
+                foreach (string export in new[] { "false", "true" })
+                    inputs.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = ["0", mode, export] });
+            }
+            await definition.SaveSourceAsync(definitionPath);
+        }
+        await project.BuildAsync(definitionPath);
     }
 
     private static async Task<MeshAsset> ImportCharacterAsync(AssetProject project, CrowdExample example, Guid meshId)

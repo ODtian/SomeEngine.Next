@@ -10,11 +10,11 @@ public sealed partial class SkinningRenderingTests
     [Fact]
     public async Task DefaultGame_crowd_shares_96_bone_actions_and_matches_both_material_paths()
     {
-        using SkinContent content = await SkinContent.CreateAsync();
-        await content.SetStaticShaderAsync();
         string engine = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(engine, "SomeEngine.slnx"))) engine = Path.GetDirectoryName(engine)!;
-        await CrowdContent.BuildAsync(content.Project.RootPath, engine);
+        string project = Path.Combine(engine, "samples/DefaultGame");
+        await SampleContent.BuildAsync(project, engine);
+        await CrowdContent.BuildAsync(project, engine);
         var example = new CrowdExample();
         SceneImage? inline = null;
         ClusterFrameMetrics inlineGeometry = default;
@@ -24,7 +24,7 @@ public sealed partial class SkinningRenderingTests
             var frames = new List<ApplicationFrameTiming>();
             SceneImage? image = null;
             await SceneImages.RunAsync("d3d12", new SceneScript(
-                crowd.CreateApplication(Path.Combine(content.Project.RootPath, path), frames.Add), 64,
+                crowd.CreateApplication(Path.Combine(project, path), frames.Add), 64,
                 [new(63, edit => edit.CaptureImage(value => image = value))]),
                 "--hardware-adapter", "--no-taa", "--no-vsm", "--fixed-step", "0.016666667");
             Assert.Equal(1000, crowd.Targets.Count);
