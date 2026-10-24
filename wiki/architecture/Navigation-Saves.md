@@ -51,7 +51,7 @@ resources = restored.Resources;
 
 分块 Grid 的资产登记、来源区域登记和恢复登记共同使用其 `NavigationGridRegionGraph` 表达来源关系；流送、目标更新和部分驻留 Apply 生成的 Grid 继续引用这一图。资产身份与选择项由 `NavigationSaveResources` 持有，完整数据由对应 Block 或来源区域重建。
 
-成本捕获沿 `NavigationCosts.Source` 取得完整输入，并在分配保存记录前合并同一输入的引用。记录包含已退出驻留范围的通行修改，多个 Flow 在恢复后共享对应的同一 Costs。普通 Grid 的单元位置、支撑层和有向连接标识用于应用保存值；恢复先通过 `NavigationCostSystem` 建立当前基线，再应用保存的完整成本。Flow 根据恢复的 Costs、目标及对应求解方法建立完成场，后续驻留投影继续持有该完整输入。
+成本捕获沿 `NavigationCosts.Source` 取得完整输入，并在分配保存记录前合并同一输入的引用。记录包含已退出驻留范围的通行修改，多个 Flow 在恢复后共享对应的同一 Costs。普通 Grid 的单元位置、支撑层和有向连接标识用于应用保存值；恢复先通过 `NavigationCostSystem` 建立当前基线，再应用保存的完整成本。Flow 的 `Solver` 保存求解阶段选定的方法，首次预算求解期间也能保存这一配置。恢复根据 Costs、目标及该方法建立完成场，后续驻留投影继续持有该完整输入。
 
 Heading Flow 修改后的成本保存所属 Graph 和按该图 `Nodes`、`Transitions` 顺序排列的单元与边成本。节点的 Region、Polygon、Channel 和 Pose 由保存的区域、网格、端口与连接顺序重建，同一位置的各朝向及各动作边分别取得对应成本。恢复后的多个 Flow 继续共享这一 Costs 对象与 HeadingGraph，并按保存的费用选择实际旋转和动作交接。
 

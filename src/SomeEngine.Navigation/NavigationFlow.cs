@@ -95,6 +95,7 @@ public sealed class NavigationFlow
     private readonly Lock _gate = new();
     private NavigationFlowInput _input;
     private NavigationFlowData _data = new(null, 0);
+    private string _solver = ReverseDijkstraFlow.Id;
 
     public NavigationFlow(NavigationCosts costs, NavigationProfile profile, NavigationFlowGoal[] goals)
         : this(costs, profile, (ReadOnlyMemory<NavigationFlowGoal>)goals) { }
@@ -110,6 +111,7 @@ public sealed class NavigationFlow
     public NavigationFlow(NavigationFlowField field)
     {
         _input = field.Input;
+        _solver = field.Solver;
         NavigationFlowInput input = field.Input;
         NavigationFlowTileState[] tiles = input.Costs.Grid.FlowRanges.ToArray().Select(tile => new NavigationFlowTileState(
             tile.Tile, NavigationFlowStatus.Ready, input.Version, input.GoalVersion, tile.Detailed,
@@ -120,10 +122,14 @@ public sealed class NavigationFlow
     public NavigationFlowInput Input => Volatile.Read(ref _input);
     public NavigationFlowField? Field => Volatile.Read(ref _data).Field;
     public long FieldVersion => Volatile.Read(ref _data).Version;
+    /// <summary>The selected integration method, retained while its first field is still being computed.</summary>
+    public string Solver => Volatile.Read(ref _solver);
     public NavigationCosts Costs => Input.Costs;
     public NavigationProfile Profile => Input.Profile;
     public ReadOnlyMemory<NavigationFlowGoal> Goals => Input.Goals;
     public ReadOnlyMemory<NavigationFlowTileState> TileStates => Volatile.Read(ref _data).TileStates;
+
+    internal void SetSolver(string solver) => Volatile.Write(ref _solver, solver);
 
     public NavigationFlowStatus GetStatus(Vector3 position)
     {

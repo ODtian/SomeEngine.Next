@@ -83,6 +83,7 @@ public sealed class NavigationFlowSystem<TSolver, TState>(NavigationFlow flow, S
                 if (system.Flow.ApplyCosts(input, NavigationCostSystem.Regrid(input.Costs, updated)))
                     input = system.Flow.Input;
             }
+            system.Flow.SetSolver(TSolver.Id);
             if (!ReferenceEquals(system.State.Input, input)) system.State = TSolver.Update(system.State, input) ?? TSolver.Create(input);
             result.State = system.State;
             JobHandle solved = TSolver.Schedule(system._scheduler, system.State, budget, default);

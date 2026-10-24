@@ -74,7 +74,7 @@ internal sealed partial class NavigationSaveResourceCapture(NavigationSaveResour
         sources.Sources.TryGetValue(flow, out NavigationSavedResource? source);
         int heading = input.HeadingGraph is { } graph ? CaptureHeadingGraph(graph, input.Profile) : -1;
         return new(Add(input.Costs), Add(input.Profile), input.Goals.ToArray(), input.GoalVersion, input.Version,
-            flow.Field?.Solver ?? ReverseDijkstraFlow.Id, source as SavedFlowAsset, heading);
+            flow.Solver, source as SavedFlowAsset, heading);
     }
 
     private NavigationSavedResource CaptureCosts(NavigationCosts costs)
