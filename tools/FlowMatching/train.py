@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import numpy as np
 import torch
+from export import check_export
 
 
 def motion_example(config):
@@ -64,21 +65,29 @@ def network_data(network, widths):
             "biases": [layer.bias.detach().numpy().tolist() for layer in linear]}
 
 
-def train(config):
+def train(config, dataset=None):
     torch.set_num_threads(config["threads"])
     torch.set_num_interop_threads(1)
     torch.use_deterministic_algorithms(True)
     torch.manual_seed(config["trainingSeed"])
-    before, after, controls = motion_example(config)
-    poses = pose_features(after)
+    if dataset is None:
+        before, after, controls = motion_example(config)
+        poses = pose_features(after)
+    else:
+        before, after, controls, poses = dataset
+    latent_count, pose_count, control_count = after.shape[1], poses.shape[1], controls.shape[1]
+    control_offset = np.asarray(config.get("controlOffset", [0] * control_count), np.float32)
+    control_scale = np.asarray(config.get("controlScale", [1] * control_count), np.float32)
+    controls = (controls - control_offset) / control_scale
+    print(f"samples={len(after)} latent={latent_count} controls={control_count} pose={pose_count}", flush=True)
     all_latents = np.concatenate((before, after))
     z_offset = all_latents.mean(axis=0)
-    z_scale = np.full(6, all_latents.std(axis=0).mean(), np.float32)
+    z_scale = np.full(latent_count, all_latents.std(axis=0).mean(), np.float32)
     z_before, z_after = (before - z_offset) / z_scale, (after - z_offset) / z_scale
     z_all = (all_latents - z_offset) / z_scale
     z_dist = z_all.std(axis=0)
     x_offset = poses.mean(axis=0)
-    x_scale = np.full(32, poses.std(axis=0).mean(), np.float32)
+    x_scale = np.full(pose_count, poses.std(axis=0).mean(), np.float32)
     x_normal = (poses - x_offset) / x_scale
     x_dist = x_normal.std(axis=0)
     decoder, flow = mlp(config["decoderWidths"]), mlp(config["flowWidths"])
@@ -98,9 +107,9 @@ def train(config):
     optimizer = torch.optim.AdamW(flow.parameters(), lr=config["learningRate"])
     for step in range(config["flowIterations"]):
         indices = torch.randint(count, (batch,))
-        start = torch.randn(batch, 6) * zdev
+        start = torch.randn(batch, latent_count) * zdev
         time = torch.rand(batch, 1)
-        history = previous[indices] + config["previousNoise"] * zdev * torch.rand(batch, 1) * torch.randn(batch, 6)
+        history = previous[indices] + config["previousNoise"] * zdev * torch.rand(batch, 1) * torch.randn(batch, latent_count)
         transported = (1 - time) * start + time * following[indices]
         velocity = flow(torch.cat((transported, history, control[indices], time), dim=1)) * zdev
         loss = ((velocity - (following[indices] - start)) ** 2).mean()
@@ -112,27 +121,34 @@ def train(config):
     with torch.no_grad():
         reconstruction = (decoder(zd) * xdev).numpy()
     print(f"decoder_pose_mae={np.abs((reconstruction - x_normal) * x_scale).mean():.8f}", flush=True)
-    return {
-        "version": 1, "boneCount": 3, "frameTime": config["frameTime"],
+    model = {
+        "version": 1, "boneCount": len(config["parents"]), "frameTime": config["frameTime"],
         "steps": config["integrationSteps"], "controls": config["controls"],
-        "controlOffset": [0] * 6, "controlScale": [1] * 6,
+        "controlOffset": control_offset.tolist(), "controlScale": control_scale.tolist(),
         "latentOffset": z_offset.tolist(), "latentScale": z_scale.tolist(),
         "latentDeviation": z_dist.tolist(), "latentMinimum": z_all.min(axis=0).tolist(),
         "latentMaximum": z_all.max(axis=0).tolist(),
-        "initialHistory": ((np.array([0, 1, 0, 0, 0, 0], np.float32) - z_offset) / z_scale).tolist(),
+        "initialHistory": ((np.asarray(config["initialLatent"], np.float32) - z_offset) / z_scale).tolist(),
         "poseOffset": x_offset.tolist(), "poseScale": x_scale.tolist(), "poseDeviation": x_dist.tolist(),
         "flow": network_data(flow, config["flowWidths"]),
         "decoder": network_data(decoder, config["decoderWidths"])}
+    check_export(model, flow, decoder)
+    return model
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--data", type=Path)
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding="utf-8"))
-    print(f"torch={torch.__version__} numpy={np.__version__} samples={config['sequences'] * config['frames']}", flush=True)
-    model = train(config)
+    print(f"torch={torch.__version__} numpy={np.__version__}", flush=True)
+    dataset = None
+    if args.data is not None:
+        with np.load(args.data) as data:
+            dataset = tuple(np.asarray(data[name], np.float32) for name in ("previous", "following", "controls", "poses"))
+    model = train(config, dataset)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(model, separators=(",", ":")), encoding="utf-8")
     print(f"model={args.output} topology={config['flowWidths']} decoder={config['decoderWidths']}", flush=True)
