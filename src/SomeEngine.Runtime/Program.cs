@@ -2,16 +2,24 @@ namespace SomeEngine.Runtime;
 
 public static class Application
 {
-    public static async Task<int> RunAsync(string[] args, Func<SomeEngine.Resources.Material, float, bool>? animateMaterial = null, ApplicationScene? application = null)
-        => (await RunCoreAsync(args, animateMaterial, application, null).ConfigureAwait(false)).Succeeded ? 0 : 1;
+    public static Task<int> RunAsync(string[] args, Func<SomeEngine.Resources.Material, float, bool>? animateMaterial = null, ApplicationScene? application = null)
+        => RunAsync<EngineSceneMaterials>(args, animateMaterial, application);
+
+    public static async Task<int> RunAsync<TMaterials>(string[] args, Func<SomeEngine.Resources.Material, float, bool>? animateMaterial = null,
+        ApplicationScene? application = null) where TMaterials : ISceneMaterials
+        => (await RunCoreAsync<TMaterials>(args, animateMaterial, application, null).ConfigureAwait(false)).Succeeded ? 0 : 1;
 
     /// <summary>Runs application callbacks and returns their completed frame result.</summary>
     public static Task<ApplicationResult> RunAsync(string[] args, ApplicationScene scene) =>
-        RunCoreAsync(args, null, scene, null);
+        RunCoreAsync<EngineSceneMaterials>(args, null, scene, null);
 
     /// <summary>Runs a script through the application frame loop with a software adapter and deterministic frames by default.</summary>
     public static Task<ApplicationResult> RunAsync(string[] args, SceneScript script,
         Func<SomeEngine.Resources.Material, float, bool>? animateMaterial = null)
+        => RunAsync<EngineSceneMaterials>(args, script, animateMaterial);
+
+    public static Task<ApplicationResult> RunAsync<TMaterials>(string[] args, SceneScript script,
+        Func<SomeEngine.Resources.Material, float, bool>? animateMaterial = null) where TMaterials : ISceneMaterials
     {
         ArgumentNullException.ThrowIfNull(script);
         string[] defaults = ["--hidden-window", "--synchronous-frames",
@@ -19,11 +27,12 @@ public static class Application
         bool hasFixedStep = args.Any(value => value.Equals("--fixed-step", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("--fixed-step=", StringComparison.OrdinalIgnoreCase));
         string[] timing = hasFixedStep ? [] : ["--fixed-step", "0.016666667"];
-        return RunCoreAsync([.. defaults, .. timing, .. args], animateMaterial, null, script);
+        return RunCoreAsync<TMaterials>([.. defaults, .. timing, .. args], animateMaterial, null, script);
     }
 
-    private static async Task<ApplicationResult> RunCoreAsync(string[] args,
+    private static async Task<ApplicationResult> RunCoreAsync<TMaterials>(string[] args,
         Func<SomeEngine.Resources.Material, float, bool>? animateMaterial, ApplicationScene? application, SceneScript? script)
+        where TMaterials : ISceneMaterials
     {
         using var startup = new ApplicationStartupTiming(System.Diagnostics.Stopwatch.GetTimestamp());
         try
@@ -62,7 +71,7 @@ public static class Application
             bool useWarp = (script is not null && !args.Contains("--hardware-adapter", StringComparer.OrdinalIgnoreCase)) || args.Any(static value =>
                 string.Equals(value, "--warp", StringComparison.OrdinalIgnoreCase));
             startup.StartTrace(application?.StartupTraceOutput);
-            int frames = await RuntimeApplication.RunAsync(options, useWarp, startup, animateMaterial, application ?? script?.Application, script).ConfigureAwait(false);
+            int frames = await RuntimeApplication.RunAsync<TMaterials>(options, useWarp, startup, animateMaterial, application ?? script?.Application, script).ConfigureAwait(false);
             return new(ApplicationFailure.None, frames) { Startup = startup.Result };
         }
         catch (Exception failure)

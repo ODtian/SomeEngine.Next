@@ -40,43 +40,62 @@ internal static class RuntimeApplication
     private static readonly TimeSpan FrameTimeout = TimeSpan.FromSeconds(60);
     private const Format PresentationFormat = Format.R8G8B8A8UNorm;
 
-    internal static Task<int> RunAsync(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
-        Func<Material, float, bool>? animateMaterial = null, ApplicationScene? application = null, SceneScript? script = null) => Task.Factory.StartNew(() =>
+    internal static Task<int> RunAsync<TMaterials>(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
+        Func<Material, float, bool>? animateMaterial = null, ApplicationScene? application = null, SceneScript? script = null)
+        where TMaterials : ISceneMaterials => Task.Factory.StartNew(() =>
     {
-        var shaderResources = new RuntimeShaderResources();
         using var display = new ApplicationDisplay();
-        int frames = 0;
-        do
+        ApplicationContent? content = null;
+        try
         {
-            if (application is not null) options = application.Options;
-            if (application is not null) application.ReloadRequested = false;
-            try
+            int frames = 0;
+            do
             {
-                application?.SceneStarted?.Invoke(Stopwatch.GetTimestamp());
-                int sceneFrames = RunScene(options, useWarp, startup, animateMaterial, application, display, shaderResources, script);
-                frames += sceneFrames;
-                startup.FinishTrace();
-                application?.SceneCompleted?.Invoke(new(ApplicationFailure.None, sceneFrames) { Startup = startup.Result });
-            }
-            catch (Exception error)
-            {
-                application?.SceneCompleted?.Invoke(new(ApplicationRunException.Classify(error, ApplicationFailure.ContentLoad),
-                    error is ApplicationRunException completed ? completed.CompletedFrames : 0, error) { Startup = startup.Result });
-                throw new ApplicationRunException(ApplicationRunException.Classify(error, ApplicationFailure.ContentLoad),
-                    frames + (error is ApplicationRunException run ? run.CompletedFrames : 0), error);
-            }
-        } while (application?.ReloadRequested == true);
-        return frames;
+                if (application is not null) options = application.Options;
+                if (application is not null) application.ReloadRequested = false;
+                string contentRoot = Path.GetFullPath(script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot());
+                DateTime catalogWriteTime = File.GetLastWriteTimeUtc(Path.Combine(contentRoot, "Library", "AssetManifest", AssetManifest.CatalogFileName));
+                if (content is null || !StringComparer.OrdinalIgnoreCase.Equals(content.Directory, contentRoot) ||
+                    content.GraphicsBackend != options.GraphicsBackend || content.CatalogWriteTime != catalogWriteTime)
+                {
+                    content?.Files.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    AssetManifest manifest = AssetManifest.Load(Path.Combine(contentRoot, "Library", "AssetManifest"));
+                    SlangCompileTarget target = options.GraphicsBackend == RuntimeGraphicsBackend.Vulkan
+                        ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil;
+                    SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession slang);
+                    if (result.Failed) throw new InvalidOperationException($"Slang global session creation failed with {result}.");
+                    var files = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
+                    content = new ApplicationContent(contentRoot, options.GraphicsBackend, catalogWriteTime,
+                        files, manifest, slang, CreateShaderSessionDescription(slang, target));
+                }
+                try
+                {
+                    application?.SceneStarted?.Invoke(Stopwatch.GetTimestamp());
+                    int sceneFrames = RunScene<TMaterials>(options, useWarp, startup, animateMaterial, application, display, script, content);
+                    frames += sceneFrames;
+                    startup.FinishTrace();
+                    application?.SceneCompleted?.Invoke(new(ApplicationFailure.None, sceneFrames) { Startup = startup.Result });
+                }
+                catch (Exception error)
+                {
+                    application?.SceneCompleted?.Invoke(new(ApplicationRunException.Classify(error, ApplicationFailure.ContentLoad),
+                        error is ApplicationRunException completed ? completed.CompletedFrames : 0, error) { Startup = startup.Result });
+                    throw new ApplicationRunException(ApplicationRunException.Classify(error, ApplicationFailure.ContentLoad),
+                        frames + (error is ApplicationRunException run ? run.CompletedFrames : 0), error);
+                }
+            } while (application?.ReloadRequested == true);
+            return frames;
+        }
+        finally { content?.Files.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-    private static int RunScene(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
+    private static int RunScene<TMaterials>(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
         Func<Material, float, bool>? animateMaterial, ApplicationScene? application,
-        ApplicationDisplay display, RuntimeShaderResources shaderResources, SceneScript? script)
+        ApplicationDisplay display, SceneScript? script, ApplicationContent content) where TMaterials : ISceneMaterials
     {
         ArgumentNullException.ThrowIfNull(options);
-        string contentRoot = script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot();
-        string manifestDirectory = Path.Combine(contentRoot, "Library", "AssetManifest");
-        AssetManifest manifest = AssetManifest.Load(manifestDirectory);
+        AssetLoader assets = content.Files;
+        AssetManifest manifest = content.Manifest;
         IReadOnlyList<AssetEntry> runtimeRecords =
             manifest.List(ApplicationSettingsAsset.FileType);
         if (runtimeRecords.Count != 1)
@@ -86,190 +105,135 @@ internal static class RuntimeApplication
                 $"asset; found {runtimeRecords.Count}.");
         }
 
-        var assets = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
+        using ApplicationSettingsAsset settings = display.Wait(ApplicationSettingsAsset.OpenAsync(assets,
+            new AssetId<ApplicationSettingsAsset>(runtimeRecords[0].AssetGuid)).AsTask());
+        ApplicationSettingsBlock boot = display.Wait(settings.GetBlockAsync<ApplicationSettingsBlock>().AsTask());
+        string title = settings.Name;
+        Task<WorldAsset> sceneTask = WorldAsset.OpenAsync(assets, boot.Scene).AsTask();
+        Task<ClusterShaders> pipelineTask = CreateClusterShadersAsync().AsTask();
+        Task<VirtualShadowMapShaders> virtualShadowTask = CreateShadowShadersAsync().AsTask();
+        Task<Shader> uiShaderTask = ShaderAsset.GetAsync(assets, boot.UiShader, content.ShaderValues, content.Slang, content.ShaderSettings).AsTask();
+        Task<Shader> presentationShaderTask = ShaderAsset.GetAsync(assets, boot.PresentationShader, content.ShaderValues, content.Slang, content.ShaderSettings).AsTask();
+        Task<Shader> lightingShaderTask = ShaderAsset.GetAsync(assets, boot.LightingShader, content.ShaderValues, content.Slang, content.ShaderSettings).AsTask();
+        Task<Shader> temporalShaderTask = ShaderAsset.GetAsync(assets, boot.TemporalShader, content.ShaderValues, content.Slang, content.ShaderSettings).AsTask();
+        Task<World> worldTask = Task.Run(async () =>
+        {
+            long started = Stopwatch.GetTimestamp();
+            WorldAsset sceneAsset = await sceneTask.ConfigureAwait(false);
+            World world = await sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
+                new(Execution: new WorldJobs(JobSystem.Default))).ConfigureAwait(false);
+            startup.RecordWork("WorldLoad", started);
+            return world;
+        });
+        Task<RuntimeScene> sceneResourcesTask = Task.Run(async () =>
+        {
+            World world = await worldTask.ConfigureAwait(false);
+            long started = Stopwatch.GetTimestamp();
+            RuntimeScene scene = await RuntimeScene.CreateAsync<TMaterials>(world, content).ConfigureAwait(false);
+            startup.RecordWork("SceneResources", started);
+            return scene;
+        });
+
+        async ValueTask<ClusterShaders> CreateClusterShadersAsync()
+        {
+            await using ClusterShadersAsset file = await ClusterShadersAsset.OpenAsync(
+                assets,
+                boot.Pipeline).ConfigureAwait(false);
+            ClusterShadersBlock shaders = await file.GetBlockAsync<ClusterShadersBlock>()
+                .ConfigureAwait(false);
+            Dictionary<AssetId<ShaderAsset>, Shader> references = await ShaderRef.LoadAsync(
+                shaders.References(), assets, content.ShaderValues, content.Slang, content.ShaderSettings).ConfigureAwait(false);
+            return shaders.Create(file.Name, references);
+        }
+        async ValueTask<VirtualShadowMapShaders> CreateShadowShadersAsync()
+        {
+            await using VirtualShadowMapShadersAsset file = await VirtualShadowMapShadersAsset.OpenAsync(
+                assets,
+                boot.VirtualShadowMap).ConfigureAwait(false);
+            VirtualShadowMapShadersBlock shaders = await file.GetBlockAsync<VirtualShadowMapShadersBlock>()
+                .ConfigureAwait(false);
+            Dictionary<AssetId<ShaderAsset>, Shader> references = await ShaderRef.LoadAsync(
+                shaders.References(), assets, content.ShaderValues, content.Slang, content.ShaderSettings).ConfigureAwait(false);
+            return shaders.Create(file.Name, references);
+        }
+        Task contentReads = Task.WhenAll(
+            sceneTask,
+            pipelineTask,
+            virtualShadowTask,
+            uiShaderTask,
+            presentationShaderTask,
+            lightingShaderTask,
+            temporalShaderTask,
+            worldTask,
+            sceneResourcesTask);
         try
         {
-            using ApplicationSettingsAsset settings = display.Wait(ApplicationSettingsAsset.OpenAsync(assets,
-                new AssetId<ApplicationSettingsAsset>(runtimeRecords[0].AssetGuid)).AsTask());
-            ApplicationSettingsBlock boot = display.Wait(settings.GetBlockAsync<ApplicationSettingsBlock>().AsTask());
-            string title = settings.Name;
-            SlangCompileTarget target = options.GraphicsBackend == RuntimeGraphicsBackend.Vulkan
-                ? SlangCompileTarget.Spirv
-                : SlangCompileTarget.Dxil;
-            // Slang front-end operations are serialized per global session. Keeping Cluster
-            // configuration work separate lets independent Slang object graphs progress together.
-            IGlobalSession clusterSlang = shaderResources.GetSlang(target, 0);
-            IGlobalSession slang = shaderResources.GetSlang(target, 1);
-            SessionDesc clusterSession = CreateShaderSessionDescription(
-                clusterSlang,
-                target);
-            SessionDesc shaderSession = CreateShaderSessionDescription(
-                slang,
-                target);
-
-            Task<WorldAsset> sceneTask = WorldAsset.OpenAsync(assets, boot.Scene).AsTask();
-            Task<ClusterShaders> pipelineTask = shaderResources.LoadClusterAsync(
-                manifest,
-                boot.Pipeline,
-                CreateClusterShadersAsync).AsTask();
-            Task<VirtualShadowMapShaders> virtualShadowTask = shaderResources.LoadShadowsAsync(
-                manifest,
-                boot.VirtualShadowMap,
-                CreateShadowShadersAsync).AsTask();
-            Task<Shader> uiShaderTask = LoadShaderAsync(boot.UiShader).AsTask();
-            Task<Shader> presentationShaderTask = LoadShaderAsync(boot.PresentationShader).AsTask();
-            Task<Shader> lightingShaderTask = LoadShaderAsync(boot.LightingShader).AsTask();
-            Task<Shader> temporalShaderTask = LoadShaderAsync(boot.TemporalShader).AsTask();
-            var deviceCreated = new TaskCompletionSource<Device>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var shaderOptions = new ClusterPipelineOptions { ForceHardwareRaster = useWarp || options.ForceHardwareRaster };
-            Task<World> worldTask = Task.Run(async () =>
-            {
-                long started = Stopwatch.GetTimestamp();
-                WorldAsset sceneAsset = await sceneTask.ConfigureAwait(false);
-                World world = await sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
-                    new(Execution: new WorldJobs(JobSystem.Default))).ConfigureAwait(false);
-                startup.RecordWork("WorldLoad", started);
-                return world;
-            });
-            Task<RuntimeScene> sceneResourcesTask = Task.Run(async () =>
-            {
-                World world = await worldTask.ConfigureAwait(false);
-                long started = Stopwatch.GetTimestamp();
-                RuntimeScene scene = await RuntimeScene.CreateAsync(world, assets, LoadShaderAsync,
-                    PrepareMaterialShaderAsync).ConfigureAwait(false);
-                startup.RecordWork("SceneResources", started);
-                return scene;
-            });
-
-            ValueTask<Shader> LoadShaderAsync(
-                AssetId<ShaderAsset> id,
-                CancellationToken cancellationToken = default) => shaderResources.LoadShaderAsync(
-                    manifest,
-                    assets,
-                    slang,
-                    shaderSession,
-                    id,
-                    cancellationToken);
-            async ValueTask PrepareMaterialShaderAsync(Shader shader, CancellationToken cancellationToken)
-            {
-                ClusterPipelineSystem.PrepareMaterialShader(shader, target);
-                Device device = await deviceCreated.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-                ClusterPipelineSystem.PrepareMaterialShader(display.Backend, device, shader, shaderOptions);
-            }
-            async ValueTask<ClusterShaders> CreateClusterShadersAsync(CancellationToken cancellationToken)
-            {
-                await using ClusterShadersAsset file = await ClusterShadersAsset.OpenAsync(
-                    assets,
-                    boot.Pipeline,
-                    cancellationToken).ConfigureAwait(false);
-                ClusterShadersBlock shaders = await file.GetBlockAsync<ClusterShadersBlock>(cancellationToken)
-                    .ConfigureAwait(false);
-                return await shaders.CreateAsync(
-                    file.Name,
-                    assets,
-                    clusterSlang,
-                    clusterSession,
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-            }
-            async ValueTask<VirtualShadowMapShaders> CreateShadowShadersAsync(CancellationToken cancellationToken)
-            {
-                await using VirtualShadowMapShadersAsset file = await VirtualShadowMapShadersAsset.OpenAsync(
-                    assets,
-                    boot.VirtualShadowMap,
-                    cancellationToken).ConfigureAwait(false);
-                VirtualShadowMapShadersBlock shaders = await file.GetBlockAsync<VirtualShadowMapShadersBlock>(cancellationToken)
-                    .ConfigureAwait(false);
-                return await shaders.CreateAsync(
-                    file.Name,
-                    assets,
-                    slang,
-                    shaderSession,
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-            }
-            Task contentReads = Task.WhenAll(
-                sceneTask,
-                pipelineTask,
-                virtualShadowTask,
-                uiShaderTask,
-                presentationShaderTask,
-                lightingShaderTask,
-                temporalShaderTask,
-                worldTask,
-                sceneResourcesTask);
-            try
-            {
-                startup.RecordStage("ContentReadsStarted");
-                using (EngineTrace.Begin(ApplicationTrace.DeviceCreation))
-                    display.Initialize(options, useWarp, title, boot);
-                deviceCreated.SetResult(display.Device);
-                startup.RecordStage("DeviceCreation");
-                using (EngineTrace.Begin(ApplicationTrace.ContentWait))
-                    display.Wait(contentReads);
-                startup.RecordStage("ContentWait");
-            }
-            catch (Exception failure)
-            {
-                deviceCreated.TrySetException(failure);
-                var errors = new List<Exception> { failure };
-                try { contentReads.GetAwaiter().GetResult(); }
-                catch (Exception readFailure)
-                {
-                    if (!ReferenceEquals(readFailure, failure)) errors.Add(readFailure);
-                }
-                CloseCompleted(sceneTask, errors);
-                CloseCompleted(sceneResourcesTask, errors);
-                CloseCompleted(worldTask, errors);
-                if (errors.Count != 1)
-                    throw new AggregateException("Application content creation and cleanup failed.", errors);
-                throw;
-            }
-
-            static void CloseCompleted<T>(Task<T> task, List<Exception> errors) where T : IDisposable
-            {
-                if (!task.IsCompletedSuccessfully) return;
-                try { task.Result.Dispose(); }
-                catch (Exception cleanup) { errors.Add(cleanup); }
-            }
-
-            ClusterShaders clusterShaders = pipelineTask.Result;
-            VirtualShadowMapShaders shadowShaders = virtualShadowTask.Result;
-            Shader uiCode = uiShaderTask.Result;
-            Shader presentationCode = presentationShaderTask.Result;
-            Shader lightingCode = lightingShaderTask.Result;
-            Shader temporalCode = temporalShaderTask.Result;
-            using WorldAsset sceneFile = sceneTask.Result;
-
-            if (display.Window is not null && !display.Window.PumpMessages())
-            {
-                sceneResourcesTask.Result.Dispose();
-                worldTask.Result.Dispose();
-                return 0;
-            }
-            return RunRenderer(
-                options,
-                startup,
-                display.Backend,
-                display.Device,
-                display.Swapchain,
-                display.Window!,
-                assets,
-                worldTask.Result,
-                sceneResourcesTask.Result,
-                pipelineTask.Result,
-                virtualShadowTask.Result,
-                uiShaderTask.Result,
-                presentationShaderTask.Result,
-                lightingShaderTask.Result,
-                temporalShaderTask.Result,
-                LoadShaderAsync,
-                boot,
-                title,
-                forceHardwareRaster: useWarp || options.ForceHardwareRaster, animateMaterial, application, script);
+            startup.RecordStage("ContentReadsStarted");
+            using (EngineTrace.Begin(ApplicationTrace.DeviceCreation))
+                display.Initialize(options, useWarp, title, boot);
+            startup.RecordStage("DeviceCreation");
+            using (EngineTrace.Begin(ApplicationTrace.ContentWait))
+                display.Wait(contentReads);
+            startup.RecordStage("ContentWait");
         }
-        finally
+        catch (Exception failure)
         {
-            assets.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            var errors = new List<Exception> { failure };
+            try { contentReads.GetAwaiter().GetResult(); }
+            catch (Exception readFailure)
+            {
+                if (!ReferenceEquals(readFailure, failure)) errors.Add(readFailure);
+            }
+            CloseCompleted(sceneTask, errors);
+            CloseCompleted(sceneResourcesTask, errors);
+            CloseCompleted(worldTask, errors);
+            if (errors.Count != 1)
+                throw new AggregateException("Application content creation and cleanup failed.", errors);
+            throw;
         }
+
+        static void CloseCompleted<T>(Task<T> task, List<Exception> errors) where T : IDisposable
+        {
+            if (!task.IsCompletedSuccessfully) return;
+            try { task.Result.Dispose(); }
+            catch (Exception cleanup) { errors.Add(cleanup); }
+        }
+
+        ClusterShaders clusterShaders = pipelineTask.Result;
+        VirtualShadowMapShaders shadowShaders = virtualShadowTask.Result;
+        Shader uiCode = uiShaderTask.Result;
+        Shader presentationCode = presentationShaderTask.Result;
+        Shader lightingCode = lightingShaderTask.Result;
+        Shader temporalCode = temporalShaderTask.Result;
+        content.Pipeline = clusterShaders;
+        content.Shadows = shadowShaders;
+        content.SharedShaders = [uiCode, presentationCode, lightingCode, temporalCode];
+        using WorldAsset sceneFile = sceneTask.Result;
+
+        if (display.Window is not null && !display.Window.PumpMessages())
+        {
+            sceneResourcesTask.Result.Dispose();
+            worldTask.Result.Dispose();
+            return 0;
+        }
+        return RunRenderer(
+            options,
+            startup,
+            display.Backend,
+            display.Device,
+            display.Swapchain,
+            display.Window!,
+            worldTask.Result,
+            sceneResourcesTask.Result,
+            pipelineTask.Result,
+            virtualShadowTask.Result,
+            uiShaderTask.Result,
+            presentationShaderTask.Result,
+            lightingShaderTask.Result,
+            temporalShaderTask.Result,
+            boot,
+            title,
+            forceHardwareRaster: useWarp || options.ForceHardwareRaster, animateMaterial, application, script);
     }
 
     private static SessionDesc CreateShaderSessionDescription(
@@ -512,7 +476,6 @@ internal static class RuntimeApplication
         Device device,
         Swapchain swapchain,
         NativeWindow window,
-        AssetLoader assets,
         World loadedWorld,
         RuntimeScene scene,
         ClusterShaders pipelineConfiguration,
@@ -521,7 +484,6 @@ internal static class RuntimeApplication
         Shader presentationShader,
         Shader lightingShader,
         Shader temporalShader,
-        Func<AssetId<ShaderAsset>, CancellationToken, ValueTask<Shader>> loadShader,
         ApplicationSettingsBlock boot,
         string title,
         bool forceHardwareRaster, Func<Material, float, bool>? animateMaterial, ApplicationScene? application, SceneScript? script)
@@ -532,6 +494,9 @@ internal static class RuntimeApplication
             ? new SurfacePanelExample(mainWorld, boot.Width, boot.Height, screenText!) : null;
         using HudOverlay? hud = options.HudOverlay ? new HudOverlay(mainWorld, boot.Width, boot.Height, screenText!) : null;
         using SphereNameplates? nameplates = options.WorldNameplates ? new SphereNameplates(mainWorld) : null;
+        var shaderOptions = new ClusterPipelineOptions { ForceHardwareRaster = forceHardwareRaster };
+        foreach (Shader shader in scene.Materials.Select(static material => material.Shader!).Distinct())
+            ClusterPipelineSystem.PrepareMaterialShader(backend, device, shader, shaderOptions);
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor(),
             new SurfaceRenderExtractor(), new SkinRenderExtractor(), new SkinBoundsRenderExtractor());
@@ -1137,7 +1102,7 @@ internal static class RuntimeApplication
 
                 bool hasFutureFrame =
                     options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit;
-                if (hasFutureFrame && !options.SynchronousFrames && script is null)
+                if (hasFutureFrame && !synchronousGame)
                 {
                     bool updateScene = animateScene;
                     float nextSceneTime = options.FixedFrameSeconds > 0 ? (frameIndex + 1) * options.FixedFrameSeconds : (float)Stopwatch.GetElapsedTime(
@@ -1187,7 +1152,7 @@ internal static class RuntimeApplication
                     applicationFrame.Timing = new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
                         prepareMs, reconcileMs, executeMs, gameTiming.Views, gameTiming.ExtractionMs,
                         gameTiming.ExtractionAllocatedBytes);
-                    application!.FrameCompleted?.Invoke(applicationFrame);
+                    application?.FrameCompleted?.Invoke(applicationFrame);
                 }
                 frameIndex++;
                 if (application?.ReloadRequested == true) break;

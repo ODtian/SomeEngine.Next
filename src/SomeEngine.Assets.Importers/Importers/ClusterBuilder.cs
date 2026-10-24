@@ -177,13 +177,12 @@ public static partial class ClusterBuilder
 {
 
 
-    public static MeshAsset Process(string filePath, Func<string, MeshMaterialSlot> materialResolver)
+    public static MeshAsset Process(string filePath, IReadOnlyDictionary<string, MeshMaterialSlot> materials)
     {
-        ArgumentNullException.ThrowIfNull(materialResolver);
         var model = ModelRoot.Load(filePath);
         var mesh = model.LogicalMeshes[0];
         IReadOnlyList<MeshMaterialSlot> materialSlots = mesh.Primitives
-            .Select(primitive => materialResolver(primitive.Material?.Name ?? string.Empty))
+            .Select(primitive => materials[primitive.Material?.Name ?? string.Empty])
             .ToArray();
         return ProcessMesh(mesh, materialSlots, mesh.Name ?? "Unnamed");
     }

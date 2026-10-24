@@ -30,7 +30,7 @@ internal static class ImportingSmoke
             Check(capabilities.Length == 3 && capabilities.All(value => value.SettingsType == typeof(SmokeImportSettings)),
                 "Available importer descriptions lost a source, settings type or unselected alternative.");
             Check(capabilities.All(value => !string.IsNullOrWhiteSpace(value.ImplementationVersion)), "Missing implementation versions.");
-            Check(provider.GetServices<AssetBlockCapability>().Any(value => value.BlockType == typeof(TextureBlock)
+            Check(ImportingCapabilities.BlockCapabilities.Any(value => value.BlockType == typeof(TextureBlock)
                 && value.Id == TextureBlock.BlockTypeId), "A referenced block was not discovered.");
             AssetImporterSetCapability set = provider.GetServices<AssetImporterSetCapability>()
                 .Single(value => value.Id == new Guid(SmokeImporterSets.Id));
@@ -100,8 +100,7 @@ internal static class ImportingSmoke
         {
             var metadata = new SourceMeta { SourceGuid = SourceGuid.New(), ElementIds = new() { ["mesh"] = assetId } };
             var context = new ImportContext(directory, "", metadata);
-            context.ConfigureAssets<SmokeImportSource, MeshAsset>(_ => "mesh", (_, id) => new MeshAsset(id),
-                (_, _) => "imported.mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
+            context.ConfigureAssets<SmokeImportSource, MeshAsset>(new SmokeMeshSource());
             return context;
         }
     }
@@ -206,6 +205,7 @@ public sealed class SmokeLabelImporter
 [AssetImporter("9b9e4b20-996d-4bb9-9734-83dd9c261090", typeof(SmokeNumberBlock), SettingsProvider = typeof(SmokeImportSettingsCodec))]
 public sealed class SmokeAlternativeImporter : IAssetImporter<SmokeImportSource, SmokeImportSettings>
 {
+    public int Runs { get; private set; }
     public ValueTask ImportAsync(SmokeImportSource source, SmokeImportSettings settings, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
     {

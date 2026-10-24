@@ -38,11 +38,7 @@ internal static class TestShaderLoading
         CancellationToken cancellationToken = default)
     {
         IGlobalSession slang = CreateGlobalSession();
-        return asset.GetBlock<ShaderBlock>().CreateAsync(
-            asset.GetBlock<ShaderSourceBlock>(),
-            slang,
-            CreateSessionDescription(slang, target),
-            asset.Name,
+        return asset.CreateAsync(slang, CreateSessionDescription(slang, target),
             cancellationToken: cancellationToken);
     }
 

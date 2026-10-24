@@ -147,7 +147,9 @@ public sealed partial class TextPayloadAsset : Asset
         CancellationToken cancellationToken = default)
     {
         await GetBlockAsync<TextPayloadBlock>(cancellationToken);
-        return await AssetText.SaveAsync(path, this, (writer, asset) => writer.WriteBlock(asset.GetBlock<TextPayloadBlock>(), chunkFiles), cancellationToken);
+        using var writer = AssetText.Create(this);
+        writer.WriteBlock<TextPayloadBlock>(chunkFiles);
+        return await writer.SaveAsync(path, cancellationToken);
     }
     public static async ValueTask<TextPayloadAsset> OpenSourceAsync(string path, CancellationToken cancellationToken = default)
     {

@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.Streaming;
@@ -85,9 +86,8 @@ public class GltfSourceImporterTests
             var source = model.LogicalMeshes[0];
             source.Primitives[0].Material = null;
             await using var context = new ImportContext();
-            context.ConfigureAssets<SharpGLTF.Schema2.Mesh, MeshAsset>(mesh => $"mesh/{mesh.LogicalIndex}",
-                (_, id) => new MeshAsset(id),
-                (_, id) => id + ".mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
+            context.ConfigureAssets<SharpGLTF.Schema2.Mesh, MeshAsset>(new GltfMeshSource(
+                new GltfImporterSettings { RequirePersistentElementIds = false }, path));
             var geometry = new GltfMeshImporter();
             var settings = new GltfMeshSettings();
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
@@ -118,6 +118,57 @@ public class GltfSourceImporterTests
     private const string UnlitShaderGuid = "4774aa8d-36c4-40db-9821-d982e19f9f84";
 
     [Fact]
+    public async Task TexturelessGltfMaterialsUseSharedEngineTemplateImages()
+    {
+        string directory = CreateTempDir();
+        try
+        {
+            string source = WriteTestProject(directory, writeImporterSettings: false);
+            JsonNode document = JsonNode.Parse(await File.ReadAllTextAsync(source))!;
+            foreach (JsonNode? material in document["materials"]!.AsArray())
+            {
+                var values = material!.AsObject();
+                var surface = values["pbrMetallicRoughness"]!.AsObject();
+                surface.Remove("baseColorTexture");
+                surface.Remove("metallicRoughnessTexture");
+                values.Remove("normalTexture");
+                values.Remove("occlusionTexture");
+            }
+            await File.WriteAllTextAsync(source, document.ToJsonString());
+            AssetProject project = AssetProjects.Create(directory);
+            await MaterialTemplates.SaveAsync(project, default, default);
+            await project.ImportAsync(source);
+            await using var loader = new AssetLoader(project.CreateStorage());
+            using MaterialAsset standardAsset = await MaterialAsset.OpenAsync(loader,
+                new(project.List(MaterialAsset.FileType).Single(value => value.Name == "MaskedLit").AssetGuid));
+            using MaterialAsset unlitAsset = await MaterialAsset.OpenAsync(loader,
+                new(project.List(MaterialAsset.FileType).Single(value => value.Name == "TransparentUnlit").AssetGuid));
+
+            Dictionary<AssetId<ShaderAsset>, Shader> shaders = [];
+            Dictionary<AssetId<TextureAsset>, Texture> textures = [];
+            using MaterialBlock content = await standardAsset.ResolveAsync(loader);
+            foreach (AssetId<TextureAsset> id in content.Parameters
+                .Where(value => value.Kind == MaterialParameterKind.Texture)
+                .Select(value => value.Texture).Distinct())
+            {
+                using TextureAsset texture = await TextureAsset.OpenAsync(loader, id);
+                textures.Add(id, await texture.GetBlock<TextureBlock>().CreateAsync(texture.Name));
+            }
+            StandardMaterial standard = await standardAsset.CreateAsync<StandardMaterial>(loader, shaders, textures);
+            UnlitMaterial unlit = await unlitAsset.CreateAsync<UnlitMaterial>(loader, shaders, textures);
+
+            Assert.Equal(MaterialTemplates.Standard, await standardAsset.GetTemplateAsync(loader));
+            Assert.Equal(MaterialTemplates.Unlit, await unlitAsset.GetTemplateAsync(loader));
+            Assert.Same(standard.AlbedoMap, standard.ARMMap);
+            Assert.Same(standard.AlbedoMap, unlit.AlbedoMap);
+            Assert.True(standard.NormalMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var normal));
+            Assert.Equal(new byte[] { 128, 128, 255, 255 }, normal.ToArray());
+            Assert.Equal(.35f, standard.Roughness);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
     public async Task ImportUsesEngineMaterialsAndProjectShaders()
     {
         string dir = CreateTempDir();
@@ -130,8 +181,8 @@ public class GltfSourceImporterTests
             AssetEntry entry = project.List(MaterialAsset.FileType).Single(asset => asset.Name == "MaskedLit");
             string path = Path.Combine(dir, entry.Path);
             await using MaterialAsset material = await MaterialAsset.OpenAsync(path);
-            Assert.IsType<StandardMaterialAsset>(material);
-            Assert.Equal(new AssetId<ShaderAsset>(Guid.Parse(LitShaderGuid)), material.GetBlock<MaterialBlock>().Shader);
+            Assert.IsType<MaterialAsset>(material);
+            Assert.Equal(MaterialTemplates.Standard, material.GetBlock<MaterialBlock>().Parent);
         }
         finally
         {
@@ -356,6 +407,8 @@ public class GltfSourceImporterTests
 
     private static string WriteTestProject(string dir, bool writeImporterSettings)
     {
+        MaterialTemplates.SaveAsync(new AssetProject(dir, []), new(Guid.Parse(LitShaderGuid)), new(Guid.Parse(UnlitShaderGuid)))
+            .AsTask().GetAwaiter().GetResult();
         string templateDir = Path.Combine(dir, "assets", "Materials", "Templates");
         Directory.CreateDirectory(templateDir);
         WriteTemplate(Path.Combine(templateDir, "PbrTemplate.material.asset"), "LitTemplate", unlit: false);

@@ -4,6 +4,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
+    <ProjectReference Include="SceneContent/DefaultGame.SceneContent.csproj" Condition="'$(SomeEngineDevelopment)' == 'true'" />
+    <Compile Remove="SceneContent/**/*.cs" />
     <Compile Remove="Content/**/*.cs" Condition="'$(SomeEngineDevelopment)' != 'true'" />
   </ItemGroup>
   <Target Name="WriteTestScenes" AfterTargets="Build">

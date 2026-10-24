@@ -28,13 +28,13 @@ SaveAsync 写出现有二进制文档并返回 AssetEntry。只有显式登记�
 
 人工原生定义保存自己的身份和强类型 Block。外部来源的 `.meta` 保存 Source ID、Importer 选择、强类型参数和必须保留的元素 ID 映射；`.import.json` 是可丢弃的构建记录。内容版本、文件路径、来源 ID 与资产 ID 不互相代替。缓存命中必须核验实际输入、输出内容及文档版本。
 
-Loader 与存储按已选条目取得字节范围，不缓存唯一业务实例，不隐式导入或编译。完整性、认证、压缩、包、差分和范围读取仍由原有通用实现提供。详见 [文件读写](../wiki/architecture/Assets/Asset-File-IO.md)、[引用和版本](../wiki/architecture/Assets/Asset-Identity-and-Dependencies.md)。
+Loader 与存储按已选条目取得字节范围。ShaderAsset.GetAsync、TextureAsset.GetAsync 以业务提供的强类型 WeakValues 复用存活实例，具体创建覆盖打开、Block 取得和完整资源创建；Material 的具体类型及实际资源引用由业务提供。完整性、认证、压缩、包、差分和范围读取由原有通用实现提供。详见 [文件读写](../wiki/architecture/Assets/Asset-File-IO.md)、[引用和版本](../wiki/architecture/Assets/Asset-Identity-and-Dependencies.md)。
 
 ## 扩展导入
 
 扩展实现 IAssetImporter<TSource,TSettings>，直接接收原生来源库对象。多个 Importer 可向同一 Asset 写不同 Block。每个 Block 在同次结果中只能有一个生产者；冲突由配置或明确检查解决，不以执行顺序覆盖。Context 合并遍历与依赖调用，处理循环、取消和结果释放。
 
-项目引用决定能力，SG 生成 Microsoft DI 注册、静态设置读取和编辑器能力描述。来源配置与本次覆盖分别生效。标准 glTF 集成位于引擎 `SomeEngine.Assets.Importers`；外部扩展示例位于 `samples/SomeEngine.Curves.Assets`。
+项目引用决定能力，SG 为 Importer、Importer 能力描述和导入组合生成 Microsoft DI 注册。Importer 使用无参构造，实际来源和设置由导入上下文提供；其余资产操作通过对象方法和静态编码完成。来源配置与本次覆盖分别生效。标准 glTF 集成位于引擎 `SomeEngine.Assets.Importers`；外部扩展示例位于 `samples/SomeEngine.Curves.Assets`。
 
 ## 项目模板与工具
 
@@ -45,7 +45,7 @@ Loader 与存储按已选条目取得字节范围，不缓存唯一业务实例�
 dotnet run --project samples/DefaultGame/DefaultGame.csproj -- sample
 
 # 游戏的开发组合调用引擎资产命令。
-dotnet run --project <project-directory>/Game.csproj -- build assets/Shaders/standard.shader
+dotnet run --project <project-directory>/Game.csproj -- prepare-materials
 dotnet run --project <project-directory>/Game.csproj -- import assets/Models/character.glb
 ```
 

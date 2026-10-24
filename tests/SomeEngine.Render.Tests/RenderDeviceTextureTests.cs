@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
@@ -34,7 +35,7 @@ public sealed class RenderDeviceTextureTests
             Width = 3, Height = 2, RowPitch = 5, SlicePitch = 10,
             ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 10,
         };
-        using EngineTexture texture = EngineTexture.Create(description,
+        EngineTexture texture = EngineTexture.Create(description,
             [new(tile, new byte[] { 10, 11, 12, 203, 204, 20, 21, 22, 205, 206 })],
             GraphicsTextureViewDimension.Texture2D);
         using SomeEngine.Graphics.Buffer result = backend.CreateBuffer(device,
@@ -156,7 +157,7 @@ public sealed class RenderDeviceTextureTests
         }
         finally
         {
-            foreach (EngineTexture texture in textures) texture.Dispose();
+            GC.KeepAlive(textures);
         }
     }
 
@@ -171,7 +172,7 @@ public sealed class RenderDeviceTextureTests
         Guid guid = assets.Project.RegisterAsset(await source.SaveAsync(Path.Combine(assets.Project.RootPath, "assets/canceled-first-use.texture.asset")));
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
         await using EngineTextureAsset file = await EngineTextureAsset.OpenAsync(loader, new AssetId<EngineTextureAsset>(guid));
-        await using EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
+        EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "RenderDevice cancel test");
         using var renderDevice = new RenderDevice(backend, device);
@@ -223,7 +224,7 @@ public sealed class RenderDeviceTextureTests
         Guid guid = assets.Project.RegisterAsset(await original.SaveAsync(Path.Combine(assets.Project.RootPath, "assets/compressed-bootstrap.texture.asset")));
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
         await using EngineTextureAsset file = await EngineTextureAsset.OpenAsync(loader, new AssetId<EngineTextureAsset>(guid));
-        await using EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
+        EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
         await file.DisposeAsync();
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "RenderDevice BC test");
@@ -245,7 +246,7 @@ public sealed class RenderDeviceTextureTests
         Guid guid = assets.Project.RegisterAsset(await source.SaveAsync(Path.Combine(assets.Project.RootPath, "assets/first-use.texture.asset")));
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
         await using EngineTextureAsset file = await EngineTextureAsset.OpenAsync(loader, new AssetId<EngineTextureAsset>(guid));
-        await using EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
+        EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
         await file.DisposeAsync();
 
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
@@ -326,7 +327,7 @@ public sealed class RenderDeviceTextureTests
             Assert.Equal(4, mipZeroLayerOne.Length);
         }
 
-        _ = ExecuteTextureFrame(graph, renderDevice, asset);
+        Assert.Same(resource, ExecuteTextureFrame(graph, renderDevice, asset));
         TextureSrv refinedView = renderDevice.GetTextureSrv(asset);
         Assert.Equal(0u, refinedView.Description.Range.FirstMipLevel);
         Assert.Equal(2u, refinedView.Description.Range.MipLevelCount);
@@ -343,7 +344,7 @@ public sealed class RenderDeviceTextureTests
         Guid guid = assets.Project.RegisterAsset(await source.SaveAsync(Path.Combine(assets.Project.RootPath, "assets/multi-device.texture.asset")));
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
         await using EngineTextureAsset file = await EngineTextureAsset.OpenAsync(loader, new AssetId<EngineTextureAsset>(guid));
-        await using EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
+        EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
 
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device firstDevice = CreateWarpDevice(backend, "RenderDevice A");
@@ -381,7 +382,7 @@ public sealed class RenderDeviceTextureTests
         storage.Publish(guid, beforePath);
         await using var loader = new AssetLoader(storage);
         await using EngineTextureAsset file = await EngineTextureAsset.OpenAsync(loader, new AssetId<EngineTextureAsset>(guid));
-        await using EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
+        EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
 
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "RenderDevice reload test");
@@ -389,6 +390,8 @@ public sealed class RenderDeviceTextureTests
         using var graph = CreateGraph(backend, device);
 
         RhiTexture oldBacking = ExecuteTextureFrame(graph, renderDevice, asset);
+        TextureSrv oldSrv = renderDevice.GetTextureSrv(asset);
+        TextureUav oldUav = renderDevice.GetTextureUav(asset, new(0, 1, 0, 1, TextureAspects.Color));
 
         storage.Publish(guid, afterPath);
         await using EngineTextureAsset nextFile = await EngineTextureAsset.OpenAsync(loader, new AssetId<EngineTextureAsset>(guid));
@@ -408,8 +411,17 @@ public sealed class RenderDeviceTextureTests
         Assert.NotSame(oldBacking, newBacking);
         Assert.Equal(2u, oldBacking.Info.Width);
         Assert.Equal(4u, newBacking.Info.Width);
+        TextureSrv newSrv = renderDevice.GetTextureSrv(asset);
+        TextureUav newUav = renderDevice.GetTextureUav(asset, new(0, 1, 0, 1, TextureAspects.Color));
+        Assert.NotSame(oldSrv, newSrv);
+        Assert.NotSame(oldUav, newUav);
+        Assert.Same(newBacking, newSrv.Description.Texture);
+        Assert.Same(newBacking, newUav.Description.Texture);
         renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+        graph.Dispose();
         renderDevice.CollectCompleted();
+        Assert.Throws<ObjectDisposedException>(() => backend.CreateTextureSrv(device, new TextureSrvDesc(oldBacking,
+            new(0, 1, 0, 1, TextureAspects.Color), Format.R8UNorm, GraphicsTextureViewDimension.Texture2D)));
     }
 
     [Fact]
@@ -420,7 +432,7 @@ public sealed class RenderDeviceTextureTests
         Guid id = assets.Project.RegisterAsset(await before.SaveAsync(Path.Combine(assets.Project.RootPath, "before.texture.asset")));
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
         await using EngineTextureAsset file = await EngineTextureAsset.OpenAsync(loader, new AssetId<EngineTextureAsset>(id));
-        await using EngineTexture texture = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
+        EngineTexture texture = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "texture failed update");
         using var renderDevice = new RenderDevice(backend, device);
@@ -439,7 +451,7 @@ public sealed class RenderDeviceTextureTests
     }
 
     [Fact]
-    public void ProgrammaticTextureReleaseWaitsForItsRecordedFrameAndLeavesOtherInstancesAlive()
+    public void RemovingADeviceAllocationWaitsForItsRecordedFrameAndLeavesOtherInstancesAlive()
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "texture release");
@@ -447,9 +459,9 @@ public sealed class RenderDeviceTextureTests
         using var graph = CreateGraph(backend, device);
         var description = new TextureDesc(GraphicsTextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
             Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination, label: "generated");
-        using EngineTexture first = EngineTexture.Create(description,
+        EngineTexture first = EngineTexture.Create(description,
             [Tile(0, 0, 1, 1, [1])], GraphicsTextureViewDimension.Texture2D);
-        using EngineTexture second = EngineTexture.Create(description,
+        EngineTexture second = EngineTexture.Create(description,
             [Tile(0, 0, 1, 1, [2])], GraphicsTextureViewDimension.Texture2D);
         Assert.False(first.TryGetTexture(device, out _));
         RhiTexture other = renderDevice.GetTexture(second);
@@ -464,7 +476,7 @@ public sealed class RenderDeviceTextureTests
                 static (ref PassDefinition _, ref int _) => { }, static (ref GeneralPassCommandScope _, in int _) => { });
             resource = renderDevice.PrepareTexture(ref frame, consumer, first);
             Assert.NotSame(resource, other);
-            first.Dispose();
+            renderDevice.ReleaseTexture(first);
             Assert.False(first.TryGetTexture(device, out _));
             using TextureSrv readable = backend.CreateTextureSrv(device, new TextureSrvDesc(resource,
                 new(0, 1, 0, 1, TextureAspects.Color), Format.R8UNorm, GraphicsTextureViewDimension.Texture2D));
@@ -495,7 +507,7 @@ public sealed class RenderDeviceTextureTests
         for (uint slice = 0; slice < depth; slice++)
             tiles.Add(new(new TextureMipTile { Width = 2, Height = 2, ArrayLayer = layer, Face = face,
                 DepthSlice = slice, RowPitch = 2, SlicePitch = 4 }, new byte[] { 1, 2, 3, 4 }));
-        using EngineTexture texture = EngineTexture.Create(new TextureDesc(
+        EngineTexture texture = EngineTexture.Create(new TextureDesc(
             volume ? GraphicsTextureDimension.Texture3D : GraphicsTextureDimension.Texture2D,
             2, 2, depth, 1, layers, 1, Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination), tiles, view);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
@@ -510,11 +522,11 @@ public sealed class RenderDeviceTextureTests
     }
 
     [Fact]
-    public async Task ProceduralUpdateWaitsForBothDevicesAndDeviceRemovalDoesNotBlockLaterUpdates()
+    public async Task ProceduralUpdateWaitsForBothDevicesAndDeviceShutdownAllowsLaterUpdates()
     {
         var original = new TextureDesc(GraphicsTextureDimension.Texture2D,
             1, 1, 1, 1, 1, 1, Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination);
-        using EngineTexture texture = EngineTexture.Create(original,
+        EngineTexture texture = EngineTexture.Create(original,
             [Tile(0, 0, 1, 1, [7])], GraphicsTextureViewDimension.Texture2D);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device firstDevice = CreateWarpDevice(backend, "procedural update first");
@@ -545,15 +557,157 @@ public sealed class RenderDeviceTextureTests
         Task nextUpdate = texture.UpdateAsync(new TextureDesc(GraphicsTextureDimension.Texture2D,
             1, 1, 1, 1, 1, 1, Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination),
             [Tile(0, 0, 1, 1, [9])], GraphicsTextureViewDimension.Texture2D).AsTask();
-        firstRenderer.ReleaseTexture(texture);
+        firstRenderer.Dispose();
         Assert.False(texture.TryGetTexture(firstDevice, out _));
+        Assert.Equal(texture.MipLevelCount, texture.GetFirstAvailableMip(firstDevice));
         ExecuteTextureFrame(secondGraph, secondRenderer, texture);
         await nextUpdate.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(1u, texture.Width);
         Assert.Equal(3ul, texture.Revision);
-        firstRenderer.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
         secondRenderer.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
     }
+
+    [Fact]
+    public void OrdinaryTextureReferencesKeepTheirDeviceAllocationUsable()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "ordinary texture references");
+        using var renderDevice = new RenderDevice(backend, device);
+        using var graph = CreateGraph(backend, device);
+        EngineTexture texture = PixelTexture(7);
+        var references = new List<EngineTexture> { texture, texture };
+        RhiTexture allocation = ExecuteTextureFrame(graph, renderDevice, texture);
+        references.RemoveAt(0);
+        GC.Collect();
+        renderDevice.CollectCompleted();
+        Assert.Same(allocation, ExecuteTextureFrame(graph, renderDevice, references[0]));
+        Assert.Same(allocation, renderDevice.GetTextureSrv(texture).Description.Texture);
+        GC.KeepAlive(texture);
+    }
+
+    [Fact]
+    public void CollectedTexturesEnqueueDeviceReleaseUntilTheRenderThreadCollects()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "collected texture");
+        using var renderDevice = new RenderDevice(backend, device);
+        (WeakReference<EngineTexture> reference, RhiTexture allocation) = CreateTextureForCollection(renderDevice);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        Assert.False(reference.TryGetTarget(out _));
+        using (TextureSrv readable = backend.CreateTextureSrv(device, new TextureSrvDesc(allocation,
+            new(0, 1, 0, 1, TextureAspects.Color), Format.R8UNorm, GraphicsTextureViewDimension.Texture2D)))
+            Assert.Same(allocation, readable.Description.Texture);
+        renderDevice.CollectCompleted();
+        Assert.Throws<ObjectDisposedException>(() => backend.CreateTextureSrv(device, new TextureSrvDesc(allocation,
+            new(0, 1, 0, 1, TextureAspects.Color), Format.R8UNorm, GraphicsTextureViewDimension.Texture2D)));
+    }
+
+    [Fact]
+    public void RecordedTextureFramesKeepTheActualTextureAliveThroughGpuCompletion()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "frame texture reference");
+        using var renderDevice = new RenderDevice(backend, device);
+        using var graph = CreateGraph(backend, device);
+        RenderGraphFrame frame = graph.BeginFrame();
+        WeakReference<EngineTexture> reference;
+        RhiTexture allocation;
+        try
+        {
+            (reference, allocation) = PrepareTextureForCollection(ref frame, renderDevice);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            Assert.True(IsTextureAlive(reference));
+            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+            int count = frame.Execute(completions);
+            renderDevice.TrackSubmission(completions.AsSpan(0, count));
+        }
+        finally { frame.Dispose(); }
+        graph.Dispose();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        Assert.False(reference.TryGetTarget(out _));
+        renderDevice.CollectCompleted();
+        Assert.Throws<ObjectDisposedException>(() => backend.CreateTextureSrv(device, new TextureSrvDesc(allocation,
+            new(0, 1, 0, 1, TextureAspects.Color), Format.R8UNorm, GraphicsTextureViewDimension.Texture2D)));
+    }
+
+    [Fact]
+    public async Task CompleteTextureUpdatesKeepTheirActualTextureAliveUntilDeviceExit()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "update texture reference");
+        using var renderDevice = new RenderDevice(backend, device);
+        (WeakReference<EngineTexture> reference, Task update) = QueueUpdateForCollection(renderDevice);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        Assert.True(IsTextureAlive(reference));
+        Assert.False(update.IsCompleted);
+        renderDevice.Dispose();
+        await update.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(update.IsCompletedSuccessfully);
+    }
+
+    [Fact]
+    public async Task ClosingADeviceFinishesAnUpdateAcceptedByItsOtherDevice()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device firstDevice = CreateWarpDevice(backend, "accepted update");
+        using Device secondDevice = CreateWarpDevice(backend, "closing update");
+        using var first = new RenderDevice(backend, firstDevice);
+        using var second = new RenderDevice(backend, secondDevice);
+        using var graph = CreateGraph(backend, firstDevice);
+        EngineTexture texture = PixelTexture(7);
+        _ = ExecuteTextureFrame(graph, first, texture);
+        _ = second.GetTexture(texture);
+        Task update = texture.UpdateAsync(PixelTexture(9)).AsTask();
+        _ = ExecuteTextureFrame(graph, first, texture);
+        Assert.False(update.IsCompleted);
+        ulong allocationVersion = texture.Versions.Allocation;
+        second.Dispose();
+        await update.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(2ul, texture.Revision);
+        Assert.True(texture.Versions.Allocation > allocationVersion);
+        Assert.False(texture.TryGetTexture(secondDevice, out _));
+        _ = ExecuteTextureFrame(graph, first, texture);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool IsTextureAlive(WeakReference<EngineTexture> texture) => texture.TryGetTarget(out _);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (WeakReference<EngineTexture>, Task) QueueUpdateForCollection(RenderDevice renderDevice)
+    {
+        EngineTexture texture = PixelTexture(7);
+        _ = renderDevice.GetTexture(texture);
+        return (new(texture), texture.UpdateAsync(PixelTexture(9)).AsTask());
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (WeakReference<EngineTexture>, RhiTexture) CreateTextureForCollection(RenderDevice renderDevice)
+    {
+        EngineTexture texture = PixelTexture(7);
+        return (new(texture), renderDevice.GetTexture(texture));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (WeakReference<EngineTexture>, RhiTexture) PrepareTextureForCollection(
+        ref RenderGraphFrame frame, RenderDevice renderDevice)
+    {
+        EngineTexture texture = PixelTexture(7);
+        GraphPassId consumer = frame.AddGeneralPass("collected texture consumer",
+            PassQueueSelection.AnyOfType(QueueType.Graphics), 0,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition _, ref int _) => { },
+            static (ref GeneralPassCommandScope _, in int _) => { });
+        return (new(texture), renderDevice.PrepareTexture(ref frame, consumer, texture));
+    }
+
+    private static EngineTexture PixelTexture(byte value) => EngineTexture.Create(
+        new TextureDesc(GraphicsTextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
+            Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination),
+        [Tile(0, 0, 1, 1, [value])], GraphicsTextureViewDimension.Texture2D);
 
     [Theory]
     [InlineData(false)]
@@ -562,7 +716,7 @@ public sealed class RenderDeviceTextureTests
     {
         var description = new TextureDesc(GraphicsTextureDimension.Texture2D,
             1, 1, 1, 1, 1, 1, Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination);
-        using EngineTexture texture = EngineTexture.Create(description,
+        EngineTexture texture = EngineTexture.Create(description,
             [Tile(0, 0, 1, 1, [7])], GraphicsTextureViewDimension.Texture2D);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device firstDevice = CreateWarpDevice(backend, "existing texture device");

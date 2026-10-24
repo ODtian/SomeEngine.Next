@@ -8,6 +8,7 @@ public interface IAssetImporterSettings<TSettings> where TSettings : notnull
 {
     TSettings DefaultSettings { get; }
     JsonTypeInfo<TSettings> TypeInfo { get; }
+    TSettings GetDefaults(SourceMeta source) => DefaultSettings;
 }
 
 /// <summary>An importer whose settings have already been bound and can be called directly.</summary>

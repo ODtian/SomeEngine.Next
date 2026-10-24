@@ -345,8 +345,7 @@ public sealed class AssetImportTests
             await Assert.ThrowsAsync<InvalidDataException>(() => project.MoveAsync(files.Source, System.IO.Path.Combine(boundary, "outside.input")).AsTask());
             await Assert.ThrowsAsync<InvalidDataException>(() => project.CopySourceAsync(files.Source, System.IO.Path.Combine(boundary, "copy.input")).AsTask());
             using var asset = new ShaderAsset();
-            await Assert.ThrowsAsync<InvalidDataException>(() => project.CopyAssetAsync(asset, outside,
-                static (copy, path, token) => copy.SaveAsync(path, token)).AsTask());
+            await Assert.ThrowsAsync<InvalidDataException>(() => project.CopyAssetAsync(asset, outside).AsTask());
             string externalSource = System.IO.Path.Combine(boundary, "external.input");
             File.WriteAllText(externalSource, "external source");
             var reader = new SourceImporter();
@@ -371,8 +370,7 @@ public sealed class AssetImportTests
         public ValueTask<string> ReadAsync(string path, CancellationToken token) => ValueTask.FromResult(File.ReadAllText(path));
         public async ValueTask ImportAsync(string source, ImportContext context, CancellationToken token)
         {
-            context.ConfigureAssets<ShaderPart, ShaderAsset>(part => "outside", (_, id) => new ShaderAsset(id),
-                (_, _) => outputPath, static (asset, path, cancellation) => asset.SaveAsync(path, cancellation));
+            context.ConfigureAssets<ShaderPart, ShaderAsset>(new OutsideShaders(outputPath));
             context.EnableImporter<ShaderPart, ShaderAsset>(new AssetImporter<ShaderPart, int>(Id,
                 [ShaderBlock.BlockTypeId, ShaderSourceBlock.BlockTypeId], new ShaderConversion(), 0));
             await context.GetAssetAsync<ShaderPart, ShaderAsset>(new(0, source), token);
@@ -400,22 +398,12 @@ public sealed class AssetImportTests
         public async ValueTask ImportAsync(string source, ImportContext context, AssetImportSettings<int>? overrides, CancellationToken token)
         {
             int settings = context.GetSettings(Id, 0, ImportTestJsonContext.Default.Int32, overrides);
-            int saved = 0;
-            context.ConfigureAssets<ShaderPart, ShaderAsset>(part => $"shader/{part.Index}",
-                (part, id) => new ShaderAsset(id) { Name = $"{part.Text}:{settings}" },
-                (part, _) => $"shader{part.Index}.shader.asset", async (asset, path, cancellation) =>
-                {
-                    AssetEntry entry = await asset.SaveAsync(path, cancellation);
-                    if (saved++ == FailAfterSave) throw new InvalidDataException("Import failed after saving an output.");
-                    CancelAfterSave?.Cancel();
-                    return entry;
-                });
+            context.ConfigureAssets<ShaderPart, ShaderAsset>(new ShaderSources(this, settings));
             context.EnableImporter<ShaderPart, ShaderAsset>(new AssetImporter<ShaderPart, int>(Id,
                 [ShaderBlock.BlockTypeId, ShaderSourceBlock.BlockTypeId], new ShaderConversion(), settings));
             if (IncludeMesh)
             {
-                context.ConfigureAssets<string, MeshAsset>(_ => "mesh/0", (_, id) => new MeshAsset(id),
-                    (_, _) => "mesh.mesh.asset", static (asset, path, cancellation) => asset.SaveAsync(path, cancellation));
+                context.ConfigureAssets<string, MeshAsset>(new MeshSources());
                 context.EnableImporter<string, MeshAsset>(new AssetImporter<string, int>(
                     new Guid("c698a681-8c3a-4e20-965e-f8d321f6bda9"),
                     [MeshBlock.BlockTypeId, ClusterGeometryBlock.BlockTypeId, ClusterVertexAttributesBlock.BlockTypeId, MeshMaterialsBlock.BlockTypeId], new MeshConversion(), 0));
@@ -427,6 +415,32 @@ public sealed class AssetImportTests
     }
 
     private sealed record ShaderPart(int Index, string Text);
+    private sealed class OutsideShaders(string path) : AssetSource<ShaderPart, ShaderAsset>
+    {
+        public override string GetElementKey(ShaderPart source) => "outside";
+        public override ShaderAsset CreateAsset(ShaderPart source, Guid id) => new(id);
+        public override string GetOutputPath(ShaderPart source, Guid id) => path;
+    }
+    private sealed class ShaderSources(SourceImporter importer, int settings) : AssetSource<ShaderPart, ShaderAsset>
+    {
+        private int _saved;
+        public override string GetElementKey(ShaderPart source) => $"shader/{source.Index}";
+        public override ShaderAsset CreateAsset(ShaderPart source, Guid id) => new(id) { Name = $"{source.Text}:{settings}" };
+        public override string GetOutputPath(ShaderPart source, Guid id) => $"shader{source.Index}.shader.asset";
+        public override async ValueTask<AssetEntry> SaveAsync(ShaderAsset asset, string path, CancellationToken cancellationToken)
+        {
+            AssetEntry entry = await asset.SaveAsync(path, cancellationToken);
+            if (_saved++ == importer.FailAfterSave) throw new InvalidDataException("Import failed after saving an output.");
+            importer.CancelAfterSave?.Cancel();
+            return entry;
+        }
+    }
+    private sealed class MeshSources : AssetSource<string, MeshAsset>
+    {
+        public override string GetElementKey(string source) => "mesh/0";
+        public override MeshAsset CreateAsset(string source, Guid id) => new(id);
+        public override string GetOutputPath(string source, Guid id) => "mesh.mesh.asset";
+    }
     private sealed class ShaderConversion : IAssetImporter<ShaderPart, int>
     {
         public ValueTask ImportAsync(ShaderPart source, int settings, ImportContext context, ImportOutput output, CancellationToken token)

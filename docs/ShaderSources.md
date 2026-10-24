@@ -6,14 +6,15 @@
 
 ## 来源格式
 
-当前 `.shader` 的 Shader 数据只声明 `SourceNames`。以下只展示该字段；完整文件还包含身份、类型、schema 和 Block 描述，格式见 [可读资产源文件](AssetSources.md)：
+当前 `.shader` 的 Shader 数据声明 `SourceNames` 和 `Inputs`。以下展示单个源码 Block 的默认输入；完整文件还包含身份、类型、schema 和 Block 描述，格式见 [可读资产源文件](AssetSources.md)：
 
 ```json
 {
   "Blocks": [
     {
       "Fields": {
-        "SourceNames": ["surface.slang"]
+        "SourceNames": ["surface.slang"],
+        "Inputs": []
       }
     }
   ]
@@ -35,43 +36,32 @@ target/profile 与特化属于一次具体编译调用：调用方直接提供 S
 5. 保存可取得的整 target 代码和每个入口代码到 `ShaderBlock`；
 6. 写入实际依赖、内容摘要和 importer 版本。
 
+`SlangShaderImporter` 通过 `ShaderAsset.CompileAsync` 完成上述编译与代码保存。预先准备好的强类型入口 IR 也使用这个公开入口生成共同发布字节码；固定管线发布与版本配对规则见 [Shader 资产](../wiki/architecture/Assets/Asset-Shaders.md#固定管线发布)。
+
 二进制 `ShaderSourceBlock` 因此包含用户机器可取得的 Slang 输入，不依赖构建机器的源码路径。`ShaderBlock` 只保存代码 chunk，不保存入口、资源、类型、布局或属性的引擎副本。
 
 整 target blob 是可选的；Slang 对多入口组合不提供整 blob 时，逐入口代码仍是有效产物。
 
 ## 用户机器编译
 
-用户机器上的显式编译通过 ShaderSourceBlock 完成。CreateAsync 使用已有 Slang 数据或调用方搜索路径中的源码；CompileAsync 返回 Shader、序列化 Slang 数据和实际读取文件的摘要。调用已有 Slang 数据的示例：
+用户机器上的共同 Shader 创建通过 `ShaderAsset.CreateAsync` 完成。入口 Block 的选择、共同编码与引擎导出的材质 IR 见 [Shader 资产与入口准备](../wiki/architecture/Assets/Asset-Shaders.md#共享材质与入口准备)。`ShaderSourceBlock.CompileAsync` 继续返回 Shader、序列化 Slang 数据和实际读取文件的摘要。调用已有 Slang 数据的示例：
 
 ```csharp
 await using ShaderAsset asset = await ShaderAsset.OpenAsync(loader, shaderId, cancellationToken);
-ShaderSourceBlock source = await asset.GetBlockAsync<ShaderSourceBlock>(cancellationToken);
-Shader shader = await source.CreateAsync(
+Shader shader = await asset.CreateAsync(
     slangGlobal,
     sessionDescription,
-    asset.Name,
     specializations,
     cancellationToken);
 ```
 
 `CreateAsync` 异步取得 IR，在新 `ISession` 中恢复 `IModule`，取得 `IEntryPoint`，compose/specialize/link/codegen，并返回驻留完成的 `Shader`。`Shader` 直接持有必要 Slang 接口、反射句柄和生成的 `ISlangBlob`，不为统一形式把 blob 复制进页。它不实现 `IDisposable`，调用方通过普通 GC 引用保持使用期限。
 
-如果保存代码适用于本次 Slang 设置，可由 `ShaderBlock.CreateAsync` 取得：
+`ShaderAsset.CreateAsync` 同时选择匹配的保存代码。`ShaderBlock.CreateAsync(source, ...)` 继续服务独立源码 Block 的直接取得；资产中选出的多个入口通过共同资产创建入口消费。
 
-```csharp
-ShaderBlock code = await asset.GetBlockAsync<ShaderBlock>(cancellationToken);
-Shader shader = await code.CreateAsync(
-    source,
-    slangGlobal,
-    sessionDescription,
-    asset.Name,
-    specializations,
-    cancellationToken);
-```
+这条路径恢复相同的直接 Slang 对象，并将所需代码交给最终 `byte[]`，由 `Shader` 通过普通引用持有。Asset 和文件随后可以释放，Shader 继续持有其代码及直接 Slang 对象。
 
-这条路径恢复相同的直接 Slang 对象，并将所需代码交给最终 `byte[]`，由 `Shader` 通过普通引用持有。当前实现仍先取得页，再复制到数组；总规范要求收敛到最终存储的取得边界，见审查 I11。Asset 和文件随后可以释放，Shader 不持有页保留，也不承担页的释放责任。
-
-内部 `ShaderRef.LoadAsync` 与公共材质/管线配置创建 API 也要求调用边界显式提供 Slang 参数或 Shader 加载行为。`AssetLoader` 不推断设备 target。材质 UpdateAsync 同样接收显式 Slang 参数或 Shader、Texture 加载行为，完整取得替代内容后在既有更新边界更新 Material。
+业务持有实际 Slang 全局会话、一份 `SessionDesc` 和对应的强类型弱索引。`ShaderAsset.GetAsync(files, id, values, slang, settings)` 合并完整创建并复用存活实例；共享取得键包括文件来源、资产身份和选定文件版本。Cluster、VirtualShadowMap 配置以 `block.Create(name, shaders)` 消费已经取得的实际引用。`MaterialAsset.UpdateAsync<TMaterial>(material, files, shaders, textures)` 完整解析替代字段，再由具体材质生成代码更新原对象。
 
 ## 增量构建与失败
 
@@ -86,13 +76,14 @@ Shader shader = await code.CreateAsync(
 项目根目录与 include 路径由调用方提供。默认局部构建以定义所在目录为根，不向父目录搜索工程，也不以进程当前目录猜引擎库。
 
 ```powershell
-dotnet run --project <project-directory>/Game.csproj -- build assets/Shaders/standard.shader
+dotnet run --project <project-directory>/Game.csproj -- prepare-materials
+dotnet run --project <project-directory>/Game.csproj -- build assets/Shaders/standard.shader.asset
 ```
 
-游戏开发构建中的 `AssetCommands` 调用 `AssetProject.BuildAsync`。编辑器直接使用同一个资产 API；Shader 行为检查通过重新打开资产、恢复 Slang 数据和取得实际入口验证结果。
+游戏的 `prepare-materials` 通过强类型 Block 选择本项目的 Standard、Unlit 与 Cluster IR，调用 `CompileAsync` 保存共同代码及实际模板。通用 `AssetCommands build` 对 `.shader` 调用 `AssetProject.BuildAsync`，对 `.shader.asset` 编译资产中已经选择的 IR 集合并保存结果。编辑器使用同一公开资产入口。
 
 ## 模板边界
 
-Standard、Unlit 的具体 C# 和共享 Slang 实现由引擎提供。顶层 Slang 和 `.shader` 随默认项目模板分发，创建项目后由用户维护。顶层来源选择通用阶段实现与管线入口；具体管线的类型、资源、布局与执行依赖由对应入口及实现持有。项目添加自己的材质与导入扩展时自行选择代码位置。
+Standard、Unlit 的具体 C# 和共享 Slang 实现由引擎提供。标准材质接口、实现及 Cluster 入口以序列化 IR 供资产准备使用；业务通过强类型入口 Block 选择自己的管线入口。顶层 Slang 和 `.shader` 继续服务项目的源码编译。具体管线的类型、资源、布局与执行依赖由对应入口及实现持有，项目自行组织材质与导入扩展。
 
 游戏本体、编辑器与 CLI 通过游戏项目编译，共用引擎资产 API。编译组合和开发资产操作的边界见 [游戏项目编译与开发资产](../wiki/architecture/Assets/Project-Development.md)。

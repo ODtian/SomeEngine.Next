@@ -17,14 +17,17 @@ using GltfTexture = SharpGLTF.Schema2.Texture;
 namespace DefaultGame.Content;
 
 [AssetImporter("a91c86d1-551d-48e3-8e33-a25e30e2c2f4", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
-public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) : GltfSceneImporter
+public sealed class ImportedSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("a91c86d1-551d-48e3-8e33-a25e30e2c2f4");
-    private readonly Dictionary<float, Guid> _shaders = [];
-    private AssetId<TextureAsset> _white;
     public override async ValueTask ImportMaterialAsync(GltfMaterial source, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
     {
+        if (source.Unlit)
+        {
+            await new StandardGltfSceneImporter().ImportMaterialAsync(source, context, output, cancellationToken);
+            return;
+        }
         var textures = new Dictionary<GltfTexture, AssetId<TextureAsset>>();
         foreach (GltfTexture texture in source.Channels
             .Where(channel => channel.Key is "BaseColor" or "Normal" or "MetallicRoughness" or "Occlusion" or "Emissive")
@@ -35,13 +38,12 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
                 texture, cancellationToken).ConfigureAwait(false);
             textures.Add(texture, imported.Reference);
         }
-        string templatePath = Path.IsPathRooted(sourceSettings.LitMaterialTemplate!)
-            ? Path.GetFullPath(sourceSettings.LitMaterialTemplate!)
-            : Path.GetFullPath(Path.Combine(context.ProjectRoot, sourceSettings.LitMaterialTemplate!));
+        string templatePath = Path.Combine(context.ProjectRoot, SampleSceneMaterials.ImportedTemplatePath);
         await context.ReportInputAsync(templatePath, cancellationToken).ConfigureAwait(false);
         await using MaterialAsset template = await MaterialAsset.OpenAsync(templatePath, cancellationToken).ConfigureAwait(false);
-        using MaterialAsset asset = template.CreateCopy();
+        using var asset = new MaterialAsset();
         var content = asset.GetBlock<MaterialBlock>();
+        content.Parent = template.Reference;
         var values = new StandardMaterialParameters(content);
         var color = source.FindChannel("BaseColor");
         var surface = source.FindChannel("MetallicRoughness");
@@ -53,21 +55,24 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
         float strength = emissive?.GetFactor("EmissiveStrength") ?? 1;
         values.EmissiveFactor = new Vector3(emission.X, emission.Y, emission.Z) * strength;
         values.AlbedoMap = color?.Texture is { } albedo && textures.TryGetValue(albedo, out AssetId<TextureAsset> albedoId)
-            ? albedoId : _white;
+            ? albedoId : MaterialTemplates.White;
         values.ARMMap = surface?.Texture is { } arm && textures.TryGetValue(arm, out AssetId<TextureAsset> armId)
-            ? armId : _white;
+            ? armId : MaterialTemplates.White;
         if (source.FindChannel("Normal")?.Texture is { } normal
             && textures.TryGetValue(normal, out AssetId<TextureAsset> normalId)) values.NormalMap = normalId;
         AssetId<TextureAsset> emissiveId = emissive?.Texture is { } emissiveTexture
-            && textures.TryGetValue(emissiveTexture, out AssetId<TextureAsset> mappedEmissive) ? mappedEmissive : _white;
+            && textures.TryGetValue(emissiveTexture, out AssetId<TextureAsset> mappedEmissive) ? mappedEmissive : MaterialTemplates.White;
         content.SetParameter(new("EmissiveMap", MaterialParameterKind.Texture) { Texture = emissiveId });
         var occlusion = source.FindChannel("Occlusion");
         AssetId<TextureAsset> occlusionId = occlusion?.Texture is { } occlusionTexture
-            && textures.TryGetValue(occlusionTexture, out AssetId<TextureAsset> mappedOcclusion) ? mappedOcclusion : _white;
+            && textures.TryGetValue(occlusionTexture, out AssetId<TextureAsset> mappedOcclusion) ? mappedOcclusion : MaterialTemplates.White;
         content.SetParameter(new("OcclusionMap", MaterialParameterKind.Texture) { Texture = occlusionId });
         content.SetParameter(new("NormalScale", MaterialParameterKind.Float) { Float = source.FindChannel("Normal")?.GetFactor("NormalScale") ?? 1 });
         content.SetParameter(new("OcclusionStrength", MaterialParameterKind.Float) { Float = occlusion?.GetFactor("OcclusionStrength") ?? 1 });
-        content.Shader = new(_shaders[Cutoff(source)]);
+        string shaderPath = Path.Combine(context.ProjectRoot, "assets/Shaders", ShaderName(Cutoff(source)) + ".shader");
+        await context.ReportInputAsync(shaderPath, cancellationToken);
+        using ShaderAsset shader = await ShaderAsset.OpenSourceAsync(shaderPath, cancellationToken);
+        content.Shader = shader.Reference;
         MaterialBlock block = content.Duplicate();
         try { output.SetBlock(block); }
         catch { block.Dispose(); throw; }
@@ -95,10 +100,10 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             "        float3 finalColor = baseColor * ao * 0.03 + emission;");
         surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
         WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
-        foreach (float cutoff in model.LogicalMaterials.Select(Cutoff).Distinct())
+        var shaderIds = new List<Guid>();
+        foreach (float cutoff in model.LogicalMaterials.Where(static material => !material.Unlit).Select(Cutoff).Distinct())
         {
-            string suffix = cutoff < 0 ? "opaque" : "mask_" + BitConverter.SingleToInt32Bits(cutoff).ToString("x8");
-            string shaderName = "scene_" + suffix;
+            string shaderName = ShaderName(cutoff);
             string shader = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
                 .Replace("\"standard_material.slang\"", "\"scene_material.slang\"");
             if (cutoff >= 0)
@@ -114,23 +119,15 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
             definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(shaderName + ".slang");
             WriteIfChanged(definitionPath, definition.ToJsonString());
             await project.BuildAsync(definitionPath);
-            _shaders.Add(cutoff, shaderId);
+            shaderIds.Add(shaderId);
         }
         string templatePath = Path.Combine(project.RootPath, "assets/Materials/Standard.material.asset");
-        using var template = await MaterialAsset.OpenAsync(templatePath);
+        using var standard = await MaterialAsset.OpenAsync(templatePath);
+        using var template = standard.CreateCopy(SampleSceneMaterials.ImportedTemplate.Value);
         var old = template.GetBlock<MaterialBlock>();
-        var previous = new StandardMaterialParameters(old);
-        _white = previous.AlbedoMap;
-        // The template is a project asset. Its concrete type is registered by the
-        // sample viewer; the engine still sees an ordinary user material.
-        if (old.MaterialTypeId != SceneMaterial.TypeId)
-        {
-            using var replacement = new SceneMaterialAsset(template.Id) { Name = "Imported scene material" };
-            var block = replacement.GetBlock<MaterialBlock>();
-            foreach (var parameter in old.Parameters) block.SetParameter(parameter);
-            block.Shader = new(_shaders.Values.First());
-            project.RegisterAsset(await replacement.SaveAsync(templatePath));
-        }
+        old.Shader = new(shaderIds.First());
+        template.Name = "Imported scene material";
+        project.RegisterAsset(await template.SaveAsync(Path.Combine(project.RootPath, SampleSceneMaterials.ImportedTemplatePath)));
     }
 
     protected override ValueTask AddSceneContentAsync(World world, Scene scene, ImportContext context,
@@ -151,6 +148,8 @@ public sealed class ImportedSceneImporter(GltfImporterSettings sourceSettings) :
 
     private static float Cutoff(GltfMaterial material) => material.Alpha == AlphaMode.MASK
         ? material.AlphaCutoff / Math.Max(material.FindChannel("BaseColor")?.Color.W ?? 1, 1e-8f) : -1;
+    private static string ShaderName(float cutoff) => cutoff < 0 ? "scene_opaque"
+        : "scene_mask_" + BitConverter.SingleToInt32Bits(cutoff).ToString("x8");
     private static string Replace(string source, string previous, string next) => source.Contains(previous)
         ? source.Replace(previous, next) : throw new InvalidDataException($"The sample shader integration changed: {previous}");
     private static void WriteIfChanged(string path, string content)
@@ -184,7 +183,7 @@ struct SceneMask : IVisibilityEvaluate<StandardVertex>
 """;
 }
 
-[AssetCapabilities]
+[AssetCapabilities(GltfImporterSets.ClusterId)]
 public static partial class ImportedSceneCapabilities;
 
 // This project's material shader consumes UV0; the source file can retain other UV sets.

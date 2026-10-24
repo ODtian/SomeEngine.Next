@@ -41,6 +41,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
+    private RenderWorld _renderWorld = null!;
     private readonly RenderDevice _renderDevice;
     private readonly ClusterRenderResources _resources;
     private readonly IRenderInstanceBatchSource<RenderInstanceSingleGroup> _instances;
@@ -380,6 +381,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
     public void OnCreate(ref RenderFrameSystemContext context)
     {
+        _renderWorld = context.World;
         if (_created)
             throw new InvalidOperationException("The Cluster pipeline is already created.");
         _options.Validate();
@@ -441,7 +443,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         if (!_created)
             throw new InvalidOperationException("The Cluster pipeline was not created.");
         ClusterMaterialAssignmentSet assignments = _materialAssignments.Current;
-        RefreshMaterialTextures();
         if (_graphInstalled && _traversalLevelPasses.Count < _resources.HierarchyLevels)
             ReconcileTraversal();
         bool assignmentsChanged = !_graphInstalled ||
@@ -449,6 +450,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool materialResourcesChanged = CollectMaterialChanges(assignments);
         if (!assignmentsChanged && !materialResourcesChanged)
         {
+            RefreshMaterialTextures();
             ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments);
             if (!ReferenceEquals(updated, _materialScalars))
             {

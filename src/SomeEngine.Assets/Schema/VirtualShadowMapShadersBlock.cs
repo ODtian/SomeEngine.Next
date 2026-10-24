@@ -24,25 +24,12 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
 
     protected override void ValidateContent() => Validate("shader settings");
 
-    public async ValueTask<VirtualShadowMapShaders> CreateAsync(
+    public VirtualShadowMapShaders Create(
         string name,
-        AssetLoader loader,
-        IGlobalSession slang,
-        SessionDesc sessionDescription,
-        ReadOnlyMemory<SpecializationArg> specializations = default,
-        CancellationToken cancellationToken = default)
+        IReadOnlyDictionary<AssetId<ShaderAsset>, Shader> shaders)
     {
-        ArgumentNullException.ThrowIfNull(loader);
         using VirtualShadowMapShadersBlock copy = Duplicate();
-        cancellationToken.ThrowIfCancellationRequested();
         copy.Validate(name);
-        Dictionary<Guid, Shader> shaders = await ShaderRef.LoadAsync(
-            copy.References(),
-            loader,
-            slang,
-            sessionDescription,
-            specializations,
-            cancellationToken).ConfigureAwait(false);
         EntryPointReflection Resolve(ShaderRef reference)
         {
             EntryPointReflection entry = reference.ResolveEntry(shaders);
@@ -57,34 +44,33 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
         var result = new VirtualShadowMapShaders
         {
             Name = name,
-            ResetReceiverMasksShader = shaders[copy.ResetReceiverMasks!.Asset.Value],
+            ResetReceiverMasksShader = shaders[copy.ResetReceiverMasks!.Asset],
             ResetReceiverMasks = Resolve(copy.ResetReceiverMasks),
-            ResetFrameShader = shaders[copy.ResetFrame!.Asset.Value],
+            ResetFrameShader = shaders[copy.ResetFrame!.Asset],
             ResetFrame = Resolve(copy.ResetFrame),
-            MarkPagesShader = shaders[copy.MarkPages!.Asset.Value],
+            MarkPagesShader = shaders[copy.MarkPages!.Asset],
             MarkPages = Resolve(copy.MarkPages),
-            MarkCoarsePagesShader = shaders[copy.MarkCoarsePages!.Asset.Value],
+            MarkCoarsePagesShader = shaders[copy.MarkCoarsePages!.Asset],
             MarkCoarsePages = Resolve(copy.MarkCoarsePages),
-            AllocatePagesShader = shaders[copy.AllocatePages!.Asset.Value],
+            AllocatePagesShader = shaders[copy.AllocatePages!.Asset],
             AllocatePages = Resolve(copy.AllocatePages),
-            ClearPagesShader = shaders[copy.ClearPages!.Asset.Value],
+            ClearPagesShader = shaders[copy.ClearPages!.Asset],
             ClearPages = Resolve(copy.ClearPages),
-            InitializeStateShader = shaders[copy.InitializeState!.Asset.Value],
+            InitializeStateShader = shaders[copy.InitializeState!.Asset],
             InitializeState = Resolve(copy.InitializeState),
-            InvalidateCastersShader = shaders[copy.InvalidateCasters!.Asset.Value],
+            InvalidateCastersShader = shaders[copy.InvalidateCasters!.Asset],
             InvalidateCasters = Resolve(copy.InvalidateCasters),
-            BuildPagePoolShader = shaders[copy.BuildPagePool!.Asset.Value],
+            BuildPagePoolShader = shaders[copy.BuildPagePool!.Asset],
             BuildPagePool = Resolve(copy.BuildPagePool),
-            CompactViewsShader = shaders[copy.CompactViews!.Asset.Value],
+            CompactViewsShader = shaders[copy.CompactViews!.Asset],
             CompactViews = Resolve(copy.CompactViews),
-            InitializePageHiZShader = shaders[copy.InitializePageHiZ!.Asset.Value],
+            InitializePageHiZShader = shaders[copy.InitializePageHiZ!.Asset],
             InitializePageHiZ = Resolve(copy.InitializePageHiZ),
-            ReducePageHiZShader = shaders[copy.ReducePageHiZ!.Asset.Value],
+            ReducePageHiZShader = shaders[copy.ReducePageHiZ!.Asset],
             ReducePageHiZ = Resolve(copy.ReducePageHiZ),
-            DynamicResolutionShader = shaders[copy.DynamicResolution!.Asset.Value],
+            DynamicResolutionShader = shaders[copy.DynamicResolution!.Asset],
             DynamicResolution = Resolve(copy.DynamicResolution),
         };
-        cancellationToken.ThrowIfCancellationRequested();
         return result;
     }
 }

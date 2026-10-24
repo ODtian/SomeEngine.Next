@@ -12,14 +12,13 @@ namespace SomeEngine.Assets.Importers;
 public sealed class StandardGltfSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b");
-    public static GltfSourceImporter CreateSourceImporter(Action<IServiceCollection>? configureServices = null,
+    public static GltfSourceImporter CreateSourceImporter(IServiceCollection? importers = null,
         string? capabilitiesVersion = null)
-        => new(services =>
-        {
-            EngineAssetCapabilities.AddAssetCapabilities(services);
-            services.AddSingleton<IClusterVertexEncoder>(StandardClusterVertexEncoder.Instance);
-            configureServices?.Invoke(services);
-        }, capabilitiesVersion ?? EngineAssetCapabilities.BuildVersion, ImporterId);
+    {
+        importers ??= new ServiceCollection();
+        EngineAssetCapabilities.AddAssetCapabilities(importers);
+        return new(importers, capabilitiesVersion ?? EngineAssetCapabilities.BuildVersion, ImporterId);
+    }
 
     public override async ValueTask ImportMaterialAsync(GltfMaterial source, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
@@ -42,29 +41,26 @@ public sealed class StandardGltfSceneImporter : GltfSceneImporter
         MaterialBlock content = material.GetBlock<MaterialBlock>();
         AssetId<TextureAsset> albedo = baseColor?.Texture is { } colorTexture
             && textures.TryGetValue(colorTexture, out AssetId<TextureAsset> colorId) ? colorId : default;
-        switch (material)
+        if (source.Unlit)
         {
-            case StandardMaterialAsset:
-                var standard = new StandardMaterialParameters(content);
-                var emissive = source.FindChannel("Emissive");
-                standard.BaseColorTint = baseColor?.Color ?? System.Numerics.Vector4.One;
-                standard.MetallicFactor = metallicRoughness?.GetFactor("MetallicFactor") ?? 1;
-                standard.Roughness = metallicRoughness?.GetFactor("RoughnessFactor") ?? 1;
-                System.Numerics.Vector4 emission = emissive?.Color ?? System.Numerics.Vector4.Zero;
-                standard.EmissiveFactor = new(emission.X, emission.Y, emission.Z);
-                if (!albedo.IsEmpty) standard.AlbedoMap = albedo;
-                if (source.FindChannel("Normal")?.Texture is { } normal
-                    && textures.TryGetValue(normal, out AssetId<TextureAsset> normalId)) standard.NormalMap = normalId;
-                if (surface is not null && textures.TryGetValue(surface, out AssetId<TextureAsset> surfaceId))
-                    standard.ARMMap = surfaceId;
-                break;
-            case UnlitMaterialAsset:
-                var unlit = new UnlitMaterialParameters(content);
-                unlit.BaseColorTint = baseColor?.Color ?? System.Numerics.Vector4.One;
-                if (!albedo.IsEmpty) unlit.AlbedoMap = albedo;
-                break;
-            default:
-                throw new InvalidDataException($"Unsupported glTF material type '{content.MaterialTypeId}'.");
+            var unlit = new UnlitMaterialParameters(content);
+            unlit.BaseColorTint = baseColor?.Color ?? System.Numerics.Vector4.One;
+            if (!albedo.IsEmpty) unlit.AlbedoMap = albedo;
+        }
+        else
+        {
+            var standard = new StandardMaterialParameters(content);
+            var emissive = source.FindChannel("Emissive");
+            standard.BaseColorTint = baseColor?.Color ?? System.Numerics.Vector4.One;
+            standard.MetallicFactor = metallicRoughness?.GetFactor("MetallicFactor") ?? 1;
+            standard.Roughness = metallicRoughness?.GetFactor("RoughnessFactor") ?? 1;
+            System.Numerics.Vector4 emission = emissive?.Color ?? System.Numerics.Vector4.Zero;
+            standard.EmissiveFactor = new(emission.X, emission.Y, emission.Z);
+            if (!albedo.IsEmpty) standard.AlbedoMap = albedo;
+            if (source.FindChannel("Normal")?.Texture is { } normal
+                && textures.TryGetValue(normal, out AssetId<TextureAsset> normalId)) standard.NormalMap = normalId;
+            if (surface is not null && textures.TryGetValue(surface, out AssetId<TextureAsset> surfaceId))
+                standard.ARMMap = surfaceId;
         }
         MaterialBlock block = content.Duplicate();
         try { output.SetBlock(block); }
@@ -74,24 +70,19 @@ public sealed class StandardGltfSceneImporter : GltfSceneImporter
     private async ValueTask<MaterialAsset> CreateMaterialAsync(bool unlit, ImportContext context,
         CancellationToken cancellationToken)
     {
-        string? templatePath = unlit ? sourceSettings.UnlitMaterialTemplate : sourceSettings.LitMaterialTemplate;
-        if (templatePath is not null)
-        {
-            string path = GltfDeps.FullPath(context.ProjectRoot, templatePath);
-            await context.ReportInputAsync(path, cancellationToken).ConfigureAwait(false);
-            await using MaterialAsset template = await MaterialAsset.OpenAsync(path, cancellationToken).ConfigureAwait(false);
-            return template.CreateCopy();
-        }
-
-        string shaderPath = GltfDeps.FullPath(context.ProjectRoot,
-            unlit ? sourceSettings.UnlitShader : sourceSettings.LitShader);
-        await context.ReportInputAsync(shaderPath, cancellationToken).ConfigureAwait(false);
-        using ShaderAsset shader = await ShaderAsset.OpenSourceAsync(shaderPath, cancellationToken).ConfigureAwait(false);
-        MaterialAsset material = unlit ? new UnlitMaterialAsset() : new StandardMaterialAsset();
-        material.GetBlock<MaterialBlock>().Shader = shader.Reference;
+        GltfImporterSettings sourceSettings = context.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
+        string templatePath = unlit ? sourceSettings.UnlitMaterialTemplate ?? MaterialTemplates.UnlitPath
+            : sourceSettings.LitMaterialTemplate ?? MaterialTemplates.StandardPath;
+        string path = GltfDeps.FullPath(context.ProjectRoot, templatePath);
+        await context.ReportInputAsync(path, cancellationToken).ConfigureAwait(false);
+        using MaterialAsset template = await MaterialAsset.OpenAsync(path, cancellationToken).ConfigureAwait(false);
+        var material = new MaterialAsset();
+        material.GetBlock<MaterialBlock>().Parent = template.Reference;
         return material;
     }
 }
 
-[AssetCapabilities]
+[AssetCapabilities(GltfImporterSets.ClusterId)]
 public static partial class EngineAssetCapabilities;
+

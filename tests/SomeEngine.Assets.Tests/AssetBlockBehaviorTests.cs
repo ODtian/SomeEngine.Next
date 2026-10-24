@@ -225,21 +225,29 @@ public sealed class AssetBlockBehaviorTests
     public async Task ImportGroupIsFullyVisibleEvenWhenRetiredBlockCleanupThrows()
     {
         await using var context = new ImportContext();
-        BlockTestAsset? target = null;
-        context.ConfigureAssets<object, BlockTestAsset>(_ => "group", (_, id) =>
-        {
-            target = CreateContent(id);
-            target.GetBlock<BlockTestText>().ThrowOnRelease = true;
-            return target;
-        }, (_, _) => "group.block-test.asset", static (asset, path, token) => asset.SaveAsync(path, token));
+        var sources = new GroupSources();
+        context.ConfigureAssets<object, BlockTestAsset>(sources);
         context.EnableImporter<object, BlockTestAsset>(new AssetImporter<object, int>(
             new Guid("eef1c633-39c2-4556-8f6a-4e31f98e526c"),
             [BlockTestNumbers.BlockTypeId, BlockTestText.BlockTypeId], new GroupImporter(), 72));
         AggregateException error = await Assert.ThrowsAsync<AggregateException>(() => context.GetAssetAsync<object, BlockTestAsset>(new()).AsTask());
         Assert.IsType<IOException>(Assert.Single(error.InnerExceptions));
-        Assert.Equal(72, target!.GetBlock<BlockTestNumbers>().Value);
-        Assert.Equal("replacement", target.GetBlock<BlockTestText>().Text);
+        Assert.Equal(72, sources.Target!.GetBlock<BlockTestNumbers>().Value);
+        Assert.Equal("replacement", sources.Target.GetBlock<BlockTestText>().Text);
         Assert.Empty(context.Assets);
+    }
+
+    private sealed class GroupSources : AssetSource<object, BlockTestAsset>
+    {
+        public BlockTestAsset? Target { get; private set; }
+        public override string GetElementKey(object source) => "group";
+        public override BlockTestAsset CreateAsset(object source, Guid id)
+        {
+            Target = CreateContent(id);
+            Target.GetBlock<BlockTestText>().ThrowOnRelease = true;
+            return Target;
+        }
+        public override string GetOutputPath(object source, Guid id) => "group.block-test.asset";
     }
 
     [Fact]
@@ -335,7 +343,7 @@ internal sealed partial class BlockTestAsset : Asset
     public BlockTestAsset(Guid id = default) : base(id) => AssetType = FileType;
     private BlockTestAsset(BlockTestAsset source) : base(source) { }
     public override BlockTestAsset Duplicate() { lock (SyncRoot) { RequireIdle(); return new(this); } }
-    public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+    public override async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
         using BlockTestAsset copy = Duplicate();
         return await copy.SaveBlockContentAsync(path, ".block-test.asset", cancellationToken);

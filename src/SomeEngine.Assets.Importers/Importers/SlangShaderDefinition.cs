@@ -65,25 +65,16 @@ public static partial class SlangShaderImporter
         try
         {
             ShaderSourceBlock definition = asset.GetBlock<ShaderSourceBlock>();
-            ShaderBlock code = asset.GetBlock<ShaderBlock>();
             string fullPath = Path.GetFullPath(definitionPath);
             projectRoot = Path.GetFullPath(projectRoot ?? Path.GetDirectoryName(fullPath)!);
             string? definitionHash = File.Exists(fullPath) ? ImportHash.FileSha256(fullPath) : null;
             TargetDesc[] targets = CreateDefaultTargets(GlobalSession);
             SessionDesc sessionDescription = CreateSessionDescription(fullPath, targets, includeDirectories);
-            ShaderCompilation compiled = definition.CompileAsync(GlobalSession, sessionDescription,
-                string.IsNullOrWhiteSpace(asset.Name) ? Path.GetFileNameWithoutExtension(fullPath) : asset.Name,
+            if (string.IsNullOrWhiteSpace(asset.Name)) asset.Name = Path.GetFileNameWithoutExtension(fullPath);
+            ShaderCompilation compiled = asset.CompileAsync(GlobalSession, sessionDescription,
                 cancellationToken).AsTask().GetAwaiter().GetResult();
-            for (int index = 0; index < compiled.SerializedSources.Count; index++)
-                definition.SetSerializedSource(index, compiled.SerializedSources[index].Span);
-            foreach (ulong key in code.Chunks.Keys.ToArray()) code.RemoveBytes(key);
-            for (int target = 0; target < targets.Length; target++)
-            {
-                ISlangBlob? targetCode = compiled.Shader.GetSlangTargetBlob(target);
-                if (targetCode is not null) code.SetTargetCode(sessionDescription, target, targetCode.Buffer);
-                for (int entry = 0; entry < compiled.Shader.SlangEntryCount; entry++)
-                    code.SetEntryCode(sessionDescription, target, entry, compiled.Shader.GetSlangEntryBlob(target, entry)!.Buffer);
-            }
+            definition = asset.GetBlock<ShaderSourceBlock>();
+            ShaderBlock code = asset.GetBlock<ShaderBlock>();
             var dependencies = compiled.Files.Select(file => new FileDependency
             {
                 RelativePath = SlangDeps.RelPath(projectRoot, file.Path), ContentHash = file.ContentHash,

@@ -163,3 +163,10 @@
 **渲染字形图集**（`RenderGlyphAtlas`）：RenderWorld 镜像实体持有的只读页像素、变化矩形与版本，供连续帧增量上传和跨版本补齐。
 
 **字形实例**（`GlyphInstance`）：渲染提取根据排版字形、布局矩形与样式得到的绘制数据，包含几何、图集页及 UV、颜色、裁剪和树序。
+## Shader
+
+**Shader 输入 Block**：`ShaderInputBlock`。在同一个 `ShaderAsset` 中保存一组 Slang 源码名称和实际序列化 IR，具体材质与管线入口由强类型 Block 表达。
+
+**共同输入顺序**：`ShaderSourceBlock.Inputs` 保存的 `ShaderInputLocation` 清单。每项通过所在 Block 的持久类型 ID 和源码序号定位实际 IR，Slang 按此顺序恢复全部所选输入并共同链接。
+
+**Shader 输入版本**：`ShaderInputVersion`。共同代码保存输入位置和所在 Block 的持久 `DataVersion`，与输入顺序及实际编译设置一起配对发布字节码。

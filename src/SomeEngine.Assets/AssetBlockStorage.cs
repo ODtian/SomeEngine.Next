@@ -84,11 +84,7 @@ public sealed class AssetBlockSource : IDisposable
     public ValueTask<ReadOnlyMemory<byte>> ReadBytesAsync(ulong key, CancellationToken cancellationToken = default)
     {
         AssetByteKey dataKey = GetByteKey(key);
-        return _byteCache.ReadAsync(dataKey, (File: _file, Key: dataKey.ChunkKey), static async input =>
-        {
-            await using AssetFile file = input.File.Retain();
-            return await file.ReadBytesAsync(input.Key).ConfigureAwait(false);
-        }, cancellationToken);
+        return _byteCache.ReadAsync(dataKey, new AssetFileBytes(_file, dataKey.ChunkKey), cancellationToken);
     }
     public ValueTask<IRangeSource> OpenChunkRangeSourceAsync(ulong key, CancellationToken cancellationToken = default)
         => _file.OpenChunkRangeSourceAsync(GetStorageKey(key), cancellationToken);
@@ -102,6 +98,11 @@ public sealed class AssetBlockSource : IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) == 0) _file.Dispose();
     }
 
+}
+
+internal readonly struct AssetFileBytes(AssetFile file, ulong key) : IAssetByteRead
+{
+    public ValueTask<byte[]> ReadAsync() => file.ReadBytesAsync(key);
 }
 
 /// <summary>Feeds a block's metadata and immutable bytes into the existing binary document writer.</summary>

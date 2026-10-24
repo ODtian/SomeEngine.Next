@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="templates/DefaultProject/Game.csproj" />
   <Project Path="samples/DefaultGame/DefaultGame.csproj" />
+  <Project Path="samples/DefaultGame/SceneContent/DefaultGame.SceneContent.csproj" />
   <Project Path="src\SomeEngine.Diagnostics\SomeEngine.Diagnostics.csproj" />
   <Project Path="tools\SomeEngine.Trace\SomeEngine.Trace.csproj" />
   <Project Path="tests\SomeEngine.Diagnostics.Tests\SomeEngine.Diagnostics.Tests.csproj" />
@@ -110,6 +111,7 @@
     <Project Path="tools/RhiTypeGraph/RhiTypeGraph.csproj" />
     <Project Path="tools/SomeEngine.Assets.Benchmarks/SomeEngine.Assets.Benchmarks.csproj" />
     <Project Path="tools/SomeEngine.Views.AotReference/SomeEngine.Views.AotReference.csproj" />
+    <Project Path="tools/SomeEngine.Core.Benchmarks/SomeEngine.Core.Benchmarks.csproj" />
   </Folder>
   <Project Path="benchmarks\SomeEngine.ECS.Benchmarks\SomeEngine.ECS.Benchmarks.csproj" />
   <Project Path="src\SomeEngine.Graphics.Direct3D12.Validation\SomeEngine.Graphics.Direct3D12.Validation.csproj" />

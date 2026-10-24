@@ -22,17 +22,16 @@ public sealed class AssetDataSharingTests : IDisposable
         AssetEntry entry = await SaveTextureAsync("shared", 7);
         using TextureAsset asset = await TextureAsset.OpenAsync(entry.Path);
         TextureBlock block = asset.GetBlock<TextureBlock>();
-        using Texture first = await block.CreateAsync();
+        Texture first = await block.CreateAsync();
         using TextureBlock branch = block.Duplicate();
-        using Texture second = await branch.CreateAsync();
+        Texture second = await branch.CreateAsync();
         Assert.True(first.TryGetTile(block.MipTiles[0].ChunkKey, out var firstBytes));
         Assert.True(second.TryGetTile(block.MipTiles[0].ChunkKey, out var secondBytes));
         Assert.True(firstBytes.Equals(secondBytes));
         asset.Dispose();
         branch.Dispose();
-        first.Dispose();
+        Assert.True(second.TryGetTile(second.MipTiles[0].ChunkKey, out _));
         Assert.Equal(new byte[] { 7, 7, 7, 7 }, secondBytes.ToArray());
-        second.Dispose();
         Assert.Equal(new byte[] { 7, 7, 7, 7 }, firstBytes.ToArray());
     }
 
@@ -57,7 +56,7 @@ public sealed class AssetDataSharingTests : IDisposable
             Assert.False(second.IsCompleted);
         }
         finally { storage.Source.Continue.TrySetResult(); }
-        using Texture ready = await second.WaitAsync(TimeSpan.FromSeconds(10));
+        Texture ready = await second.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(1, storage.Source.DataReads);
         Assert.True(ready.TryGetTile(ready.MipTiles[0].ChunkKey, out var bytes));
         Assert.Equal(new byte[] { 9, 9, 9, 9 }, bytes.ToArray());
@@ -73,8 +72,8 @@ public sealed class AssetDataSharingTests : IDisposable
         TextureBlock block = asset.GetBlock<TextureBlock>();
         storage.Source.FailNext = true;
         await Assert.ThrowsAsync<IOException>(() => block.CreateAsync().AsTask());
-        using Texture first = await block.CreateAsync();
-        using Texture second = await block.CreateAsync();
+        Texture first = await block.CreateAsync();
+        Texture second = await block.CreateAsync();
         Assert.Equal(2, storage.Source.DataReads);
         Assert.True(first.TryGetTile(first.MipTiles[0].ChunkKey, out var left));
         Assert.True(second.TryGetTile(second.MipTiles[0].ChunkKey, out var right));
@@ -102,7 +101,7 @@ public sealed class AssetDataSharingTests : IDisposable
             GC.WaitForPendingFinalizers();
         }
         Assert.False(IsAlive(bytes));
-        using Texture reloaded = await block.CreateAsync();
+        Texture reloaded = await block.CreateAsync();
         Assert.Equal(2, storage.Source.DataReads);
         Assert.True(reloaded.TryGetTile(reloaded.MipTiles[0].ChunkKey, out var pixels));
         Assert.Equal(new byte[] { 5, 5, 5, 5 }, pixels.ToArray());
@@ -118,13 +117,13 @@ public sealed class AssetDataSharingTests : IDisposable
         await using var loader = new AssetLoader(storage, new() { ByteCache = cache });
         using TextureAsset asset = await TextureAsset.OpenAsync(loader, new(entry.AssetGuid));
         TextureBlock block = asset.GetBlock<TextureBlock>();
-        using Texture first = await block.CreateAsync();
-        using Texture second = await block.CreateAsync();
+        Texture first = await block.CreateAsync();
+        Texture second = await block.CreateAsync();
         Assert.Equal(1, storage.Source.DataReads);
         cache.SetBudget(0);
         Assert.Equal(0, cache.CachedBytes + cache.IndexBytes);
-        using Texture third = await block.CreateAsync();
-        using Texture fourth = await block.CreateAsync();
+        Texture third = await block.CreateAsync();
+        Texture fourth = await block.CreateAsync();
         Assert.Equal(3, storage.Source.DataReads);
         Assert.True(first.TryGetTile(first.MipTiles[0].ChunkKey, out var held));
         Assert.Equal(new byte[] { 6, 6, 6, 6 }, held.ToArray());
@@ -144,7 +143,7 @@ public sealed class AssetDataSharingTests : IDisposable
         await storage.Source.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
         cache.Clear();
         storage.Source.Continue.TrySetResult();
-        using Texture texture = await read.WaitAsync(TimeSpan.FromSeconds(10));
+        Texture texture = await read.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.True(texture.TryGetTile(texture.MipTiles[0].ChunkKey, out var bytes));
         Assert.Equal(new byte[] { 4, 4, 4, 4 }, bytes.ToArray());
         Assert.Equal(0, cache.CachedItems);
@@ -159,10 +158,12 @@ public sealed class AssetDataSharingTests : IDisposable
         await using var loader = new AssetLoader(storage, new() { ByteCache = cache });
         ReadOnlyMemory<byte> held;
         using (TextureAsset asset = await TextureAsset.OpenAsync(loader, new(entry.AssetGuid)))
-        using (Texture texture = await asset.GetBlock<TextureBlock>().CreateAsync())
+        {
+            Texture texture = await asset.GetBlock<TextureBlock>().CreateAsync();
             Assert.True(texture.TryGetTile(texture.MipTiles[0].ChunkKey, out held));
+        }
         using TextureAsset reopened = await TextureAsset.OpenAsync(loader, new(entry.AssetGuid));
-        using Texture replacement = await reopened.GetBlock<TextureBlock>().CreateAsync();
+        Texture replacement = await reopened.GetBlock<TextureBlock>().CreateAsync();
         Assert.True(replacement.TryGetTile(replacement.MipTiles[0].ChunkKey, out var bytes));
         Assert.True(held.Equals(bytes));
         Assert.Equal(1, storage.Source.DataReads);
@@ -181,17 +182,17 @@ public sealed class AssetDataSharingTests : IDisposable
         using TextureAsset first = await TextureAsset.OpenAsync(firstLoader, new(entries[0].AssetGuid));
         using TextureAsset second = await TextureAsset.OpenAsync(secondLoader, new(entries[1].AssetGuid));
         using TextureAsset third = await TextureAsset.OpenAsync(thirdLoader, new(entries[2].AssetGuid));
-        using Texture heldFirst = await first.GetBlock<TextureBlock>().CreateAsync();
-        using Texture heldSecond = await second.GetBlock<TextureBlock>().CreateAsync();
-        using Texture heldThird = await third.GetBlock<TextureBlock>().CreateAsync();
+        Texture heldFirst = await first.GetBlock<TextureBlock>().CreateAsync();
+        Texture heldSecond = await second.GetBlock<TextureBlock>().CreateAsync();
+        Texture heldThird = await third.GetBlock<TextureBlock>().CreateAsync();
         Assert.Equal(3, cache.CachedItems);
         cache.SetBudget(cache.IndexBytes + cache.CachedBytes * 2 / 3);
         Assert.Equal(2, cache.CachedItems);
-        using Texture touchSecond = await second.GetBlock<TextureBlock>().CreateAsync();
-        using Texture rereadFirst = await first.GetBlock<TextureBlock>().CreateAsync();
-        using Texture secondAgain = await second.GetBlock<TextureBlock>().CreateAsync();
+        Texture touchSecond = await second.GetBlock<TextureBlock>().CreateAsync();
+        Texture rereadFirst = await first.GetBlock<TextureBlock>().CreateAsync();
+        Texture secondAgain = await second.GetBlock<TextureBlock>().CreateAsync();
         Assert.Equal(1, storage[1].Source.DataReads);
-        using Texture rereadThird = await third.GetBlock<TextureBlock>().CreateAsync();
+        Texture rereadThird = await third.GetBlock<TextureBlock>().CreateAsync();
         Assert.Equal(2, storage[0].Source.DataReads);
         Assert.Equal(2, storage[2].Source.DataReads);
         Assert.InRange(cache.CachedBytes + cache.IndexBytes, 1, cache.BudgetBytes);
@@ -207,7 +208,7 @@ public sealed class AssetDataSharingTests : IDisposable
         using TextureAsset oldAsset = await TextureAsset.OpenAsync(before.Path);
         using TextureAsset newAsset = await TextureAsset.OpenAsync(after.Path);
         TextureBlock oldBlock = oldAsset.GetBlock<TextureBlock>(), newBlock = newAsset.GetBlock<TextureBlock>();
-        using Texture texture = await oldBlock.CreateAsync();
+        Texture texture = await oldBlock.CreateAsync();
         await newBlock.UpdateAsync(texture);
         await Assert.ThrowsAsync<InvalidOperationException>(() => oldBlock.LoadMipAsync(texture, 0).AsTask());
         await newBlock.LoadMipAsync(texture, 0);
@@ -221,7 +222,7 @@ public sealed class AssetDataSharingTests : IDisposable
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference<byte[]> LoadAndRelease(TextureBlock block)
     {
-        using Texture texture = block.CreateAsync().AsTask().GetAwaiter().GetResult();
+        Texture texture = block.CreateAsync().AsTask().GetAwaiter().GetResult();
         Assert.True(texture.TryGetTile(texture.MipTiles[0].ChunkKey, out var pixels));
         Assert.True(MemoryMarshal.TryGetArray(pixels, out ArraySegment<byte> data));
         return new(data.Array!);

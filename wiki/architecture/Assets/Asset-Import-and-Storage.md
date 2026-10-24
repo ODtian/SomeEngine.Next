@@ -46,7 +46,7 @@ Importer 的 `ProducedBlocks` 声明可产出的类型，一个来源元素可�
 
 ## 完整流程与失败处理
 
-`IAssetSourceImporter<TSource, TSettings>` 连接格式读取及遍历。`AssetProject` 读取来源配置、创建 Context 并组织保存提交；`ImportContext` 通过 `ConfigureAssets`、`EnableImporter` 和 `GetAssetAsync` 维护子元素到语义 Asset 的对应、输出草稿和本次执行期限。局部 Importer 不自行保存文件。
+`IAssetSourceImporter<TSource, TSettings>` 连接格式读取及遍历。`AssetProject` 读取来源配置、创建 Context 并组织保存提交；`ImportContext` 通过 `ConfigureAssets(new SourceType())`、`EnableImporter(importer)` 和 `GetAssetAsync` 维护子元素身份、实际来源、设置、目标 Asset 及执行数据。保存通过来源描述的 `SaveAsync` 方法调用资产自己的 `SaveAsync`，各强类型资产及源生成入口使用同一固定 Block 编码。
 
 `AssetProject.ImportAsync` 选择来源及配置，读取来源，执行遍历和递归依赖，检查实际输入仍与本次读取一致，然后保存全部草稿。实现位于该 partial 类型的 `Importing/AssetImportProject.cs`。来源、设置、工具或扩展版本变化均参与重新导入判断。实际读取产生的依赖与构建记录分开保存，失败任务的依赖不冒充成功构建结果。
 
@@ -64,7 +64,7 @@ Importer 的 `ProducedBlocks` 声明可产出的类型，一个来源元素可�
 
 ## 保存、目录和读取
 
-来源移动和复制不能把格式内的相对路径当成无关字节。通用 `CopySourceAsync` 只允许同目录复制，创建新的来源及元素身份并保留人工选择；跨目录请求在写入任何文件前拒绝。原生资产的跨目录移动通过认识相应 Block 的强类型路径编辑函数完成。其他来源格式需要自己的引用改写，不以目标目录恰好有同名依赖作为正确性依据。
+来源移动和复制不能把格式内的相对路径当成无关字节。通用 `CopySourceAsync` 只允许同目录复制，创建新的来源及元素身份并保留人工选择；跨目录请求在写入任何文件前拒绝。原生资产的跨目录移动通过 `AssetBlockPathEditor<TBlock>.Relocate` 的强类型方法完成。`CopyAssetAsync(asset, destination)` 通过资产自己的保存方法创建新身份的文件。其他来源格式需要自己的引用改写，不以目标目录恰好有同名依赖作为正确性依据。
 
 `AssetManifest` 是已登记条目的主数据；路径、来源输出和反向依赖是派生索引。目录查询不触发导入或编译。直接保存资产返回 `AssetEntry`，需要目录可见时由调用方明确登记；项目构建流程则统一完成这些步骤。
 

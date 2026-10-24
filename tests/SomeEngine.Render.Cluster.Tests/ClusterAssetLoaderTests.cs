@@ -1,4 +1,5 @@
 using SomeEngine.Assets;
+using SomeEngine.Core.Collections;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
@@ -13,7 +14,7 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class ClusterAssetLoaderTests
 {
     [Fact]
-    public async Task ClusterRenderAssetRequestsEveryShaderThroughTheSameGenericLoader()
+    public async Task ClusterRenderAssetsUseTheSameLiveShaders()
     {
         using var directory = new TemporaryDirectory();
         var project = new AssetProject(directory.Path, []);
@@ -40,16 +41,15 @@ public sealed class ClusterAssetLoaderTests
         await using ClusterShadersAsset second = opened[1];
         Assert.NotSame(first, second);
         Assert.Equal(shaderGuids.Order(), first.Describe().Dependencies.Order());
-        ClusterShaders shaders = await first.GetBlock<ClusterShadersBlock>().CreateAsync(
-            first.Name,
-            loader,
-            TestShaderLoading.Slang,
-            TestShaderLoading.CreateSessionDescription());
-        ClusterShaders other = await second.GetBlock<ClusterShadersBlock>().CreateAsync(
-            second.Name,
-            loader,
-            TestShaderLoading.Slang,
-            TestShaderLoading.CreateSessionDescription());
+        var values = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
+        Dictionary<AssetId<ShaderAsset>, Shader> references = await ShaderRef.LoadAsync(
+            first.GetBlock<ClusterShadersBlock>().References(), loader, values,
+            TestShaderLoading.Slang, TestShaderLoading.CreateSessionDescription());
+        ClusterShaders shaders = first.GetBlock<ClusterShadersBlock>().Create(first.Name, references);
+        Dictionary<AssetId<ShaderAsset>, Shader> otherReferences = await ShaderRef.LoadAsync(
+            second.GetBlock<ClusterShadersBlock>().References(), loader, values,
+            TestShaderLoading.Slang, TestShaderLoading.CreateSessionDescription());
+        ClusterShaders other = second.GetBlock<ClusterShadersBlock>().Create(second.Name, otherReferences);
         Assert.NotSame(shaders, other);
         Assert.Equal("MainCluster", shaders.Name);
         Assert.Equal(roles.Length, shaders.Operations?.Count);
@@ -60,7 +60,7 @@ public sealed class ClusterAssetLoaderTests
             Shader shader = operation.Shaders[0];
             Guid shaderGuid = first.GetBlock<ClusterShadersBlock>().Operations[index].Shaders![0].Asset.Value;
             Assert.Equal($"cluster-{index}", shader.Name);
-            Assert.NotSame(shader, other.Operations[index].Shaders[0]);
+            Assert.Same(shader, other.Operations[index].Shaders[0]);
             Assert.Equal(shaderGuids[index], shaderGuid);
         }
     }

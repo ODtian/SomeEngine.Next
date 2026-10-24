@@ -5,16 +5,8 @@ using SomeEngine.Graphics;
 namespace SomeEngine.Resources;
 
 /// <summary>Unlit material. It is one ordinary concrete Material type.</summary>
-[MaterialType("SomeEngine.Assets.Schema.UnlitMaterial")]
 public sealed partial class UnlitMaterial : Material
 {
-    public UnlitMaterial()
-    {
-        Texture white = MaterialTextures.Create("White", [255, 255, 255, 255]);
-        InitializeContent(null, null,
-            [(new(nameof(AlbedoMap), MaterialParameterKind.Texture), white)], [white]);
-    }
-
     public partial Texture? AlbedoMap { get; set; }
 
     public partial SamplerDesc MaterialSampler { get; set; } = new(

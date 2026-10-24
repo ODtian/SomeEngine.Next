@@ -20,12 +20,38 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
 {
     private readonly TestAssets assets = new();
     [Fact]
-    public void SharedMaterialEditsKeepTheSameResourceAndDoNotExtractEntityChanges()
+    public void MeshPagesApplyTheirRevisionThroughExtraction()
+    {
+        using World game = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
+        Mesh complete = MeshAsset(810, 1);
+        Mesh mesh = Mesh.Create("streamed mesh", complete.VertexEncoding, complete.PageDigests, complete.Bvh);
+        Entity source = AddMeshSource(game, mesh, 0, Vector3.Zero);
+        ExtractAndApply(extraction, game, render);
+        Entity mirror = extraction.RequireMirror(source);
+        Mesh before = render.Read<RenderMesh>(mirror).Mesh;
+        Assert.True(complete.TryGetPage(0, out var page));
+
+        mesh.AddPages([(0, page)], mesh.Revision);
+        extraction.Extract(game);
+        Assert.Same(before, render.Read<RenderMesh>(mirror).Mesh);
+        graphics.Apply(extraction, render);
+
+        Mesh after = render.Read<RenderMesh>(mirror).Mesh;
+        Assert.Equal(mesh.Revision, after.Revision);
+        Assert.True(after.TryGetPage(0, out var supplied));
+        Assert.Equal(page.ToArray(), supplied.ToArray());
+        Assert.False(before.TryGetPage(0, out _));
+    }
+
+    [Fact]
+    public void SharedMaterialEditsApplyTheirVersionAtExtraction()
     {
         using World main = new();
         using RenderWorld render = new();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
-        using var material = new StandardMaterial();
+        var material = new StandardMaterial();
         for (int index = 0; index < 128; index++)
         {
             Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, new Vector3(index, 0, 0));
@@ -33,16 +59,19 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         }
         ExtractAndApply(extraction, main, render);
         Material before = render.ReadMaterial(material.MaterialId);
+        ulong materialVersion = render.ReadMaterialRevision(material.MaterialId);
         uint version = render.AcquireSystemVersion();
         int materialWrites = 0;
         render.Hooks<RenderMaterialReference>().OnReplace((DeferredWorld _, Entity _, in RenderMaterialReference _) => materialWrites++);
         material.Roughness = 0.9f;
         extraction.Extract(main);
         Assert.Same(before, render.ReadMaterial(material.MaterialId));
+        Assert.Equal(materialVersion, render.ReadMaterialRevision(material.MaterialId));
         graphics.Apply(extraction, render);
         Assert.Same(material, render.ReadMaterial(material.MaterialId));
         Assert.Equal(0.9f, Assert.IsType<StandardMaterial>(render.ReadMaterial(material.MaterialId)).Roughness);
-        Assert.Equal(0, materialWrites);
+        Assert.Equal(material.Revision, render.ReadMaterialRevision(material.MaterialId));
+        Assert.Equal(1, materialWrites);
         QueryHandle query = render.Query(new QueryDefinitionBuilder().ReadBuffer<RenderMaterialBinding>());
         try
         {
@@ -64,8 +93,8 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         using World main = new();
         using RenderWorld render = new();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
-        using var first = new StandardMaterial();
-        using var second = new StandardMaterial();
+        var first = new StandardMaterial();
+        var second = new StandardMaterial();
         Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
         SetSourceBindings(main, source, first, default!, 1);
         ExtractAndApply(extraction, main, render);
@@ -79,18 +108,18 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         main.DestroyEntity(source);
         ExtractAndApply(extraction, main, render);
         Assert.Throws<KeyNotFoundException>(() => render.ReadMaterial(second.MaterialId));
-        Assert.False(first.IsDisposed);
-        Assert.False(second.IsDisposed);
+        Assert.Equal(0.5f, first.Roughness);
+        Assert.Equal(0.5f, second.Roughness);
     }
 
     [Fact]
-    public async Task TextureContentChangesKeepMaterialAndCookieReferencesWithoutEntityWrites()
+    public async Task TextureContentVersionsCrossExtractionWithSharedReferences()
     {
         using World main = new();
         using RenderWorld render = new();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor(), new LightRenderExtractor());
-        using Texture texture = TextureAsset(91, 1);
-        using var material = new StandardMaterial { AlbedoMap = texture };
+        Texture texture = TextureAsset(91, 1);
+        var material = new StandardMaterial { AlbedoMap = texture };
         Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
         SetSourceBindings(main, source, material, default!, 1);
         main.Add(source, new DirectionalLight(Vector3.UnitZ, Vector3.One, 1));
@@ -102,14 +131,44 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         render.Hooks<RenderLightCookie>().OnReplace((DeferredWorld _, Entity _, in RenderLightCookie _) => writes++);
         ulong materialRevision = material.Revision;
         ulong textureRevision = texture.Revision;
+        TextureVersions before = render.ReadTextureVersions(texture);
         await texture.UpdateAsync(TextureAsset(92, 1));
-        ExtractAndApply(extraction, main, render);
+        extraction.Extract(main);
+        Assert.Equal(before, render.ReadTextureVersions(texture));
+        graphics.Apply(extraction, render);
         Assert.Equal(textureRevision + 1, texture.Revision);
         Assert.Equal(materialRevision, material.Revision);
         Assert.Equal(0, writes);
+        Assert.Equal(texture.Versions, render.ReadTextureVersions(texture));
         Assert.Same(material, render.ReadMaterial(material.MaterialId));
         Assert.Same(texture, material.AlbedoMap);
         Assert.Same(texture, render.Read<RenderLightCookie>(mirror).Texture);
+    }
+
+    [Fact]
+    public void TextureAllocationChangesCrossTheExistingExtractionBoundary()
+    {
+        using World game = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
+        Texture texture = TextureAsset(93, 1);
+        var material = new StandardMaterial { AlbedoMap = texture };
+        Entity source = AddMeshSource(game, MeshAsset(5, 1), 0, Vector3.Zero);
+        SetSourceBindings(game, source, material, default!, 1);
+        ExtractAndApply(extraction, game, render);
+        TextureVersions before = render.ReadTextureVersions(texture);
+        _ = graphics.RenderDevice.GetTexture(texture);
+        Assert.True(texture.Versions.Allocation > before.Allocation);
+        Assert.Equal(before, render.ReadTextureVersions(texture));
+        extraction.Extract(game);
+        graphics.Apply(extraction, render);
+        TextureVersions allocated = render.ReadTextureVersions(texture);
+        Assert.Equal(texture.Versions, allocated);
+        graphics.RenderDevice.ReleaseTexture(texture);
+        Assert.Equal(allocated, render.ReadTextureVersions(texture));
+        ExtractAndApply(extraction, game, render);
+        Assert.True(render.ReadTextureVersions(texture).Allocation > allocated.Allocation);
+        Assert.Equal(before.Content, render.ReadTextureVersions(texture).Content);
     }
 
     [Theory]

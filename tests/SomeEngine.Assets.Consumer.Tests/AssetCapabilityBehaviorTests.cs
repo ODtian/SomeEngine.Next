@@ -7,11 +7,9 @@ namespace SomeEngine.Assets.Consumer.Tests;
 public sealed class AssetCapabilityBehaviorTests
 {
     [Fact]
-    public void GeneratedFactoriesUseServicesAndShareOneImporterWithinEachScope()
+    public void GeneratedImportersShareOneInstanceWithinEachScope()
     {
         var services = new ServiceCollection();
-        var dependency = new CapabilityDependency();
-        services.AddSingleton(dependency);
         Assert.Same(services, ConsumerAssetCapabilities.AddAssetCapabilities(services));
         int count = services.Count;
         ConsumerAssetCapabilities.AddAssetCapabilities(services);
@@ -21,7 +19,6 @@ public sealed class AssetCapabilityBehaviorTests
         using var first = provider.CreateScope();
         using var second = provider.CreateScope();
         var importer = first.ServiceProvider.GetRequiredService<CapabilityImporter>();
-        Assert.Same(dependency, importer.Dependency);
         Assert.Same(importer, first.ServiceProvider.GetServices<IAssetImporter<CapabilitySource, CapabilitySettings>>()
             .Single(value => value is CapabilityImporter));
         Assert.NotSame(importer, second.ServiceProvider.GetRequiredService<CapabilityImporter>());
@@ -40,21 +37,12 @@ public sealed class AssetCapabilityBehaviorTests
             Assert.Equal(typeof(CapabilitySettings), capability.SettingsType);
             Assert.Equal(CapabilityData.BlockTypeId, Assert.Single(capability.ProducedBlocks).Id);
         });
-        Assert.Contains(provider.GetServices<AssetBlockCapability>(), capability =>
+        Assert.Contains(ConsumerAssetCapabilities.BlockCapabilities, capability =>
             capability.Id == CapabilityData.BlockTypeId && capability.BlockType == typeof(CapabilityData));
         Assert.Equal(new Guid("90b3ba7e-813b-4ad7-8c24-90c2f45eb356"),
             Assert.Single(alternatives, capability => capability.ImporterType == typeof(CapabilityImporter)).Id);
     }
 
-    [Fact]
-    public void MissingConstructorServicesReportTheMicrosoftDiResolutionFailure()
-    {
-        var services = ConsumerAssetCapabilities.AddAssetCapabilities(new ServiceCollection());
-        using var provider = services.BuildServiceProvider();
-        using var scope = provider.CreateScope();
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-            scope.ServiceProvider.GetRequiredService<CapabilityImporter>());
-    }
 }
 
 [AssetCapabilities]
@@ -68,12 +56,10 @@ public sealed partial class CapabilityData : AssetBlock
 
 public sealed class CapabilitySource;
 public sealed record CapabilitySettings(int Scale);
-public sealed class CapabilityDependency;
 
 [AssetImporter("90b3ba7e-813b-4ad7-8c24-90c2f45eb356", typeof(CapabilityData))]
-public sealed class CapabilityImporter(CapabilityDependency dependency) : IAssetImporter<CapabilitySource, CapabilitySettings>
+public sealed class CapabilityImporter : IAssetImporter<CapabilitySource, CapabilitySettings>
 {
-    public CapabilityDependency Dependency { get; } = dependency;
     public ValueTask ImportAsync(CapabilitySource source, CapabilitySettings settings, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 }

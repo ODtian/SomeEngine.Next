@@ -12,6 +12,8 @@ internal static class AssetMeasurements
     {
         if (args.Length > 0 && args[0] == "storage") return await StorageComparison.RunAsync(args[1..]);
         if (args.Length == 1 && args[0] == "cache") return await AssetByteCacheMeasurements.RunAsync();
+        if (args.Length == 1 && args[0] == "reuse") return await ResourceReuseMeasurements.RunAsync();
+        if (args.Length == 1 && args[0] == "reuse-gpu") return TextureGpuReuseMeasurements.Run();
         int samples = 31;
         if (args.Length != 0 && (args.Length != 2 || args[0] != "--samples"
             || !int.TryParse(args[1], out samples) || samples is < 3 or > 301))
@@ -90,7 +92,7 @@ internal static class AssetMeasurements
                 throw new InvalidOperationException("Replacing pixels changed an existing value.");
             return measurements.ToArray();
         }
-        finally { first?.Dispose(); second?.Dispose(); edited?.Dispose(); asset?.Dispose(); }
+        finally { edited?.Dispose(); asset?.Dispose(); }
 
         async ValueTask Record(Func<ValueTask> operation)
         {

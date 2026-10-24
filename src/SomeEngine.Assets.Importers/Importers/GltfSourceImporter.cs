@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using SomeEngine.Assets;
@@ -14,19 +13,17 @@ namespace SomeEngine.Assets.Importers;
 
 public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImportOverrides>
 {
-    public const uint ImporterVersion = 15;
+    public const uint ImporterVersion = 16;
     public static readonly Guid SourceImporterId = new("b0c10195-d8d1-46ab-81b8-f8c54db7d0aa");
-    private readonly Action<IServiceCollection> _configureServices;
+    private readonly IServiceCollection _importers;
     private readonly string _capabilitiesVersion;
     private readonly Guid? _sceneImporterId;
 
-    /// <param name="pages">Caller-held storage for imported assets. The caller keeps it alive until import completes.</param>
-    public GltfSourceImporter(Action<IServiceCollection> configureServices, string capabilitiesVersion,
+    public GltfSourceImporter(IServiceCollection importers, string capabilitiesVersion,
         Guid? sceneImporterId = null)
     {
-        ArgumentNullException.ThrowIfNull(configureServices);
         ArgumentException.ThrowIfNullOrWhiteSpace(capabilitiesVersion);
-        _configureServices = configureServices;
+        _importers = importers;
         _capabilitiesVersion = capabilitiesVersion;
         _sceneImporterId = sceneImporterId;
     }
@@ -48,11 +45,9 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         cancellationToken.ThrowIfCancellationRequested();
         GltfImporterSettings settings = GetSettings(metadata, overrides?.Value.Settings);
         string encodedOverrides = overrides is null ? "" : JsonSerializer.Serialize(overrides.Value, GltfSettingsJson.Default.GltfImportOverrides);
-        var services = new ServiceCollection();
-        _configureServices(services);
-        AssetImporterCapability[] available = services.Select(static service => service.ImplementationInstance)
+        AssetImporterCapability[] available = _importers.Select(static service => service.ImplementationInstance)
             .OfType<AssetImporterCapability>().ToArray();
-        AssetImporterSetCapability[] sets = services.Select(static service => service.ImplementationInstance)
+        AssetImporterSetCapability[] sets = _importers.Select(static service => service.ImplementationInstance)
             .OfType<AssetImporterSetCapability>().ToArray();
         EnsureDefaultSelections(metadata, available, sets, _sceneImporterId);
         SourceImporterSettings[] selections = SelectImporters(overrides?.Value.Importers, metadata.Importers, available, sets);
@@ -72,45 +67,20 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
     public async ValueTask ImportAsync(ModelRoot source, ImportContext context, AssetImportSettings<GltfImportOverrides>? overrides,
         CancellationToken cancellationToken)
     {
-        if (overrides?.Value.Settings is { } sourceSettings) context.ConfigureSettings(SourceImporterId, sourceSettings);
-        GltfImporterSettings settings = context.GetSettings(SourceImporterId, new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
-        var services = new ServiceCollection();
-        _configureServices(services);
-        var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        GltfImporterSettings settings = overrides?.Value.Settings
+            ?? context.GetSettings(SourceImporterId, new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
+        context.ConfigureSettings(SourceImporterId, settings);
+        var provider = _importers.BuildServiceProvider();
         context.Hold(provider);
         AsyncServiceScope scope = provider.CreateAsyncScope();
         context.Hold(scope);
 
-        context.ConfigureAssets<GltfMesh, MeshAsset>(
-            mesh => ElementKey(settings, "mesh", mesh.LogicalIndex, mesh),
-            (mesh, id) => new MeshAsset(id) { Name = mesh.Name ?? $"Mesh_{mesh.LogicalIndex}" },
-            (_, id) => OutputPath(context.SourcePath, "mesh", id),
-            static (asset, path, token) => asset.SaveAsync(path, token));
-        context.ConfigureAssets<Scene, WorldAsset>(
-            scene => ElementKey(settings, "scene", scene.LogicalIndex, scene),
-            (scene, id) => new WorldAsset(id) { Name = scene.Name ?? $"Scene_{scene.LogicalIndex}" },
-            (_, id) => OutputPath(context.SourcePath, "scene", id),
-            static (asset, path, token) => asset.SaveAsync(path, token));
-        context.ConfigureAssets<GltfMaterial, MaterialAsset>(
-            material => ElementKey(settings, "material", material.LogicalIndex, material),
-            (material, id) => new MaterialAsset(id) { Name = material.Name ?? $"Material_{material.LogicalIndex}" },
-            (_, id) => OutputPath(context.SourcePath, "material", id),
-            static (asset, path, token) => asset.SaveAsync(path, token));
-        context.ConfigureAssets<GltfTexture, TextureAsset>(
-            texture => ElementKey(settings, "texture", texture.LogicalIndex, texture),
-            (texture, id) => new TextureAsset(id) { Name = texture.Name ?? texture.PrimaryImage?.Name ?? $"Texture_{texture.LogicalIndex}" },
-            (_, id) => OutputPath(context.SourcePath, "texture", id),
-            static (asset, path, token) => asset.SaveAsync(path, token));
-        context.ConfigureAssets<Skin, SkeletonAsset>(
-            skin => ElementKey(settings, "skin", skin.LogicalIndex, skin),
-            (skin, id) => new SkeletonAsset(id) { Name = skin.Name ?? $"Skin_{skin.LogicalIndex}" },
-            (_, id) => OutputPath(context.SourcePath, "skeleton", id),
-            static (asset, path, token) => asset.SaveAsync(path, token));
-        context.ConfigureAssets<Animation, AnimationClipAsset>(
-            animation => ElementKey(settings, "animation", animation.LogicalIndex, animation),
-            (animation, id) => new AnimationClipAsset(id) { Name = animation.Name ?? $"Animation_{animation.LogicalIndex}" },
-            (_, id) => OutputPath(context.SourcePath, "animation-clip", id),
-            static (asset, path, token) => asset.SaveAsync(path, token));
+        context.ConfigureAssets<GltfMesh, MeshAsset>(new GltfMeshSource(settings, context.SourcePath));
+        context.ConfigureAssets<Scene, WorldAsset>(new GltfSceneSource(settings, context.SourcePath));
+        context.ConfigureAssets<GltfMaterial, MaterialAsset>(new GltfMaterialSource(settings, context.SourcePath));
+        context.ConfigureAssets<GltfTexture, TextureAsset>(new GltfTextureSource(settings, context.SourcePath));
+        context.ConfigureAssets<Skin, SkeletonAsset>(new GltfSkeletonSource(settings, context.SourcePath));
+        context.ConfigureAssets<Animation, AnimationClipAsset>(new GltfAnimationClipSource(settings, context.SourcePath));
 
         var capabilities = scope.ServiceProvider.GetServices<AssetImporterCapability>().ToDictionary(static value => value.Id);
         SourceImporterSettings[] selections = SelectImporters(overrides?.Value.Importers, context.Selections,
@@ -122,19 +92,17 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         if (scenes.Length != 1)
             throw new InvalidOperationException("Select one glTF scene importer to assemble the source scenes and their assets.");
         AssetImporterCapability sceneCapability = capabilities[scenes[0].ImporterId];
-        if (scope.ServiceProvider.GetRequiredService(sceneCapability.ImporterType) is not GltfSceneImporter assembly)
+        if (sceneCapability.GetImporter(scope.ServiceProvider) is not GltfSceneImporter assembly)
             throw new InvalidOperationException("The selected glTF scene importer must derive from GltfSceneImporter.");
         context.EnableImporter<Scene, WorldAsset>(sceneCapability.Bind<Scene>(scope.ServiceProvider, scenes[0].Settings));
-        context.EnableImporter<GltfMesh, MeshAsset>(sceneCapability.Id,
-            [MeshMaterialsBlock.BlockTypeId], assembly.ImportMeshMaterialsAsync);
+        context.EnableImporter<GltfMesh, MeshAsset>(new SceneMeshImporter(sceneCapability.Id, assembly));
         EnableSelected<GltfMaterial, MaterialAsset>(scope.ServiceProvider, selections, context);
         bool hasMaterialProducer = selections.Any(selection => selection.Enabled
             && capabilities.TryGetValue(selection.ImporterId, out AssetImporterCapability? capability)
             && capability.SourceType == typeof(GltfMaterial)
             && capability.ProducedBlocks.Any(block => block.Id == MaterialBlock.BlockTypeId));
         if (!hasMaterialProducer)
-            context.EnableImporter<GltfMaterial, MaterialAsset>(sceneCapability.Id,
-                [MaterialBlock.BlockTypeId], assembly.ImportMaterialAsync);
+            context.EnableImporter<GltfMaterial, MaterialAsset>(new SceneMaterialImporter(sceneCapability.Id, assembly));
         EnableSelected<GltfTexture, TextureAsset>(scope.ServiceProvider, selections, context);
         EnableSelected<Skin, SkeletonAsset>(scope.ServiceProvider, selections, context);
         EnableSelected<Animation, AnimationClipAsset>(scope.ServiceProvider, selections, context);
@@ -218,7 +186,7 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
                 || selection.ImporterId == id
                 || selection.SetMemberId is null && available.Any(candidate => candidate.Id == selection.ImporterId
                     && ReplacesMember(candidate, member)));
-            if (index < 0) metadata.Importers.Add(new(id, default, SetMemberId: id));
+            if (index < 0) metadata.Importers.Add(new(id, member.GetDefaultSettings(metadata), SetMemberId: id));
             else metadata.Importers[index] = metadata.Importers[index] with { SetMemberId = id };
         }
         bool hasScene = metadata.Importers.Any(selection =>
@@ -232,19 +200,22 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
             : throw new InvalidOperationException("Select one project glTF scene importer."));
         if (!sceneImporters.Any(capability => capability.Id == selectedSceneImporter))
             throw new InvalidOperationException($"Selected glTF scene importer {selectedSceneImporter} is unavailable in this project.");
-        if (!hasScene) metadata.Importers.Add(new(selectedSceneImporter, default));
+        if (!hasScene) metadata.Importers.Add(new(selectedSceneImporter, sceneImporters.Single(value => value.Id == selectedSceneImporter).GetDefaultSettings(metadata)));
     }
 
-    private static string ElementKey(GltfImporterSettings settings, string kind, int index, ExtraProperties source)
+    private sealed class SceneMeshImporter(Guid id, GltfSceneImporter importer) : IAssetImporter<GltfMesh>
     {
-        string? persistentId = source.Extras?[settings.PersistentIdProperty]?.GetValue<string>();
-        if (!string.IsNullOrWhiteSpace(persistentId)) return $"{kind}:id:{persistentId}";
-        if (settings.RequirePersistentElementIds)
-            throw new InvalidDataException($"glTF {kind} {index} lacks extras.{settings.PersistentIdProperty}; ordinal identity is disabled for this source.");
-        Trace.TraceWarning($"glTF {kind} {index} uses a persisted ordinal identity. Reordering elements cannot preserve identity without extras.{settings.PersistentIdProperty}.");
-        return $"{kind}:index:{index}";
+        public Guid Id => id;
+        public IReadOnlyList<Guid> ProducedBlocks { get; } = [MeshMaterialsBlock.BlockTypeId];
+        public ValueTask ImportAsync(GltfMesh source, ImportContext context, ImportOutput output, CancellationToken cancellationToken)
+            => importer.ImportMeshMaterialsAsync(source, context, output, cancellationToken);
     }
 
-    private static string OutputPath(string sourcePath, string kind, Guid id)
-        => Path.Combine(Path.GetDirectoryName(sourcePath)!, $"{Path.GetFileNameWithoutExtension(sourcePath)}.{id:N}.{kind}.asset");
+    private sealed class SceneMaterialImporter(Guid id, GltfSceneImporter importer) : IAssetImporter<GltfMaterial>
+    {
+        public Guid Id => id;
+        public IReadOnlyList<Guid> ProducedBlocks { get; } = [MaterialBlock.BlockTypeId];
+        public ValueTask ImportAsync(GltfMaterial source, ImportContext context, ImportOutput output, CancellationToken cancellationToken)
+            => importer.ImportMaterialAsync(source, context, output, cancellationToken);
+    }
 }

@@ -170,11 +170,12 @@ public sealed class ClusterMaterialAssignmentSet
                     _neededMaterials.Add(binding.MaterialId);
         }
 
-        internal void SetValue(Material material)
+        internal void SetValue(RenderMaterialReference data)
         {
+            Material material = data.Material;
             if (!_result._materialOffsets.ContainsKey(material.MaterialId)) return;
-            if (_result._values.TryGetValue(material.MaterialId, out var value) && ReferenceEquals(value.Resource, material) && value.Revision == material.Revision) return;
-            _result._values = _result._values.SetItem(material.MaterialId, (material, material.Revision));
+            if (_result._values.TryGetValue(material.MaterialId, out var value) && ReferenceEquals(value.Resource, material) && value.Revision == data.Revision) return;
+            _result._values = _result._values.SetItem(material.MaterialId, (material, data.Revision));
             _result._changes = _result._changes.Add(material.MaterialId);
         }
 
@@ -214,7 +215,7 @@ public sealed class ClusterMaterialAssignmentSet
         {
             foreach (long id in _neededMaterials)
                 if (_result._materialOffsets.ContainsKey(id) && !_result._values.ContainsKey(id))
-                    SetValue(_world.ReadMaterial(id));
+                    SetValue(new(_world.ReadMaterial(id), _world.ReadMaterialRevision(id)));
             if (_topologyChanged) _result.TopologyVersion = checked(_source.TopologyVersion + 1);
             return _result;
         }
@@ -342,7 +343,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
             {
                 ReadOnlySpan<RenderMaterialReference> values = chunk.Read<RenderMaterialReference>();
                 for (int row = 0; row < values.Length; row++)
-                    _update.SetValue(values[row].Material);
+                    _update.SetValue(values[row]);
             }
         }
         internal void Collect(QueryCursor query)

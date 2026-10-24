@@ -30,11 +30,11 @@ public static class SampleContent
             sourceFormats: [new ShaderSourceFormat([engineShaders])]);
         foreach (string source in Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal))
         {
+            if (Path.GetFileNameWithoutExtension(source) is "standard" or "unlit") continue;
             cancellationToken.ThrowIfCancellationRequested();
             await project.BuildAsync(source, cancellationToken: cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"Shader: {Path.GetFileName(source)}");
         }
-        await SampleTextures.BuildAsync(project, cancellationToken).ConfigureAwait(false);
         await SampleMaterials.BuildAsync(project, cancellationToken).ConfigureAwait(false);
         Guid pipeline = BuildClusterShaders(project);
         Guid shadows = BuildShadowShaders(project);

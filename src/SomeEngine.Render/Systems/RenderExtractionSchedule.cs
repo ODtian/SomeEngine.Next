@@ -4,6 +4,8 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Render.Components;
+using SomeEngine.Resources;
+using System.Collections.Immutable;
 
 namespace SomeEngine.Render.Systems;
 
@@ -31,6 +33,8 @@ public sealed class RenderExtractionSystems : IDisposable
     private EntityTableChangeBatch? _candidateSourceChanges;
     private bool _candidateFullReconciliation;
     private readonly HashSet<IRenderExtractionSystem> _changedSystems = [];
+    private ImmutableDictionary<Texture, TextureVersions> _textureVersions = ImmutableDictionary<Texture, TextureVersions>.Empty;
+    private bool _texturesChanged;
     private bool _candidatePending;
     private bool _extractionActive;
     private bool _disposed;
@@ -178,6 +182,9 @@ public sealed class RenderExtractionSystems : IDisposable
         var query = new RenderExtractionQuery();
         query.Write<RenderTransform>();
         query.Write<RenderPreviousTransform>();
+        query.Write<RenderTextureVersions>();
+        query.ReadOptionalBuffer<MeshMaterialBinding>();
+        query.ReadOptional<LightCookie>();
         for (int index = 0; index < _systems.Count; index++)
             _systems[index].DeclareReads(query);
         _writtenComponents = query.WrittenComponents.ToArray();
@@ -207,6 +214,10 @@ public sealed class RenderExtractionSystems : IDisposable
                     foreach (IRenderExtractionSystem system in systems._systems)
                         if (system.CompleteSourceCollection(state.Source, systems._candidateFullReconciliation))
                             systems._changedSystems.Add(system);
+                    systems._textureVersions = TextureExtraction.Collect(query);
+                    var before = systems._renderWorld.TextureVersions;
+                    systems._texturesChanged = before.Count != systems._textureVersions.Count ||
+                        systems._textureVersions.Any(pair => !before.TryGetValue(pair.Key, out var version) || version != pair.Value);
                 });
             foreach (IRenderExtractionSystem system in _systems)
                 if (system.CompleteCollection(_context, _candidateFullReconciliation))
@@ -270,7 +281,7 @@ public sealed class RenderExtractionSystems : IDisposable
             return;
         }
 
-        if (_changedSystems.Count == 0 && !_context.HasTransformChanges) return;
+        if (_changedSystems.Count == 0 && !_context.HasTransformChanges && !_texturesChanged) return;
         if (!_renderWorld.TryApplyExtractionChangesDirect(this))
             _renderWorld.ApplyExtractionChanges(this);
     }
@@ -282,6 +293,8 @@ public sealed class RenderExtractionSystems : IDisposable
         _candidateSourceChanges = null;
         _candidateFullReconciliation = false;
         _changedSystems.Clear();
+        _textureVersions = ImmutableDictionary<Texture, TextureVersions>.Empty;
+        _texturesChanged = false;
         _candidatePending = false;
     }
 
@@ -320,6 +333,7 @@ public sealed class RenderExtractionSystems : IDisposable
         _renderWorld.AcquireSystemVersion();
         for (int index = 0; index < _systems.Count; index++)
             _systems[index].Apply(_context);
+        if (_texturesChanged) _renderWorld.UpdateTextureVersions(_textureVersions);
         _context.ApplyRetainedTransforms();
         _context.DestroyUnusedMirrors();
     }
@@ -336,6 +350,7 @@ public sealed class RenderExtractionSystems : IDisposable
         else
             _context.ApplyTransformValueChanges();
         foreach (IRenderExtractionSystem system in _changedSystems) system.ApplyChanges(_context);
+        if (_texturesChanged) _renderWorld.UpdateTextureVersions(_textureVersions);
     }
 
     internal bool TryApplyChangesDirect()
@@ -351,6 +366,7 @@ public sealed class RenderExtractionSystems : IDisposable
         _renderWorld.AcquireSystemVersion();
         _context.ApplyTransformValueChanges();
         foreach (IRenderExtractionSystem system in _changedSystems) system.ApplyChanges(_context);
+        if (_texturesChanged) _renderWorld.UpdateTextureVersions(_textureVersions);
         return true;
     }
 

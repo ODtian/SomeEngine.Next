@@ -47,6 +47,8 @@ Asset 和 Block 关闭它们明确取得的来源；实际读取保持来源有�
 
 具体系统直接请求认识的 Block，以强类型代码完成必要读取、解码、依赖解析和资源创建。完成后的对象保证当前承诺可用的数据能够直接使用，不再通过 Asset 的异步接口访问这些数据。
 
+MaterialAsset 的具体对象创建由 `CreateAsync<TMaterial>` 选择。AssetLoader 持有文件访问能力；ShaderAsset、TextureBlock 的具体方法创建完整资源，业务提供的实际 Shader、Texture 引用决定材质的资源共用。材料字段与资源依赖的具体行为见 [材质资产](Asset-Materials.md)。
+
 Asset 和使用对象可以复用编码或读取能力，但不要求绑定同一个对象生命周期。Asset 可部分驻留，小字段在异步创建完成前就绪，大数据通过显式异步操作取得；使用对象以普通引用持有全部必需数据，普通读取无需回到 Asset。Shader 使用普通 GC 引用和直接 Slang 对象，Texture tile 与 Mesh 几何范围则可以保留自己的业务分页。
 
 一个 CurveBlock 可以建立 Curve 或 CurveSamples；ConstantCurveBlock 也可建立 Curve。这种多对多关系不需要全局资产到对象转换表。业务对象保留普通属性、状态和必要设备资源，不反向引用资产设施。未来细节级别或新增后端内容通过明确的业务流送或资产侧转换取得，再一次发布完整状态，而不是同步属性隐式读文件。
