@@ -10,6 +10,9 @@ struct GpuPoseControl
     uint inputOffset;
     float playbackTime;
     uint blendStart;
+    uint referenceOffset;
+    float presentationAmount;
+    uint2 padding;
 };
 
 struct GpuPosePlayback
@@ -40,6 +43,8 @@ RWStructuredBuffer<float4x4> GpuPoseModels;
 RWStructuredBuffer<float4x4> GpuPosePrevious;
 RWStructuredBuffer<float4x4> GpuPoseHistoryCurrent;
 RWStructuredBuffer<float4x4> GpuPoseHistoryPrevious;
+struct GpuRootCorrection { float4 translation; float4 rotation; };
+StructuredBuffer<GpuRootCorrection> GpuPoseRoots;
 
 struct GpuBlendState
 {
@@ -468,15 +473,42 @@ void SamplePoseLevel(uint3 thread : SV_DispatchThreadID)
         machine = GpuPoseClips.Load4(control.machineOffset);
         clip = ReadPoseState(machine, playback.state).clipOffset;
     }
+    uint reference = control.referenceOffset + work.y * 64u;
+    uint selection = GpuPoseClips.Load(reference + 48u);
     PoseTrs pose;
-    if ((control.flags & 64u) != 0u) pose = SampleBlendGraph(control, work.y);
-    else pose = SampleClip(clip, playback.sampleTime, work.y);
-    if ((control.flags & 8u) != 0u && playback.weight < 1.0)
+    pose.translation = asfloat(GpuPoseClips.Load3(reference));
+    pose.rotation = asfloat(GpuPoseClips.Load4(reference + 16u));
+    pose.scale = asfloat(GpuPoseClips.Load3(reference + 32u));
+    if ((selection & 1u) != 0u)
     {
-        PoseTrs source = SampleClip(ReadPoseState(machine, playback.sourceState).clipOffset, playback.sourceSampleTime, work.y);
-        pose.translation = lerp(source.translation, pose.translation, playback.weight);
-        pose.rotation = InterpolateRotation(source.rotation, pose.rotation, playback.weight);
-        pose.scale = lerp(source.scale, pose.scale, playback.weight);
+        uint bones, stride;
+        GpuPoseModels.GetDimensions(bones, stride);
+        uint history = bones + work.w;
+        if ((control.flags & 256u) != 0u)
+        {
+            if ((control.flags & 64u) != 0u) pose = SampleBlendGraph(control, work.y);
+            else pose = SampleClip(clip, playback.sampleTime, work.y);
+            if ((control.flags & 8u) != 0u && playback.weight < 1.0)
+            {
+                PoseTrs source = SampleClip(ReadPoseState(machine, playback.sourceState).clipOffset, playback.sourceSampleTime, work.y);
+                pose.translation = lerp(source.translation, pose.translation, playback.weight);
+                pose.rotation = InterpolateRotation(source.rotation, pose.rotation, playback.weight);
+                pose.scale = lerp(source.scale, pose.scale, playback.weight);
+            }
+            GpuRootCorrection correction = GpuPoseRoots[work.x];
+            if ((selection & 2u) != 0u && correction.translation.w != 0.0)
+            {
+                pose.translation = mul(float4(pose.translation, 1), TrsMatrix(correction.translation.xyz, correction.rotation, float3(1))).xyz;
+                pose.rotation = MultiplyRotation(correction.rotation, pose.rotation);
+            }
+            float4x4 stored = float4x4(float4(pose.translation, 0), pose.rotation, float4(pose.scale, 0), float4(playback.sampleTime, 0, 0, 0));
+            GpuPoseHistoryPrevious[history] = (control.flags & 512u) != 0u ? stored : GpuPoseHistoryCurrent[history];
+            GpuPoseHistoryCurrent[history] = stored;
+        }
+        float4x4 before = GpuPoseHistoryPrevious[history], after = GpuPoseHistoryCurrent[history];
+        pose.translation = lerp(before[0].xyz, after[0].xyz, control.presentationAmount);
+        pose.rotation = InterpolateRotation(before[1], after[1], control.presentationAmount);
+        pose.scale = lerp(before[2].xyz, after[2].xyz, control.presentationAmount);
     }
     float4x4 local = TrsMatrix(pose.translation, pose.rotation, pose.scale);
     GpuPoseModels[work.w] = work.z == 0xffffffffu ? local : mul(local, GpuPoseModels[work.z]);

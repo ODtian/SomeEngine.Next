@@ -96,6 +96,8 @@ Game 侧通过 `GpuPoseAnimation.RequestReadback` 请求自身骨骼范围，使
 
 ready clip 或 CPU 图输出的同步需求、完成点及同次 G 范围交接见 [CPU/GPU Pose Handoff](CPU-GPU-Pose-Handoff.md)。
 
+视觉采样间隔、骨骼 LOD、局部 TRS 呈现及 GPU clip 的同步事件/根运动见 [GPU Pose Frequency](GPU-Pose-Frequency.md)。
+
 公共应用示例位于 [SkinningRenderingTests](../../../tests/SomeEngine.Runtime.Tests/SkinningRenderingTests.cs)。
 示例使用共享父实例、两个播放速度及每顶点两个影响；数值读取和可见几何都经过普通 App、
 既有提取、RG 与 Cluster 路径。

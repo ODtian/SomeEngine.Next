@@ -89,7 +89,7 @@ public struct ClipSystem : ISystem<ImmediateSystemContext>
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_clips);
 
-    private static uint CrossedEvents(float previous, float current, float marker, float duration, bool loop)
+    internal static uint CrossedEvents(float previous, float current, float marker, float duration, bool loop)
     {
         if (!loop) return marker > previous && marker <= current ? 1u : 0u;
         uint before = previous < marker ? 0 : (uint)MathF.Floor((previous - marker) / duration) + 1;
