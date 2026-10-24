@@ -506,8 +506,11 @@ internal static class RuntimeApplication
         try { application?.Initialize?.Invoke(applicationFrame); }
         finally { sceneEdit.End(); }
         elementSystems.UpdateViews(0);
-        bool measure = platform?.IsMeasuring == true;
+        ApplicationFrameMeasurements? measurements = application?.FrameMeasured is { } receiveTiming
+            ? new(receiveTiming) : null;
+        bool measure = platform?.IsMeasuring == true || measurements is not null;
         GameUpdateTiming gameTiming = default;
+        long gameStarted = 0, nextGameStarted = 0;
 
         GameUpdateTiming UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds)
         {
@@ -546,6 +549,7 @@ internal static class RuntimeApplication
 
         if (!options.SynchronousFrames && script is null)
         {
+            gameStarted = Stopwatch.GetTimestamp();
             if (options.ScenePlayback is not null)
                 scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
                     orbitCamera: options.ScenePlayback == "camera");
@@ -815,6 +819,7 @@ internal static class RuntimeApplication
                 if (nextGameUpdate is not null)
                 {
                     gameTiming = RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+                    gameStarted = nextGameStarted;
                     nextGameUpdate = null;
                 }
                 if (script is not null)
@@ -908,6 +913,7 @@ internal static class RuntimeApplication
                     ui.WantCaptureMouse || elementCapture.Pointer);
                 if (options.SynchronousFrames || script is not null)
                 {
+                    gameStarted = Stopwatch.GetTimestamp();
                     if (animateScene && options.ScenePlayback is null)
                         scene.Update(sceneSeconds);
                     gameTiming = UpdateInterface(frameIndex, width, height, deltaSeconds);
@@ -1036,7 +1042,9 @@ internal static class RuntimeApplication
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
                     options.SynchronousFrames || application?.FrameRendered is not null,
                     options.TemporalAntialiasing,
-                    viewFrame.JitterPixels);
+                    viewFrame.JitterPixels,
+                    measurements,
+                    out ulong graphFrameIdentity);
                 double executeMs = Stopwatch.GetElapsedTime(executeStarted).TotalMilliseconds;
                 skinning.CompleteReadbacks();
                 if (application?.FrameRendered is { } frameRendered)
@@ -1087,6 +1095,7 @@ internal static class RuntimeApplication
                     int nextCanvasWidth = width;
                     int nextCanvasHeight = height;
                     int nextFrameNumber = frameIndex + 1;
+                    nextGameStarted = Stopwatch.GetTimestamp();
                     nextGameUpdate = Task.Run(() =>
                     {
                         using var association = EngineTrace.Associate(gameTrace);
@@ -1122,6 +1131,10 @@ internal static class RuntimeApplication
                     platform.RecordFrame(new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
                         prepareMs, reconcileMs, executeMs, gameTiming.Views, gameTiming.ExtractionMs,
                         gameTiming.ExtractionAllocatedBytes), cluster.CaptureDiagnostics());
+                measurements?.RecordCpu(graphFrameIdentity, frameIndex,
+                    Stopwatch.GetElapsedTime(Math.Min(frameStarted, gameStarted)).TotalMilliseconds,
+                    gameTiming.Views.TotalMs, gameTiming.Views.AnimationMs, gameTiming.ExtractionMs,
+                    prepareMs, reconcileMs, executeMs);
                 frameIndex++;
                 if (platform?.ReloadRequested == true) break;
             }
@@ -1319,8 +1332,11 @@ internal static class RuntimeApplication
         RenderGraphDiagnosticsHandler? graphDiagnostics,
         bool synchronousFrames,
         bool temporalAntialiasing,
-        Vector2 jitterPixels)
+        Vector2 jitterPixels,
+        ApplicationFrameMeasurements? measurements,
+        out ulong graphFrameIdentity)
     {
+        graphFrameIdentity = 0;
         using var trace = EngineTrace.Begin(ApplicationTrace.Execute);
         if (!coordinator.TryBeginFrame(out RenderFrame? frame))
         {
@@ -1342,7 +1358,9 @@ internal static class RuntimeApplication
                 RenderGraphFrame graphFrame = graph.BeginFrame(
                     new RenderGraphFrameOptions(
                         SubmissionMode: FrameSubmissionMode.RecordAhead,
-                        Diagnostics: graphDiagnostics));
+                        Diagnostics: graphDiagnostics,
+                        GpuTimes: measurements is null ? null : measurements.ReceiveGpu));
+                graphFrameIdentity = graphFrame.FrameIdentity;
                 try
                 {
                     if (reportMilestones)

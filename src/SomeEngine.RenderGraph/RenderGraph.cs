@@ -572,7 +572,10 @@ public sealed partial class RenderGraph : IDisposable
         if (_editToken != 0 || _frameToken != 0)
             throw new InvalidOperationException("A render graph edit or frame is active.");
         if (!_lost)
+        {
             WaitForSubmittedWork();
+            foreach (FrameSlot slot in _frameSlots) slot.Reset(_backend);
+        }
         _closing = true;
         foreach (FrameSlot slot in _frameSlots)
             slot.Dispose();

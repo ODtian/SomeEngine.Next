@@ -6,6 +6,8 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
+    public const string DeformationTimeGroup = "Cluster deformation";
+    public const string DeformationEvaluationTimeGroup = "Cluster deformation evaluation";
     private readonly record struct DeformDrawData(
         GraphBufferId Count, GraphBufferId Previous0, GraphBufferId Previous1, GraphBufferId Previous2);
 
@@ -15,13 +17,14 @@ public sealed partial class ClusterPipelineSystem
     private void RecordDeformReset(ref RenderGraphEdit graph, in FrameResources frame)
     {
         var clear = new ClusterTessellationResetParameters(frame.DeformAllocation);
-        TrackStagePass(graph.AddCopyFramePass("Reset Cluster deformation capacity",
+        GraphPassId reset = TrackStagePass(graph.AddCopyFramePass("Reset Cluster deformation capacity",
             PassQueueSelection.AnyOfType(QueueType.Graphics), clear,
             new PassOptions(RepeatCommands: true),
             static (ref PassDefinition pass, ref ClusterTessellationResetParameters data) =>
                 pass.Write(data.Counters, BufferRange.Whole, PipelineSync.Copy,
                     ResourceAccess.CopyDestination, WriteCoverage.Complete),
             ClusterTessellationResetParameters.Record));
+        graph.SetPassTimeGroup(reset, DeformationTimeGroup);
     }
 
     private RasterEpoch UpdateDeformation(ref RenderGraphEdit graph, RasterEpoch epoch, ClusterRasterStageSet stages)
@@ -62,6 +65,7 @@ public sealed partial class ClusterPipelineSystem
                     _materialInputBin = material.BinIndex;
                     PassDefinition pass = graph.GetPass(passId);
                     BindDeformResources(ref graph, ref pass, stage, uniforms, epoch.DrawData, index);
+                    graph.SetPassTimeGroup(passId, index == 5 ? DeformationEvaluationTimeGroup : DeformationTimeGroup);
                 }
             }
         }

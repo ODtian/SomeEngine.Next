@@ -154,6 +154,7 @@ internal sealed partial class FrameExecutor
                 }
             }
 
+            ResolveGpuTimes(destination);
             _recordingChanged = false;
             _commandChanges.Clear();
             int count = 0;
@@ -167,6 +168,7 @@ internal sealed partial class FrameExecutor
         }
         catch
         {
+            _gpuTimes?.Cancel();
             DisposeUnsubmitted();
             throw;
         }
@@ -611,6 +613,7 @@ internal sealed partial class FrameExecutor
 
     private bool CanRepeatCommands(int pass)
     {
+        if (_measureGpu) return false;
         ref readonly FramePass row = ref CollectionsMarshal.AsSpan(_passes)[pass];
         return row.Options.RepeatCommands && row.PersistentCallbacks is not null;
     }
@@ -744,6 +747,7 @@ internal sealed partial class FrameExecutor
     private void RecordPassCommands(int pass, GraphPassKind kind, CommandContext context)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.PassDispatch);
+        if (_measureGpu) WriteGpuTime(context, _passTimes[pass], 0);
         RecordBefore(pass, context);
         foreach (int accessIndex in _passAccesses[pass])
         {
@@ -753,6 +757,7 @@ internal sealed partial class FrameExecutor
                 _frame.Backend.ResetQueries(context, _queryPools[access.ResourceIndex].Resource,
                     access.QueryRange.FirstQuery, access.QueryRange.QueryCount);
         }
+        if (_measureGpu) WriteGpuTime(context, _passTimes[pass], 1);
         if (kind == GraphPassKind.Raster)
         {
             if (_shadingRateImages)
@@ -763,7 +768,9 @@ internal sealed partial class FrameExecutor
             _frame.Backend.EndRendering(context);
         }
         else InvokePass(pass, context);
+        if (_measureGpu) WriteGpuTime(context, _passTimes[pass], 2);
         RecordAfter(pass, context);
+        if (_measureGpu) WriteGpuTime(context, _passTimes[pass], 3);
     }
 
     private Texture? FindShadingRateImage(int pass)
@@ -913,8 +920,12 @@ internal sealed partial class FrameExecutor
             {
                 _frame.Backend.Begin(context, new CommandRecordingDesc(Label: "RenderGraph late releases"));
                 begun = true;
+                if (_measureGpu) WriteGpuTime(context, _releaseTimes[queue], 0);
+                if (_measureGpu) WriteGpuTime(context, _releaseTimes[queue], 1);
                 RecordBarrierBatch(context, CollectionsMarshal.AsSpan(_lateAcquireBarriers), [], [], []);
                 RecordBarrierBatch(context, [], [], [], CollectionsMarshal.AsSpan(_lateReleaseBarriers));
+                if (_measureGpu) WriteGpuTime(context, _releaseTimes[queue], 2);
+                if (_measureGpu) WriteGpuTime(context, _releaseTimes[queue], 3);
                 commands = _frame.Backend.End(context);
                 begun = false;
             }

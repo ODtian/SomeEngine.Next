@@ -86,12 +86,15 @@ public readonly record struct PassOptions(
 {
     /// <summary>Ends this queue's submission after the pass so its result can be observed earlier.</summary>
     public bool SubmitAfter { get; init; }
+    /// <summary>Caller-defined category retained with completed GPU measurements.</summary>
+    public string? TimeGroup { get; init; }
 }
 
 public readonly record struct RenderGraphFrameOptions(
     FrameSubmissionMode SubmissionMode = FrameSubmissionMode.Pipelined,
     RenderGraphDebugOptions Debug = RenderGraphDebugOptions.None,
-    RenderGraphDiagnosticsHandler? Diagnostics = null);
+    RenderGraphDiagnosticsHandler? Diagnostics = null,
+    Action<RenderGraphGpuTimes>? GpuTimes = null);
 
 public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
 {

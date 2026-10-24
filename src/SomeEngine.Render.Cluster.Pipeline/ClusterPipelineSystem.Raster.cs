@@ -7,6 +7,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
+    public const string RasterTimeGroup = "Cluster raster";
     private ImmutableDictionary<int, RasterEpoch> _rasterEpochs = ImmutableDictionary<int, RasterEpoch>.Empty;
     private RasterPassGroup? _rasterGroup;
     private ImmutableDictionary<GraphPassId, MeshRaster> _meshRasterPasses = ImmutableDictionary<GraphPassId, MeshRaster>.Empty;
@@ -132,6 +133,7 @@ public sealed partial class ClusterPipelineSystem
             finally { _rasterGroup = null; }
             foreach (GraphPassId pass in passes.Passes)
             {
+                graph.SetPassTimeGroup(pass, RasterTimeGroup);
                 graph.OrderAfter(pass, stage.Tessellation is null ? data.WorkReady : data.Patches.Last);
                 foreach (GraphPassId consumer in data.Consumers) graph.OrderAfter(consumer, pass);
             }

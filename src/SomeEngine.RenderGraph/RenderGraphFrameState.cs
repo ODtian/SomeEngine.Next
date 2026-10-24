@@ -67,6 +67,8 @@ internal sealed partial class RenderGraphFrameState
     internal IReadOnlyList<ExplicitPassOrder> DynamicOrders => _dynamicOrders;
     internal IReadOnlyList<(GraphIdentity Identity, SwapchainImage Image, Queue PresentQueue)> SwapchainImages => _swapchainImages;
     internal void ReleaseRecordingContexts() => _executor.ReleaseRecordingContexts();
+    internal void CollectGpuTimes() => _executor.CollectGpuTimes();
+    internal void DisposeGpuTimes() => _executor.DisposeGpuTimes();
 
     internal FrameExecutor Executor => _executorActive
         ? _executor
