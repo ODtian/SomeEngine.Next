@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
@@ -48,7 +49,9 @@ internal readonly record struct ClusterBvhCheckpoint(int PatchCount);
 internal sealed record ClusterBvhPublication(
     int PatchCount,
     Mesh[] RootMeshes,
-    ClusterStagedUpload[] Uploads);
+    ClusterStagedUpload[] Uploads,
+    Mesh[] ChangedMeshes,
+    ClusterLodChange[] LodChanges);
 
 internal sealed class ClusterBvh
 {
@@ -330,6 +333,7 @@ internal sealed class ClusterBvh
     public ClusterBvhPublication PreparePublication()
     {
         var changedMeshes = new HashSet<uint>();
+        var lodChanges = new List<ClusterLodChange>();
         foreach (ClusterBvhPatch patch in _pendingPatches)
         {
             if (patch.Destination.Length != sizeof(uint))
@@ -348,8 +352,16 @@ internal sealed class ClusterBvh
             ulong offset = checked((ulong)mesh.FirstNode * NodeBytes);
             int length = checked((int)(mesh.NodeCount * NodeBytes));
             Span<ClusterBVHNode> nodes = MemoryMarshal.Cast<byte, ClusterBVHNode>(mesh.Nodes.Span);
+            var leafFlags = new float[nodes.Length];
+            for (int nodeIndex = 0; nodeIndex < nodes.Length; nodeIndex++)
+                leafFlags[nodeIndex] = nodes[nodeIndex].BoundMin.W;
             if (mesh.LodGroups.UpdateReadiness(nodes) || changedMeshes.Contains(mesh.FirstNode))
                 _storage.Stage(offset, length);
+            uint root = _roots[mesh.Mesh].NodeIndex;
+            for (int nodeIndex = 0; nodeIndex < nodes.Length; nodeIndex++)
+                if (nodes[nodeIndex].NodeType == 1u && leafFlags[nodeIndex] != nodes[nodeIndex].BoundMin.W)
+                    lodChanges.Add(new(mesh.Mesh, root, nodes[nodeIndex].LODSphere,
+                        mesh.FirstPage + mesh.LocalPageByNode[nodeIndex], 1u));
         }
         foreach (Mesh mesh in _pendingRootMeshes)
         {
@@ -361,7 +373,10 @@ internal sealed class ClusterBvh
         return new ClusterBvhPublication(
             _pendingPatches.Count,
             [.. _pendingRootMeshes],
-            _storage.CaptureStagedUploads());
+            _storage.CaptureStagedUploads(),
+            _pageIndexes.Where(mesh => changedMeshes.Contains(mesh.FirstNode) || _pendingRootMeshes.Contains(mesh.Mesh))
+                .Select(static mesh => mesh.Mesh).ToArray(),
+            lodChanges.ToArray());
     }
 
     public void CommitPublication(ClusterBvhPublication publication)

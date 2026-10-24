@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -27,7 +27,7 @@ internal struct ClusterVisibilityWinnerUniforms
 internal struct ClusterDrawDispatchUniforms
 {
     internal uint DrawArgsByteOffset;
-    internal uint Pad0;
+    internal uint EarlyDepthEnabled;
     internal uint Pad1;
     internal uint Pad2;
 }
@@ -40,12 +40,12 @@ internal struct ClusterSoftwareRasterUniforms
     internal uint MaxBins;
     internal uint DebugDump;
     internal uint CurrentBin;
-    internal uint Pad0;
+    internal uint EarlyDepthEnabled;
     internal uint Pad1;
     internal uint Pad2;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 48)]
 internal struct ClusterRasterBinningUniforms
 {
     internal uint RasterMaxBins;
@@ -56,6 +56,10 @@ internal struct ClusterRasterBinningUniforms
     internal uint ScreenWidth;
     internal uint ScreenHeight;
     internal uint ViewCount;
+    internal uint BinnedEntriesPerCluster;
+    internal uint DepthBucketsEnabled;
+    internal uint Padding1;
+    internal uint Padding2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
@@ -88,12 +92,12 @@ internal struct ClusterShadeBinUniforms
     internal uint ShadeBinCount;
     internal uint SlotCapacity;
     internal uint BinItemCapacity;
-    internal uint Pad1;
-    internal uint Pad2;
-    internal uint Pad3;
+    internal uint AdditionalReceiverLayerCount;
+    internal uint ViewCount;
+    internal uint SurfaceDataStride;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 48)]
 internal struct ClusterShadeUniforms
 {
     internal uint DebugMode;
@@ -102,8 +106,10 @@ internal struct ClusterShadeUniforms
     internal uint ShadingBin;
     internal uint ShadeBinCount;
     internal uint MaterialSlotCapacity;
-    internal uint Pad2;
-    internal uint Pad3;
+    internal uint ViewCount;
+    internal uint SurfaceDataStride;
+    internal uint VisibilityDepth;
+    private uint _surfacePadding0, _surfacePadding1, _surfacePadding2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]

@@ -16,6 +16,7 @@ using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
+using ClusterGeometry = SomeEngine.Render.Cluster.ClusterGeometry;
 using SomeEngine.Runtime;
 using Shader = SomeEngine.Resources.Shader;
 
@@ -111,7 +112,7 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         return rendering;
     }
 
-    public void Dispose() => _material?.Dispose();
+    public void Dispose() => _material = null;
 
     private sealed record ExampleMesh(ulong Revision, Vector3[] Positions, Vector2[] Attributes, uint[] Indices, Bounds Bounds);
     private readonly record struct ExampleGeometry(Material Material, ExampleMesh Mesh) : IComponent;
@@ -139,6 +140,12 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
             query.ReadOptional<ExampleGeometry>();
             query.Write<ExampleRenderGeometry>();
             query.Write<RenderMaterialReference>();
+        }
+        public void CollectResources(scoped QueryCursor source, RenderExtractionResources resources)
+        {
+            foreach (QueryChunkView chunk in source.Chunks)
+                if (chunk.TryRead<ExampleGeometry>(out var values))
+                    foreach (var value in values) resources.Add(value.Material);
         }
         public void Reset() => _values.Clear();
         public void Collect(QueryChunkView chunk)

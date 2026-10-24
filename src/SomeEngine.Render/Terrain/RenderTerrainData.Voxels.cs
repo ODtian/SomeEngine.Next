@@ -6,7 +6,7 @@ namespace SomeEngine.Render.Terrain;
 
 public sealed partial class RenderTerrainData
 {
-    internal VoxelGpuInput CreateVoxelInput(ref RenderGraphFrame frame, ref RenderGraphFrameExtension extension,
+    internal VoxelGpuInput CreateVoxelInput(ref RenderGraphFrame frame, ref TerrainFrameCommands extension,
         VoxelGrid grid, VoxelFieldData source, VoxelRegion range)
     {
         int size = grid.PageSize;

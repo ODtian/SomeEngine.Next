@@ -27,7 +27,7 @@ target/profile 与特化属于一次具体编译调用：调用方直接提供 S
 
 ## 内容构建
 
-`ShaderSourceFormat` 通过 `AssetProject.BuildAsync` 调用 `SlangShaderImporter`。构建行为：
+`AssetProject.BuildAsync` 直接打开 Shader 定义并调用 `SlangShaderImporter`，编译搜索路径通过 `shaderIncludeDirectories` 提供。构建行为：
 
 1. 用 Slang 加载每份根源码；
 2. 让 Slang 处理实际 include/import；

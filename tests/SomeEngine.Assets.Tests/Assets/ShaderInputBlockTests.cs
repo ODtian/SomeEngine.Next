@@ -1,3 +1,4 @@
+using System.Buffers;
 using SlangShaderSharp;
 using System.Runtime.InteropServices.Marshalling;
 
@@ -57,6 +58,54 @@ public sealed class ShaderInputBlockTests
         Assert.NotNull(shader.GetSlangReflection(0).FindTypeByName("StandardScalars"));
         Assert.True(shader.GetSlangEntryBlob(0, clusterEntry)!.GetBufferSize() > 0);
         Assert.True(shader.GetSlangEntryBlob(0, consumerEntry)!.GetBufferSize() > 0);
+    }
+
+    [Fact]
+    public async Task SelectedTypedEntryBlocksRestoreSavedEntryVariantsWithoutSourceFiles()
+    {
+        using var files = new AssetTestDirectory();
+        IGlobalSession slang = SlangShaderImporter.GlobalSession;
+        var description = new SessionDesc
+        {
+            Targets = [new TargetDesc { Format = SlangCompileTarget.Spirv, Profile = slang.FindProfile("glsl_460") }],
+            FileSystem = new EmptyShaderFileSystem(),
+        };
+        Assert.True(slang.CreateSession(description, out ISession session).Succeeded);
+        IModule? source = session.LoadModuleFromSource("variant_entry", "variant_entry.slang",
+            Slang.CreateBlob(System.Text.Encoding.UTF8.GetBytes("""
+                RWStructuredBuffer<uint> Result;
+                [shader("compute")]
+                [numthreads(1, 1, 1)]
+                void WriteValue<let value : uint>(uint3 thread : SV_DispatchThreadID)
+                {
+                    Result[thread.x] = value;
+                }
+                """)), out ISlangBlob? diagnostics);
+        Assert.True(source is not null, diagnostics?.AsString);
+        Assert.True(source!.Serialize(out ISlangBlob serialized).Succeeded);
+        using var entries = new ConsumerMaterialEntriesBlock { SourceNames = ["variant_entry.slang"] };
+        entries.SetSerializedSource(0, serialized.Buffer);
+        string path = files.File("variants.shader.asset");
+        using (var asset = new ShaderAsset { Name = "Saved variants" })
+        {
+            asset.SetBlock(entries);
+            asset.SelectInputs<ConsumerMaterialEntriesBlock>();
+            asset.GetBlock<ShaderSourceBlock>().Specializations =
+            [new() { EntryPoint = "WriteValue", Arguments = ["3"] },
+             new() { EntryPoint = "WriteValue", Arguments = ["7"] }];
+            await asset.CompileAsync(slang, description);
+            await asset.SaveAsync(path);
+        }
+        using ShaderAsset restored = await ShaderAsset.OpenAsync(path);
+        Shader shader = await restored.CreateAsync(slang, description);
+        Assert.True(shader.TryGetSpecialization("WriteValue", ["3"], out Shader first));
+        Assert.True(shader.TryGetSpecialization("WriteValue", ["7"], out Shader second));
+        Assert.True(first.TryGetSlangEntry(0, "WriteValue", SlangStage.Compute, out EntryPointReflection firstEntry));
+        Assert.True(second.TryGetSlangEntry(0, "WriteValue", SlangStage.Compute, out EntryPointReflection secondEntry));
+        Assert.True(first.GetSlangEntryBytes(0, firstEntry).Length > 0);
+        Assert.True(second.GetSlangEntryBytes(0, secondEntry).Length > 0);
+        Assert.NotEqual(first.GetSlangEntryBytes(0, firstEntry).ToArray(),
+            second.GetSlangEntryBytes(0, secondEntry).ToArray());
     }
 
     private static async Task<byte[]> SerializeConsumerEntryAsync(

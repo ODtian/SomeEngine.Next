@@ -26,12 +26,12 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         Format inputFormat,
         int inputWidth,
         int inputHeight,
-        GraphPassId inputCompletePass,
-        GraphPassId pageFaultReadbackPass,
+        GraphReadbackId pageFaultReadback,
         Shader shader,
         string vertexEntryPoint,
         string pixelEntryPoint,
-        Format outputFormat)
+        Format outputFormat,
+        GraphRegionId region)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
@@ -39,12 +39,6 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(shader);
         if (inputColor == default)
             throw new ArgumentException("Presentation requires a valid color input.", nameof(inputColor));
-        if (inputCompletePass == default)
-        {
-            throw new ArgumentException(
-                "Presentation requires a valid color producer.",
-                nameof(inputCompletePass));
-        }
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(inputWidth);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(inputHeight);
         if (!ReferenceEquals(graph.Device, device))
@@ -140,9 +134,9 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                     reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                     bindings,
                     RuntimePresentationPassData.Declare,
-                    RuntimePresentationPassData.Record);
-                edit.OrderAfter(pass, inputCompletePass);
-                edit.OrderAfter(pass, pageFaultReadbackPass);
+                    RuntimePresentationPassData.Record,
+                    region: region);
+                edit.OrderAfter(pass, pageFaultReadback);
                 edit.Commit();
                 _target = target;
                 _drawPass = pass;
@@ -164,7 +158,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
     internal GraphTextureId Target => _target;
     internal GraphPassId DrawPass => _drawPass;
 
-    internal void OrderAfter(RenderGraphEdit edit, GraphPassId predecessor) => edit.OrderAfter(_drawPass, predecessor);
+    internal void OrderAfter(RenderGraphEdit edit, GraphReadbackId predecessor) => edit.OrderAfter(_drawPass, predecessor);
 
     internal void Bind(
         ref RenderGraphFrame frame,

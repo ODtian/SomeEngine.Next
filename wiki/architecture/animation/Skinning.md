@@ -32,6 +32,9 @@ Rendering world 的网格组件保存 source joint 到区段实体及区段内�
 `Application.RunAsync(args, application)` 与 `SceneScript(application, ...)` 共用这些回调。
 应用的动画阶段独立于界面开关。
 
+`ApplicationScene.LodThreshold` 设置公开的像素误差阈值。
+`FrameRendered` 在该帧 GPU 完成后接收 `ClusterFrameMetrics`；应用提供这一回调时启用帧计数读回与同步完成。
+
 以下是接入示例，`skeleton` 和 `binding` 表示调用者已加载的资产，`instance` 的使用期覆盖应用运行：
 
 ```csharp
@@ -70,6 +73,28 @@ joint 与权重，选择影响数，并计算位置、法线和切线。上一�
 `CLUSTER_VERTEX_ENCODING` 宏声明材质接受的完整顶点编码标识。默认值对应标准位置与属性。
 自定义编码可在包含这些入口之前替换该宏；Cluster 继续按同一顶点求值接口执行用户材质。
 使用 Deform Cache 时，`CLUSTER_DEFORM_VERTEX_ENCODING` 应声明同一输入编码。
+
+## Inline 与缓存选择
+
+同一个用户求值器可实现 `IVertexDeformCache`：`evaluate` 读取自己的 joint/权重及
+`LoadSkinBinding(ctx.instanceID)`，`writeCache` 和 `readCache` 解释用户选择的字节编码。
+inline 材质直接把该类型作为 `VertexEvaluate` 与 `RasterVertexEvaluate`；缓存材质把
+该类型声明为 `DeformEvaluate`，两个消费入口选择 `CachedVertexEval<DeformEvaluate>`，
+并引入 `cluster_deform.slang`。完整接口见 [Deform Cache](../cluster/Deform-Cache.md)。
+
+缓存写入为每个可见 cluster 分别构造当前与上一帧 `VertexEvalContext`，携带各自的
+实例 ID、世界变换和 `IsPreviousFrame`。用户求值继续读取同一套 G、joint 映射与
+逆绑定矩阵；材质绑定通过既有 feature resource binder 提供给变形计算入口。
+光栅、着色和运动向量随后消费保存的两份结果。
+
+[`SkinCacheRenderingTests`](../../../tests/SomeEngine.Runtime.Tests/SkinCacheRenderingTests.cs)
+提供一个具体材质例子：每顶点 128 字节保存当前与上一份 `StandardVertex`，16 字节对齐。
+四个面板显示两个独立角色各自的当前/上一姿势，两种材质共用同一求值代码，角色使用
+不同播放速率和逆绑定矩阵。缓存与 inline 通过同一公开应用入口渲染。
+
+`ApplicationScene.FrameMeasured` 接收完成后的 CPU 与 GPU 整帧时间；阶段类别由
+`ClusterPipelineSystem.DeformationTimeGroup`、`DeformationEvaluationTimeGroup` 和
+`RasterTimeGroup` 给出。边界与采集方法见 [GPU Timing](../render-graph/GPU-Timing.md)。
 
 应用图像示例位于
 [`SkinningRenderingTests`](../../../tests/SomeEngine.Runtime.Tests/SkinningRenderingTests.cs)。

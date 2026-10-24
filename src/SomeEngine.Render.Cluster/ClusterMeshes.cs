@@ -41,10 +41,15 @@ internal sealed record ClusterMeshPublication(
     uint[] ResidentPages,
     PageRetirement[] Retirements,
     ClusterStagedUpload[] PageUploads,
-    BufferRange[] ResidentPageRanges);
+    BufferRange[] ResidentPageRanges,
+    ClusterLeafFlagFixup[] LeafFlagFixups,
+    ClusterLodChange[] LodChanges);
 
 internal sealed partial class ClusterMeshes : IDisposable
 {
+    internal uint MaximumRasterBatchesPerCluster => 9u;
+    internal uint GeometryPageCount { get { lock (_gate) return _pages.Count; } }
+
     private static long s_nextEpochId;
 
     private readonly PageHeap _heap;
@@ -201,6 +206,43 @@ internal sealed partial class ClusterMeshes : IDisposable
         {
             ThrowIfDisposed();
             _bvh.CollectPageDependencies(pages);
+        }
+    }
+
+    internal void CollectPageDependencies(Dictionary<uint, uint> priorities)
+    {
+        lock (_gate)
+        {
+            var pages = priorities.Keys.Where(page => _pages.TrySource(page, out _, out _)).ToHashSet();
+            uint priority = priorities.Count == 0 ? 0u : priorities.Values.Max();
+            _bvh.CollectPageDependencies(pages);
+            foreach (uint page in pages)
+                priorities.TryAdd(page, priority);
+        }
+    }
+
+    internal void ResolvePages(Dictionary<uint, uint> priorities, List<KeyValuePair<uint, uint>> unresolved)
+    {
+        lock (_gate)
+        {
+            unresolved.Clear();
+            foreach ((uint page, uint priority) in priorities)
+            {
+                PageFaultResolution resolution = ResolvePageCore(page);
+                if (resolution.Kind is not (PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending or PageFaultResolutionKind.Unknown))
+                    unresolved.Add(new(page, priority));
+            }
+        }
+    }
+
+    internal ClusterStreamingDemand SetReferencedPages(IEnumerable<uint> pages, bool complete)
+    {
+        lock (_gate)
+        {
+            _pages.ClearReferences();
+            ulong bytes = 0;
+            foreach (uint page in pages) bytes += _pages.ReferencePage(page);
+            return new(bytes, _pages.CalculateStreamingCapacityBytes(_heap.Capacity), complete);
         }
     }
 
@@ -881,7 +923,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                 residentPages,
                 retirements,
                 _pageStorage.CaptureStagedUploads(),
-                BuildResidentPageRanges(residentPages, retirements));
+                BuildResidentPageRanges(residentPages, retirements), [], bvh.LodChanges);
             return _preparedPublication;
         }
     }

@@ -75,7 +75,7 @@ public sealed class AclClipBehaviorTests
     {
         using var files = new ClipFiles();
         var project = new AssetProject(files.Directory, []);
-        var importer = new GltfSourceImporter(services => PoseTestAssets.AddAssetCapabilities(services),
+        var importer = new GltfSourceImporter(PoseTestAssets.AddAssetCapabilities(new Microsoft.Extensions.DependencyInjection.ServiceCollection()),
             PoseTestAssets.BuildVersion, PoseSceneImporter.Id);
         await project.ImportAsync(files.Source, importer);
         AssetEntry skeletonEntry = Assert.Single(project.Manifest.Assets.Values, value => value.AssetType == SkeletonAsset.FileType);

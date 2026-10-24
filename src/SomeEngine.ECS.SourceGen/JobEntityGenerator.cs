@@ -173,17 +173,7 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         {
             if (field.IsStatic || field.IsConst)
                 continue;
-            ISymbol diagnosticMember = field.AssociatedSymbol ?? field;
-            if (!storage.IsAliasFree(field.Type))
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    ManagedField,
-                    diagnosticMember.Locations.FirstOrDefault(),
-                    diagnosticMember.Name,
-                    job.ToDisplayString()));
-                valid = false;
-            }
-            else if (!field.IsReadOnly && !field.IsImplicitlyDeclared)
+            if (!field.IsReadOnly && !field.IsImplicitlyDeclared)
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     PacketLocalFieldMutation,

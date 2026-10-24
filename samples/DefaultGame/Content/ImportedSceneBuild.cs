@@ -49,7 +49,7 @@ public static class ImportedSceneBuild
         var importer = new GltfSourceImporter(services, "imported-scenes-4;" + ImportedSceneCapabilities.BuildVersion,
             ImportedSceneImporter.ImporterId);
         var project = new AssetProject(projectRoot, [importer],
-            sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);
+            shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
         AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
         foreach (AssetEntry entry in applicationAssets.Assets.Values)
         {

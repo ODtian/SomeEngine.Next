@@ -1,4 +1,5 @@
 using SomeEngine.Core.Diagnostics;
+using SomeEngine.Render.Cluster.Pipeline;
 
 
 namespace SomeEngine.Runtime;
@@ -34,6 +35,9 @@ public sealed record RuntimeStartupOptions(
     public string? ScenePlayback { get; init; }
     public float FixedFrameSeconds { get; init; }
     public string? FrameOutputPath { get; init; }
+    public string? LinearFrameOutputPath { get; init; }
+    public int? CaptureFrame { get; init; }
+    public ClusterShadingPath ShadingPath { get; init; } = ClusterShadingPath.Deferred;
     public bool HideDebugUi { get; init; }
     public bool SurfacePanel { get; init; }
     public bool WorldNameplates { get; init; }
@@ -41,6 +45,10 @@ public sealed record RuntimeStartupOptions(
     public bool HudNumbersChange { get; init; } = true;
     public bool TemporalAntialiasing { get; init; } = true;
     public bool VirtualShadows { get; init; } = true;
+    public bool MeasureBlending { get; init; }
+    public ClusterBlendIndex BlendIndex { get; init; } = ClusterBlendIndex.Xyz;
+    /// <summary>Optional directional and local ray count; zero selects hard depth comparison.</summary>
+    public uint? ShadowRayCount { get; init; }
 
     public static RuntimeStartupOptions Parse(string[] args)
     {
@@ -66,10 +74,29 @@ public sealed record RuntimeStartupOptions(
         if (frameOutputPath is not null &&
             !Path.GetExtension(frameOutputPath).Equals(".bmp", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("--frame-output requires a .bmp destination.");
+        string? linearFrameOutputPath = ReadOptionalValue(args, "--linear-frame-output");
+        if (linearFrameOutputPath is not null &&
+            !Path.GetExtension(linearFrameOutputPath).Equals(".rgba16", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("--linear-frame-output requires a .rgba16 destination.", "--linear-frame-output");
+        int? captureFrame = null;
+        if (ReadOptionalValue(args, "--capture-frame") is { } captureText)
+        {
+            if (!int.TryParse(captureText, out int parsed) || parsed < 0 || (frameLimit > 0 && parsed >= frameLimit))
+                throw new ArgumentOutOfRangeException("--capture-frame");
+            if (frameOutputPath is null && linearFrameOutputPath is null)
+                throw new ArgumentException("--capture-frame requires an output destination.", "--capture-frame");
+            captureFrame = parsed;
+        }
+        else if (frameLimit > 0 && (frameOutputPath is not null || linearFrameOutputPath is not null))
+            captureFrame = frameLimit - 1;
+        else if (linearFrameOutputPath is not null)
+            throw new ArgumentException("Linear output requires --frames or --capture-frame.", "--linear-frame-output");
         string? playback = ReadOptionalValue(args, "--scene-playback");
         if (playback is not null and not "motion" and not "materials" and not "camera")
             throw new ArgumentException("--scene-playback requires 'motion', 'materials', or 'camera'.");
         bool synchronousFrames = args.Contains("--synchronous-frames", StringComparer.OrdinalIgnoreCase);
+        string? shadowRayText = ReadOptionalValue(args, "--vsm-ray-count");
+        uint? shadowRayCount = shadowRayText is null ? null : uint.Parse(shadowRayText, System.Globalization.CultureInfo.InvariantCulture);
         float fixedStep = 0;
         string? stepText = ReadOptionalValue(args, "--fixed-step");
         if (stepText is not null && (!float.TryParse(stepText, System.Globalization.CultureInfo.InvariantCulture, out fixedStep)
@@ -124,6 +151,14 @@ public sealed record RuntimeStartupOptions(
             ScenePlayback = playback,
             FixedFrameSeconds = fixedStep,
             FrameOutputPath = frameOutputPath,
+            LinearFrameOutputPath = linearFrameOutputPath,
+            CaptureFrame = captureFrame,
+            ShadingPath = (ReadOptionalValue(args, "--shading-path") ?? "deferred").ToLowerInvariant() switch
+            {
+                "deferred" => ClusterShadingPath.Deferred,
+                "forward" => ClusterShadingPath.Forward,
+                _ => throw new ArgumentException("--shading-path requires 'deferred' or 'forward'.", "--shading-path"),
+            },
             HideDebugUi = args.Contains("--no-debug-ui", StringComparer.OrdinalIgnoreCase),
             SurfacePanel = args.Contains("--surface-panel", StringComparer.OrdinalIgnoreCase),
             WorldNameplates = args.Contains("--world-nameplates", StringComparer.OrdinalIgnoreCase),
@@ -132,6 +167,15 @@ public sealed record RuntimeStartupOptions(
             HudNumbersChange = !args.Contains("--hud-static", StringComparer.OrdinalIgnoreCase),
             TemporalAntialiasing = ReadBooleanOption(args, ["--taa"], ["--no-taa"], true),
             VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
+            MeasureBlending = args.Contains("--measure-blending", StringComparer.OrdinalIgnoreCase),
+            BlendIndex = (ReadOptionalValue(args, "--blend-index") ?? "xyz").ToLowerInvariant() switch
+            {
+                "full" => ClusterBlendIndex.FullScan,
+                "xyz" => ClusterBlendIndex.Xyz,
+                "xy" => ClusterBlendIndex.Xy,
+                _ => throw new ArgumentException("--blend-index requires 'full', 'xy' or 'xyz'.", "--blend-index"),
+            },
+            ShadowRayCount = shadowRayCount,
         };
     }
 

@@ -1,20 +1,10 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SomeEngine.Animation.Pose;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 
 namespace SomeEngine.Render.Features.Skinning;
-
-/// <summary>The GPU-selected state clocks and crossfade weights accompanying a model pose.</summary>
-public readonly record struct GpuPosePlayback(int State, int SourceState, float Time, float SourceTime,
-    float SourceSampleTime, float TransitionWeight, bool Finished);
-
-/// <summary>CPU-owned matrices and playback data copied together from one submitted GPU section.</summary>
-public sealed record GpuPoseReadback(uint Starts, ulong InputNumber, double CalculationTime, float SampleTime,
-    ReadOnlyMemory<Matrix4x4> Current, ReadOnlyMemory<Matrix4x4> Previous)
-{
-    public GpuPosePlayback Playback { get; init; }
-}
 
 public sealed partial class SkinningFeature
 {
@@ -22,19 +12,41 @@ public sealed partial class SkinningFeature
 
     /// <summary>Requests the next submitted current/previous pair for an extracted model section.</summary>
     public void RequestReadback(in RenderPoseSection section, Action<GpuPoseReadback> receive) =>
-        _readbacks.Add(new(section, receive));
+        _readbacks.Add(new(section, new(0, section.Range.Count), receive));
+
+    private void RequestReadbacks()
+    {
+        foreach (Section section in _sectionOrder)
+        foreach (GpuPoseReadbackRequest request in section.Data.Readbacks.Span)
+        {
+            if (request.Completion.IsCompleted || request.Identity != section.Data.Identity
+                || _readbacks.Exists(readback => ReferenceEquals(readback.Request, request))) continue;
+            var output = new RenderPoseSection(section.Range, section.Data.Starts, section.Data.InputNumber,
+                section.FrameTime, section.Data.SampleTime, section.Index, section.FrameVersion);
+            _readbacks.Add(new(output, request.Range, request.Deliver) { Request = request });
+        }
+    }
 
     private void RecordReadbacks(ref RenderGraphFrame frame)
     {
         foreach (Readback readback in _readbacks)
         {
             if (readback.Completion != default) continue;
-            ulong bytes = (ulong)readback.Section.Range.Count * 64;
+            Section section = _sectionOrder[readback.Section.PlaybackIndex];
+            readback.Section = new(section.Range, section.Data.Starts, section.Data.InputNumber,
+                section.FrameTime, section.Data.SampleTime, section.Index, section.FrameVersion);
+            readback.Identity = section.Data.Identity;
+            readback.Calculations = new PoseCalculation[readback.Range.Count];
+            if (!section.Data.IsGpu) section.Data.Calculations.AsSpan(readback.Range.Start, readback.Range.Count).CopyTo(readback.Calculations);
+            else foreach (short bone in section.Data.CpuBones.Span)
+                if (bone >= readback.Range.Start && bone < readback.Range.Start + readback.Range.Count)
+                    readback.Calculations[bone - readback.Range.Start] = section.Data.Calculations[bone];
+            ulong bytes = (ulong)readback.Range.Count * 64;
             readback.Buffer ??= _backend.CreateBuffer(_device, new BufferDesc(bytes * 2 + 64, BufferUsages.CopyDestination), MemoryType.Readback);
             GraphBufferId output = frame.Import(readback.Buffer,
                 [new(BufferRange.Whole, readback.Buffer.InitialSync, readback.Buffer.InitialAccess, ResourceContentState.Undefined)]);
             var data = new ReadbackCopy(_currentBones, _previousBones, _playbackInput, output,
-                new BufferRange((ulong)readback.Section.Range.Start * 64, bytes),
+                new BufferRange((ulong)(readback.Section.Range.Start + readback.Range.Start) * 64, bytes),
                 new BufferRange((ulong)readback.Section.PlaybackIndex * 64, 64));
             readback.Pass = frame.AddCopyPass("Read model pose section", PassQueueSelection.AnyOfType(QueueType.Graphics), data,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
@@ -61,28 +73,57 @@ public sealed partial class SkinningFeature
 
     private void AcceptReadbacks(RenderGraphFrameResult result)
     {
-        foreach (Readback readback in _readbacks)
-            if (result.TryGetPassCompletion(readback.Pass, out QueueCompletion completion)) readback.Completion = completion;
+        for (int index = 0; index < _readbacks.Count;)
+        {
+            Readback readback = _readbacks[index];
+            if (readback.Completion != default) { index++; continue; }
+            if (result.TryGetPassCompletion(readback.Pass, out QueueCompletion completion))
+            {
+                readback.Completion = completion;
+                index++;
+            }
+            else if (readback.Request is { } request)
+            {
+                _readbacks.RemoveAt(index);
+                readback.Buffer?.Dispose();
+                request.Cancel();
+            }
+            else index++;
+        }
     }
 
-    /// <summary>Waits for requested GPU copies and delivers independently retained matrices.</summary>
-    public void CompleteReadbacks()
+    /// <summary>Delivers completed GPU copies as independently retained matrices.</summary>
+    public void CompleteReadbacks() => CompleteReadbacks(wait: false);
+
+    private void CompleteReadbacks(bool wait)
     {
         for (int index = 0; index < _readbacks.Count;)
         {
             Readback readback = _readbacks[index];
             if (readback.Completion == default) { index++; continue; }
-            if (_backend.WaitCpu(readback.Completion, TimeSpan.FromSeconds(60)) != WaitStatus.Completed)
-                throw new TimeoutException("Model pose readback did not complete.");
+            if (!_backend.IsComplete(readback.Completion))
+            {
+                if (!wait) { index++; continue; }
+                if (_backend.WaitCpu(readback.Completion, TimeSpan.FromSeconds(60)) != WaitStatus.Completed)
+                    throw new TimeoutException("Model pose readback did not complete.");
+            }
             using SomeEngine.Graphics.Buffer buffer = readback.Buffer!;
             using MappedBuffer mapping = _backend.Map(buffer, MapType.Read, BufferRange.Whole);
             mapping.Invalidate(mapping.Range);
-            int count = readback.Section.Range.Count;
+            int count = readback.Range.Count;
             ReadOnlySpan<Matrix4x4> matrices = MemoryMarshal.Cast<byte, Matrix4x4>(mapping.Bytes[..(count * 128)]);
             PlaybackData playback = MemoryMarshal.Read<PlaybackData>(mapping.Bytes[(count * 128)..]);
-            var result = new GpuPoseReadback(playback.Starts, playback.InputNumber, playback.CalculationTime,
+            for (int bone = 0; bone < count; bone++)
+                if (readback.Calculations[bone].Version == 0)
+                    readback.Calculations[bone] = new(readback.Section.Version, readback.Section.CalculationTime, playback.SampleTime);
+            var result = new GpuPoseReadback(playback.Starts, playback.InputNumber, readback.Section.CalculationTime,
                 playback.SampleTime, matrices[..count].ToArray(), matrices[count..].ToArray())
             {
+                Identity = readback.Identity with { Starts = playback.Starts, InputNumber = playback.InputNumber },
+                Range = readback.Range,
+                Version = readback.Section.Version,
+                SourceCalculationTime = playback.CalculationTime,
+                Calculations = readback.Calculations,
                 Playback = new(unchecked((int)playback.State), unchecked((int)playback.SourceState), playback.Time,
                     playback.SourceTime, playback.SourceSampleTime, playback.Weight, playback.Finished != 0),
             };
@@ -98,12 +139,16 @@ public sealed partial class SkinningFeature
 
     private readonly record struct ReadbackCopy(GraphBufferInput Current, GraphBufferInput Previous,
         GraphBufferInput Playback, GraphBufferId Output, BufferRange Range, BufferRange PlaybackRange);
-    private sealed class Readback(RenderPoseSection section, Action<GpuPoseReadback> receive)
+    private sealed class Readback(RenderPoseSection section, PoseRange range, Action<GpuPoseReadback> receive)
     {
-        internal readonly RenderPoseSection Section = section;
+        internal RenderPoseSection Section = section;
+        internal readonly PoseRange Range = range;
         internal readonly Action<GpuPoseReadback> Receive = receive;
+        internal GpuPoseReadbackRequest? Request;
+        internal GpuPoseIdentity Identity;
         internal SomeEngine.Graphics.Buffer? Buffer;
         internal GraphPassId Pass;
         internal QueueCompletion Completion;
+        internal PoseCalculation[] Calculations = [];
     }
 }

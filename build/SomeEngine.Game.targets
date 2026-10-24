@@ -4,10 +4,10 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Runtime/SomeEngine.Runtime.csproj"
-                      GlobalPropertiesToRemove="PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+                      GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Generators/SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false"
-                      GlobalPropertiesToRemove="PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+                      GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <Content Include="$(SomeEngineProjectRoot)/assets/**/*.asset"
              Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="$(SomeEngineProjectRoot)/Library/AssetManifest/**/*"
@@ -21,7 +21,7 @@
   </ItemGroup>
   <ItemGroup Condition="'$(SomeEngineDevelopment)' == 'true'">
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj"
-                      GlobalPropertiesToRemove="PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+                      GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
   </ItemGroup>
   <Target Name="GenerateGameProjectPaths" BeforeTargets="CoreCompile" Condition="'$(SomeEngineDevelopment)' == 'true'">
     <PropertyGroup>

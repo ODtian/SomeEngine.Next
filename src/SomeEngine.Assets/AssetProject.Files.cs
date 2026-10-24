@@ -58,8 +58,7 @@ public sealed partial class AssetProject
             {
                 result.Add(new(path, AssetFileKind.BinaryAsset, await DescribeFileAsync(path, cancellationToken).ConfigureAwait(false)));
             }
-            else if (path.EndsWith(".shader", StringComparison.OrdinalIgnoreCase)
-                || _sourceFormats.Any(format => path.EndsWith(format.SourceExtension, StringComparison.OrdinalIgnoreCase)))
+            else if (path.EndsWith(".shader", StringComparison.OrdinalIgnoreCase))
             {
                 AssetEntry entry = AssetText.Describe(await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false));
                 result.Add(new(path, AssetFileKind.NativeSource, entry with { Path = path }));
@@ -231,8 +230,7 @@ public sealed partial class AssetProject
         {
             string source = FullPath(sourcePath), destination = RequireProjectPath(_projectRoot, destinationPath);
             if (!File.Exists(SourceMeta.GetMetaPath(source)) || source.EndsWith(".asset", StringComparison.OrdinalIgnoreCase)
-                || source.EndsWith(".shader", StringComparison.OrdinalIgnoreCase)
-                || _sourceFormats.Any(format => source.EndsWith(format.SourceExtension, StringComparison.OrdinalIgnoreCase)))
+                || source.EndsWith(".shader", StringComparison.OrdinalIgnoreCase))
                 throw new NotSupportedException($"'{source}' is not an imported source with companion metadata. Copy native assets through their typed codec.");
             if (!PathsEqual(Path.GetDirectoryName(source)!, Path.GetDirectoryName(destination)!))
                 throw new NotSupportedException("Copying an imported source to another directory requires rewriting its relative inputs. Copy it within its directory or use a format-specific copy.");

@@ -11,6 +11,7 @@ public abstract partial class Material
     private ulong[]? _changes;
     private bool _changingProperties;
     private Shader? _shader;
+    private MaterialState _state = MaterialState.Default;
     private static long _nextMaterialId;
     private readonly long _materialId = Interlocked.Increment(ref _nextMaterialId);
     public long MaterialId => _materialId;
@@ -26,6 +27,16 @@ public abstract partial class Material
         }
     }
     public ulong Revision { get; private set; } = 1;
+    public MaterialState State
+    {
+        get => _state;
+        set
+        {
+            if (_state == value) return;
+            _state = value;
+            if (!_changingProperties) Revision++;
+        }
+    }
     public abstract IReadOnlyList<MaterialPropertyDefinition> Properties { get; }
     public int PropertyCount => Properties.Count;
     /// <summary>Conservative world-space displacement distance, derived from this material's geometric parameters.</summary>

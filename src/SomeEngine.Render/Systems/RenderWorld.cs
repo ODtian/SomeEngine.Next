@@ -1,6 +1,7 @@
 using SomeEngine.ECS;
 using System.Collections.Immutable;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Components;
 using SomeEngine.Render.Components;
 using SomeEngine.Resources;
@@ -21,12 +22,35 @@ public sealed class RenderWorld : World
 {
     private readonly Entity _materialIndexEntity;
     private readonly Entity _textureVersionsEntity;
+    private readonly QueryHandle _worldOriginQuery;
 
     public RenderWorld(int initialEntityCapacity = 256, WorldExecution? execution = null)
         : base(initialEntityCapacity, execution)
     {
+        _worldOriginQuery = Query(new QueryDefinitionBuilder().Read<RenderWorldOrigin>());
         _materialIndexEntity = CreateEntity(new RenderMaterialIndex(ImmutableDictionary<long, RenderMaterialEntry>.Empty));
         _textureVersionsEntity = CreateEntity(new RenderTextureVersions(ImmutableDictionary<Texture, TextureVersions>.Empty));
+    }
+
+    /// <summary>The shared origin extracted for this world; coordinates use engine world units.</summary>
+    public WorldOrigin WorldOrigin
+    {
+        get
+        {
+            WorldOrigin origin = default;
+            int count = 0;
+            ExecuteQuery(_worldOriginQuery, query =>
+            {
+                foreach (QueryChunkView chunk in query.Chunks)
+                    foreach (RenderWorldOrigin value in chunk.Read<RenderWorldOrigin>())
+                    {
+                        SomeEngine.Core.Diagnostics.DevelopmentCheck.Require(++count == 1,
+                            "A render world has one shared coordinate origin.");
+                        origin = value.Value;
+                    }
+            });
+            return origin;
+        }
     }
 
     /// <summary>Reads the shared material referenced through this world's extraction boundary.</summary>

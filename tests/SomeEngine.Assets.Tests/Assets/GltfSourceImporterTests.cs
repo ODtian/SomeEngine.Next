@@ -87,8 +87,6 @@ public class GltfSourceImporterTests
             var source = model.LogicalMeshes[0];
             source.Primitives[0].Material = null;
             await using var context = new ImportContext();
-            context.ConfigureAssets<SharpGLTF.Schema2.Mesh, MeshAsset>(new GltfMeshSource(
-                new GltfImporterSettings { RequirePersistentElementIds = false }, path));
             var geometry = new GltfMeshImporter();
             var settings = new GltfMeshSettings();
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
@@ -99,6 +97,9 @@ public class GltfSourceImporterTests
                 Guid.NewGuid(), [VertexStreamsBlock.BlockTypeId], new GltfVertexStreamsImporter(), settings));
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
                 new Guid("334ba003-337f-4298-ae72-1a5ce4861591"), [MeshBlock.BlockTypeId], geometry, settings));
+            string key = $"mesh/{source.LogicalIndex}";
+            Guid id = context.GetAssetId(key);
+            context.AddAsset(source, new MeshAsset(id), key, id + ".mesh.asset");
             MeshAsset mesh = await context.GetAssetAsync<SharpGLTF.Schema2.Mesh, MeshAsset>(source);
             Assert.Single(mesh.GetBlock<MeshBlock>().Regions);
             Assert.True(mesh.ContainsBlock<ClusterGeometryBlock>());

@@ -37,6 +37,27 @@ public static class SceneContent
     public static async Task GenerateSpheresAsync(string destination, string engineRoot, int width = 64, int height = 64)
     {
         await GenerateDefaultAsync(destination, engineRoot).ConfigureAwait(false);
+        await WriteSpheresAsync(destination, width, height).ConfigureAwait(false);
+    }
+
+    public static async Task GenerateSpheresFromCookedAsync(string destination, string cookedContent,
+        int width = 64, int height = 64)
+    {
+        destination = Path.GetFullPath(destination);
+        cookedContent = Path.GetFullPath(cookedContent);
+        if (Directory.Exists(destination) && Directory.EnumerateFileSystemEntries(destination).Any())
+            throw new ArgumentException("Use an empty content directory.", nameof(destination));
+        foreach (string relative in new[] { "assets", Path.Combine("Library", "AssetManifest") })
+        {
+            string source = Path.Combine(cookedContent, relative);
+            foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+                Copy(file, Path.Combine(destination, relative, Path.GetRelativePath(source, file)));
+        }
+        await WriteSpheresAsync(destination, width, height).ConfigureAwait(false);
+    }
+
+    private static async Task WriteSpheresAsync(string destination, int width, int height)
+    {
         var project = new AssetProject(destination, []);
         var manifest = project.Manifest;
         await using var loader = new AssetLoader(new LooseAssetStorage(destination, manifest));
@@ -71,7 +92,7 @@ public static class SceneContent
             mesh.GetBlock<MeshMaterialsBlock>().Materials = [material.Reference];
             project.RegisterAsset(await mesh.SaveAsync(Path.Combine(destination, $"assets/Meshes/sphere-{index}.mesh.asset")));
             var entity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(index == 0 ? -1 : 1, 0, 6), Quaternion.Identity) });
-            world.Add(entity, new MeshSource { Mesh = mesh.Reference });
+            world.Add(entity, new MeshSource { Mesh = mesh.Reference, DepthCacheClass = DepthCacheClass.Static });
         }
         world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
             VerticalFieldOfView = MathF.PI / 3, NearPlane = 0.1f, FarPlane = 100 });

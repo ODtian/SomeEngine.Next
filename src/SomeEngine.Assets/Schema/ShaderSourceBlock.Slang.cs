@@ -1,6 +1,11 @@
+using System.Buffers;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using SlangShaderSharp;
 using SomeEngine.Resources;
+using SomeEngine.Serialization;
+using SomeEngine.Serialization.Containers;
+using SomeEngine.Serialization.IO;
 
 namespace SomeEngine.Assets.Schema;
 
@@ -17,28 +22,47 @@ public sealed partial class ShaderSourceBlock
         SessionDesc sessionDescription,
         string name,
         ReadOnlyMemory<SpecializationArg> specializations = default,
-        CancellationToken cancellationToken = default) =>
-        (await CreateCoreAsync(
-            slang,
-            sessionDescription,
-            name,
-            specializations,
-            generateCode: true,
-            saveSources: false,
-            cancellationToken).ConfigureAwait(false)).Shader;
+        CancellationToken cancellationToken = default)
+    {
+        using ShaderSourceBlock copy = Duplicate();
+        ShaderCompilation compiled = await copy.CreateCoreAsync(slang, sessionDescription, name, specializations,
+            generateCode: true, saveSources: false, cancellationToken).ConfigureAwait(false);
+        if (!specializations.IsEmpty || compiled.Specializations.Count == 0) return compiled.Shader;
+
+        var variants = new List<(string EntryPoint, string[] Arguments, Shader Shader)>(compiled.Specializations.Count);
+        foreach (ShaderSpecialization specialization in compiled.Specializations)
+        {
+            Shader variant = (await copy.CreateCoreAsync(slang, sessionDescription, name,
+                specialization.ToSlangArguments(), generateCode: true, saveSources: false,
+                cancellationToken, specialization.EntryPoint).ConfigureAwait(false)).Shader;
+            variants.Add((specialization.EntryPoint, specialization.Arguments.ToArray(), variant));
+        }
+        return compiled.Shader.WithSpecializations(variants);
+    }
 
     /// <summary>Compiles the current source files and returns their serialized Slang data and read-byte hashes.</summary>
     public ValueTask<ShaderCompilation> CompileAsync(IGlobalSession slang, SessionDesc sessionDescription,
         string name, CancellationToken cancellationToken = default)
-        => CreateCoreAsync(slang, sessionDescription, name, default, generateCode: true,
+        => CompileAsync(slang, sessionDescription, name, default, cancellationToken);
+
+    public ValueTask<ShaderCompilation> CompileAsync(IGlobalSession slang, SessionDesc sessionDescription,
+        string name, ReadOnlyMemory<SpecializationArg> specializations, CancellationToken cancellationToken = default)
+        => CreateCoreAsync(slang, sessionDescription, name, specializations, generateCode: true,
             saveSources: true, cancellationToken);
+
+    public ValueTask<ShaderCompilation> CompileAsync(IGlobalSession slang, SessionDesc sessionDescription,
+        string name, string entryPoint, ReadOnlyMemory<SpecializationArg> specializations,
+        CancellationToken cancellationToken = default)
+        => CreateCoreAsync(slang, sessionDescription, name, specializations, generateCode: true,
+            saveSources: true, cancellationToken, entryPoint);
 
     internal async ValueTask<Shader> CreateUsingSavedCodeAsync(
         IGlobalSession slang,
         SessionDesc sessionDescription,
         string name,
         ReadOnlyMemory<SpecializationArg> specializations = default,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        string? entryPoint = null) =>
         (await CreateCoreAsync(
             slang,
             sessionDescription,
@@ -46,18 +70,64 @@ public sealed partial class ShaderSourceBlock
             specializations,
             generateCode: false,
             saveSources: false,
-            cancellationToken).ConfigureAwait(false)).Shader;
+            cancellationToken, entryPoint).ConfigureAwait(false)).Shader;
 
-    internal async ValueTask<Shader> CreateSelectedAsync(
-        IReadOnlyList<ShaderInputSource> inputs,
-        IGlobalSession slang,
-        SessionDesc sessionDescription,
-        string name,
-        ReadOnlyMemory<SpecializationArg> specializations,
-        bool generateCode,
-        CancellationToken cancellationToken) =>
-        (await CreateCoreAsync(slang, sessionDescription, name, specializations,
-            generateCode, saveSources: false, cancellationToken, inputs).ConfigureAwait(false)).Shader;
+    internal async ValueTask<(string[] Names, byte[][] Sources)> ReadSavedSourcesAsync(CancellationToken cancellationToken)
+    {
+        string[] names = SourceNames.ToArray();
+        var sources = new byte[names.Length][];
+        for (int index = 0; index < sources.Length; index++)
+        {
+            ulong key = SerializedSourceKey(index);
+            if (!ContentKeys.Contains(key))
+                throw new InvalidDataException("Saved shader specializations require their serialized Slang source.");
+            sources[index] = (await ReadBytesAsync(key, cancellationToken).ConfigureAwait(false)).ToArray();
+            if (sources[index].Length == 0)
+                throw new InvalidDataException("Saved shader specializations have empty serialized Slang source.");
+        }
+        return (names, sources);
+    }
+
+    internal static Shader RestoreSavedEntry(IGlobalSession slang, SessionDesc description, string name,
+        string entryPoint, string[] arguments, string[] sourceNames, byte[][] sources)
+    {
+        using var source = new ShaderSourceBlock();
+        foreach (string path in sourceNames) source.SourceNames.Add(path);
+        for (int index = 0; index < sources.Length; index++) source.SetSerializedSource(index, sources[index]);
+        return source.CreateUsingSavedCodeAsync(slang, description, name,
+            arguments.Select(SpecializationArg.FromExpression).ToArray(), CancellationToken.None, entryPoint)
+            .AsTask().GetAwaiter().GetResult();
+    }
+
+    internal async ValueTask<Shader> CreateSelectedAsync(IReadOnlyList<ShaderInputSource> inputs,
+        IGlobalSession slang, SessionDesc description, string name, ReadOnlyMemory<SpecializationArg> arguments,
+        bool generateCode, CancellationToken cancellationToken)
+    {
+        using ShaderSourceBlock source = FromInputs(inputs);
+        return (await source.CreateCoreAsync(slang, description, name, arguments, generateCode,
+            saveSources: false, cancellationToken).ConfigureAwait(false)).Shader;
+    }
+
+    internal async ValueTask<ShaderCompilation> CompileSelectedAsync(IReadOnlyList<ShaderInputSource> inputs,
+        IGlobalSession slang, SessionDesc description, string name, CancellationToken cancellationToken)
+    {
+        using ShaderSourceBlock source = FromInputs(inputs);
+        return await source.CreateCoreAsync(slang, description, name, default, generateCode: true,
+            saveSources: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal ValueTask<ShaderCompilation> CompileSelectedEntryAsync(IGlobalSession slang, SessionDesc description,
+        string name, string entryPoint, ReadOnlyMemory<SpecializationArg> arguments, CancellationToken cancellationToken) =>
+        CreateCoreAsync(slang, description, name, arguments, generateCode: true, saveSources: false,
+            cancellationToken, entryPoint);
+
+    internal ShaderSourceBlock FromInputs(IReadOnlyList<ShaderInputSource> inputs)
+    {
+        var source = new ShaderSourceBlock { SourceNames = inputs.Select(input => input.Name).ToList(),
+            Specializations = Specializations.ToList() };
+        for (int index = 0; index < inputs.Count; index++) source.SetSerializedSource(index, inputs[index].Serialized.Span);
+        return source;
+    }
 
     private async ValueTask<ShaderCompilation> CreateCoreAsync(
         IGlobalSession slang,
@@ -67,7 +137,7 @@ public sealed partial class ShaderSourceBlock
         bool generateCode,
         bool saveSources,
         CancellationToken cancellationToken,
-        IReadOnlyList<ShaderInputSource>? inputs = null)
+        string? entryPoint = null)
     {
         ArgumentNullException.ThrowIfNull(slang);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -94,12 +164,10 @@ public sealed partial class ShaderSourceBlock
         await frontEnd.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (inputs is null && copy.SourceNames.Count == 0)
+            if (copy.SourceNames.Count == 0)
                 throw new InvalidDataException("The shader source block contains no source files.");
 
-            string[] paths = inputs is null
-                ? copy.SourceNames.Select(NormalizeSourceName).ToArray()
-                : inputs.Select(static input => input.Name).ToArray();
+            string[] paths = copy.SourceNames.Select(NormalizeSourceName).ToArray();
             if (paths.Distinct(StringComparer.OrdinalIgnoreCase).Count() != paths.Length)
                 throw new InvalidDataException("The shader source block contains duplicate source files.");
 
@@ -118,13 +186,13 @@ public sealed partial class ShaderSourceBlock
                 ulong serializedKey = SerializedSourceKey(sourceIndex);
                 IModule? sourceUnit;
                 ISlangBlob? diagnostics;
-                if (!saveSources && (inputs is not null || copy.ContentKeys.Contains(serializedKey)))
+                if (!saveSources && copy.ContentKeys.Contains(serializedKey))
                 {
-                    ReadOnlyMemory<byte> serialized = inputs is not null ? inputs[sourceIndex].Serialized
-                        : await copy.ReadBytesAsync(serializedKey, cancellationToken).ConfigureAwait(false);
+                    ReadOnlyMemory<byte> serialized = await copy.ReadBytesAsync(serializedKey, cancellationToken).ConfigureAwait(false);
                     ISlangBlob source = Slang.CreateBlob(serialized.Span);
                     sourceUnit = session.LoadModuleFromIRBlob(Path.GetFileNameWithoutExtension(paths[sourceIndex]),
                         paths[sourceIndex], source, out diagnostics);
+                    if (saveSources) serializedSources.Add(serialized);
                 }
                 else
                 {
@@ -158,38 +226,33 @@ public sealed partial class ShaderSourceBlock
                     SlangResult entryResult = sourceUnit.GetDefinedEntryPoint(entryIndex, out IEntryPoint entry);
                     if (entryResult.Failed || entry is null)
                         throw new InvalidDataException("Slang could not return a declared shader entry point.");
-                    entries.Add(entry);
+                    if (entryPoint is null || entry.GetFunctionReflection().Name == entryPoint)
+                        entries.Add(entry);
                 }
             }
 
             if (entries.Count == 0)
                 throw new InvalidDataException("The shader source block exposes no entry points.");
 
-            IComponentType[] components = sourceUnits
-                .Cast<IComponentType>()
-                .Concat(entries)
-                .ToArray();
+            var components = new List<IComponentType>(sourceUnits);
+            foreach (IEntryPoint entry in entries)
+            {
+                IComponentType component = entry;
+                if (entryPoint is not null && !specializations.IsEmpty)
+                    component = Specialize(entry, specializations);
+                components.Add(component);
+            }
             SlangResult combineResult = session.CreateCompositeComponentType(
-                components,
+                components.ToArray(),
                 out IComponentType combinedCode,
                 out ISlangBlob? combineDiagnostics);
             string combineText = DiagnosticText(combineDiagnostics);
             if (combineResult.Failed || combinedCode is null)
                 throw new InvalidDataException("Slang composition failed: " + combineText);
 
-            IComponentType codeToLink = combinedCode;
-            if (!specializations.IsEmpty)
-            {
-                SpecializationArg[] arguments = specializations.ToArray();
-                SlangResult specializationResult = combinedCode.Specialize(
-                    arguments,
-                    out IComponentType specializedCode,
-                    out ISlangBlob? specializationDiagnostics);
-                string specializationText = DiagnosticText(specializationDiagnostics);
-                if (specializationResult.Failed || specializedCode is null)
-                    throw new InvalidDataException("Slang specialization failed: " + specializationText);
-                codeToLink = specializedCode;
-            }
+            IComponentType codeToLink = entryPoint is null && !specializations.IsEmpty
+                ? Specialize(combinedCode, specializations)
+                : combinedCode;
 
             SlangResult linkResult = codeToLink.Link(
                 out IComponentType linkedCode,
@@ -208,12 +271,24 @@ public sealed partial class ShaderSourceBlock
                 linkedCode,
                 targets,
                 generateCode);
-            return new(shader, serializedSources, sourceFiles.Finish());
+            return new(shader, serializedSources, sourceFiles.Finish())
+            {
+                Specializations = generateCode && entryPoint is null ? copy.ReadSpecializations(shader) : [],
+            };
         }
         finally
         {
             frontEnd.Release();
         }
+    }
+
+    private static IComponentType Specialize(IComponentType code, ReadOnlyMemory<SpecializationArg> arguments)
+    {
+        SlangResult result = code.Specialize(arguments.ToArray(), out IComponentType specialized,
+            out ISlangBlob? diagnostics);
+        if (result.Failed || specialized is null)
+            throw new InvalidDataException("Slang specialization failed: " + DiagnosticText(diagnostics));
+        return specialized;
     }
 
     private static string NormalizeSourceName(string sourceName)

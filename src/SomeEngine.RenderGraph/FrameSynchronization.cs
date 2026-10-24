@@ -11,7 +11,6 @@ internal sealed partial class FrameExecutor
     private List<QueueRelease>[] _releases = [];
     private List<AliasingResource>[] _aliasBeforeResources = [];
     private List<AliasingResource>[] _aliasAfterResources = [];
-    private List<QueueCompletion>[] _completionWaits = [];
     private List<int>[] _physicalPredecessors = [];
     private readonly List<PendingQueueRelease> _lateReleases = [];
     private readonly HashSet<Queue> _transferSources =
@@ -149,7 +148,7 @@ internal sealed partial class FrameExecutor
             PipelineSync targetSync = PipelineSync.None;
             ResourceAccess targetAccess = ResourceAccess.NoAccess;
             bool targetWrites = false;
-            bool targetAtomicMergeable = true;
+            bool targetMergeableWrites = true;
             int end = cursor;
             while (end < accesses.Count && _accesses[accesses[end]].PassIndex == pass)
             {
@@ -157,12 +156,11 @@ internal sealed partial class FrameExecutor
                 targetSync |= access.Sync;
                 targetAccess = MergeBufferAccess(targetAccess, access.Access);
                 targetWrites |= access.Mode != GraphAccessMode.Read;
-                targetAtomicMergeable &=
-                    access.UnorderedAccessHazards ==
-                    UnorderedAccessHazardMode.AtomicMergeable;
+                targetMergeableWrites &=
+                    access.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered;
                 end++;
             }
-            targetAtomicMergeable &= targetWrites;
+            targetMergeableWrites &= targetWrites;
 
             Queue targetQueue = _passes[pass].Queue!;
             bool initialQueueTransfer = false;
@@ -184,9 +182,9 @@ internal sealed partial class FrameExecutor
             bool queueChanged = state.Queue is not null && !ReferenceEquals(state.Queue, targetQueue);
             bool stateChanged = state.Sync != targetSync || state.Access != targetAccess;
             bool ordering = state.Writes || targetWrites;
-            bool mergeableAtomicChain =
-                state.AtomicMergeable &&
-                targetAtomicMergeable &&
+            bool mergeableWriteChain =
+                state.MergeableWrites &&
+                targetMergeableWrites &&
                 !queueChanged &&
                 state.Access == targetAccess;
             bool barrierFreeInitialAccess =
@@ -235,7 +233,7 @@ internal sealed partial class FrameExecutor
             if (!initialQueueTransfer &&
                 (!queueChanged || state.Queue?.Type == targetQueue.Type))
             {
-                if (!mergeableAtomicChain &&
+                if (!mergeableWriteChain &&
                     !barrierFreeInitialAccess &&
                     (stateChanged || ordering))
                 {
@@ -252,12 +250,12 @@ internal sealed partial class FrameExecutor
             }
 
             state = new BufferPhysicalState(
-                mergeableAtomicChain ? state.Sync | targetSync : targetSync,
+                mergeableWriteChain ? state.Sync | targetSync : targetSync,
                 targetAccess,
                 targetQueue,
                 pass,
                 targetWrites,
-                targetAtomicMergeable);
+                targetMergeableWrites);
             cursor = end;
         }
     }
@@ -278,14 +276,14 @@ internal sealed partial class FrameExecutor
             PipelineSync sync = PipelineSync.None;
             ResourceAccess access = ResourceAccess.NoAccess;
             bool writes = false;
-            bool atomic = true;
+            bool mergeableWrites = true;
             do
             {
                 FrameResourceAccess row = _accesses[accesses[position++]];
                 sync |= row.Sync;
                 access = MergeBufferAccess(access, row.Access);
                 writes |= row.Mode != GraphAccessMode.Read;
-                atomic &= row.UnorderedAccessHazards == UnorderedAccessHazardMode.AtomicMergeable;
+                mergeableWrites &= row.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered;
             } while (position < accesses.Count && _accesses[accesses[position]].PassIndex == pass);
             Queue queue = _passes[pass].Queue!;
             bool seen = _bufferQueueStates.TryGetValue(queue, out BufferPhysicalState previous);
@@ -296,9 +294,13 @@ internal sealed partial class FrameExecutor
             if (!seen && !resource.Placement.Aliases)
                 AddInitialCompletions(resource.EntryBoundaryStates, queue, pass);
             if (!seen && resource.Placement.Aliases)
-                // The alias barrier precedes this access in the same command stream.
-                AddBufferTransition(-1, pass, buffer, PipelineSync.All, sync,
+            {
+                // The alias barrier leaves this buffer at NoAccess. Activate
+                // its first declared access with an explicit transition.
+                AddBufferTransition(-1, pass, buffer,
+                    pass == resource.FirstPass ? PipelineSync.All : PipelineSync.None, sync,
                     ResourceAccess.NoAccess, access, false);
+            }
 
             // D3D12 permits concurrent readers. Serialize writers for the whole buffer:
             // even disjoint writes may race through cache lines shared by different queues.
@@ -314,15 +316,15 @@ internal sealed partial class FrameExecutor
             }
             else AddUnique(_bufferReaders, pass);
 
-            bool mergeAtomic = seen && previous.AtomicMergeable && atomic && writes && previous.Access == access;
-            if (seen && !mergeAtomic && !mergeReads &&
+            bool mergeWrites = seen && previous.MergeableWrites && mergeableWrites && writes && previous.Access == access;
+            if (seen && !mergeWrites && !mergeReads &&
                 (previous.Writes || writes || previous.Sync != sync || previous.Access != access))
                 AddBufferTransition(previous.LastPass, pass, buffer, previous.Sync, sync,
                     previous.Access, access, false);
             _bufferQueueStates[queue] = new BufferPhysicalState(
-                mergeAtomic || mergeReads ? previous.Sync | sync : sync,
+                mergeWrites || mergeReads ? previous.Sync | sync : sync,
                 mergeReads ? MergeBufferAccess(previous.Access, access) : access,
-                queue, pass, writes, atomic && writes);
+                queue, pass, writes, mergeableWrites && writes);
         }
     }
 
@@ -423,7 +425,7 @@ internal sealed partial class FrameExecutor
                 FrameResourceAccess access = default;
                 bool found = false;
                 bool targetWrites = false;
-                bool targetAtomicMergeable = true;
+                bool targetMergeableWrites = true;
                 for (int item = first; item < end; item++)
                 {
                     FrameResourceAccess source = _accesses[accesses[item]];
@@ -439,10 +441,10 @@ internal sealed partial class FrameExecutor
                     }
                     found = true;
                     targetWrites |= source.Mode != GraphAccessMode.Read;
-                    targetAtomicMergeable &= source.UnorderedAccessHazards == UnorderedAccessHazardMode.AtomicMergeable;
+                    targetMergeableWrites &= source.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered;
                 }
                 if (!found) continue;
-                targetAtomicMergeable &= targetWrites;
+                targetMergeableWrites &= targetWrites;
                 TexturePhysicalState state = region.State;
                 TextureSubresourceRange cellRange = region.Range;
                 bool initialQueueTransfer = false;
@@ -468,9 +470,9 @@ internal sealed partial class FrameExecutor
                     state.Access != access.Access ||
                     state.Layout != access.TextureLayout;
                 bool ordering = state.Writes || targetWrites;
-                bool mergeableAtomicChain =
-                    state.AtomicMergeable &&
-                    targetAtomicMergeable &&
+                bool mergeableWriteChain =
+                    state.MergeableWrites &&
+                    targetMergeableWrites &&
                     !queueChanged &&
                     state.Access == access.Access &&
                     state.Layout == access.TextureLayout;
@@ -501,7 +503,7 @@ internal sealed partial class FrameExecutor
                 if (!initialQueueTransfer &&
                     (!queueChanged || state.Queue?.Type == targetQueue.Type))
                 {
-                    if (!mergeableAtomicChain && (stateChanged || ordering))
+                    if (!mergeableWriteChain && (stateChanged || ordering))
                     {
                         AddTextureTransition(
                             state.LastPass,
@@ -520,13 +522,13 @@ internal sealed partial class FrameExecutor
                 }
 
                 _textureRegions[regionIndex] = region with { State = new TexturePhysicalState(
-                    mergeableAtomicChain ? state.Sync | access.Sync : access.Sync,
+                    mergeableWriteChain ? state.Sync | access.Sync : access.Sync,
                     access.Access,
                     access.TextureLayout,
                     targetQueue,
                     pass,
                     targetWrites,
-                    targetAtomicMergeable) };
+                    targetMergeableWrites) };
             }
             first = end;
         }
@@ -827,7 +829,7 @@ internal sealed partial class FrameExecutor
     {
         _textureRegions.Clear();
         TexturePhysicalState initial = aliasActivated
-            ? new(PipelineSync.All, ResourceAccess.NoAccess, TextureLayout.Undefined, null, -1, false, false)
+            ? new(PipelineSync.None, ResourceAccess.NoAccess, TextureLayout.Undefined, null, -1, false, false)
             : new(texture.InitialSync, texture.InitialAccess, texture.InitialLayout, null, -1,
                 ResourceAccessRules.Writes(texture.InitialAccess), false);
         for (int aspect = 0; aspect < TextureAspectCount(resource.Format); aspect++)
@@ -1028,7 +1030,7 @@ internal sealed partial class FrameExecutor
         Queue? Queue,
         int LastPass,
         bool Writes,
-        bool AtomicMergeable);
+        bool MergeableWrites);
 
     private readonly record struct TexturePhysicalState(
         PipelineSync Sync,
@@ -1037,7 +1039,7 @@ internal sealed partial class FrameExecutor
         Queue? Queue,
         int LastPass,
         bool Writes,
-        bool AtomicMergeable);
+        bool MergeableWrites);
 
     private readonly record struct PendingQueueRelease(
         Queue SourceQueue,
@@ -1147,7 +1149,6 @@ internal sealed partial class FrameExecutor
         EnsureCapacity(ref _releases, _passes.Count);
         EnsureCapacity(ref _aliasBeforeResources, _passes.Count);
         EnsureCapacity(ref _aliasAfterResources, _passes.Count);
-        EnsureCapacity(ref _completionWaits, _passes.Count);
         EnsureCapacity(ref _physicalPredecessors, _passes.Count);
         for (int pass = _synchronizationPassCount; pass < _passes.Count; pass++)
         {
@@ -1155,7 +1156,7 @@ internal sealed partial class FrameExecutor
             _beforeTextureBarriers[pass] ??= []; _afterTextureBarriers[pass] ??= [];
             _acquires[pass] ??= []; _releases[pass] ??= [];
             _aliasBeforeResources[pass] ??= []; _aliasAfterResources[pass] ??= [];
-            _completionWaits[pass] ??= []; _physicalPredecessors[pass] ??= [];
+            _physicalPredecessors[pass] ??= [];
         }
         _synchronizationPassCount = _passes.Count;
         foreach (var (key, bindingOnly) in _synchronizationChanges)
@@ -1219,7 +1220,7 @@ internal sealed partial class FrameExecutor
         }
         foreach (int pass in _changedSynchronizationPasses)
         {
-            _commandChanges.Add(pass);
+            InvalidateCommands(pass);
             _beforeBufferBarriers[pass].Clear(); _afterBufferBarriers[pass].Clear();
             _beforeTextureBarriers[pass].Clear(); _afterTextureBarriers[pass].Clear();
             _acquires[pass].Clear(); _releases[pass].Clear();
@@ -1244,21 +1245,30 @@ internal sealed partial class FrameExecutor
         _changedSynchronizationPasses.Clear();
     }
 
-    private void RefreshCompletionWaits()
+    private void RefreshCompletionWaits(int waveCount)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.WaitCollection);
+        for (int wave = 0; wave < waveCount; wave++)
+            foreach (int submission in _recordingSubmissions[wave]) _submissionWaits[submission].Clear();
         foreach ((int pass, var resources) in _initialWaitResources)
         {
-            _completionWaits[pass].Clear();
             if (!IsLive(pass)) continue;
             Queue queue = _passes[pass].Queue!;
+            List<QueueCompletion> waits = _submissionWaits[_submissionByPass[pass]];
             foreach (var key in resources)
             {
                 switch (key.Kind)
                 {
                     case GraphAccessTargetKind.Buffer:
-                        FrameBuffer buffer = _buffers[key.Index];
-                        foreach (BufferBoundaryState state in BufferEntryStates(buffer)) AddWait(state.ReadyAfter);
+                        ref readonly FrameBuffer buffer = ref CollectionsMarshal.AsSpan(_buffers)[key.Index];
+                        ReadOnlySpan<BufferBoundaryState> states = BufferEntryStates(buffer);
+                        if (buffer.Lifetime == RenderGraphResourceLifetime.Persistent &&
+                            buffer.Definition?.Boundaries.CompletionItems is { } items)
+                        {
+                            foreach (int item in items) AddWait(states[item].ReadyAfter);
+                        }
+                        else
+                            foreach (ref readonly BufferBoundaryState state in states) AddWait(state.ReadyAfter);
                         break;
                     case GraphAccessTargetKind.Texture:
                         FrameTexture texture = _textures[key.Index];
@@ -1275,7 +1285,7 @@ internal sealed partial class FrameExecutor
             void AddWait(QueueCompletion? completion)
             {
                 if (completion.HasValue && !ReferenceEquals(completion.Value.Queue, queue))
-                    AddCompletion(_completionWaits[pass], completion.Value);
+                    AddCompletion(waits, completion.Value);
             }
         }
     }

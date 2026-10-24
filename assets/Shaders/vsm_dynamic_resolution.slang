@@ -1,22 +1,22 @@
 #include "resource_effects.slang"
+#define VSM_PAGE_LIST_READ_ONLY 1
 
 struct VirtualShadowDynamicResolutionUniforms
 {
     uint MaxPhysicalPages;
-    uint TargetRasterWork;
+    uint PadRasterWork;
     float PagePoolLoadStart;
-    float MaxDirectionalLodBias;
-    float MaxLocalLodBias;
+    float MaxLodBias;
+    uint PadLodBias;
     uint Enabled;
     uint Pad0;
     uint Pad1;
 };
 
 ConstantBuffer<VirtualShadowDynamicResolutionUniforms> DynamicResolution;
-StructuredBuffer<uint> FreePageCount;
-StructuredBuffer<uint> PolicyRasterWorkCount;
+#include "vsm_page_lists.slang"
 StructuredBuffer<uint> AllocationFailures;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
 RWStructuredBuffer<float2> DynamicResolutionBias;
 
 [shader("compute")]
@@ -33,30 +33,25 @@ void UpdateVirtualShadowDynamicResolution(uint3 threadId : SV_DispatchThreadID)
     }
 
     uint maxPages = max(DynamicResolution.MaxPhysicalPages, 1u);
-    uint freePages = min(FreePageCount[0], maxPages);
-    float pageLoad = 1.0 - float(freePages) / float(maxPages);
-    float poolRange = max(1.0 - DynamicResolution.PagePoolLoadStart, 1e-4);
-    float poolPressure = saturate(
-        (pageLoad - DynamicResolution.PagePoolLoadStart) / poolRange);
+    uint availablePages = ShadowPageListCount(VSM_PAGE_LIST_AVAILABLE, DynamicResolution.MaxPhysicalPages);
+    uint freePages = min(availablePages, maxPages);
+    float pageLoad = float(maxPages - freePages + AllocationFailures[0]) / float(maxPages);
+    float allocationRatio = DynamicResolution.PagePoolLoadStart > 0.0
+        ? pageLoad / DynamicResolution.PagePoolLoadStart : 1.0;
 
-    uint targetWork = max(DynamicResolution.TargetRasterWork, 1u);
-    float workRatio = max(float(PolicyRasterWorkCount[0]) / float(targetWork), 1.0);
-    float workBias = log2(workRatio);
-    bool allocationFailed = AllocationFailures[0] != 0u;
-
-    float directional = max(
-        workBias,
-        poolPressure * DynamicResolution.MaxDirectionalLodBias);
-    float local = max(
-        workBias,
-        poolPressure * DynamicResolution.MaxLocalLodBias);
-    if (allocationFailed)
+    float2 state = DynamicResolutionBias[0];
+    float target = clamp(state.x + log2(max(allocationRatio, 1e-6)), 0.0, DynamicResolution.MaxLodBias);
+    if (allocationRatio > 1.0)
     {
-        directional = DynamicResolution.MaxDirectionalLodBias;
-        local = DynamicResolution.MaxLocalLodBias;
+        state.x = lerp(state.x, target, 0.5);
+        state.y = 0.0;
     }
-
-    DynamicResolutionBias[0] = float2(
-        clamp(directional, 0.0, DynamicResolution.MaxDirectionalLodBias),
-        clamp(local, 0.0, DynamicResolution.MaxLocalLodBias));
+    else
+    {
+        // React quickly to overload. Restore detail after ten frames below
+        // the allocation budget, using a slower exponential response.
+        state.y = min(state.y + 1.0, 11.0);
+        if (state.y > 10.0) state.x = lerp(state.x, target, 0.1);
+    }
+    DynamicResolutionBias[0] = state;
 }

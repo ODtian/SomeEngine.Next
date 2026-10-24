@@ -14,7 +14,7 @@ public sealed class GpuClusterRenderingTests(SceneContentFixture content)
     public async Task GpuMeshReplacementUpdatesItsPictureAndGeometryRevision()
     {
         using GpuClusterExample example = await GpuClusterExample.CreateAsync(content.DirectoryPath);
-        using var material = new UnlitMaterial { BaseColorTint = new(1, 0, 0, 1) };
+        var material = new UnlitMaterial { BaseColorTint = new(1, 0, 0, 1) };
         example.SetMaterial(material);
         // These dimensions and subdivisions are example data spanning several geometry pages.
         example.SetGrid(32, new(2, 2));
@@ -68,10 +68,10 @@ public sealed class GpuClusterRenderingTests(SceneContentFixture content)
             Width = 2, Height = 1, RowPitch = 8, SlicePitch = 8,
             ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 8,
         };
-        using var texture = Texture.Create(textureDescription,
+        var texture = Texture.Create(textureDescription,
             [new TexturePixels(tile, new byte[] { 255, 0, 0, 255, 0, 255, 0, 255 })],
             TextureViewDimension.Texture2D);
-        using var material = new UnlitMaterial
+        var material = new UnlitMaterial
         {
             AlbedoMap = texture,
             MaterialSampler = new(FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,

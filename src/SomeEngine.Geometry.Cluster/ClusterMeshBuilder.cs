@@ -416,7 +416,7 @@ public static partial class ClusterMeshBuilder
         ReadOnlySpan<uint> remap,
         int nextGroupId, bool sourceLocks)
     {
-        List<int> pending = CreatePendingClusters(clusters.Count);
+        List<int> pending = CreateLeafClusterIndices(clusters.Count);
         var workspace = new LodWorkspace();
         int depth = 0;
         while (pending.Count > 1)
@@ -468,7 +468,7 @@ public static partial class ClusterMeshBuilder
         Span<int> pendingSpan = CollectionsMarshal.AsSpan(pending);
         for (int groupIndex = 0; groupIndex < workspace.GroupOffsets.Count - 1; groupIndex++)
         {
-            Span<int> group = PendingGroup(pendingSpan, workspace.GroupOffsets, groupIndex);
+            Span<int> group = GetClusterGroup(pendingSpan, workspace.GroupOffsets, groupIndex);
             ReduceClusterGroup(
                 config,
                 positions,

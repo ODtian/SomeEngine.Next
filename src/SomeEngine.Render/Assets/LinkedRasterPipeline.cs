@@ -34,7 +34,8 @@ public sealed class LinkedRasterPipeline : IDisposable
         uint sampleCount = 1,
         string? label = null,
         uint sampleMask = uint.MaxValue,
-        bool alphaToCoverage = false)
+        bool alphaToCoverage = false,
+        DynamicStates additionalDynamicStates = DynamicStates.None)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
@@ -84,7 +85,7 @@ public sealed class LinkedRasterPipeline : IDisposable
                     depthStencil,
                     blend,
                     attachments,
-                    DynamicStates.Viewport | DynamicStates.Scissor,
+                    DynamicStates.Viewport | DynamicStates.Scissor | additionalDynamicStates,
                     label,
                     vertexCodeBlob: shader.GetSlangEntryBlob(targetIndex, vertex),
                     pixelCodeBlob: shader.GetSlangEntryBlob(targetIndex, pixel)));

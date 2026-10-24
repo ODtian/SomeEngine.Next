@@ -5,31 +5,38 @@ using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Systems;
 
+/// <summary>Resource versions collected during one Game world extraction.</summary>
+public sealed class RenderExtractionResources
+{
+    private readonly ImmutableDictionary<Texture, TextureVersions>.Builder _textures = ImmutableDictionary.CreateBuilder<Texture, TextureVersions>();
+    private readonly ImmutableDictionary<long, RenderMaterialReference>.Builder _materials = ImmutableDictionary.CreateBuilder<long, RenderMaterialReference>();
+    public void Add(Texture texture) => _textures[texture] = texture.Versions;
+    public void Add(Material material)
+    {
+        if (_materials.ContainsKey(material.MaterialId)) return;
+        _materials.Add(material.MaterialId, new(material));
+        for (uint property = 0; property < material.PropertyCount; property++)
+            if (material.GetTexture(property) is { } texture) Add(texture);
+    }
+    internal ImmutableDictionary<Texture, TextureVersions> Textures => _textures.ToImmutable();
+    internal ImmutableDictionary<long, RenderMaterialReference> Materials => _materials.ToImmutable();
+}
+
 internal static class TextureExtraction
 {
-    internal static ImmutableDictionary<Texture, TextureVersions> Collect(QueryCursor query,
-        out ImmutableDictionary<long, RenderMaterialReference> materialReferences)
+    internal static RenderExtractionResources Collect(scoped QueryCursor query)
     {
-        var textures = ImmutableDictionary.CreateBuilder<Texture, TextureVersions>();
-        var materials = new HashSet<Material>();
+        var resources = new RenderExtractionResources();
         foreach (QueryChunkView chunk in query.Chunks)
         {
             if (chunk.HasBuffer<MeshMaterialBinding>())
                 for (int row = 0; row < chunk.Entities.Length; row++)
                     foreach (MeshMaterialBinding binding in chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan())
-                        materials.Add(binding.Material);
+                        resources.Add(binding.Material);
             if (chunk.TryRead<LightCookie>(out ReadOnlySpan<LightCookie> cookies))
                 foreach (LightCookie cookie in cookies)
-                    if (cookie.Texture is { } texture) textures[texture] = texture.Versions;
+                    if (cookie.Texture is { } texture) resources.Add(texture);
         }
-        var references = ImmutableDictionary.CreateBuilder<long, RenderMaterialReference>();
-        foreach (Material material in materials)
-        {
-            references[material.MaterialId] = new(material);
-            for (uint property = 0; property < material.PropertyCount; property++)
-                if (material.GetTexture(property) is { } texture) textures[texture] = texture.Versions;
-        }
-        materialReferences = references.ToImmutable();
-        return textures.ToImmutable();
+        return resources;
     }
 }

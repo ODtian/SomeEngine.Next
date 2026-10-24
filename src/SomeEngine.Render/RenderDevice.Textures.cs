@@ -68,12 +68,10 @@ public sealed partial class RenderDevice
         TextureShape shape = realization.Shape;
         TextureSubresourceRange resolved = range ?? shape.ResidentRange(realization.FirstResidentMip);
         ValidateResidentRange(realization, resolved);
-        return GetTextureSrv(
-            realization,
-            resolved,
-            format ?? shape.SampledFormat,
-            dimension ?? shape.SampledDimension,
-            label);
+        TextureSrv view = GetTextureSrv(realization, resolved, format ?? shape.SampledFormat,
+            dimension ?? shape.SampledDimension, label);
+        if (range is null && format is null && dimension is null) UpdateSampledDescriptor(realization, view);
+        return view;
     }
 
     public TextureUav GetTextureUav(
@@ -995,6 +993,9 @@ public sealed partial class RenderDevice
 
         internal TextureShape Shape { get; }
         internal RhiTexture Resource { get; }
+        internal DescriptorTable? SampledDescriptor { get; set; }
+        internal TextureSrv? SampledView { get; set; }
+        internal uint SampledIndex { get; set; }
         internal Dictionary<TextureViewKey, DeviceResource> Views { get; } = [];
         internal ulong Revision { get; set; }
         internal bool Initialized { get; set; }
@@ -1050,6 +1051,7 @@ public sealed partial class RenderDevice
             foreach (DeviceResource view in Views.Values)
                 view.Dispose();
             Views.Clear();
+            SampledDescriptor?.Dispose();
             Resource.Dispose();
         }
     }

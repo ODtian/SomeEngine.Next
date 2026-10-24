@@ -3,19 +3,16 @@
     <RootNamespace>DefaultGame</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
-    <ProjectReference Include="SceneContent/DefaultGame.SceneContent.csproj" Condition="'$(SomeEngineDevelopment)' == 'true'" />
+    <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+    <ProjectReference Include="SceneContent/DefaultGame.SceneContent.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" Condition="'$(SomeEngineDevelopment)' == 'true'" />
     <Compile Remove="SceneContent/**/*.cs" />
-    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <Compile Remove="Content/**/*.cs" Condition="'$(SomeEngineDevelopment)' != 'true'" />
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="../../assets/Fonts/Example.otf" LogicalName="DefaultGame.Fonts.Example.otf" />
   </ItemGroup>
   <Target Name="WriteTestScenes" AfterTargets="Build">
     <PropertyGroup>
       <_TestSceneDirectory>$([System.String]::Copy('$(SomeEnginePath)/samples/ImportedScenes/Apps').Replace('\', '/'))</_TestSceneDirectory>
-      <_TestScenes>[{&quot;Name&quot;:&quot;1024 spheres&quot;,&quot;ContentDirectory&quot;:&quot;.&quot;,&quot;Animate&quot;:true},{&quot;Name&quot;:&quot;Sponza&quot;,&quot;ContentDirectory&quot;:&quot;$(_TestSceneDirectory)/Sponza&quot;},{&quot;Name&quot;:&quot;Amazon Bistro&quot;,&quot;ContentDirectory&quot;:&quot;$(_TestSceneDirectory)/Bistro&quot;}]</_TestScenes>
+      <_TestScenes>[{&quot;Name&quot;:&quot;1024 spheres&quot;,&quot;ContentDirectory&quot;:&quot;.&quot;,&quot;Animate&quot;:true,&quot;MeasurementFrames&quot;:{&quot;FirstFrame&quot;:2048,&quot;FrameCount&quot;:1024}},{&quot;Name&quot;:&quot;Sponza&quot;,&quot;ContentDirectory&quot;:&quot;$(_TestSceneDirectory)/Sponza&quot;,&quot;MeasurementFrames&quot;:{&quot;FirstFrame&quot;:2048,&quot;FrameCount&quot;:1024}},{&quot;Name&quot;:&quot;Amazon Bistro&quot;,&quot;ContentDirectory&quot;:&quot;$(_TestSceneDirectory)/Bistro&quot;,&quot;MeasurementFrames&quot;:{&quot;FirstFrame&quot;:2048,&quot;FrameCount&quot;:1024}}]</_TestScenes>
     </PropertyGroup>
     <WriteLinesToFile File="$(TargetDir)test-scenes.json" Lines="$(_TestScenes)" Overwrite="true" WriteOnlyWhenDifferent="true" />
   </Target>

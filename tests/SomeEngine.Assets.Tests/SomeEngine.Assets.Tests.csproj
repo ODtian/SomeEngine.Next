@@ -49,4 +49,7 @@
     <Using Include="SomeEngine.Resources" />
     <Using Include="SomeEngine.Assets.Schema" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="Content/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

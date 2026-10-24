@@ -29,4 +29,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../SomeEngine.Assets.Tests/AssetImportTestSetup.cs" Link="AssetImportTestSetup.cs" />
+  </ItemGroup>
 </Project>

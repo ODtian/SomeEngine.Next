@@ -1,3 +1,4 @@
+using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -12,13 +13,20 @@ public struct GpuPoseTarget : IComponent
     public SkeletonInstance Skeleton;
     public QuantizedClipData? Clip;
     public GpuPoseStateMachine? StateMachine;
+    public GpuPoseBlend? Blend;
+    public GpuPoseRig? Rig;
+    public Vector3 ModelOffset;
     public float[]? Controls;
     public float PlaybackTime;
     public bool Playing;
     public float SampleTime;
     public double CalculationTime;
     public uint Starts;
+    /// <summary>The graph installation's start marker, retained across nested motion entries.</summary>
+    public uint AnimationStarts;
     public ulong InputNumber;
+    public CpuBoneDemand? CpuBones;
+    public ReadOnlyMemory<GpuPoseReadbackRequest> Readbacks { get; internal set; }
 }
 
 public readonly record struct GpuClipParameters(QuantizedClipData Clip, bool Loop = false);
@@ -54,8 +62,11 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
         GpuPoseTarget output = world.Read<GpuPoseTarget>(target);
         output.Clip = definitions.Parameters[index].Clip;
         output.StateMachine = null;
+        output.Blend = null;
+        output.Rig = null;
         output.SampleTime = 0;
         output.Starts = placement.Starts;
+        output.AnimationStarts = placement.Starts;
         world.Replace(target, output);
     }
 
@@ -63,16 +74,23 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
         world.ExecuteBufferWrite<GpuClipInstance>(animation, static instances => instances.Clear());
 }
 
-public static class GpuPoseAnimation
+public static partial class GpuPoseAnimation
 {
-    public static Entity CreateTarget(World world, SkeletonInstance skeleton) =>
-        world.CreateEntity(new GpuPoseTarget { Skeleton = skeleton });
+    public static Entity CreateTarget(World world, SkeletonInstance skeleton)
+    {
+        Entity target = world.CreateEntity(new GpuPoseTarget { Skeleton = skeleton });
+        CpuBoneDemands.For(world).Changed = true;
+        return target;
+    }
 
     public static void AddSystems(SystemGroup<ImmediateSystemContext> systems)
     {
-        AnimationSystems.Add(systems, new GpuPoseFrameSystem(), AnimationPhase.Composition);
-        AnimationSystems.Add(systems, new GpuClipSystem(), AnimationPhase.Composition);
-        AnimationSystems.Add(systems, new GpuStateSystem(), AnimationPhase.Composition);
+        AnimationSystems.Add(systems, new GpuPoseFrameSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuClipSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuStateSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuBlendSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuRigSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new CpuBoneSystem(), AnimationPhase.Completion);
     }
 }
 
@@ -124,6 +142,8 @@ internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
                 GpuPoseTarget output = world.Read<GpuPoseTarget>(instance.Target);
                 output.Clip = parameters.Clip;
                 output.StateMachine = null;
+                output.Blend = null;
+                output.Rig = null;
                 output.SampleTime = parameters.Loop ? elapsed % parameters.Clip.Duration : elapsed;
                 output.Starts = time.Starts;
                 world.Replace(instance.Target, output);

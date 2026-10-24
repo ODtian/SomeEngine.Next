@@ -25,7 +25,7 @@ public sealed partial class ClusterRenderResources
     }
 
     internal ClusterGpuAllocation GetGpu(ClusterGeometry geometry) => _residency.GetGpu(geometry);
-    internal ClusterResidencyBinding GpuBuffers => _residency.GetBinding();
+    internal ClusterGeometryBuffers GeometryBuffers => _residency.GeometryBuffers;
 
     internal RenderFrameUseLease UseGpu(RenderFrame frame)
     {

@@ -21,7 +21,7 @@ bool WorldAabbOutsideFrustum(
             (index & 1u) != 0u ? worldMax.x : worldMin.x,
             (index & 2u) != 0u ? worldMax.y : worldMin.y,
             (index & 4u) != 0u ? worldMax.z : worldMin.z);
-        float4 clip = mul(float4(corner, 1.0), viewProjection);
+        float4 clip = mul(float4(corner + (usePrev ? view.PreviousWorldTranslation : view.WorldTranslation), 1.0), viewProjection);
         allLeft = allLeft && clip.x < -clip.w;
         allRight = allRight && clip.x > clip.w;
         allBottom = allBottom && clip.y < -clip.w;
@@ -56,7 +56,7 @@ void BuildWorldAabbScreenBoundsAndNearDepth(
             (index & 1u) != 0u ? worldMax.x : worldMin.x,
             (index & 2u) != 0u ? worldMax.y : worldMin.y,
             (index & 4u) != 0u ? worldMax.z : worldMin.z);
-        float4 clip = mul(float4(corner, 1.0), viewProjMat);
+        float4 clip = mul(float4(corner + (usePrev ? view.PreviousWorldTranslation : view.WorldTranslation), 1.0), viewProjMat);
         if (clip.w <= 1e-5 || clip.z < 0.0)
         {
             touchesNearPlane = true;

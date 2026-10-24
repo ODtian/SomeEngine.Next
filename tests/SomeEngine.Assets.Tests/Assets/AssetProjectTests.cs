@@ -23,7 +23,7 @@ public sealed class AssetProjectTests
 
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             await project.BuildAsync("assets/Shaders/simple.shader");
 
             ShaderAsset? first = await OpenResolvedShaderAsync(project, "assets/Shaders/simple.shader", "shader:main");
@@ -49,7 +49,7 @@ public sealed class AssetProjectTests
 
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
 
             ShaderAsset? loaded = await OpenResolvedShaderAsync(project, "assets/Shaders/not_imported.shader", "shader:main");
 
@@ -104,7 +104,7 @@ public sealed class AssetProjectTests
 
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             await project.BuildAsync("assets/Shaders/reimport.shader");
 
             ShaderAsset? first = await OpenResolvedShaderAsync(project, "assets/Shaders/reimport.shader", "shader:main");
@@ -140,7 +140,7 @@ public sealed class AssetProjectTests
 
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             await project.BuildAsync("assets/Shaders/deterministic.shader");
             ShaderAsset? first = await OpenResolvedShaderAsync(project, "assets/Shaders/deterministic.shader", "shader:main");
             Assert.NotNull(first);
@@ -176,7 +176,7 @@ public sealed class AssetProjectTests
             };
             await savedMaterial.SaveAsync(materialPath);
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             using var materialFile = await MaterialAsset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/test.material.asset"));
             project.RegisterAsset(materialFile.Describe());
             MaterialAsset? asset = await OpenMaterialAsync(project, materialGuid);
@@ -217,7 +217,7 @@ public sealed class AssetProjectTests
                 MaterialAsset.SchemaHash);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
 
             await Assert.ThrowsAsync<InvalidDataException>(async () =>
                 await OpenMaterialAsync(project, manifestGuid));
@@ -265,7 +265,7 @@ public sealed class AssetProjectTests
                 "shader:main");
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
 
             ShaderAsset? root = await OpenShaderAsync(project, shaderGuid);
             Assert.NotNull(root);
@@ -285,7 +285,7 @@ public sealed class AssetProjectTests
 
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             const string path = "assets/Materials/created.material.asset";
 
             using var first = new StandardMaterialAsset
@@ -344,7 +344,7 @@ public sealed class AssetProjectTests
                 MaterialAsset.SchemaHash);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             using var replacement = new StandardMaterialAsset(staleGuid) {
                 Name = "Reconciled",
             };
@@ -378,7 +378,7 @@ public sealed class AssetProjectTests
             manifest.AddAsset(meshGuid, "MeshA", "assets/Meshes/a.mesh.asset", MeshAsset.FileType, MeshAsset.SchemaHash, dependencies: [materialGuid]);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             IReadOnlyList<AssetEntry> materials = project.List(MaterialAsset.FileType);
 
             Assert.Single(materials);
@@ -441,7 +441,7 @@ public sealed class AssetProjectTests
             manifest.AddAsset(materialGuid, "DanglingMaterial", "assets/Materials/dangling.material.asset", MaterialAsset.FileType, MaterialAsset.SchemaHash, dependencies: [missingTextureGuid]);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             IReadOnlyList<AssetDiagnostic> diagnostics = project.Validate();
 
             Assert.Contains(diagnostics, static diagnostic => diagnostic.Kind == AssetDiagnosticKind.OrphanSourceMeta);
@@ -464,7 +464,7 @@ public sealed class AssetProjectTests
 
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
 
             Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "imported.material.asset");
@@ -502,7 +502,7 @@ public sealed class AssetProjectTests
             };
             await savedMaterial.SaveAsync(materialPath);
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             MaterialAsset? loaded = await OpenResolvedMaterialAsync(project, "assets/Materials/lazy.material.asset");
 
             Assert.Null(loaded);
@@ -519,7 +519,7 @@ public sealed class AssetProjectTests
         string dir = CreateTempDir();
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             Assert.Empty(project.List(MaterialAsset.FileType));
             Assert.Empty(project.List(ShaderAsset.FileType));
         }
@@ -532,7 +532,7 @@ public sealed class AssetProjectTests
         string dir = CreateTempDir();
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             MaterialAsset? result = await OpenMaterialAsync(project, Guid.NewGuid());
             Assert.Null(result);
         }
@@ -545,7 +545,7 @@ public sealed class AssetProjectTests
         string dir = CreateTempDir();
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             Assert.Null(project.Resolve("assets/Materials/nonexistent.material.asset"));
         }
         finally { Directory.Delete(dir, true); }
@@ -557,7 +557,7 @@ public sealed class AssetProjectTests
         string dir = CreateTempDir();
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             Assert.Empty(project.GetDependencies(Guid.NewGuid()));
         }
         finally { Directory.Delete(dir, true); }
@@ -569,7 +569,7 @@ public sealed class AssetProjectTests
         string dir = CreateTempDir();
         try
         {
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             Assert.Empty(project.GetReferencers(Guid.NewGuid()));
         }
         finally { Directory.Delete(dir, true); }
@@ -589,7 +589,7 @@ public sealed class AssetProjectTests
             };
             await savedMaterial.SaveAsync(path);
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             using var firstFile = await MaterialAsset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/dup.material.asset"));
             project.RegisterAsset(firstFile.Describe());
             using var secondFile = await MaterialAsset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/dup.material.asset"));
@@ -616,7 +616,7 @@ public sealed class AssetProjectTests
             await firstMaterial.SaveAsync(p1);
             await secondMaterial.SaveAsync(p2);
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             using var firstFile = await MaterialAsset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/a.material.asset"));
             project.RegisterAsset(firstFile.Describe());
             using var secondFile = await MaterialAsset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/b.material.asset"));
@@ -645,7 +645,7 @@ public sealed class AssetProjectTests
                 MaterialAsset.SchemaHash);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             IReadOnlyList<AssetDiagnostic> diagnostics = project.Validate();
 
             Assert.Contains(diagnostics, d => d.Kind == AssetDiagnosticKind.MissingAssetFile && d.AssetGuid == guid);
@@ -669,7 +669,7 @@ public sealed class AssetProjectTests
                 MaterialAsset.SchemaHash);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             Assert.Single(project.List(MaterialAsset.FileType));
             Assert.Equal(guid, project.Resolve("assets/Materials/pre.material.asset"));
         }
@@ -690,7 +690,7 @@ public sealed class AssetProjectTests
             };
             await savedMaterial.SaveAsync(path);
 
-            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat()]);
+            AssetProject project = new AssetProject(dir, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()]);
             Assert.Null(project.Resolve("assets/Materials/lazy2.material.asset"));
 
             MaterialAsset? loaded = await OpenResolvedMaterialAsync(project, "assets/Materials/lazy2.material.asset");

@@ -86,12 +86,14 @@ public readonly record struct PassOptions(
 {
     /// <summary>Ends this queue's submission after the pass so its result can be observed earlier.</summary>
     public bool SubmitAfter { get; init; }
+    public string? TimeGroup { get; init; }
 }
 
 public readonly record struct RenderGraphFrameOptions(
     FrameSubmissionMode SubmissionMode = FrameSubmissionMode.Pipelined,
     RenderGraphDebugOptions Debug = RenderGraphDebugOptions.None,
-    RenderGraphDiagnosticsHandler? Diagnostics = null);
+    RenderGraphDiagnosticsHandler? Diagnostics = null,
+    Action<RenderGraphGpuTimes>? GpuTimes = null);
 
 public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
 {
@@ -131,11 +133,12 @@ public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
     /// <summary>
     /// Allows any registered queue that supports the pass commands, preferring
     /// fewer transfers from predecessor queues before comparing available time.
+    /// Compatible pass chains also prefer the queues requested by their consumers.
     /// </summary>
     public static PassQueueSelection AnyCompatible() => new(null, default, false, true);
 }
 
-public readonly record struct BufferBoundaryState(
+public record struct BufferBoundaryState(
     BufferRange Range,
     PipelineSync Sync,
     ResourceAccess Access,
@@ -143,9 +146,27 @@ public readonly record struct BufferBoundaryState(
     Queue? Queue = null,
     QueueCompletion? ReadyAfter = null,
     BufferContentScope ContentScope = BufferContentScope.FullRange,
-    Queue? ReleasedTo = null);
+    Queue? ReleasedTo = null)
+{
+    public BufferRange Range { get; init; } = Range;
+    public PipelineSync Sync { get; init; } = Sync;
+    public ResourceAccess Access { get; init; } = Access;
+    public ResourceContentState Contents { get; init; } = Contents;
+    public Queue? Queue { get; init; } = Queue;
+    public BufferContentScope ContentScope { get; init; } = ContentScope;
+    public Queue? ReleasedTo { get; init; } = ReleasedTo;
 
-public readonly record struct TextureBoundaryState(
+    private QueueCompletion? _readyAfter = ReadyAfter;
+    public QueueCompletion? ReadyAfter
+    {
+        readonly get => _readyAfter;
+        init => _readyAfter = value;
+    }
+
+    internal void SetCompletion(QueueCompletion? completion) => _readyAfter = completion;
+}
+
+public record struct TextureBoundaryState(
     TextureSubresourceRange Range,
     PipelineSync Sync,
     ResourceAccess Access,
@@ -154,7 +175,26 @@ public readonly record struct TextureBoundaryState(
     Queue? Queue = null,
     QueueCompletion? ReadyAfter = null,
     Queue? ReleasedTo = null,
-    TextureSubresourceRange? ReleaseRange = null);
+    TextureSubresourceRange? ReleaseRange = null)
+{
+    public TextureSubresourceRange Range { get; init; } = Range;
+    public PipelineSync Sync { get; init; } = Sync;
+    public ResourceAccess Access { get; init; } = Access;
+    public TextureLayout Layout { get; init; } = Layout;
+    public ResourceContentState Contents { get; init; } = Contents;
+    public Queue? Queue { get; init; } = Queue;
+    public Queue? ReleasedTo { get; init; } = ReleasedTo;
+    public TextureSubresourceRange? ReleaseRange { get; init; } = ReleaseRange;
+
+    private QueueCompletion? _readyAfter = ReadyAfter;
+    public QueueCompletion? ReadyAfter
+    {
+        readonly get => _readyAfter;
+        init => _readyAfter = value;
+    }
+
+    internal void SetCompletion(QueueCompletion? completion) => _readyAfter = completion;
+}
 
 public readonly record struct QueryRange(uint FirstQuery, uint QueryCount);
 
@@ -194,11 +234,14 @@ public enum GraphAccessMode : byte
 /// Describes whether overlapping unordered-access writes require an execution order.
 /// AtomicMergeable is a strong caller contract: every write is an atomic, associative,
 /// commutative reduction into the existing value, so peer passes may execute in either order.
+/// DisjointWrites promises that written bytes or texels are separate from every peer
+/// unordered writer's accesses. Readers wait for every writer in either mode.
 /// </summary>
 public enum UnorderedAccessHazardMode : byte
 {
     Ordered,
     AtomicMergeable,
+    DisjointWrites,
 }
 
 internal static class UnorderedAccessHazardRules
@@ -216,6 +259,15 @@ internal static class UnorderedAccessHazardRules
             throw new ArgumentOutOfRangeException(nameof(hazards));
         if (hazards == UnorderedAccessHazardMode.Ordered)
             return;
+        if (hazards == UnorderedAccessHazardMode.DisjointWrites)
+        {
+            if (mode == GraphAccessMode.Write && coverage == WriteCoverage.Partial &&
+                access == ResourceAccess.UnorderedAccess &&
+                resultContents is null or ResourceContentState.Defined &&
+                layout is TextureLayout.Undefined or TextureLayout.UnorderedAccess)
+                return;
+            throw new ArgumentException("Disjoint writes require a partial UAV write in UnorderedAccess layout.");
+        }
         if (mode != GraphAccessMode.ReadWrite ||
             coverage != WriteCoverage.Partial ||
             access != ResourceAccess.UnorderedAccess ||

@@ -57,6 +57,7 @@ internal static class ImportingSmoke
                     // The dependent conversion is deliberately selected first.
                     context.EnableImporter<SmokeImportSource, MeshAsset>(imports[labelId].Bind<SmokeImportSource>(scope.ServiceProvider, settings));
                     context.EnableImporter<SmokeImportSource, MeshAsset>(imports[numberId].Bind<SmokeImportSource>(scope.ServiceProvider, settings));
+                    context.AddAsset(source, new MeshAsset(context.GetAssetId("mesh")) { Name = source.Label }, "mesh", path);
                     Task<MeshAsset>[] requests = Enumerable.Range(0, 24)
                         .Select(_ => context.GetAssetAsync<SmokeImportSource, MeshAsset>(source).AsTask()).ToArray();
                     MeshAsset[] results = await Task.WhenAll(requests).ConfigureAwait(false);
@@ -78,7 +79,11 @@ internal static class ImportingSmoke
                     conflict.EnableImporter<SmokeImportSource, MeshAsset>(imports[numberId].Bind<SmokeImportSource>(scope.ServiceProvider, settings));
                     conflict.EnableImporter<SmokeImportSource, MeshAsset>(imports[alternativeId].Bind<SmokeImportSource>(scope.ServiceProvider, settings));
                     bool rejected = false;
-                    try { await conflict.GetAssetAsync<SmokeImportSource, MeshAsset>(source); }
+                    try
+                    {
+                        conflict.AddAsset(source, new MeshAsset(conflict.GetAssetId("mesh")) { Name = source.Label }, "mesh", path);
+                        await conflict.GetAssetAsync<SmokeImportSource, MeshAsset>(source);
+                    }
                     catch (InvalidOperationException) { rejected = true; }
                     Check(rejected, "Competing producers were accepted.");
                 }
@@ -99,9 +104,7 @@ internal static class ImportingSmoke
         ImportContext CreateContext()
         {
             var metadata = new SourceMeta { SourceGuid = SourceGuid.New(), ElementIds = new() { ["mesh"] = assetId } };
-            var context = new ImportContext(directory, "", metadata);
-            context.ConfigureAssets<SmokeImportSource, MeshAsset>(new SmokeMeshSource());
-            return context;
+            return new ImportContext(directory, "", metadata);
         }
     }
 

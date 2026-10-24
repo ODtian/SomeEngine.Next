@@ -42,7 +42,7 @@ public static class SampleApplication
         if (args.Contains("--gpu-cluster", StringComparer.Ordinal))
         {
             using GpuClusterExample example = await GpuClusterExample.CreateAsync(ProjectPaths.Root);
-            using var material = new UnlitMaterial { BaseColorTint = new(1, 0, 0, 1) };
+            var material = new UnlitMaterial { BaseColorTint = new(1, 0, 0, 1) };
             example.SetMaterial(material);
             // Grid density, dimensions and the update frame are example data.
             example.SetGrid(32, new(2, 2));
@@ -63,13 +63,28 @@ public static class SampleApplication
             return await Application.RunAsync(args, application: scene);
         }
 #endif
+        RuntimeStartupOptions startupOptions = RuntimeStartupOptions.Parse(args);
+        string? clusterEffect = args.FirstOrDefault(static value => value.StartsWith("--cluster-effect=", StringComparison.Ordinal))
+            ?["--cluster-effect=".Length..] ?? (args.Contains("--cluster-oit", StringComparer.Ordinal) ? "glass" : null);
+        ClusterBlendAssets? clusterAssets = clusterEffect is null ? null
+            : await ClusterBlendAssets.OpenAsync(AppContext.BaseDirectory, startupOptions.GraphicsBackend);
+        ClusterBlendScene? clusterScene = clusterAssets is null ? null : new(clusterAssets, clusterEffect!);
         var scenes = SceneTestPlatform.ReadScenes(Path.Combine(AppContext.BaseDirectory, "test-scenes.json"));
         var platform = new SceneTestPlatform(scenes.Select(scene => scene with
         {
             ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
-        }).ToArray(), RuntimeStartupOptions.Parse(args))
+        }).ToArray(), startupOptions)
         {
             StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
+            InitializeScene = clusterScene is null ? null : clusterScene.Initialize,
+            UpdateScene = clusterScene is null || args.Contains("--cluster-static", StringComparer.Ordinal) ? null : clusterScene.Update,
+            ColorFeatureSettings = clusterScene is null ? null : new Dictionary<string, string>
+            {
+                ["Effect"] = clusterScene.Effect,
+                ["Workload"] = clusterScene.Workload,
+                ["Method"] = "Cluster",
+                ["Candidates"] = startupOptions.BlendIndex.ToString(),
+            },
         };
         return await Application.RunAsync<SampleSceneMaterials>(args, static (material, seconds) =>
         {

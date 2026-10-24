@@ -11,12 +11,16 @@ public readonly struct BonePose
     public SkeletonInstance Instance => _sources[_bone].Instance;
     public int BoneIndex => _sources[_bone].Bone;
     public Matrix4x4 Transform => _sources[_bone].Transform;
-    public ulong Version => Instance.Version;
-    public double Time => Instance.Time;
-    public double SampleTime => Instance.SampleTime;
+    public PoseCalculation Calculation => Instance.Calculations[BoneIndex];
+    public ulong Version => Calculation.Version;
+    public double Time => Calculation.Time;
+    public double SampleTime => Calculation.SampleTime;
 
     internal BonePose(BoneSource[] sources, int bone) { _sources = sources; _bone = bone; }
 }
+
+/// <summary>The version, calculation time and local-source time of one stored model matrix.</summary>
+public readonly record struct PoseCalculation(ulong Version, double Time, double SampleTime);
 
 internal readonly record struct BoneSource(SkeletonInstance Instance, int Bone)
 {

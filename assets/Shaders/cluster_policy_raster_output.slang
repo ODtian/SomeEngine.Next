@@ -3,16 +3,23 @@
 
 #include "cluster_raster_shared.slang"
 #include "cluster_visibility_raster_output.slang"
+#define CLUSTER_TARGET_DEPTH_CACHE 1
 #include "cluster_raster_target_output.slang"
+#include "cluster_instance_properties.slang"
 
-StructuredBuffer<uint2> VisibleClusterRasterWindows;
+ByteAddressBuffer RasterOutputInstanceData;
+ConstantBuffer<RenderInstancePropertyMetadata> RasterOutputInstanceProperties;
+uint RasterOutputDepthCacheClass(uint visibleIndex)
+{
+    return LoadTargetDepthCacheClass(VisibleClusterRequest(RasterOutputVisibleClusters[visibleIndex]).InstanceID);
+}
 
 uint2 ClusterRasterTargetPixelOrigin(uint visibleClusterIndex, ClusterViewUniforms view)
 {
     if (view.TargetPolicy == 0u) return 0u.xx;
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
     if (target.RasterWindowPages == 0u) return 0u.xx;
-    return ClusterUnpackRasterTargetPageWindow(VisibleClusterRasterWindows[visibleClusterIndex]).xy * target.PageSize;
+    return ClusterUnpackRasterTargetPageWindow(VisibleClusterRasterWindow(RasterOutputVisibleClusters[visibleClusterIndex])).xy * target.PageSize;
 }
 
 float4 ClusterHardwareRasterPosition(float4 clip, uint visibleClusterIndex,
@@ -22,6 +29,8 @@ float4 ClusterHardwareRasterPosition(float4 clip, uint visibleClusterIndex,
     float2 origin = float2(ClusterRasterTargetPixelOrigin(visibleClusterIndex, view));
     clip.xy = clip.xy * scale + clip.w * (float2(scale.x - 1.0, 1.0 - scale.y) +
         float2(-2.0, 2.0) * origin / rasterSize);
+    if (!ClusterViewClipsDepth(view))
+        clip.z = 0.5 * clip.w;
     return clip;
 }
 
@@ -45,13 +54,89 @@ bool ClusterRasterTargetWindowContainsPixel(
         return false;
     ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
     uint4 pageWindow = ClusterUnpackRasterTargetPageWindow(
-        VisibleClusterRasterWindows[visibleClusterIndex]);
+        VisibleClusterRasterWindow(RasterOutputVisibleClusters[visibleClusterIndex]));
     uint2 localPage = uint2(pixel) / target.PageSize;
     return all(localPage >= pageWindow.xy) && all(localPage <= pageWindow.zw);
 }
 
+bool ClusterRasterOutputAcceptsPage(int2 pixel, uint targetViewIndex,
+    uint visibleClusterIndex, bool accepted)
+{
+    if (accepted && (RasterOutputVisibleClusters[visibleClusterIndex].PageAndFlags & 2u) != 0u)
+    {
+        ClusterRasterTargetView target = RasterTargetViews[targetViewIndex];
+        uint tableIndex = ClusterRasterTargetTableIndex(target, uint2(pixel) / target.PageSize);
+        accepted = (RasterTargetPageTable[tableIndex] & VSM_PAGE_PRIMARY) != 0u;
+    }
+    return accepted;
+}
+
+bool ResolveClusterRasterOutputPixel(int2 pixel, uint targetPolicy, uint targetViewIndex,
+    uint visibleClusterIndex, out ClusterRasterOutputPixel outputPixel)
+{
+    outputPixel.Position = pixel;
+    outputPixel.DepthCacheClass = 0u;
+    if (targetPolicy == 0u)
+        return true;
+
+    outputPixel.DepthCacheClass = RasterOutputDepthCacheClass(visibleClusterIndex);
+    uint2 targetPixel;
+    bool accepted = ResolveRasterTargetPixel(pixel, targetViewIndex, targetPixel, outputPixel.DepthCacheClass);
+    outputPixel.Position = int2(targetPixel);
+    return ClusterRasterOutputAcceptsPage(pixel, targetViewIndex, visibleClusterIndex, accepted);
+}
+
+// Keep workgroup cache access out of the hardware entry point static call graph.
+bool ResolveCachedClusterRasterOutputPixel(int2 pixel, uint targetPolicy, uint targetViewIndex,
+    uint visibleClusterIndex, out ClusterRasterOutputPixel outputPixel)
+{
+    outputPixel.Position = pixel;
+    outputPixel.DepthCacheClass = 0u;
+    if (targetPolicy == 0u)
+        return true;
+
+    outputPixel.DepthCacheClass = RasterOutputDepthCacheClass(visibleClusterIndex);
+    uint2 targetPixel;
+    bool accepted = ResolveCachedRasterTargetPixel(pixel, targetViewIndex, targetPixel, outputPixel.DepthCacheClass);
+    outputPixel.Position = int2(targetPixel);
+    return ClusterRasterOutputAcceptsPage(pixel, targetViewIndex, visibleClusterIndex, accepted);
+}
+
+bool ResolveClusterHardwareRasterPixel(int2 pixel, uint visibleClusterIndex,
+    ClusterViewUniforms view, out ClusterRasterOutputPixel outputPixel)
+{
+    outputPixel.Position = pixel;
+    outputPixel.DepthCacheClass = 0u;
+    if (view.TargetPolicy != 0u && !ClusterRasterTargetWindowContainsPixel(
+            visibleClusterIndex, view.TargetViewIndex, pixel))
+        return false;
+    return ResolveClusterRasterOutputPixel(pixel, view.TargetPolicy, view.TargetViewIndex,
+        visibleClusterIndex, outputPixel);
+}
+
+bool ClusterRasterQuadAcceptsPixel(bool accepted)
+{
+    // Keep every lane of an accepted quad active during user derivative evaluation.
+    uint value = accepted ? 1u : 0u;
+    return (value | QuadReadAcrossX(value) | QuadReadAcrossY(value) |
+        QuadReadAcrossDiagonal(value)) != 0u;
+}
+
+uint ReadClusterRasterTargetDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, bool accepted = true)
+{
+    if (targetPolicy == 0u || !accepted)
+        return 0u;
+    return ReadRasterTargetPixelDepth(uint2(pixel.Position), pixel.DepthCacheClass);
+}
+
 struct ClusterRasterOutputImageAtomic64 : IClusterRasterOutput
 {
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, uint targetViewIndex)
+    {
+        return targetPolicy != 0u ? ReadClusterRasterTargetDepth(pixel, targetPolicy)
+            : uint(VisibilityWinnerImage[uint3(pixel.Position, targetViewIndex)] >> 32u);
+    }
+
     int4 scissor(
         uint visibleClusterIndex,
         uint targetPolicy,
@@ -68,8 +153,15 @@ struct ClusterRasterOutputImageAtomic64 : IClusterRasterOutput
             screenHeight);
     }
 
+    bool resolvePixel(int2 pixel, uint targetPolicy, uint targetViewIndex,
+        uint visibilityValue, out ClusterRasterOutputPixel outputPixel)
+    {
+        return ResolveCachedClusterRasterOutputPixel(pixel, targetPolicy, targetViewIndex,
+            DecodeVisBufferVisibleClusterIndex(visibilityValue), outputPixel);
+    }
+
     void write(
-        int2 pixel,
+        ClusterRasterOutputPixel pixel,
         uint viewIndex,
         uint targetPolicy,
         uint targetViewIndex,
@@ -78,12 +170,10 @@ struct ClusterRasterOutputImageAtomic64 : IClusterRasterOutput
     {
         if (targetPolicy == 0u)
         {
-            WriteVisibilityWinnerImage(pixel, targetViewIndex, depth, visibilityValue);
+            WriteVisibilityWinnerImage(pixel.Position, targetViewIndex, depth, visibilityValue);
             return;
         }
-        if (WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth))
-            return;
-        WriteRasterTargetDepth(pixel, targetViewIndex, depth);
+        WriteRasterTargetPixelDepth(uint2(pixel.Position), depth, pixel.DepthCacheClass);
     }
 };
 
@@ -91,6 +181,12 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
 {
     uint Width;
     uint Height;
+
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, uint targetViewIndex)
+    {
+        return targetPolicy != 0u ? ReadClusterRasterTargetDepth(pixel, targetPolicy)
+            : VisibilityWinnerBuffer.Load(((targetViewIndex * Height + uint(pixel.Position.y)) * Width + uint(pixel.Position.x)) * 8u + 4u);
+    }
 
     int4 scissor(
         uint visibleClusterIndex,
@@ -108,8 +204,15 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
             screenHeight);
     }
 
+    bool resolvePixel(int2 pixel, uint targetPolicy, uint targetViewIndex,
+        uint visibilityValue, out ClusterRasterOutputPixel outputPixel)
+    {
+        return ResolveCachedClusterRasterOutputPixel(pixel, targetPolicy, targetViewIndex,
+            DecodeVisBufferVisibleClusterIndex(visibilityValue), outputPixel);
+    }
+
     void write(
-        int2 pixel,
+        ClusterRasterOutputPixel pixel,
         uint viewIndex,
         uint targetPolicy,
         uint targetViewIndex,
@@ -119,7 +222,7 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
         if (targetPolicy == 0u)
         {
             WriteVisibilityWinnerBuffer(
-                pixel,
+                pixel.Position,
                 targetViewIndex,
                 Width,
                 Height,
@@ -127,26 +230,76 @@ struct ClusterRasterOutputBufferAtomic64 : IClusterRasterOutput
                 visibilityValue);
             return;
         }
-        if (WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth))
-            return;
-        WriteRasterTargetDepth(pixel, targetViewIndex, depth);
+        WriteRasterTargetPixelDepth(uint2(pixel.Position), depth, pixel.DepthCacheClass);
+    }
+};
+
+// A dicing wave can contain patches from different windows/views. Its patches
+// cannot share the ordinary one-window group cache; resolve each target tap
+// through the same requested-page/receiver-aware writer instead.
+struct ClusterDicedRasterOutput<TPrimary : IClusterRasterOutput> : IClusterRasterOutput
+{
+    TPrimary Primary;
+
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, uint targetViewIndex)
+    {
+        return targetPolicy == 0u ? Primary.readDepth(pixel, targetPolicy, targetViewIndex)
+            : ReadClusterRasterTargetDepth(pixel, targetPolicy);
+    }
+
+    int4 scissor(uint visibleClusterIndex, uint targetPolicy, uint targetViewIndex,
+        uint screenWidth, uint screenHeight)
+    {
+        if (targetPolicy == 0u)
+            return Primary.scissor(visibleClusterIndex, targetPolicy, targetViewIndex, screenWidth, screenHeight);
+        return RasterTargetWindowScissor(ClusterUnpackRasterTargetPageWindow(
+            VisibleClusterRasterWindow(RasterOutputVisibleClusters[visibleClusterIndex])), RasterTargetViews[targetViewIndex]);
+    }
+
+    bool resolvePixel(int2 pixel, uint targetPolicy, uint targetViewIndex,
+        uint visibilityValue, out ClusterRasterOutputPixel outputPixel)
+    {
+        if (targetPolicy == 0u)
+            return Primary.resolvePixel(pixel, targetPolicy, targetViewIndex, visibilityValue, outputPixel);
+        return ResolveClusterRasterOutputPixel(pixel, targetPolicy, targetViewIndex,
+            DecodeVisBufferVisibleClusterIndex(visibilityValue), outputPixel);
+    }
+
+    void write(ClusterRasterOutputPixel pixel, uint viewIndex, uint targetPolicy, uint targetViewIndex,
+        float depth, uint visibilityValue)
+    {
+        if (targetPolicy == 0u)
+            Primary.write(pixel, viewIndex, targetPolicy, targetViewIndex, depth, visibilityValue);
+        else
+            WriteRasterTargetPixelDepth(uint2(pixel.Position), depth, pixel.DepthCacheClass);
     }
 };
 
 // This output is selected only for a raster stream whose views target depth pages.
 struct ClusterRasterOutputTarget : IClusterRasterOutput
 {
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, uint targetViewIndex)
+    {
+        return ReadClusterRasterTargetDepth(pixel, targetPolicy);
+    }
+
     int4 scissor(uint visibleClusterIndex, uint targetPolicy, uint targetViewIndex,
         uint screenWidth, uint screenHeight)
     {
         return PrepareRasterTargetScissor(visibleClusterIndex, targetViewIndex, screenWidth, screenHeight);
     }
 
-    void write(int2 pixel, uint viewIndex, uint targetPolicy, uint targetViewIndex,
+    bool resolvePixel(int2 pixel, uint targetPolicy, uint targetViewIndex,
+        uint visibilityValue, out ClusterRasterOutputPixel outputPixel)
+    {
+        return ResolveCachedClusterRasterOutputPixel(pixel, targetPolicy, targetViewIndex,
+            DecodeVisBufferVisibleClusterIndex(visibilityValue), outputPixel);
+    }
+
+    void write(ClusterRasterOutputPixel pixel, uint viewIndex, uint targetPolicy, uint targetViewIndex,
         float depth, uint visibilityValue)
     {
-        if (!WriteCachedRasterTargetDepth(pixel, targetViewIndex, depth))
-            WriteRasterTargetDepth(pixel, targetViewIndex, depth);
+        WriteRasterTargetPixelDepth(uint2(pixel.Position), depth, pixel.DepthCacheClass);
     }
 };
 

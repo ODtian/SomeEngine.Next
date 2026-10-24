@@ -18,6 +18,10 @@ internal sealed class ClusterPipelineSet : IDisposable
         .Count(static role => role != ClusterShaderOperationRole.None);
 
     private readonly List<ClusterPipeline> _pipelines = [];
+    private readonly Dictionary<(bool TargetFilters, bool MultipleViews), ClusterComputePipeline> _traversals = [];
+    private readonly Func<bool, bool, ClusterComputePipeline> _createTraversal;
+    private readonly Dictionary<bool, ClusterComputePipeline> _shadeCounts = [];
+    private readonly Func<bool, ClusterComputePipeline> _createShadeCount;
     private bool _disposed;
 
     internal ClusterPipelineSet(
@@ -41,8 +45,9 @@ internal sealed class ClusterPipelineSet : IDisposable
             ClusterComputePipeline Compute(
                 ClusterShaderOperationRole role,
                 string name,
-                string? entryPoint = null) =>
-                CreateCompute(backend, device, operations, _pipelines, role, name, entryPoint);
+                string? entryPoint = null,
+                string[]? specializations = null) =>
+                CreateCompute(backend, device, operations, _pipelines, role, name, entryPoint, specializations);
 
                 ClusterRasterPipeline Raster(
                     ClusterShaderOperationRole role,
@@ -75,7 +80,17 @@ internal sealed class ClusterPipelineSet : IDisposable
                         vertexEntry,
                         pixelEntry);
 
-            Traversal = Compute(ClusterShaderOperationRole.BvhTraversal, "Cluster BVH traversal");
+            _createTraversal = (targetFilters, multipleViews) => Compute(
+                ClusterShaderOperationRole.BvhTraversal,
+                $"Cluster BVH traversal (target filters: {targetFilters}, multiple views: {multipleViews})",
+                specializations: [targetFilters ? "true" : "false", multipleViews ? "true" : "false"]);
+            DecalClear = Compute(ClusterShaderOperationRole.MaterialDecalCells, "Clear material decal cells", "ClearMaterialDecalCells");
+            DecalCount = Compute(ClusterShaderOperationRole.MaterialDecalCells, "Count material decal cells", "CountMaterialDecalCells");
+            DecalReserve = Compute(ClusterShaderOperationRole.MaterialDecalCells, "Reserve material decal cells", "ReserveMaterialDecalCells");
+            DecalScatter = Compute(ClusterShaderOperationRole.MaterialDecalCells, "Scatter material decal cells", "ScatterMaterialDecalCells");
+            DecalSort = Compute(ClusterShaderOperationRole.MaterialDecalCells, "Sort material decal cells", "SortMaterialDecalCells");
+            LeafFlagFixups = Compute(ClusterShaderOperationRole.LeafFlagFixups, "Cluster streaming leaf flags");
+            PageRequests = Compute(ClusterShaderOperationRole.PageRequests, "Cluster page request priorities");
             SceneBounds = Compute(ClusterShaderOperationRole.SceneBounds, "Cluster spatial scene bounds");
 
                 TraversalInitialize = Compute(
@@ -163,9 +178,10 @@ internal sealed class ClusterPipelineSet : IDisposable
                 ShadeBinClearPrepare = Compute(
                     ClusterShaderOperationRole.MaterialBinningReset,
                     "Cluster material bin clear");
-                ShadeBinCount = Compute(
+                _createShadeCount = writeReceivers => Compute(
                     ClusterShaderOperationRole.MaterialBinningCount,
-                    "Cluster material bin count");
+                    "Cluster material bin count",
+                    writeReceivers ? null : "CountShadeBinsWithoutReceivers");
                 ShadeBinReserve = Compute(
                     ClusterShaderOperationRole.MaterialBinningReserve,
                     "Cluster material bin reserve");
@@ -189,12 +205,28 @@ internal sealed class ClusterPipelineSet : IDisposable
         }
     }
 
-    internal ClusterComputePipeline Traversal { get; }
+    internal ClusterComputePipeline GetTraversal(bool targetFilters, bool multipleViews)
+    {
+        var capabilities = (targetFilters, multipleViews);
+        if (!_traversals.TryGetValue(capabilities, out ClusterComputePipeline? pipeline))
+        {
+            pipeline = _createTraversal(targetFilters, multipleViews);
+            _traversals.Add(capabilities, pipeline);
+        }
+        return pipeline;
+    }
+    internal ClusterComputePipeline PageRequests { get; }
+    internal ClusterComputePipeline LeafFlagFixups { get; }
     internal ClusterComputePipeline SceneBounds { get; }
     internal ClusterComputePipeline TraversalInitialize { get; }
     internal ClusterComputePipeline DeferredResume { get; }
     internal string DefaultRasterVertexEncoding { get; }
     internal bool DefaultRasterCullingEnabled { get; }
+    internal ClusterComputePipeline DecalClear { get; }
+    internal ClusterComputePipeline DecalCount { get; }
+    internal ClusterComputePipeline DecalReserve { get; }
+    internal ClusterComputePipeline DecalScatter { get; }
+    internal ClusterComputePipeline DecalSort { get; }
     internal ClusterComputePipeline CullReset { get; }
     internal ClusterComputePipeline CullPhase1 { get; }
     internal ClusterComputePipeline CullPhase2 { get; }
@@ -214,7 +246,15 @@ internal sealed class ClusterPipelineSet : IDisposable
     internal ClusterComputePipeline HiZDownsample { get; }
     internal ClusterComputePipeline HiZDownsampleTwo { get; }
     internal ClusterComputePipeline ShadeBinClearPrepare { get; }
-    internal ClusterComputePipeline ShadeBinCount { get; }
+    internal ClusterComputePipeline GetShadeBinCount(bool writeReceivers)
+    {
+        if (!_shadeCounts.TryGetValue(writeReceivers, out ClusterComputePipeline? pipeline))
+        {
+            pipeline = _createShadeCount(writeReceivers);
+            _shadeCounts.Add(writeReceivers, pipeline);
+        }
+        return pipeline;
+    }
     internal ClusterComputePipeline ShadeBinReserve { get; }
     internal ClusterComputePipeline ShadeBinScatter { get; }
     internal ClusterComputePipeline Resolve { get; }
@@ -226,11 +266,19 @@ internal sealed class ClusterPipelineSet : IDisposable
         List<ClusterPipeline> ownedPipelines,
         ClusterShaderOperationRole role,
         string name,
-        string? entryPoint = null)
+        string? entryPoint = null,
+        string[]? specializations = null)
     {
         ShaderOperation operation = GetOperation(operations, role);
         (Shader Shader, EntryPointReflection Entry) compute =
             GetEntry(operation, role, SlangStage.Compute);
+        string selectedEntry = entryPoint ?? compute.Entry.Name;
+        if (specializations is not null && compute.Shader.HasSpecializations(selectedEntry))
+        {
+            Shader shader = compute.Shader.RequireSpecialization(selectedEntry, specializations);
+            compute = (shader, shader.RequireSlangEntry(shader.RequireSlangTarget(device.Capabilities.CompileTarget),
+                selectedEntry, SlangStage.Compute));
+        }
 
         ownedPipelines.EnsureCapacity(checked(ownedPipelines.Count + 1));
         ClusterComputePipeline? created = null;
@@ -311,6 +359,16 @@ internal sealed class ClusterPipelineSet : IDisposable
                         "MSVisBufferMeshlet",
                         SlangStage.Mesh)
                         ? "MSVisBufferMeshlet" : "MSVisBuffer";
+            if (role == ClusterShaderOperationRole.HardwareVisibilityRaster)
+            {
+                EntryPointReflection rasterPixel = shader.RequireSlangEntry(
+                    shader.RequireSlangTarget(device.Capabilities.CompileTarget),
+                    pixelEntry ?? pixel.Entry.Name, SlangStage.Fragment);
+                rasterizerState = rasterizerState with
+                {
+                    Cull = ClusterGeometryRequirements.UsesBothRasterFaces(rasterPixel) ? CullType.None : CullType.Back,
+                };
+            }
             created = ClusterRasterPipeline.Create(
                 backend,
                 device,

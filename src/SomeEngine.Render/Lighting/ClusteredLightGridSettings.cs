@@ -5,6 +5,7 @@ public sealed record ClusteredLightGridSettings
 {
     public uint TileSize { get; init; } = 16;
     public uint DepthSliceCount { get; init; } = 16;
+    /// <summary>Average entries per cell for the shared light-list budget, not a per-cell limit.</summary>
     public uint MaxLightsPerCell { get; init; } = 64;
     public int MaxLights { get; init; } = 4_096;
 

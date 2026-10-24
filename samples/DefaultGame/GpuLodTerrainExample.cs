@@ -17,7 +17,6 @@ public sealed class GpuLodTerrainExample : IDisposable
 {
     private readonly Shader _drawShader;
     private readonly Shader _voxelShader;
-    private Material? _material;
 
     private GpuLodTerrainExample(Scheduler scheduler, Shader surface, Shader attributes, Shader build,
         Shader draw, Shader voxel)
@@ -65,12 +64,12 @@ public sealed class GpuLodTerrainExample : IDisposable
     public TerrainPlacement CreatePlacement(Material material)
     {
         var source = (UnlitMaterial)material;
-        _material = new UnlitMaterial
+        var drawMaterial = new UnlitMaterial
         {
             Shader = _drawShader, BaseColorTint = source.BaseColorTint,
             AlbedoMap = source.AlbedoMap, MaterialSampler = source.MaterialSampler,
         };
-        return new TerrainPlacement(Heights.Terrain, new(0, 0, 0, 2, 1, 1), [_material], new TerrainLodDistances(5, 9))
+        return new TerrainPlacement(Heights.Terrain, new(0, 0, 0, 2, 1, 1), [drawMaterial], new TerrainLodDistances(5, 9))
         {
             Transform = new TransformQvvs(new(-16, -4, 10), Quaternion.Identity),
         };
@@ -86,5 +85,5 @@ public sealed class GpuLodTerrainExample : IDisposable
         public float Apply(HeightFieldRead source, int x, int z) => 3f + .6f * MathF.Sin(x * .35f) * MathF.Cos(z * .3f);
     }
 
-    public void Dispose() => _material?.Dispose();
+    public void Dispose() => Heights.Terrain.Dispose();
 }

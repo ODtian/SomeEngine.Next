@@ -26,8 +26,6 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
     public void DeclareReads(RenderExtractionQuery query)
     {
-        query.Write<RenderMaterialReference>();
-        query.ReadDestination<RenderMaterialIndex>();
         query.Write<RenderMesh>();
         query.ReadOptional<WorldTransform>();
         query.ReadOptional<MeshInstance>();
@@ -222,7 +220,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 snapshot.Mesh,
                 snapshot.BoundsExpansion,
                 snapshot.PageSource));
-            SyncMaterials(context, snapshot, entity, allowStructuralChanges: true);
+            if (snapshot.MaterialsChanged) SyncMaterials(context, snapshot, entity, allowStructuralChanges: true);
         }
 
         ReadOnlySpan<RenderMirror> mirrors = context.Mirrors;

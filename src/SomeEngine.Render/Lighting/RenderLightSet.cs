@@ -2,6 +2,7 @@ using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS;
 using SomeEngine.Render.Components;
+using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Lighting;
 
@@ -11,9 +12,15 @@ namespace SomeEngine.Render.Lighting;
 /// </summary>
 public sealed class RenderLightSet
 {
-    private readonly LightRows<RenderDirectionalLight> _directional = new();
-    private readonly LightRows<RenderPointLight> _points = new();
-    private readonly LightRows<RenderSpotLight> _spots = new();
+    private readonly LightRows<RenderDirectionalLight> _directional = new(
+        static light => light.ShadowSettings,
+        static (before, after) => before.Direction != after.Direction);
+    private readonly LightRows<RenderPointLight> _points = new(
+        static light => light.ShadowSettings,
+        static (before, after) => before.Position != after.Position);
+    private readonly LightRows<RenderSpotLight> _spots = new(
+        static light => light.ShadowSettings,
+        static (before, after) => before.Position != after.Position || before.Direction != after.Direction);
 
     public IReadOnlyList<RenderDirectionalLight> Directional => _directional.Values;
     public IReadOnlyList<RenderPointLight> Points => _points.Values;
@@ -24,6 +31,21 @@ public sealed class RenderLightSet
 
     public ulong Revision { get; private set; }
 
+    public Entity GetDirectionalEntity(int lightIndex) => _directional.GetEntity(lightIndex);
+    public Entity GetPointEntity(int lightIndex) => _points.GetEntity(lightIndex);
+    public Entity GetSpotEntity(int lightIndex) => _spots.GetEntity(lightIndex);
+
+    public float GetDirectionalMobility(int lightIndex) => _directional.GetMobility(lightIndex);
+    public float GetPointMobility(int lightIndex) => _points.GetMobility(lightIndex);
+    public float GetSpotMobility(int lightIndex) => _spots.GetMobility(lightIndex);
+
+    internal void AdvanceLightMovement(ulong renderedFrame, uint activeFrameCount)
+    {
+        _directional.AdvanceMovement(renderedFrame, activeFrameCount);
+        _points.AdvanceMovement(renderedFrame, activeFrameCount);
+        _spots.AdvanceMovement(renderedFrame, activeFrameCount);
+    }
+
     public void Clear()
     {
         _directional.Clear();
@@ -33,14 +55,17 @@ public sealed class RenderLightSet
 
     internal void CommitChanges() => Revision = checked(Revision + 1uL);
 
-    public void CollectDirectional(scoped QueryCursor rows) => _directional.Append(rows);
-    public void CollectPoint(scoped QueryCursor rows) => _points.Append(rows);
-    public void CollectSpot(scoped QueryCursor rows) => _spots.Append(rows);
+    public void CollectDirectional(QueryCursor rows) => _directional.Append(rows);
+    public void CollectPoint(QueryCursor rows) => _points.Append(rows);
+    public void CollectSpot(QueryCursor rows) => _spots.Append(rows);
     public void AddDirectional(in RenderDirectionalLight light) => _directional.Add(light, null);
+    public void AddDirectional(Entity entity, in RenderDirectionalLight light) => _directional.Set(entity, light, null);
     public void AddDirectional(in RenderDirectionalLight light, in RenderLightCookie cookie) => _directional.Add(light, cookie);
     public void AddPoint(in RenderPointLight light) => _points.Add(light, null);
+    public void AddPoint(Entity entity, in RenderPointLight light) => _points.Set(entity, light, null);
     public void AddPoint(in RenderPointLight light, in RenderLightCookie cookie) => _points.Add(light, cookie);
     public void AddSpot(in RenderSpotLight light) => _spots.Add(light, null);
+    public void AddSpot(Entity entity, in RenderSpotLight light) => _spots.Set(entity, light, null);
     public void AddSpot(in RenderSpotLight light, in RenderLightCookie cookie) => _spots.Add(light, cookie);
 
     internal bool UpdateMembership(World world, Entity entity) =>
@@ -48,16 +73,59 @@ public sealed class RenderLightSet
         _points.UpdateMembership(world, entity) |
         _spots.UpdateMembership(world, entity);
 
-    internal bool UpdateDirectional(scoped QueryCursor rows) => _directional.Update(rows);
-    internal bool UpdatePoints(scoped QueryCursor rows) => _points.Update(rows);
-    internal bool UpdateSpots(scoped QueryCursor rows) => _spots.Update(rows);
+    internal bool UpdateDirectional(QueryCursor rows) => _directional.Update(rows);
+    internal bool UpdatePoints(QueryCursor rows) => _points.Update(rows);
+    internal bool UpdateSpots(QueryCursor rows) => _spots.Update(rows);
 
-    private sealed class LightRows<T> where T : struct, IComponent
+    private struct LightMovement
+    {
+        internal ulong FirstRenderedFrame;
+        internal bool Changed;
+        internal bool Active;
+        internal float Factor;
+    }
+
+    private sealed class LightRows<T>(
+        Func<T, LightShadowSettings> shadowSettingsReader,
+        Func<T, T, bool> movementComparison) where T : struct, IComponent
     {
         internal readonly List<T> Values = [];
         internal readonly List<RenderLightCookie?> Cookies = [];
         private readonly List<Entity> _entities = [];
         private readonly Dictionary<Entity, int> _rows = [];
+        private readonly List<LightMovement> _movement = [];
+
+        internal Entity GetEntity(int index) => _entities[index];
+
+        internal float GetMobility(int index) => _movement[index].Factor;
+
+        internal void AdvanceMovement(ulong renderedFrame, uint activeFrameCount)
+        {
+            Span<LightMovement> movement = CollectionsMarshal.AsSpan(_movement);
+            for (int index = 0; index < movement.Length; index++)
+            {
+                ref LightMovement value = ref movement[index];
+                if (!value.Active) continue;
+                if (value.Changed)
+                {
+                    value.FirstRenderedFrame = renderedFrame;
+                    value.Changed = false;
+                    value.Factor = 1f;
+                }
+                else
+                {
+                    ulong age = renderedFrame - value.FirstRenderedFrame;
+                    value.Active = age < activeFrameCount;
+                    value.Factor = value.Active ? 1f - (float)age / activeFrameCount : 0f;
+                }
+            }
+        }
+
+        private LightMovement NewMovement(T value)
+        {
+            bool movable = shadowSettingsReader(value).Mobility == LightMobility.Movable;
+            return new LightMovement { Changed = true, Active = movable, Factor = movable ? 1f : 0f };
+        }
 
         internal void Clear()
         {
@@ -65,6 +133,7 @@ public sealed class RenderLightSet
             Cookies.Clear();
             _entities.Clear();
             _rows.Clear();
+            _movement.Clear();
         }
 
         internal void Add(T value, RenderLightCookie? cookie)
@@ -72,12 +141,13 @@ public sealed class RenderLightSet
             Values.Add(value);
             Cookies.Add(cookie);
             _entities.Add(Entity.Null);
+            _movement.Add(NewMovement(value));
         }
 
-        internal void Append(scoped QueryCursor query)
+        internal void Append(QueryCursor query)
         {
             foreach (QueryRow row in query.Rows)
-                Add(row.Read<T>(), row.TryRead<RenderLightCookie>(out var cookie) ? cookie : null);
+                Set(row.Entity, row.Read<T>(), row.TryRead<RenderLightCookie>(out var cookie) ? cookie : null);
         }
 
         internal bool UpdateMembership(World world, Entity entity)
@@ -92,15 +162,17 @@ public sealed class RenderLightSet
                 Values[index] = Values[last];
                 Cookies[index] = Cookies[last];
                 _entities[index] = _entities[last];
+                _movement[index] = _movement[last];
                 if (_entities[index] != Entity.Null) _rows[_entities[index]] = index;
             }
             Values.RemoveAt(last);
             Cookies.RemoveAt(last);
             _entities.RemoveAt(last);
+            _movement.RemoveAt(last);
             return true;
         }
 
-        internal bool Update(scoped QueryCursor query)
+        internal bool Update(QueryCursor query)
         {
             bool changed = false;
             foreach (QueryChunkView chunk in query.Chunks)
@@ -119,11 +191,14 @@ public sealed class RenderLightSet
             return changed;
         }
 
-        private bool Set(Entity entity, T value, RenderLightCookie? cookie)
+        internal bool Set(Entity entity, T value, RenderLightCookie? cookie)
         {
             if (_rows.TryGetValue(entity, out int row))
             {
                 if (EqualityComparer<T>.Default.Equals(Values[row], value) && Cookies[row] == cookie) return false;
+                if (movementComparison(Values[row], value) ||
+                    shadowSettingsReader(Values[row]).Mobility != shadowSettingsReader(value).Mobility)
+                    _movement[row] = NewMovement(value);
                 Values[row] = value;
                 Cookies[row] = cookie;
             }

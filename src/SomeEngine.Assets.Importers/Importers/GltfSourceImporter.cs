@@ -75,13 +75,6 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         AsyncServiceScope scope = provider.CreateAsyncScope();
         context.Hold(scope);
 
-        context.ConfigureAssets<GltfMesh, MeshAsset>(new GltfMeshSource(settings, context.SourcePath));
-        context.ConfigureAssets<Scene, WorldAsset>(new GltfSceneSource(settings, context.SourcePath));
-        context.ConfigureAssets<GltfMaterial, MaterialAsset>(new GltfMaterialSource(settings, context.SourcePath));
-        context.ConfigureAssets<GltfTexture, TextureAsset>(new GltfTextureSource(settings, context.SourcePath));
-        context.ConfigureAssets<Skin, SkeletonAsset>(new GltfSkeletonSource(settings, context.SourcePath));
-        context.ConfigureAssets<Animation, AnimationClipAsset>(new GltfAnimationClipSource(settings, context.SourcePath));
-
         var capabilities = scope.ServiceProvider.GetServices<AssetImporterCapability>().ToDictionary(static value => value.Id);
         SourceImporterSettings[] selections = SelectImporters(overrides?.Value.Importers, context.Selections,
             capabilities.Values.ToArray(), scope.ServiceProvider.GetServices<AssetImporterSetCapability>().ToArray());
@@ -106,6 +99,55 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         EnableSelected<GltfTexture, TextureAsset>(scope.ServiceProvider, selections, context);
         EnableSelected<Skin, SkeletonAsset>(scope.ServiceProvider, selections, context);
         EnableSelected<Animation, AnimationClipAsset>(scope.ServiceProvider, selections, context);
+
+        foreach (GltfMesh mesh in source.LogicalMeshes)
+        {
+            string key = ElementKey(settings, "mesh", mesh.LogicalIndex, mesh);
+            Guid id = context.GetAssetId(key);
+            context.AddAsset(mesh, new MeshAsset(id) { Name = mesh.Name ?? $"Mesh_{mesh.LogicalIndex}" },
+                key, OutputPath(context.SourcePath, "mesh", id));
+        }
+        foreach (Scene scene in source.LogicalScenes)
+        {
+            string key = ElementKey(settings, "scene", scene.LogicalIndex, scene);
+            Guid id = context.GetAssetId(key);
+            context.AddAsset(scene, new WorldAsset(id) { Name = scene.Name ?? $"Scene_{scene.LogicalIndex}" },
+                key, OutputPath(context.SourcePath, "scene", id));
+        }
+        foreach (GltfMaterial material in source.LogicalMaterials)
+        {
+            string key = ElementKey(settings, "material", material.LogicalIndex, material);
+            Guid id = context.GetAssetId(key);
+            context.AddAsset(material, new MaterialAsset(id) { Name = material.Name ?? $"Material_{material.LogicalIndex}" },
+                key, OutputPath(context.SourcePath, "material", id));
+        }
+        foreach (GltfTexture texture in source.LogicalTextures)
+        {
+            string key = ElementKey(settings, "texture", texture.LogicalIndex, texture);
+            Guid id = context.GetAssetId(key);
+            context.AddAsset(texture, new TextureAsset(id) { Name = texture.Name ?? texture.PrimaryImage?.Name ?? $"Texture_{texture.LogicalIndex}" },
+                key, OutputPath(context.SourcePath, "texture", id));
+        }
+        if (context.HasImporters<Skin, SkeletonAsset>())
+        {
+            foreach (Skin skin in source.LogicalSkins)
+            {
+                string key = ElementKey(settings, "skin", skin.LogicalIndex, skin);
+                Guid id = context.GetAssetId(key);
+                context.AddAsset(skin, new SkeletonAsset(id) { Name = skin.Name ?? $"Skin_{skin.LogicalIndex}" },
+                    key, OutputPath(context.SourcePath, "skeleton", id));
+            }
+        }
+        if (context.HasImporters<Animation, AnimationClipAsset>())
+        {
+            foreach (Animation animation in source.LogicalAnimations)
+            {
+                string key = ElementKey(settings, "animation", animation.LogicalIndex, animation);
+                Guid id = context.GetAssetId(key);
+                context.AddAsset(animation, new AnimationClipAsset(id) { Name = animation.Name ?? $"Animation_{animation.LogicalIndex}" },
+                    key, OutputPath(context.SourcePath, "animation-clip", id));
+            }
+        }
 
         if (context.HasImporters<Skin, SkeletonAsset>())
             foreach (Skin skin in source.LogicalSkins)
@@ -218,4 +260,16 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         public ValueTask ImportAsync(GltfMaterial source, ImportContext context, ImportOutput output, CancellationToken cancellationToken)
             => importer.ImportMaterialAsync(source, context, output, cancellationToken);
     }
+    private static string ElementKey(GltfImporterSettings settings, string kind, int index, ExtraProperties source)
+    {
+        string? persistentId = source.Extras?[settings.PersistentIdProperty]?.GetValue<string>();
+        if (!string.IsNullOrWhiteSpace(persistentId)) return $"{kind}:id:{persistentId}";
+        if (settings.RequirePersistentElementIds)
+            throw new InvalidDataException($"glTF {kind} {index} lacks extras.{settings.PersistentIdProperty}.");
+        return $"{kind}:index:{index}";
+    }
+
+    private static string OutputPath(string sourcePath, string kind, Guid id)
+        => Path.Combine(Path.GetDirectoryName(sourcePath)!, $"{Path.GetFileNameWithoutExtension(sourcePath)}.{id:N}.{kind}.asset");
+
 }

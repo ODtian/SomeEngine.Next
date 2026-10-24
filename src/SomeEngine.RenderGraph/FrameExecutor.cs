@@ -20,7 +20,6 @@ internal sealed partial class FrameExecutor
     private readonly Dictionary<GraphIdentity, int> _viewIndices = [];
     private readonly Dictionary<GraphIdentity, int> _passIndices = [];
     private readonly Dictionary<GraphIdentity, int> _accessIndices = [];
-    private readonly Dictionary<int, int> _extensionCounts = [];
     private readonly List<int> _resourceAccessScratch = [];
     private readonly Stack<int> _livenessStack = new();
     private readonly List<int> _shaderReaderScratch = [];
@@ -30,7 +29,7 @@ internal sealed partial class FrameExecutor
     private ResourceContentState[] _contentsScratch = [];
     private BufferContentScope[] _bufferContentScopeScratch = [];
     private List<int>[] _readerScratch = [];
-    private List<int>[] _atomicWriterScratch = [];
+    private List<int>[] _sharedWriterScratch = [];
     private TextureLayout?[] _layoutScratch = [];
     private int[] _criticalRanks = [];
     private int[] _scheduleIndegrees = [];
@@ -141,6 +140,7 @@ internal sealed partial class FrameExecutor
         RefreshParameterBindings();
         ResolveSynchronization();
         PublishDiagnostics();
+        PrepareGpuTimes();
         return RecordAndSubmit(destination);
     }
 
@@ -149,13 +149,12 @@ internal sealed partial class FrameExecutor
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.Rows);
         BeginRows();
         GraphStructureIndex structureIndex = _frame.StructureIndex;
+        UpdateBufferRanges();
         int staticBufferCount = structureIndex.Structure.Buffers.Count;
         int staticTextureCount = structureIndex.Structure.Textures.Count;
         int staticQueryPoolCount = structureIndex.Structure.QueryPools.Count;
         int staticShaderTableCount = structureIndex.Structure.ShaderTables.Count;
         int staticViewCount = structureIndex.Structure.Views.Count;
-        int staticPassCount = structureIndex.Structure.Passes.Count;
-        int staticAccessCount = structureIndex.Structure.Accesses.Count;
 
         PrepareRows(_buffers, staticBufferCount + _frame.DynamicBuffers.Count);
         foreach (int i in ChangedRows(structureIndex.Structure.Buffers, _bufferIndices, _rowChanges.Buffers))
@@ -242,6 +241,7 @@ internal sealed partial class FrameExecutor
         {
             GraphQueryPool source = structureIndex.Structure.QueryPools.Rows[i];
             GraphIdentity identity = structureIndex.QueryPoolIds[i];
+            _rebuiltRowCount++;
             _queryPools[i] = new FrameQueryPool
             {
                 Identity = identity,
@@ -260,6 +260,7 @@ internal sealed partial class FrameExecutor
         {
             GraphRayTracingShaderTable source = structureIndex.Structure.ShaderTables.Rows[i];
             GraphIdentity identity = structureIndex.ShaderTableIds[i];
+            _rebuiltRowCount++;
             _shaderTables[i] = new FrameRayTracingShaderTable
             {
                 Identity = identity,
@@ -335,14 +336,13 @@ internal sealed partial class FrameExecutor
             SetViewRow(destination, source);
         }
 
-        for (int removed = staticPassCount + _frame.DynamicPasses.Count; removed < _passes.Count; removed++)
-            _changedValuePasses.Add(removed);
-        PrepareRows(_passes, staticPassCount + _frame.DynamicPasses.Count);
+        PreparePassRows();
         EnsureCapacity(ref _passAccesses, _passes.Count);
-        foreach (int i in ChangedRows(structureIndex.Structure.Passes, _passIndices, _rowChanges.Passes))
+        foreach (int sourceRow in CollectChangedRows(structureIndex.Structure.Passes, _rowChanges.Passes))
         {
-            GraphPass source = structureIndex.Structure.Passes.Rows[i];
-            GraphIdentity identity = structureIndex.PassIds[i];
+            GraphIdentity identity = structureIndex.PassIds[sourceRow];
+            GraphPass source = structureIndex.Structure.Passes.Get(identity);
+            int i = _passIndices[identity];
             SetPassRow(i, new FramePass
             {
                 Identity = identity,
@@ -356,39 +356,36 @@ internal sealed partial class FrameExecutor
                 ParameterOrdinaryData = source.ParameterOrdinaryData,
                 ParameterBindings = source.ParameterBindings,
                 PersistentBindings = source.PersistentBindings,
-                DeclarationOrdinal = checked((long)source.DeclarationOrdinal << 32),
-                Enabled = source.Enabled,
+                TimeMeasurements = source.TimeMeasurements,
+                DeclarationOrdinal = source.DeclarationOrdinal,
+                Enabled = source.Enabled && structureIndex.Structure.IsRegionEnabled(source.Region) &&
+                    _frame.HasBufferUploads(source.CallbackStorage),
                 PersistentCallbacks = source.CallbackStorage,
-                ExtensionPointIndex = -1,
+                Region = source.Region,
             });
-            _passIndices[identity] = i;
         }
 
-        _extensionCounts.Clear();
         for (int i = 0; i < _frame.DynamicPasses.Count; i++)
         {
             FramePass source = _frame.DynamicPasses[i];
-            int insertion = source.ExtensionPointIndex >= 0
-                ? structureIndex.Structure.ExtensionPoints.Rows[source.ExtensionPointIndex].DeclarationOrdinal
-                : structureIndex.Structure.NextDeclarationOrdinal;
-            _extensionCounts.TryGetValue(insertion, out int ordinal);
-            _extensionCounts[insertion] = ordinal + 1;
-            long key = checked(((long)insertion << 32) + ordinal + 1);
-            source.DeclarationOrdinal = key;
-            int destination = staticPassCount + i;
-            SetPassRow(destination, source);
+            int ordinal = _dynamicPassPositions[i].Ordinal;
+            GraphRegionEntry interval = structureIndex.Structure.GetRegionInterval(source.Region);
+            long insertion = source.Region.IsValid ? interval.Start :
+                interval.End;
+            source.DeclarationOrdinal = checked(insertion + ordinal + 1);
+            if (source.IsBufferUpload) source.DeclarationOrdinal = long.MinValue + i;
+            DevelopmentCheck.Require(!source.Region.IsValid || source.DeclarationOrdinal < interval.End,
+                "Frame passes must fit inside their region's declaration interval.");
+            source.Enabled &= structureIndex.Structure.IsRegionEnabled(source.Region);
+            SetPassRow(_dynamicPassRows[i], source);
         }
 
-        int previousRangeStart = _rangeReadStart;
-        bool rangeReadsChanged = PrepareBufferRangeReads(
-            staticAccessCount + _frame.DynamicAccesses.Count, out int accessCount);
-        if (rangeReadsChanged)
-            for (int index = previousRangeStart; index < _accesses.Count; index++) DetachAccess(index);
-        PrepareRows(_accesses, accessCount);
-        foreach (int i in ChangedRows(structureIndex.Structure.Accesses, _accessIndices, _rowChanges.Accesses))
+        PrepareAccessRows();
+        foreach (int sourceRow in CollectChangedRows(structureIndex.Structure.Accesses, _rowChanges.Accesses))
         {
-            PassResourceAccess source = structureIndex.Structure.Accesses.Rows[i];
-            GraphIdentity identity = structureIndex.AccessIds[i];
+            GraphIdentity identity = structureIndex.AccessIds[sourceRow];
+            PassResourceAccess source = structureIndex.Structure.Accesses.Get(identity);
+            int i = _accessIndices[identity];
             BufferRange bufferRange = source.BufferRange;
             TextureSubresourceRange textureRange = source.TextureRange;
             GraphIdentity target = source.Target;
@@ -412,7 +409,6 @@ internal sealed partial class FrameExecutor
                 {
                     DetachAccess(i);
                     _accesses[i] = default;
-                    _accessIndices[identity] = i;
                     continue;
                 }
                 bufferRange = source.ParameterSecondary ? value.SecondaryBufferRange : value.BufferRange;
@@ -442,6 +438,8 @@ internal sealed partial class FrameExecutor
                 Sync = source.Sync,
                 Access = source.Access,
                 BufferRange = bufferRange,
+                BufferDescriptor = source.BufferDescriptor,
+                BufferDescriptorOnly = source.BufferDescriptorOnly,
                 TextureRange = textureRange,
                 QueryRange = source.QueryRange,
                 TextureLayout = source.TextureLayout,
@@ -449,16 +447,13 @@ internal sealed partial class FrameExecutor
                 BufferContentScope = source.BufferContentScope,
                 UnorderedAccessHazards = source.UnorderedAccessHazards,
             });
-            _accessIndices[identity] = i;
         }
         for (int i = 0; i < _frame.DynamicAccesses.Count; i++)
         {
             FrameResourceAccess source = _frame.DynamicAccesses[i];
-            int destination = staticAccessCount + i;
+            int destination = _dynamicAccessRows[i];
             SetAccessRow(destination, source);
         }
-
-        BuildBufferRangeReads(rangeReadsChanged);
 
         EndRows();
     }
@@ -524,8 +519,16 @@ internal sealed partial class FrameExecutor
     private bool TryResolvePass(in GraphIdentity identity, out int index) =>
         identity.Owner == _frame.Graph.Identity
             ? _passIndices.TryGetValue(identity, out index)
-            : TryResolveDynamicRow(identity, GraphIdentityDomain.Pass,
-                _frame.StructureIndex.Structure.Passes.Count, _frame.DynamicPasses.Count, out index);
+            : TryResolveFramePass(identity, out index);
+
+    private bool TryResolveFramePass(in GraphIdentity identity, out int index)
+    {
+        index = -1;
+        if (identity.Owner != _frame.Identity || identity.Domain != GraphIdentityDomain.Pass ||
+            identity.Generation != 1 || (uint)identity.Slot >= (uint)_frame.DynamicPasses.Count) return false;
+        index = _dynamicPassRows[identity.Slot];
+        return true;
+    }
 
     private bool TryResolveView(in GraphIdentity identity, out int index) =>
         identity.Owner == _frame.Graph.Identity
@@ -568,7 +571,8 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<int> _rowIndexSet = [];
     private readonly List<int> _rowIndexScratch = [];
     private bool _rowsReady;
-    private int _staticBufferCount, _staticTextureCount, _staticAccessCount;
+    private int _rebuiltRowCount;
+    private int _staticBufferCount, _staticTextureCount;
 
     internal void ChangeBuffer(GraphIdentity identity, bool refreshViews = true)
     {
@@ -618,11 +622,12 @@ internal sealed partial class FrameExecutor
 
     private void BeginRows()
     {
+        _rebuiltRowCount = 0;
+        _analyzedPasses.Clear();
         FrameTransientResourceAllocator memory = _frame.Slot.TransientResources!;
         GraphStructure structure = _frame.StructureIndex.Structure;
         _analysisChanged |= _buffers.Count != structure.Buffers.Count + _frame.DynamicBuffers.Count ||
             _textures.Count != structure.Textures.Count + _frame.DynamicTextures.Count ||
-            _passes.Count != structure.Passes.Count + _frame.DynamicPasses.Count ||
             _queryPools.Count != structure.QueryPools.Count || _shaderTables.Count != structure.ShaderTables.Count;
 
         int retainedBuffers = _staticBufferCount == structure.Buffers.Count ? _frame.DynamicBuffers.Count : 0;
@@ -665,25 +670,15 @@ internal sealed partial class FrameExecutor
                 if (_textureIndices.TryGetValue(id, out int index) && _textures[index].Resource is { } resource)
                     _resourceRows.Remove(resource);
             }
-        foreach (GraphIdentity id in _rowChanges.Accesses)
-            if (_accessIndices.TryGetValue(id, out int index) && !structure.Accesses.Contains(id))
-            {
-                DetachAccess(index);
-            }
-        int detachedStart = structure.Accesses.Count == _staticAccessCount
-            ? structure.Accesses.Count + _frame.DynamicAccesses.Count
-            : Math.Min(structure.Accesses.Count, _staticAccessCount);
-        for (int index = detachedStart; index < _rangeReadStart; index++) DetachAccess(index);
     }
 
     private void EndRows()
     {
-        if (_dynamicOrderChanges.Count != 0) _analysisChanged = true;
+        PrepareDynamicOrders();
 
         GraphStructure structure = _frame.StructureIndex.Structure;
         _staticBufferCount = structure.Buffers.Count;
         _staticTextureCount = structure.Textures.Count;
-        _staticAccessCount = structure.Accesses.Count;
         _rowChanges.Buffers.Clear();
         _rowChanges.Textures.Clear();
         _rowChanges.QueryPools.Clear();
@@ -696,6 +691,7 @@ internal sealed partial class FrameExecutor
 
     private void SetBufferRow(int index, FrameBuffer row)
     {
+        _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetBufferRow);
         FrameBuffer previous = _buffers[index];
         if (previous.Identity != row.Identity && (previous.Definition is not null || row.Definition is not null))
@@ -736,6 +732,7 @@ internal sealed partial class FrameExecutor
 
     private void SetTextureRow(int index, FrameTexture row)
     {
+        _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetTextureRow);
         FrameTexture previous = _textures[index];
         if (previous.Identity != row.Identity && (previous.Definition is not null || row.Definition is not null))
@@ -779,6 +776,7 @@ internal sealed partial class FrameExecutor
 
     private void SetViewRow(int index, FrameView row)
     {
+        _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetViewRow);
         ConnectViewResources(index, ref row);
         FrameView previous = _views[index];
@@ -807,7 +805,9 @@ internal sealed partial class FrameExecutor
 
     private void SetAccessRow(int index, FrameResourceAccess access)
     {
+        _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetAccessRow);
+        FrameResourceAccess previous = _accesses[index];
         access.PassIndex = ResolvePass(access.Pass);
         DevelopmentCheck.Require(Enum.IsDefined(access.TargetKind), "The resource access target kind is invalid.");
         access.ResourceIndex = access.TargetKind switch
@@ -818,12 +818,21 @@ internal sealed partial class FrameExecutor
             _ => ResolveShaderTable(access.Target),
         };
         if (access.TargetKind == GraphAccessTargetKind.Buffer)
+        {
             access.BufferRange = GraphStructureIndex.ResolveRange(access.BufferRange, _buffers[access.ResourceIndex].Description.Size);
+            if (access.BufferDescriptor)
+                access.SharedBufferRanges = _frame.BufferRanges.GetValueOrDefault(access.Target) ??
+                    (access.BufferDescriptorOnly ? BufferRangeSet.Empty : null);
+            else if (access.SharedBufferRanges is { } ranges &&
+                (!previous.Connected || previous.BufferDescriptor || previous.TargetKind != GraphAccessTargetKind.Buffer ||
+                    previous.BufferRange != access.BufferRange || !ReferenceEquals(previous.SharedBufferRanges, ranges)))
+                foreach (BufferRange range in ranges.Ranges)
+                    _ = GraphStructureIndex.ResolveRange(range, _buffers[access.ResourceIndex].Description.Size);
+        }
         else if (access.TargetKind == GraphAccessTargetKind.Texture)
             ValidateTextureRange(_textures[access.ResourceIndex], access.TextureRange);
         else if (access.TargetKind == GraphAccessTargetKind.QueryPool)
             ValidateQueryRange(_queryPools[access.ResourceIndex], access.QueryRange);
-        FrameResourceAccess previous = _accesses[index];
         if (previous.Connected && previous.PassIndex == access.PassIndex &&
             previous.TargetKind == access.TargetKind && previous.ResourceIndex == access.ResourceIndex)
         {
@@ -834,6 +843,8 @@ internal sealed partial class FrameExecutor
             _accesses[index] = access;
             return;
         }
+        if (access.TargetKind == GraphAccessTargetKind.Texture)
+            InvalidateRasterRendering(access.PassIndex);
         _stateConnectionChanges.Add((access.TargetKind, access.ResourceIndex));
         DetachAccess(index);
         List<int> passAccesses = _passAccesses[access.PassIndex];
@@ -912,61 +923,31 @@ internal sealed partial class FrameExecutor
         }
     }
 
-    private List<ResolvedBufferRead> _bufferReads = [];
-    private List<ResolvedBufferRead> _previousBufferReads = [];
-    private int _rangeReadStart;
+    private readonly Dictionary<GraphIdentity, BufferRangeSet> _previousBufferRanges = [];
 
-    private readonly record struct ResolvedBufferRead(
-        BufferRangeRead Read, int PassIndex, int ResourceIndex, ulong BufferSize);
-
-    private bool PrepareBufferRangeReads(int firstAccess, out int accessCount)
+    private void UpdateBufferRanges()
     {
-        _bufferReads.Clear();
-        accessCount = firstAccess;
-        foreach (BufferRangeRead read in _frame.BufferRangeReads)
-        {
-            if (read.Ranges.Count == 0) continue;
-            int resource = ResolveBuffer(read.Buffer);
-            _bufferReads.Add(new ResolvedBufferRead(read, ResolvePass(read.Pass), resource,
-                _buffers[resource].Description.Size));
-            accessCount = checked(accessCount + 1);
-        }
-        bool changed = _rangeReadStart != firstAccess || _accesses.Count != accessCount ||
-            !CollectionsMarshal.AsSpan(_bufferReads).SequenceEqual(
-                CollectionsMarshal.AsSpan(_previousBufferReads));
-        _rangeReadStart = firstAccess;
-        if (changed)
-            _analysisChanged = true;
-        return changed;
+        foreach (GraphIdentity buffer in _previousBufferRanges.Keys)
+            if (!_frame.BufferRanges.ContainsKey(buffer))
+                ChangeDescriptorReads(buffer);
+        foreach ((GraphIdentity buffer, BufferRangeSet ranges) in _frame.BufferRanges)
+            if (!_previousBufferRanges.TryGetValue(buffer, out BufferRangeSet? previous) || !ReferenceEquals(ranges, previous))
+                ChangeDescriptorReads(buffer);
+        _previousBufferRanges.Clear();
+        foreach ((GraphIdentity buffer, BufferRangeSet ranges) in _frame.BufferRanges)
+            _previousBufferRanges.Add(buffer, ranges);
     }
 
-    private void BuildBufferRangeReads(bool changed)
+    private void ChangeDescriptorReads(GraphIdentity buffer)
     {
-        int index = _rangeReadStart;
-        foreach (ResolvedBufferRead resolved in _bufferReads)
-        {
-            if (changed)
-            {
-                foreach (BufferRange range in resolved.Read.Ranges.Ranges)
-                    _ = GraphStructureIndex.ResolveRange(range, resolved.BufferSize);
-                SetAccessRow(index, new FrameResourceAccess
-                {
-                    Pass = resolved.Read.Pass,
-                    Target = resolved.Read.Buffer,
-                    TargetKind = GraphAccessTargetKind.Buffer,
-                    Mode = GraphAccessMode.Read,
-                    Coverage = WriteCoverage.Partial,
-                    Sync = resolved.Read.Sync,
-                    Access = resolved.Read.Access,
-                    BufferRange = new(0, resolved.BufferSize),
-                    SharedBufferRanges = resolved.Read.Ranges,
-                    PassIndex = resolved.PassIndex,
-                    ResourceIndex = resolved.ResourceIndex,
-                });
-            }
-            index++;
-        }
-        (_bufferReads, _previousBufferReads) = (_previousBufferReads, _bufferReads);
+        GraphStructureIndex index = _frame.StructureIndex;
+        foreach (GraphIdentity access in index.ResourceAccesses.GetValueOrDefault(buffer, []))
+            if (index.Structure.Accesses.Get(access).BufferDescriptor) ChangeAccess(access);
+        if (!_bufferIndices.TryGetValue(buffer, out int resource) ||
+            !_resourceAccessLists.TryGetValue((GraphAccessTargetKind.Buffer, resource), out List<int>? accesses)) return;
+        foreach (int row in accesses)
+            if (_accesses[row].BufferDescriptor && _accesses[row].Identity.IsValid)
+                ChangeAccess(_accesses[row].Identity);
     }
 
     private readonly HashSet<GraphBufferInput> _changedBufferInputs = [];

@@ -4,7 +4,7 @@ namespace SomeEngine.Assets.Schema;
 
 /// <summary>Slang inputs that can be acquired asynchronously and compiled into a resident shader.</summary>
 [AssetBlock("SomeEngine.Assets.Schema.ShaderSourceBlock"), BinarySerializable, TextSerializable]
-[BinaryFields(nameof(SourceNames), nameof(Inputs))]
+[BinaryFields(nameof(SourceNames), nameof(Inputs), nameof(Specializations))]
 public sealed partial class ShaderSourceBlock : ShaderInputBlock
 {
     /// <summary>Ordered inputs selected from this shader asset's strongly typed blocks.</summary>

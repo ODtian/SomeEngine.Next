@@ -58,10 +58,10 @@ public ref struct VoxelDistanceGpuContext
 {
     private readonly RenderTerrainData _data;
     private RenderGraphFrame _frame;
-    private RenderGraphFrameExtension _extension;
+    private TerrainFrameCommands _extension;
     private readonly VoxelDistanceGpuPage[] _pages;
 
-    internal VoxelDistanceGpuContext(RenderTerrainData data, RenderGraphFrame frame, RenderGraphFrameExtension extension,
+    internal VoxelDistanceGpuContext(RenderTerrainData data, RenderGraphFrame frame, TerrainFrameCommands extension,
         VoxelGrid grid, float initialValue, VoxelDistanceSettings settings, VoxelGpuInput input,
         VoxelDistanceGpuPage[] pages, GraphBufferId accuracy)
     {
@@ -116,7 +116,7 @@ internal sealed class VoxelDistanceGpuRequest<TDistance>(long sequence, JobHandl
     private readonly float[] _accuracy = new float[2];
 
     internal override GraphPassId Record(RenderTerrainData data, ref RenderGraphFrame frame,
-        ref RenderGraphFrameExtension extension)
+        ref TerrainFrameCommands extension)
     {
         VoxelGpuInput input = data.CreateVoxelInput(ref frame, ref extension, grid, source, settings.ReadRegion);
         var pages = new VoxelDistanceGpuPage[outputs.Length];

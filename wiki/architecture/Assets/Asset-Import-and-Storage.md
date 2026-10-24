@@ -46,7 +46,7 @@ Importer 的 `ProducedBlocks` 声明可产出的类型，一个来源元素可�
 
 ## 完整流程与失败处理
 
-`IAssetSourceImporter<TSource, TSettings>` 连接格式读取及遍历。`AssetProject` 读取来源配置、创建 Context 并组织保存提交；`ImportContext` 通过 `ConfigureAssets(new SourceType())`、`EnableImporter(importer)` 和 `GetAssetAsync` 维护子元素身份、实际来源、设置、目标 Asset 及执行数据。保存通过来源描述的 `SaveAsync` 方法调用资产自己的 `SaveAsync`，各强类型资产及源生成入口使用同一固定 Block 编码。
+`IAssetSourceImporter<TSource, TSettings>` 连接格式读取及遍历。`AssetProject` 读取来源配置、创建 Context 并组织保存提交。格式 Importer 根据来源对象取得元素键，经 `context.GetAssetId(key)` 沿用资产身份，直接创建具体 Asset，再通过 `context.AddAsset(input, asset, key, outputPath)` 交付实际关联。`EnableImporter(importer)` 选择 Block 生产者，`GetAssetAsync` 完成已关联资产的转换。Context 保存本次资产与执行数据，输出包含已请求完成的资产。`AssetProject` 直接调用资产自己的 `SaveAsync`；各强类型资产及源生成入口使用同一固定 Block 编码。
 
 `AssetProject.ImportAsync` 选择来源及配置，读取来源，执行遍历和递归依赖，检查实际输入仍与本次读取一致，然后保存全部草稿。实现位于该 partial 类型的 `Importing/AssetImportProject.cs`。来源、设置、工具或扩展版本变化均参与重新导入判断。实际读取产生的依赖与构建记录分开保存，失败任务的依赖不冒充成功构建结果。
 

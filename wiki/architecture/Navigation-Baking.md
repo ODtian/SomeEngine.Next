@@ -38,6 +38,6 @@ ReadOnlyMemory<NavigationMeshTileRange> tiles = result.Tiles;
 
 `NavigationMeshImportSource` 持有固定的 `NavigationBuildInput`、`NavigationMeshImportVariant` 数组和可选 Scheduler。每个变体提供 `NavigationMeshSelection`、实际 Profile 与 Policy。Selection 由 Profile 资产身份和构建变体名组成。
 
-生成的 `EngineAssetCapabilities` 提供 `NavigationMeshImporter` 能力。调用方通过 `ImportContext.ConfigureAssets` 确定 NavigationAsset 身份与输出路径，再从能力描述绑定并启用该导入器。导入器共享一次表面构建，提交每种规格的网格 Job，将完整结果安装到一个 `NavigationMeshBlock`，并通过 `ImportOutput` 交付。设置使用 `NavigationMeshSettings` 的生成 JSON 编解码器。网格数组的保存与读取通过现有 `NavigationArrayData` Job 完成。
+生成的 `EngineAssetCapabilities` 提供 `NavigationMeshImporter` 能力。调用方从能力描述绑定并启用该导入器，经 `ImportContext.GetAssetId` 取得身份，直接创建 `NavigationAsset`，再通过 `AddAsset` 交付输入、资产和输出路径。导入器共享一次表面构建，提交每种规格的网格 Job，将完整结果安装到一个 `NavigationMeshBlock`，并通过 `ImportOutput` 交付。设置使用 `NavigationMeshSettings` 的生成 JSON 编解码器。网格数组的保存与读取通过现有 `NavigationArrayData` Job 完成。
 
 实现：[设置与结果](../../src/SomeEngine.Navigation/NavigationMeshBuild.cs)、[调度与入口连接](../../src/SomeEngine.Navigation/NavigationMeshBuilder.cs)、[Recast 转换](../../src/SomeEngine.Navigation/NavigationRecast.cs)、[共同通行筛选](../../src/SomeEngine.Navigation/NavigationSurfaceTraversal.cs)、[导入器](../../src/SomeEngine.Assets.Importers/Importers/NavigationMeshImporter.cs)。公共行为入口：[NavigationBakeTests](../../tests/SomeEngine.Assets.Tests/NavigationBakeTests.cs)。

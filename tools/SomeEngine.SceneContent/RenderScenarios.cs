@@ -198,7 +198,7 @@ public static class RenderScenarios
                 pixel + "\ntypedef MaskVisibility VisibilityEvaluate;");
         }
         File.WriteAllText(shaderPath, shader);
-        AssetProject project = new AssetProject(destination, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], sourceFormats: [new ShaderSourceFormat([engineShaders])]);
+        AssetProject project = new AssetProject(destination, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], shaderIncludeDirectories: [engineShaders]);
         await project.BuildAsync(Path.ChangeExtension(shaderPath, ".shader"));
         IAssetStorage storage = project.CreateStorage();
         await using var loader = new AssetLoader(storage);

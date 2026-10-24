@@ -252,7 +252,7 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         ImGui.End();
     }
 
-    internal void InstallGraph(global::SomeEngine.RenderGraph.RenderGraph graph, GraphTextureId target)
+    internal void InstallGraph(global::SomeEngine.RenderGraph.RenderGraph graph, GraphTextureId target, GraphRegionId region)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (ReferenceEquals(_graph, graph) && _target == target && _pass != default) return;
@@ -277,7 +277,8 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
             _fontSampler ?? throw new InvalidOperationException("The ImGui sampler is unavailable."), 0, 0);
         GraphPassId pass = edit.AddRasterFramePass("Runtime ImGui overlay",
             PassQueueSelection.AnyOfType(QueueType.Graphics), data,
-            new PassOptions(Recording: PassRecordingMode.CallingThread), RuntimeUiPassData.Declare, RuntimeUiPassData.Record);
+            new PassOptions(Recording: PassRecordingMode.CallingThread), RuntimeUiPassData.Declare, RuntimeUiPassData.Record,
+            region: region);
         edit.Commit();
         _graph = graph;
         _target = target;

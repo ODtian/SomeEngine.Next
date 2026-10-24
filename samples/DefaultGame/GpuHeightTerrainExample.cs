@@ -17,7 +17,6 @@ public sealed class GpuHeightTerrainExample : IDisposable
 {
     private readonly Shader _drawShader;
     private readonly Shader _brushShader;
-    private readonly List<Material> _materials = [];
 
     private GpuHeightTerrainExample(Scheduler scheduler, Shader surface, Shader attributes, Shader build, Shader draw, Shader brush)
     {
@@ -77,12 +76,11 @@ public sealed class GpuHeightTerrainExample : IDisposable
             Shader = _drawShader, BaseColorTint = source.BaseColorTint,
             AlbedoMap = source.AlbedoMap, MaterialSampler = source.MaterialSampler,
         };
-        _materials.Add(result);
         return result;
     }
 
     public void Dispose()
     {
-        foreach (Material material in _materials) material.Dispose();
+        Heights.Terrain.Dispose();
     }
 }

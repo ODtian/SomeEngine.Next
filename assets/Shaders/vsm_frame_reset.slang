@@ -20,6 +20,8 @@ RWByteAddressBuffer PageRequestDispatchArguments;
 RWByteAddressBuffer AllocationFailures;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer PolicyRasterWorkCount;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWByteAddressBuffer DepthWorkCount;
 
 void ClearWord(RWByteAddressBuffer buffer, uint offset)
 {
@@ -43,6 +45,7 @@ void ResetVirtualShadowFrame(uint3 groupId : SV_GroupID, uint threadIndex : SV_G
     ClearWord(PageRequestDispatchArguments, offset);
     ClearWord(AllocationFailures, offset);
     ClearWord(PolicyRasterWorkCount, offset);
+    ClearWord(DepthWorkCount, offset);
 
     uint rectCount;
     uint rectStride;

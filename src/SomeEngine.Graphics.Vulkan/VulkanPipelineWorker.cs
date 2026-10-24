@@ -119,7 +119,7 @@ internal sealed partial class VulkanBackend
         private readonly TaskCompletionSource<Pipeline> _completion = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly VulkanDevice _device;
-        private IComponentType? _slangCode;
+        private SlangShaderData? _slangCode;
         private object? _code;
         private VulkanPipelineCache? _cache;
         private Func<Pipeline>? _create;
@@ -127,7 +127,7 @@ internal sealed partial class VulkanBackend
 
         internal VulkanPipelineJob(
             VulkanDevice device,
-            IComponentType slangCode,
+            SlangShaderData slangCode,
             object code,
             VulkanPipelineCache? cache,
             Func<Pipeline> create)
@@ -185,7 +185,7 @@ internal sealed partial class VulkanBackend
     private Task<Pipeline> EnqueuePipelineCreation(
         VulkanDevice device,
         VulkanPipelineCache? cache,
-        IComponentType slangCode,
+        SlangShaderData slangCode,
         object code,
         Func<Pipeline> create)
     {

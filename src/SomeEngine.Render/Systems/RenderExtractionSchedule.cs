@@ -185,6 +185,8 @@ public sealed class RenderExtractionSystems : IDisposable
         query.Write<RenderTransform>();
         query.Write<RenderPreviousTransform>();
         query.Write<RenderTextureVersions>();
+        query.Write<RenderMaterialReference>();
+        query.ReadDestination<RenderMaterialIndex>();
         query.ReadOptionalBuffer<MeshMaterialBinding>();
         query.ReadOptional<LightCookie>();
         for (int index = 0; index < _systems.Count; index++)
@@ -216,7 +218,10 @@ public sealed class RenderExtractionSystems : IDisposable
                     foreach (IRenderExtractionSystem system in systems._systems)
                         if (system.CompleteSourceCollection(state.Source, systems._candidateFullReconciliation))
                             systems._changedSystems.Add(system);
-                    systems._textureVersions = TextureExtraction.Collect(query, out systems._materialReferences);
+                    var resources = TextureExtraction.Collect(query);
+                    foreach (IRenderExtractionSystem system in systems._systems) system.CollectResources(query, resources);
+                    systems._textureVersions = resources.Textures;
+                    systems._materialReferences = resources.Materials;
                     systems._context.MaterialReferences = systems._materialReferences;
                     systems._materialsChanged = systems._materialReferences.Values.Any(value =>
                         systems._renderWorld.TryReadMaterial(value.Material.MaterialId, out _) &&
@@ -444,6 +449,9 @@ public interface IRenderExtractionSystem : IDisposable
     void DeclareReads(RenderExtractionQuery query);
 
     void Reset();
+
+    /// <summary>Collects referenced resources from all current sources in the same read window.</summary>
+    void CollectResources(scoped QueryCursor source, RenderExtractionResources resources) { }
 
     /// <summary>Collects current data from an affected source chunk; unrelated chunks are not replayed.</summary>
     void Collect(QueryChunkView chunk);

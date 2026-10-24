@@ -10,7 +10,8 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
     private readonly CancellationTokenSource _cancellation;
     private readonly SourceMeta _sourceMeta;
     private readonly Dictionary<Guid, object?> _settings = [];
-    private readonly Dictionary<(Type Source, Type Asset), object> _sourceTypes = [];
+    private readonly Dictionary<(Type Input, Type Asset), object> _importers = [];
+    private readonly Dictionary<(object Input, Type Asset), Guid> _assetIds = [];
     private readonly Dictionary<Guid, AssetResult> _assets = [];
     private readonly List<IAsyncDisposable> _resources = [];
     private readonly Dictionary<string, string> _inputs = new(OperatingSystem.IsWindows()
@@ -56,30 +57,63 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
         }
     }
 
-    /// <summary>Declares a native source type's identity, creation and saving rules, not individual results.</summary>
-    public void ConfigureAssets<TSource, TAsset>(AssetSource<TSource, TAsset> source)
+    /// <summary>Returns this source file's saved identity for an imported object.</summary>
+    public Guid GetAssetId(string elementKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(elementKey);
+        lock (_sync)
+        {
+            RequireOpen();
+            if (!_sourceMeta.ElementIds.TryGetValue(elementKey, out Guid id))
+                _sourceMeta.ElementIds.Add(elementKey, id = Guid.NewGuid());
+            return id;
+        }
+    }
+
+    /// <summary>Associates actual input and asset objects after selecting their block importers.</summary>
+    public TAsset AddAsset<TSource, TAsset>(TSource source, TAsset asset, string elementKey, string outputPath)
         where TSource : class where TAsset : Asset
     {
         lock (_sync)
         {
-            RequireConfiguration();
-            if (!_sourceTypes.TryAdd((typeof(TSource), typeof(TAsset)),
-                new SourceAssets<TSource, TAsset>(source)))
-                throw new InvalidOperationException("This source and semantic asset type are already configured.");
+            RequireOpen();
+            if (_assets.TryGetValue(asset.Id, out AssetResult? existing))
+            {
+                try
+                {
+                    if (existing.ElementKey != elementKey || existing.Content is not TAsset)
+                        throw new InvalidOperationException("Different input objects or asset types share one identity.");
+                    _assetIds[(source, typeof(TAsset))] = asset.Id;
+                    return (TAsset)existing.Content;
+                }
+                finally { if (!ReferenceEquals(existing.Content, asset)) asset.Dispose(); }
+            }
+            try
+            {
+                string path = AssetProject.RequireProjectPath(ProjectRoot, outputPath);
+                if (_assets.Values.Any(value => AssetProject.PathsEqual(value.Path, path)))
+                    throw new InvalidOperationException("Two imported assets use the same output path.");
+                AssetResult result = CreateResult(source, asset, elementKey, path);
+                _assets.Add(asset.Id, result);
+                _assetIds.Add((source, typeof(TAsset)), asset.Id);
+                return asset;
+            }
+            catch { asset.Dispose(); throw; }
         }
     }
 
     public void EnableImporter<TSource, TAsset>(IAssetImporter<TSource> importer)
         where TSource : class where TAsset : Asset
     {
-        ArgumentNullException.ThrowIfNull(importer);
         lock (_sync)
         {
             RequireConfiguration();
-            SourceAssets<TSource, TAsset> source = GetSourceType<TSource, TAsset>();
-            if (source.Importers.Any(value => value.Id == importer.Id))
+            if (!_importers.TryGetValue((typeof(TSource), typeof(TAsset)), out object? values))
+                _importers.Add((typeof(TSource), typeof(TAsset)), values = new List<IAssetImporter<TSource>>());
+            var importers = (List<IAssetImporter<TSource>>)values;
+            if (importers.Any(value => value.Id == importer.Id))
                 throw new InvalidOperationException($"Importer {importer.Id} is selected twice for {typeof(TAsset)}.");
-            source.Importers.Add(importer);
+            importers.Add(importer);
         }
     }
 
@@ -88,16 +122,15 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
         lock (_sync)
         {
             RequireOpen();
-            return _sourceTypes.TryGetValue((typeof(TSource), typeof(TAsset)), out object? source)
-                && ((SourceAssets<TSource, TAsset>)source).Importers.Count != 0;
+            return _importers.TryGetValue((typeof(TSource), typeof(TAsset)), out object? values)
+                && ((List<IAssetImporter<TSource>>)values).Count != 0;
         }
     }
 
-    /// <summary>Returns the same completed object to every request for one source element and semantic asset.</summary>
+    /// <summary>Completes and returns the asset associated with this input object.</summary>
     public async ValueTask<TAsset> GetAssetAsync<TSource, TAsset>(TSource source,
         CancellationToken cancellationToken = default) where TSource : class where TAsset : Asset
     {
-        ArgumentNullException.ThrowIfNull(source);
         cancellationToken.ThrowIfCancellationRequested();
         AssetResult result;
         lock (_sync)
@@ -105,33 +138,11 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
             RequireOpen();
             _cancellation.Token.ThrowIfCancellationRequested();
             _started = true;
-            SourceAssets<TSource, TAsset> definition = GetSourceType<TSource, TAsset>();
-            string key = definition.Source.GetElementKey(source);
-            ArgumentException.ThrowIfNullOrWhiteSpace(key);
-            if (definition.Importers.Count == 0)
+            if (!_assetIds.TryGetValue((source, typeof(TAsset)), out Guid id))
+                throw new InvalidOperationException($"No {typeof(TAsset)} is associated with this input object.");
+            result = _assets[id];
+            if (result.Conversions.Count == 0)
                 throw new InvalidOperationException($"No importer is enabled for {typeof(TSource)} -> {typeof(TAsset)}.");
-            if (!_sourceMeta.ElementIds.TryGetValue(key, out Guid id))
-                _sourceMeta.ElementIds.Add(key, id = Guid.NewGuid());
-            if (_assets.TryGetValue(id, out result!))
-            {
-                if (result.ElementKey != key || result.Content is not TAsset)
-                    throw new InvalidOperationException("Different source elements or semantic asset types share one identity.");
-                if (result.Completion.Task.IsCompletedSuccessfully) return (TAsset)result.Content;
-            }
-            else
-            {
-                string path = AssetProject.RequireProjectPath(ProjectRoot, definition.Source.GetOutputPath(source, id));
-                if (_assets.Values.Any(value => AssetProject.PathsEqual(value.Path, path)))
-                    throw new InvalidOperationException("Two imported assets use the same output path.");
-                TAsset asset = definition.Source.CreateAsset(source, id);
-                try
-                {
-                    if (asset.Id != id) throw new InvalidOperationException("The asset factory returned a different identity.");
-                    result = CreateResult(source, asset, key, path, definition);
-                    _assets.Add(id, result);
-                }
-                catch { asset.Dispose(); throw; }
-            }
         }
         await RunAsync(result.Completion, cancellationToken).ConfigureAwait(false);
         return (TAsset)result.Content;
@@ -220,7 +231,8 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
             lock (_sync)
             {
                 RequireCompleted();
-                return _assets.Values.OrderBy(value => value.ElementKey, StringComparer.Ordinal)
+                return _assets.Values.Where(value => value.Completion.Started)
+                    .OrderBy(value => value.ElementKey, StringComparer.Ordinal)
                     .Cast<AssetOutput>().ToArray();
             }
         }
@@ -231,26 +243,22 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
         lock (_sync) { RequireCompleted(); return new Dictionary<string, string>(_inputs, _inputs.Comparer); }
     }
 
-    private SourceAssets<TSource, TAsset> GetSourceType<TSource, TAsset>() where TSource : class where TAsset : Asset
-        => _sourceTypes.TryGetValue((typeof(TSource), typeof(TAsset)), out object? source)
-            ? (SourceAssets<TSource, TAsset>)source
-            : throw new InvalidOperationException($"No source rules are configured for {typeof(TSource)} -> {typeof(TAsset)}.");
-
-    private AssetResult CreateResult<TSource, TAsset>(TSource source, TAsset asset, string key, string path,
-        SourceAssets<TSource, TAsset> definition) where TSource : class where TAsset : Asset
+    private AssetResult CreateResult<TSource, TAsset>(TSource source, TAsset asset, string key, string path)
+        where TSource : class where TAsset : Asset
     {
-        var result = new AssetResult<TSource, TAsset>(asset, key, path, definition.Source);
-        foreach (IAssetImporter<TSource> importer in definition.Importers)
-        {
-            var work = new ImporterWork<TSource>(source, importer, this, asset);
-            foreach (Guid block in importer.ProducedBlocks)
+        var result = new AssetResult(asset, key, path);
+        if (_importers.TryGetValue((typeof(TSource), typeof(TAsset)), out object? values))
+            foreach (IAssetImporter<TSource> importer in (List<IAssetImporter<TSource>>)values)
             {
-                if (result.Producers.TryGetValue(block, out ImportWork? other))
-                    throw new InvalidOperationException($"Block {block} has competing producers {other.Name} and importer {importer.Id}.");
-                result.Producers[block] = work;
+                var work = new ImporterWork<TSource>(source, importer, this, asset);
+                foreach (Guid block in importer.ProducedBlocks)
+                {
+                    if (result.Producers.TryGetValue(block, out ImportWork? other))
+                        throw new InvalidOperationException($"Block {block} has competing producers {other.Name} and importer {importer.Id}.");
+                    result.Producers[block] = work;
+                }
+                result.Conversions.Add(work);
             }
-            result.Conversions.Add(work);
-        }
         result.Completion = new AssetWork(result, this);
         return result;
     }
@@ -325,13 +333,13 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
     private void RequireConfiguration()
     {
         RequireOpen();
-        if (_started) throw new InvalidOperationException("Importer selections and source rules cannot change after the first asset request.");
+        if (_started) throw new InvalidOperationException("Importer selections cannot change after the first asset request.");
     }
     private void RequireCompleted()
     {
         RequireOpen();
         _cancellation.Token.ThrowIfCancellationRequested();
-        if (_assets.Values.Any(value => !value.Completion.Task.IsCompletedSuccessfully))
+        if (_assets.Values.Any(value => value.Completion.Started && !value.Completion.Task.IsCompletedSuccessfully))
             throw new InvalidOperationException("Every requested asset must finish successfully before saving the import.");
     }
 
@@ -378,34 +386,19 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
         catch (Exception error) { completion.TrySetException(error); }
     }
 
-    internal abstract class AssetOutput(Asset asset, string elementKey, string path)
+    internal class AssetOutput(Asset asset, string elementKey, string path)
     {
         public Asset Asset { get; } = asset;
         public string ElementKey { get; } = elementKey;
         public string Path { get; } = path;
-        public abstract ValueTask<AssetEntry> SaveAsync(string destination, CancellationToken cancellationToken);
     }
 
-    private sealed class SourceAssets<TSource, TAsset>(AssetSource<TSource, TAsset> source)
-        where TSource : class where TAsset : Asset
-    {
-        public AssetSource<TSource, TAsset> Source { get; } = source;
-        public List<IAssetImporter<TSource>> Importers { get; } = [];
-    }
-
-    private abstract class AssetResult(Asset content, string elementKey, string path) : AssetOutput(content, elementKey, path)
+    private sealed class AssetResult(Asset content, string elementKey, string path) : AssetOutput(content, elementKey, path)
     {
         public Asset Content => Asset;
         public Dictionary<Guid, ImportWork> Producers { get; } = [];
         public List<ImportWork> Conversions { get; } = [];
         public ImportWork Completion { get; set; } = null!;
-    }
-
-    private sealed class AssetResult<TSource, TAsset>(TAsset asset, string key, string path, AssetSource<TSource, TAsset> source)
-        : AssetResult(asset, key, path) where TSource : class where TAsset : Asset
-    {
-        public override ValueTask<AssetEntry> SaveAsync(string destination, CancellationToken cancellationToken)
-            => source.SaveAsync((TAsset)Content, destination, cancellationToken);
     }
 
     private abstract class ImportWork(string name)

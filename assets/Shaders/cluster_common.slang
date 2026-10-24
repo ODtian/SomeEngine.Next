@@ -26,7 +26,7 @@ void LoadClusterInfo(ByteAddressBuffer pageHeap, uint pageOffset, uint clusterId
 uint GetClusterLocalMaterial(ByteAddressBuffer pageHeap, uint pageOffset, uint clusterId, uint triangle)
 {
     uint clusterOffset = pageOffset + pageHeap.Load(pageOffset + 16u) + clusterId * PACKED_CLUSTER_STRIDE_BYTES;
-    return LocalMaterial(LoadClusterMaterials(pageHeap, pageOffset, clusterOffset), pageHeap.Load(clusterOffset + 72u), triangle);
+    return LocalMaterial(pageHeap, clusterOffset, pageOffset, triangle);
 }
 
 /// Fetch a single uint8 vertex index from the page heap.

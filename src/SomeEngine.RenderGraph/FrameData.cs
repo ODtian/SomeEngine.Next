@@ -310,16 +310,16 @@ internal struct FramePass
     internal byte[]? ParameterOrdinaryData;
     internal List<GraphParameterResourceBinding>? ParameterBindings;
     internal List<GraphIdentity>? PersistentBindings;
+    internal List<PassTimeMeasurement>? TimeMeasurements;
     internal long DeclarationOrdinal;
+    internal bool IsBufferUpload;
     internal bool Enabled;
     internal bool Live;
     internal Queue? Queue;
-    internal int FirstAccess;
-    internal int AccessCount;
     internal PassCallbackStorage? PersistentCallbacks;
     internal FramePassCallbackStore? FrameCallbacks;
     internal int FrameCallbackIndex;
-    internal int ExtensionPointIndex;
+    internal GraphIdentity Region;
 }
 
 internal struct FrameResourceAccess
@@ -334,6 +334,8 @@ internal struct FrameResourceAccess
     internal ResourceAccess Access;
     internal BufferRange BufferRange;
     internal BufferRangeSet? SharedBufferRanges;
+    internal bool BufferDescriptor;
+    internal bool BufferDescriptorOnly;
     internal BufferAccessRanges BufferRanges => new(BufferRange, SharedBufferRanges);
     internal TextureSubresourceRange TextureRange;
     internal QueryRange QueryRange;

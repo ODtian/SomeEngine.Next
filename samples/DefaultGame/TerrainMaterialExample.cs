@@ -172,7 +172,6 @@ public sealed class TerrainMaterialExample : IDisposable
 
     public void Dispose()
     {
-        foreach (TerrainDisplacementMaterial material in Materials) material.Dispose();
         Lift.Terrain.Dispose();
     }
 }

@@ -164,7 +164,8 @@ public readonly record struct DeviceLimits(
     uint ShaderBufferAlignment,
     uint TextureDataPitchAlignment,
     uint TextureDataPlacementAlignment,
-    uint MaximumConstantBufferRange);
+    uint MaximumConstantBufferRange,
+    uint MaximumComputeThreadsPerGroup = 0);
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -282,9 +283,11 @@ public sealed class DeviceCapabilities
         bool supportsBufferInt64Atomics = false,
         bool supportsImageInt64Atomics = false,
         bool supportsComputeForwardProgress = false,
-        bool supportsConcurrentBufferReads = false)
+        bool supportsConcurrentBufferReads = false,
+        uint shaderLaneCount = 0)
     {
         Limits = limits;
+        ShaderLaneCount = shaderLaneCount;
         SupportsBundles = supportsBundles;
         SupportsPipelineStatistics = supportsPipelineStatistics;
         SupportsStreamOutputStatistics = supportsStreamOutputStatistics;
@@ -323,6 +326,7 @@ public sealed class DeviceCapabilities
     }
 
     public DeviceLimits Limits { get; }
+    public uint ShaderLaneCount { get; }
     public bool SupportsBundles { get; }
     public bool SupportsPipelineStatistics { get; }
     public bool SupportsStreamOutputStatistics { get; }

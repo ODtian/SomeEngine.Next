@@ -36,7 +36,7 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
         context.World.ExecuteQuery(
             _viewQuery,
             ref collector,
-            static (scoped QueryCursor cursor, ref ReceiverCollector value) => value.Collect(cursor));
+            static (QueryCursor cursor, ref ReceiverCollector value) => value.Collect(cursor));
         receiver = collector.View;
         count = collector.Count;
         if (count != 1)
@@ -59,7 +59,7 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
         internal Entity Entity;
         internal int Count;
 
-        internal void Collect(scoped QueryCursor cursor)
+        internal void Collect(QueryCursor cursor)
         {
             foreach (QueryRow row in cursor.Rows)
             {

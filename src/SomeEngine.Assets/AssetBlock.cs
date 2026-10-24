@@ -29,7 +29,7 @@ public abstract class AssetBlock : IDisposable, IAsyncDisposable
     private bool _disposed;
     protected object SyncRoot { get; }
     [BinaryIgnore] public abstract Guid BlockId { get; }
-    [BinaryIgnore] public Guid DataVersion { get; private set; } = Guid.NewGuid();
+    [BinaryIgnore] public Guid DataVersion { get; internal set; } = Guid.NewGuid();
     /// <summary>Locally supplied immutable bytes. Values must not be modified after assignment.</summary>
     private readonly Dictionary<ulong, ReadOnlyMemory<byte>> _chunks = [];
     [BinaryIgnore] public IReadOnlyDictionary<ulong, ReadOnlyMemory<byte>> Chunks => _chunks;

@@ -24,7 +24,8 @@ internal sealed class RuntimeScene : IDisposable
     private readonly record struct RegionMaterial(int Region, AssetId<MaterialAsset> Material);
 
     private readonly World _world;
-    private (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings, ClusterSkinBounds? SkinBounds)[] _meshes = [];
+    private readonly Entity _worldOriginEntity;
+    private (Guid Asset, Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings, ClusterSkinBounds? SkinBounds)[] _meshes = [];
     private readonly (Entity Entity, PointLight Value)[] _playbackLights;
     private Material[] _playbackMaterials;
     private readonly Vector3 _initialCameraPosition;
@@ -47,11 +48,16 @@ internal sealed class RuntimeScene : IDisposable
         float verticalFieldOfView,
         float nearPlane,
         float farPlane,
+        CameraDepthOfField? depthOfField,
+        uint playerId,
+        FirstPersonCamera? firstPerson,
         int meshInstanceCount,
         Vector3 meshPositionMin,
         Vector3 meshPositionMax)
     {
         _world = world;
+        Entity[] origins = Entities(world, new QueryDefinitionBuilder().Read<WorldOrigin>());
+        _worldOriginEntity = origins.Length == 0 ? world.CreateEntity(default(WorldOrigin)) : origins.Single();
         _playbackLights = playbackLights;
         _playbackMaterials = playbackMaterials;
         _initialCameraPosition = camera.Position;
@@ -63,12 +69,18 @@ internal sealed class RuntimeScene : IDisposable
         _verticalFieldOfView = verticalFieldOfView;
         _nearPlane = nearPlane;
         _farPlane = farPlane;
+        DepthOfField = depthOfField;
+        PlayerId = playerId;
+        FirstPerson = firstPerson;
         MeshInstanceCount = meshInstanceCount;
         MeshPositionMin = meshPositionMin;
         MeshPositionMax = meshPositionMax;
     }
 
     internal RuntimeCamera Camera { get; private set; }
+    internal CameraDepthOfField? DepthOfField { get; }
+    internal uint PlayerId { get; }
+    internal FirstPersonCamera? FirstPerson { get; }
 
     internal int MeshInstanceCount { get; }
 
@@ -108,19 +120,27 @@ internal sealed class RuntimeScene : IDisposable
                         .ConfigureAwait(false);
                     MeshBlock geometry = await file.GetBlockAsync<MeshBlock>(cancellationToken).ConfigureAwait(false);
                     ClusterGeometryBlock? clusters = await file.TryGetBlockAsync<ClusterGeometryBlock>(cancellationToken).ConfigureAwait(false);
-                    if (clusters is null) return;
+                    ClusterMeshBlock? packed = clusters is null
+                        ? await file.TryGetBlockAsync<ClusterMeshBlock>(cancellationToken).ConfigureAwait(false) : null;
+                    if (clusters is null && packed is null) return;
                     MeshMaterialsBlock references = await file.GetBlockAsync<MeshMaterialsBlock>(cancellationToken)
                         .ConfigureAwait(false);
-                    ClusterVertexAttributesBlock attributes = await file.GetBlockAsync<ClusterVertexAttributesBlock>(cancellationToken).ConfigureAwait(false);
-                    Mesh mesh = await clusters.CreateAsync(geometry, attributes, file.Name, cancellationToken).ConfigureAwait(false);
+                    ClusterVertexAttributesBlock? attributes = clusters is not null
+                        ? await file.GetBlockAsync<ClusterVertexAttributesBlock>(cancellationToken).ConfigureAwait(false) : null;
+                    Mesh mesh = clusters is not null
+                        ? await clusters.CreateAsync(geometry, attributes!, file.Name, cancellationToken).ConfigureAwait(false)
+                        : await packed!.CreateAsync(geometry, file.Name, cancellationToken).ConfigureAwait(false);
                     ClusterSkinBoundsBlock? skinBounds = await file.TryGetBlockAsync<ClusterSkinBoundsBlock>(cancellationToken).ConfigureAwait(false);
                     MeshPayloadSource? pages = null;
                     try
                     {
-                        pages = await clusters.OpenPayloadSourceAsync(attributes, cancellationToken).ConfigureAwait(false);
-                        int[] regions = clusters.Clusters.SelectMany(cluster => cluster.TriangleRegions.IsEmpty
+                        pages = clusters is not null
+                            ? await clusters.OpenPayloadSourceAsync(attributes!, cancellationToken).ConfigureAwait(false)
+                            : await packed!.OpenPayloadSourceAsync(cancellationToken).ConfigureAwait(false);
+                        int[] regions = clusters is not null ? clusters.Clusters.SelectMany(cluster => cluster.TriangleRegions.IsEmpty
                                 ? cluster.TriangleMaterials : cluster.TriangleRegions)
-                            .Select(region => Math.Max(0, region)).Distinct().Order().ToArray();
+                            .Select(region => Math.Max(0, region)).Distinct().Order().ToArray()
+                            : Enumerable.Range(0, geometry.Regions.Count).ToArray();
                         RegionMaterial[] regionMaterials = regions
                             .Select(region => new RegionMaterial(region, references.Materials[region])).ToArray();
                         foreach (RegionMaterial value in regionMaterials)
@@ -186,8 +206,8 @@ internal sealed class RuntimeScene : IDisposable
                 meshPositionMin = Vector3.Min(meshPositionMin, transform.Position);
                 meshPositionMax = Vector3.Max(meshPositionMax, transform.Position);
                 world.Add(entity, new MeshInstance { Mesh = meshData.Mesh, PageSource = meshData.Source,
-                    BoundsExpansion = source.BoundsExpansion });
-                if (content.SkinBounds is { } skinBounds) world.Add(entity, new MeshSkinBounds(skinBounds));
+                    BoundsExpansion = source.BoundsExpansion, DepthCacheClass = source.DepthCacheClass, FirstPerson = source.FirstPerson });
+                if (meshData.SkinBounds is { } skinBounds) world.Add(entity, new MeshSkinBounds(skinBounds));
                 world.AddBuffer<MeshMaterialBinding>(entity);
                 MeshMaterialBinding[] bindings = meshData.Bindings;
                 world.ExecuteBufferWrite<MeshMaterialBinding, MeshMaterialBinding[]>(entity, ref bindings,
@@ -214,8 +234,9 @@ internal sealed class RuntimeScene : IDisposable
             {
                 return new RuntimeScene(world, playbackLights, [.. materials.Values], motionQuery,
                     runtimeCamera, camera.VerticalFieldOfView, camera.NearPlane,
-                    camera.FarPlane, instances.Length, meshPositionMin, meshPositionMax)
-                    { _meshes = [.. meshes.Values] };
+                    camera.FarPlane, camera.DepthOfField, camera.PlayerId, camera.FirstPerson,
+                    instances.Length, meshPositionMin, meshPositionMax)
+                    { _meshes = meshes.Select(pair => (pair.Key, pair.Value.Mesh, pair.Value.Source, pair.Value.Bindings, pair.Value.SkinBounds)).ToArray() };
             }
             catch { world.ReleaseQuery(motionQuery); throw; }
         }
@@ -254,6 +275,44 @@ internal sealed class RuntimeScene : IDisposable
 
     internal Entity[] GetMeshEntities() => Entities(_world, new QueryDefinitionBuilder().Read<MeshInstance>());
 
+    internal Entity[] GetMovingMeshEntities() => Entities(_world,
+        new QueryDefinitionBuilder().Read<SceneMotion>().Read<WorldTransform>());
+
+    internal void SetWorldOrigin(WorldOrigin origin) => _world.Replace(_worldOriginEntity, origin);
+
+    internal SceneFrame CaptureFrame(SceneFrame frame)
+    {
+        var lights = new List<SceneLight>();
+        foreach (Entity entity in Entities(_world, new QueryDefinitionBuilder().Read<DirectionalLight>()))
+        {
+            DirectionalLight light = _world.Read<DirectionalLight>(entity);
+            lights.Add(new(SceneLightKind.Directional, Vector3.Zero, light.Direction, 0, 0, 0,
+                light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
+        }
+        foreach (Entity entity in GetPointLights())
+        {
+            PointLight light = _world.Read<PointLight>(entity);
+            lights.Add(new(SceneLightKind.Point, light.Position, Vector3.Zero, light.Range, 0, 0,
+                light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
+        }
+        foreach (Entity entity in Entities(_world, new QueryDefinitionBuilder().Read<SpotLight>()))
+        {
+            SpotLight light = _world.Read<SpotLight>(entity);
+            lights.Add(new(SceneLightKind.Spot, light.Position, light.Direction, light.Range,
+                light.InnerConeCos, light.OuterConeCos, light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
+        }
+        return frame with
+        {
+            NearPlane = _nearPlane, FarPlane = _farPlane, Lights = lights.ToArray(),
+            Meshes = GetMeshEntities().Select(entity =>
+            {
+                Mesh mesh = _world.Read<MeshInstance>(entity).Mesh;
+                Guid asset = _meshes.FirstOrDefault(value => ReferenceEquals(value.Mesh, mesh)).Asset;
+                return new SceneMeshTransform(asset, _world.Read<WorldTransform>(entity).Qvvs.ToMatrix());
+            }).ToArray(),
+        };
+    }
+
     internal Mesh GetMesh(Entity entity) => _world.Read<MeshInstance>(entity).Mesh;
 
     internal void ReplaceMesh(Entity entity, Mesh mesh)
@@ -285,11 +344,11 @@ internal sealed class RuntimeScene : IDisposable
         return AddMeshEntity(_world.Read<MeshInstance>(source), bindings, transform);
     }
 
-    internal Entity AddEntity(Mesh mesh, IReadOnlyList<Material> materials, TransformQvvs transform)
+    internal Entity AddEntity(Mesh mesh, IReadOnlyList<Material> materials, TransformQvvs transform, float boundsExpansion)
     {
         var bindings = new MeshMaterialBinding[materials.Count];
         for (int index = 0; index < materials.Count; index++) bindings[index] = new(materials[index]);
-        return AddMeshEntity(new MeshInstance { Mesh = mesh }, bindings, transform);
+        return AddMeshEntity(new MeshInstance { Mesh = mesh, BoundsExpansion = boundsExpansion }, bindings, transform);
     }
 
     private Entity AddMeshEntity(MeshInstance instance, MeshMaterialBinding[] bindings, TransformQvvs transform)
@@ -308,8 +367,26 @@ internal sealed class RuntimeScene : IDisposable
         catch { _world.DestroyEntity(entity); throw; }
     }
 
+    internal Entity AddMaterialDecal(Material material, TransformQvvs transform, int order)
+    {
+        Entity entity = _world.CreateEntity(new WorldTransform { Qvvs = transform });
+        _world.Add(entity, new MaterialDecal(material, order));
+        return entity;
+    }
+
+    internal void SetMaterialDecal(Entity entity, Material material, int order) =>
+        _world.Replace(entity, new MaterialDecal(material, order));
+
     internal void SetEntityTransform(Entity entity, TransformQvvs transform) =>
         _world.Replace(entity, new WorldTransform { Qvvs = transform });
+
+    internal void SetXray(Entity entity, Xray effect)
+    {
+        if (_world.Has<Xray>(entity)) _world.Replace(entity, effect);
+        else _world.Add(entity, effect);
+    }
+
+    internal void RemoveXray(Entity entity) => _world.Remove<Xray>(entity);
     internal Entity[] GetPointLights() => Entities(_world, new QueryDefinitionBuilder().Read<PointLight>());
     internal void SetPointLight(Entity entity, PointLight light) => _world.Replace(entity, light);
 

@@ -9,7 +9,7 @@ struct GpuPoseControl
     uint machineOffset;
     uint inputOffset;
     float playbackTime;
-    uint padding;
+    uint blendStart;
 };
 
 struct GpuPosePlayback
@@ -40,6 +40,112 @@ RWStructuredBuffer<float4x4> GpuPoseModels;
 RWStructuredBuffer<float4x4> GpuPosePrevious;
 RWStructuredBuffer<float4x4> GpuPoseHistoryCurrent;
 RWStructuredBuffer<float4x4> GpuPoseHistoryPrevious;
+
+struct GpuBlendState
+{
+    float phase;
+    uint3 samples;
+    float3 weights;
+    float padding;
+};
+
+struct GpuBlendLocal { float4 translation; float4 rotation; float4 scale; };
+RWStructuredBuffer<GpuBlendState> GpuBlendStates;
+RWStructuredBuffer<GpuBlendLocal> GpuBlendLocals;
+
+float2 BlendCoordinate(uint points, uint index)
+{
+    return asfloat(GpuPoseClips.Load2(points + index * 24u));
+}
+
+void ProjectBlendEdge(float2 coordinate, uint points, uint a, uint b,
+    inout float nearest, inout GpuBlendState selection)
+{
+    float2 origin = BlendCoordinate(points, a), edge = BlendCoordinate(points, b) - origin;
+    float amount = saturate(dot(coordinate - origin, edge) / dot(edge, edge));
+    float2 difference = coordinate - origin - edge * amount;
+    float distance = dot(difference, difference);
+    if (distance < nearest)
+    {
+        nearest = distance;
+        selection.samples = uint3(a, b, a);
+        selection.weights = float3(1.0 - amount, amount, 0.0);
+    }
+}
+
+GpuBlendState SelectBlendSpace(uint space, float2 coordinate)
+{
+    uint4 ranges = GpuPoseClips.Load4(space);
+    uint4 triangles = GpuPoseClips.Load4(space + 16u);
+    GpuBlendState selection = (GpuBlendState)0;
+    if (ranges.w != 0u)
+    {
+        uint interval = 0u;
+        while (interval + 1u < ranges.w)
+        {
+            uint b = GpuPoseClips.Load(ranges.z + interval * 16u + 4u);
+            if (coordinate.x <= BlendCoordinate(ranges.x, b).x) break;
+            interval++;
+        }
+        uint4 span = GpuPoseClips.Load4(ranges.z + interval * 16u);
+        float amount = saturate((coordinate.x - asfloat(span.z)) * asfloat(span.w));
+        selection.samples = uint3(span.x, span.y, span.x);
+        selection.weights = float3(1.0 - amount, amount, 0.0);
+        return selection;
+    }
+    for (uint triangle = 0u; triangle < triangles.y; triangle++)
+    {
+        uint3 indices = GpuPoseClips.Load3(triangles.x + triangle * 12u);
+        float2 origin = BlendCoordinate(ranges.x, indices.x);
+        float2 b = BlendCoordinate(ranges.x, indices.y) - origin;
+        float2 c = BlendCoordinate(ranges.x, indices.z) - origin;
+        float2 relative = coordinate - origin;
+        float inverse = 1.0 / (b.x * c.y - c.x * b.y);
+        float wb = dot(relative, float2(c.y, -c.x)) * inverse;
+        float wc = dot(relative, float2(-b.y, b.x)) * inverse;
+        float wa = 1.0 - wb - wc;
+        if (wa < 0.0 || wb < 0.0 || wc < 0.0) continue;
+        selection.samples = indices;
+        selection.weights = float3(wa, wb, wc);
+        return selection;
+    }
+    float nearest = 3.402823466e+38;
+    for (uint triangle = 0u; triangle < triangles.y; triangle++)
+    {
+        uint3 indices = GpuPoseClips.Load3(triangles.x + triangle * 12u);
+        ProjectBlendEdge(coordinate, ranges.x, indices.x, indices.y, nearest, selection);
+        ProjectBlendEdge(coordinate, ranges.x, indices.y, indices.z, nearest, selection);
+        ProjectBlendEdge(coordinate, ranges.x, indices.z, indices.x, nearest, selection);
+    }
+    return selection;
+}
+
+void AdvanceBlendInputs(GpuPoseControl control, bool reset, float delta)
+{
+    uint4 graph = GpuPoseClips.Load4(control.machineOffset);
+    for (uint index = 0u; index < graph.y; index++)
+    {
+        uint address = graph.x + index * 32u;
+        uint4 node = GpuPoseClips.Load4(address), operation = GpuPoseClips.Load4(address + 16u);
+        GpuBlendState prior = GpuBlendStates[control.blendStart + index];
+        float phase = reset ? 0.0 : prior.phase;
+        GpuBlendState selection = (GpuBlendState)0;
+        if (node.x == 0u) phase += delta * asfloat(operation.z);
+        else if (node.x == 1u)
+        {
+            uint4 header = GpuPoseClips.Load4(node.y);
+            uint4 details = GpuPoseClips.Load4(node.y + 16u);
+            float2 coordinate = float2(GpuPoseInputs[control.inputOffset + details.z], GpuPoseInputs[control.inputOffset + details.w]);
+            selection = SelectBlendSpace(node.y, coordinate);
+            float frequency = 0.0;
+            for (uint sample = 0u; sample < 3u; sample++)
+                frequency += selection.weights[sample] / asfloat(GpuPoseClips.Load(header.x + selection.samples[sample] * 24u + 12u));
+            phase += delta * frequency;
+        }
+        selection.phase = phase;
+        GpuBlendStates[control.blendStart + index] = selection;
+    }
+}
 
 struct PoseStateDefinition
 {
@@ -92,12 +198,22 @@ void AdvancePoseStates(uint3 thread : SV_DispatchThreadID)
     GpuPoseControls.GetDimensions(count, stride);
     if (thread.x >= count) return;
     GpuPoseControl control = GpuPoseControls[thread.x];
-    if ((control.flags & 1u) == 0u) return;
+    if ((control.flags & 128u) == 0u) return;
     GpuPosePlayback playback = GpuPosePlaybackStates[thread.x];
     bool reset = (control.flags & 34u) != 0u || playback.starts != control.starts
         || control.playbackTime < playback.playbackTime;
     if (!reset && all(playback.inputNumber == control.inputNumber)) return;
-    if ((control.flags & 8u) == 0u)
+    if ((control.flags & 64u) != 0u)
+    {
+        float delta = (control.flags & 16u) == 0u ? 0.0 : control.playbackTime - (reset ? 0.0 : playback.playbackTime);
+        AdvanceBlendInputs(control, reset, delta);
+        playback = (GpuPosePlayback)0;
+        playback.state = playback.sourceState = playback.transitionIndex = 0xffffffffu;
+        playback.time = playback.sourceTime = control.playbackTime;
+        playback.sampleTime = playback.sourceSampleTime = control.playbackTime;
+        playback.weight = 1.0;
+    }
+    else if ((control.flags & 8u) == 0u)
     {
         playback = (GpuPosePlayback)0;
         playback.state = playback.sourceState = 0xffffffffu;
@@ -239,6 +355,101 @@ float4x4 TrsMatrix(float3 translation, float4 q, float3 scale)
         float4(translation, 1));
 }
 
+PoseTrs ReadBlendLocal(uint index)
+{
+    GpuBlendLocal stored = GpuBlendLocals[index];
+    PoseTrs result;
+    result.translation = stored.translation.xyz;
+    result.rotation = stored.rotation;
+    result.scale = stored.scale.xyz;
+    return result;
+}
+
+float4 MultiplyRotation(float4 a, float4 b)
+{
+    return float4(a.w * b.xyz + b.w * a.xyz + cross(a.xyz, b.xyz), a.w * b.w - dot(a.xyz, b.xyz));
+}
+
+PoseTrs SampleBlendSpace(uint space, GpuBlendState selection, uint bone)
+{
+    uint points = GpuPoseClips.Load(space);
+    selection.weights /= selection.weights.x + selection.weights.y + selection.weights.z;
+    uint first = 0xffffffffu;
+    for (uint sample = 0u; sample < 3u; sample++)
+        if (selection.weights[sample] > 0.0) first = min(first, selection.samples[sample]);
+    uint4 point = GpuPoseClips.Load4(points + first * 24u);
+    uint clip = GpuPoseClips.Load(points + first * 24u + 16u);
+    float time = frac(selection.phase + asfloat(point.z)) * asfloat(point.w);
+    float4 reference = SampleClip(clip, time, bone).rotation;
+    PoseTrs result = (PoseTrs)0;
+    for (uint sample = 0u; sample < 3u; sample++)
+    {
+        float weight = selection.weights[sample];
+        if (weight == 0.0) continue;
+        uint address = points + selection.samples[sample] * 24u;
+        uint4 pointData = GpuPoseClips.Load4(address);
+        uint pointClip = GpuPoseClips.Load(address + 16u);
+        PoseTrs pose = SampleClip(pointClip, frac(selection.phase + asfloat(pointData.z)) * asfloat(pointData.w), bone);
+        result.translation += pose.translation * weight;
+        result.scale += pose.scale * weight;
+        result.rotation += pose.rotation * (dot(reference, pose.rotation) < 0.0 ? -weight : weight);
+    }
+    result.rotation = normalize(result.rotation);
+    return result;
+}
+
+PoseTrs SampleBlendGraph(GpuPoseControl control, uint bone)
+{
+    uint4 graph = GpuPoseClips.Load4(control.machineOffset);
+    PoseTrs result = (PoseTrs)0;
+    // Each invocation owns one bone's rows, so its dependency-ordered writes feed its later steps directly.
+    for (uint index = 0u; index < graph.y; index++)
+    {
+        uint address = graph.x + index * 32u;
+        uint4 node = GpuPoseClips.Load4(address), operation = GpuPoseClips.Load4(address + 16u);
+        GpuBlendState selection = GpuBlendStates[control.blendStart + index];
+        if (node.x == 0u)
+        {
+            uint4 clip = GpuPoseClips.Load4(node.y);
+            float duration = clip.y > 1u ? float(clip.y - 1u) / asfloat(clip.z) : 0.0;
+            float time = operation.y != 0u ? fmod(selection.phase, duration) : min(selection.phase, duration);
+            result = SampleClip(node.y, time, bone);
+        }
+        else if (node.x == 1u) result = SampleBlendSpace(node.y, selection, bone);
+        else
+        {
+            PoseTrs basis = ReadBlendLocal(control.clipOffset + node.z * graph.z + bone);
+            PoseTrs source = ReadBlendLocal(control.clipOffset + node.w * graph.z + bone);
+            float weight = asfloat(operation.z) * asfloat(GpuPoseClips.Load(operation.x + bone * 4u));
+            if (operation.w != 0xffffffffu) weight *= GpuPoseInputs[control.inputOffset + operation.w];
+            if (operation.y == 0u)
+            {
+                result.translation = lerp(basis.translation, source.translation, weight);
+                result.scale = lerp(basis.scale, source.scale, weight);
+                float4 rotation = dot(basis.rotation, source.rotation) < 0.0 ? -source.rotation : source.rotation;
+                result.rotation = normalize(lerp(basis.rotation, rotation, weight));
+            }
+            else
+            {
+                uint reference = node.y + bone * 48u;
+                float3 translation = asfloat(GpuPoseClips.Load3(reference));
+                float4 rotation = asfloat(GpuPoseClips.Load4(reference + 16u));
+                float3 scale = asfloat(GpuPoseClips.Load3(reference + 32u));
+                float4 delta = MultiplyRotation(source.rotation, float4(-rotation.xyz, rotation.w));
+                result.translation = basis.translation + (source.translation - translation) * weight;
+                result.scale = basis.scale * lerp(float3(1.0), source.scale / scale, weight);
+                result.rotation = normalize(MultiplyRotation(InterpolateRotation(float4(0, 0, 0, 1), delta, weight), basis.rotation));
+            }
+        }
+        GpuBlendLocal stored;
+        stored.translation = float4(result.translation, 0);
+        stored.rotation = result.rotation;
+        stored.scale = float4(result.scale, 0);
+        GpuBlendLocals[control.clipOffset + index * graph.z + bone] = stored;
+    }
+    return result;
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void SamplePoseLevel(uint3 thread : SV_DispatchThreadID)
@@ -257,7 +468,9 @@ void SamplePoseLevel(uint3 thread : SV_DispatchThreadID)
         machine = GpuPoseClips.Load4(control.machineOffset);
         clip = ReadPoseState(machine, playback.state).clipOffset;
     }
-    PoseTrs pose = SampleClip(clip, playback.sampleTime, work.y);
+    PoseTrs pose;
+    if ((control.flags & 64u) != 0u) pose = SampleBlendGraph(control, work.y);
+    else pose = SampleClip(clip, playback.sampleTime, work.y);
     if ((control.flags & 8u) != 0u && playback.weight < 1.0)
     {
         PoseTrs source = SampleClip(ReadPoseState(machine, playback.sourceState).clipOffset, playback.sourceSampleTime, work.y);
@@ -267,6 +480,166 @@ void SamplePoseLevel(uint3 thread : SV_DispatchThreadID)
     }
     float4x4 local = TrsMatrix(pose.translation, pose.rotation, pose.scale);
     GpuPoseModels[work.w] = work.z == 0xffffffffu ? local : mul(local, GpuPoseModels[work.z]);
+}
+
+struct GpuPoseGoal
+{
+    float3 position;
+    float positionWeight;
+    float3 bendDirection;
+    float orientationWeight;
+    float4 orientation;
+};
+StructuredBuffer<GpuPoseGoal> GpuPoseGoals;
+StructuredBuffer<float4> GpuPoseOffsets;
+
+float4 DirectionRotation(float3 from, float3 to)
+{
+    from = normalize(from); to = normalize(to);
+    float cosine = clamp(dot(from, to), -1.0, 1.0);
+    float3 axis = cross(from, to);
+    float sine = length(axis);
+    if (sine == 0.0)
+    {
+        if (cosine >= 0.0) return float4(0, 0, 0, 1);
+        axis = normalize(abs(from.x) > abs(from.z) ? float3(-from.y, from.x, 0) : float3(0, -from.z, from.y));
+        return float4(axis, 0);
+    }
+    float halfAngle = atan2(sine, cosine) * 0.5;
+    return float4(axis / sine * sin(halfAngle), cos(halfAngle));
+}
+
+float4 ModelRotation(float4x4 model)
+{
+    float3 x = normalize(model[0].xyz), y = normalize(model[1].xyz), z = normalize(model[2].xyz);
+    float trace = x.x + y.y + z.z;
+    float4 rotation;
+    if (trace > 0.0)
+    {
+        float scale = sqrt(trace + 1.0);
+        rotation = float4(float3(y.z - z.y, z.x - x.z, x.y - y.x) * (0.5 / scale), scale * 0.5);
+    }
+    else if (x.x >= y.y && x.x >= z.z)
+    {
+        float scale = sqrt(1.0 + x.x - y.y - z.z), inverse = 0.5 / scale;
+        rotation = float4(scale * 0.5, (x.y + y.x) * inverse, (x.z + z.x) * inverse, (y.z - z.y) * inverse);
+    }
+    else if (y.y > z.z)
+    {
+        float scale = sqrt(1.0 + y.y - x.x - z.z), inverse = 0.5 / scale;
+        rotation = float4((y.x + x.y) * inverse, scale * 0.5, (y.z + z.y) * inverse, (z.x - x.z) * inverse);
+    }
+    else
+    {
+        float scale = sqrt(1.0 + z.z - x.x - y.y), inverse = 0.5 / scale;
+        rotation = float4((z.x + x.z) * inverse, (z.y + y.z) * inverse, scale * 0.5, (x.y - y.x) * inverse);
+    }
+    return normalize(rotation);
+}
+
+void RotateModelDescendants(uint2 range, float3 pivot, float4 rotation)
+{
+    float4x4 turn = TrsMatrix(float3(0), rotation, float3(1));
+    for (uint index = 0u; index < range.y; index++)
+    {
+        uint bone = GpuPoseClips.Load(range.x + index * 4u);
+        float4x4 model = GpuPoseModels[bone];
+        model[3].xyz -= pivot;
+        model = mul(model, turn);
+        model[3].xyz += pivot;
+        GpuPoseModels[bone] = model;
+    }
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void TranslatePose(uint3 thread : SV_DispatchThreadID)
+{
+    uint count, stride;
+    GpuPoseWork.GetDimensions(count, stride);
+    if (thread.x >= count) return;
+    uint4 work = GpuPoseWork[thread.x];
+    if ((GpuPoseControls[work.x].flags & 1u) == 0u) return;
+    uint2 range = GpuPoseClips.Load2(work.y);
+    float3 offset = GpuPoseOffsets[work.x].xyz;
+    for (uint index = 0u; index < range.y; index++)
+    {
+        uint bone = GpuPoseClips.Load(range.x + index * 4u);
+        float4x4 model = GpuPoseModels[bone];
+        model[3].xyz += offset;
+        GpuPoseModels[bone] = model;
+    }
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void SolveTwoBone(uint3 thread : SV_DispatchThreadID)
+{
+    uint count, stride;
+    GpuPoseWork.GetDimensions(count, stride);
+    if (thread.x >= count) return;
+    uint4 work = GpuPoseWork[thread.x];
+    if ((GpuPoseControls[work.x].flags & 1u) == 0u) return;
+    uint3 bones = GpuPoseClips.Load3(work.y);
+    GpuPoseGoal goal = GpuPoseGoals[work.z];
+    if (goal.positionWeight > 0.0)
+    {
+        float3 a = GpuPoseModels[bones.x][3].xyz, b = GpuPoseModels[bones.y][3].xyz, c = GpuPoseModels[bones.z][3].xyz;
+        float upper = length(b - a), lower = length(c - b);
+        float3 target = lerp(c, goal.position, goal.positionWeight);
+        float3 direction = normalize(target - a);
+        float2 bend = asfloat(GpuPoseClips.Load2(work.y + 16u));
+        float minimum = sqrt(max(upper * upper + lower * lower + 2.0 * upper * lower * bend.y, 0.0));
+        float maximum = sqrt(max(upper * upper + lower * lower + 2.0 * upper * lower * bend.x, 0.0));
+        float distance = clamp(length(target - a), minimum, maximum);
+        float along = (upper * upper - lower * lower + distance * distance) / (2.0 * distance);
+        float height = sqrt(max(upper * upper - along * along, 0.0));
+        float3 bendDirection = normalize(goal.bendDirection - direction * dot(goal.bendDirection, direction));
+        float3 middle = a + direction * along + bendDirection * height;
+        float3 tip = a + direction * distance;
+        RotateModelDescendants(GpuPoseClips.Load2(work.y + 32u), a, DirectionRotation(b - a, middle - a));
+        b = GpuPoseModels[bones.y][3].xyz;
+        c = GpuPoseModels[bones.z][3].xyz;
+        RotateModelDescendants(GpuPoseClips.Load2(work.y + 40u), b, DirectionRotation(c - b, tip - b));
+    }
+    if (goal.orientationWeight > 0.0)
+    {
+        float4 current = ModelRotation(GpuPoseModels[bones.z]);
+        float4 rotation = InterpolateRotation(current, goal.orientation, goal.orientationWeight);
+        float4 delta = MultiplyRotation(rotation, float4(-current.xyz, current.w));
+        RotateModelDescendants(GpuPoseClips.Load2(work.y + 48u), GpuPoseModels[bones.z][3].xyz, delta);
+    }
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void SolveAim(uint3 thread : SV_DispatchThreadID)
+{
+    uint count, stride;
+    GpuPoseWork.GetDimensions(count, stride);
+    if (thread.x >= count) return;
+    uint4 work = GpuPoseWork[thread.x];
+    if ((GpuPoseControls[work.x].flags & 1u) == 0u) return;
+    GpuPoseGoal goal = GpuPoseGoals[work.z];
+    if (goal.positionWeight == 0.0) return;
+    uint2 chain = GpuPoseClips.Load2(work.y);
+    for (uint joint = 0u; joint < chain.y; joint++)
+    {
+        uint address = chain.x + joint * 48u;
+        uint3 bone = GpuPoseClips.Load3(address);
+        float4 axis = asfloat(GpuPoseClips.Load4(address + 16u));
+        float maximum = asfloat(GpuPoseClips.Load(address + 32u));
+        float4x4 model = GpuPoseModels[bone.x];
+        float3 current = normalize(mul(float4(axis.xyz, 0), model).xyz);
+        float3 direction = normalize(goal.position - model[3].xyz);
+        float angle = acos(clamp(dot(current, direction), -1.0, 1.0));
+        if (angle > 0.0)
+        {
+            float weight = min(angle, maximum) / angle * axis.w * goal.positionWeight;
+            float4 delta = InterpolateRotation(float4(0, 0, 0, 1), DirectionRotation(current, direction), weight);
+            RotateModelDescendants(bone.yz, model[3].xyz, delta);
+        }
+    }
 }
 
 [shader("compute")]

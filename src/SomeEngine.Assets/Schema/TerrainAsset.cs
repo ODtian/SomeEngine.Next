@@ -54,7 +54,7 @@ public sealed partial class TerrainAsset : Asset
                 voxels.SetBytes(key++, TerrainPageSource.Encode(page.Samples));
             }
         }
-        IReadOnlyList<Exception> errors = ApplyBlocks([layout, heights, voxels, bindings]);
+        IReadOnlyList<Exception> errors = ApplyBlocks([(layout, true), (heights, true), (voxels, true), (bindings, true)]);
         if (errors.Count != 0) throw new AggregateException(errors);
         return ValueTask.CompletedTask;
     }

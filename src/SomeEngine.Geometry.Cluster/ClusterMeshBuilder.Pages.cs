@@ -669,7 +669,7 @@ public static partial class ClusterMeshBuilder
             header.ExtensionDataOffset = offsets.ExtensionDataOffset;
             header.VertexEncodingHash = VertexEncodingHash;
             header.ExtensionDataSize = checked((uint)offsets.ExtensionDataSize);
-            header.Reserved = 0;
+            header.ExtensionDataSize = 0;
         }
     }
 

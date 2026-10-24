@@ -33,6 +33,7 @@
     <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../assets/Fonts/Example.otf" LogicalName="SomeEngine.Runtime.Fonts.Example.otf" />
     <Content Include="../../assets/Fonts/OFL-Example.txt" Link="Fonts/OFL-Example.txt"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="imgui.ini" Condition="Exists('imgui.ini')">

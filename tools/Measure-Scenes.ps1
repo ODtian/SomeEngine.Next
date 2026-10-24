@@ -8,6 +8,8 @@ using System;
 using System.Runtime.InteropServices;
 public static class SceneTestKeys {
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, UIntPtr key, IntPtr data);
+    [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
 }
 '@
 $started = [DateTime]::UtcNow
@@ -17,6 +19,19 @@ $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
 $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
+if ($Scene) {
+    $start.ArgumentList.Add('--measure-scene')
+    $start.ArgumentList.Add($Scene)
+}
+foreach ($argument in $ApplicationArguments) { $start.ArgumentList.Add($argument) }
+if ($ShadingPath) {
+    $start.ArgumentList.Add('--shading-path')
+    $start.ArgumentList.Add($ShadingPath)
+}
+if ($playback) {
+    $start.ArgumentList.Add('--scene-playback')
+    $start.ArgumentList.Add($playback)
+}
 if ($Trace) {
     $startupTraces = Join-Path ([IO.Path]::GetDirectoryName($application)) 'Performance'
     [void][IO.Directory]::CreateDirectory($startupTraces)
@@ -34,9 +49,13 @@ try {
         $process.Refresh()
     }
     if ($process.HasExited) { throw 'DefaultGame exited before creating its test window.' }
+    $window = $process.MainWindowHandle
+    # Keep the measured client area above desktop tools at its configured size and position.
+    [void][SceneTestKeys]::ShowWindowAsync($window, 5)
+    [void][SceneTestKeys]::SetWindowPos($window, [IntPtr]::new(-1), 0, 0, 0, 0, 0x4043)
     $key = if ($Trace) { 0x79 } else { 0x78 }
-    [void][SceneTestKeys]::PostMessage($process.MainWindowHandle, 0x100, [UIntPtr]$key, [IntPtr]0)
-    [void][SceneTestKeys]::PostMessage($process.MainWindowHandle, 0x101, [UIntPtr]$key, [IntPtr]0)
+    [void][SceneTestKeys]::PostMessage($window, 0x100, [UIntPtr]$key, [IntPtr]0)
+    [void][SceneTestKeys]::PostMessage($window, 0x101, [UIntPtr]$key, [IntPtr]0)
     $reports = Join-Path ([IO.Path]::GetDirectoryName($application)) 'Performance'
     while (!$process.HasExited -and $timer.Elapsed.TotalSeconds -lt 57) {
         $report = Get-ChildItem -LiteralPath $reports -Filter results.json -Recurse -ErrorAction SilentlyContinue |

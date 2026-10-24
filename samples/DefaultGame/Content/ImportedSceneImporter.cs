@@ -111,6 +111,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
                 shader = Replace(shader, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
                     MaskShader.Replace("ALPHA_CUTOFF", cutoff.ToString("R", CultureInfo.InvariantCulture)) + "\ntypedef SceneMask VisibilityEvaluate;");
             WriteIfChanged(Path.Combine(directory, shaderName + ".slang"), shader);
+            WriteSurfaceEntries(directory, shaderName);
             string definitionPath = Path.Combine(directory, shaderName + ".shader");
             var definition = JsonNode.Parse(File.ReadAllText(Path.Combine(defaults, "standard.shader")))!;
             Guid shaderId = File.Exists(definitionPath)
@@ -129,6 +130,65 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         old.Shader = new(shaderIds.First());
         template.Name = "Imported scene material";
         project.RegisterAsset(await template.SaveAsync(Path.Combine(project.RootPath, SampleSceneMaterials.ImportedTemplatePath)));
+    }
+
+    internal static void WriteSurfaceSources(string directory, string engineRoot)
+    {
+        WriteIfChanged(Path.Combine(directory, "cluster_transparency.slang"),
+            File.ReadAllText(Path.Combine(engineRoot, "assets/Shaders/cluster_transparency.slang")));
+        foreach (string definitionPath in Directory.EnumerateFiles(directory, "scene_*.shader"))
+        {
+            string shaderName = Path.GetFileNameWithoutExtension(definitionPath);
+            string sourcePath = Path.Combine(directory, shaderName + ".slang");
+            string suffix = shaderName["scene_".Length..];
+            bool twoSided = suffix.EndsWith("_both", StringComparison.Ordinal);
+            string surface = twoSided ? suffix[..^"_both".Length] : suffix;
+            float cutoff = surface == "opaque" ? -1 : BitConverter.Int32BitsToSingle(
+                int.Parse(surface["mask_".Length..], NumberStyles.HexNumber, CultureInfo.InvariantCulture));
+            string source = CreateSurfaceShader(Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"),
+                shaderName, cutoff, twoSided);
+            WriteIfChanged(sourcePath, source);
+            WriteSurfaceEntries(directory, shaderName);
+            JsonNode definition = CreateSurfaceDefinition(definitionPath,
+                Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"), shaderName, cutoff);
+            WriteIfChanged(definitionPath, definition.ToJsonString());
+        }
+    }
+
+    private static JsonNode CreateSurfaceDefinition(string path, string defaults, string name, float cutoff)
+    {
+        var definition = JsonNode.Parse(File.ReadAllText(Path.Combine(defaults, "standard.shader")))!;
+        Guid id = File.Exists(path)
+            ? Guid.Parse(JsonNode.Parse(File.ReadAllText(path))!["Fields"]!["Id"]!.GetValue<string>()) : Guid.NewGuid();
+        definition["Fields"]!["Id"] = id.ToString();
+        definition["Fields"]!["Name"] = name;
+        definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang", name + "_transparency.slang");
+        // Both import and refresh derive the saved depth variants from the same material declaration.
+        foreach (JsonNode? value in (JsonArray)definition["Blocks"]![0]!["Fields"]!["Specializations"]!)
+            if (value!["EntryPoint"]!.GetValue<string>() is "ClusterSurfaceDataDepth" or "ClusterSurfaceDataMode" or
+                "ClusterShadowReceiver" or "ClusterForwardShade" or "BuildTransparentGeometry" or
+                "RequestTransparentShadows" or "RequestProjectedTransparentShadows" or
+                "ResolveTransparentColor" or "ResolveProjectedTransparentColor")
+                ((JsonArray)value["Arguments"]!)[0] = cutoff >= 0 ? "1" : "0";
+        return definition;
+    }
+
+    private static void WriteSurfaceEntries(string directory, string name) =>
+        WriteIfChanged(Path.Combine(directory, name + "_transparency.slang"),
+            "import \"" + name + "\";\n#define TRANSPARENCY_MATERIAL_TYPE SceneTransparencyMaterial_" + name +
+            "\n#include \"cluster_transparency_entries.slang\"\n");
+
+    private static string CreateSurfaceShader(string defaults, string shaderName, float cutoff, bool twoSided)
+    {
+        string source = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
+            .Replace("\"standard_material.slang\"", "\"scene_material.slang\"")
+            .Replace("StandardTransparencyMaterial", "SceneTransparencyMaterial_" + shaderName);
+        if (twoSided) source = "#define CLUSTER_RASTER_TWO_SIDED 1\n" + source;
+        if (cutoff >= 0)
+            source = Replace(source, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
+                MaskShader.Replace("ALPHA_CUTOFF", cutoff.ToString("R", CultureInfo.InvariantCulture)) +
+                "\ntypedef SceneMask VisibilityEvaluate;");
+        return source;
     }
 
     protected override ValueTask AddSceneContentAsync(World world, Scene scene, ImportContext context,

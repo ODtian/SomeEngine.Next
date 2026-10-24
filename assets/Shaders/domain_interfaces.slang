@@ -12,6 +12,7 @@ struct SurfaceBarycentrics
 
 struct SurfaceReconstructionInput
 {
+    float2 PixelCenter;
     float3 TargetPosition;
     float3 TargetPositionDx;
     float3 TargetPositionDy;
@@ -21,6 +22,7 @@ struct SurfaceReconstructionInput
     float3 ParentDy;
     float4x4 ViewProjection;
     uint2 ScreenSize;
+    float3 WorldTranslation;
 };
 
 // Conservative geometric approximation error for one triangular domain patch.

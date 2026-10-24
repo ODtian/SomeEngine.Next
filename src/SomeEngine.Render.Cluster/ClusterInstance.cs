@@ -1,4 +1,5 @@
 using SomeEngine.Render.Instances;
+using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Cluster;
 
@@ -17,11 +18,18 @@ public static class ClusterRenderFeature
     public static RenderInstancePropertyKey MaterialSlotOffsetKey { get; } =
         new("someengine.cluster.material_slot_offset");
 
+    public static RenderInstancePropertyKey BlendOcclusionKey { get; } =
+        new("someengine.cluster.blend_occlusion");
+
     public static RenderInstancePropertyKey BoundsExpansionKey { get; } =
         new("someengine.cluster.bounds_expansion");
 
     public static RenderInstancePropertyKey DeformBoundsKey { get; } =
         new("someengine.cluster.deform_bounds");
+
+    public static RenderInstancePropertyKey XrayKey { get; } = new("someengine.xray");
+    public static RenderInstancePropertyKey DepthCacheClassKey { get; } = new("someengine.shadow.depth_cache_class");
+    public static RenderInstancePropertyKey FirstPersonKey { get; } = new("someengine.shadow.first_person");
 
     public const uint MissingBvhRoot = uint.MaxValue;
     public const uint MissingMaterialSlots = uint.MaxValue;
@@ -61,6 +69,11 @@ public static class ClusterRenderFeature
             Float32Encoding);
         _ = builder.Register<RenderDeformBounds>("SomeEngine.Render.Cluster", DeformBoundsKey,
             new("someengine.cluster.bounds.uint2.v1", valueSize: 8, storageAlignment: 4, storageStride: 8, metadataWordCount: 1));
+        _ = builder.Register<uint>("SomeEngine.Render", DepthCacheClassKey, UInt32Encoding);
+        _ = builder.Register<FirstPersonMeshData>("SomeEngine.Render", FirstPersonKey,
+            new("someengine.render.first_person.v1", valueSize: 8, storageAlignment: 4, storageStride: 8, metadataWordCount: 1));
+        _ = builder.Register<RenderXray>("SomeEngine.Render", XrayKey,
+            new("someengine.render.xray.v1", valueSize: 48, storageAlignment: 4, storageStride: 48, metadataWordCount: 1));
         return builder.Freeze();
     }
 
@@ -71,6 +84,7 @@ public static class ClusterRenderFeature
             "SomeEngine.Render.Cluster.MaterialBinding",
             MaterialSlotOffsetKey,
             UInt32Encoding);
+        _ = builder.Register<uint>("SomeEngine.Render.Cluster.MaterialBinding", BlendOcclusionKey, UInt32Encoding);
         return builder.Freeze();
     }
 }

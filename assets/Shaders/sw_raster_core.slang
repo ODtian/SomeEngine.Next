@@ -10,7 +10,6 @@
 #ifndef SW_RASTER_CORE_SLANG
 #define SW_RASTER_CORE_SLANG
 
-#include "cluster_common.slang"
 #include "cluster_structures.slang"
 #include "cluster_view_access.slang"
 #include "common.slang"
@@ -24,12 +23,12 @@ struct ClusterSoftwareRasterUniforms
     uint MaxBins;
     uint DebugDump;  // non-zero = dump debug data this frame
     uint CurrentBin; // Per-bin dispatch: which bin this dispatch covers
-    uint _pad0;
+    uint EarlyDepthEnabled;
     uint _pad1;
     uint _pad2;
 };
 
-cbuffer ClusterSoftwareRasterPushConstants : register(b100, space0)
+cbuffer ClusterSoftwareRasterPushConstants
 {
     ClusterSoftwareRasterUniforms ClusterSoftwareRasterUniformData;
 };
@@ -37,7 +36,7 @@ cbuffer ClusterSoftwareRasterPushConstants : register(b100, space0)
 // Instance-property accessors are declared in cluster_common.slang (via vertex_evaluate.slang).
 StructuredBuffer<ClusterViewUniforms> SoftwareRasterViews;
 StructuredBuffer<ClusterViewUniforms> SoftwareRasterPolicyViews;
-StructuredBuffer<DrawRequest> SoftwareRasterVisibleClusters;
+StructuredBuffer<VisibleCluster> SoftwareRasterVisibleClusters;
 StructuredBuffer<uint> SoftwareRasterBinnedClusterIndexBuffer; // visible index, triangle range
 StructuredBuffer<RasterBinEntry> SoftwareRasterBinMeta;
 
@@ -121,11 +120,13 @@ VertexEvalContext MakeSWRasterVertexEvalContext(
     uint vertexBlobSize,
     uint localVertIdx,
     uint instanceID,
-    RenderInstanceTransform transform)
+    RenderInstanceTransform transform,
+    uint visibleClusterIndex)
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
     LoadVertexData(ctx, vertexBlobAddress);
+    ctx.visibleClusterIndex = visibleClusterIndex;
     ctx.localVertexIndex = localVertIdx;
     ctx.instanceID = instanceID;
     ctx.transform = transform;
@@ -135,19 +136,16 @@ VertexEvalContext MakeSWRasterVertexEvalContext(
 
 // ─── Generic SW Rasterizer Kernel ───
 
-// Geometry crosses repeated triangle batches through group memory. User varyings
-// remain in their producer lanes and use the visibility implementation.
-groupshared float4 SoftwareRasterClipPositions[64];
-
-void SWRasterKernel<
-    TVE : IVertexEvaluate, TVisibility : IVisibilityEvaluate<TVE.Vertex>,
-    TOutput : IClusterRasterOutput>(
+void SWRasterKernel<TVE, TVisibility, TOutput>(
     uniform TVE evaluator,
     uniform TVisibility visibility,
     uniform TOutput rasterOutput,
     uint3 groupID,
     uint groupThreadIndex,
     uniform bool allowMaterialRanges = false)
+    where TVE : IVertexEvaluate
+    where TVisibility : IVisibilityEvaluate<TVE.Vertex>
+    where TOutput : IClusterRasterOutput
 {
     uint flatClusterIdx = groupID.x + groupID.y * 65535u;
 
@@ -163,7 +161,7 @@ void SWRasterKernel<
     uint binEntry = SoftwareRasterBinnedClusterIndexBuffer[binnedIndex];
     uint originalIndex = RasterWorkVisibleIndex(binEntry);
 
-    DrawRequest req = SoftwareRasterVisibleClusters[originalIndex];
+    DrawRequest req = VisibleClusterRequest(SoftwareRasterVisibleClusters[originalIndex]);
     uint viewIndex = DrawRequestViewIndex(req);
     ClusterViewUniforms view = LoadClusterView(
         SoftwareRasterViews,
@@ -172,6 +170,7 @@ void SWRasterKernel<
     uint pageOffset = req.PageOffset;
     uint clusterID = DrawRequestClusterID(req);
     uint realInstanceID = req.InstanceID;
+    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, realInstanceID, view);
 
     // ─── Load Cluster Geometry ───
     uint vertexBlobAddress, vertexBlobSize, tStart, vertexCount, triangleCount, idxOffset;
@@ -211,31 +210,30 @@ void SWRasterKernel<
 
     if (allowMaterialRanges && RasterWorkIsRange(binEntry >> 22u))
     {
+        float4 firstClip = 0.0.xxxx;
+        float4 secondClip = 0.0.xxxx;
         TVisibility.Varying firstVarying = {};
         TVisibility.Varying secondVarying = {};
         [unroll]
         for (uint vertexHalf = 0u; vertexHalf < 2u; vertexHalf++)
         {
-            uint localVertex = groupThreadIndex + vertexHalf * 32u;
+            uint localVertex = WaveGetLaneIndex() + vertexHalf * 32u;
             if (localVertex < vertexCount)
             {
                 VertexEvalContext ctx = MakeSWRasterVertexEvalContext(
-                    vertexBlobAddress, vertexBlobSize, localVertex, realInstanceID, transform);
-                ctx.visibleClusterIndex = originalIndex;
+                    vertexBlobAddress, vertexBlobSize, localVertex, realInstanceID, transform, originalIndex);
                 TVE.Vertex vertex = evaluator.evaluate(ctx);
-                float4 clip = mul(float4(evaluator.getPosition(vertex), 1.0), view.ViewProj);
+                float3 worldPosition = evaluator.getPosition(vertex);
+                float4 clip = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
+                clip.zw = CalculateClusterRasterDepthInput(worldPosition, clip, view);
                 VisibilityVertexInput input;
-                input.VisibleClusterIndex = originalIndex;
-                input.InstanceID = realInstanceID;
-                input.ViewIndex = viewIndex;
+                input.Source = req;
                 input.LocalVertexIndex = localVertex;
                 TVisibility.Varying varying = visibility.makeVarying(vertex, input);
-                SoftwareRasterClipPositions[localVertex] = clip;
-                if (vertexHalf == 0u) firstVarying = varying;
-                else secondVarying = varying;
+                if (vertexHalf == 0u) { firstClip = clip; firstVarying = varying; }
+                else { secondClip = clip; secondVarying = varying; }
             }
         }
-        GroupMemoryBarrierWithGroupSync();
         // Keep opaque user varyings in their producer lanes for the entire range.
         // Every lane participates in each triangle batch's wave operations.
         for (uint triangleBase = rangeStart; triangleBase < rangeEnd; triangleBase += 32u)
@@ -249,15 +247,17 @@ void SWRasterKernel<
             {
                 uint vertex = active ? FetchVertexIndex(pageOffset, idxOffset, tStart, triangle, corner) : 0u;
                 uint lane = vertex & 31u;
+                float4 first = WaveReadLaneAt(firstClip, lane);
+                float4 second = WaveReadLaneAt(secondClip, lane);
                 TVisibility.Varying firstValue = visibility.readLane(firstVarying, lane);
                 TVisibility.Varying secondValue = visibility.readLane(secondVarying, lane);
-                clips[corner] = SoftwareRasterClipPositions[vertex];
+                clips[corner] = vertex < 32u ? first : second;
                 triangleVaryings[corner] = vertex < 32u ? firstValue : secondValue;
             }
             RasterizeClusterTriangleWave<TVE.Vertex, TVisibility, TOutput>(
-                visibility, rasterOutput, clips, triangleVaryings, scissor, originalIndex,
+                visibility, rasterOutput, clips, triangleVaryings, scissor, originalIndex, req,
                 triangle, viewIndex, view.TargetPolicy, view.TargetViewIndex, active,
-                view.ScreenWidth, view.ScreenHeight);
+                view.ScreenWidth, view.ScreenHeight, ClusterViewClipsDepth(view), ClusterSoftwareRasterUniformData.EarlyDepthEnabled);
         }
         return;
     }
@@ -295,8 +295,8 @@ void SWRasterKernel<
     // leaves its producer lane. Cluster only transports clip position and asks the
     // user visibility evaluator to transport its opaque Varying.
     uint producerLocalVertex = 0xFFFFFFFFu;
-    if (groupThreadIndex < uniqueVertexCount)
-        producerLocalVertex = SoftwareRasterVertexIndex(usedVertices, groupThreadIndex);
+    if (WaveGetLaneIndex() < uniqueVertexCount)
+        producerLocalVertex = SoftwareRasterVertexIndex(usedVertices, WaveGetLaneIndex());
 
     float4 producerClip = 0.0.xxxx;
     TVisibility.Varying producerVarying = {};
@@ -307,14 +307,13 @@ void SWRasterKernel<
             vertexBlobSize,
             producerLocalVertex,
             realInstanceID,
-            transform);
-        ctx.visibleClusterIndex = originalIndex;
+            transform, originalIndex);
         TVE.Vertex vertex = evaluator.evaluate(ctx);
-        producerClip = mul(float4(evaluator.getPosition(vertex), 1.0), view.ViewProj);
+        float3 worldPosition = evaluator.getPosition(vertex);
+        producerClip = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
+        producerClip.zw = CalculateClusterRasterDepthInput(worldPosition, producerClip, view);
         VisibilityVertexInput visibilityInput;
-        visibilityInput.VisibleClusterIndex = originalIndex;
-        visibilityInput.InstanceID = realInstanceID;
-        visibilityInput.ViewIndex = viewIndex;
+        visibilityInput.Source = req;
         visibilityInput.LocalVertexIndex = producerLocalVertex;
         producerVarying = visibility.makeVarying(vertex, visibilityInput);
     }
@@ -341,13 +340,14 @@ void SWRasterKernel<
         varyings,
         scissor,
         visibleIndexPlusOne - 1u,
+        req,
         localTriIdx,
         viewIndex,
         view.TargetPolicy,
         view.TargetViewIndex,
         bTriValid,
         view.ScreenWidth,
-        view.ScreenHeight);
+        view.ScreenHeight, ClusterViewClipsDepth(view), ClusterSoftwareRasterUniformData.EarlyDepthEnabled);
 }
 
 #endif // SW_RASTER_CORE_SLANG

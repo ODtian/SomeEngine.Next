@@ -50,6 +50,12 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
             query.ReadOptional<CustomGeometry>();
             query.Write<RenderMaterialReference>();
         }
+        public void CollectResources(scoped QueryCursor source, RenderExtractionResources resources)
+        {
+            foreach (QueryChunkView chunk in source.Chunks)
+                if (chunk.TryRead<CustomGeometry>(out var values))
+                    foreach (var value in values) resources.Add(value.Material);
+        }
         public void Reset() => _values.Clear();
         public void Collect(QueryChunkView chunk)
         {

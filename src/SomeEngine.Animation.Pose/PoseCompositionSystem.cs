@@ -17,18 +17,41 @@ public struct PoseCompositionSystem : ISystem<ImmediateSystemContext>
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         _time += context.DeltaTime;
-        context.World.ExecuteQuery(_targets, ref _time, static (QueryCursor rows, ref double time) =>
+        Compose(context.World, _time);
+    }
+
+    internal void Compose(World world, double time)
+    {
+        CopyInputs(world);
+        ComposeModels(world, time);
+    }
+
+    internal void CopyInputs(World world)
+    {
+        world.ExecuteQuery(_targets, static (scoped QueryCursor rows) =>
         {
             foreach (QueryRow row in rows.Rows)
             {
                 ref PoseTarget target = ref row.ReadWrite<PoseTarget>();
+                if (target.Skeleton.CpuWrittenBones.Length != 0) continue;
                 PoseResult result = row.ReadBuffer<PoseResult>()[target.Output.Index];
                 if (target.Version == result.Version) continue;
                 PoseRange range = target.Output.Range;
                 target.Skeleton.SetLocalPose(LocalPose.Transforms(row.ReadBuffer<LocalPose>().AsSpan().Slice(range.Start, range.Count)), result.Time);
                 target.Version = result.Version;
             }
-            foreach (QueryRow row in rows.Rows) row.Read<PoseTarget>().Skeleton.Compose(time);
+        });
+    }
+
+    internal void ComposeModels(World world, double time)
+    {
+        world.ExecuteQuery(_targets, ref time, static (scoped QueryCursor rows, ref double time) =>
+        {
+            foreach (QueryRow row in rows.Rows)
+            {
+                SkeletonInstance skeleton = row.Read<PoseTarget>().Skeleton;
+                if (skeleton.CpuWrittenBones.Length == 0) skeleton.Compose(time);
+            }
         });
     }
 

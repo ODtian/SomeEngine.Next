@@ -24,7 +24,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     private readonly TerrainClusterAdapter _adapter;
     private readonly object _scene;
     private readonly ClusterGpuBuilder _builder;
-    private readonly GraphExtensionPointId _extensionPoint;
+    private readonly GraphRegionId _extensionPoint;
     private readonly Dictionary<TerrainGeometryRequest, Batch> _batches = [];
     private readonly Dictionary<(int Geometry, ulong Revision), GeometryData> _geometries = [];
     private readonly Dictionary<(Shader Shader, string Entry), ComputeData> _pipelines = [];
@@ -41,7 +41,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         _scene = scene.RenderKey;
         _builder = new(backend, device, cluster, graph, _adapter.Encoder);
         using RenderGraphEdit edit = graph.BeginEdit();
-        _extensionPoint = edit.AddExtensionPoint("Terrain geometry input");
+        _extensionPoint = edit.AddFrameRegion("Terrain geometry input");
         edit.Commit();
     }
 
@@ -151,7 +151,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
         RenderGraphFrame frame = context.Graph;
-        using RenderGraphFrameExtension extension = frame.BeginExtension(_extensionPoint);
+        var extension = new TerrainFrameCommands(frame, _extensionPoint);
         foreach (Batch batch in _batches.Values)
         {
             TerrainGeometryRequest request = batch.Request;

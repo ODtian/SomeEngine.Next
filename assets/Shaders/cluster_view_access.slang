@@ -28,8 +28,15 @@ uint ClusterPhysicalViewIndex(uint viewIndex)
 ClusterViewUniforms LoadClusterCullView(
     StructuredBuffer<ClusterViewUniforms> primaryViews,
     StructuredBuffer<ClusterViewUniforms> policyViews,
-    uint viewIndex)
+    uint viewIndex, bool targetFilters = true)
 {
+    // Views without target filters are uploaded with TargetPolicy zero.
+    if (!targetFilters)
+    {
+        ClusterViewUniforms view = primaryViews[viewIndex];
+        view.TargetPolicy = 0u;
+        return view;
+    }
     return ClusterIsPolicyViewIndex(viewIndex)
         ? policyViews[ClusterPhysicalViewIndex(viewIndex)]
         : primaryViews[viewIndex];

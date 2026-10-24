@@ -140,6 +140,7 @@ public sealed partial class RenderDevice : IDisposable
         try
         {
             DisposeTextures();
+            DisposeSamplers();
         }
         catch (Exception failure)
         {

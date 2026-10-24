@@ -9,6 +9,7 @@ public readonly struct ModelPoseSection
     public int BoneStart => Instance.Skeleton.InheritedBoneCount;
     public PoseRange Range => Instance.Range;
     public ReadOnlySpan<Matrix4x4> Transforms => Instance.ModelTransforms;
+    public ReadOnlySpan<PoseCalculation> Calculations => Instance.Calculations;
     public ulong Version => Instance.Version;
     public double Time => Instance.Time;
     public double SampleTime => Instance.SampleTime;

@@ -17,7 +17,6 @@ public sealed class GpuVoxelTerrainExample : IDisposable
 {
     private readonly Shader _drawShader;
     private readonly Shader _brushShader;
-    private Material? _material;
 
     private GpuVoxelTerrainExample(Scheduler scheduler, Shader surface, Shader attributes, Shader build, Shader draw, Shader brush)
     {
@@ -62,18 +61,18 @@ public sealed class GpuVoxelTerrainExample : IDisposable
     public int AddPlacement(Material material)
     {
         var source = (UnlitMaterial)material;
-        _material = new UnlitMaterial
+        var drawMaterial = new UnlitMaterial
         {
             Shader = _drawShader, BaseColorTint = source.BaseColorTint,
             AlbedoMap = source.AlbedoMap, MaterialSampler = source.MaterialSampler,
         };
-        return Scene.Add(new TerrainPlacement(Field.Terrain, new(-1, -1, -1, 2, 2, 2), [_material])
+        return Scene.Add(new TerrainPlacement(Field.Terrain, new(-1, -1, -1, 2, 2, 2), [drawMaterial])
         {
             Transform = new TransformQvvs(new Vector3(0, 0, 6), Quaternion.Identity),
         });
     }
 
-    public void Dispose() => _material?.Dispose();
+    public void Dispose() => Field.Terrain.Dispose();
 
     private readonly record struct SphereSamples(VoxelRegion Range, Vector3 Center) : IVoxelBrushCpu
     {

@@ -124,13 +124,19 @@ public readonly struct GraphParameterResourceBinding
             TextureLayout.Undefined, null, bufferContentScope: contentScope);
 
     /// <summary>
-    /// Binds a whole Buffer SRV descriptor without inferring a whole-buffer synchronization read.
-    /// The Pass must separately declare every range the shader can actually access.
+    /// Binds a Buffer SRV descriptor whose accessible bytes come from the frame's buffer ranges
+    /// or from ordinary range reads declared by the pass.
     /// </summary>
     public static GraphParameterResourceBinding ReadOnlyBufferDescriptor(
         GraphBufferSrvId view) =>
         ForGraphView(ResourceBindingType.BufferSrv, view.Value,
             GraphAccessMode.Read, WriteCoverage.Partial, PipelineSync.None,
+            TextureLayout.Undefined, null, requiresExplicitAccess: true);
+
+    /// <summary>Binds a Buffer UAV whose accessed ranges are declared by the pass.</summary>
+    public static GraphParameterResourceBinding WritableBufferDescriptor(GraphBufferUavId view) =>
+        ForGraphView(ResourceBindingType.BufferUav, view.Value,
+            GraphAccessMode.ReadWrite, WriteCoverage.Partial, PipelineSync.None,
             TextureLayout.Undefined, null, requiresExplicitAccess: true);
 
     public static GraphParameterResourceBinding WritableBuffer(

@@ -208,7 +208,7 @@ public sealed class DeformationBlockBehaviorTests
     }
 
     private static GltfSourceImporter SourceImporter()
-        => new(services => PoseTestAssets.AddAssetCapabilities(services), PoseTestAssets.BuildVersion, PoseSceneImporter.Id);
+        => new(PoseTestAssets.AddAssetCapabilities(new Microsoft.Extensions.DependencyInjection.ServiceCollection()), PoseTestAssets.BuildVersion, PoseSceneImporter.Id);
 
     private static ValueTask<SkeletonAsset> OpenSkeleton(AssetProject project, DeformationFiles files, string id)
         => SkeletonAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets.Values.Single(entry => entry.SubAssetKey == "skin:id:" + id).Path));

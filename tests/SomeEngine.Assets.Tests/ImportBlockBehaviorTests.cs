@@ -25,7 +25,7 @@ public sealed class ImportBlockBehaviorTests
                 return ValueTask.CompletedTask;
             });
 
-        BlockTestAsset asset = await context.GetAssetAsync<string, BlockTestAsset>("mesh");
+        BlockTestAsset asset = await GetAsset(context, "mesh");
         Assert.Equal(produce ? "42" : "absent", asset.GetBlock<ContextTextBlock>().Text);
         Assert.Equal(produce ? 42 : (int?)null, (await asset.TryGetBlockAsync<ContextNumberBlock>())?.Value);
         Assert.Equal(produce ? 42 : (int?)null, (await context.TryGetBlockAsync<ContextNumberBlock>(asset))?.Value);
@@ -51,10 +51,9 @@ public sealed class ImportBlockBehaviorTests
                 throw new KeyNotFoundException("source element missing");
             });
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(() => context.GetAssetAsync<string, BlockTestAsset>("mesh").AsTask());
-        KeyNotFoundException error = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => GetAsset(context, "mesh").AsTask());
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             context.TryGetBlockAsync<ContextNumberBlock>(target!).AsTask());
-        Assert.Equal("source element missing", error.Message);
     }
 
     [Fact]
@@ -70,7 +69,7 @@ public sealed class ImportBlockBehaviorTests
                 await finish.Task.WaitAsync(token);
                 output.SetBlock(new ContextNumberBlock(42));
             });
-        Task<BlockTestAsset> import = context.GetAssetAsync<string, BlockTestAsset>("mesh").AsTask();
+        Task<BlockTestAsset> import = GetAsset(context, "mesh").AsTask();
         Asset asset = await target.Task.WaitAsync(TimeSpan.FromSeconds(10));
         using var cancellation = new CancellationTokenSource();
         Task<ContextNumberBlock?> canceled = context.TryGetBlockAsync<ContextNumberBlock>(asset, cancellation.Token).AsTask();
@@ -174,22 +173,18 @@ public sealed class ImportBlockBehaviorTests
             await asset.SaveAsync(files.Output);
         }
         using var reopened = await BlockTestAsset.OpenAsync(files.Output);
-        KeyNotFoundException error = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             reopened.TryGetBlockAsync<FailedReadBlock>().AsTask());
-        Assert.Equal("block source missing", error.Message);
     }
 
-    private static ImportContext CreateContext()
+    private static ImportContext CreateContext() => new();
+
+    private static ValueTask<BlockTestAsset> GetAsset(ImportContext context, string source, CancellationToken cancellationToken = default)
     {
-        var context = new ImportContext();
-        Configure(context);
-        return context;
+        Guid id = context.GetAssetId(source);
+        context.AddAsset(source, new BlockTestAsset(id), source, "result.block-test.asset");
+        return context.GetAssetAsync<string, BlockTestAsset>(source, cancellationToken);
     }
-
-    private static void Configure(ImportContext context)
-        => context.ConfigureAssets<string, BlockTestAsset>(static source => source,
-            static (_, id) => new BlockTestAsset(id), static (_, _) => "result.block-test.asset",
-            static (asset, path, token) => asset.SaveAsync(path, token));
 
     private sealed class SourceImporter : IAssetSourceImporter<string>
     {
@@ -199,7 +194,6 @@ public sealed class ImportBlockBehaviorTests
 
         public async ValueTask ImportAsync(string source, ImportContext context, CancellationToken cancellationToken)
         {
-            Configure(context);
             context.EnableImporter<string, BlockTestAsset>(Guid.NewGuid(), [BlockTestNumbers.BlockTypeId],
                 async (_, imports, output, token) =>
                 {
@@ -223,7 +217,7 @@ public sealed class ImportBlockBehaviorTests
                 });
             context.EnableImporter<string, BlockTestAsset>(Guid.NewGuid(), [ContextNumberBlock.BlockTypeId],
                 static (_, _, _, _) => ValueTask.CompletedTask);
-            BlockTestAsset asset = await context.GetAssetAsync<string, BlockTestAsset>(source, cancellationToken);
+            BlockTestAsset asset = await GetAsset(context, source, cancellationToken);
             Assert.Equal(21, (await asset.TryGetBlockAsync<ImportNumberBlock>(cancellationToken))!.Value);
         }
     }

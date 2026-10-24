@@ -42,11 +42,10 @@ public sealed class ClusterGpuBuilder : IDisposable
             "Build Cluster geometry");
         _bindings = ClusterLinkedStageLayout.Create(_pipeline.ParameterLayout);
         _encoding = VertexEncodingCompatibility.Hash(encoder.VertexEncoding);
-        ClusterResidencyBinding buffers = resources.GpuBuffers;
-        using RenderGraphEdit edit = graph.BeginEdit();
-        _pages = edit.RegisterExternalBuffer(buffers.PageHeap, []);
-        _bvh = edit.RegisterExternalBuffer(buffers.Bvh, []);
-        edit.Commit();
+        resources.Residency.InstallGeometryBuffers(graph);
+        ClusterGeometryBuffers buffers = resources.GeometryBuffers;
+        _pages = buffers.PageHeap;
+        _bvh = buffers.Bvh;
     }
 
     /// <summary>Reserves device storage. Record the build before the geometry is drawn in this frame.</summary>

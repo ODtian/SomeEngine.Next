@@ -45,10 +45,13 @@ public readonly struct GpuStateLeaf : IAnimationLeaf<GpuStateParameters>
         GpuPoseTarget output = world.Read<GpuPoseTarget>(target);
         output.Clip = null;
         output.StateMachine = parameters.Machine;
+        output.Blend = null;
+        output.Rig = null;
         output.Controls = instance.Controls;
         output.PlaybackTime = 0;
         output.Playing = false;
         output.Starts = placement.Starts;
+        output.AnimationStarts = placement.Starts;
         world.Replace(target, output);
     }
 
@@ -81,6 +84,8 @@ internal struct GpuStateSystem : ISystem<ImmediateSystemContext>
                 GpuPoseTarget output = world.Read<GpuPoseTarget>(instance.Target);
                 output.Clip = null;
                 output.StateMachine = parameters.Machine;
+                output.Blend = null;
+                output.Rig = null;
                 output.Controls = instance.Controls;
                 output.PlaybackTime = elapsed;
                 output.Playing = true;

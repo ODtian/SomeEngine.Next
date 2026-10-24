@@ -11,5 +11,5 @@ public static class AssetProjects
         string? capabilitiesVersion = null)
         => new(projectRoot,
             [StandardGltfSceneImporter.CreateSourceImporter(importers, capabilitiesVersion)],
-            sourceFormats: [new ShaderSourceFormat(shaderIncludeDirectories)]);
+            shaderIncludeDirectories: shaderIncludeDirectories);
 }

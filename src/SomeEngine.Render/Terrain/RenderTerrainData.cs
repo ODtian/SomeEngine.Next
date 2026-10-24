@@ -17,7 +17,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
-    private readonly GraphExtensionPointId _extensionPoint;
+    private readonly GraphRegionId _extensionPoint;
     private readonly ConditionalWeakTable<TerrainFieldPage, DevicePage> _pageData = new();
     private readonly List<DevicePage> _pages = [];
     private readonly Dictionary<(Shader Shader, string Entry), LinkedComputePipeline> _pipelines = [];
@@ -33,7 +33,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
         _backend = backend;
         _device = device;
         using RenderGraphEdit edit = graph.BeginEdit();
-        _extensionPoint = edit.AddExtensionPoint("Terrain field work");
+        _extensionPoint = edit.AddFrameRegion("Terrain field work");
         edit.Commit();
     }
 
@@ -72,7 +72,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
                 _pages.RemoveAt(index);
             }
 
-        RenderGraphFrameExtension extension = frame.BeginExtension(_extensionPoint);
+        TerrainFrameCommands extension = new TerrainFrameCommands(frame, _extensionPoint);
         foreach (TerrainGpuRequest request in _requests)
         {
             if (request.IsSubmitted || !request.Dependency.IsCompleted) continue;
@@ -95,7 +95,6 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
                 throw;
             }
         }
-        extension.Dispose();
     }
 
     internal LinkedComputePipeline GetPipeline(Shader shader, string entry)
@@ -126,7 +125,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
 
     internal GraphBufferId GetOutput(ref RenderGraphFrame frame, TerrainFieldPage page) => ImportPage(ref frame, GetPage(page));
 
-    private GraphBufferId GetInput(ref RenderGraphFrame frame, ref RenderGraphFrameExtension extension, TerrainFieldPage page)
+    private GraphBufferId GetInput(ref RenderGraphFrame frame, ref TerrainFrameCommands extension, TerrainFieldPage page)
     {
         DevicePage devicePage = GetPage(page);
         GraphBufferId buffer = ImportPage(ref frame, devicePage);
@@ -139,7 +138,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
         return buffer;
     }
 
-    internal HeightGpuInput CreateHeightInput(ref RenderGraphFrame frame, ref RenderGraphFrameExtension extension,
+    internal HeightGpuInput CreateHeightInput(ref RenderGraphFrame frame, ref TerrainFrameCommands extension,
         HeightGrid grid, HeightFieldData source, HeightRegion range)
     {
         int size = grid.PageSize;
@@ -179,14 +178,14 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
     }
 
     internal GraphPassId RecordReadback(TerrainPageReadRequest request, ref RenderGraphFrame frame,
-        ref RenderGraphFrameExtension extension)
+        ref TerrainFrameCommands extension)
     {
         GraphBufferId source = GetInput(ref frame, ref extension, request.Page);
         return RecordReadback(request, new(source, BufferRange.Whole), request.Samples, ref frame, ref extension);
     }
 
     internal GraphPassId RecordReadback(TerrainGpuRequest request, GraphBufferSlice source, float[] samples,
-        ref RenderGraphFrame frame, ref RenderGraphFrameExtension extension)
+        ref RenderGraphFrame frame, ref TerrainFrameCommands extension)
     {
         ulong bytes = (ulong)samples.Length * sizeof(float);
         Buffer readback = _backend.CreateBuffer(_device,
@@ -197,7 +196,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
         return Copy(ref extension, "Read terrain data", source, destination, 0, bytes);
     }
 
-    private static GraphPassId Copy(ref RenderGraphFrameExtension extension, string label, GraphBufferSlice source,
+    private static GraphPassId Copy(ref TerrainFrameCommands extension, string label, GraphBufferSlice source,
         GraphBufferId destination, ulong offset, ulong bytes) =>
         extension.AddCopyPass(label, PassQueueSelection.AnyCompatible(), new CopyData(source, destination, offset, bytes),
             new PassOptions(Culling: PassCullingMode.NeverCull),
@@ -292,16 +291,16 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
             new BufferDesc(bytes, BufferUsages.CopyDestination, "Terrain retained samples"), MemoryType.Readback);
         using var graph = new global::SomeEngine.RenderGraph.RenderGraph(_backend, _device,
             [_backend.GetQueue(_device, QueueType.Graphics)], new RenderGraphDesc(MaximumFramesInFlight: 1));
-        GraphExtensionPointId point;
+        GraphRegionId point;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            point = edit.AddExtensionPoint("Retain terrain samples");
+            point = edit.AddFrameRegion("Retain terrain samples");
             edit.Commit();
         }
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         using (RenderGraphFrame frame = graph.BeginFrame())
         {
-            RenderGraphFrameExtension extension = frame.BeginExtension(point);
+            TerrainFrameCommands extension = new TerrainFrameCommands(frame, point);
             GraphBufferId destination = frame.Import(readback,
                 [new(BufferRange.Whole, readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
             foreach (var page in pages)
@@ -310,8 +309,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
                 Copy(ref extension, "Retain terrain page", new(source, BufferRange.Whole), destination,
                     page.Offset, (ulong)page.Source.SampleCount * sizeof(float));
             }
-            extension.Dispose();
-            int count = frame.Execute(completions);
+                int count = frame.Execute(completions);
             foreach (QueueCompletion completion in completions.AsSpan(0, count))
             {
                 WaitStatus status = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);

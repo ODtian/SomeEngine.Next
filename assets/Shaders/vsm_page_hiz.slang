@@ -6,15 +6,34 @@
 void InitializeVirtualShadowPageHiZ(
     uint3 groupId : SV_GroupID, uint3 groupThreadId : SV_GroupThreadID)
 {
-    uint physicalPage = ActivePhysicalPages[groupId.x].x;
-    uint2 pixel = uint2(groupId.y, groupId.z) * 8u + groupThreadId.xy;
+    uint tiles = (max(PageHiZ.PageSize / 2u, 1u) + 7u) / 8u;
+    uint pageIndex = VirtualShadowDispatchPage(groupId, tiles);
+    if (pageIndex >= ActivePhysicalPageCount[0]) return;
+    uint physicalPage = ActivePhysicalPages[pageIndex].x;
+    if (!NeedsVirtualShadowPageHiZUpdate(physicalPage)) return;
+    uint2 pixel = VirtualShadowDispatchTile(groupId, tiles) * 8u + groupThreadId.xy;
     uint2 atlasPage = uint2(physicalPage % PageHiZ.PhysicalPagesPerRow,
         physicalPage / PageHiZ.PhysicalPagesPerRow) * PageHiZ.PageSize;
     uint2 source = min(pixel * 2u, PageHiZ.PageSize - 1u);
     uint2 next = min(source + 1u, PageHiZ.PageSize - 1u);
-    float d0 = 1.0 - asfloat(ShadowPhysicalAtlas.Load(int3(atlasPage + source, 0)));
-    float d1 = 1.0 - asfloat(ShadowPhysicalAtlas.Load(int3(atlasPage + uint2(next.x, source.y), 0)));
-    float d2 = 1.0 - asfloat(ShadowPhysicalAtlas.Load(int3(atlasPage + uint2(source.x, next.y), 0)));
-    float d3 = 1.0 - asfloat(ShadowPhysicalAtlas.Load(int3(atlasPage + next, 0)));
-    StoreVirtualShadowPageHiZ(max(max(d0, d1), max(d2, d3)), physicalPage, pixel, groupThreadId.xy);
+    uint4 staticDepth = uint4(
+        ShadowPhysicalAtlas.Load(int4(atlasPage + source, 1, 0)),
+        ShadowPhysicalAtlas.Load(int4(atlasPage + uint2(next.x, source.y), 1, 0)),
+        ShadowPhysicalAtlas.Load(int4(atlasPage + uint2(source.x, next.y), 1, 0)),
+        ShadowPhysicalAtlas.Load(int4(atlasPage + next, 1, 0)));
+    uint4 dynamicDepth = 0u.xxxx;
+    if (PageHiZ.StaticLayerOffset != 0u)
+    {
+        dynamicDepth = uint4(
+        ShadowPhysicalAtlas.Load(int4(atlasPage + source, 0, 0)),
+        ShadowPhysicalAtlas.Load(int4(atlasPage + uint2(next.x, source.y), 0, 0)),
+        ShadowPhysicalAtlas.Load(int4(atlasPage + uint2(source.x, next.y), 0, 0)),
+        ShadowPhysicalAtlas.Load(int4(atlasPage + next, 0, 0)));
+    }
+    float4 staticForwardDepth = 1.0 - asfloat(staticDepth);
+    float4 combinedForwardDepth = 1.0 - asfloat(max(staticDepth, dynamicDepth));
+    float2 depth = float2(
+        max(max(staticForwardDepth.x, staticForwardDepth.y), max(staticForwardDepth.z, staticForwardDepth.w)),
+        max(max(combinedForwardDepth.x, combinedForwardDepth.y), max(combinedForwardDepth.z, combinedForwardDepth.w)));
+    StoreVirtualShadowPageHiZ(depth, physicalPage, pixel, groupThreadId.xy);
 }

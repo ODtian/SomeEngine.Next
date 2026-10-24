@@ -1,7 +1,14 @@
-﻿namespace SomeEngine.RenderGraph;
+namespace SomeEngine.RenderGraph;
 
 public sealed partial class RenderGraph : IDisposable
 {
+    internal void SetParameterInputValue(GraphParameterInput input, in ParameterInputValue value)
+    {
+        if (input.PersistentValue == value) return;
+        input.PersistentValue = value;
+        foreach (FrameSlot frame in _frameSlots) frame.ParameterInputChanged(input);
+    }
+
     internal void PropertyChanged(GraphIdentity identity, GraphStoreKind kind, bool refreshViews = true)
     {
         foreach (FrameSlot frame in _frameSlots) frame.ChangeProperty(identity, kind, refreshViews);
@@ -153,39 +160,13 @@ public sealed partial class RenderGraph : IDisposable
         out RenderGraphFrame frame,
         in RenderGraphFrameOptions options = default)
     {
-        EnsureAvailable();
-        CollectCompleted();
-        lock (_structureGate)
+        if (!TryOpenNextFrame(out RenderGraphNextFrame next, TimeSpan.Zero))
         {
-            if (_frameToken != 0)
-                throw new InvalidOperationException("A CPU frame is already active.");
-            for (int probe = 0; probe < _frameSlots.Length; probe++)
-            {
-                int index = (_preferredFrameIndex + probe) % _frameSlots.Length;
-                FrameSlot slot = _frameSlots[index];
-                if (!slot.IsReady(_backend)) continue;
-                slot.Reset(_backend);
-                // Reuse completed execution storage before initializing another
-                // copy of its graph cache, heaps and recorded commands.
-                _preferredFrameIndex = index;
-                ulong identity = AllocateOwnerIdentity();
-                _frameToken = checked((long)identity);
-                try
-                {
-                    frame = new RenderGraphFrame(slot.BeginExecution(
-                        this, identity, options, _structureIndex, StructureVersion));
-                    return true;
-                }
-                catch
-                {
-                    _frameToken = 0;
-                    throw;
-                }
-            }
+            frame = default;
+            return false;
         }
-
-        frame = default;
-        return false;
+        using (next) frame = BeginFrame(next, options);
+        return true;
     }
 
     public RenderGraphFrame BeginFrame(in RenderGraphFrameOptions options = default)
@@ -225,6 +206,25 @@ public sealed partial class RenderGraph : IDisposable
             _persistentResources.CollectCompleted();
         foreach (FrameSlot slot in _frameSlots)
             slot.CollectCompleted(_backend);
+    }
+
+    public int GetRangeCompletionCount(GraphBufferId buffer, in BufferRange range) =>
+        GetRangeCompletionCount(GetPersistentBuffer(buffer), range);
+
+    public int CopyRangeCompletions(GraphBufferId buffer, in BufferRange range, Span<QueueCompletion> destination) =>
+        CopyRangeCompletions(GetPersistentBuffer(buffer), range, destination);
+
+    private Buffer GetPersistentBuffer(GraphBufferId buffer)
+    {
+        EnsureAvailable();
+        lock (_structureGate)
+        {
+            DevelopmentCheck.Require(buffer.Value.Owner == Identity && _structure.Buffers.Contains(buffer.Value),
+                "The buffer must belong to this graph.");
+            GraphBuffer data = _structure.Buffers.Get(buffer.Value);
+            return data.PersistentResource ?? data.RegisteredResource ??
+                throw new InvalidOperationException("Range completions require a persistent buffer.");
+        }
     }
 
     /// <summary>
@@ -343,7 +343,7 @@ public sealed partial class RenderGraph : IDisposable
                 : $"No registered {policy.Type} Queue can execute the pass.");
     }
 
-    private static bool QueueSupports(GraphPassKind kind, QueueType queueType) => kind switch
+    internal static bool QueueSupports(GraphPassKind kind, QueueType queueType) => kind switch
     {
         GraphPassKind.Raster => queueType == QueueType.Graphics,
         GraphPassKind.Compute => queueType is QueueType.Graphics or QueueType.Compute,
@@ -484,6 +484,10 @@ public sealed partial class RenderGraph : IDisposable
 
     private void CarryFrameValues(GraphStructure previous, GraphStructure next, GraphEditChanges changes)
     {
+        next.RootRegion.Enabled = previous.RootRegion.Enabled;
+        foreach (GraphIdentity identity in changes.Regions)
+            if (previous.Regions.Contains(identity) && next.Regions.Contains(identity))
+                next.Regions.Get(identity).Enabled = previous.Regions.Get(identity).Enabled;
         foreach (GraphIdentity identity in changes.Passes.Concat(changes.Labels))
             if (previous.Passes.Contains(identity) && next.Passes.Contains(identity))
                 next.Passes.Get(identity).Enabled = previous.Passes.Get(identity).Enabled;
@@ -509,7 +513,7 @@ public sealed partial class RenderGraph : IDisposable
             if (ReferenceEquals(source.PersistentResource, destination.PersistentResource) &&
                 ReferenceEquals(source.RegisteredResource, destination.RegisteredResource) &&
                 ReferenceEquals(source.BoundResource, destination.BoundResource))
-                destination.BoundaryStates = source.BoundaryStates;
+                destination.Boundaries = source.Boundaries;
         }
         foreach (GraphIdentity identity in changes.Textures)
         {
@@ -572,7 +576,10 @@ public sealed partial class RenderGraph : IDisposable
         if (_editToken != 0 || _frameToken != 0)
             throw new InvalidOperationException("A render graph edit or frame is active.");
         if (!_lost)
+        {
             WaitForSubmittedWork();
+            foreach (FrameSlot slot in _frameSlots) slot.Reset(_backend);
+        }
         _closing = true;
         foreach (FrameSlot slot in _frameSlots)
             slot.Dispose();

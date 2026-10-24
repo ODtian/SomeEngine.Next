@@ -9,7 +9,7 @@ typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
 
 #include "cluster_tessellation_entries.slang"
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -21,7 +21,7 @@ void SeedPhongTessellation(
     SeedTessellationRasterBin(vertex, groupId, groupThreadIndex);
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]

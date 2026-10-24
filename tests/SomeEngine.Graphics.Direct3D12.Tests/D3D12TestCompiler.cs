@@ -443,7 +443,7 @@ public sealed class D3D12TestCompiler : IDisposable
         return string.IsNullOrWhiteSpace(detail) ? prefix : $"{prefix}: {detail.Trim()}";
     }
 
-    private static D3D12TestShader CreateTestShader(
+    private D3D12TestShader CreateTestShader(
         ISession session,
         IComponentType[] components,
         IComponentType combinedCode,
@@ -478,6 +478,7 @@ public sealed class D3D12TestCompiler : IDisposable
             ? GetTargetCode()
             : []);
         return new D3D12TestShader(
+            _globalSession,
             session,
             components,
             combinedCode,

@@ -6,6 +6,7 @@ internal sealed class RuntimeCamera
 {
     private const float MaximumUpAlignment = 0.995f;
     private Vector3 _forward;
+    private float _targetDistance;
     private readonly Vector3 _worldUp;
 
     internal RuntimeCamera(Vector3 position, Vector3 target, Vector3 up)
@@ -17,6 +18,7 @@ internal sealed class RuntimeCamera
             throw new ArgumentException("Runtime camera direction and up vectors must be non-zero.");
 
         Position = position;
+        _targetDistance = forward.Length();
         _forward = Vector3.Normalize(forward);
         _worldUp = Vector3.Normalize(up);
         if (MathF.Abs(Vector3.Dot(_forward, _worldUp)) >= MaximumUpAlignment)
@@ -25,10 +27,12 @@ internal sealed class RuntimeCamera
 
     internal Vector3 Position { get; private set; }
     internal Vector3 Forward => _forward;
+    internal Vector3 Target => Position + _forward * _targetDistance;
 
     internal void SetView(Vector3 position, Vector3 target)
     {
         SetPosition(position);
+        _targetDistance = (target - position).Length();
         Vector3 direction = Vector3.Normalize(target - position);
         if (MathF.Abs(Vector3.Dot(direction, _worldUp)) < MaximumUpAlignment)
             _forward = direction;

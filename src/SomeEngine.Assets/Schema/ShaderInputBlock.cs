@@ -8,6 +8,7 @@ public abstract class ShaderInputBlock : AssetBlock
 {
     private IList<string> _sourceNames = [];
     private IList<ShaderInputLocation> _inputs = [];
+    private IList<ShaderSpecialization> _specializations = [];
 
     public IList<string> SourceNames
     {
@@ -21,11 +22,18 @@ public abstract class ShaderInputBlock : AssetBlock
         set { lock (SyncRoot) { RequireIdle(); _inputs = new List<ShaderInputLocation>(value); MarkChanged(); } }
     }
 
+    public IList<ShaderSpecialization> Specializations
+    {
+        get { lock (SyncRoot) { RequireIdle(); return _specializations; } }
+        set { lock (SyncRoot) { RequireIdle(); _specializations = new List<ShaderSpecialization>(value); MarkChanged(); } }
+    }
+
     protected ShaderInputBlock() { }
     protected ShaderInputBlock(ShaderInputBlock source, object? syncRoot = null) : base(source, syncRoot)
     {
         _sourceNames = new List<string>(source._sourceNames);
         _inputs = new List<ShaderInputLocation>(source._inputs);
+        _specializations = new List<ShaderSpecialization>(source._specializations);
     }
 
     public static ulong SerializedSourceKey(int sourceIndex) => BinaryFieldKey.FromName(
@@ -40,12 +48,13 @@ public abstract class ShaderInputBlock : AssetBlock
         await source.ReadIntoAsync(data, cancellationToken).ConfigureAwait(false);
         _sourceNames = data.SourceNames;
         _inputs = data.Inputs;
+        _specializations = data.Specializations;
         AttachSource(source, data.DataVersion);
     }
 
     protected async ValueTask WriteInputDataAsync(AssetBlockWriter writer, CancellationToken cancellationToken)
     {
-        writer.WriteMetadata(BlockId, new ShaderInputData { SourceNames = _sourceNames, Inputs = _inputs, DataVersion = DataVersion });
+        writer.WriteMetadata(BlockId, new ShaderInputData { SourceNames = _sourceNames, Inputs = _inputs, Specializations = _specializations, DataVersion = DataVersion });
         await WriteChunksAsync(writer, cancellationToken).ConfigureAwait(false);
     }
 }
@@ -56,11 +65,12 @@ public abstract class ShaderInputBlock : AssetBlock
 public readonly partial record struct ShaderInputLocation(Guid BlockTypeId, int SourceIndex);
 
 [BinarySerializable]
-[BinaryFields(nameof(SourceNames), nameof(Inputs), nameof(DataVersion))]
+[BinaryFields(nameof(SourceNames), nameof(Inputs), nameof(Specializations), nameof(DataVersion))]
 internal sealed partial class ShaderInputData
 {
     public IList<string> SourceNames { get; set; } = [];
     public IList<ShaderInputLocation> Inputs { get; set; } = [];
+    public IList<ShaderSpecialization> Specializations { get; set; } = [];
     public Guid DataVersion { get; set; }
 }
 

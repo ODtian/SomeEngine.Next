@@ -244,7 +244,7 @@ public sealed class SkeletonBehaviorTests
 #endif
 
     private static GltfSourceImporter SourceImporter()
-        => new(services => PoseTestAssets.AddAssetCapabilities(services), PoseTestAssets.BuildVersion, PoseSceneImporter.Id);
+        => new(PoseTestAssets.AddAssetCapabilities(new Microsoft.Extensions.DependencyInjection.ServiceCollection()), PoseTestAssets.BuildVersion, PoseSceneImporter.Id);
 
     private static void AssertTransform(BoneTransform transform, Vector3 translation, Quaternion rotation, Vector3 scale)
     {

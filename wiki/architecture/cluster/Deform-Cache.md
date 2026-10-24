@@ -21,6 +21,11 @@
 
 [`DeformCacheRenderingTests`](../../../tests/SomeEngine.Runtime.Tests/DeformCacheRenderingTests.cs) 中的用户材质是一个验收例子：它使用带额外标记的顶点类型、32 字节对齐、区域头部空间和异或编码的标记，经应用公开入口比较缓存结果与直接变形的图像。
 
+[Skinning](../animation/Skinning.md#inline-与缓存选择) 记录骨骼资源、每实例 `SkinBinding` 与
+同一用户求值器在 inline/cache 间的选择。`ClusterDeformWrite` 的当前和上一求值分别
+携带对应的实例变换与历史标志，用户缓存编码保存这两份结果。
+公开应用的分阶段与整帧成本入口见 [GPU Timing](../render-graph/GPU-Timing.md)。
+
 ## Invariants
 - Cluster 不解释 cache payload 字段或压缩方式。
 - cache region 不要求与 vertex 数或 vertex layout 等长。

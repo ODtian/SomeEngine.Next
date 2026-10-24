@@ -10,8 +10,10 @@
   "Blocks": [
     {
       "TypeId": "def46de0-7af8-87e0-75b9-660aaa202b94",
-      "Schema": "807616378EC9A0BF",
+      "Schema": "163D4CAD0FD3CEDB",
       "Fields": {
+        "Inputs": [],
+        "Specializations": [],
         "SourceNames": [
           "Pipeline/build_hiz_reduce.slang"
         ]

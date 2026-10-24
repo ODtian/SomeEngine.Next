@@ -10,8 +10,12 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" PrivateAssets="all" />
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/SomeEngine.Animation/SomeEngine.Animation.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Animation.Pose.Importers/SomeEngine.Animation.Pose.Importers.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../SomeEngine.Assets.Tests/AssetImportTestSetup.cs" Link="AssetImportTestSetup.cs" />
   </ItemGroup>
 </Project>

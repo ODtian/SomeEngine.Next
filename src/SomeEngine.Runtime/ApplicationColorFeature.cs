@@ -1,0 +1,22 @@
+using System.Numerics;
+using SomeEngine.Graphics;
+using SomeEngine.RenderGraph;
+using SomeEngine.Render.Cluster.Pipeline;
+
+namespace SomeEngine.Runtime;
+
+public readonly record struct ApplicationRendering(IGraphicsBackend Backend, Device Device,
+    global::SomeEngine.RenderGraph.RenderGraph Graph, int Width, int Height, Matrix4x4 Projection = default,
+    GraphRegionId Region = default)
+{
+    public ClusterStencil? Stencil => StencilSource?.Invoke();
+    internal Func<ClusterStencil>? StencilSource { get; init; }
+}
+
+/// <summary>A persistent color feature consuming the renderer's color and depth.</summary>
+public interface IApplicationColorFeature : IDisposable
+{
+    GraphPassId CompletePass { get; }
+    void OrderAfter(ref RenderGraphEdit graph, GraphPassId colorReady);
+    GraphTextureId Record(ref RenderGraphFrame graph, GraphTextureId color, GraphTextureId depth);
+}

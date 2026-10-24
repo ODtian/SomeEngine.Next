@@ -56,12 +56,12 @@ public ref struct VoxelBrushGpuContext
 {
     private readonly RenderTerrainData _data;
     private RenderGraphFrame _frame;
-    private RenderGraphFrameExtension _extension;
+    private TerrainFrameCommands _extension;
     private readonly GraphBufferSlice _source;
     private readonly GraphBufferSlice _pageTable;
     private readonly GraphBufferId _output;
 
-    internal VoxelBrushGpuContext(RenderTerrainData data, RenderGraphFrame frame, RenderGraphFrameExtension extension,
+    internal VoxelBrushGpuContext(RenderTerrainData data, RenderGraphFrame frame, TerrainFrameCommands extension,
         VoxelGrid grid, VoxelRegion range, VoxelRegion page, float initialValue, VoxelGpuInput input,
         GraphBufferId output, GraphPassId previous)
     {

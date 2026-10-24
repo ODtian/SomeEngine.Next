@@ -251,6 +251,9 @@ internal sealed unsafe partial class VulkanBackend
     {
         ValidateBufferTextureCopy(copy, texture);
         (uint blockWidth, _, uint blockBytes) = VulkanFormats.GetBlockInfo(texture.Format);
+        if (copy.Aspect == TextureAspects.Stencil) (blockWidth, blockBytes) = (1, 1);
+        else if (copy.Aspect == TextureAspects.Depth && texture.Format == Format.D32FloatS8UInt)
+            (blockWidth, blockBytes) = (1, 4);
         uint rowLength = copy.BufferRowPitch == 0
             ? 0
             : checked(copy.BufferRowPitch / blockBytes * blockWidth);

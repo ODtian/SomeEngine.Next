@@ -76,10 +76,11 @@ public sealed partial class ShaderAsset : Asset
             ShaderBlock code = await copy.GetBlockAsync<ShaderBlock>(cancellationToken).ConfigureAwait(false);
             if (code.MatchesInputs(inputs.Select(static input => input.Version), sessionDescription)) savedCode = code;
         }
-        Shader shader = await source.CreateSelectedAsync(inputs, slang, sessionDescription, copy.Name,
-            specializations, generateCode: savedCode is null, cancellationToken).ConfigureAwait(false);
-        return savedCode is null ? shader
-            : await savedCode.ReadCodeAsync(shader, sessionDescription, cancellationToken).ConfigureAwait(false);
+        using ShaderSourceBlock selected = source.FromInputs(inputs);
+        return savedCode is null
+            ? await selected.CreateAsync(slang, sessionDescription, copy.Name, specializations, cancellationToken).ConfigureAwait(false)
+            : await savedCode.CreateAsync(selected, slang, sessionDescription, copy.Name,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Compiles the asset's complete inputs and saves their common target and entry code.</summary>
@@ -100,18 +101,38 @@ public sealed partial class ShaderAsset : Asset
         else
         {
             inputs = await copy.ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
-            Shader shader = await source.CreateSelectedAsync(inputs, slang, sessionDescription, copy.Name,
-                default, generateCode: true, cancellationToken).ConfigureAwait(false);
-            compiled = new(shader, [], []);
+            compiled = await source.CompileSelectedAsync(inputs, slang, sessionDescription, copy.Name,
+                cancellationToken).ConfigureAwait(false);
         }
         using var code = new ShaderBlock();
         code.InputVersions = inputs.Select(static input => input.Version).ToList();
-        for (int target = 0; target < compiled.Shader.SlangTargetCount; target++)
+        SaveCode(compiled.Shader, [], null);
+        using ShaderSourceBlock selected = source.FromInputs(inputs);
+        source.Specializations = compiled.Specializations.ToList();
+        inputs = await copy.ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
+        code.InputVersions = inputs.Select(static input => input.Version).ToList();
+        foreach (ShaderSpecialization variant in compiled.Specializations)
         {
-            if (compiled.Shader.GetSlangTargetBlob(target) is { } targetCode)
-                code.SetTargetCode(sessionDescription, target, targetCode.Buffer);
-            for (int entry = 0; entry < compiled.Shader.SlangEntryCount; entry++)
-                code.SetEntryCode(sessionDescription, target, entry, compiled.Shader.GetSlangEntryBlob(target, entry)!.Buffer);
+            // Code generation belongs to asset preparation, alongside the common entries.
+            ShaderCompilation cooked = await selected.CompileSelectedEntryAsync(slang, sessionDescription, copy.Name,
+                variant.EntryPoint, variant.ToSlangArguments(), cancellationToken).ConfigureAwait(false);
+            SaveCode(cooked.Shader, variant.Arguments.ToArray(), variant.EntryPoint);
+        }
+
+        void SaveCode(Shader shader, string[] arguments, string? entryPoint)
+        {
+            for (int target = 0; target < shader.SlangTargetCount; target++)
+            {
+                if (shader.GetSlangTargetBlob(target) is { } targetCode)
+                    code.SetTargetCode(sessionDescription, target, targetCode.Buffer, arguments, entryPoint);
+                for (int entry = 0; entry < shader.SlangEntryCount; entry++)
+                {
+                    if (shader.GetSlangEntryPoint(entry).GetSpecializationParamCount() != 0 && entryPoint is null) continue;
+                    if (shader.GetSlangEntryBlob(target, entry) is { } entryCode)
+                        code.SetEntryCode(sessionDescription, target, entry, entryCode.Buffer, arguments, entryPoint);
+                    code.SetEntryUsage(sessionDescription, target, entry, shader.GetSlangUsedParameters(target, entry), arguments, entryPoint);
+                }
+            }
         }
         lock (SyncRoot)
         {

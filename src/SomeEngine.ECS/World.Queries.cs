@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using System.Runtime.CompilerServices;
 
@@ -47,6 +48,28 @@ public partial class World
         using WorldJobAdmissionScope admission = EnterRootControlMutation();
         ThrowIfStructuralTransactionActive();
         _queries.Release(query);
+    }
+
+    /// <summary>Observes changes to the query's ordered entity membership.</summary>
+    /// <remarks>Version filters contribute their component requirements; execution owns their time window.</remarks>
+    public uint MembershipVersion(QueryHandle query)
+    {
+        using WorldJobAdmissionScope control = EnterRootControlMutation();
+        QueryRecord record = _queries.GetMembershipRecord(query);
+        using WorldJobAdmissionScope admission = EnterJobAdmission(
+            WorldJobAdmissionRequest.ForQuery(WorldTopologyAccess.Read,
+                record.Definition.MembershipStorageAccesses, canWrite: false));
+        return record.ReadMembershipVersion();
+    }
+
+    internal ReadOnlySpan<Entity> ReadQueryEntities(QueryHandle query, out uint version)
+    {
+        using WorldJobAdmissionScope control = EnterRootControlMutation();
+        QueryRecord record = _queries.GetMembershipRecord(query);
+        using WorldJobAdmissionScope admission = EnterJobAdmission(
+            WorldJobAdmissionRequest.ForQuery(WorldTopologyAccess.Read,
+                record.Definition.MembershipStorageAccesses, canWrite: false));
+        return record.ReadMembershipEntities(out version);
     }
 
     internal void ExecuteQuery(

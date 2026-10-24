@@ -802,7 +802,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             Code: default,
             Label: "original");
         ComputePipelineDesc changed = original with { Label = "changed" };
-        (IComponentType slangCode, ShaderReflection reflection, EntryPointReflection compute,
+        (SlangShaderData slangCode, ShaderReflection reflection, EntryPointReflection compute,
             System.Buffers.ReadOnlySequence<byte> code, string? label,
             ReadOnlyMemory<StaticSamplerBinding> staticSamplers,
             ISlangBlob? codeBlob) = changed;

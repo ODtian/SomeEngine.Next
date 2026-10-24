@@ -7,8 +7,12 @@ public sealed partial class VirtualShadowMapShadersBlock
     internal void Validate(string path)
     {
         string subject = $"Virtual shadow map shader asset '{path}'";
+        if (BlueNoise is null || BlueNoise.Value.IsEmpty)
+            throw new InvalidDataException($"{subject} field '{nameof(BlueNoise)}' is missing.");
         ShaderRef?[] entries =
         [
+            ProjectDirectionalLights,
+            ProjectLocalLights,
             ResetReceiverMasks,
             ResetFrame,
             MarkPages,
@@ -22,9 +26,12 @@ public sealed partial class VirtualShadowMapShadersBlock
             InitializePageHiZ,
             ReducePageHiZ,
             DynamicResolution,
+            CompletePageDepth,
         ];
         string[] names =
         [
+            nameof(ProjectDirectionalLights),
+            nameof(ProjectLocalLights),
             nameof(ResetReceiverMasks),
             nameof(ResetFrame),
             nameof(MarkPages),
@@ -38,6 +45,7 @@ public sealed partial class VirtualShadowMapShadersBlock
             nameof(InitializePageHiZ),
             nameof(ReducePageHiZ),
             nameof(DynamicResolution),
+            nameof(CompletePageDepth),
         ];
         for (int index = 0; index < entries.Length; index++)
         {

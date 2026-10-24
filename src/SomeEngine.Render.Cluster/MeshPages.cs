@@ -95,6 +95,7 @@ internal sealed class MeshPages
     private readonly HashSet<uint> _pendingLoads = new();
     private readonly HashSet<uint> _pendingEvictions = new();
     private readonly HashSet<uint> _lowestDetailPageIds = new();
+    private readonly HashSet<uint> _referencedPages = [];
     private readonly List<uint> _offsets = [];
     private readonly List<LinkedListNode<uint>?> _lruNodes = [];
     private readonly LinkedList<uint> _residentLru = new();
@@ -287,6 +288,23 @@ internal sealed class MeshPages
         return true;
     }
 
+    internal void ClearReferences() => _referencedPages.Clear();
+
+    internal uint ReferencePage(uint page)
+    {
+        if (!_referencedPages.Add(page) || _lowestDetailPageIds.Contains(page) ||
+            !TrySource(page, out uint bytes, out _)) return 0;
+        return PageHeap.AllocationSize(bytes);
+    }
+
+    internal ulong CalculateStreamingCapacityBytes(uint capacity)
+    {
+        ulong openingBytes = 0;
+        foreach (uint page in _lowestDetailPageIds)
+            if (TrySource(page, out uint bytes, out _)) openingBytes += PageHeap.AllocationSize(bytes);
+        return capacity > openingBytes ? capacity - openingBytes : 0;
+    }
+
     internal bool IsRemoved(uint pageId) =>
         pageId < _pageRegistrationIndices.Count && _pageRegistrationIndices[(int)pageId] < 0;
 
@@ -301,6 +319,7 @@ internal sealed class MeshPages
         {
             _pageRegistrationIndices[(int)page] = -1;
             _lowestDetailPageIds.Remove(page);
+            _referencedPages.Remove(page);
         }
         return registration;
     }
@@ -519,7 +538,7 @@ internal sealed class MeshPages
         while (node != null)
         {
             pageId = node.Value;
-            if (pageId != protectedPageId && !_lowestDetailPageIds.Contains(pageId))
+            if (pageId != protectedPageId && !_lowestDetailPageIds.Contains(pageId) && !_referencedPages.Contains(pageId))
                 return true;
 
             node = node.Next;
@@ -564,6 +583,7 @@ internal sealed class MeshPages
         _pageRegistrationIndices.Clear();
         _residentPages.Clear();
         _lowestDetailPageIds.Clear();
+        _referencedPages.Clear();
         _pendingLoads.Clear();
         _pendingEvictions.Clear();
         _residentLru.Clear();

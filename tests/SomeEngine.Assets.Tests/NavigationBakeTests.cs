@@ -47,10 +47,8 @@ public sealed class NavigationBakeTests
             string path = Path.Combine(directory, "walkways.navigation.asset");
             await using (var context = new ImportContext(directory, "walkways", new SourceMeta { SourceGuid = SourceGuid.New() }))
             {
-                context.ConfigureAssets<NavigationMeshImportSource, NavigationAsset>(_ => "walkways",
-                    (_, id) => new NavigationAsset(id), (_, _) => path,
-                    static (asset, output, token) => asset.SaveAsync(output, token));
                 context.EnableImporter<NavigationMeshImportSource, NavigationAsset>(capability.Bind<NavigationMeshImportSource>(provider));
+                context.AddAsset(source, new NavigationAsset(context.GetAssetId("walkways")), "walkways", path);
                 NavigationAsset asset = await context.GetAssetAsync<NavigationMeshImportSource, NavigationAsset>(source);
                 await asset.SaveAsync(path);
             }

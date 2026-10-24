@@ -48,6 +48,10 @@ actorTransform = frame.RootMotion.Transform * actorTransform;
 
 [Motion Warping](Motion-Warping.md) 将来源根轨迹在指定窗口内对齐各角色的交互目标，通过相同 `PoseResult.RootMotion` 输出移动，并提供独立于播放历史的只读轨迹查询。
 
+[Inertialization](Inertialization.md) 保存动作切换时的可见姿势与速度差，通过共同结果和依赖节点组衰减到当前来源。
+
+[Physics Pose Blending](Physics-Pose-Blending.md) 将已完成刚体世界变换还原为骨骼局部姿势，按部位遮罩和共同层权重与当前动画混合，并沿普通结果恢复到动作。
+
 ## 结果交接
 
 `PoseResultId` 表达图内的结果编号。`PoseAnimation.CreateTarget` 的 `resultCount` 分配连续的 `LocalPose` buffer 区段；`output` 选择骨架最终消费的编号。`PoseResult` buffer 保存各区段的采样时刻、累计相位、启动标记、当前贡献权重、运动增量和版本。片段贡献权重采用共同图权重乘目标上的动画层权重。
@@ -66,7 +70,7 @@ PoseAnimation.AddSystems(systems, static composition =>
 });
 ```
 
-回调在创建执行组合时调用，保留各系统的具体类型和注册顺序。每帧依次执行 `PoseFrameSystem`、`ClipSystem`、调用方的每帧系统、依赖节点组和 `PoseCompositionSystem`。最终系统先将变化的局部结果交给对应骨架实例，再沿已绑定父实例完成父先子后的 FK；父结果版本变化也会更新保持原局部输入的子实例。随后共同图和时间线处理完成。
+回调在创建执行组合时调用，保留各系统的具体类型和注册顺序。每帧依次执行 `PoseFrameSystem`、`ClipSystem`、调用方的每帧系统、依赖节点组和 `PoseCompositionSystem`。节点安装时同时连接其局部结果与 `ModelBones` 所需的父模型来源；每个依赖层之前完成就绪的父 G，再执行本层具体节点。最终系统将变化的局部结果交给对应骨架实例，再沿已绑定父实例完成父先子后的 FK；父结果版本变化也会更新保持原局部输入的子实例。随后共同图和时间线处理完成。同步选骨与 GPU 剩余范围的完成点见 [CPU/GPU Pose Handoff](CPU-GPU-Pose-Handoff.md)。
 
 ## 按结果依赖求值
 

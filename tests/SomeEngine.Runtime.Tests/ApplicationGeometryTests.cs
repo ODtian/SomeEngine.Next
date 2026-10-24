@@ -6,6 +6,7 @@ using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
 using SomeEngine.Resources;
 using SomeEngine.Assets.Schema;
+using ClusterGeometry = SomeEngine.Render.Cluster.ClusterGeometry;
 
 namespace SomeEngine.Runtime.Tests;
 

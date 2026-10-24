@@ -31,7 +31,7 @@ internal sealed partial class FrameExecutor
                         if (!TryRepeatBatch(batch)) work[count++] = batch;
                     if (count != 0)
                         _aheadJobs[wave] = JobSystem.ScheduleParallel(
-                            new RecordBatchJob(this, work, 0), count, 1);
+                            new RecordBatchJob(this, work, 0), count, AheadBatchSize(work, count));
                 }
             }
 
@@ -73,5 +73,22 @@ internal sealed partial class FrameExecutor
             _aheadJobs[wave] = default;
             job.Complete();
         }
+    }
+
+    private static int AheadBatchSize(RecordingBatch[] work, int count)
+    {
+        // Keep the existing sixteen-pass recording granularity for small runs.
+        // Command lists remain separate while one worker records the ready range.
+        CommandContext first = work[0].Context;
+        int passes = 0;
+        for (int index = 0; index < count; index++)
+        {
+            RecordingBatch batch = work[index];
+            if (batch.Context.QueueType != first.QueueType ||
+                batch.Context.QueueIndex != first.QueueIndex || batch.Count > 16 - passes)
+                return 1;
+            passes += batch.Count;
+        }
+        return count;
     }
 }

@@ -18,7 +18,6 @@ public sealed class GpuBlendTerrainExample : IDisposable
     private readonly Shader _drawShader;
     private readonly Shader _heightShader;
     private readonly Shader _voxelShader;
-    private Material? _material;
 
     private GpuBlendTerrainExample(Scheduler scheduler, Shader surface, Shader attributes, Shader build,
         Shader draw, Shader height, Shader voxel)
@@ -72,16 +71,16 @@ public sealed class GpuBlendTerrainExample : IDisposable
     public int AddPlacement(Material material)
     {
         var source = (UnlitMaterial)material;
-        _material = new UnlitMaterial
+        var drawMaterial = new UnlitMaterial
         {
             Shader = _drawShader, BaseColorTint = source.BaseColorTint,
             AlbedoMap = source.AlbedoMap, MaterialSampler = source.MaterialSampler,
         };
-        return Scene.Add(new TerrainPlacement(Voxels.Terrain, new(0, -1, 0, 2, 2, 2), [_material])
+        return Scene.Add(new TerrainPlacement(Voxels.Terrain, new(0, -1, 0, 2, 2, 2), [drawMaterial])
         {
             Transform = new TransformQvvs(new Vector3(-4, -2, 6), Quaternion.Identity),
         });
     }
 
-    public void Dispose() => _material?.Dispose();
+    public void Dispose() => Heights.Terrain.Dispose();
 }

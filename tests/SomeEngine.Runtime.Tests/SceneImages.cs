@@ -6,6 +6,40 @@ namespace SomeEngine.Runtime.Tests;
 
 internal static class SceneImages
 {
+    internal static void AssertLinearEqual(SceneLinearImage expected, SceneLinearImage actual, float tolerance,
+        [CallerMemberName] string test = "")
+    {
+        try
+        {
+            Assert.Equal(expected.Frame.Width, actual.Frame.Width);
+            Assert.Equal(expected.Frame.Height, actual.Frame.Height);
+            float maximum = 0;
+            int largest = 0;
+            for (int index = 0; index < actual.Pixels.Length; index++)
+            {
+                float difference = MathF.Abs((float)expected.Pixels.Span[index] - (float)actual.Pixels.Span[index]);
+                if (difference > maximum) { maximum = difference; largest = index; }
+            }
+            Assert.True(maximum <= tolerance, $"Linear color error {maximum} at pixel ({largest / 4 % actual.Frame.Width}, {largest / 4 / actual.Frame.Width}), channel {largest % 4}; tolerance {tolerance}.");
+        }
+        catch (XunitException)
+        {
+            SaveFailure(Preview(expected), Preview(actual), test);
+            throw;
+        }
+
+    }
+
+    internal static void AssertLinearNotEqual(SceneLinearImage expected, SceneLinearImage actual,
+        [CallerMemberName] string test = "")
+    {
+        try { Assert.NotEqual(expected.Pixels.ToArray(), actual.Pixels.ToArray()); }
+        catch (XunitException) { SaveFailure(Preview(expected), Preview(actual), test); throw; }
+    }
+
+    private static SceneImage Preview(SceneLinearImage value) => new(value.Frame.Frame, value.Frame.Width, value.Frame.Height,
+        value.Pixels.Span.ToArray().Select(channel => (byte)Math.Clamp((float)channel * 255, 0, 255)).ToArray());
+
     internal static async Task RunAsync(string backend, SceneScript script, params string[] options)
     {
         ApplicationResult result = await Application.RunAsync(
@@ -81,6 +115,48 @@ internal static class SceneImages
             throw;
         }
     }
+
+    internal static void AssertWithinPixelError(SceneImage expected, SceneImage actual, int pixelRadius, int colorTolerance,
+        [CallerMemberName] string test = "")
+    {
+        try
+        {
+            Assert.Equal(expected.Width, actual.Width);
+            Assert.Equal(expected.Height, actual.Height);
+            Assert.Equal(expected.Pixels.Length, actual.Pixels.Length);
+            Compare(expected, actual);
+            Compare(actual, expected);
+        }
+        catch (XunitException)
+        {
+            SaveFailure(expected, actual, test);
+            throw;
+        }
+
+        void Compare(SceneImage source, SceneImage destination)
+        {
+            for (int y = 0; y < source.Height; y++)
+            for (int x = 0; x < source.Width; x++)
+            {
+                int pixel = (y * source.Width + x) * 4;
+                bool matched = false;
+                for (int dy = Math.Max(0, y - pixelRadius); dy <= Math.Min(source.Height - 1, y + pixelRadius) && !matched; dy++)
+                for (int dx = Math.Max(0, x - pixelRadius); dx <= Math.Min(source.Width - 1, x + pixelRadius) && !matched; dx++)
+                {
+                    int other = (dy * source.Width + dx) * 4;
+                    int difference = 0;
+                    for (int channel = 0; channel < 4; channel++)
+                        difference = Math.Max(difference, Math.Abs(source.Pixels.Span[pixel + channel] - destination.Pixels.Span[other + channel]));
+                    matched = difference <= colorTolerance;
+                }
+                Assert.True(matched, $"Frame {actual.Frame}: pixel ({x}, {y}) exceeds {pixelRadius} pixels and RGBA8 tolerance {colorTolerance}.");
+            }
+        }
+    }
+
+    internal static void AssertEqualWithinPixel(SceneImage expected, SceneImage actual, int tolerance = 2,
+        [CallerMemberName] string test = "") =>
+        AssertWithinPixelError(expected, actual, pixelRadius: 1, colorTolerance: tolerance, test);
 
     internal static void AssertColorRegion(SceneImage image, int left, int top, int width, int height,
         byte red, byte green, byte blue, int tolerance = 2, [CallerMemberName] string test = "")

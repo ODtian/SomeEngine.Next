@@ -40,12 +40,12 @@ public ref struct HeightBrushGpuContext
 {
     private readonly RenderTerrainData _data;
     private RenderGraphFrame _frame;
-    private RenderGraphFrameExtension _extension;
+    private TerrainFrameCommands _extension;
     private readonly GraphBufferSlice _source;
     private readonly GraphBufferSlice _pageTable;
     private readonly GraphBufferId _output;
 
-    internal HeightBrushGpuContext(RenderTerrainData data, RenderGraphFrame frame, RenderGraphFrameExtension extension,
+    internal HeightBrushGpuContext(RenderTerrainData data, RenderGraphFrame frame, TerrainFrameCommands extension,
         HeightGrid grid, HeightRegion range, HeightRegion page, float initialHeight, HeightGpuInput input,
         GraphBufferId output, GraphPassId previous)
     {

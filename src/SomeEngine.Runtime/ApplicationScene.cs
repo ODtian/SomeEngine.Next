@@ -2,6 +2,7 @@ using SomeEngine.ECS;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Systems;
 using SomeEngine.Render.Cluster;
+using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Runtime;
 
@@ -14,6 +15,7 @@ public sealed class ApplicationScene(string contentDirectory)
     public string ContentDirectory { get; set; } = contentDirectory;
     public RuntimeStartupOptions Options { get; set; } = RuntimeStartupOptions.Parse([]);
     public uint GeometryMemoryBytes { get; set; } = 256u * 1024 * 1024;
+    public float LodThreshold { get; set; } = 1;
     public ulong GeometryBvhMemoryBytes { get; set; } = 64ul * 1024 * 1024;
     public string? StartupTraceOutput { get; set; }
     public bool DebugUiEnabled { get; set; } = true;
@@ -25,6 +27,12 @@ public sealed class ApplicationScene(string contentDirectory)
     public Action<ApplicationFrame>? UpdateFrame { get; set; }
     public Action? DrawDebugUi { get; set; }
     public Action<ApplicationFrame>? FrameCompleted { get; set; }
+    /// <summary>Receives this frame's Cluster results after GPU completion. Supplying this callback enables synchronous frame diagnostics.</summary>
+    public Action<ClusterFrameMetrics>? FrameRendered { get; set; }
+    /// <summary>Receives complete CPU/GPU frame timing after GPU completion, preserving asynchronous frame scheduling.</summary>
+    public Action<ApplicationFrameTiming>? FrameMeasured { get; set; }
+    public Action<ClusterBlendMetrics>? BlendFrameCompleted { get; set; }
+    public Func<ApplicationRendering, IApplicationColorFeature>? CreateColorFeature { get; set; }
     public Action<ApplicationResult>? SceneCompleted { get; set; }
     public bool ReloadRequested { get; internal set; }
 
@@ -63,4 +71,4 @@ public sealed class ApplicationFrame
 }
 
 public readonly record struct ApplicationFrameTimes(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs,
-    ViewTiming Views = default, double ExtractionMs = 0, long ExtractionAllocatedBytes = 0);
+    ViewTiming Views = default, double ExtractionMs = 0, long ExtractionAllocatedBytes = 0, int SimulationFrame = 0);

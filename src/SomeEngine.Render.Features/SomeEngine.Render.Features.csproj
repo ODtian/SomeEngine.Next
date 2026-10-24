@@ -5,15 +5,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\SomeEngine.Animation.Pose\SomeEngine.Animation.Pose.csproj" />
+    <ProjectReference Include="../SomeEngine.Animation.Pose/SomeEngine.Animation.Pose.csproj" />
     <ProjectReference Include="..\SomeEngine.Assets\SomeEngine.Assets.csproj" />
     <ProjectReference Include="..\SomeEngine.Graphics\SomeEngine.Graphics.csproj" />
     <ProjectReference Include="..\SomeEngine.Render\SomeEngine.Render.csproj" />
     <ProjectReference Include="..\SomeEngine.Render.Cluster.Pipeline\SomeEngine.Render.Cluster.Pipeline.csproj" />
     <ProjectReference Include="..\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="../../assets/Shaders/gpu_pose.slang" LogicalName="SomeEngine.Render.Features.Shaders.gpu_pose.slang" />
-    <EmbeddedResource Include="../../assets/Shaders/skin_bounds.slang" LogicalName="SomeEngine.Render.Features.Shaders.skin_bounds.slang" />
   </ItemGroup>
 </Project>

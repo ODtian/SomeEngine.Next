@@ -49,7 +49,7 @@ internal sealed class VoxelGpuRequest<TBrush>(long sequence, JobHandle dependenc
     : TerrainGpuRequest(sequence, dependency, completion) where TBrush : struct, IVoxelBrushGpu
 {
     internal override GraphPassId Record(RenderTerrainData data, ref RenderGraphFrame frame,
-        ref RenderGraphFrameExtension extension)
+        ref TerrainFrameCommands extension)
     {
         if (outputs.Length == 0) return default;
         VoxelGpuInput input = data.CreateVoxelInput(ref frame, ref extension, grid, source, range.Expand(brush.ReadBorder));

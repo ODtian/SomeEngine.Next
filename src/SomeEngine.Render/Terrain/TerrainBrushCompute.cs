@@ -8,7 +8,7 @@ namespace SomeEngine.Render.Terrain;
 internal static class TerrainBrushCompute
 {
     internal static GraphPassId Add<TParameters>(RenderTerrainData data, ref RenderGraphFrame frame,
-        ref RenderGraphFrameExtension extension, GraphPassId previous, Shader shader, string entryPoint,
+        ref TerrainFrameCommands extension, GraphPassId previous, Shader shader, string entryPoint,
         TParameters parameters, DispatchArguments dispatch, scoped ReadOnlySpan<GraphParameterResourceBinding> bindings)
         where TParameters : unmanaged
     {

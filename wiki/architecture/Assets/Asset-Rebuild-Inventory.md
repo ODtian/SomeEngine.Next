@@ -11,6 +11,6 @@
 | 管线配置 | `ClusterShadersAsset`、`VirtualShadowMapShadersAsset` 保存角色到 `ShaderRef`，不保存 Shader 数据 |
 | World 与启动配置 | 语义 Asset 与具体 Block 分离；Game world 到 Rendering world 数据边界不变 |
 | 外部扩展 | 外部程序集通过公开 Asset/Block API 定义自己的语义类型和创建行为 |
-| 构建 | `AssetProject`、`ShaderSourceFormat` 与项目自己的构建入口维护身份、依赖和产物 |
+| 构建 | `AssetProject` 直接调用既有 `SlangShaderImporter` 构建 Shader，项目构建入口共用其身份、依赖和产物提交 |
 
 Shader 的完整边界见 [Asset-Shaders](Asset-Shaders.md) 与 [Shader Block、驻留与 Slang 重构规范](../shader/Shader-Block-Residency-Refactor.md)。

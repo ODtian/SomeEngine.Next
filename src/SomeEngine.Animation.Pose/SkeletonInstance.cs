@@ -25,12 +25,16 @@ public sealed class SkeletonInstance : IDisposable
     public ulong BindingVersion { get; private set; } = 1;
     public ReadOnlySpan<BoneTransform> LocalPose => _storage!.Local(Range);
     public ModelPose ModelPose => new(this);
+    /// <summary>The resolved own bones currently written by synchronous CPU demand.</summary>
+    public ReadOnlyMemory<short> CpuBones => CpuWrittenBones;
     internal ReadOnlySpan<Matrix4x4> ModelTransforms => _storage!.Model(Range);
     internal BoneSource[] BoneSources => _boneSources;
     internal ReadOnlySpan<SkeletonInstance> Sections => _sections;
     internal ulong Version => _version;
     internal double Time => _time;
     internal double SampleTime => _sampleTime;
+    internal ReadOnlySpan<PoseCalculation> Calculations => _storage!.Calculations(Range);
+    internal short[] CpuWrittenBones { get; set; } = [];
 
     internal SkeletonInstance(PoseStorage storage, Skeleton skeleton, PoseRange range,
         SkeletonInstance? parent, bool privateParent)
@@ -52,6 +56,7 @@ public sealed class SkeletonInstance : IDisposable
             _boneSources[skeleton.InheritedBoneCount + bone] = new(this, bone);
         _sections[^1] = this;
         skeleton.ReferencePose.CopyTo(storage.Local(range));
+        storage.SampleTimes(range).Clear();
         Evaluate(parent?.Time ?? 0);
     }
 
@@ -70,13 +75,39 @@ public sealed class SkeletonInstance : IDisposable
     {
         localPose[..Range.Count].CopyTo(_storage!.Local(Range));
         _sampleTime = sampleTime;
+        _storage.SampleTimes(Range).Fill(sampleTime);
         _localChanged = true;
     }
 
     internal void Compose(double time)
     {
         ParentInstance?.Compose(time);
-        if (_localChanged || _parentVersion != (ParentInstance?.Version ?? 0)) Evaluate(time);
+        if (_localChanged || CpuWrittenBones.Length == 0 && _parentVersion != (ParentInstance?.Version ?? 0)) Evaluate(time);
+    }
+
+    internal void WriteBones(ReadOnlySpan<short> bones, ReadOnlySpan<BoneTransform> samples,
+        double time, double sampleTime)
+    {
+        Span<BoneTransform> local = _storage!.Local(Range);
+        Span<Matrix4x4> model = _storage.Model(Range);
+        Span<PoseCalculation> calculations = _storage.Calculations(Range);
+        Span<double> sourceTimes = _storage.SampleTimes(Range);
+        _version++;
+        for (int index = 0; index < bones.Length; index++)
+        {
+            int bone = bones[index];
+            local[bone] = samples[index];
+            sourceTimes[bone] = sampleTime;
+            Matrix4x4 transform = samples[index].ToMatrix();
+            int parent = Skeleton.Parents[bone], inherited = Skeleton.InheritedParents[bone];
+            model[bone] = parent >= 0 ? transform * model[parent]
+                : inherited >= 0 ? transform * _boneSources[inherited].Transform : transform;
+            calculations[bone] = new(_version, time, sampleTime);
+        }
+        _time = time;
+        _sampleTime = sampleTime;
+        _parentVersion = ParentInstance?.Version ?? 0;
+        _localChanged = false;
     }
 
     /// <summary>Uses an existing matching parent and refreshes the connected result sections at the supplied time.</summary>
@@ -128,7 +159,9 @@ public sealed class SkeletonInstance : IDisposable
     private static void CopyParentPose(SkeletonInstance source, SkeletonInstance destination)
     {
         if (source.ParentInstance is not null) CopyParentPose(source.ParentInstance, destination.ParentInstance!);
-        destination.Update(source.LocalPose, source.Time, source.SampleTime);
+        destination.SetLocalPose(source.LocalPose, source.SampleTime);
+        source._storage!.SampleTimes(source.Range).CopyTo(destination._storage!.SampleTimes(destination.Range));
+        destination.Compose(source.Time);
     }
 
     private void Evaluate(double time)
@@ -137,15 +170,18 @@ public sealed class SkeletonInstance : IDisposable
         Span<Matrix4x4> model = _storage.Model(Range);
         ReadOnlySpan<short> parents = Skeleton.Parents;
         ReadOnlySpan<short> inherited = Skeleton.InheritedParents;
+        Span<PoseCalculation> calculations = _storage.Calculations(Range);
+        ReadOnlySpan<double> sampleTimes = _storage.SampleTimes(Range);
+        _version++;
         for (int bone = 0; bone < Range.Count; bone++)
         {
             Matrix4x4 transform = local[bone].ToMatrix();
             model[bone] = parents[bone] >= 0 ? transform * model[parents[bone]]
                 : inherited[bone] >= 0 ? transform * _boneSources[inherited[bone]].Transform : transform;
+            calculations[bone] = new(_version, time, sampleTimes[bone]);
         }
         _time = time;
         _parentVersion = ParentInstance?.Version ?? 0;
         _localChanged = false;
-        _version++;
     }
 }

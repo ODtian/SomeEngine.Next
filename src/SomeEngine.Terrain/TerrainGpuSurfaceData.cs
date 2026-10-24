@@ -60,7 +60,7 @@ internal sealed record TerrainGpuSurfaceData(TerrainGpuSurfaceNode[] Nodes, Terr
     }
 
     internal void AddBindings(RenderTerrainData fields, ref RenderGraphFrame frame,
-        ref RenderGraphFrameExtension extension, Dictionary<string, GraphParameterResourceBinding> bindings)
+        ref TerrainFrameCommands extension, Dictionary<string, GraphParameterResourceBinding> bindings)
     {
         var sources = new TerrainGpuScalarSource[Fields.Length];
         var samples = new GraphBufferSlice[Fields.Length];
@@ -91,7 +91,7 @@ internal sealed record TerrainGpuSurfaceData(TerrainGpuSurfaceNode[] Nodes, Terr
                 frame.Upload<int>(AttributeVoxelSources, BufferUsages.ShaderRead));
     }
 
-    private static GraphBufferSlice Combine(ref RenderGraphFrame frame, ref RenderGraphFrameExtension extension,
+    private static GraphBufferSlice Combine(ref RenderGraphFrame frame, ref TerrainFrameCommands extension,
         GraphBufferSlice[] inputs, ulong bytes)
     {
         if (inputs.Length == 1) return inputs[0];
@@ -160,14 +160,14 @@ internal readonly record struct TerrainGpuFieldInput(GraphBufferSlice Samples, G
 internal abstract record TerrainGpuFieldData(JobHandle Completion)
 {
     internal abstract TerrainGpuFieldInput CreateInput(RenderTerrainData fields, ref RenderGraphFrame frame,
-        ref RenderGraphFrameExtension extension);
+        ref TerrainFrameCommands extension);
 }
 
 internal sealed record TerrainHeightGpuData(HeightGrid Grid, float InitialHeight, HeightFieldData Data,
     HeightRegion Range, JobHandle Completion) : TerrainGpuFieldData(Completion)
 {
     internal override TerrainGpuFieldInput CreateInput(RenderTerrainData fields, ref RenderGraphFrame frame,
-        ref RenderGraphFrameExtension extension)
+        ref TerrainFrameCommands extension)
     {
         HeightGpuInput input = fields.CreateHeightInput(ref frame, ref extension, Grid, Data, Range);
         return new(input.Samples, input.PageTable, new(0, Grid.PageSize, Grid.Width, Grid.Depth,
@@ -179,7 +179,7 @@ internal sealed record TerrainVoxelGpuData(VoxelGrid Grid, float InitialValue, V
     VoxelRegion Range, JobHandle Completion) : TerrainGpuFieldData(Completion)
 {
     internal override TerrainGpuFieldInput CreateInput(RenderTerrainData fields, ref RenderGraphFrame frame,
-        ref RenderGraphFrameExtension extension)
+        ref TerrainFrameCommands extension)
     {
         VoxelGpuInput input = fields.CreateVoxelInput(ref frame, ref extension, Grid, Data, Range);
         return new(input.Samples, input.PageTable, new(1, Grid.PageSize, 0, 0, input.MinPageX, input.MinPageY,

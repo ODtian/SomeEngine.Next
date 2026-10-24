@@ -16,7 +16,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using GpuHeightTerrainExample ground = await GpuHeightTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
-        using var material = new UnlitMaterial();
+        var material = new UnlitMaterial();
         var input = new EditStart();
         TerrainEdit edit = ground.Heights.EditCpu(new HeightDeltaBrush(ground.Heights.Grid.Range, 1f),
             scheduler.CreateExternalFenceHandle(input));
@@ -79,7 +79,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using GpuHeightTerrainExample ground = await GpuHeightTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
-        using var material = new UnlitMaterial();
+        var material = new UnlitMaterial();
         Shader voxelShader = await TerrainGpuEditingTests.LoadNeighborhoodShaderAsync("terrain_voxel_delta.slang");
         VoxelField voxels = ground.Heights.Terrain.CreateVoxelField("detail", new VoxelGrid(4), 4f);
         ground.AddPlacements(material, material);
@@ -155,7 +155,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using GpuHeightTerrainExample ground = await GpuHeightTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
-        using var material = new UnlitMaterial();
+        var material = new UnlitMaterial();
         var builds = new List<TerrainGpuBuild>();
         (int First, int Second) placement = default;
         SceneImage? empty = null, visible = null;
@@ -205,7 +205,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using GpuHeightTerrainExample ground = await GpuHeightTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
-        using var material = new UnlitMaterial();
+        var material = new UnlitMaterial();
         ground.AddPlacements(material, material);
         var builds = new List<TerrainGpuBuild>();
         int runs = 0, updates = 0;
