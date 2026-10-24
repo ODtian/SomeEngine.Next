@@ -30,7 +30,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private GraphBufferId _playback, _readyPlayback, _blendStates, _readyBlendStates;
     private readonly List<GraphBufferId> _retiredHistories = [];
     private readonly Dictionary<Entity, Section> _sections = [];
-    private readonly Dictionary<Entity, RenderMeshSkin> _meshes = [];
+    private readonly Dictionary<Entity, MeshInput> _meshes = [];
     private readonly List<Entity> _removed = [];
     private readonly List<Control> _controls = [];
     private readonly List<float> _controlValues = [];
@@ -57,6 +57,14 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     public GraphBufferInput CurrentBones => _currentBones;
     public GraphBufferInput PreviousBones => _previousBones;
     public GraphPassId CompletePass { get; }
+
+    internal readonly record struct PoseInput(uint Starts, ulong Number, ulong GeometryNumber, bool IsGpu);
+
+    internal PoseInput ReadPoseInput(Entity entity)
+    {
+        Section section = _sections[entity];
+        return new(section.Data.Starts, section.Data.InputNumber, section.FrameVersion, section.Data.IsGpu);
+    }
 
     public SkinningFeature(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph)
     {
@@ -138,16 +146,19 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             foreach (QueryRow row in rows.Rows)
             {
                 RenderMeshSkin data = row.Read<RenderMeshSkin>();
-                if (!feature._meshes.TryGetValue(row.Entity, out RenderMeshSkin before) || before != data)
+                if (!feature._meshes.TryGetValue(row.Entity, out MeshInput? mesh))
                 {
-                    feature._meshes[row.Entity] = data;
+                    feature._meshes.Add(row.Entity, mesh = new());
                     feature._definitionsChanged = true;
                 }
+                if (mesh.Data != data) feature._definitionsChanged = true;
+                mesh.Data = data;
+                mesh.Collection = feature._collection;
             }
         });
         _removed.Clear();
-        foreach (Entity entity in _meshes.Keys)
-            if (!context.World.IsAlive(entity) || !context.World.Has<RenderMeshSkin>(entity)) _removed.Add(entity);
+        foreach ((Entity entity, MeshInput mesh) in _meshes)
+            if (mesh.Collection != _collection) _removed.Add(entity);
         foreach (Entity entity in _removed) { _meshes.Remove(entity); _definitionsChanged = true; }
 
         if (_definitionsChanged) Rebuild(context.World);
@@ -305,8 +316,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         Align(writer, 64);
         var bindOffsets = new Dictionary<SkinBinding, uint>();
         ulong inverseStart = (ulong)bytes.Position;
-        foreach (RenderMeshSkin mesh in _meshes.Values)
+        foreach (MeshInput input in _meshes.Values)
         {
+            RenderMeshSkin mesh = input.Data;
             if (bindOffsets.ContainsKey(mesh.Binding)) continue;
             bindOffsets.Add(mesh.Binding, (uint)(((ulong)bytes.Position - inverseStart) / 64));
             writer.Write(MemoryMarshal.AsBytes(mesh.Binding.InverseBindMatrices));
@@ -315,8 +327,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _inverseBytes = new(inverseStart, (ulong)bytes.Position - inverseStart);
         Align(writer, 4);
         ulong jointsStart = (ulong)bytes.Position;
-        foreach ((Entity entity, RenderMeshSkin mesh) in _meshes)
+        foreach ((Entity entity, MeshInput input) in _meshes)
         {
+            RenderMeshSkin mesh = input.Data;
             uint jointOffset = (uint)(((ulong)bytes.Position - jointsStart) / 4);
             foreach (RenderSkinJoint joint in mesh.Joints) writer.Write((uint)(_sections[joint.Section].Range.Start + joint.Bone));
             world.Replace(entity, new RenderSkinBinding(jointOffset, bindOffsets[mesh.Binding]));
@@ -640,6 +653,12 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private readonly record struct CpuCopy(int Source, int Destination, int Count);
     private readonly record struct HistoryCopy(PoseRange Source, PoseRange Destination, int SourceIndex, int DestinationIndex,
         int SourceBlendStart, int DestinationBlendStart, int BlendCount);
+    private sealed class MeshInput
+    {
+        internal RenderMeshSkin Data;
+        internal ulong Collection;
+    }
+
     private sealed class Section(Entity entity)
     {
         internal readonly Entity Entity = entity;

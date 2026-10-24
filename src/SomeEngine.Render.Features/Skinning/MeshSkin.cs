@@ -44,10 +44,13 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
     private readonly Dictionary<Entity, SourceMesh> _meshes = [];
     private readonly Dictionary<SkeletonInstance, SourceSection> _sections = [];
     private readonly Dictionary<SkeletonInstance, GpuPoseTarget> _gpuControls = [];
-    private readonly Dictionary<Entity, SourceSection> _targets = [];
+    private readonly Dictionary<Entity, SourceTarget> _targets = [];
     private readonly List<SkeletonInstance> _removedSections = [];
     private readonly List<Entity> _removedMeshes = [];
     private ulong _input;
+    private bool _canApplyChangesDirect;
+
+    public bool CanApplyChangesDirect => _canApplyChangesDirect;
 
     public void DeclareReads(RenderExtractionQuery query)
     {
@@ -62,25 +65,52 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
         query.Write<RenderGpuPoseTarget>();
     }
 
-    public void Reset() { _input++; _gpuControls.Clear(); _targets.Clear(); }
+    public void Reset() { _input++; _gpuControls.Clear(); }
 
     public void Collect(QueryChunkView chunk)
     {
-        if (chunk.Has<MeshSkin>()) foreach (Entity entity in chunk.Entities) _meshSources.Add(entity);
-        if (chunk.Has<GpuPoseTarget>()) foreach (Entity entity in chunk.Entities) _targetSources.Add(entity);
+        ReadOnlySpan<Entity> entities = chunk.Entities;
+        if (chunk.TryRead<MeshSkin>(out ReadOnlySpan<MeshSkin> meshes))
+            for (int index = 0; index < entities.Length; index++)
+            {
+                Entity entity = entities[index];
+                _meshSources.Add(entity);
+                if (!_meshes.TryGetValue(entity, out SourceMesh? mesh)) _meshes.Add(entity, mesh = new());
+                Bind(mesh, meshes[index].Joints);
+            }
+        if (chunk.TryRead<GpuPoseTarget>(out ReadOnlySpan<GpuPoseTarget> targets))
+            for (int index = 0; index < entities.Length; index++)
+            {
+                Entity entity = entities[index];
+                _targetSources.Add(entity);
+                if (!_targets.TryGetValue(entity, out SourceTarget? target)) _targets.Add(entity, target = new());
+                target.Data = targets[index];
+            }
     }
 
     public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) { Collect(chunk); return false; }
 
     public bool CompleteSourceCollection(World world, bool fullCollection)
     {
-        _meshSources.RemoveWhere(entity => !world.IsAlive(entity) || !world.Has<MeshSkin>(entity));
-        _targetSources.RemoveWhere(entity => !world.IsAlive(entity) || !world.Has<GpuPoseTarget>(entity));
+        if (fullCollection)
+        {
+            _meshSources.RemoveWhere(entity => !world.IsAlive(entity) || !world.Has<MeshSkin>(entity));
+            _targetSources.RemoveWhere(entity =>
+            {
+                bool removed = !world.IsAlive(entity) || !world.Has<GpuPoseTarget>(entity);
+                if (removed) _targets.Remove(entity);
+                return removed;
+            });
+        }
+        _canApplyChangesDirect = true;
         foreach (Entity entity in _targetSources)
         {
-            GpuPoseTarget target = world.Read<GpuPoseTarget>(entity);
+            SourceTarget sourceTarget = _targets[entity];
+            GpuPoseTarget target = sourceTarget.Data;
             _gpuControls[target.Skeleton] = target;
             SourceSection section = Section(target.Skeleton);
+            sourceTarget.Section = section;
+            _canApplyChangesDirect &= section.Entity != Entity.Null && sourceTarget.PublishedSection == section.Entity;
             section.Target = entity;
             if (target.Rig is GpuPoseRig rig)
             {
@@ -94,30 +124,19 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                     static (goals, ref capture) => goals.AsSpan().CopyTo(capture));
             }
             Mark(section);
-            _targets.Add(entity, section);
         }
         foreach (Entity entity in _meshSources)
         {
-            SkinBindingInstance binding = world.Read<MeshSkin>(entity).Joints;
-            if (!_meshes.TryGetValue(entity, out SourceMesh? mesh)) _meshes.Add(entity, mesh = new());
-            if (!ReferenceEquals(mesh.Binding, binding) || mesh.BindingVersion != binding.SkeletonInstance.BindingVersion)
-            {
-                mesh.Binding = binding;
-                mesh.BindingVersion = binding.SkeletonInstance.BindingVersion;
-                mesh.Joints = new SourceJoint[binding.JointCount];
-                for (int joint = 0; joint < mesh.Joints.Length; joint++)
-                {
-                    BonePose bone = binding.GetJointPose(joint);
-                    mesh.Joints[joint] = new(Section(bone.Instance), bone.BoneIndex);
-                }
-                mesh.Changed = true;
-            }
-            foreach (SourceJoint joint in mesh.Joints) Mark(joint.Section!);
+            SourceMesh mesh = _meshes[entity];
+            Bind(mesh, mesh.Binding!);
+            _canApplyChangesDirect &= !mesh.Changed;
+            foreach (SourceSection section in mesh.Sections) Mark(section);
         }
         _removedSections.Clear();
         foreach ((SkeletonInstance source, SourceSection section) in _sections)
         {
             if (section.Input != _input) { _removedSections.Add(source); continue; }
+            _canApplyChangesDirect &= section.Entity != Entity.Null && !section.Rebound;
             _gpuControls.TryGetValue(source, out GpuPoseTarget gpu);
             ModelPose model = source.ModelPose;
             bool isGpu = gpu.Clip is not null || gpu.StateMachine is not null || gpu.Blend is not null;
@@ -158,7 +177,26 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
         }
         _removedMeshes.Clear();
         foreach (Entity source in _meshes.Keys) if (!_meshSources.Contains(source)) _removedMeshes.Add(source);
+        _canApplyChangesDirect &= _removedSections.Count == 0 && _removedMeshes.Count == 0;
         return _sections.Count != 0 || _removedMeshes.Count != 0;
+    }
+
+    private void Bind(SourceMesh mesh, SkinBindingInstance binding)
+    {
+        if (ReferenceEquals(mesh.Binding, binding) && mesh.BindingVersion == binding.SkeletonInstance.BindingVersion) return;
+        mesh.Binding = binding;
+        mesh.BindingVersion = binding.SkeletonInstance.BindingVersion;
+        mesh.Joints = new SourceJoint[binding.JointCount];
+        var sections = new HashSet<SourceSection>();
+        for (int joint = 0; joint < mesh.Joints.Length; joint++)
+        {
+            BonePose bone = binding.GetJointPose(joint);
+            SourceSection section = Section(bone.Instance);
+            mesh.Joints[joint] = new(section, bone.BoneIndex);
+            sections.Add(section);
+        }
+        mesh.Sections = [.. sections];
+        mesh.Changed = true;
     }
 
     private SourceSection Section(SkeletonInstance source)
@@ -256,10 +294,13 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
             context.Upsert(entity, new RenderSkinBinding());
             mesh.Changed = false;
         }
-        foreach ((Entity source, SourceSection section) in _targets)
+        foreach ((Entity source, SourceTarget target) in _targets)
         {
+            SourceSection section = target.Section!;
+            if (!retain && target.PublishedSection == section.Entity) continue;
             Entity entity = retain ? context.RetainMirror(source) : context.RequireMirror(source);
             context.Upsert(entity, new RenderGpuPoseTarget(section.Entity));
+            target.PublishedSection = section.Entity;
         }
         foreach (SkeletonInstance source in _removedSections)
         {
@@ -277,11 +318,18 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
     }
 
     private readonly record struct SourceJoint(SourceSection? Section, int Bone);
+    private sealed class SourceTarget
+    {
+        internal GpuPoseTarget Data;
+        internal SourceSection? Section;
+        internal Entity PublishedSection;
+    }
     private sealed class SourceMesh
     {
         internal SkinBindingInstance? Binding;
         internal ulong BindingVersion;
         internal SourceJoint[] Joints = [];
+        internal SourceSection[] Sections = [];
         internal bool Changed;
     }
     private sealed class SourceSection(SkeletonInstance source)
