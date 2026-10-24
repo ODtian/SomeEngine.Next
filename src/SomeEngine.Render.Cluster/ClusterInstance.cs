@@ -20,6 +20,9 @@ public static class ClusterRenderFeature
     public static RenderInstancePropertyKey BoundsExpansionKey { get; } =
         new("someengine.cluster.bounds_expansion");
 
+    public static RenderInstancePropertyKey DeformBoundsKey { get; } =
+        new("someengine.cluster.deform_bounds");
+
     public const uint MissingBvhRoot = uint.MaxValue;
     public const uint MissingMaterialSlots = uint.MaxValue;
 
@@ -56,6 +59,8 @@ public static class ClusterRenderFeature
             "SomeEngine.Render.Cluster",
             BoundsExpansionKey,
             Float32Encoding);
+        _ = builder.Register<RenderDeformBounds>("SomeEngine.Render.Cluster", DeformBoundsKey,
+            new("someengine.cluster.bounds.uint2.v1", valueSize: 8, storageAlignment: 4, storageStride: 8, metadataWordCount: 1));
         return builder.Freeze();
     }
 

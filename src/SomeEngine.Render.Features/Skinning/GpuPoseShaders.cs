@@ -35,12 +35,13 @@ internal static class GpuPoseShaders
             using var reader = new StreamReader(source);
             IModule? module = session.LoadModuleFromSource("gpu_pose", "gpu_pose.slang", Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
             if (module is null) throw new InvalidDataException(diagnostics?.AsString);
+            Require(module.FindEntryPointByName("AdvancePoseStates", out IEntryPoint advance), null);
             Require(module.FindEntryPointByName("LoadPoseHistory", out IEntryPoint load), null);
             Require(module.FindEntryPointByName("SamplePoseLevel", out IEntryPoint sample), null);
             Require(module.FindEntryPointByName("StorePoseHistory", out IEntryPoint store), null);
-            Require(session.CreateCompositeComponentType([module, load, sample, store], out IComponentType combined, out diagnostics), diagnostics);
+            Require(session.CreateCompositeComponentType([module, advance, load, sample, store], out IComponentType combined, out diagnostics), diagnostics);
             Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
-            shader = Shader.CreateFromSlang("GPU poses", s_global, session, [module], [load, sample, store], linked, [output]);
+            shader = Shader.CreateFromSlang("GPU poses", s_global, session, [module], [advance, load, sample, store], linked, [output]);
             s_shaders.Add(target, shader);
             return shader;
         }

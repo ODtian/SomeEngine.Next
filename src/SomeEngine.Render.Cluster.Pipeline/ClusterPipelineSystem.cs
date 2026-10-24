@@ -158,7 +158,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         in ClusterPipelineOutputDescription outputDescription,
         ClusterStreamingFeedbackChannel streamingFeedback,
         IGraphResourceProvider? stageResourceProvider = null,
-        ClusterPipelineOptions? options = null)
+        ClusterPipelineOptions? options = null,
+        IClusterBoundsSource? boundsSource = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
@@ -176,6 +177,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _outputDescription = outputDescription;
         _streamingFeedback = streamingFeedback ?? throw new ArgumentNullException(nameof(streamingFeedback));
         _stageResourceProvider = stageResourceProvider;
+        _deformBounds = boundsSource;
         _options = options ?? new ClusterPipelineOptions();
         _visibilityMode = _options.SelectVisibilityMode(device.Capabilities);
         _packedViews = new ClusterViewUniforms[checked((int)outputDescription.ViewCount)];
@@ -1046,6 +1048,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         else
             BindNeutralTargetPolicyFilterResources(ref graph, ref pass);
         BindSceneSeed(ref graph, ref pass);
+        BindDeformBounds(ref graph, ref pass);
     }
 
     private void BindTargetPolicyResources(
@@ -1059,6 +1062,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             ref pass,
             PipelineSync.ComputeShading,
             policyTarget);
+        BindDeformBounds(ref graph, ref pass);
         if (policyTarget)
             _renderContext.FilterResourcesBinder(ref graph, ref pass, PipelineSync.ComputeShading);
         else
@@ -1191,6 +1195,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _sceneBatch = CurrentInstances;
                 _sceneInstanceRevision = _sceneBatch?.ContentRevision ?? 0;
                 _sceneGeometryRevision = GeometryRevision;
+                _sceneDeformRevision = _deformBounds?.Revision ?? 0;
             }
             if (_pendingResidencyPublication is { } publication)
             {

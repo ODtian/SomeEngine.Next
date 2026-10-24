@@ -797,6 +797,7 @@ public sealed class ClusterRenderResources : IDisposable
         private readonly ResolvedRenderInstanceProperty<RenderPreviousTransform> _previousTransform;
         private readonly ResolvedRenderInstanceProperty<uint> _bvhRoot;
         private readonly ResolvedRenderInstanceProperty<float> _boundsExpansion;
+        private readonly ResolvedRenderInstanceProperty<RenderDeformBounds> _deformBounds;
 
         internal ClusterGeometryProducer(ClusterMeshCache meshes)
         {
@@ -808,6 +809,7 @@ public sealed class ClusterRenderResources : IDisposable
                 RenderInstanceTransformProperties.PreviousTransformKey);
             _bvhRoot = clusterProperties.Resolve<uint>(ClusterRenderFeature.BvhRootKey);
             _boundsExpansion = clusterProperties.Resolve<float>(ClusterRenderFeature.BoundsExpansionKey);
+            _deformBounds = clusterProperties.Resolve<RenderDeformBounds>(ClusterRenderFeature.DeformBoundsKey);
         }
 
         public RenderInstancePropertyLayout Properties => ClusterRenderFeature.GeometryLayout;
@@ -818,6 +820,7 @@ public sealed class ClusterRenderResources : IDisposable
             packet.ChangedSince<RenderTransform>(lastSystemVersion)
             || packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)
             || packet.ChangedSince<RenderMesh>(lastSystemVersion)
+            || packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastSystemVersion)
                 ? RenderInstanceChanges.Values
                 : RenderInstanceChanges.None;
 
@@ -832,6 +835,7 @@ public sealed class ClusterRenderResources : IDisposable
             {
                 destination.BindPerInstance(_bvhRoot);
                 destination.BindPerInstance(_boundsExpansion);
+                destination.BindPerInstance(_deformBounds);
             }
         }
 
@@ -871,6 +875,9 @@ public sealed class ClusterRenderResources : IDisposable
                     expansions);
                 destination.Write(_bvhRoot, roots);
                 destination.Write(_boundsExpansion, expansions);
+                if (packet.TryRead<RenderDeformBounds>(out var bounds)) destination.Write(_deformBounds, bounds);
+                else
+                    for (int row = 0; row < packet.Count; row++) destination.Write(_deformBounds, row, default(RenderDeformBounds));
             }
             finally
             {
