@@ -65,13 +65,13 @@ public sealed partial class ClusterPipelineSystem
             graph.CreateBufferSrv(GraphData.Resources.Bvh, label: "Cluster scene BVH")));
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.Resources.InstanceData), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferCbv(GraphData.Resources.InstanceProperties, GraphData.Resources.InstancePropertiesRange), PipelineSync.ComputeShading);
+        BindDeformBounds(ref graph, ref pass);
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.SceneInstances, structureStride: 4), PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferUav(GraphData.SceneChunks, structureStride: 16), PipelineSync.ComputeShading,
             GraphAccessMode.Write, WriteCoverage.Partial, ResourceContentState.Defined, BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(graph.CreateBufferUav(GraphData.InstanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.Resources.MaterialBounds, structureStride: sizeof(uint)), PipelineSync.ComputeShading);
-        BindDeformBounds(ref graph, ref pass);
         _sceneBatch = null;
     }
 
