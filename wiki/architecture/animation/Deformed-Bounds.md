@@ -38,6 +38,10 @@ world.Add(meshEntity, new MeshSkin(skeletonInstance, skinBinding));
 实例保存自己的骨骼绑定、输入标记和输出范围。定义变化上传工作表；姿势输入变化更新对应实例的值。
 当前和上一姿势分别读取 `SkinningFeature` 提供的两份 G。实际提交后接受输入标记，重复输入保留结果。
 
+当前几何变化同时写入 `RenderDeformBounds` 的 ECS 版本，范围值保持原有对应关系。
+CPU 几何按模型姿势版本观察，GPU 几何按输入编号观察；逐帧历史更新继续推进边界输入版本。
+普通实例装配据此记录变化行，阴影 feature 复用既有变化行和当前／上一世界包围体使缓存页失效。
+
 ## Cluster 共同结果
 
 `IClusterBoundsSource` 提供 `CurrentBounds`、`PreviousBounds`、`CompletePass` 和 `Revision`。

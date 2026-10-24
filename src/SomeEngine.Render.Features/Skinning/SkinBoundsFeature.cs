@@ -109,7 +109,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         _world = context.World;
         _query = context.World.Query(new QueryDefinitionBuilder().Read<RenderMesh>().Read<RenderMeshSkin>()
             .Read<RenderSkinBinding>().Read<RenderSkinBounds>().Write<RenderDeformBounds>()
-            .Optional<RenderPoseSection>(QueryAccess.Read));
+            .Optional<RenderPoseSection>(QueryAccess.Read).Optional<RenderBoneSectionData>(QueryAccess.Read));
     }
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
@@ -148,26 +148,31 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             instance.Mesh = mesh;
             _layoutChanged = true;
         }
-        bool changed = false;
+        bool changed = false, geometryChanged = false;
         RenderSkinBinding binding = row.Read<RenderSkinBinding>();
-        if (instance.Binding != binding) { instance.Binding = binding; changed = true; }
+        if (instance.Binding != binding) { instance.Binding = binding; changed = geometryChanged = true; }
         RenderSkinJoint[] joints = row.Read<RenderMeshSkin>().Joints;
         if (!ReferenceEquals(instance.Joints, joints))
         {
             instance.Joints = joints;
             instance.Sections = joints.Select(joint => joint.Section).Distinct().ToArray();
             instance.Inputs = new PoseInput[instance.Sections.Length];
-            changed = true;
+            changed = geometryChanged = true;
         }
         for (int index = 0; index < instance.Sections.Length; index++)
         {
             RenderPoseSection pose = _world.Read<RenderPoseSection>(instance.Sections[index]);
-            var input = new PoseInput(pose.Starts, pose.InputNumber);
-            if (instance.Inputs[index] == input) continue;
+            RenderBoneSectionData data = _world.Read<RenderBoneSectionData>(instance.Sections[index]);
+            var input = new PoseInput(pose.Starts, pose.InputNumber, data.IsGpu ? pose.InputNumber : data.Version, data.IsGpu);
+            PoseInput before = instance.Inputs[index];
+            if (before == input) continue;
             instance.Inputs[index] = input;
             changed = true;
+            geometryChanged |= before.Starts != input.Starts || before.GeometryNumber != input.GeometryNumber || before.IsGpu != input.IsGpu;
         }
         if (changed) { instance.Input++; Revision++; }
+        // The same range can hold new geometry. Publish its change through ordinary instance consumers.
+        if (geometryChanged) _ = row.Write<RenderDeformBounds>();
     }
 
     private void Rebuild()
@@ -360,7 +365,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         internal readonly List<SkinJointBounds[]> Boxes = [];
         internal float Error;
     }
-    private readonly record struct PoseInput(uint Starts, ulong Number);
+    private readonly record struct PoseInput(uint Starts, ulong Number, ulong GeometryNumber, bool IsGpu);
     [StructLayout(LayoutKind.Sequential)] private readonly record struct Control(uint Joints, uint InverseBind, uint Output, uint Update);
     [StructLayout(LayoutKind.Sequential)] private readonly record struct Work(uint Instance, uint FirstBox, uint BoxCount, uint Output,
         uint FirstLodBox, uint LodBoxCount, float Error, uint Pad);
