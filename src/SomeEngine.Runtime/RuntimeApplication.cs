@@ -579,6 +579,7 @@ internal static class RuntimeApplication
                 // frames. Match that count instead of rotating a third copy of graph data.
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
+        _ = instances.GetDataTransfer(renderGraph);
         using var skinning = new SkinningFeature(backend, device, renderGraph);
         using var skinBounds = new SkinBoundsFeature(backend, device, renderGraph, skinning);
         SurfaceMaterial? surfaceMaterial = includeInterface

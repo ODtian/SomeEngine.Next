@@ -12,7 +12,7 @@ slang.CreateSession(new SessionDesc
     CompilerOptionEntries = [new(CompilerOptionName.ExperimentalFeature, CompilerOptionValue.FromInt(1, 0))],
 }, out ISession session);
 
-foreach (string name in new[] { "material_interfaces", "standard_material", "cluster_material", "unlit_material", "cluster_unlit_material" })
+foreach (string name in new[] { "material_interfaces", "standard_material", "cluster_material", "unlit_material", "cluster_unlit_material", "cluster_transparency" })
 {
     string path = Path.Combine(inputsDirectory, name + ".ir.slang");
     IModule? input = session.LoadModuleFromSource(name, path, Slang.CreateBlob(await File.ReadAllBytesAsync(path)),
