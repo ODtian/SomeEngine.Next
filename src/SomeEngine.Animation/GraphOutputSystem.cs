@@ -28,6 +28,7 @@ public struct GraphOutputSystem<T, TOps>(TrackFields fields = TrackFields.Proper
 
     public unsafe void OnUpdate(ref ImmediateSystemContext context)
     {
+        if (!context.World.HasQueryMembers(_outputs)) return;
         var evaluation = (World: context.World, Weights: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0);
         context.World.ExecuteQuery(_outputs, context.LastSystemVersion, ref evaluation, &Evaluate);
         _writes = evaluation.Writes;

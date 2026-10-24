@@ -35,6 +35,11 @@
 
 公开 `World.MembershipVersion(QueryHandle)` 提供查询成员观察版本，供列表拉取依赖。匹配、顺序、启用过滤与结构事务的语义见 [[architecture/someui/Dependencies|Dependencies]] 的 Query membership；公开行为由 `QueryMembershipTests` 验证。
 
+`World.HasQueryMembers(query)` 在当前匹配表中检查实体和启用成员，供消费者选择本次查询工作。
+它借用拓扑及成员条件所需的只读存储，直接读取现有匹配表和行掩码。
+版本过滤项在成员检查中贡献组件要求，实际时间窗口由后续 `ExecuteQuery` 应用。
+源码入口为 `World.Queries.cs` 和 `Queries/QueryState.cs`。
+
 ## Job 与拓扑写入版本
 
 generated `IJobEntity` 在取得访问权限、完成 chunk/row 过滤并即将进入声明 World 写入的执行行时，惰性取得该次执行共享的版本。串行路径由 `GetExecutionVersion()` 保存版本，并行路径让匹配 packets 使用同一个共享版本对象。

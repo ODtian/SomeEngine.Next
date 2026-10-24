@@ -83,6 +83,7 @@ internal static partial class CheckAnimation
             return 0;
         }
         global::SomeEngine.ECS.Tests.FieldAccessChecks.VerifyAll();
+        QueryMembersChecks.Check();
         global::SomeEngine.Tools.EcsAotSmoke.ComponentBytesSmoke.Check();
         global::SomeEngine.Tools.EcsAotSmoke.TypedFieldSmoke.Check();
         CheckGeneratedFieldPlayback();
@@ -95,7 +96,7 @@ internal static partial class CheckAnimation
         CheckFunction();
         CheckClocksAndCompletion();
         GraphConsumerChecks.Check();
-        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graph");
+        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields query-members bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graph");
         return 0;
     }
 

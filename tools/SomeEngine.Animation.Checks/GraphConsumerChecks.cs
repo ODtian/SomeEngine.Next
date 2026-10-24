@@ -30,6 +30,10 @@ internal static class GraphConsumerChecks
         Entity target = world.CreateEntity(new GraphValue());
         var first = Spec.Tween<float, FloatOps, Linear>(0.5f);
         var second = Spec.Tween<float, FloatOps, SquareEasing>(0.5f);
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        AnimationSystems.AddDefaults(systems);
+        AnimationSystems.Add(systems, second);
+        Tick(systems, world, 0.25);
         using var builder = new AnimationBuilder(world);
         using (builder.Sequence())
         {
@@ -37,9 +41,6 @@ internal static class GraphConsumerChecks
             builder.To(target, Value, 20, second);
         }
         builder.Play();
-        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        AnimationSystems.AddDefaults(systems);
-        AnimationSystems.Add(systems, second);
         Tick(systems, world, 0.75);
         Require(world.Read<GraphValue>(target).Value == 12.5f, "Typed sequential leaves sample their compiled intervals.");
     }
