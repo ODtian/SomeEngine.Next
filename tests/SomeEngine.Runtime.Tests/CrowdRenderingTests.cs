@@ -12,8 +12,9 @@ public sealed partial class SkinningRenderingTests
     {
         string engine = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(engine, "SomeEngine.slnx"))) engine = Path.GetDirectoryName(engine)!;
-        string project = Path.Combine(engine, "samples/DefaultGame");
-        await SampleContent.BuildAsync(project, engine);
+        string? cooked = Environment.GetEnvironmentVariable("SOMEENGINE_TEST_COOKED_CONTENT");
+        string project = cooked ?? Path.Combine(engine, "samples/DefaultGame");
+        if (cooked is null) await SampleContent.BuildAsync(project, engine);
         await CrowdContent.BuildAsync(project, engine);
         var example = new CrowdExample();
         SceneImage? inline = null;

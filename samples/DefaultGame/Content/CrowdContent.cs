@@ -50,6 +50,10 @@ public static class CrowdContent
 
     private static void CopyContent(string source, string destination)
     {
+        string shaders = Path.Combine(destination, "assets/Shaders");
+        if (Directory.Exists(shaders))
+            foreach (string file in Directory.EnumerateFiles(shaders, "*.slang", SearchOption.AllDirectories))
+                if (!File.Exists(Path.Combine(source, Path.GetRelativePath(destination, file)))) File.Delete(file);
         foreach (string folder in new[] { "assets", "Library/AssetManifest" })
         foreach (string file in Directory.EnumerateFiles(Path.Combine(source, folder), "*", SearchOption.AllDirectories))
         {
