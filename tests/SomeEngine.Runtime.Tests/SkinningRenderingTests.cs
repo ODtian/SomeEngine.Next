@@ -303,25 +303,52 @@ public sealed partial class SkinningRenderingTests
             string engine = AppContext.BaseDirectory;
             while (!File.Exists(Path.Combine(engine, "SomeEngine.slnx"))) engine = Path.GetDirectoryName(engine)!;
             string directory = Path.Combine(Path.GetTempPath(), $"SomeEngine-Skin-{Guid.NewGuid():N}");
-            string source = Path.Combine(engine, "samples/DefaultGame");
-            foreach (string file in Directory.EnumerateFiles(Path.Combine(source, "assets"), "*", SearchOption.AllDirectories))
-            {
-                string output = Path.Combine(directory, Path.GetRelativePath(source, file));
-                Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-                File.Copy(file, output);
-            }
-            string shader = await File.ReadAllTextAsync(Path.Combine(directory, "assets/Shaders/standard.slang"));
+            string sample = Path.Combine(engine, "samples/DefaultGame");
+            string products = Path.Combine(AppContext.BaseDirectory, "SkinContent");
+            bool hasProducts = Directory.Exists(products);
+            CopyContent(hasProducts ? products : sample, directory);
+            string shader = await File.ReadAllTextAsync(Path.Combine(sample, "assets/Shaders/standard.slang"));
             var project = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engine, "assets/Shaders")]);
             var result = new SkinContent(project, shader);
             try
             {
                 await File.WriteAllTextAsync(result.ShaderPath, result.SkinShader(FloatReader, "someengine.tests.skin.float.v1"));
-                await SampleContent.BuildAsync(directory, engine);
+                string definitionPath = result.ShaderPath.Replace(".slang", ".shader");
+                using (ShaderAsset definition = await ShaderAsset.OpenSourceAsync(definitionPath))
+                {
+                    ShaderSourceBlock inputs = await definition.GetBlockAsync<ShaderSourceBlock>();
+                    inputs.Specializations.Clear();
+                    foreach (string mode in new[] { "0", "8" })
+                    {
+                        inputs.Specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = [mode] });
+                        inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowReceiver", Arguments = ["0", mode] });
+                        foreach (string export in new[] { "false", "true" })
+                            inputs.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = ["0", mode, export] });
+                    }
+                    await definition.SaveSourceAsync(definitionPath);
+                }
+                if (!hasProducts) await SampleContent.BuildAsync(directory, engine);
                 var prepared = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engine, "assets/Shaders")]);
                 await prepared.BuildAsync(result.ShaderPath.Replace(".slang", ".shader"));
+                CopyContent(directory, products);
                 return new SkinContent(prepared, shader);
             }
             catch { result.Dispose(); throw; }
+        }
+
+        private static void CopyContent(string source, string destination)
+        {
+            foreach (string folder in new[] { "assets", "Library/AssetManifest" })
+            {
+                string input = Path.Combine(source, folder);
+                if (!Directory.Exists(input)) continue;
+                foreach (string file in Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories))
+                {
+                    string output = Path.Combine(destination, Path.GetRelativePath(source, file));
+                    Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+                    File.Copy(file, output, overwrite: true);
+                }
+            }
         }
 
         public async Task SetShaderAsync(string reader, string encoding)

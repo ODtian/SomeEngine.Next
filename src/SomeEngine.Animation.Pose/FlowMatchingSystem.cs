@@ -125,8 +125,9 @@ public struct FlowMatchingSystem : ISystem<ImmediateSystemContext>, ISystem<Pose
         instance.State.Motion = RootMotionDelta.Identity;
         instance.Sampled |= instance.State.Sample;
         GraphParameters graph = world.Read<GraphParameters>(animation);
-        for (int value = 0; value < instance.State.Control.Length; value++)
-            instance.State.Control[value] = graph.Values[parameters.ControlParameter + value];
+        if (parameters.ControlParameter is byte firstControl)
+            for (int value = 0; value < instance.State.Control.Length; value++)
+                instance.State.Control[value] = graph.Values[firstControl + value];
         instance.State.SuppliedNoise = parameters.NoiseParameter >= 0;
         if (instance.State.SuppliedNoise)
             for (int value = 0; value < instance.State.Noise.Length; value++)
