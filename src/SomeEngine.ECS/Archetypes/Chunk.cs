@@ -24,6 +24,8 @@ public class Chunk
     private readonly long _persistentIdentity;
     private ChunkStorage _storage;
     private long _bufferOverflowDetachCount;
+    private readonly long[] _columnWrites;
+    private long _enabledWrites;
 
     /// <summary>每行的 Entity。</summary>
     internal Span<Entity> Entities => Volatile.Read(ref _storage).Entities;
@@ -104,6 +106,9 @@ public class Chunk
     /// <summary>Per-column change version tick.</summary>
     internal Span<uint> ChangeVersions => Volatile.Read(ref _storage).ChangeVersions;
 
+    internal long ColumnWrites(int column) => Volatile.Read(ref _columnWrites[column]);
+    internal long EnabledWrites => Volatile.Read(ref _enabledWrites);
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal Span<uint> AddVersionRows(int column) =>
         Volatile.Read(ref _storage).AddVersions[column];
@@ -149,6 +154,7 @@ public class Chunk
         var columns = new object[columnOperations.Length];
         var addVersions = new uint[columnOperations.Length][];
         var writeVersions = new uint[columnOperations.Length][];
+        _columnWrites = new long[columnOperations.Length];
 
         for (int i = 0; i < columnOperations.Length; i++)
         {
@@ -183,6 +189,8 @@ public class Chunk
         OrderVersion = source.OrderVersion;
         IndexInArchetype = source.IndexInArchetype;
         SharedValues = source.SharedValues;
+        _columnWrites = (long[])source._columnWrites.Clone();
+        _enabledWrites = source._enabledWrites;
     }
 
     internal long PersistentIdentity => _persistentIdentity;
@@ -395,6 +403,7 @@ public class Chunk
             masks[maskIndex] |= rowMask;
         else
             masks[maskIndex] &= ~rowMask;
+        Interlocked.Increment(ref _enabledWrites);
         return true;
     }
 
@@ -553,6 +562,7 @@ public class Chunk
         EnsureWritable();
         WriteVersionRows(column)[row] = version;
         VersionClock.PublishNewest(ref ChangeVersions[column], version);
+        Interlocked.Increment(ref _columnWrites[column]);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -561,6 +571,7 @@ public class Chunk
         EnsureWritable();
         WriteVersionRows(column).Slice(startRow, count).Fill(version);
         VersionClock.PublishNewest(ref ChangeVersions[column], version);
+        Interlocked.Increment(ref _columnWrites[column]);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -568,6 +579,7 @@ public class Chunk
     {
         EnsureWritable();
         VersionClock.PublishNewest(ref ChangeVersions[column], version);
+        Interlocked.Increment(ref _columnWrites[column]);
     }
 
     /// <summary>

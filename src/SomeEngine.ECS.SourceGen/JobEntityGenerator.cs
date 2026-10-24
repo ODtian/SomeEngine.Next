@@ -33,11 +33,6 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         "Derived relationship components are read-only",
         "Parameter '{0}' on job entity '{1}' requests writable access to derived relationship component '{2}'");
 
-    private static readonly DiagnosticDescriptor ManagedField = Create(
-        "SECSSG104",
-        "IJobEntity fields must be unmanaged by-value configuration",
-        "Field '{0}' on job entity '{1}' is not unmanaged; indirect/reference aliases require a future declared lookup or certified external resource surface");
-
     private static readonly DiagnosticDescriptor NestedJob = Create(
         "SECSSG105",
         "Nested IJobEntity types are not supported",
@@ -73,6 +68,11 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         "SECSSG110",
         "IJobEntity direct storage must be alias-free unmanaged data",
         "Parameter '{0}' on job entity '{1}' accesses '{2}', which contains managed references, pointers, or external aliases; use a certified lookup/resource adapter instead");
+
+    private static readonly DiagnosticDescriptor InvalidResources = Create(
+        "SECSSG111",
+        "Component resources require a matching static descriptor",
+        "Parameter '{0}' requires a table component and a descriptor implementing IJobComponentResources<{1}>");
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -213,6 +213,36 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
             }
 
             ParameterModel model = parameterModel;
+            AttributeData? resources = parameter.GetAttributes().FirstOrDefault(static attribute =>
+                attribute.AttributeClass is { } type &&
+                type.Name == "JobResourcesAttribute" &&
+                type.ContainingNamespace.ToDisplayString() == SystemsNamespace);
+            ITypeSymbol? resourceType = resources?.AttributeClass?.TypeArguments.FirstOrDefault();
+            if (resourceType is null && resources?.ConstructorArguments.Length == 1)
+                resourceType = resources.ConstructorArguments[0].Value as ITypeSymbol;
+            if (resourceType is INamedTypeSymbol { IsUnboundGenericType: true } openResources &&
+                model.ValueType is INamedTypeSymbol component &&
+                openResources.Arity == component.TypeArguments.Length)
+                resourceType = openResources.ConstructedFrom.Construct(component.TypeArguments.ToArray());
+            if (resourceType is not null)
+            {
+                bool matchingComponent = resourceType is INamedTypeSymbol namedResources &&
+                    namedResources.AllInterfaces.Any(iface =>
+                        IsType(iface.OriginalDefinition, SystemsNamespace, "IJobComponentResources") &&
+                        SymbolEqualityComparer.Default.Equals(iface.TypeArguments[0], model.ValueType));
+                if (model.Kind is not (ParameterKind.TableRead or ParameterKind.TableReadWrite) ||
+                    !matchingComponent)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        InvalidResources,
+                        parameter.Locations.FirstOrDefault(),
+                        parameter.Name,
+                        model.TypeName));
+                    valid = false;
+                }
+                else
+                    model.ResourceType = resourceType;
+            }
             if (!aliases.Add((model.AliasKind, model.ValueType)))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
@@ -240,7 +270,7 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
                 supportsParallel = false;
                 serialReason ??= $"{model.ValueType.Name} is a canonical relationship source";
             }
-            if (model.Kind != ParameterKind.Entity && !storage.IsAliasFree(model.ValueType))
+            if (model.Kind != ParameterKind.Entity && model.ResourceType is null && !storage.IsAliasFree(model.ValueType))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     ManagedDirectStorage,
@@ -426,6 +456,25 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
 {{constraints}}
         => global::SomeEngine.ECS.Systems.JobEntityRuntime.ScheduleParallel(
             world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, options, dependency);
+
+    public static global::SomeEngine.Job.JobHandle ScheduleParallel{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.ScheduleParallel(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, default, dependency);
+
+    public static global::SomeEngine.Job.JobHandle ScheduleParallel{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.ECS.Systems.JobEntityScheduleOptions options,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.ScheduleParallel(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, options, dependency);
 """
             : string.Empty;
 
@@ -465,6 +514,25 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         => global::SomeEngine.ECS.Systems.JobEntityRuntime.Schedule(
             world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, options, dependency);
 
+    public static global::SomeEngine.Job.JobHandle Schedule{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Schedule(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, default, dependency);
+
+    public static global::SomeEngine.Job.JobHandle Schedule{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.ECS.Systems.JobEntityScheduleOptions options,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Schedule(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, options, dependency);
+
     public static void Execute{{methodTypeParameters}}(
         this in {{jobType}} job,
         global::SomeEngine.ECS.World world,
@@ -481,6 +549,25 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
 {{constraints}}
         => global::SomeEngine.ECS.Systems.JobEntityRuntime.Execute(
             world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, options, dependency);
+
+    public static void Execute{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Execute(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, default, dependency);
+
+    public static void Execute{{methodTypeParameters}}(
+        this in {{jobType}} job,
+        global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
+        global::SomeEngine.ECS.Systems.JobEntityScheduleOptions options,
+        global::SomeEngine.Job.JobHandle dependency = default)
+{{constraints}}
+        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Execute(
+            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, options, dependency);
 {{parallelMethods}}
     [global::System.Runtime.CompilerServices.UnsafeAccessor(
         global::System.Runtime.CompilerServices.UnsafeAccessorKind.StaticMethod,
@@ -641,10 +728,13 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         };
         internal ITypeSymbol ValueType { get; }
         internal bool Writable { get; }
+        internal ITypeSymbol? ResourceType { get; set; }
         internal bool HasStaticAliasProof => !ContainsTypeParameter(ValueType);
         internal string TypeName => ValueType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         internal string AccessExpression => Kind switch
         {
+            ParameterKind.TableRead or ParameterKind.TableReadWrite when ResourceType is not null =>
+                $"global::SomeEngine.ECS.Systems.GeneratedQueryAccess.Table<{TypeName}, {ResourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>(global::SomeEngine.ECS.Systems.GeneratedQueryMode.{(Writable ? "ReadWrite" : "Read")})",
             ParameterKind.TableRead => HasStaticAliasProof
                 ? $"CreateGeneratedTableAccess<{TypeName}>(default, global::SomeEngine.ECS.Systems.GeneratedQueryMode.Read)"
                 : $"global::SomeEngine.ECS.Systems.GeneratedQueryAccess.Table<{TypeName}>(global::SomeEngine.ECS.Systems.GeneratedQueryMode.Read)",

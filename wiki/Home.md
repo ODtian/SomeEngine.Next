@@ -8,6 +8,7 @@
 - [[architecture/Terrain|Terrain]]
 - [[architecture/RHI/Index|RHI]]
 - [[architecture/ECS-Architecture|ECS]]
+- [[architecture/Navigation-Surfaces|导航几何与多层表面]]
 - [[architecture/Product-Boundary|Product Boundary]]
 - [[architecture/SomeUI|SomeUI]]
 - [[architecture/Animation|Animation]]

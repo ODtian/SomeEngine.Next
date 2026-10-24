@@ -40,7 +40,8 @@ public readonly struct GeneratedQueryAccess
         bool relationshipTarget,
         bool isAliasFree,
         bool directAccess = true,
-        QueryTermFilter filters = QueryTermFilter.None)
+        QueryTermFilter filters = QueryTermFilter.None,
+        IComponentResourceBinding? resources = null)
     {
         ValueType = valueType;
         ComponentId = componentId;
@@ -51,6 +52,7 @@ public readonly struct GeneratedQueryAccess
         IsAliasFree = isAliasFree;
         HasDirectAccess = directAccess;
         Filters = filters;
+        Resources = resources;
     }
 
     public Type ValueType { get; }
@@ -66,6 +68,8 @@ public readonly struct GeneratedQueryAccess
     public bool IsRelationshipTarget { get; }
 
     internal bool IsAliasFree { get; }
+
+    internal IComponentResourceBinding? Resources { get; }
 
     public QueryTermFilter Filters { get; }
 
@@ -86,6 +90,20 @@ public readonly struct GeneratedQueryAccess
             ComponentMetadata<T>.IsRelationshipTarget,
             isAliasFree);
     }
+
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public static GeneratedQueryAccess Table<T, TResources>(GeneratedQueryMode mode)
+        where T : struct, IComponent
+        where TResources : struct, IJobComponentResources<T> =>
+        new(
+            typeof(T),
+            ComponentMetadata<T>.Id,
+            GeneratedQueryStorage.Table,
+            mode,
+            ComponentMetadata<T>.IsRelationshipSource,
+            ComponentMetadata<T>.IsRelationshipTarget,
+            isAliasFree: false,
+            resources: new ComponentResourceBinding<T, TResources>());
 
     [EditorBrowsable(EditorBrowsableState.Never)]
     public static GeneratedQueryAccess Buffer<T>(GeneratedQueryMode mode)
@@ -168,7 +186,8 @@ public readonly struct GeneratedQueryAccess
             IsRelationshipTarget,
             IsAliasFree,
             HasDirectAccess,
-            Filters | filters);
+            Filters | filters,
+            Resources);
 
     internal GeneratedQueryAccess WithExactFilters(QueryTermFilter filters) =>
         new(
@@ -180,7 +199,8 @@ public readonly struct GeneratedQueryAccess
             IsRelationshipTarget,
             IsAliasFree,
             HasDirectAccess,
-            filters);
+            filters,
+            Resources);
 }
 
 /// <summary>
@@ -197,6 +217,7 @@ public sealed class GeneratedQueryAccessDescriptor
     private readonly bool _hasRelationshipWrite;
     private readonly bool _hasWorldWrites;
     private readonly bool _supportsParallel;
+    private readonly ConditionalWeakTable<World, ComponentResourceQueryCache> _resourceQueries = new();
 
     [EditorBrowsable(EditorBrowsableState.Never)]
     public GeneratedQueryAccessDescriptor(
@@ -223,7 +244,7 @@ public sealed class GeneratedQueryAccessDescriptor
                 throw new InvalidOperationException(
                     $"Derived relationship component {access.ValueType.Name} is read-only.");
             }
-            if (access.HasDirectAccess && !access.IsAliasFree)
+            if (access.HasDirectAccess && !access.IsAliasFree && access.Resources is null)
             {
                 throw new InvalidOperationException(
                     $"Generated IJobEntity direct access to {access.ValueType.Name} is not alias-free unmanaged storage. Declare a certified external resource/lookup adapter instead.");
@@ -253,6 +274,16 @@ public sealed class GeneratedQueryAccessDescriptor
     public bool HasRelationshipWrite => _hasRelationshipWrite;
 
     internal bool HasWorldWrites => _hasWorldWrites;
+
+    internal bool HasComponentResources => Array.Exists(_accesses, static access => access.Resources is not null);
+
+    internal bool HasVersionFilters => Array.Exists(_accesses, static access =>
+        (access.Filters & (QueryTermFilter.Changed | QueryTermFilter.Added | QueryTermFilter.ChunkChanged)) != 0);
+
+    internal bool HasSparseAccess => Array.Exists(_accesses, static access =>
+        access.Storage == GeneratedQueryStorage.Sparse && access.HasDirectAccess);
+
+    internal ComponentResourceQueryCache ResourceCache(World world) => _resourceQueries.GetOrCreateValue(world);
 
     public bool SupportsParallel
     {

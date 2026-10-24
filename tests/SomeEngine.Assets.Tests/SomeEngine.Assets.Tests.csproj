@@ -31,6 +31,9 @@
     <ProjectReference Include="..\..\src\SomeEngine.Generators\SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="..\..\external\dxc\bin\x64\dxcompiler.dll">
