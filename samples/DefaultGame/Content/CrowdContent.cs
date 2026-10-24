@@ -18,6 +18,17 @@ namespace DefaultGame.Content;
 /// <summary>Builds the procedural crowd example with two material implementations of the same deformation.</summary>
 public static class CrowdContent
 {
+    public static async Task BuildMaterialsAsync(string projectRoot, string engineRoot)
+    {
+        string template = await File.ReadAllTextAsync(Path.Combine(projectRoot, "assets/Shaders/standard.slang"));
+        foreach ((string directory, bool cached) in new[] { ("CrowdInline", false), ("CrowdCache", true) })
+        {
+            var project = new AssetProject(Path.Combine(projectRoot, directory), [],
+                shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
+            await WriteShaderAsync(project, template, cached);
+        }
+    }
+
     public static async Task BuildAsync(string projectRoot, string engineRoot)
     {
         string inlineRoot = Path.Combine(projectRoot, "CrowdInline");
@@ -219,24 +230,24 @@ public static class CrowdContent
                 uint4 joints = uint4(packed.x & 65535u, packed.x >> 16u, packed.y & 65535u, packed.y >> 16u);
                 float4 weights = float4(packed.z & 255u, (packed.z >> 8u) & 255u, (packed.z >> 16u) & 255u, packed.z >> 24u) / 255.0;
                 uint2 binding = LoadSkinBinding(ctx.instanceID);
-                float3 position = EvalObjectPosition(ctx);
+                precise float3 position = EvalObjectPosition(ctx);
                 uint normalStream = ctx.pageHeap.Load(ctx.attributeBlobAddress + 4u);
-                float3 normal = float3(ReadStandardComponent(ctx, normalStream, 0u, 0),
+                precise float3 normal = float3(ReadStandardComponent(ctx, normalStream, 0u, 0),
                     ReadStandardComponent(ctx, normalStream, 1u, 1), ReadStandardComponent(ctx, normalStream, 2u, 0));
-                float3 localPosition = 0;
-                float3 localNormal = 0;
+                precise float3 localPosition = 0;
+                precise float3 localNormal = 0;
                 [unroll] for (uint influence = 0; influence < 4u; influence++)
                 {
-                    float4x4 transform = LoadSkinTransform(binding, joints[influence], ctx.IsPreviousFrame != 0u);
-                    float3 transformedPosition = mul(float4(position, 1), transform).xyz;
-                    float3 transformedNormal = mul(float4(normal, 0), transform).xyz;
+                    precise float4x4 transform = LoadSkinTransform(binding, joints[influence], ctx.IsPreviousFrame != 0u);
+                    precise float3 transformedPosition = mul(float4(position, 1), transform).xyz;
+                    precise float3 transformedNormal = mul(float4(normal, 0), transform).xyz;
                     localPosition += transformedPosition * weights[influence];
                     localNormal += transformedNormal * weights[influence];
                 }
                 StaticVertexEval source;
                 Vertex result = source.evaluate(ctx);
-                float3 worldPosition = TransformInstanceLocalPosition(localPosition, ctx.transform);
-                float3 worldNormal = normalize(RotateByTransform(localNormal, ctx.transform));
+                precise float3 worldPosition = TransformInstanceLocalPosition(localPosition, ctx.transform);
+                precise float3 worldNormal = normalize(RotateByTransform(localNormal, ctx.transform));
                 setSurface(result, worldPosition, worldNormal);
                 return result;
             }

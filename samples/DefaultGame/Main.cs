@@ -14,6 +14,12 @@ public static class SampleApplication
     public static async Task<int> Main(string[] args)
     {
 #if SOMEENGINE_DEVELOPMENT
+        if (args is ["sample-crowd-materials"])
+        {
+            string engine = Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../.."));
+            await CrowdContent.BuildMaterialsAsync(ProjectPaths.Root, engine);
+            return 0;
+        }
         if (args is ["sample-crowd"])
         {
             string engine = Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../.."));
