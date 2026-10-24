@@ -316,6 +316,19 @@ public sealed partial class SkinningRenderingTests
             try
             {
                 await File.WriteAllTextAsync(result.ShaderPath, result.SkinShader(FloatReader, "someengine.tests.skin.float.v1"));
+                string definitionPath = result.ShaderPath.Replace(".slang", ".shader");
+                using (ShaderAsset definition = await ShaderAsset.OpenSourceAsync(definitionPath))
+                {
+                    ShaderSourceBlock inputs = await definition.GetBlockAsync<ShaderSourceBlock>();
+                    foreach (string mode in new[] { "0", "8" })
+                    {
+                        inputs.Specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = [mode] });
+                        inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowReceiver", Arguments = ["0", mode] });
+                        foreach (string export in new[] { "false", "true" })
+                            inputs.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = ["0", mode, export] });
+                    }
+                    await definition.SaveSourceAsync(definitionPath);
+                }
                 await SampleContent.BuildAsync(directory, engine);
                 var prepared = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engine, "assets/Shaders")]);
                 await prepared.BuildAsync(result.ShaderPath.Replace(".slang", ".shader"));
