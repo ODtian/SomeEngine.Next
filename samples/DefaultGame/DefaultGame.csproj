@@ -8,6 +8,10 @@
     <Compile Remove="SceneContent/**/*.cs" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <Compile Remove="Content/**/*.cs" Condition="'$(SomeEngineDevelopment)' != 'true'" />
+    <Content Include="$(SomeEngineProjectRoot)/CrowdInline/assets/**/*.asset" Link="CrowdInline/assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(SomeEngineProjectRoot)/CrowdInline/Library/AssetManifest/**/*" Link="CrowdInline/Library/AssetManifest/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(SomeEngineProjectRoot)/CrowdCache/assets/**/*.asset" Link="CrowdCache/assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(SomeEngineProjectRoot)/CrowdCache/Library/AssetManifest/**/*" Link="CrowdCache/Library/AssetManifest/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="WriteTestScenes" AfterTargets="Build">
     <PropertyGroup>
