@@ -708,8 +708,17 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
     }
 
     [Fact]
-    public void Global_unbounded_resource_and_sampler_use_published_heap_indices_and_execute()
+    public void Local_parameters_and_published_tables_execute_when_recorded_and_repeated()
     {
+        const string localSource = """
+            RWStructuredBuffer<uint> outputValues;
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void computeMain(uint3 id : SV_DispatchThreadID)
+            {
+                outputValues[0] = 37u;
+            }
+            """;
         const string source = """
             Texture2D<float4> bindlessTextures[];
             SamplerState bindlessSamplers[];
@@ -722,9 +731,12 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             {
                 float sampled = bindlessTextures[textureIndex].SampleLevel(
                     bindlessSamplers[samplerIndex], float2(0.5), 0).x;
-                outputValues[0] = asuint(sampled) + 0xBEEFu;
+                outputValues[1] = asuint(sampled) + 0xBEEFu;
             }
             """;
+        D3D12TestShader localShader = shaderCompiler.Compile(
+            "local_before_unbounded_heap_execution", localSource,
+            [new("computeMain", SlangStage.Compute)], "sm_6_6");
         D3D12TestShader shader = shaderCompiler.Compile(
             "global_unbounded_heap_execution", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_6");
@@ -759,37 +771,60 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
         backend.PublishDescriptors(device);
         using Pipeline pipeline = backend.CreateComputePipeline(device,
             new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
+        using Pipeline localPipeline = backend.CreateComputePipeline(device,
+            new ComputePipelineDesc(localShader.SlangCode, localShader.Reflection, localShader.GetEntryPoint(0), localShader.GetEntryCode(0)));
+        VariableLayoutReflection localLayout = localShader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
         using Buffer output = backend.CreateBuffer(device,
-            new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource),
+            new BufferDesc(8, BufferUsages.ShaderWrite | BufferUsages.CopySource),
             MemoryType.DeviceLocal);
         using BufferUav outputUav = backend.CreateBufferUav(device,
             new BufferUavDesc(output, BufferRange.Whole, Format.R32UInt));
         using Buffer readback = backend.CreateBuffer(device,
-            new BufferDesc(4, BufferUsages.CopyDestination), MemoryType.Readback);
+            new BufferDesc(8, BufferUsages.CopyDestination), MemoryType.Readback);
         byte[] ordinary = new byte[8];
         BitConverter.GetBytes(textureIndex).CopyTo(ordinary, 0);
         BitConverter.GetBytes(samplerIndex).CopyTo(ordinary, 4);
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(1, 0, 8));
-        backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
-            PipelineSync.ComputeShading, ResourceAccess.NoAccess,
-            ResourceAccess.UnorderedAccess));
-        backend.SetPipeline(context, pipeline);
-        backend.SetTransientParameterBindings(context,
-            new ParameterBlockBindings(layout, [ResourceBinding.WritableBuffer(outputUav)], ordinary));
-        backend.Dispatch(context, new DispatchArguments(1, 1, 1));
-        backend.Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading,
-            PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
-        backend.CopyBuffer(context, new BufferCopy(output, 0, readback, 0, 4));
-        using RecordedCommands commands = backend.End(context);
-        QueueCompletion completion = backend.Submit(backend.GetQueue(device, QueueType.Compute),
-            new QueueSubmitDesc([], [], [commands], [], []));
-        Assert.Equal(WaitStatus.Completed,
-            backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
-        using MappedBuffer mapped = backend.Map(readback, MapType.Read, new BufferRange(0, 4));
-        mapped.Invalidate(new BufferRange(0, 4));
-        Assert.Equal(unchecked(0x3F800000u + 0xBEEFu), BitConverter.ToUInt32(mapped.Bytes));
+        for (int submission = 0; submission < 3; submission++)
+        {
+            RecordedCommands commands;
+            if (submission < 2)
+            {
+                backend.Begin(context, new CommandRecordingDesc(4, 0, 8));
+                backend.Barrier(context, new BufferBarrier(output,
+                    submission == 0 ? PipelineSync.None : PipelineSync.Copy,
+                    PipelineSync.ComputeShading,
+                    submission == 0 ? ResourceAccess.NoAccess : ResourceAccess.CopySource,
+                    ResourceAccess.UnorderedAccess));
+                backend.SetPipeline(context, localPipeline);
+                backend.SetTransientParameterBindings(context,
+                    new ParameterBlockBindings(localLayout, [ResourceBinding.WritableBuffer(outputUav)], []));
+                backend.Dispatch(context, new DispatchArguments(1, 1, 1));
+                backend.SetPipeline(context, pipeline);
+                backend.SetTransientParameterBindings(context,
+                    new ParameterBlockBindings(layout, [ResourceBinding.WritableBuffer(outputUav)], ordinary));
+                backend.Dispatch(context, new DispatchArguments(1, 1, 1));
+                backend.Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading,
+                    PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
+                backend.CopyBuffer(context, new BufferCopy(output, 0, readback, 0, 8));
+                commands = backend.End(context);
+            }
+            else Assert.True(backend.TryRepeatCommands(context, out commands));
+            using (commands)
+            {
+                QueueCompletion completion = backend.Submit(backend.GetQueue(device, QueueType.Compute),
+                    new QueueSubmitDesc([], [], [commands], [], []));
+                Assert.Equal(WaitStatus.Completed,
+                    backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+            }
+            backend.CollectCompleted(device);
+            using MappedBuffer mapped = backend.Map(readback, MapType.Read, BufferRange.Whole);
+            mapped.Invalidate(mapped.Range);
+            Assert.Equal(37u, BitConverter.ToUInt32(mapped.Bytes));
+            Assert.Equal(0x3F80BEEFu, BitConverter.ToUInt32(mapped.Bytes[4..]));
+        }
     }
 
     [Fact]
