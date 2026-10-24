@@ -54,14 +54,6 @@ interface ISurfaceEvaluate<TSurface, TTriangle>
         RWTexture2DArray<float4> outputColor);
 };
 
-struct SurfaceShadowReceiver
-{
-    float3 Position;
-    float3 GeometricNormal;
-    uint Flags;
-    float Depth;
-};
-
 interface ITransparentSurfaceEvaluate<TSurface, TTriangle>
 {
     float4 evaluateTransparency(uint debugMode, SurfacePixelInput input,

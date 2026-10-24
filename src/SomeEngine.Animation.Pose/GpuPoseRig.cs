@@ -79,8 +79,14 @@ public sealed class GpuPoseRig
     {
         TranslationBone = translationBone;
         var steps = new List<GpuPoseSource>();
-        while (output is GpuTwoBonePose || output is GpuAimPose || output is GpuStridePose)
+        while (output is GpuTwoBonePose || output is GpuAimPose || output is GpuStridePose || output is GpuXpbdPose)
         {
+            if (output is GpuXpbdPose xpbd)
+            {
+                steps.Add(xpbd);
+                output = xpbd.Source;
+                continue;
+            }
             if (output is GpuStridePose stride)
             {
                 steps.Add(stride);
