@@ -83,6 +83,7 @@ public struct EwbikSystem : ISystem<PoseNodeContext>
             ref copy, static (poses, ref copy) => LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count))
                 .CopyTo(copy.Values));
         body.Targets.CopyTo(body.Samples.Targets, 0);
+        body.PreferenceWeights.CopyTo(body.Samples.PreferenceWeights, 0);
         body.Samples.Settings = body.Settings;
         body.Samples.ReadParents();
         body.Sampled = true;

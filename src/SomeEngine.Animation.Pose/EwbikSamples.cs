@@ -9,6 +9,7 @@ internal sealed class EwbikSamples
 {
     internal readonly BoneTransform[] Transforms;
     internal readonly EwbikTarget[] Targets;
+    internal readonly float[] PreferenceWeights;
     internal readonly JobResourceAccess[] Accesses;
     internal EwbikSettings Settings;
     private readonly EwbikRig _rig;
@@ -22,6 +23,7 @@ internal sealed class EwbikSamples
         _rig = rig;
         Transforms = new BoneTransform[rig.Skeleton.BoneCount];
         Targets = new EwbikTarget[rig.Effectors.Length];
+        PreferenceWeights = new float[rig.Constraints.Length];
         Settings = rig.Settings;
         _models = new Matrix4x4[Transforms.Length];
         _inherited = new Matrix4x4[Transforms.Length];
@@ -46,6 +48,8 @@ internal sealed class EwbikSamples
 
     internal void Solve()
     {
+        foreach (EwbikConstraint constraint in _rig.Constraints)
+            Transforms[constraint.Bone].Rotation = constraint.Limit.Apply(Transforms[constraint.Bone].Rotation, 0, 0);
         for (int bone = 0; bone < Transforms.Length; bone++) UpdateModel(bone);
         for (int iteration = 0; iteration < Settings.Iterations; iteration++)
         {
@@ -84,6 +88,10 @@ internal sealed class EwbikSamples
                 Matrix4x4.Decompose(ParentModel(joint.Bone), out _, out Quaternion parentRotation, out _);
                 Transforms[joint.Bone].Rotation = Quaternion.Normalize(Quaternion.Conjugate(parentRotation)
                     * delta * _rotations[joint.Bone]);
+                int constraint = _rig.BoneConstraints[joint.Bone];
+                if (constraint >= 0)
+                    Transforms[joint.Bone].Rotation = _rig.Constraints[constraint].Limit.Apply(
+                        Transforms[joint.Bone].Rotation, limit, PreferenceWeights[constraint]);
                 for (int index = joint.DescendantStart; index < joint.DescendantStart + joint.DescendantCount; index++)
                     UpdateModel(_rig.Descendants[index]);
             }
