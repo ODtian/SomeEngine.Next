@@ -27,6 +27,8 @@
              Link="HandwrittenSpatialPartitions.cs" />
     <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialParallelFrames.cs"
              Link="SpatialParallelFrames.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialBitmap.cs"
+             Link="HandwrittenSpatialBitmap.cs" />
     <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"

@@ -1,0 +1,756 @@
+{
+  "ObservationStartedAtUtc": "2026-10-19T06:07:41.1781258Z",
+  "ObservationFinishedAtUtc": "2026-10-19T06:07:41.329836Z",
+  "Preparation": {
+    "Id": "d321f30017fc4da3b7ef70838fef5b0a",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-Command",
+      "$taskCases = foreach ($taskSize in @('small','middle','large')) {\n    foreach ($taskMask in @(1,4,8)) { foreach ($taskDirection in @('oneway','mutual')) { \"finite-$taskSize-mask$taskMask-$taskDirection\" } }\n    foreach ($taskDynamic in @(10,50,90)) { \"default-$taskSize-dynamic$taskDynamic\" }\n}\n& 'F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Submit-Measurements.ps1' -CaseId $taskCases -Machine Fixed -QueueScript 'F:\\SomeEngine.Next\\tools\\Invoke-Benchmark.ps1' -Session '01a15090-f5bd-7a12-860a-e214325db5bb' -CollectReports -SourceCommit 'e17a82f594c8e6c9ed4f4ff35b5e316a67afa314' -Series 'controlled-required-r29'"
+    ],
+    "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+    "ExitCode": 0,
+    "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+    "Kind": "Exclusive",
+    "SubmittedAtUtc": "2026-10-19T13:47:36.9913819+08:00",
+    "StartedAtUtc": "2026-10-19T13:49:25.4816687+08:00",
+    "FinishedAtUtc": "2026-10-19T13:49:36.77675+08:00"
+  },
+  "Submission": {
+    "SourceCommit": "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+    "SubmissionCommit": "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+    "Backend": "NativeAOT",
+    "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+    "ListingCommand": [
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+      "--mode",
+      "list",
+      "--source",
+      "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314"
+    ],
+    "StartedAtUtc": "2026-10-19T05:49:26.4879831Z",
+    "FinishedAtUtc": "2026-10-19T05:49:36.5471379Z",
+    "CaseCount": 27,
+    "Machines": [
+      "Fixed"
+    ],
+    "Reports": [
+      {
+        "Script": "Collect-Measurements.ps1",
+        "QueueId": "9edd86d9ca6d4397b1e9e84ea1a5ff21",
+        "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\9edd86d9ca6d4397b1e9e84ea1a5ff21"
+      },
+      {
+        "Script": "Export-Evidence.ps1",
+        "QueueId": "910c05c37199400e9e1b92d365696dc0",
+        "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\910c05c37199400e9e1b92d365696dc0"
+      },
+      {
+        "Script": "Write-MeasurementReport.ps1",
+        "QueueId": "f50bf3015776450ba196d3d466d12af8",
+        "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\f50bf3015776450ba196d3d466d12af8"
+      }
+    ]
+  },
+  "CaseCount": 27,
+  "Cases": [
+    {
+      "CaseId": "finite-small-mask1-oneway",
+      "QueueId": "111519bfef19425b9a54ac3905396fc2",
+      "Completed": true,
+      "Result": {
+        "Id": "111519bfef19425b9a54ac3905396fc2",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "small",
+          "--variant",
+          "mask1-oneway",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-small-mask1-oneway.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:26.8937704+08:00",
+        "StartedAtUtc": "2026-10-19T13:50:40.7147958+08:00",
+        "FinishedAtUtc": "2026-10-19T13:50:41.1161471+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-small-mask1-mutual",
+      "QueueId": "7bca5fe0373645a896e4c63bc397e1fe",
+      "Completed": true,
+      "Result": {
+        "Id": "7bca5fe0373645a896e4c63bc397e1fe",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "small",
+          "--variant",
+          "mask1-mutual",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-small-mask1-mutual.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:27.2073691+08:00",
+        "StartedAtUtc": "2026-10-19T13:50:43.1056792+08:00",
+        "FinishedAtUtc": "2026-10-19T13:50:43.5078985+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-small-mask4-oneway",
+      "QueueId": "9d77b3be473f451cb5807ccb26c2be31",
+      "Completed": true,
+      "Result": {
+        "Id": "9d77b3be473f451cb5807ccb26c2be31",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "small",
+          "--variant",
+          "mask4-oneway",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-small-mask4-oneway.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:27.5551007+08:00",
+        "StartedAtUtc": "2026-10-19T13:54:11.8646466+08:00",
+        "FinishedAtUtc": "2026-10-19T13:54:12.3042218+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-small-mask4-mutual",
+      "QueueId": "bec57cde969c4cc68910e886922b9975",
+      "Completed": true,
+      "Result": {
+        "Id": "bec57cde969c4cc68910e886922b9975",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "small",
+          "--variant",
+          "mask4-mutual",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-small-mask4-mutual.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:27.9939276+08:00",
+        "StartedAtUtc": "2026-10-19T13:54:56.1100026+08:00",
+        "FinishedAtUtc": "2026-10-19T13:54:56.5323183+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-small-mask8-oneway",
+      "QueueId": "0b97acf10176415d9c69412a36f73799",
+      "Completed": true,
+      "Result": {
+        "Id": "0b97acf10176415d9c69412a36f73799",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "small",
+          "--variant",
+          "mask8-oneway",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-small-mask8-oneway.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:28.303983+08:00",
+        "StartedAtUtc": "2026-10-19T13:55:15.9698796+08:00",
+        "FinishedAtUtc": "2026-10-19T13:55:16.5113402+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-small-mask8-mutual",
+      "QueueId": "636df5fc8fb74e5eb7186f3530758314",
+      "Completed": true,
+      "Result": {
+        "Id": "636df5fc8fb74e5eb7186f3530758314",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "small",
+          "--variant",
+          "mask8-mutual",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-small-mask8-mutual.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:28.6001778+08:00",
+        "StartedAtUtc": "2026-10-19T13:55:40.4436071+08:00",
+        "FinishedAtUtc": "2026-10-19T13:55:40.8602249+08:00"
+      }
+    },
+    {
+      "CaseId": "default-small-dynamic10",
+      "QueueId": "c5b320a192ec439c92fd2f45ad6577e0",
+      "Completed": true,
+      "Result": {
+        "Id": "c5b320a192ec439c92fd2f45ad6577e0",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "small",
+          "--variant",
+          "dynamic10",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\default-small-dynamic10.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:28.9123482+08:00",
+        "StartedAtUtc": "2026-10-19T13:57:45.2656126+08:00",
+        "FinishedAtUtc": "2026-10-19T13:57:45.5226949+08:00"
+      }
+    },
+    {
+      "CaseId": "default-small-dynamic50",
+      "QueueId": "2e7f7857fdec4036874e57bb1780c598",
+      "Completed": true,
+      "Result": {
+        "Id": "2e7f7857fdec4036874e57bb1780c598",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "small",
+          "--variant",
+          "dynamic50",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\default-small-dynamic50.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:29.2373349+08:00",
+        "StartedAtUtc": "2026-10-19T13:57:58.4049264+08:00",
+        "FinishedAtUtc": "2026-10-19T13:57:58.6637572+08:00"
+      }
+    },
+    {
+      "CaseId": "default-small-dynamic90",
+      "QueueId": "f2977680b7f4484ab04961325b10b9d2",
+      "Completed": true,
+      "Result": {
+        "Id": "f2977680b7f4484ab04961325b10b9d2",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "small",
+          "--variant",
+          "dynamic90",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\default-small-dynamic90.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:29.5555175+08:00",
+        "StartedAtUtc": "2026-10-19T13:58:30.0318564+08:00",
+        "FinishedAtUtc": "2026-10-19T13:58:30.3059981+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-middle-mask1-oneway",
+      "QueueId": "94458ddcad1d4ee291eb2b154c8a68fc",
+      "Completed": true,
+      "Result": {
+        "Id": "94458ddcad1d4ee291eb2b154c8a68fc",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "middle",
+          "--variant",
+          "mask1-oneway",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-middle-mask1-oneway.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:29.8643106+08:00",
+        "StartedAtUtc": "2026-10-19T13:59:57.1970854+08:00",
+        "FinishedAtUtc": "2026-10-19T13:59:59.2859685+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-middle-mask1-mutual",
+      "QueueId": "b3fea78050bd40979023b85f97029880",
+      "Completed": true,
+      "Result": {
+        "Id": "b3fea78050bd40979023b85f97029880",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "middle",
+          "--variant",
+          "mask1-mutual",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-middle-mask1-mutual.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:30.1799774+08:00",
+        "StartedAtUtc": "2026-10-19T14:00:24.2720729+08:00",
+        "FinishedAtUtc": "2026-10-19T14:00:26.3150136+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-middle-mask4-oneway",
+      "QueueId": "fc617a487c554f8daa376ef20fd74715",
+      "Completed": true,
+      "Result": {
+        "Id": "fc617a487c554f8daa376ef20fd74715",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "middle",
+          "--variant",
+          "mask4-oneway",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-middle-mask4-oneway.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:30.4925634+08:00",
+        "StartedAtUtc": "2026-10-19T14:01:29.9547385+08:00",
+        "FinishedAtUtc": "2026-10-19T14:01:32.1487936+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-middle-mask4-mutual",
+      "QueueId": "a68ea55f2f39439e8722d849889dfcf7",
+      "Completed": true,
+      "Result": {
+        "Id": "a68ea55f2f39439e8722d849889dfcf7",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "middle",
+          "--variant",
+          "mask4-mutual",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-middle-mask4-mutual.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:30.793669+08:00",
+        "StartedAtUtc": "2026-10-19T14:01:46.2473069+08:00",
+        "FinishedAtUtc": "2026-10-19T14:01:48.5199612+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-middle-mask8-oneway",
+      "QueueId": "2e64b24cf10042809b61b9bbd84876c5",
+      "Completed": true,
+      "Result": {
+        "Id": "2e64b24cf10042809b61b9bbd84876c5",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "middle",
+          "--variant",
+          "mask8-oneway",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-middle-mask8-oneway.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:31.0935908+08:00",
+        "StartedAtUtc": "2026-10-19T14:02:31.8614691+08:00",
+        "FinishedAtUtc": "2026-10-19T14:02:33.9594447+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-middle-mask8-mutual",
+      "QueueId": "3d49f271356c4de792fb97942f83f957",
+      "Completed": true,
+      "Result": {
+        "Id": "3d49f271356c4de792fb97942f83f957",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "finite",
+          "--size",
+          "middle",
+          "--variant",
+          "mask8-mutual",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\finite-middle-mask8-mutual.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:31.3952877+08:00",
+        "StartedAtUtc": "2026-10-19T14:02:56.0345768+08:00",
+        "FinishedAtUtc": "2026-10-19T14:02:58.0330358+08:00"
+      }
+    },
+    {
+      "CaseId": "default-middle-dynamic10",
+      "QueueId": "9d29a1d37d0848e58e8ea2c7249f7301",
+      "Completed": true,
+      "Result": {
+        "Id": "9d29a1d37d0848e58e8ea2c7249f7301",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "middle",
+          "--variant",
+          "dynamic10",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\default-middle-dynamic10.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:31.7036444+08:00",
+        "StartedAtUtc": "2026-10-19T14:04:49.4216019+08:00",
+        "FinishedAtUtc": "2026-10-19T14:04:50.548924+08:00"
+      }
+    },
+    {
+      "CaseId": "default-middle-dynamic50",
+      "QueueId": "09b035b4a77345979c0441e710fc323f",
+      "Completed": true,
+      "Result": {
+        "Id": "09b035b4a77345979c0441e710fc323f",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "middle",
+          "--variant",
+          "dynamic50",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\default-middle-dynamic50.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:32.0140999+08:00",
+        "StartedAtUtc": "2026-10-19T14:04:52.635263+08:00",
+        "FinishedAtUtc": "2026-10-19T14:04:53.9390779+08:00"
+      }
+    },
+    {
+      "CaseId": "default-middle-dynamic90",
+      "QueueId": "aa535079b96d4045915c20cd014fcc09",
+      "Completed": true,
+      "Result": {
+        "Id": "aa535079b96d4045915c20cd014fcc09",
+        "Executable": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.Benchmarks.exe",
+        "Arguments": [
+          "--mode",
+          "measure",
+          "--case",
+          "default",
+          "--size",
+          "middle",
+          "--variant",
+          "dynamic90",
+          "--source",
+          "e17a82f594c8e6c9ed4f4ff35b5e316a67afa314",
+          "--backend",
+          "NativeAOT",
+          "--machine",
+          "Fixed",
+          "--output",
+          "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\controlled-required-r29\\default-middle-dynamic90.json"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-19T13:49:32.3576603+08:00",
+        "StartedAtUtc": "2026-10-19T14:05:17.5351593+08:00",
+        "FinishedAtUtc": "2026-10-19T14:05:19.0057076+08:00"
+      }
+    },
+    {
+      "CaseId": "finite-large-mask1-oneway",
+      "QueueId": "c30d0e151cb44fe2abef257c10f677fa",
+      "Completed": false,
+      "Result": null
+    },
+    {
+      "CaseId": "finite-large-mask1-mutual",
+      "QueueId": "dceb284d37a24e96acbf412b8c0d1f14",
+      "Completed": false,
+      "Result": null
+    },
+    {
+      "CaseId": "finite-large-mask4-oneway",
+      "QueueId": "67d19f8773f04221a19e6375550bc988",
+      "Completed": false,
+      "Result": null
+    },
+    {
+      "CaseId": "finite-large-mask4-mutual",
+      "QueueId": "7989884e54ed4b988013a206ca84bfa1",
+      "Completed": false,
+      "Result": null
+    },
+    {
+      "CaseId": "finite-large-mask8-oneway",
+      "QueueId": "9c59eae18db847c892b410c7bdf8766c",
+      "Completed": false,
+      "Result": null
+    },
+    {
+      "CaseId": "finite-large-mask8-mutual",
+      "QueueId": "ad0b6fa32f7d487e95fb70e548959bbf",
+      "Completed": false,
+      "Result": null
+    },
+    {
+      "CaseId": "default-large-dynamic10",
+      "QueueId": "3919e8521f384ea3831b53d16a9604e2",
+      "Completed": false,
+      "Result": null
+    },
+    {
+      "CaseId": "default-large-dynamic50",
+      "QueueId": "56c93f841ee54af8bc7fbb498219f320",
+      "Completed": false,
+      "Result": null
+    },
+    {
+      "CaseId": "default-large-dynamic90",
+      "QueueId": "dc487c4f64444ff8a4fc5069d5ece2d9",
+      "Completed": false,
+      "Result": null
+    }
+  ],
+  "Analyses": [
+    {
+      "Script": "Collect-Measurements.ps1",
+      "QueueId": "9edd86d9ca6d4397b1e9e84ea1a5ff21",
+      "ResultPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\9edd86d9ca6d4397b1e9e84ea1a5ff21\\result.json",
+      "Completed": false,
+      "Result": null,
+      "Stdout": "",
+      "Stderr": ""
+    },
+    {
+      "Script": "Export-Evidence.ps1",
+      "QueueId": "910c05c37199400e9e1b92d365696dc0",
+      "ResultPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\910c05c37199400e9e1b92d365696dc0\\result.json",
+      "Completed": false,
+      "Result": null,
+      "Stdout": "",
+      "Stderr": ""
+    },
+    {
+      "Script": "Write-MeasurementReport.ps1",
+      "QueueId": "f50bf3015776450ba196d3d466d12af8",
+      "ResultPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\f50bf3015776450ba196d3d466d12af8\\result.json",
+      "Completed": false,
+      "Result": null,
+      "Stdout": "",
+      "Stderr": ""
+    }
+  ],
+  "WatcherCondition": "Created controlled-required-r29/cold.csv",
+  "WatcherSession": 31272
+}

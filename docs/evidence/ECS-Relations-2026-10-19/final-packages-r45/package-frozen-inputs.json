@@ -1,0 +1,16 @@
+[
+  {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll",
+    "ExpectedUtc": "2026-10-20T01:23:34.4962378+00:00",
+    "ActualUtc": "2026-10-20T01:23:34.4962378+00:00",
+    "ExpectedLength": 69120,
+    "ActualLength": 69120
+  },
+  {
+    "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.AotSmoke.obj",
+    "ExpectedUtc": "2026-10-20T01:23:50.7250812+00:00",
+    "ActualUtc": "2026-10-20T01:23:50.7250812+00:00",
+    "ExpectedLength": 24930157,
+    "ActualLength": 24930157
+  }
+]

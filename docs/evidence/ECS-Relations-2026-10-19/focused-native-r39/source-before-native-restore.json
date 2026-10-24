@@ -1,0 +1,18 @@
+{
+  "SourceCommit": "393a9fbf009aa2e8269636fdf532551271a85bc5",
+  "ChangedFiles": [
+    "src/SomeEngine.ECS.Relations/IQueryRelationOutput.cs",
+    "src/SomeEngine.ECS.Relations/RelationQuery.cs",
+    "src/SomeEngine.Physics/CollisionPairBuffer.cs"
+  ],
+  "BehaviorQueueId": "b128d839e2ad497591e55cf22eb9054e",
+  "BehaviorExitCode": 0,
+  "TokenName": "_pairRangesResource",
+  "PushExitCode": 0,
+  "PublishStartedAtUtc": "2026-10-19T23:06:07.1384945Z",
+  "PublishFinishedAtUtc": "2026-10-19T23:06:29.2115059Z",
+  "PublishExitCode": 0,
+  "SourceCheckExitCode": null,
+  "Object": null,
+  "Executable": null
+}

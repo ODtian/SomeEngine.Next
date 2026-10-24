@@ -1,0 +1,100 @@
+{
+  "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+  "StartedAtUtc": "2026-10-19T21:59:34.9775045Z",
+  "PublishQueueId": "09e27c3989dd4717835ef1f692127416",
+  "ReportQueueId": "7c68b721d83e4622aabbcbb4228c4ef0",
+  "Cases": [
+    {
+      "CaseId": "finite-small-mask1-mutual",
+      "QueueId": "c4eceeb249e041cca849e08bbbdba7eb",
+      "ExitCode": 0,
+      "Equal": true,
+      "MedianRatio": 0.9936923823386705,
+      "P95Ratio": 1.0121711603536732
+    },
+    {
+      "CaseId": "finite-small-mask8-oneway",
+      "QueueId": "316d18e97fea40d0b6bd34100b459174",
+      "ExitCode": 0,
+      "Equal": true,
+      "MedianRatio": 1.0052064414578037,
+      "P95Ratio": 0.9901755516186181
+    },
+    {
+      "CaseId": "finite-middle-mask8-oneway",
+      "QueueId": "7e55b779139647e3a4ba479cb78ae68f",
+      "ExitCode": 0,
+      "Equal": true,
+      "MedianRatio": 0.9993857033696417,
+      "P95Ratio": 1.007133291041094
+    },
+    {
+      "CaseId": "finite-large-mask8-oneway",
+      "QueueId": "b031cd11b86148e39ab532d5332f1ee0",
+      "ExitCode": 0,
+      "Equal": true,
+      "MedianRatio": 1.0039870691637827,
+      "P95Ratio": 1.0012326418146156
+    },
+    {
+      "CaseId": "finite-large-mask8-mutual",
+      "QueueId": "0b89c15a84ea4736ae7b7fdd767dc475",
+      "ExitCode": 0,
+      "Equal": true,
+      "MedianRatio": 1.0026409647529915,
+      "P95Ratio": 0.998992180589962
+    }
+  ],
+  "PostprocessStages": [
+    {
+      "Script": "Collect-Measurements.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1",
+        "-Series",
+        "focused-native-r38"
+      ],
+      "StartedAtUtc": "2026-10-19T21:36:48.1632223Z",
+      "FinishedAtUtc": "2026-10-19T21:36:49.5272287Z",
+      "ExitCode": 0
+    },
+    {
+      "Script": "Export-Evidence.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1",
+        "-Series",
+        "focused-native-r38"
+      ],
+      "StartedAtUtc": "2026-10-19T21:36:49.615974Z",
+      "FinishedAtUtc": "2026-10-19T21:36:51.1988027Z",
+      "ExitCode": 0
+    },
+    {
+      "Script": "Write-MeasurementReport.ps1",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1",
+        "-Series",
+        "focused-native-r38"
+      ],
+      "StartedAtUtc": "2026-10-19T21:36:51.2058438Z",
+      "FinishedAtUtc": "2026-10-19T21:36:52.911538Z",
+      "ExitCode": 0
+    }
+  ],
+  "FocusedApproved": "4/5",
+  "FocusedEqual": "5/5",
+  "ApprovedRatioLimit": 1.01,
+  "FinalAcceptancePending": true,
+  "Continue": true,
+  "ProducerCommit": "3573775db6e0e5404ec8886c9775d1a0bff1d678",
+  "PushExitCode": 0,
+  "FinishedAtUtc": "2026-10-19T21:59:41.5887272Z"
+}

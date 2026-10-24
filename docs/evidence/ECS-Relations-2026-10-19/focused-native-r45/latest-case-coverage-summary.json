@@ -1,0 +1,35 @@
+{
+  "Cases": 108,
+  "Equal": 108,
+  "Required": 126.0,
+  "StrictPassed": 114,
+  "ApprovedPassed": 126,
+  "ApprovedUnmet": 0.0,
+  "ApprovedRatioLimit": 1.01,
+  "Sources": [
+    {
+      "Series": "final-native-r38",
+      "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+      "Cases": 93,
+      "Required": 110.0
+    },
+    {
+      "Series": "focused-native-r39",
+      "SourceCommit": "393a9fbf009aa2e8269636fdf532551271a85bc5",
+      "Cases": 9,
+      "Required": 10.0
+    },
+    {
+      "Series": "focused-native-r41",
+      "SourceCommit": "5b6c96e8ed4f78e4c2a617c345e49623a19d5c91",
+      "Cases": 4,
+      "Required": 4.0
+    },
+    {
+      "Series": "focused-native-r45",
+      "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+      "Cases": 2,
+      "Required": 2.0
+    }
+  ]
+}

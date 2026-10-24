@@ -1,0 +1,21 @@
+  正在确定要还原的项目…
+  已还原 F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS.Relations\SomeEngine.ECS.Relations.csproj (用时 241 毫秒)。
+  已还原 F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\benchmarks\SomeEngine.ECS.Relations.Benchmarks\SomeEngine.ECS.Relations.Benchmarks.csproj (用时 241 毫秒)。
+  已还原 F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Physics\SomeEngine.Physics.csproj (用时 241 毫秒)。
+  6 个项目(共 9 个)是最新的，无法还原。
+  SomeEngine.Diagnostics -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Diagnostics\bin\Release\net10.0\SomeEngine.Diagnostics.dll
+  SomeEngine.Job.Contracts -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Job.Contracts\bin\Release\net10.0\SomeEngine.Job.Contracts.dll
+  SomeEngine.Job -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Job\bin\Release\net10.0\SomeEngine.Job.dll
+  SomeEngine.ECS.SourceGen -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS.SourceGen\bin\Release\netstandard2.0\SomeEngine.ECS.SourceGen.dll
+  SomeEngine.ECS -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS\bin\Release\net10.0\SomeEngine.ECS.dll
+  SomeEngine.ECS.Systems -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS.Systems\bin\Release\net10.0\SomeEngine.ECS.Systems.dll
+  SomeEngine.ECS.Relations -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.ECS.Relations\bin\Release\net10.0\SomeEngine.ECS.Relations.dll
+  SomeEngine.Physics -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\src\SomeEngine.Physics\bin\Release\net10.0\SomeEngine.Physics.dll
+  SomeEngine.ECS.Relations.Benchmarks -> F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\benchmarks\SomeEngine.ECS.Relations.Benchmarks\bin\Release\net10.0\win-x64\SomeEngine.ECS.Relations.Benchmarks.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:08.22
+JIT_BUILD {"SourceCommit":"51c8ce75949cf16d7190e14028c655f526d5697b","ReaderQueueId":"cb3aed562ed146e69b3467d2735f174a","Executable":"dotnet","Arguments":["build","benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj","-c","Release","-p:PublishAot=false","-p:SelfContained=false","-p:SourceRevisionId=51c8ce75949cf16d7190e14028c655f526d5697b"],"StartedAtUtc":"2026-10-19T22:08:26.226725Z","FinishedAtUtc":"2026-10-19T22:08:34.9717517Z","BuildExitCode":0,"SourceCheckExitCode":0,"Dll":{"FullName":"F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.Benchmarks.dll","Length":336896,"LastWriteTimeUtc":"2026-10-19T22:08:34.6754950Z"}}

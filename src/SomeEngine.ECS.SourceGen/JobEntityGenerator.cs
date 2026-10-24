@@ -33,6 +33,11 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         "Derived relationship components are read-only",
         "Parameter '{0}' on job entity '{1}' requests writable access to derived relationship component '{2}'");
 
+    private static readonly DiagnosticDescriptor ManagedField = Create(
+        "SECSSG104",
+        "IJobEntity fields must be unmanaged by-value configuration",
+        "Field '{0}' on job entity '{1}' is not unmanaged; indirect/reference aliases require a future declared lookup or certified external resource surface");
+
     private static readonly DiagnosticDescriptor NestedJob = Create(
         "SECSSG105",
         "Nested IJobEntity types are not supported",
@@ -79,7 +84,8 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
             .Select(static (symbol, _) => symbol!)
             .Collect();
 
-        context.RegisterSourceOutput(jobs, static (sourceContext, symbols) => Execute(sourceContext, symbols));
+        context.RegisterSourceOutput(jobs.Combine(context.CompilationProvider),
+            static (sourceContext, input) => Execute(sourceContext, input.Left, input.Right));
     }
 
     private static INamedTypeSymbol? GetJobSymbol(GeneratorSyntaxContext context)
@@ -92,21 +98,23 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
 
     private static void Execute(
         SourceProductionContext context,
-        ImmutableArray<INamedTypeSymbol> symbols)
+        ImmutableArray<INamedTypeSymbol> symbols,
+        Compilation compilation)
     {
+        var storage = new JobStorageTypeAnalysis(compilation);
         var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
         foreach (INamedTypeSymbol symbol in symbols)
         {
             if (!seen.Add(symbol))
                 continue;
-            JobModel? model = BuildModel(context, symbol);
+            JobModel? model = BuildModel(context, symbol, storage);
             if (model is null)
                 continue;
             context.AddSource(model.HintName, Generate(model));
         }
     }
 
-    private static JobModel? BuildModel(SourceProductionContext context, INamedTypeSymbol job)
+    private static JobModel? BuildModel(SourceProductionContext context, INamedTypeSymbol job, JobStorageTypeAnalysis storage)
     {
         bool valid = true;
         if (job.IsRefLikeType)
@@ -165,7 +173,17 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         {
             if (field.IsStatic || field.IsConst)
                 continue;
-            if (!field.IsReadOnly && !field.IsImplicitlyDeclared)
+            ISymbol diagnosticMember = field.AssociatedSymbol ?? field;
+            if (!storage.IsAliasFree(field.Type))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    ManagedField,
+                    diagnosticMember.Locations.FirstOrDefault(),
+                    diagnosticMember.Name,
+                    job.ToDisplayString()));
+                valid = false;
+            }
+            else if (!field.IsReadOnly && !field.IsImplicitlyDeclared)
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     PacketLocalFieldMutation,
@@ -222,7 +240,7 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
                 supportsParallel = false;
                 serialReason ??= $"{model.ValueType.Name} is a canonical relationship source";
             }
-            if (model.Kind != ParameterKind.Entity && !IsSafeDirectType(model.ValueType))
+            if (model.Kind != ParameterKind.Entity && !storage.IsAliasFree(model.ValueType))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     ManagedDirectStorage,
@@ -408,25 +426,6 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
 {{constraints}}
         => global::SomeEngine.ECS.Systems.JobEntityRuntime.ScheduleParallel(
             world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, options, dependency);
-
-    public static global::SomeEngine.Job.JobHandle ScheduleParallel{{methodTypeParameters}}(
-        this in {{jobType}} job,
-        global::SomeEngine.ECS.World world,
-        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
-        global::SomeEngine.Job.JobHandle dependency = default)
-{{constraints}}
-        => global::SomeEngine.ECS.Systems.JobEntityRuntime.ScheduleParallel(
-            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, default, dependency);
-
-    public static global::SomeEngine.Job.JobHandle ScheduleParallel{{methodTypeParameters}}(
-        this in {{jobType}} job,
-        global::SomeEngine.ECS.World world,
-        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
-        global::SomeEngine.ECS.Systems.JobEntityScheduleOptions options,
-        global::SomeEngine.Job.JobHandle dependency = default)
-{{constraints}}
-        => global::SomeEngine.ECS.Systems.JobEntityRuntime.ScheduleParallel(
-            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, options, dependency);
 """
             : string.Empty;
 
@@ -466,25 +465,6 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
         => global::SomeEngine.ECS.Systems.JobEntityRuntime.Schedule(
             world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, options, dependency);
 
-    public static global::SomeEngine.Job.JobHandle Schedule{{methodTypeParameters}}(
-        this in {{jobType}} job,
-        global::SomeEngine.ECS.World world,
-        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
-        global::SomeEngine.Job.JobHandle dependency = default)
-{{constraints}}
-        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Schedule(
-            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, default, dependency);
-
-    public static global::SomeEngine.Job.JobHandle Schedule{{methodTypeParameters}}(
-        this in {{jobType}} job,
-        global::SomeEngine.ECS.World world,
-        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
-        global::SomeEngine.ECS.Systems.JobEntityScheduleOptions options,
-        global::SomeEngine.Job.JobHandle dependency = default)
-{{constraints}}
-        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Schedule(
-            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, options, dependency);
-
     public static void Execute{{methodTypeParameters}}(
         this in {{jobType}} job,
         global::SomeEngine.ECS.World world,
@@ -501,25 +481,6 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
 {{constraints}}
         => global::SomeEngine.ECS.Systems.JobEntityRuntime.Execute(
             world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, options, dependency);
-
-    public static void Execute{{methodTypeParameters}}(
-        this in {{jobType}} job,
-        global::SomeEngine.ECS.World world,
-        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
-        global::SomeEngine.Job.JobHandle dependency = default)
-{{constraints}}
-        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Execute(
-            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, default, dependency);
-
-    public static void Execute{{methodTypeParameters}}(
-        this in {{jobType}} job,
-        global::SomeEngine.ECS.World world,
-        global::System.ReadOnlySpan<global::SomeEngine.Job.JobResourceAccess> externalAccesses,
-        global::SomeEngine.ECS.Systems.JobEntityScheduleOptions options,
-        global::SomeEngine.Job.JobHandle dependency = default)
-{{constraints}}
-        => global::SomeEngine.ECS.Systems.JobEntityRuntime.Execute(
-            world, in job, default({{adapterType}}), {{cacheType}}.Descriptor, externalAccesses, options, dependency);
 {{parallelMethods}}
     [global::System.Runtime.CompilerServices.UnsafeAccessor(
         global::System.Runtime.CompilerServices.UnsafeAccessorKind.StaticMethod,
@@ -621,35 +582,6 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
 
     private static bool IsGeneratedAccessible(Accessibility accessibility) =>
         accessibility is Accessibility.Public or Accessibility.Internal;
-
-    private static bool IsSafeDirectType(ITypeSymbol type)
-    {
-        return IsSafeDirectType(type, new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default));
-    }
-
-    private static bool IsSafeDirectType(ITypeSymbol type, HashSet<ITypeSymbol> seen)
-    {
-        if (!type.IsUnmanagedType || type.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer)
-            return false;
-        if (type.SpecialType is SpecialType.System_IntPtr or SpecialType.System_UIntPtr)
-            return false;
-        if (type is ITypeParameterSymbol)
-            return true;
-        if (type is not INamedTypeSymbol named || named.TypeKind == TypeKind.Enum || !seen.Add(type))
-            return true;
-        foreach (IFieldSymbol field in named.GetMembers().OfType<IFieldSymbol>())
-        {
-            // Auto-properties are represented by implicitly-declared instance backing fields.
-            // They are part of the stored value just like explicitly-declared fields, so skipping
-            // them would allow a native-sized handle (or another alias-bearing type) to receive a
-            // generated alias certificate.
-            if (field.IsStatic || field.IsConst)
-                continue;
-            if (field.IsFixedSizeBuffer || !IsSafeDirectType(field.Type, seen))
-                return false;
-        }
-        return true;
-    }
 
     private static DiagnosticDescriptor Create(string id, string title, string message) =>
         new(

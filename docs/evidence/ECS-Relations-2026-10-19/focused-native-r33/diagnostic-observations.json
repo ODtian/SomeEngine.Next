@@ -1,0 +1,109 @@
+[
+  {
+    "StartedAtUtc": "2026-10-19T10:42:26.6572384Z",
+    "FinishedAtUtc": "2026-10-19T10:42:28.3328924Z",
+    "CompletedCases": 8,
+    "TotalCases": 16,
+    "QueuedCases": 8,
+    "QueuedAnalyses": 3,
+    "WorkerPid": 81812,
+    "OtherExperiment": "Bistro python77024, started10:41:28",
+    "LastFocusedCaseFinishedAtUtc": "2026-10-19T10:41:28.0947826Z",
+    "RunningFocusedCases": 0,
+    "Source": "parent/root read queue metadata and process activity; actual overlap to compute at final",
+    "Kind": "focused33ActivityObservation"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T11:21:40.5371493Z",
+    "FinishedAtUtc": "2026-10-19T11:21:42.7331889Z",
+    "CompletedCases": 11,
+    "TotalCases": 16,
+    "QueuedCases": 5,
+    "QueuedAnalyses": 3,
+    "RunningFocusedCases": 0,
+    "EqualCompleted": true,
+    "Source": "parent/root read existing result metadata/ratios during inter-case interval; actual overlaps to compute at final",
+    "Kind": "focused33ActivityObservation2"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T11:23:32.409736Z",
+    "FinishedAtUtc": "2026-10-19T11:23:32.6471828Z",
+    "Pid": 68860,
+    "PidStartedAtUtc": "2026-10-19T11:23:31.4483119Z",
+    "Source": "implementer_one read only saved1b0235 stdout; actual overlaps to compute at final",
+    "Kind": "focused33OneTextObservation"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T12:18:17.2025639Z",
+    "FinishedAtUtc": "2026-10-19T12:18:18.9815514Z",
+    "CompletedCases": 13,
+    "TotalCases": 16,
+    "QueuedCases": 3,
+    "QueuedAnalyses": 3,
+    "RunningFocusedCases": 0,
+    "EqualCompleted": true,
+    "LastFocusedCaseFinishedAtUtc": "2026-10-19T11:42:27.3691007Z",
+    "Source": "parent/root read existing result metadata/ratios during inter-case interval; actual overlaps to compute at final",
+    "Kind": "focused33ActivityObservation3"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T12:51:10.488663Z",
+    "FinishedAtUtc": "2026-10-19T12:51:10.5965042Z",
+    "CompletedCases": 16,
+    "TotalCases": 16,
+    "LastFocusedCaseFinishedAtUtc": "2026-10-19T12:35:57.7509671Z",
+    "FinalAnalysisResultExists": false,
+    "WorkerAlive": true,
+    "Source": "root-authorized read of three final case receipts, four deferred queue result existence checks and worker81812 metadata",
+    "Kind": "focused33ActivityObservation4"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T12:24:36.123776Z",
+    "FinishedAtUtc": "2026-10-19T12:24:36.191565Z",
+    "Purpose": "root-authorized two-file source read for deferred pipeline",
+    "Kind": "focused33SourceReads"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T12:25:43.7103985Z",
+    "FinishedAtUtc": "2026-10-19T12:25:43.8029334Z",
+    "Purpose": "root-authorized saved three queue commands read for deferred pipeline",
+    "Kind": "focused33SourceReads"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T12:27:57.5262224Z",
+    "FinishedAtUtc": "2026-10-19T12:27:57.912077Z",
+    "Purpose": "root-authorized deferred apply/check submission",
+    "Kind": "focused33QueueSubmissions"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T12:28:24.980895Z",
+    "FinishedAtUtc": "2026-10-19T12:28:25.3618095Z",
+    "Purpose": "root-authorized deferred publish submission",
+    "Kind": "focused33QueueSubmissions"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T12:28:44.0870619Z",
+    "FinishedAtUtc": "2026-10-19T12:28:44.4501392Z",
+    "Purpose": "root-authorized deferred two-core CPU reader submission",
+    "Kind": "focused33QueueSubmissions"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T12:30:35.135692Z",
+    "FinishedAtUtc": "2026-10-19T12:30:35.205635Z",
+    "Purpose": "root-authorized Submit-Measurements source read for deferred Master",
+    "Kind": "focused33AdditionalPreparationObservations"
+  },
+  {
+    "StartedAtUtc": "2026-10-19T12:32:52.8121008Z",
+    "FinishedAtUtc": "2026-10-19T12:32:53.1858959Z",
+    "Purpose": "root-authorized deferred r34 Master submission",
+    "Kind": "focused33AdditionalPreparationObservations"
+  },
+  {
+    "Kind": "r34WatcherStartup",
+    "StartedAtUtc": "2026-10-19T12:32:13.3762756Z",
+    "FinishedAtUtc": "2026-10-19T12:32:14.385652Z",
+    "Pid": 50224,
+    "Purpose": "process start through WATCH_READY; deferred r34 observer startup during r33 diagnostic"
+  }
+]

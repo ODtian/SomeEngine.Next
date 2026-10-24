@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -13,20 +14,50 @@ internal readonly ref struct KeyGroups<TComponent, TKey>
     private readonly HashSet<TKey> _keys;
     private readonly List<Entity> _missing;
 
-    public KeyGroups(World world, QueryCursor members, QueryCursor access)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public KeyGroups(World world, scoped in QueryCursor members)
     {
         _world = world;
         _keys = new HashSet<TKey>();
         _missing = new List<Entity>();
+        CollectKeys(in members, _keys, _missing);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void CollectKeys(scoped in QueryCursor members, HashSet<TKey> keys, List<Entity> missing)
+    {
         foreach (var member in members.Rows)
         {
-            if (access.TryGetRow(member.Entity, out var row) && row.Has<TComponent>())
-                _keys.Add(row.ReadRef<TComponent>().GetKey());
+            if (member.Has<TComponent>())
+                keys.Add(member.ReadRef<TComponent>().GetKey());
             else
-                _missing.Add(member.Entity);
+                missing.Add(member.Entity);
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public KeyGroups(World world, scoped in QueryCursor members, scoped in QueryCursor access)
+    {
+        _world = world;
+        _keys = new HashSet<TKey>();
+        _missing = new List<Entity>();
+        CollectKeys(in members, in access, _keys, _missing);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void CollectKeys(scoped in QueryCursor members, scoped in QueryCursor access,
+        HashSet<TKey> keys, List<Entity> missing)
+    {
+        foreach (var member in members.Rows)
+        {
+            if (access.TryGetRow(member.Entity, out var row) && row.Has<TComponent>())
+                keys.Add(row.ReadRef<TComponent>().GetKey());
+            else
+                missing.Add(member.Entity);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Enumerator GetEnumerator() => new(_world, _keys.GetEnumerator(), CollectionsMarshal.AsSpan(_missing));
 
     public ref struct Enumerator
@@ -42,19 +73,21 @@ internal readonly ref struct KeyGroups<TComponent, TKey>
             _missing = missing;
         }
 
-        public KeyGroup<TKey> Current { get; private set; }
-
-        public bool MoveNext()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool MoveNext(out KeyGroup<TKey> group)
         {
             if (_keys.MoveNext())
             {
                 TKey key = _keys.Current;
-                Current = new KeyGroup<TKey>(key, _world.GetByIndex<TComponent, TKey>(key));
+                group = new KeyGroup<TKey>(key, _world.GetByIndex<TComponent, TKey>(key));
                 return true;
             }
             if (_missing.IsEmpty)
+            {
+                group = default;
                 return false;
-            Current = new KeyGroup<TKey>(_missing);
+            }
+            group = new KeyGroup<TKey>(_missing);
             _missing = default;
             return true;
         }

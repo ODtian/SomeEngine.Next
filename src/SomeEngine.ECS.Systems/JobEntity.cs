@@ -76,8 +76,6 @@ public readonly struct GeneratedQueryAccess
         where T : struct, IComponent
     {
         bool isAliasFree = JobStorageTypeMetadata<T>.IsAliasFree;
-        if (isAliasFree)
-            ComponentRegistry.MarkJobAliasFree(ComponentMetadata<T>.Id);
 
         return new GeneratedQueryAccess(
             typeof(T),
@@ -122,15 +120,8 @@ public readonly struct GeneratedQueryAccess
     internal static GeneratedQueryAccess GeneratedTable<T>(GeneratedQueryMode mode)
         where T : struct, IComponent
     {
-        ComponentRegistry.MarkJobAliasFree(ComponentMetadata<T>.Id);
-        return new GeneratedQueryAccess(
-            typeof(T),
-            ComponentMetadata<T>.Id,
-            GeneratedQueryStorage.Table,
-            mode,
-            ComponentMetadata<T>.IsRelationshipSource,
-            ComponentMetadata<T>.IsRelationshipTarget,
-            isAliasFree: true);
+        JobStorageTypeMetadata<T>.Register(true);
+        return Table<T>(mode);
     }
 
     /// <summary>Source-generator-emitted factory for a proven closed buffer element.</summary>
@@ -138,14 +129,8 @@ public readonly struct GeneratedQueryAccess
     internal static GeneratedQueryAccess GeneratedBuffer<T>(GeneratedQueryMode mode)
         where T : struct, IBufferElement
     {
-        return new GeneratedQueryAccess(
-            typeof(T),
-            BufferComponents.Header<T>(),
-            GeneratedQueryStorage.Buffer,
-            mode,
-            relationshipSource: false,
-            relationshipTarget: false,
-            isAliasFree: true);
+        JobStorageTypeMetadata<T>.Register(true);
+        return Buffer<T>(mode);
     }
 
     /// <summary>Source-generator-emitted factory for a proven closed sparse component.</summary>
@@ -153,14 +138,8 @@ public readonly struct GeneratedQueryAccess
     internal static GeneratedQueryAccess GeneratedSparse<T>(GeneratedQueryMode mode)
         where T : struct, ISparseComponent
     {
-        return new GeneratedQueryAccess(
-            typeof(T),
-            ComponentMetadata<T>.Id,
-            GeneratedQueryStorage.Sparse,
-            mode,
-            relationshipSource: false,
-            relationshipTarget: false,
-            isAliasFree: true);
+        JobStorageTypeMetadata<T>.Register(true);
+        return Sparse<T>(mode);
     }
 
     internal static GeneratedQueryAccess Filter(

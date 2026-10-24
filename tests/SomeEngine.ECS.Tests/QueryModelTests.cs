@@ -452,7 +452,7 @@ public class QueryModelTests
             query,
             lastSystemVersion,
             ref count,
-            static (QueryCursor cursor, ref int state) =>
+            static (scoped QueryCursor cursor, ref int state) =>
             {
                 foreach (var _ in cursor.Rows)
                     state++;

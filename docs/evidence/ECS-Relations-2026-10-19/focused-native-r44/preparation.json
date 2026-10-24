@@ -1,0 +1,27 @@
+{
+  "SourceCommit": "bf4348ce600cd423090d1c1430596fc60ea97a2e",
+  "PublishQueueId": "5e4a42759df440bf92d9f5601e4254d6",
+  "StartedAtUtc": "2026-10-20T00:46:39.5996416Z",
+  "LastCaseSubmittedAtUtc": "2026-10-20T00:46:40.7741271Z",
+  "InitialObservationEndedAtUtc": "2026-10-20T00:46:40.8306777Z",
+  "WatcherInitialObservationEndedAtUtc": "2026-10-20T00:46:40.8033259Z",
+  "NativeReaderRelease": {
+    "ReaderQueueId": "f90e715b3bc04b5c9a94b7fa48d63682",
+    "SourceCommit": "bf4348ce600cd423090d1c1430596fc60ea97a2e",
+    "NativeReaderStartedAtUtc": "2026-10-20T00:46:36.0091553Z",
+    "NativeReaderFinishedAtUtc": "2026-10-20T00:46:39.4179483Z",
+    "NativeReaderExitCode": 0,
+    "ReleasedAtUtc": "2026-10-20T00:46:39.4179483Z",
+    "ReleaseBasis": "Both selected full functions and reader facts are saved."
+  },
+  "RootHostRelease": {
+    "SourceCommit": "bf4348ce600cd423090d1c1430596fc60ea97a2e",
+    "RootHostReadEndedAtUtc": "2026-10-20T00:38:13.5649923Z",
+    "NativeFilePreparedAtUtc": "2026-10-20T00:36:16.3617472Z",
+    "RecordedAtUtc": "2026-10-20T00:46:39.5909044Z"
+  },
+  "PreparationEndAtUtc": "2026-10-20T00:46:40.8306777Z",
+  "CaseCount": 2,
+  "ReaderQueueId": "f90e715b3bc04b5c9a94b7fa48d63682",
+  "FinalQueueId": "914c2db70ab949bb81a2b11790accd11"
+}

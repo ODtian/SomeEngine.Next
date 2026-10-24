@@ -1,0 +1,187 @@
+{
+  "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+  "ConsumerFiles": [
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.BitmapRelationGenerator\\BitmapRelation_SomeEngine_Tools_RelationsSmoke_BodyBitmap.g.cs",
+      "Length": 2866,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9150755Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.BitmapRelationGenerator\\BitmapRelation_SomeEngine_Tools_RelationsSmoke_ForwardedBodyBitmap.g.cs",
+      "Length": 2984,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9160762Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.EcsTypeGenerator\\EcsTypeRegistration.g.cs",
+      "Length": 3287,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9170838Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.JobEntityGenerator\\SomeEngine.JobEntity.IncreaseNumbers.9a5bd0f7.g.cs",
+      "Length": 5782,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9180788Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationEdgeGenerator\\RelationEdge_SomeEngine_Tools_RelationsSmoke_DefaultContacts.g.cs",
+      "Length": 2322,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9190773Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationEdgeGenerator\\RelationEdge_SomeEngine_Tools_RelationsSmoke_MutualCategories.g.cs",
+      "Length": 2328,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9200743Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationEdgeGenerator\\RelationEdge_SomeEngine_Tools_RelationsSmoke_SameCharacterHair.g.cs",
+      "Length": 2334,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9200743Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationEdgeGenerator\\RelationEdge_SomeEngine_Tools_RelationsSmoke_Total2.g.cs",
+      "Length": 2324,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9180788Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_DefaultContacts.g.cs",
+      "Length": 4243,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9250759Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_MutualCategories.g.cs",
+      "Length": 4255,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9270748Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_SameCharacterHair.g.cs",
+      "Length": 4267,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9260743Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_Total1.g.cs",
+      "Length": 1798,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.92108Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_Total2.g.cs",
+      "Length": 4247,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9220773Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_Total3.g.cs",
+      "Length": 2714,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9220773Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_Total4.g.cs",
+      "Length": 3166,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9220773Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_Total5.g.cs",
+      "Length": 3618,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9230781Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_Total6.g.cs",
+      "Length": 4070,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.924079Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_Total7.g.cs",
+      "Length": 4522,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.924079Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationGenerator\\Relation_SomeEngine_Tools_RelationsSmoke_WeightedTotal8.g.cs",
+      "Length": 5022,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9250759Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationImplementationGenerator\\RelationImplementation_SomeEngine_Tools_RelationsSmoke_HairCharacterIndex.g.cs",
+      "Length": 10197,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9280743Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.SpatialRelationGenerator\\SpatialRelation_SomeEngine_Tools_RelationsSmoke_BodyBitmap.g.cs",
+      "Length": 11304,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9323682Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.SpatialRelationGenerator\\SpatialRelation_SomeEngine_Tools_RelationsSmoke_DefaultContacts.g.cs",
+      "Length": 9124,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.929076Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.SpatialRelationGenerator\\SpatialRelation_SomeEngine_Tools_RelationsSmoke_ForwardedBodyBitmap.g.cs",
+      "Length": 11756,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9329385Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.SpatialRelationGenerator\\SpatialRelation_SomeEngine_Tools_RelationsSmoke_HairCharacterIndex.g.cs",
+      "Length": 10428,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9310742Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.SpatialRelationGenerator\\SpatialRelation_SomeEngine_Tools_RelationsSmoke_MutualCategories.g.cs",
+      "Length": 9144,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9318255Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.SpatialRelationGenerator\\SpatialRelation_SomeEngine_Tools_RelationsSmoke_SameCharacterHair.g.cs",
+      "Length": 9164,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9300745Z"
+    },
+    {
+      "Path": "tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.SpatialRelationGenerator\\SpatialRelation_SomeEngine_Tools_RelationsSmoke_Total2.g.cs",
+      "Length": 9168,
+      "LastWriteTimeUtc": "2026-10-20T01:23:33.9280743Z"
+    }
+  ],
+  "LibraryFiles": [
+    {
+      "Path": "src\\SomeEngine.ECS.Relations\\obj\\Release\\net10.0\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationFamilyGenerator\\RelationFamily1.g.cs",
+      "Length": 5386,
+      "LastWriteTimeUtc": "2026-10-20T01:23:04.770022Z"
+    },
+    {
+      "Path": "src\\SomeEngine.ECS.Relations\\obj\\Release\\net10.0\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationFamilyGenerator\\RelationFamily2.g.cs",
+      "Length": 6490,
+      "LastWriteTimeUtc": "2026-10-20T01:23:04.7710201Z"
+    },
+    {
+      "Path": "src\\SomeEngine.ECS.Relations\\obj\\Release\\net10.0\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationFamilyGenerator\\RelationFamily3.g.cs",
+      "Length": 7146,
+      "LastWriteTimeUtc": "2026-10-20T01:23:04.7720205Z"
+    },
+    {
+      "Path": "src\\SomeEngine.ECS.Relations\\obj\\Release\\net10.0\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationFamilyGenerator\\RelationFamily4.g.cs",
+      "Length": 8049,
+      "LastWriteTimeUtc": "2026-10-20T01:23:04.7731382Z"
+    },
+    {
+      "Path": "src\\SomeEngine.ECS.Relations\\obj\\Release\\net10.0\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationFamilyGenerator\\RelationFamily5.g.cs",
+      "Length": 8947,
+      "LastWriteTimeUtc": "2026-10-20T01:23:04.7741388Z"
+    },
+    {
+      "Path": "src\\SomeEngine.ECS.Relations\\obj\\Release\\net10.0\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationFamilyGenerator\\RelationFamily6.g.cs",
+      "Length": 9857,
+      "LastWriteTimeUtc": "2026-10-20T01:23:04.7749623Z"
+    },
+    {
+      "Path": "src\\SomeEngine.ECS.Relations\\obj\\Release\\net10.0\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationFamilyGenerator\\RelationFamily7.g.cs",
+      "Length": 10813,
+      "LastWriteTimeUtc": "2026-10-20T01:23:04.776029Z"
+    },
+    {
+      "Path": "src\\SomeEngine.ECS.Relations\\obj\\Release\\net10.0\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationFamilyGenerator\\RelationFamily8.g.cs",
+      "Length": 11764,
+      "LastWriteTimeUtc": "2026-10-20T01:23:04.777116Z"
+    },
+    {
+      "Path": "src\\SomeEngine.ECS.Relations\\obj\\Release\\net10.0\\generated\\SomeEngine.ECS.SourceGen\\SomeEngine.ECS.SourceGen.RelationFamilyGenerator\\RelationQueryViews.g.cs",
+      "Length": 1772,
+      "LastWriteTimeUtc": "2026-10-20T01:23:04.7776735Z"
+    }
+  ]
+}

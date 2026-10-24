@@ -1,0 +1,30 @@
+{
+  "StartedAtUtc": "2026-10-20T01:16:10.1714471Z",
+  "FinishedAtUtc": "2026-10-20T01:16:10.307153Z",
+  "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+  "Equal": true,
+  "Comparisons": [
+    {
+      "Boundary": "ScheduledPairOutput",
+      "Required": true,
+      "RelationMedianTicks": 555,
+      "HandwrittenMedianTicks": 742.5,
+      "MedianRatio": 0.7474747474747475,
+      "RelationP95Ticks": 883.25,
+      "HandwrittenP95Ticks": 1225,
+      "P95Ratio": 0.7210204081632653,
+      "Passed": true
+    },
+    {
+      "Boundary": "Consume",
+      "Required": false,
+      "RelationMedianTicks": 457,
+      "HandwrittenMedianTicks": 467.5,
+      "MedianRatio": 0.9775401069518717,
+      "RelationP95Ticks": 603.75,
+      "HandwrittenP95Ticks": 606.75,
+      "P95Ratio": 0.9950556242274413,
+      "Passed": true
+    }
+  ]
+}

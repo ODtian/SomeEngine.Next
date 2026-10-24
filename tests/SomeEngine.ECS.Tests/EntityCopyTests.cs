@@ -274,7 +274,7 @@ public class EntityCopyTests
         world.ExecuteQuery(
             query,
             ref count,
-            static (SomeEngine.ECS.Queries.QueryCursor cursor, ref int state) =>
+            static (scoped SomeEngine.ECS.Queries.QueryCursor cursor, ref int state) =>
             {
                 foreach (var _ in cursor.Rows)
                     state++;

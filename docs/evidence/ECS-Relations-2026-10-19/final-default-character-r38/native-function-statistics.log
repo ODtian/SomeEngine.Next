@@ -1,0 +1,245 @@
+{"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"DefaultHand","Start":"0x15e300","EndExclusive":"0x15e657","Bytes":855,"Instructions":186,"StackBytes":440,"InitialXmm4Bytes":352,"DirectXmm4Clears":1,"LoopInitial":336,"LoopStep":48,"IndexedClears":3,"CopyCallSites":2,"CallSites":12,"StartMod32":0,"StartMod64":0}
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e300 pushq	%r15
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e302 pushq	%r14
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e304 pushq	%r13
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e306 pushq	%rdi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e307 pushq	%rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e308 pushq	%rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e309 pushq	%rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e30a subq	$0x180, %rsp            # imm = 0x180
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e311 xorps	%xmm4, %xmm4
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e314 movaps	%xmm4, 0x20(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e319 movabsq	$-0x150, %rax           # imm = 0xFEB0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e323 movaps	%xmm4, 0x180(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e32b movaps	%xmm4, 0x190(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e333 movaps	%xmm4, 0x1a0(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e33b addq	$0x30, %rax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e33f jne	0x15e323 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e341 movq	%rdx, 0x1c8(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e349 movq	%rcx, %rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e34c leaq	0x1c8(%rsp), %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e354 leaq	0x20(%rsp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e359 callq	0xb210 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e35e movups	0x20(%rsp), %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e363 movups	%xmm0, 0x60(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e368 movups	0x30(%rsp), %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e36d movups	%xmm0, 0x70(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e372 movups	0x40(%rsp), %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e377 movups	%xmm0, 0x80(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e37f movups	0x50(%rsp), %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e384 movups	%xmm0, 0x90(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e38c xorps	%xmm0, %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e38f movups	%xmm0, 0xa0(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e397 xorps	%xmm0, %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e39a movups	%xmm0, 0xb0(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e3a2 leaq	0x120(%rsp), %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e3aa leaq	0x60(%rsp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e3af movl	$0x60, %r8d
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e3b5 callq	0x87eb0 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e3ba movq	0x140(%rsp), %rdx
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e33f -> 0x15e323 startMod32=31 startMod64=63 targetMod32=3 targetMod64=35
+COPY CONTEXT 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand
+0x15e397 xorps	%xmm0, %xmm0
+0x15e39a movups	%xmm0, 0xb0(%rsp)
+0x15e3a2 leaq	0x120(%rsp), %rcx
+0x15e3aa leaq	0x60(%rsp), %rdx
+0x15e3af movl	$0x60, %r8d
+0x15e3b5 callq	0x87eb0 <symbol>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e3dd callq	0xd820 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryRowCursor__MoveNext_0>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e3ee callq	0x154b60 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryChunkEnumerator_1<SomeEngine_ECS_SomeEngine_ECS_Queries_NoSharedFilter>__MoveNext>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e426 callq	0xd820 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryRowCursor__MoveNext_0>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e42d -> 0x15e3e6 startMod32=13 startMod64=45 targetMod32=6 targetMod64=38
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e460 callq	0x1612c0 <SomeEngine_ECS_SomeEngine_ECS_Queries_ComponentRowEnumerator_2<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__BindColumns>
+COPY CONTEXT 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand
+0x15e4b6 movl	(%rcx), %edi
+0x15e4b8 movl	0x4(%rcx), %ebp
+0x15e4bb leaq	0xc0(%rsp), %rcx
+0x15e4c3 leaq	0x120(%rsp), %rdx
+0x15e4cb movl	$0x60, %r8d
+0x15e4d1 callq	0x87eb0 <symbol>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e599 callq	0xd820 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryRowCursor__MoveNext_0>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e5aa callq	0x154b60 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryChunkEnumerator_1<SomeEngine_ECS_SomeEngine_ECS_Queries_NoSharedFilter>__MoveNext>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e5b1 -> 0x15e3ba startMod32=17 startMod64=49 targetMod32=26 targetMod64=58
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e5e2 callq	0xd820 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryRowCursor__MoveNext_0>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e5e9 -> 0x15e5a2 startMod32=9 startMod64=41 targetMod32=2 targetMod64=34
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e613 callq	0x1612c0 <SomeEngine_ECS_SomeEngine_ECS_Queries_ComponentRowEnumerator_2<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__BindColumns>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e620 -> 0x15e4db startMod32=0 startMod64=32 targetMod32=27 targetMod64=27
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e628 -> 0x15e4f8 startMod32=8 startMod64=40 targetMod32=24 targetMod64=56
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultHand 0x15e636 -> 0x15e54a startMod32=22 startMod64=54 targetMod32=10 targetMod64=10
+{"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"KeyHand","Start":"0x164c40","EndExclusive":"0x1653a2","Bytes":1890,"Instructions":449,"StackBytes":424,"InitialXmm4Bytes":224,"DirectXmm4Clears":2,"LoopInitial":192,"LoopStep":48,"IndexedClears":3,"CopyCallSites":0,"CallSites":24,"StartMod32":0,"StartMod64":0}
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c40 pushq	%r15
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c42 pushq	%r14
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c44 pushq	%r13
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c46 pushq	%r12
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c48 pushq	%rdi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c49 pushq	%rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c4a pushq	%rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c4b pushq	%rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c4c subq	$0x168, %rsp            # imm = 0x168
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c53 xorl	%eax, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c55 movq	%rax, 0x78(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c5a xorps	%xmm4, %xmm4
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c5d movaps	%xmm4, 0x80(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c65 movaps	%xmm4, 0x90(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c6d movabsq	$-0xc0, %rax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c77 movaps	%xmm4, 0x160(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c7f movaps	%xmm4, 0x170(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c87 movaps	%xmm4, 0x180(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c8f addq	$0x30, %rax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c93 jne	0x164c77 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c95 movq	%rax, 0x160(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c9d movq	%rdx, 0x1b8(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164ca5 movq	%rcx, %rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164ca8 leaq	(%rip), %rcx            # 0x164caf <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164caf callq	0x164cb4 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164cb4 movq	%rax, %rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164cb7 movq	%rsi, 0x38(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164cbc leaq	(%rip), %rcx            # 0x164cc3 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164cc3 callq	0x164cc8 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164cc8 movq	%rax, %rdi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164ccb leaq	(%rip), %rcx            # 0x164cd2 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164cd2 movq	%rcx, 0x8(%rdi)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164cd6 leaq	0x1b8(%rsp), %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164cde leaq	0xc8(%rsp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164ce6 callq	0xb210 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164ceb movups	0xc8(%rsp), %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164cf3 movups	%xmm0, 0x108(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164cfb movups	0xd8(%rsp), %xmm0
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164c93 -> 0x164c77 startMod32=19 startMod64=19 targetMod32=23 targetMod64=55
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164d35 callq	0x154b60 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryChunkEnumerator_1<SomeEngine_ECS_SomeEngine_ECS_Queries_NoSharedFilter>__MoveNext>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164d6d callq	0xd820 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryRowCursor__MoveNext_0>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164d74 -> 0x164d2d startMod32=20 startMod64=52 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164e41 -> 0x164d4d startMod32=1 startMod64=1 targetMod32=13 targetMod64=13
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164e5a -> 0x164d4d startMod32=26 startMod64=26 targetMod32=13 targetMod64=13
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164eae -> 0x164e6f startMod32=14 startMod64=46 targetMod32=15 targetMod64=47
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x164f46 -> 0x164d4d startMod32=6 startMod64=6 targetMod32=13 targetMod64=13
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x1651bc -> 0x165130 startMod32=28 startMod64=60 targetMod32=16 targetMod64=48
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x1651f1 -> 0x164f70 startMod32=17 startMod64=49 targetMod32=16 targetMod64=48
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x1651fb -> 0x164f70 startMod32=27 startMod64=59 targetMod32=16 targetMod64=48
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x165219 -> 0x165044 startMod32=25 startMod64=25 targetMod32=4 targetMod64=4
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x16522e -> 0x165049 startMod32=14 startMod64=46 targetMod32=9 targetMod64=9
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x165246 -> 0x16519c startMod32=6 startMod64=6 targetMod32=28 targetMod64=28
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x1652f1 -> 0x16519c startMod32=17 startMod64=49 targetMod32=28 targetMod64=28
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x165318 -> 0x165263 startMod32=24 startMod64=24 targetMod32=3 targetMod64=35
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x165321 -> 0x1652ed startMod32=1 startMod64=33 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x165327 -> 0x1652ed startMod32=7 startMod64=39 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x165331 -> 0x16526b startMod32=17 startMod64=49 targetMod32=11 targetMod64=43
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x16533e -> 0x1652ed startMod32=30 startMod64=62 targetMod32=13 targetMod64=45
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyHand 0x165345 -> 0x164db3 startMod32=5 startMod64=5 targetMod32=19 targetMod64=51
+{"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"DefaultGeneric","Start":"0x1d3280","EndExclusive":"0x1d35db","Bytes":859,"Instructions":187,"StackBytes":440,"InitialXmm4Bytes":352,"DirectXmm4Clears":1,"LoopInitial":336,"LoopStep":48,"IndexedClears":3,"CopyCallSites":2,"CallSites":12,"StartMod32":0,"StartMod64":0}
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3280 pushq	%r15
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3282 pushq	%r14
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3284 pushq	%r13
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3286 pushq	%rdi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3287 pushq	%rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3288 pushq	%rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3289 pushq	%rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d328a subq	$0x180, %rsp            # imm = 0x180
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3291 xorps	%xmm4, %xmm4
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3294 movaps	%xmm4, 0x20(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3299 movabsq	$-0x150, %rax           # imm = 0xFEB0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32a3 movaps	%xmm4, 0x180(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32ab movaps	%xmm4, 0x190(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32b3 movaps	%xmm4, 0x1a0(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32bb addq	$0x30, %rax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32bf jne	0x1d32a3 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32c1 movq	%rcx, 0x1c0(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32c9 movq	%r8, %rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32cc leaq	0x1c0(%rsp), %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32d4 leaq	0x20(%rsp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32d9 callq	0xb210 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32de movups	0x20(%rsp), %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32e3 movups	%xmm0, 0x60(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32e8 movups	0x30(%rsp), %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32ed movups	%xmm0, 0x70(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32f2 movups	0x40(%rsp), %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32f7 movups	%xmm0, 0x80(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32ff movups	0x50(%rsp), %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3304 movups	%xmm0, 0x90(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d330c xorps	%xmm0, %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d330f movups	%xmm0, 0xa0(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3317 xorps	%xmm0, %xmm0
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d331a movups	%xmm0, 0xb0(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3322 leaq	0x120(%rsp), %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d332a leaq	0x60(%rsp), %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d332f movl	$0x60, %r8d
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3335 callq	0x87eb0 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d333a movq	0x140(%rsp), %rdx
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d32bf -> 0x1d32a3 startMod32=31 startMod64=63 targetMod32=3 targetMod64=35
+COPY CONTEXT 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric
+0x1d3317 xorps	%xmm0, %xmm0
+0x1d331a movups	%xmm0, 0xb0(%rsp)
+0x1d3322 leaq	0x120(%rsp), %rcx
+0x1d332a leaq	0x60(%rsp), %rdx
+0x1d332f movl	$0x60, %r8d
+0x1d3335 callq	0x87eb0 <symbol>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d335d callq	0xd820 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryRowCursor__MoveNext_0>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d336e callq	0x154b60 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryChunkEnumerator_1<SomeEngine_ECS_SomeEngine_ECS_Queries_NoSharedFilter>__MoveNext>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d33a6 callq	0xd820 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryRowCursor__MoveNext_0>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d33ad -> 0x1d3366 startMod32=13 startMod64=45 targetMod32=6 targetMod64=38
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d33e0 callq	0x1612c0 <SomeEngine_ECS_SomeEngine_ECS_Queries_ComponentRowEnumerator_2<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__BindColumns>
+COPY CONTEXT 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric
+0x1d3436 movl	(%rcx), %edi
+0x1d3438 movl	0x4(%rcx), %ebp
+0x1d343b leaq	0xc0(%rsp), %rcx
+0x1d3443 leaq	0x120(%rsp), %rdx
+0x1d344b movl	$0x60, %r8d
+0x1d3451 callq	0x87eb0 <symbol>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d351c callq	0xd820 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryRowCursor__MoveNext_0>
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d352d callq	0x154b60 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryChunkEnumerator_1<SomeEngine_ECS_SomeEngine_ECS_Queries_NoSharedFilter>__MoveNext>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3534 -> 0x1d333a startMod32=20 startMod64=52 targetMod32=26 targetMod64=58
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3565 callq	0xd820 <SomeEngine_ECS_SomeEngine_ECS_Queries_QueryRowCursor__MoveNext_0>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d356c -> 0x1d3525 startMod32=12 startMod64=44 targetMod32=5 targetMod64=37
+ITERATOR CALL 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d3596 callq	0x1612c0 <SomeEngine_ECS_SomeEngine_ECS_Queries_ComponentRowEnumerator_2<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__BindColumns>
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d35a3 -> 0x1d345b startMod32=3 startMod64=35 targetMod32=27 targetMod64=27
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d35ab -> 0x1d3478 startMod32=11 startMod64=43 targetMod32=24 targetMod64=56
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b DefaultGeneric 0x1d35b9 -> 0x1d34ca startMod32=25 startMod64=57 targetMod32=10 targetMod64=10
+{"Version":"51c8ce75949cf16d7190e14028c655f526d5697b","Role":"KeyGeneric","Start":"0x20a900","EndExclusive":"0x20adf9","Bytes":1273,"Instructions":288,"StackBytes":312,"InitialXmm4Bytes":112,"DirectXmm4Clears":1,"LoopInitial":96,"LoopStep":48,"IndexedClears":3,"CopyCallSites":0,"CallSites":11,"StartMod32":0,"StartMod64":0}
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a900 pushq	%r15
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a902 pushq	%r14
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a904 pushq	%r13
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a906 pushq	%r12
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a908 pushq	%rdi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a909 pushq	%rsi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a90a pushq	%rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a90b pushq	%rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a90c subq	$0xf8, %rsp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a913 xorl	%eax, %eax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a915 movq	%rax, 0x78(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a91a xorps	%xmm4, %xmm4
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a91d movaps	%xmm4, 0x80(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a925 movabsq	$-0x60, %rax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a92f movaps	%xmm4, 0xf0(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a937 movaps	%xmm4, 0x100(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a93f movaps	%xmm4, 0x110(%rsp,%rax)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a947 addq	$0x30, %rax
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a94b jne	0x20a92f <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a94d movq	%rax, 0xf0(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a955 movq	%rcx, %rbp
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a958 movl	%edx, %esi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a95a movq	%r9, %rdi
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a95d movq	0x178(%rsp), %rbx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a965 leaq	(%rip), %rcx            # 0x20a96c <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a96c callq	0x20a971 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a971 movq	%rax, %r14
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a974 leaq	(%rip), %rcx            # 0x20a97b <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a97b callq	0x20a980 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a980 movq	%rax, %r15
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a983 leaq	(%rip), %rcx            # 0x20a98a <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a98a movq	%rcx, 0x8(%r15)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a98e leaq	0x160(%rsp), %rcx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a996 movq	%r14, %rdx
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a999 movq	%r15, %r8
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a99c callq	0x164460 <symbol>
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a9a1 movq	%rbp, 0x48(%rsp)
+ENTRY 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a9a6 movq	%r14, 0x40(%rsp)
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20a94b -> 0x20a92f startMod32=11 startMod64=11 targetMod32=15 targetMod64=47
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20ac97 -> 0x20ac0a startMod32=23 startMod64=23 targetMod32=10 targetMod64=10
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20acbe -> 0x20ab0b startMod32=30 startMod64=62 targetMod32=11 targetMod64=11
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20acd6 -> 0x20aa02 startMod32=22 startMod64=22 targetMod32=2 targetMod64=2
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20ad06 -> 0x20ab6f startMod32=6 startMod64=6 targetMod32=15 targetMod64=47
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20ad20 -> 0x20ac76 startMod32=0 startMod64=32 targetMod32=22 targetMod64=54
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20adba -> 0x20ac76 startMod32=26 startMod64=58 targetMod32=22 targetMod64=54
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20add8 -> 0x20ad4b startMod32=24 startMod64=24 targetMod32=11 targetMod64=11
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20ade1 -> 0x20ad3e startMod32=1 startMod64=33 targetMod32=30 targetMod64=62
+BACKEDGE 51c8ce75949cf16d7190e14028c655f526d5697b KeyGeneric 0x20adeb -> 0x20adb5 startMod32=11 startMod64=43 targetMod32=21 targetMod64=53

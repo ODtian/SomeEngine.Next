@@ -1,0 +1,5 @@
+"CaseId","Side","Configuration","ProcessMask","MainThreadMask","PreviousMainThreadMask","ProcessPriority","MainThreadPriority","ProcessorAfterSetting","Samples","ObservedProcessors","ChangedEndpoints"
+"finite-small-mask1-mutual-control","H1","Fixed","4294967295","4","4294967295","High","Normal","2","256","2","0"
+"finite-small-mask1-mutual-control","H2","Fixed","4294967295","4","4294967295","High","Normal","2","256","2","0"
+"finite-large-mask8-oneway-control","H1","Fixed","4294967295","4","4294967295","High","Normal","2","256","2","0"
+"finite-large-mask8-oneway-control","H2","Fixed","4294967295","4","4294967295","High","Normal","2","256","2","0"

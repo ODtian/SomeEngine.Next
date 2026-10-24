@@ -1,0 +1,36 @@
+[
+  {
+    "Name": "ArchiveMeasurements",
+    "QueueId": "5bc38d23ffdd4c2fa48b9a115101dbbb",
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\focused-native-r45\\archive.ps1"
+    ],
+    "StartedAtUtc": "2026-10-20T01:29:15.2583546Z",
+    "FinishedAtUtc": "2026-10-20T01:29:17.8895118Z",
+    "ExitCode": 0,
+    "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\ArchiveMeasurements.stdout.log",
+    "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\ArchiveMeasurements.stderr.log"
+  },
+  {
+    "Name": "ReadPackageCodegen",
+    "QueueId": "5bc38d23ffdd4c2fa48b9a115101dbbb",
+    "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+    "Executable": "pwsh",
+    "Arguments": [
+      "-NoProfile",
+      "-File",
+      "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\docs\\evidence\\ECS-Relations-2026-10-19\\final-packages-r45\\Read-Package-Codegen.ps1",
+      "-ReaderQueueId",
+      "5bc38d23ffdd4c2fa48b9a115101dbbb"
+    ],
+    "StartedAtUtc": "2026-10-20T01:29:17.9387633Z",
+    "FinishedAtUtc": "2026-10-20T01:29:59.4771984Z",
+    "ExitCode": 0,
+    "Stdout": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\ReadPackageCodegen.stdout.log",
+    "Stderr": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\final-packages-r45\\ReadPackageCodegen.stderr.log"
+  }
+]

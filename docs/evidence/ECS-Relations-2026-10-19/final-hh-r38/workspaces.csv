@@ -1,0 +1,5 @@
+"CaseId","DataSharing","UsedBy","SetupTicks","Frequency"
+"finite-small-mask1-mutual-control","SharedStaticWorkspace","shared","43675","10000000"
+"default-small-dynamic10-control","SharedStaticWorkspace","shared","38382","10000000"
+"finite-large-mask8-mutual-control","SharedStaticWorkspace","shared","220984","10000000"
+"default-large-dynamic50-control","SharedStaticWorkspace","shared","131589","10000000"

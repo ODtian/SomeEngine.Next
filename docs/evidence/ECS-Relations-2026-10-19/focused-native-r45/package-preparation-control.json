@@ -1,0 +1,9 @@
+{
+  "StartedAtUtc": "2026-10-20T01:00:26.9050269Z",
+  "FinishedAtUtc": "2026-10-20T01:00:26.9805092Z",
+  "MasterPath": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\relations-measurements\\focused-native-r45\\master.ps1",
+  "ParserErrors": 0,
+  "PackageOrder": "Case1,Case2,Analysis,Libraries,Consumer",
+  "PackageReader": "Consumer after 14 stages",
+  "MasterResultExists": false
+}

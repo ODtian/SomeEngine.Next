@@ -46,7 +46,7 @@ public class GltfSourceImporterTests
             QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<MeshSource>());
             try
             {
-                world.ExecuteQuery(query, ref entities, static (QueryCursor rows, ref List<Entity> values) =>
+                world.ExecuteQuery(query, ref entities, static (scoped QueryCursor rows, ref List<Entity> values) =>
                 {
                     foreach (var row in rows.Rows) values.Add(row.Entity);
                 });

@@ -44,7 +44,7 @@ public sealed class SpatialRelationGenerator : IIncrementalGenerator
             if (!seen.Add(type))
                 continue;
             INamedTypeSymbol capability = type.AllInterfaces.First(IsSupported);
-            var parameters = TypeParameters(type).ToArray();
+            var parameters = RelationTypeSyntax.TypeParameters(type).ToArray();
             string typeName = FullName(type);
             bool key = capability.Name == "IKeyRelation";
             bool bitmap = capability.Name == "IBitmapRelation";
@@ -96,7 +96,7 @@ public sealed class SpatialRelationGenerator : IIncrementalGenerator
         if (composed)
             generics.AddRange(new[] { previous, previousResults });
         generics.AddRange(parameters.Select(parameter => parameter.Name));
-        text.Append("    ").Append(IsPublic(type) ? "public" : "internal").Append(" static ").Append(Relations)
+        text.Append("    ").Append(RelationTypeSyntax.IsPublic(type) ? "public" : "internal").Append(" static ").Append(Relations)
             .Append("RelationQuery<").Append(result).Append(", ").Append(Row).Append("> ").Append(operation)
             .Append('<').Append(string.Join(", ", generics)).AppendLine(">(")
             .Append("        this ").Append(Relations).Append("RelationQuery<").Append(source).Append(", ").Append(Row)
@@ -114,8 +114,9 @@ public sealed class SpatialRelationGenerator : IIncrementalGenerator
                 .Append("        where ").Append(previousResults).AppendLine(" : unmanaged");
         }
         foreach (var parameter in parameters)
-            AppendConstraints(text, parameter);
-        string expression = $"new {atom}(source.Enumerable.Tree, relation" + (implementation is null ? ")" : ", implementation)");
+            RelationTypeSyntax.AppendConstraints(text, parameter);
+        string expression = implementation is null ? $"new {atom}(relation)" :
+            $"new {atom}(source.Enumerable.Tree, relation, implementation)";
         if (operation == "Except")
             expression = $"new {appended}({expression})";
         if (composed)
@@ -133,24 +134,4 @@ public sealed class SpatialRelationGenerator : IIncrementalGenerator
     }
 
     private static string FullName(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-
-    private static IEnumerable<ITypeParameterSymbol> TypeParameters(INamedTypeSymbol type) =>
-        (type.ContainingType is null ? Enumerable.Empty<ITypeParameterSymbol>() : TypeParameters(type.ContainingType))
-        .Concat(type.TypeParameters);
-
-    private static bool IsPublic(INamedTypeSymbol type) =>
-        type.DeclaredAccessibility == Accessibility.Public && (type.ContainingType is null || IsPublic(type.ContainingType));
-
-    private static void AppendConstraints(StringBuilder text, ITypeParameterSymbol parameter)
-    {
-        var constraints = new List<string>();
-        if (parameter.HasUnmanagedTypeConstraint) constraints.Add("unmanaged");
-        else if (parameter.HasValueTypeConstraint) constraints.Add("struct");
-        else if (parameter.HasReferenceTypeConstraint) constraints.Add("class");
-        else if (parameter.HasNotNullConstraint) constraints.Add("notnull");
-        constraints.AddRange(parameter.ConstraintTypes.Select(FullName));
-        if (parameter.HasConstructorConstraint) constraints.Add("new()");
-        if (constraints.Count > 0)
-            text.Append("        where ").Append(parameter.Name).Append(" : ").AppendLine(string.Join(", ", constraints));
-    }
 }

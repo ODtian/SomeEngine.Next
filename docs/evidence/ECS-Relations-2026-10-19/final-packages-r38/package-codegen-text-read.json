@@ -1,0 +1,9 @@
+{
+  "ProcessId": 31700,
+  "ProcessStartUtc": "2026-10-19T22:10:33.1817050Z",
+  "ReadStartUtc": "2026-10-19T22:10:34.1758640Z",
+  "ReadEndUtc": "2026-10-19T22:10:35.1545853Z",
+  "Reader": "cb3aed562ed146e69b3467d2735f174a",
+  "ReaderExitCode": 0,
+  "Evidence": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\docs\\evidence\\ECS-Relations-2026-10-19\\final-packages-r38"
+}

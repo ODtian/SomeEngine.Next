@@ -78,28 +78,30 @@ public readonly struct CollisionCandidates<TComponent, TBoundsReader> : ICollisi
     internal CollisionCandidates<TComponent, TBoundsReader> WithTree() =>
         new(World, _bodies, Tree, _boundsReader);
 
-    internal void BuildTree(RelationQueryViews queries) =>
+    internal void BuildTree(scoped RelationQueryViews queries) =>
         Tree.Rebuild<TComponent, TBoundsReader>(queries.First, queries.Access, _boundsReader);
 
     public int QueryCount => 1;
+
+    public static bool ReadsFromSingleQuery => true;
 
     public QueryHandle GetQuery(int position) => _bodies;
 
     public QueryDefinition AddReads(QueryDefinition definition, int position) =>
         definition.WithOptionalRead<TComponent>();
 
-    public void Prepare(RelationQueryViews queries)
+    public void Prepare(scoped RelationQueryViews queries)
     {
         if (_buildFromQuery)
             BuildTree(queries);
     }
 
-    public bool Enumerate<TOutput>(CollisionNodePair partition, RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct =>
+    public bool Enumerate<TOutput>(CollisionNodePair partition, scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct =>
         SpatialTraversal.Enumerate<SpatialAll, GroupMatch, TOutput>(Tree, queries, default, true, partition, ref output);
 
-    public bool Enumerate<TOutput>(RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         if (_buildFromQuery)
             Tree.Rebuild<TComponent, TBoundsReader>(queries.First, queries.Access, _boundsReader);

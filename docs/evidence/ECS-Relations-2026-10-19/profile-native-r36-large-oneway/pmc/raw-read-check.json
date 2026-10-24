@@ -1,0 +1,18 @@
+[
+  {
+    "Name": "pmc-target-29672.raw.json.gz",
+    "OriginalBytes": 699612,
+    "PreservedBytes": 699612,
+    "CompleteGzipRead": true,
+    "UncompressedBytes": 7503696,
+    "ReadCompletedAtUtc": "2026-10-19T20:52:14.7609225Z"
+  },
+  {
+    "Name": "pmc-target-29672-by-stack.raw.json.gz",
+    "OriginalBytes": 704659,
+    "PreservedBytes": 704659,
+    "CompleteGzipRead": true,
+    "UncompressedBytes": 7571094,
+    "ReadCompletedAtUtc": "2026-10-19T20:52:14.7754414Z"
+  }
+]

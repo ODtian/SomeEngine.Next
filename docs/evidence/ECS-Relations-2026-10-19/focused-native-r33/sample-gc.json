@@ -1,0 +1,290 @@
+[
+  {
+    "CaseId": "finite-small-mask1-mutual",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "finite-small-mask1-mutual",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "finite-small-mask8-oneway",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "finite-small-mask8-oneway",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-small-dynamic10",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-small-dynamic10",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-small-dynamic50",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-small-dynamic50",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-small-dynamic90",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-small-dynamic90",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "threads-small-sparse-parallel",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 959032.0
+  },
+  {
+    "CaseId": "threads-small-sparse-parallel",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 946448.0
+  },
+  {
+    "CaseId": "finite-middle-mask8-oneway",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "finite-middle-mask8-oneway",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-middle-dynamic10",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-middle-dynamic10",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-middle-dynamic50",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-middle-dynamic50",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-middle-dynamic90",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-middle-dynamic90",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "finite-large-mask8-oneway",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "finite-large-mask8-oneway",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "finite-large-mask8-mutual",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "finite-large-mask8-mutual",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-large-dynamic10",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-large-dynamic10",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-large-dynamic50",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-large-dynamic50",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-large-dynamic90",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "default-large-dynamic90",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 0.0
+  },
+  {
+    "CaseId": "character-large-hair64-clustered",
+    "Side": "Relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 2543616.0
+  },
+  {
+    "CaseId": "character-large-hair64-clustered",
+    "Side": "Handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "TotalFrameAllocatedBytes": 2543616.0
+  }
+]

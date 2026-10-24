@@ -1,0 +1,86 @@
+
+F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\benchmarks\SomeEngine.ECS.Relations.Benchmarks\obj\Release\net10.0\win-x64\native\SomeEngine.ECS.Relations.Benchmarks.obj:	file format coff-x86-64
+
+Disassembly of section .managedcode$I:
+
+00000000001a7370 <SomeEngine_ECS_Systems_SomeEngine_ECS_Systems_ReadOnlyQueryPairJobs_PairJobData_1<SomeEngine_Physics_SomeEngine_Physics_CollisionPairBuffer_CountJob_1<SomeEngine_Physics_SomeEngine_Physics_SpatialCandidates_4<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_BodyBoundsReader__SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialComponentFilter_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__SomeEngine_Physics_SomeEngine_Physics_SpatialBitmapFilter_5<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_MutualCategories__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_MutualCategoryBitmap__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_MutualPermission__SomeEngine_Physics_SomeEngine_Physics_MutualSpatialPermission>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_SpatialExcept_2<SomeEngine_Physics_SomeEngine_Physics_SpatialKeyFilter_4<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SameCharacterHair__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HairCharacterIndex__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Hair__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>>>>__Execute>:
+  1a7370:      	pushq	%r14
+  1a7372:      	pushq	%rdi
+  1a7373:      	pushq	%rsi
+  1a7374:      	pushq	%rbp
+  1a7375:      	pushq	%rbx
+  1a7376:      	subq	$0xd0, %rsp
+  1a737d:      	xorl	%eax, %eax
+  1a737f:      	movq	%rax, 0x38(%rsp)
+  1a7384:      	xorps	%xmm4, %xmm4
+  1a7387:      	movabsq	$-0x90, %rax
+  1a7391:      	movaps	%xmm4, 0xd0(%rsp,%rax)
+  1a7399:      	movaps	%xmm4, 0xe0(%rsp,%rax)
+  1a73a1:      	movaps	%xmm4, 0xf0(%rsp,%rax)
+  1a73a9:      	addq	$0x30, %rax
+  1a73ad:      	jne	0x1a7391 <SomeEngine_ECS_Systems_SomeEngine_ECS_Systems_ReadOnlyQueryPairJobs_PairJobData_1<SomeEngine_Physics_SomeEngine_Physics_CollisionPairBuffer_CountJob_1<SomeEngine_Physics_SomeEngine_Physics_SpatialCandidates_4<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_BodyBoundsReader__SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialComponentFilter_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__SomeEngine_Physics_SomeEngine_Physics_SpatialBitmapFilter_5<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_MutualCategories__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_MutualCategoryBitmap__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_MutualPermission__SomeEngine_Physics_SomeEngine_Physics_MutualSpatialPermission>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_SpatialExcept_2<SomeEngine_Physics_SomeEngine_Physics_SpatialKeyFilter_4<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SameCharacterHair__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HairCharacterIndex__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Hair__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>>>>__Execute+0x21>
+  1a73af:      	movq	%rcx, %rbx
+  1a73b2:      	movl	%edx, %esi
+  1a73b4:      	leaq	0x38(%rbx), %rdx
+  1a73b8:      	movq	(%rdx), %rdi
+  1a73bb:      	movq	0x10(%rdx), %rbp
+  1a73bf:      	leaq	0x88(%rsp), %rcx
+  1a73c7:      	cmpb	%dl, (%rdx)
+  1a73c9:      	movl	$0x48, %r8d
+  1a73cf:      	callq	0x88010 <S_P_CoreLib_System_Buffer__BulkMoveWithWriteBarrier>
+  1a73d4:      	leaq	0x8(%rbx), %rdx
+  1a73d8:      	addq	$0x20, %rbx
+  1a73dc:      	movq	0x10(%rdi), %r8
+  1a73e0:      	cmpl	0x8(%r8), %esi
+  1a73e4:      	jae	0x1a747c <SomeEngine_ECS_Systems_SomeEngine_ECS_Systems_ReadOnlyQueryPairJobs_PairJobData_1<SomeEngine_Physics_SomeEngine_Physics_CollisionPairBuffer_CountJob_1<SomeEngine_Physics_SomeEngine_Physics_SpatialCandidates_4<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_BodyBoundsReader__SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialComponentFilter_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__SomeEngine_Physics_SomeEngine_Physics_SpatialBitmapFilter_5<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_MutualCategories__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_MutualCategoryBitmap__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_MutualPermission__SomeEngine_Physics_SomeEngine_Physics_MutualSpatialPermission>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_SpatialExcept_2<SomeEngine_Physics_SomeEngine_Physics_SpatialKeyFilter_4<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SameCharacterHair__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HairCharacterIndex__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Hair__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>>>>__Execute+0x10c>
+  1a73ea:      	movl	%esi, %r14d
+  1a73ed:      	leaq	0x10(%r8,%r14,8), %r8
+  1a73f2:      	movl	(%r8), %ecx
+  1a73f5:      	movl	0x4(%r8), %r8d
+  1a73f9:      	movq	%rdx, 0x38(%rsp)
+  1a73fe:      	movq	%rbx, 0x40(%rsp)
+  1a7403:      	xorl	%edx, %edx
+  1a7405:      	movq	%rdx, 0x48(%rsp)
+  1a740a:      	movq	%rdx, 0x50(%rsp)
+  1a740f:      	movq	%rdx, 0x58(%rsp)
+  1a7414:      	movq	%rdx, 0x60(%rsp)
+  1a7419:      	movq	%rdx, 0x68(%rsp)
+  1a741e:      	movq	%rdx, 0x70(%rsp)
+  1a7423:      	movq	%rdx, 0x78(%rsp)
+  1a7428:      	movl	%ecx, 0x20(%rsp)
+  1a742c:      	movl	%r8d, 0x24(%rsp)
+  1a7431:      	leaq	0x80(%rsp), %rdx
+  1a7439:      	movq	%rdx, 0x28(%rsp)
+  1a743e:      	leaq	0x38(%rsp), %rdx
+  1a7443:      	leaq	0xb0(%rsp), %r8
+  1a744b:      	movq	%rbp, %rcx
+  1a744e:      	movl	$0x1, %r9d
+  1a7454:      	callq	0x2267c0 <SomeEngine_Physics_SomeEngine_Physics_SpatialTraversal__Enumerate_0<SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialComponentFilter_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__SomeEngine_Physics_SomeEngine_Physics_SpatialBitmapFilter_5<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_MutualCategories__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_MutualCategoryBitmap__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_MutualPermission__SomeEngine_Physics_SomeEngine_Physics_MutualSpatialPermission>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_SpatialExcept_2<SomeEngine_Physics_SomeEngine_Physics_SpatialKeyFilter_4<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SameCharacterHair__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HairCharacterIndex__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Hair__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_CollisionPairQueries_PairCount>>
+  1a7459:      	movq	0x18(%rdi), %rax
+  1a745d:      	cmpl	0x8(%rax), %esi
+  1a7460:      	jae	0x1a747c <SomeEngine_ECS_Systems_SomeEngine_ECS_Systems_ReadOnlyQueryPairJobs_PairJobData_1<SomeEngine_Physics_SomeEngine_Physics_CollisionPairBuffer_CountJob_1<SomeEngine_Physics_SomeEngine_Physics_SpatialCandidates_4<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_BodyBoundsReader__SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialAnd_4<SomeEngine_Physics_SomeEngine_Physics_SpatialComponentFilter_3<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_DefaultContacts__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body>__SomeEngine_Physics_SomeEngine_Physics_SpatialBitmapFilter_5<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_MutualCategories__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_MutualCategoryBitmap__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Body__SomeEngine_ECS_Relations_SomeEngine_ECS_Relations_MutualPermission__SomeEngine_Physics_SomeEngine_Physics_MutualSpatialPermission>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_SpatialExcept_2<SomeEngine_Physics_SomeEngine_Physics_SpatialKeyFilter_4<SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_SameCharacterHair__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_HairCharacterIndex__SomeEngine_ECS_Relations_Benchmarks_SomeEngine_ECS_Benchmarks_Relations_Spatial_Hair__SomeEngine_ECS_SomeEngine_ECS_Entities_Entity>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__S_P_CoreLib_System_ValueTuple_2<S_P_CoreLib_System_ValueTuple_2<SomeEngine_Physics_SomeEngine_Physics_GroupMatch__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>__SomeEngine_Physics_SomeEngine_Physics_GroupMatch>>>>__Execute+0x10c>
+  1a7462:      	movl	0x80(%rsp), %ecx
+  1a7469:      	movl	%ecx, 0x10(%rax,%r14,4)
+  1a746e:      	addq	$0xd0, %rsp
+  1a7475:      	popq	%rbx
+  1a7476:      	popq	%rbp
+  1a7477:      	popq	%rsi
+  1a7478:      	popq	%rdi
+  1a7479:      	popq	%r14
+  1a747b:      	retq
+  1a747c:      	callq	0x10c8f0 <S_P_CoreLib_Internal_Runtime_CompilerHelpers_ThrowHelpers__ThrowIndexOutOfRangeException>
+  1a7481:      	int3
+  1a7482:      	nop
+  1a7483:      	nop
+  1a7484:      	nop
+  1a7485:      	nop
+  1a7486:      	nop
+  1a7487:      	nop
+  1a7488:      	nop
+  1a7489:      	nop
+  1a748a:      	nop
+  1a748b:      	nop
+  1a748c:      	nop
+  1a748d:      	nop
+  1a748e:      	nop
+  1a748f:      	nop

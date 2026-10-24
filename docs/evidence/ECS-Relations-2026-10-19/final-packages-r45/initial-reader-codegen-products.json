@@ -1,0 +1,26 @@
+{
+  "SourceCommit": "c0effa290eee225c296f779a85b9d79109d789a5",
+  "Stages": 14,
+  "QueueIds": [
+    "b29fc3fd3ed94505adb27bead7eed42c",
+    "0943bc78afa94cbd816e22a2a2350079"
+  ],
+  "Products": [
+    {
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.AotSmoke.dll",
+      "Length": 69120,
+      "LastWriteTimeUtc": "2026-10-20T01:23:34.4962378Z"
+    },
+    {
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\obj\\Release\\net10.0\\win-x64\\native\\SomeEngine.ECS.Relations.AotSmoke.obj",
+      "Length": 24930157,
+      "LastWriteTimeUtc": "2026-10-20T01:23:50.7250812Z"
+    },
+    {
+      "Path": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\tools\\SomeEngine.ECS.Relations.AotSmoke\\bin\\Release\\net10.0\\win-x64\\native-publish\\SomeEngine.ECS.Relations.AotSmoke.exe",
+      "Length": 3997696,
+      "LastWriteTimeUtc": "2026-10-20T01:23:51.4308191Z"
+    }
+  ],
+  "FinishedAtUtc": "2026-10-20T01:23:52.0727673Z"
+}

@@ -1,0 +1,86 @@
+{
+  "ProcessId": 76036,
+  "ProcessStartedAtUtc": "2026-10-20T00:46:13.7558321Z",
+  "ObservationStartedAtUtc": "2026-10-20T00:46:14.4140921Z",
+  "ObservationEndedAtUtc": "2026-10-20T00:46:15.7909171Z",
+  "Worker": {
+    "ProcessId": 81812,
+    "CreationDate": "2026-10-19T16:23:27.742435+08:00",
+    "CommandLine": "\"C:\\Program Files\\dotnet\\dotnet.exe\" F:\\SomeEngine.Next\\tools\\BenchmarkQueue\\bin\\Release\\net10.0\\SomeEngine.BenchmarkQueue.dll --worker"
+  },
+  "ExecutorChildren": [
+    {
+      "ProcessId": 90944,
+      "ParentProcessId": 81812,
+      "Name": "conhost.exe",
+      "CreationDate": "2026-10-19T16:23:27.762154+08:00",
+      "CommandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+    },
+    {
+      "ProcessId": 51584,
+      "ParentProcessId": 81812,
+      "Name": "python.exe",
+      "CreationDate": "2026-10-20T08:41:33.585053+08:00",
+      "CommandLine": "\"C:/Users/boqi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe\" -B F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/compare_frames.py --scene bistro --scene-cache F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/bistro.npz --scene-layout F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/scenes/loads/bistro-sparse-motion.json --width 320 --height 180 --warmup 64 --frames 24 --variants screen_grid_ray screen_sparse_cards_grid_ray screen_emissive_surfel_grid_ray --profiles static camera moving turn_lights --primary-query raster --geometry-query cells --object-query cell --object-walk lists --object-update split --object-covers --object-grid 32 --dense-grid 4 --pointer-seeds 0 --cell-ray-bounds --triangle-data aos --cell-triangle-indices packed --tail-cache sharc_nrc --neural-coordinates world --neural-weights uniform --probe-sampling history --probe-spacing 16 --probe-rays 1 --pixel-rays quad --surfel-history --surfel-capacity 65536 --surfel-read center-chain --lighting-history 4 --training 128 --training-stride 4 --training-width 1 --training-sampling scan --raster-bucket 128 --temporal-frames 12 --temporal-width 64 --temporal-spp 256 --temporal-reference-repeats 2 --quality-checks 1 --query-rays 0 --combine-passes --frame-timing --out F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/results-packed-points-v1-fast-small-bistro-motion --gather-width 8 --reference-spp 256 --save-linear --change point-data --values all used packed"
+    }
+  ],
+  "Tasks": [
+    {
+      "Id": "5e4a42759df440bf92d9f5601e4254d6",
+      "DirectoryExists": true,
+      "Result": {
+        "Id": "5e4a42759df440bf92d9f5601e4254d6",
+        "Executable": "pwsh",
+        "Arguments": [
+          "-NoProfile",
+          "-File",
+          "F:/.codex/worktrees/ecs-relations-worker-3/SomeEngine.Next/artifacts/relations-measurements/focused-native-r44/producer.ps1"
+        ],
+        "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+        "ExitCode": 0,
+        "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+        "Kind": "Exclusive",
+        "SubmittedAtUtc": "2026-10-20T08:34:49.2691755+08:00",
+        "StartedAtUtc": "2026-10-20T08:40:10.9472418+08:00",
+        "FinishedAtUtc": "2026-10-20T08:41:33.5823502+08:00"
+      },
+      "Tail": [
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\Registry\\JobStorageTypeMetadata.cs(77): Trim analysis warning IL2070: SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>): 'this' argument does not satisfy 'DynamicallyAccessedMemberTypes.PublicFields', 'DynamicallyAccessedMemberTypes.NonPublicFields' in call to 'System.Type.GetFields(BindingFlags)'. The parameter 'type' of method 'SomeEngine.ECS.Registry.JobStorageTypeShape.IsAliasFree(Type,HashSet`1<Type>)' does not have matching annotations. The source value must declare at least the same requirements as those declared on the target location it is assigned to. [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\SomeEngine.ECS.Relations.Benchmarks.csproj]",
+        "  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish\\",
+        "SOURCE_NATIVE {\"SourceCommit\":\"bf4348ce600cd423090d1c1430596fc60ea97a2e\",\"ChangedFiles\":[\"src/SomeEngine.Physics/SpatialFilters.cs\"],\"BehaviorStartedAtUtc\":\"2026-10-20T00:40:12.1988982Z\",\"BehaviorFinishedAtUtc\":\"2026-10-20T00:40:44.9762911Z\",\"BehaviorExitCode\":0,\"PushExitCode\":0,\"PublishArguments\":[\"publish\",\"benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj\",\"-c\",\"Release\",\"-r\",\"win-x64\",\"-p:PublishAot=true\",\"-p:SelfContained=true\",\"-p:SourceRevisionId=bf4348ce600cd423090d1c1430596fc60ea97a2e\",\"-o\",\"benchmarks/SomeEngine.ECS.Relations.Benchmarks/bin/Release/net10.0/win-x64/native-publish\"],\"PublishStartedAtUtc\":\"2026-10-20T00:40:51.5098270Z\",\"PublishFinishedAtUtc\":\"2026-10-20T00:41:33.4067596Z\",\"PublishExitCode\":0,\"SourceCheckExitCode\":0,\"Object\":{\"Path\":\"F:\\\\.codex\\\\worktrees\\\\ecs-relations-worker-3\\\\SomeEngine.Next\\\\benchmarks\\\\SomeEngine.ECS.Relations.Benchmarks\\\\obj\\\\Release\\\\net10.0\\\\win-x64\\\\native\\\\SomeEngine.ECS.Relations.Benchmarks.obj\",\"LastWriteTimeUtc\":\"2026-10-20T00:41:32.2023200Z\",\"Length\":26077023},\"Executable\":{\"Path\":\"F:\\\\.codex\\\\worktrees\\\\ecs-relations-worker-3\\\\SomeEngine.Next\\\\benchmarks\\\\SomeEngine.ECS.Relations.Benchmarks\\\\bin\\\\Release\\\\net10.0\\\\win-x64\\\\native-publish\\\\SomeEngine.ECS.Relations.Benchmarks.exe\",\"LastWriteTimeUtc\":\"2026-10-20T00:41:32.8880888Z\",\"Length\":4931584}}"
+      ]
+    },
+    {
+      "Id": "f90e715b3bc04b5c9a94b7fa48d63682",
+      "DirectoryExists": false,
+      "Result": null,
+      "Tail": null
+    }
+  ],
+  "ControlFiles": [
+    {
+      "Name": "manifest-ready.json",
+      "Exists": false
+    },
+    {
+      "Name": "preparation.json",
+      "Exists": false
+    },
+    {
+      "Name": "native-reader-stage.json",
+      "Exists": false
+    },
+    {
+      "Name": "native-reader-released.json",
+      "Exists": false
+    },
+    {
+      "Name": "watcher-ready.json",
+      "Exists": false
+    },
+    {
+      "Name": "root-host-released.json",
+      "Exists": false
+    }
+  ]
+}

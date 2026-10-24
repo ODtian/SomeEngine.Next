@@ -202,7 +202,7 @@ internal static partial class EcsBenchmarkSuite
             World.ExecuteQuery(
                 query,
                 ref state,
-                static (QueryCursor cursor, ref JobChecksum checksum) =>
+                static (scoped QueryCursor cursor, ref JobChecksum checksum) =>
                 {
                     foreach (QueryRow row in cursor.Rows)
                     {
@@ -295,7 +295,7 @@ internal static partial class EcsBenchmarkSuite
                     _query,
                     _lastVersion,
                     ref state,
-                    static (QueryCursor cursor, ref FilterChecksum checksum) =>
+                    static (scoped QueryCursor cursor, ref FilterChecksum checksum) =>
                     {
                         foreach (QueryRow row in cursor.Rows)
                         {
@@ -396,7 +396,7 @@ internal static partial class EcsBenchmarkSuite
             World.ExecuteQuery(
                 _bufferQuery,
                 ref checksum,
-                static (QueryCursor cursor, ref StorageChecksum state) =>
+                static (scoped QueryCursor cursor, ref StorageChecksum state) =>
                 {
                     foreach (QueryRow row in cursor.Rows)
                     {
@@ -414,7 +414,7 @@ internal static partial class EcsBenchmarkSuite
                 World.ExecuteQuery(
                     _sharedQuery,
                     ref sharedState,
-                    static (QueryCursor cursor, ref SharedCountState state) =>
+                    static (scoped QueryCursor cursor, ref SharedCountState state) =>
                     {
                         foreach (QueryRow _ in cursor.RowsWithShared(in state.Bucket))
                             state.Count++;
@@ -929,7 +929,7 @@ internal static partial class EcsBenchmarkSuite
         world.ExecuteQuery(
             query,
             ref state,
-            static (QueryCursor cursor, ref JobChecksum checksum) =>
+            static (scoped QueryCursor cursor, ref JobChecksum checksum) =>
             {
                 foreach (QueryRow row in cursor.Rows)
                 {
@@ -963,7 +963,7 @@ internal static partial class EcsBenchmarkSuite
         world.ExecuteQuery(
             query,
             ref checksum,
-            static (QueryCursor cursor, ref DurablePositionChecksum state) =>
+            static (scoped QueryCursor cursor, ref DurablePositionChecksum state) =>
             {
                 foreach (QueryRow row in cursor.Rows)
                 {

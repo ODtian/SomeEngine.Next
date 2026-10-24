@@ -1,0 +1,18 @@
+{
+  "Version": "73f7e089990e65cf4fc5517593e31aaeee03298a",
+  "Role": "PartitionData",
+  "Start": "0x1a6900",
+  "EndExclusive": "0x1a6a08",
+  "Bytes": 264,
+  "Instructions": 59,
+  "StackBytes": 184,
+  "InitialXmm4Bytes": 112,
+  "DirectXmm4Clears": 1,
+  "LoopInitial": 96,
+  "LoopStep": 48,
+  "IndexedClears": 3,
+  "CopyCallSites": 0,
+  "CallSites": 2,
+  "StartMod32": 0,
+  "StartMod64": 0
+}

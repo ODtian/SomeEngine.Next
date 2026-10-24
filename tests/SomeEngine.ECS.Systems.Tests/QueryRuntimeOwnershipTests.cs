@@ -352,7 +352,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
             _world.ExecuteQuery(
                 _query,
                 ref state,
-                static (QueryCursor _, ref BlockingState blocking) => blocking.Block());
+                static (scoped QueryCursor _, ref BlockingState blocking) => blocking.Block());
         }
     }
 
@@ -378,7 +378,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
             _world.ExecuteQuery(
                 _query,
                 ref started,
-                static (QueryCursor _, ref ManualResetEventSlim signal) => signal.Set());
+                static (scoped QueryCursor _, ref ManualResetEventSlim signal) => signal.Set());
         }
     }
 
@@ -404,7 +404,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
                     _query,
                     lastSystemVersion: 0,
                     ref state,
-                    static (QueryCursor cursor, ref ExactQueryState exact) =>
+                    static (scoped QueryCursor cursor, ref ExactQueryState exact) =>
                     {
                         foreach (QueryRow row in cursor.Rows)
                         {

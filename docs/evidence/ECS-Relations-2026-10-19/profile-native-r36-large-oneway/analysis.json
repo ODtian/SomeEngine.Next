@@ -1,0 +1,48 @@
+{
+  "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+  "CaptureQueueId": "66dd4947702b4dbd8336d1d4f0a6ad2b",
+  "ProcessId": 95016,
+  "Trace": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\cpu.diagsession",
+  "StartedAtUtc": "2026-10-19T19:41:04.9391168Z",
+  "ExpandExitCode": 0,
+  "Traces": [
+    {
+      "Etl": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\cpu\\01068CA8-C758-4F25-B685-FFB899E72671\\sc.user_aux.etl",
+      "EtlBytes": 67502080,
+      "SymbolDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\native-publish",
+      "LeafArguments": [
+        "-i",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\cpu\\01068CA8-C758-4F25-B685-FFB899E72671\\sc.user_aux.etl",
+        "-symbols",
+        "-o",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\cpu-functions-1.csv",
+        "-a",
+        "profile",
+        "-detail"
+      ],
+      "LeafStartedAtUtc": "2026-10-19T19:41:05.6450056Z",
+      "LeafExitCode": 0,
+      "StackArguments": [
+        "-i",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\cpu\\01068CA8-C758-4F25-B685-FFB899E72671\\sc.user_aux.etl",
+        "-symbols",
+        "-o",
+        "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\point-stacks-1.txt",
+        "-a",
+        "stack",
+        "-butterfly",
+        "1",
+        "-pid",
+        "95016",
+        "-symbol",
+        "ReadEntityQueryRef"
+      ],
+      "StackStartedAtUtc": "2026-10-19T19:41:11.0028215Z",
+      "StackExitCode": 0,
+      "FinishedAtUtc": "2026-10-19T19:41:12.9767587Z",
+      "Leaf": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\cpu-functions-1.csv",
+      "Stacks": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\profile-native-r36-large-oneway\\guid-session\\point-stacks-1.txt"
+    }
+  ],
+  "FinishedAtUtc": "2026-10-19T19:41:12.9876361Z"
+}

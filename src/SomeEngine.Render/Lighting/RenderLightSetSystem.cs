@@ -69,11 +69,11 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
         foreach (Entity entity in membership.Entities)
             update.Changed |= _lights.UpdateMembership(context.World, entity);
         context.World.ExecuteQuery(_directional, context.LastSystemVersion, ref update,
-            static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdateDirectional(rows));
+            static (scoped QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdateDirectional(rows));
         context.World.ExecuteQuery(_point, context.LastSystemVersion, ref update,
-            static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdatePoints(rows));
+            static (scoped QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdatePoints(rows));
         context.World.ExecuteQuery(_spot, context.LastSystemVersion, ref update,
-            static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdateSpots(rows));
+            static (scoped QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdateSpots(rows));
         if (update.Changed) _lights.CommitChanges();
         _tableChanges.Accept(membership);
     }

@@ -6,7 +6,7 @@ public ref struct QueryRowEnumerator<TFilter>
     where TFilter : IChunkFilter, allows ref struct
 {
     private QueryChunkEnumerator<TFilter> _chunks;
-    private QueryRowCursor _rows;
+    private int _row;
 
     internal QueryRowEnumerator(
         World world,
@@ -22,37 +22,40 @@ public ref struct QueryRowEnumerator<TFilter>
             current,
             filter,
             matchRowFilters: false);
-        _rows = new QueryRowCursor(world, last, current);
+        _row = -1;
     }
 
-    public QueryRow Current => _rows.Current;
+    public QueryRow Current => _chunks.ReadRow(_row);
+
+    internal QueryArchetypeMatch CurrentMatch => _chunks.CurrentMatch;
+    internal Chunk? CurrentChunk => _chunks.CurrentChunk;
 
     public QueryRowEnumerator<TFilter> GetEnumerator() => this;
 
     public bool MoveNext()
     {
-        if (!MoveNext(out QueryRow row))
-            return false;
+        while (true)
+        {
+            if (_chunks.MoveNextRow(ref _row))
+                return true;
 
-        _rows.Current = row;
-        return true;
+            if (!_chunks.MoveNext())
+                return false;
+
+            _row = -1;
+        }
     }
 
     public bool MoveNext(out QueryRow row)
     {
-        while (true)
+        if (!MoveNext())
         {
-            if (_rows.MoveNext(out row))
-                return true;
-
-            if (!_chunks.MoveNext())
-            {
-                row = default;
-                return false;
-            }
-
-            _rows.Reset(_chunks.CurrentMatch, _chunks.CurrentChunk);
+            row = default;
+            return false;
         }
+
+        row = Current;
+        return true;
     }
 
 }
@@ -74,10 +77,18 @@ internal ref struct QueryRowCursor
         _match = null;
         _chunk = null;
         _row = -1;
-        Current = default;
     }
 
-    internal QueryRow Current { get; set; }
+    internal readonly QueryRow Current => new(
+        _world,
+        _match!,
+        _chunk!,
+        _row,
+        _lastVersion,
+        _currentVersion);
+
+    internal QueryArchetypeMatch Match => _match!;
+    internal Chunk? Chunk => _chunk;
 
     internal void Reset(QueryArchetypeMatch match, Chunk chunk)
     {
@@ -86,44 +97,40 @@ internal ref struct QueryRowCursor
         _row = -1;
     }
 
-    internal bool MoveNext()
+    internal bool MoveNext() =>
+        MoveNext(_match!, _chunk, _lastVersion, ref _row);
+
+    internal static bool MoveNext(
+        QueryArchetypeMatch match,
+        Chunk? chunk,
+        uint lastVersion,
+        ref int row)
     {
-        if (!MoveNext(out QueryRow row))
+        if (chunk is null)
             return false;
 
-        Current = row;
-        return true;
+        row++;
+        while (row < chunk.Count)
+        {
+            if (match.MatchesRow(chunk, row, lastVersion))
+                return true;
+
+            row++;
+        }
+
+        return false;
     }
 
     internal bool MoveNext(out QueryRow row)
     {
-        if (_chunk is null)
+        if (!MoveNext())
         {
             row = default;
             return false;
         }
 
-        var match = _match!;
-        _row++;
-        while (_row < _chunk.Count)
-        {
-            if (match.MatchesRow(_chunk, _row, _lastVersion))
-            {
-                row = new QueryRow(
-                    _world,
-                    match,
-                    _chunk,
-                    _row,
-                    _lastVersion,
-                    _currentVersion);
-                return true;
-            }
-
-            _row++;
-        }
-
-        row = default;
-        return false;
+        row = Current;
+        return true;
     }
 }
 

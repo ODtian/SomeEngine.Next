@@ -770,7 +770,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 context.World.ExecuteQuery(
                     _viewQuery,
                     ref viewCollector,
-                    static (QueryCursor cursor, ref ViewCollector state) => state.Collect(cursor));
+                    static (scoped QueryCursor cursor, ref ViewCollector state) => state.Collect(cursor));
                 views = CollectionsMarshal.AsSpan(viewCollector.Views);
                 viewEntities = CollectionsMarshal.AsSpan(viewCollector.Entities);
                 primaryViewCount = views.Length;
@@ -1799,7 +1799,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
         internal void Clear() { Views.Clear(); Entities.Clear(); }
 
-        internal void Collect(QueryCursor cursor)
+        internal void Collect(scoped QueryCursor cursor)
         {
             foreach (QueryRow row in cursor.Rows)
             {

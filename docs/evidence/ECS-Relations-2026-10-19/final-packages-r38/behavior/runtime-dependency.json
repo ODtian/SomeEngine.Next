@@ -1,0 +1,12 @@
+{
+  "Dependency": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\external\\Alimer.Bindings",
+  "SharedDependency": "F:\\SomeEngine.Next\\external\\Alimer.Bindings",
+  "GitlinkCommit": "8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4",
+  "SharedCommit": "8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4",
+  "StartedAtUtc": "2026-10-19T21:34:09.9757471Z",
+  "BuildStartedAtUtc": "2026-10-19T21:34:09.9985216Z",
+  "BuildFinishedAtUtc": "2026-10-19T21:34:20.9802887Z",
+  "BuildExitCode": 0,
+  "JunctionRemovedAtUtc": "2026-10-19T21:34:20.9921493Z",
+  "EmptyDirectoryRestored": true
+}

@@ -1,0 +1,101 @@
+[
+  "QUEUED 138f1bac061e42d180fdc82e3dbb4da3 startup finite-middle-mask4-mutual",
+  {
+    "CaseId": "finite-middle-mask4-mutual",
+    "InputCaseId": "finite-middle-mask4-mutual",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Machine": "Fixed",
+    "Report": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\final-startup-r38\\finite-middle-mask4-mutual.json",
+    "QueueId": "138f1bac061e42d180fdc82e3dbb4da3",
+    "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\138f1bac061e42d180fdc82e3dbb4da3"
+  },
+  "QUEUED 0522eacb129e48b386ef61d2a7777ee2 startup default-middle-dynamic50",
+  {
+    "CaseId": "default-middle-dynamic50",
+    "InputCaseId": "default-middle-dynamic50",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Machine": "Fixed",
+    "Report": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\final-startup-r38\\default-middle-dynamic50.json",
+    "QueueId": "0522eacb129e48b386ef61d2a7777ee2",
+    "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\0522eacb129e48b386ef61d2a7777ee2"
+  },
+  "QUEUED c48333f7547347abbf7dcc625e0b1a0f startup character-middle-hair16-clustered",
+  {
+    "CaseId": "character-middle-hair16-clustered",
+    "InputCaseId": "character-middle-hair16-clustered",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Machine": "Fixed",
+    "Report": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\final-startup-r38\\character-middle-hair16-clustered.json",
+    "QueueId": "c48333f7547347abbf7dcc625e0b1a0f",
+    "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\c48333f7547347abbf7dcc625e0b1a0f"
+  },
+  "QUEUED 3d59c85d1def40dda44f7bab7368add6 startup bitmap-space-middle-uniform-mutual",
+  {
+    "CaseId": "bitmap-space-middle-uniform-mutual",
+    "InputCaseId": "bitmap-space-middle-uniform-mutual",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Machine": "Fixed",
+    "Report": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\final-startup-r38\\bitmap-space-middle-uniform-mutual.json",
+    "QueueId": "3d59c85d1def40dda44f7bab7368add6",
+    "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\3d59c85d1def40dda44f7bab7368add6"
+  },
+  "QUEUED cc47970b825d4c95a793d1e65e13a578 startup character-space-middle-clustered",
+  {
+    "CaseId": "character-space-middle-clustered",
+    "InputCaseId": "character-space-middle-clustered",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Machine": "Fixed",
+    "Report": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\final-startup-r38\\character-space-middle-clustered.json",
+    "QueueId": "cc47970b825d4c95a793d1e65e13a578",
+    "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\cc47970b825d4c95a793d1e65e13a578"
+  },
+  "QUEUED 4639b7986719458a92c35e45145b107f startup complete-middle-uniform",
+  {
+    "CaseId": "complete-middle-uniform",
+    "InputCaseId": "complete-middle-uniform",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Machine": "Fixed",
+    "Report": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\final-startup-r38\\complete-middle-uniform.json",
+    "QueueId": "4639b7986719458a92c35e45145b107f",
+    "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\4639b7986719458a92c35e45145b107f"
+  },
+  "QUEUED b65b6e4500dd41f78ba763bc8f6e71ee startup updates-middle-uniform",
+  {
+    "CaseId": "updates-middle-uniform",
+    "InputCaseId": "updates-middle-uniform",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Machine": "Fixed",
+    "Report": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\final-startup-r38\\updates-middle-uniform.json",
+    "QueueId": "b65b6e4500dd41f78ba763bc8f6e71ee",
+    "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\b65b6e4500dd41f78ba763bc8f6e71ee"
+  },
+  "QUEUED 834ae1da43b844279b4a2236348258ff startup threads-middle-uniform-parallel",
+  {
+    "CaseId": "threads-middle-uniform-parallel",
+    "InputCaseId": "threads-middle-uniform-parallel",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Machine": "Fixed",
+    "Report": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\final-startup-r38\\threads-middle-uniform-parallel.json",
+    "QueueId": "834ae1da43b844279b4a2236348258ff",
+    "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\834ae1da43b844279b4a2236348258ff"
+  },
+  "QUEUED 3d1b92afb1f4432ebe7ac12901162b10 startup consume-middle-uniform",
+  {
+    "CaseId": "consume-middle-uniform",
+    "InputCaseId": "consume-middle-uniform",
+    "SourceCommit": "51c8ce75949cf16d7190e14028c655f526d5697b",
+    "Backend": "NativeAOT",
+    "Machine": "Fixed",
+    "Report": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\ecs-relations\\measurements\\final-startup-r38\\consume-middle-uniform.json",
+    "QueueId": "3d1b92afb1f4432ebe7ac12901162b10",
+    "QueueDirectory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\artifacts\\benchmark-queue\\3d1b92afb1f4432ebe7ac12901162b10"
+  }
+]

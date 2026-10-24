@@ -204,7 +204,7 @@ public sealed class RenderExtractionSystems : IDisposable
         {
             var state = (Systems: this, Source: mainWorld);
             mainWorld.ExecuteReadSnapshot(_sourceQueryHandle, _lastSystemVersion, ref state,
-                static (QueryCursor query, ref (RenderExtractionSystems Systems, World Source) state) =>
+                static (scoped QueryCursor query, ref (RenderExtractionSystems Systems, World Source) state) =>
                 {
                     RenderExtractionSystems systems = state.Systems;
                     systems._candidateSourceChanges = systems._sourceChanges!.Read();
@@ -316,7 +316,7 @@ public sealed class RenderExtractionSystems : IDisposable
             "A RenderWorld is bound to one authoritative main World for its lifetime.");
     }
 
-    private void Collect(QueryCursor cursor)
+    private void Collect(scoped QueryCursor cursor)
     {
         foreach (QueryChunkView chunk in cursor.ChangedChunks(_candidateSourceChanges!))
         {
@@ -326,7 +326,7 @@ public sealed class RenderExtractionSystems : IDisposable
         }
     }
 
-    private void CollectDelta(QueryCursor cursor)
+    private void CollectDelta(scoped QueryCursor cursor)
     {
         foreach (QueryChunkView chunk in cursor.Chunks)
         {
@@ -622,11 +622,11 @@ public sealed class RenderExtractionContext : IDisposable
         _world.ExecuteQuery(
             _renderSources,
             ref state,
-            static (QueryCursor cursor, ref RenderExtractionContext context) =>
+            static (scoped QueryCursor cursor, ref RenderExtractionContext context) =>
                 context.CollectMirrors(cursor));
     }
 
-    private void CollectMirrors(QueryCursor cursor)
+    private void CollectMirrors(scoped QueryCursor cursor)
     {
         foreach (QueryChunkView chunk in cursor.Chunks)
         {
@@ -697,10 +697,10 @@ public sealed class RenderExtractionContext : IDisposable
         if (!HasTransformChanges) return;
         RenderExtractionContext state = this;
         _world.ExecuteQuery(_transformWrites, ref state,
-            static (QueryCursor query, ref RenderExtractionContext context) => context.ApplyTransformValues(query));
+            static (scoped QueryCursor query, ref RenderExtractionContext context) => context.ApplyTransformValues(query));
     }
 
-    private void ApplyTransformValues(QueryCursor query)
+    private void ApplyTransformValues(scoped QueryCursor query)
     {
         // Dense motion is cheaper to read and write by column. Sparse edits keep
         // the entity lookup path so their cost does not scale with the whole world.
@@ -756,7 +756,7 @@ public sealed class RenderExtractionContext : IDisposable
         }
     }
 
-    private void ApplyTransformColumns(QueryCursor query)
+    private void ApplyTransformColumns(scoped QueryCursor query)
     {
         _transformUpdates.Clear();
         _transformChunks.Clear();

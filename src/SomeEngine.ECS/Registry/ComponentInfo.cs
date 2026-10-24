@@ -12,7 +12,7 @@ internal struct ComponentInfo
     public int Size;
     public StoragePath Storage;
     public bool ContainsReferences;
-    internal bool IsJobAliasFree;
+    internal unsafe bool IsJobAliasFree => Operations.GetJobAliasFree();
     internal IHierarchyComponentRegistration? HierarchyRegistration;
     internal ComponentOperations Operations;
 

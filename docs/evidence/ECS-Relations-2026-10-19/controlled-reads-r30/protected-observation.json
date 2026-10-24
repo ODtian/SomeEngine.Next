@@ -1,0 +1,11 @@
+{
+  "ObservationKind": "Final analysis watcher registration: read the preparation submission manifest",
+  "ObservationStartedAtUtc": "2026-10-19T06:38:51.7489907Z",
+  "ObservationFinishedAtUtc": "2026-10-19T06:38:51.7625824Z",
+  "PreparationQueueId": "5901928d83b14710a37990b4b882bbcf",
+  "FinalQueueId": "2ab8810d771248d9a76896079fc5a989",
+  "CaseCount": 6,
+  "WatcherSession": 49686,
+  "WatcherCondition": "Final analysis result.json Created/Changed, or existing result.json at registration",
+  "FinalEventAtUtc": "2026-10-19T06:41:35.2293072Z"
+}

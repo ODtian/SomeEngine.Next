@@ -1,0 +1,50 @@
+[
+  {
+    "Queue": {
+      "Id": "2582aa33cc7246a6910f63891a25e90f",
+      "Executable": "pwsh",
+      "Arguments": [
+        "-NoProfile",
+        "-File",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/Audit-MeasurementQueue.ps1",
+        "-Series",
+        "controlled-r24",
+        "-PreparationQueueId",
+        "3a65f3e37e714ecaa536c8a0d0b7f79d"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Cpu",
+      "SubmittedAtUtc": "2026-10-19T12:07:34.6122292+08:00",
+      "StartedAtUtc": "2026-10-19T12:07:34.7023389+08:00",
+      "FinishedAtUtc": "2026-10-19T12:07:36.049789+08:00"
+    },
+    "Stdout": "{\r\n  \"Series\": \"controlled-r24\",\r\n  \"SourceCommit\": \"7acdf434f01f10277893af75aaee7a97bae9e81f\",\r\n  \"Backend\": \"NativeAOT\",\r\n  \"CaseCount\": 27,\r\n  \"SessionIds\": [\r\n    \"01a15090-f5bd-7a12-860a-e214325db5bb\"\r\n  ],\r\n  \"PreparationExitCode\": 0,\r\n  \"CaseExitCodes\": [\r\n    0\r\n  ],\r\n  \"AnalysisExitCodes\": [\r\n    0\r\n  ],\r\n  \"LastCaseSubmittedAtUtc\": \"2026-10-19T12:04:28.783859+08:00\",\r\n  \"FirstCaseStartedAtUtc\": \"2026-10-19T12:04:30.2811123+08:00\",\r\n  \"PreparationFinishedAtUtc\": \"2026-10-19T12:04:30.2803093+08:00\",\r\n  \"LastCaseFinishedAtUtc\": \"2026-10-19T12:07:13.0463741+08:00\",\r\n  \"FirstAnalysisStartedAtUtc\": \"2026-10-19T12:07:13.047288+08:00\",\r\n  \"AllCasesSubmittedBeforeExecution\": true,\r\n  \"PreparationFinishedBeforeExecution\": true,\r\n  \"AnalysisStartedAfterExecution\": true,\r\n  \"MeasurementSeconds\": 162.7652618\r\n}\r\n",
+    "Stderr": ""
+  },
+  {
+    "Queue": {
+      "Id": "cd27140bdf05457682478c9f3e6b3a97",
+      "Executable": "dotnet",
+      "Arguments": [
+        "build",
+        "benchmarks/SomeEngine.ECS.Relations.Benchmarks/SomeEngine.ECS.Relations.Benchmarks.csproj",
+        "-c",
+        "Release",
+        "-r",
+        "win-x64",
+        "--no-restore"
+      ],
+      "Directory": "F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next",
+      "ExitCode": 0,
+      "SessionId": "01a15090-f5bd-7a12-860a-e214325db5bb",
+      "Kind": "Exclusive",
+      "SubmittedAtUtc": "2026-10-19T12:10:54.8046595+08:00",
+      "StartedAtUtc": "2026-10-19T12:10:54.8949963+08:00",
+      "FinishedAtUtc": "2026-10-19T12:11:00.7370643+08:00"
+    },
+    "Stdout": "  SomeEngine.Diagnostics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Diagnostics\\bin\\Release\\net10.0\\SomeEngine.Diagnostics.dll\r\n  SomeEngine.Job.Contracts -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job.Contracts\\bin\\Release\\net10.0\\SomeEngine.Job.Contracts.dll\r\n  SomeEngine.ECS.SourceGen -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.SourceGen\\bin\\Release\\netstandard2.0\\SomeEngine.ECS.SourceGen.dll\r\n  SomeEngine.Job -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Job\\bin\\Release\\net10.0\\SomeEngine.Job.dll\r\n  SomeEngine.ECS -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS\\bin\\Release\\net10.0\\SomeEngine.ECS.dll\r\n  SomeEngine.ECS.Relations -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Relations\\bin\\Release\\net10.0\\SomeEngine.ECS.Relations.dll\r\n  SomeEngine.ECS.Systems -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.ECS.Systems\\bin\\Release\\net10.0\\SomeEngine.ECS.Systems.dll\r\n  SomeEngine.Physics -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\src\\SomeEngine.Physics\\bin\\Release\\net10.0\\SomeEngine.Physics.dll\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\MeasurementProcessors.cs(19,36): warning CA1416: 可在所有平台上访问此调用站点。\"Process.ProcessorAffinity\" 在 'linux', 'windows' 上受支持。 (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\SomeEngine.ECS.Relations.Benchmarks.csproj]\r\n  SomeEngine.ECS.Relations.Benchmarks -> F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\bin\\Release\\net10.0\\win-x64\\SomeEngine.ECS.Relations.Benchmarks.dll\r\n\r\n已成功生成。\r\n\r\nF:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\MeasurementProcessors.cs(19,36): warning CA1416: 可在所有平台上访问此调用站点。\"Process.ProcessorAffinity\" 在 'linux', 'windows' 上受支持。 (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\SomeEngine.ECS.Relations.Benchmarks.csproj]\r\n    1 个警告\r\n    0 个错误\r\n\r\n已用时间 00:00:05.29\r\n",
+    "Stderr": ""
+  }
+]

@@ -1,6 +1,7 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Registry;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Queries;
 
@@ -9,7 +10,6 @@ public sealed class QueryDefinition
     private readonly QueryTerm[] _terms;
     private readonly QueryAccessEntry[] _accesses;
     private readonly WorldJobStorageAccess[] _jobStorageAccesses;
-    private readonly WorldJobStorageAccess[] _membershipStorageAccesses;
     private readonly QueryDataAccess[] _dataAccesses;
 
     private QueryDefinition(QueryTerm[] ownedTerms)
@@ -44,14 +44,6 @@ public sealed class QueryDefinition
                     access.Access.CanWrite() ? WorldStorageAccess.Write : WorldStorageAccess.Read));
         }
         _jobStorageAccesses = jobStorage.ToArray();
-        var membershipStorage = new List<WorldJobStorageAccess>();
-        foreach (QueryDataAccess access in _dataAccesses)
-        {
-            if ((access.Filters & (QueryTermFilter.Enabled | QueryTermFilter.Disabled)) != 0)
-                membershipStorage.Add(new WorldJobStorageAccess(
-                    access.Storage, access.ComponentId, WorldStorageAccess.Read));
-        }
-        _membershipStorageAccesses = membershipStorage.ToArray();
     }
 
     public static QueryDefinition Empty { get; } = new(Array.Empty<QueryTerm>());
@@ -61,6 +53,25 @@ public sealed class QueryDefinition
     public ReadOnlySpan<QueryAccessEntry> Accesses => _accesses;
 
     public QueryKey Key { get; }
+
+    /// <summary>Reports whether All or the sole Any term requires this component for every member.</summary>
+    public bool Requires<T>() where T : struct
+    {
+        int componentId = ComponentMetadata<T>.Id;
+        int anyCount = 0;
+        bool matchingAny = false;
+        foreach (QueryTerm term in _terms)
+        {
+            if (term.Kind == QueryTermKind.All && term.ComponentId == componentId)
+                return true;
+            if (term.Kind == QueryTermKind.Any)
+            {
+                anyCount++;
+                matchingAny |= term.ComponentId == componentId;
+            }
+        }
+        return matchingAny && anyCount == 1;
+    }
 
     /// <summary>Creates the optional storage-access union of both definitions.</summary>
     public QueryDefinition WithAccessFrom(QueryDefinition definition)
@@ -84,10 +95,24 @@ public sealed class QueryDefinition
     }
 
     /// <summary>Adds component read access while retaining this query's membership conditions.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public QueryDefinition WithOptionalRead<T>() where T : struct
+    {
+        int componentId = ComponentMetadata<T>.Id;
+        foreach (QueryDataAccess access in _dataAccesses)
+            if (access.ComponentId == componentId && access.Access.CanRead())
+                return this;
+        return AddOptionalRead<T>();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private QueryDefinition AddOptionalRead<T>() where T : struct
     {
         QueryableTypeInfo info = QueryableTypeInfo.For<T>();
         info.Validate(QueryTermKind.Optional, QueryAccess.Read, QueryTermFilter.None);
+        foreach (QueryTerm term in _terms)
+            if (term.ComponentId == info.ComponentId && term.Kind == QueryTermKind.None)
+                return this;
         QueryTerm[] terms = (QueryTerm[])_terms.Clone();
         bool found = false;
         for (int i = 0; i < terms.Length; i++)
@@ -111,14 +136,11 @@ public sealed class QueryDefinition
     internal ReadOnlyMemory<WorldJobStorageAccess> JobStorageAccesses =>
         _jobStorageAccesses;
 
-    internal ReadOnlyMemory<WorldJobStorageAccess> MembershipStorageAccesses =>
-        _membershipStorageAccesses;
-
     internal ReadOnlySpan<QueryDataAccess> DataAccesses => _dataAccesses;
 
     internal bool HasRelationshipWrite { get; }
 
-    internal bool CanWrite { get; }
+    public bool CanWrite { get; }
 
     /// <summary>
     /// Normalizes query terms once for every construction path. Keeping merge, conflict, and

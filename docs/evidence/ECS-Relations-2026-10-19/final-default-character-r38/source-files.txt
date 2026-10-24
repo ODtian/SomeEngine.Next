@@ -1,0 +1,620 @@
+FILE src/SomeEngine.ECS.Relations/ComponentPairsWithin.cs
+   1: using SomeEngine.ECS.Entities;
+   2: using SomeEngine.ECS.Queries;
+   3: using System.Runtime.CompilerServices;
+   4:
+   5: namespace SomeEngine.ECS.Relations;
+   6:
+   7: /// <summary>Within-query pairing that binds its existing component rows before emitting identities.</summary>
+   8: public readonly struct ComponentPairsWithin<TRelation, TFirst, TSecond, TSelection>(
+   9:     EntityPairsWithin source, TRelation relation) : IQueryRelationEnumerable<(Entity, Entity)>
+  10:     where TRelation : struct, IRelation<TFirst, TSecond>
+  11:     where TFirst : struct
+  12:     where TSecond : struct
+  13:     where TSelection : struct, IRelationSelection
+  14: {
+  15:     private readonly bool _componentsRequired = ReadComponentRequirements(source);
+  16:
+  17:     public World World => source.World;
+  18:     public int QueryCount => 1;
+  19:     public static bool ReadsFromSingleQuery => true;
+  20:     public QueryHandle GetQuery(int position) => source.GetQuery(position);
+  21:     public QueryDefinition AddReads(QueryDefinition definition, int position)
+  22:     {
+  23:         QueryDefinition reads = definition.WithOptionalRead<TFirst>();
+  24:         return typeof(TFirst) == typeof(TSecond) ? reads : reads.WithOptionalRead<TSecond>();
+  25:     }
+  26:
+  27:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  28:     public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+  29:         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+  30:     {
+  31:         QueryCursor members = queries.First;
+  32:         return _componentsRequired ? Enumerate<RequiredRelationComponents, TOutput>(members, relation, ref output)
+  33:             : Enumerate<OptionalRelationComponents, TOutput>(members, relation, ref output);
+  34:     }
+  35:
+  36:     private static bool ReadComponentRequirements(EntityPairsWithin source)
+  37:     {
+  38:         QueryDefinition definition = source.World.GetQueryDefinition(source.GetQuery(0));
+  39:         return definition.Requires<TFirst>() &&
+  40:             (typeof(TFirst) == typeof(TSecond) || definition.Requires<TSecond>());
+  41:     }
+  42:
+  43:     private static bool Enumerate<TPresence, TOutput>(scoped QueryCursor members, TRelation predicate, ref TOutput output)
+  44:         where TPresence : struct, IRelationComponentPresence
+  45:         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+  46:     {
+  47:         var firstRows = members.ReadRows<TFirst, TSecond>();
+  48:         while (firstRows.MoveNext(out var first, out var firstValue, out var secondValue))
+  49:         {
+  50:             Entity firstEntity = first.Entity;
+  51:             var secondRows = firstRows;
+  52:             while (secondRows.MoveNext(out var second, out var startValue, out var lastValue))
+  53:             {
+  54:                 Entity secondEntity = default;
+  55:                 bool ascending = false;
+  56:                 ComponentReference<TFirst> relationFirst = firstValue;
+  57:                 ComponentReference<TSecond> relationSecond = lastValue;
+  58:                 if (typeof(TFirst) != typeof(TSecond) || !TRelation.IsSymmetric)
+  59:                 {
+  60:                     secondEntity = second.Entity;
+  61:                     ascending = EntityOrder.Precedes(firstEntity, secondEntity);
+  62:                     relationFirst = ascending ? firstValue : startValue;
+  63:                     relationSecond = ascending ? lastValue : secondValue;
+  64:                 }
+  65:                 if (TSelection.RequiresMatch)
+  66:                 {
+  67:                     if (!TPresence.IsRequired && (!relationFirst.HasValue || !relationSecond.HasValue))
+  68:                         continue;
+  69:                     if (!predicate.Matches(in relationFirst.Value, in relationSecond.Value))
+  70:                         continue;
+  71:                 }
+  72:                 else if ((TPresence.IsRequired || (relationFirst.HasValue && relationSecond.HasValue)) &&
+  73:                     predicate.Matches(in relationFirst.Value, in relationSecond.Value))
+  74:                     continue;
+  75:                 if (typeof(TFirst) == typeof(TSecond) && TRelation.IsSymmetric)
+  76:                 {
+  77:                     secondEntity = second.Entity;
+  78:                     ascending = EntityOrder.Precedes(firstEntity, secondEntity);
+  79:                 }
+  80:                 var pair = ascending ? (firstEntity, secondEntity) : (secondEntity, firstEntity);
+  81:                 bool continued = TOutput.ReadsComponentRows
+  82:                     ? ascending ? output.Add(in pair, first, second) : output.Add(in pair, second, first)
+  83:                     : output.Add(in pair);
+  84:                 if (!continued)
+  85:                     return false;
+  86:             }
+  87:         }
+  88:         return true;
+  89:     }
+  90: }
+FILE src/SomeEngine.ECS.Relations/KeyPairs.cs
+   1: using SomeEngine.ECS.Components;
+   2: using SomeEngine.ECS.Entities;
+   3: using SomeEngine.ECS.Queries;
+   4: using System.Runtime.CompilerServices;
+   5:
+   6: namespace SomeEngine.ECS.Relations;
+   7:
+   8: public readonly struct KeyPairs<TPairing, TRelation, TImplementation, TComponent, TKey>
+   9:     : IQueryRelationEnumerable<(Entity, Entity)>
+  10:     where TPairing : struct, IKeyPairing
+  11:     where TRelation : struct, IRelation<TComponent, TComponent>
+  12:     where TImplementation : struct, IKeyRelation<TRelation, TComponent, TKey>
+  13:     where TComponent : struct, IIndexedComponent<TKey>
+  14:     where TKey : notnull, IEquatable<TKey>
+  15: {
+  16:     private readonly QueryHandle _first;
+  17:     private readonly QueryHandle _second;
+  18:     private readonly TRelation _relation;
+  19:     private readonly TImplementation _implementation;
+  20:     private readonly bool _exclude;
+  21:
+  22:     public KeyPairs(World world, QueryHandle first, QueryHandle second, TRelation relation,
+  23:         TImplementation implementation, bool exclude)
+  24:     {
+  25:         World = world;
+  26:         _first = first;
+  27:         _second = second;
+  28:         _relation = relation;
+  29:         _implementation = implementation;
+  30:         _exclude = exclude;
+  31:     }
+  32:
+  33:     public World World { get; }
+  34:
+  35:     public int QueryCount => TPairing.QueryCount;
+  36:
+  37:     public static bool ReadsFromSingleQuery => TPairing.ReadsFromSingleQuery;
+  38:
+  39:     public QueryHandle GetQuery(int position) => position == 0 ? _first : _second;
+  40:
+  41:     public QueryDefinition AddReads(QueryDefinition definition, int position) => definition.WithOptionalRead<TComponent>();
+  42:
+  43:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  44:     public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+  45:         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+  46:     {
+  47:         QueryCursor first = queries.First;
+  48:         if (TPairing.QueryCount == 1 && TPairing.ReadsFromSingleQuery)
+  49:             return Enumerate(World, _exclude, in _relation, in _implementation, first, first, first, ref output);
+  50:         QueryCursor second = queries.Second;
+  51:         QueryCursor access = queries.Access;
+  52:         return Enumerate(World, _exclude, in _relation, in _implementation, first, second, access, ref output);
+  53:     }
+  54:
+  55:     private static bool Enumerate<TOutput>(World world, bool exclude, scoped in TRelation relation,
+  56:         scoped in TImplementation implementation, scoped QueryCursor first, scoped QueryCursor second,
+  57:         scoped QueryCursor access, ref TOutput output)
+  58:         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
+  59:     {
+  60:         var firstGroups = TPairing.ReadsFromSingleQuery ? new KeyGroups<TComponent, TKey>(world, in first)
+  61:             : new KeyGroups<TComponent, TKey>(world, in first, in access);
+  62:         var secondGroups = TPairing.QueryCount == 1 ? firstGroups : new KeyGroups<TComponent, TKey>(world, in second, in access);
+  63:         var firstValues = firstGroups.GetEnumerator();
+  64:         while (firstValues.MoveNext(out var firstGroup))
+  65:         {
+  66:             var secondValues = secondGroups.GetEnumerator();
+  67:             while (secondValues.MoveNext(out var secondGroup))
+  68:             {
+  69:                 bool hasKeys = firstGroup.HasKey && secondGroup.HasKey;
+  70:                 bool forwardMatch = hasKeys && implementation.Matches(in relation, in firstGroup.Key, in secondGroup.Key);
+  71:                 bool reverseMatch = TPairing.ReordersPairs
+  72:                     ? hasKeys && implementation.Matches(in relation, in secondGroup.Key, in firstGroup.Key)
+  73:                     : forwardMatch;
+  74:                 bool forwardAccepted = forwardMatch != exclude;
+  75:                 bool reverseAccepted = reverseMatch != exclude;
+  76:                 if (!forwardAccepted && !reverseAccepted)
+  77:                     continue;
+  78:                 foreach (Entity firstEntity in firstGroup.Entities)
+  79:                 {
+  80:                     scoped QueryRow firstRow = default;
+  81:                     bool firstMember = TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows
+  82:                         ? first.TryGetRow(firstEntity, out firstRow)
+  83:                         : first.Contains(firstEntity);
+  84:                     if (!firstMember)
+  85:                         continue;
+  86:                     foreach (Entity secondEntity in secondGroup.Entities)
+  87:                     {
+  88:                         if (!TPairing.TryPair(in first, in second, firstEntity, secondEntity, out var pair))
+  89:                             continue;
+  90:                         scoped QueryRow secondRow = default;
+  91:                         bool secondMember;
+  92:                         if (TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows)
+  93:                             secondMember = first.TryGetRow(secondEntity, out secondRow);
+  94:                         else
+  95:                             secondMember = TPairing.QueryCount == 1
+  96:                                 ? first.Contains(secondEntity) : second.Contains(secondEntity);
+  97:                         if (!secondMember)
+  98:                             continue;
+  99:                         bool accepted = TPairing.ReordersPairs && pair.Item1 != firstEntity
+ 100:                             ? reverseAccepted : forwardAccepted;
+ 101:                         if (!accepted)
+ 102:                             continue;
+ 103:                         bool continued = TPairing.ReadsFromSingleQuery && TOutput.ReadsComponentRows
+ 104:                             ? output.Add(in pair, firstRow, secondRow) : output.Add(in pair);
+ 105:                         if (!continued)
+ 106:                             return false;
+ 107:                     }
+ 108:                 }
+ 109:             }
+ 110:         }
+ 111:         return true;
+ 112:     }
+ 113: }
+FILE src/SomeEngine.ECS.Relations/KeyGroups.cs
+   1: using System.Runtime.InteropServices;
+   2: using System.Runtime.CompilerServices;
+   3: using SomeEngine.ECS.Components;
+   4: using SomeEngine.ECS.Entities;
+   5: using SomeEngine.ECS.Queries;
+   6:
+   7: namespace SomeEngine.ECS.Relations;
+   8:
+   9: internal readonly ref struct KeyGroups<TComponent, TKey>
+  10:     where TComponent : struct, IIndexedComponent<TKey>
+  11:     where TKey : notnull, IEquatable<TKey>
+  12: {
+  13:     private readonly World _world;
+  14:     private readonly HashSet<TKey> _keys;
+  15:     private readonly List<Entity> _missing;
+  16:
+  17:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  18:     public KeyGroups(World world, scoped in QueryCursor members)
+  19:     {
+  20:         _world = world;
+  21:         _keys = new HashSet<TKey>();
+  22:         _missing = new List<Entity>();
+  23:         CollectKeys(in members, _keys, _missing);
+  24:     }
+  25:
+  26:     [MethodImpl(MethodImplOptions.NoInlining)]
+  27:     private static void CollectKeys(scoped in QueryCursor members, HashSet<TKey> keys, List<Entity> missing)
+  28:     {
+  29:         foreach (var member in members.Rows)
+  30:         {
+  31:             if (member.Has<TComponent>())
+  32:                 keys.Add(member.ReadRef<TComponent>().GetKey());
+  33:             else
+  34:                 missing.Add(member.Entity);
+  35:         }
+  36:     }
+  37:
+  38:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  39:     public KeyGroups(World world, scoped in QueryCursor members, scoped in QueryCursor access)
+  40:     {
+  41:         _world = world;
+  42:         _keys = new HashSet<TKey>();
+  43:         _missing = new List<Entity>();
+  44:         CollectKeys(in members, in access, _keys, _missing);
+  45:     }
+  46:
+  47:     [MethodImpl(MethodImplOptions.NoInlining)]
+  48:     private static void CollectKeys(scoped in QueryCursor members, scoped in QueryCursor access,
+  49:         HashSet<TKey> keys, List<Entity> missing)
+  50:     {
+  51:         foreach (var member in members.Rows)
+  52:         {
+  53:             if (access.TryGetRow(member.Entity, out var row) && row.Has<TComponent>())
+  54:                 keys.Add(row.ReadRef<TComponent>().GetKey());
+  55:             else
+  56:                 missing.Add(member.Entity);
+  57:         }
+  58:     }
+  59:
+  60:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  61:     public Enumerator GetEnumerator() => new(_world, _keys.GetEnumerator(), CollectionsMarshal.AsSpan(_missing));
+  62:
+  63:     public ref struct Enumerator
+  64:     {
+  65:         private readonly World _world;
+  66:         private HashSet<TKey>.Enumerator _keys;
+  67:         private ReadOnlySpan<Entity> _missing;
+  68:
+  69:         public Enumerator(World world, HashSet<TKey>.Enumerator keys, ReadOnlySpan<Entity> missing)
+  70:         {
+  71:             _world = world;
+  72:             _keys = keys;
+  73:             _missing = missing;
+  74:         }
+  75:
+  76:         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  77:         public bool MoveNext(out KeyGroup<TKey> group)
+  78:         {
+  79:             if (_keys.MoveNext())
+  80:             {
+  81:                 TKey key = _keys.Current;
+  82:                 group = new KeyGroup<TKey>(key, _world.GetByIndex<TComponent, TKey>(key));
+  83:                 return true;
+  84:             }
+  85:             if (_missing.IsEmpty)
+  86:             {
+  87:                 group = default;
+  88:                 return false;
+  89:             }
+  90:             group = new KeyGroup<TKey>(_missing);
+  91:             _missing = default;
+  92:             return true;
+  93:         }
+  94:     }
+  95: }
+  96:
+  97: internal readonly ref struct KeyGroup<TKey>
+  98: {
+  99:     public KeyGroup(TKey key, ReadOnlySpan<Entity> entities)
+ 100:     {
+ 101:         Key = key;
+ 102:         Entities = entities;
+ 103:         HasKey = true;
+ 104:     }
+ 105:
+ 106:     public KeyGroup(ReadOnlySpan<Entity> entities)
+ 107:     {
+ 108:         Key = default!;
+ 109:         Entities = entities;
+ 110:         HasKey = false;
+ 111:     }
+ 112:
+ 113:     public readonly TKey Key;
+ 114:     public ReadOnlySpan<Entity> Entities { get; }
+ 115:     public bool HasKey { get; }
+ 116: }
+FILE src/SomeEngine.ECS.Relations/IQueryRelationOutput.cs
+   1: using SomeEngine.ECS.Queries;
+   2: using System.Runtime.CompilerServices;
+   3:
+   4: namespace SomeEngine.ECS.Relations;
+   5:
+   6: /// <summary>Callback-scoped pair rows forwarded between ECS bindings before emitting public identities.</summary>
+   7: public interface IQueryRelationOutput<TRow> : IRelationOutput<TRow>
+   8: {
+   9:     static virtual bool ReadsComponentRows => true;
+  10:
+  11:     bool Add(in TRow row, scoped QueryRow first, scoped QueryRow second);
+  12: }
+  13:
+  14: /// <summary>A component binding that can reuse the pair rows supplied by a query source.</summary>
+  15: public interface IQueryRelation<TRow> : IRelation<TRow>
+  16: {
+  17:     bool Matches(in TRow row, scoped QueryRow first, scoped QueryRow second);
+  18: }
+  19:
+  20: internal ref struct QueryIdentityOutput<TOutput, TRow>(ref TOutput output) : IQueryRelationOutput<TRow>
+  21:     where TOutput : struct, IRelationOutput<TRow>, allows ref struct
+  22: {
+  23:     public static bool ReadsComponentRows => false;
+  24:
+  25:     private readonly RelationOutputReference<TOutput> _output = new(ref output);
+  26:
+  27:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  28:     public bool Add(in TRow row) => _output.Value.Add(in row);
+  29:
+  30:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  31:     public bool Add(in TRow row, scoped QueryRow first, scoped QueryRow second) => _output.Value.Add(in row);
+  32: }
+FILE src/SomeEngine.ECS.Relations/RelationOutputReference.cs
+   1: using System.Runtime.CompilerServices;
+   2:
+   3: namespace SomeEngine.ECS.Relations;
+   4:
+   5: /// <summary>Shares the caller's output storage through synchronous relation callbacks.</summary>
+   6: internal readonly ref struct RelationOutputReference<TOutput>
+   7:     where TOutput : allows ref struct
+   8: {
+   9:     private readonly ref byte _value;
+  10:
+  11:     internal RelationOutputReference(ref TOutput output) =>
+  12:         _value = ref Unsafe.As<TOutput, byte>(ref output);
+  13:
+  14:     // The byte reference preserves the original managed address and is restored to the same type.
+  15:     internal ref TOutput Value => ref Unsafe.As<byte, TOutput>(ref _value);
+  16: }
+FILE src/SomeEngine.ECS.Relations/IKeyPairing.cs
+   1: using SomeEngine.ECS.Entities;
+   2: using SomeEngine.ECS.Queries;
+   3: using System.Runtime.CompilerServices;
+   4:
+   5: namespace SomeEngine.ECS.Relations;
+   6:
+   7: /// <summary>Defines the entity identities and input positions emitted from key groups.</summary>
+   8: public interface IKeyPairing
+   9: {
+  10:     static abstract int QueryCount { get; }
+  11:
+  12:     static abstract bool ReordersPairs { get; }
+  13:
+  14:     static virtual bool ReadsFromSingleQuery => false;
+  15:
+  16:     static abstract bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+  17:         Entity first, Entity second, out (Entity, Entity) pair);
+  18: }
+  19:
+  20: public readonly struct KeyPairsWithin : IKeyPairing
+  21: {
+  22:     public static int QueryCount => 1;
+  23:
+  24:     public static bool ReordersPairs => false;
+  25:
+  26:     public static bool ReadsFromSingleQuery => true;
+  27:
+  28:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  29:     public static bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+  30:         Entity first, Entity second, out (Entity, Entity) pair)
+  31:     {
+  32:         pair = (first, second);
+  33:         return EntityOrder.Precedes(first, second);
+  34:     }
+  35: }
+  36:
+  37: public readonly struct KeyProduct2 : IKeyPairing
+  38: {
+  39:     public static int QueryCount => 2;
+  40:
+  41:     public static bool ReordersPairs => false;
+  42:
+  43:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  44:     public static bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+  45:         Entity first, Entity second, out (Entity, Entity) pair)
+  46:     {
+  47:         pair = (first, second);
+  48:         return true;
+  49:     }
+  50: }
+  51:
+  52: public readonly struct KeyPairsBetween : IKeyPairing
+  53: {
+  54:     public static int QueryCount => 2;
+  55:
+  56:     public static bool ReordersPairs => true;
+  57:
+  58:     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  59:     public static bool TryPair(scoped in QueryCursor firstMembers, scoped in QueryCursor secondMembers,
+  60:         Entity first, Entity second, out (Entity, Entity) pair)
+  61:     {
+  62:         int order = EntityOrder.Compare(first, second);
+  63:         pair = order < 0 ? (first, second) : (second, first);
+  64:         return order != 0 && (order < 0 || !firstMembers.Contains(second) ||
+  65:             !secondMembers.Contains(first));
+  66:     }
+  67: }
+FILE benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenDefaultPairs.cs
+   1: using SomeEngine.ECS.Entities;
+   2: using SomeEngine.ECS.Queries;
+   3: using SomeEngine.ECS.Relations;
+   4:
+   5: namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
+   6:
+   7: /// <summary>Remaining-row pair combinations with the default motion rule written directly.</summary>
+   8: public static class HandwrittenDefaultPairs
+   9: {
+  10:     public static bool Enumerate<TOutput>(World world, QueryHandle bodies, ref TOutput output)
+  11:         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+  12:     {
+  13:         QueryDefinition original = world.GetQueryDefinition(bodies);
+  14:         QueryDefinition definition = original.WithOptionalRead<Body>();
+  15:         bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+  16:         QueryHandle members = temporaryQuery ? world.Query(definition) : bodies;
+  17:         var execution = new PairExecution<TOutput>(output);
+  18:         try
+  19:         {
+  20:             world.ExecuteQuery(members, ref execution);
+  21:             return execution.Completed;
+  22:         }
+  23:         finally
+  24:         {
+  25:             output = execution.Output;
+  26:             if (temporaryQuery)
+  27:                 world.ReleaseQuery(members);
+  28:         }
+  29:     }
+  30:
+  31:     private ref struct PairExecution<TOutput>(TOutput output) : IQueryExecution
+  32:         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+  33:     {
+  34:         public TOutput Output = output;
+  35:         public bool Completed;
+  36:
+  37:         public void Execute(scoped QueryCursor members)
+  38:         {
+  39:             var firstRows = members.ReadRows<Body, Body>();
+  40:             while (firstRows.MoveNext(out var first, out var firstBody, out _))
+  41:             {
+  42:                 Entity firstEntity = first.Entity;
+  43:                 var secondRows = firstRows;
+  44:                 while (secondRows.MoveNext(out var second, out var secondBody, out _))
+  45:                 {
+  46:                     if (firstBody.Value.Kind != MotionKind.Dynamic && secondBody.Value.Kind != MotionKind.Dynamic)
+  47:                         continue;
+  48:                     var pair = EntityOrder.OrderPair(firstEntity, second.Entity);
+  49:                     if (!Output.Add(in pair))
+  50:                     {
+  51:                         Completed = false;
+  52:                         return;
+  53:                     }
+  54:                 }
+  55:             }
+  56:             Completed = true;
+  57:         }
+  58:     }
+  59: }
+FILE benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenKeyPairs.cs
+   1: using System.Runtime.InteropServices;
+   2: using SomeEngine.ECS.Components;
+   3: using SomeEngine.ECS.Entities;
+   4: using SomeEngine.ECS.Queries;
+   5: using SomeEngine.ECS.Relations;
+   6:
+   7: namespace SomeEngine.ECS.Benchmarks.Relations;
+   8:
+   9: /// <summary>Handwritten within-query pairing over the existing component-key buckets.</summary>
+  10: public static class HandwrittenKeyPairs<TComponent, TKey>
+  11:     where TComponent : struct, IIndexedComponent<TKey>
+  12:     where TKey : notnull, IEquatable<TKey>
+  13: {
+  14:     public static bool Where<TOutput>(World world, QueryHandle members, ref TOutput output)
+  15:         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+  16:         => Enumerate(world, members, false, ref output);
+  17:
+  18:     public static bool Except<TOutput>(World world, QueryHandle members, ref TOutput output)
+  19:         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+  20:         => Enumerate(world, members, true, ref output);
+  21:
+  22:     private static bool Enumerate<TOutput>(World world, QueryHandle members, bool exclude, ref TOutput output)
+  23:         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+  24:     {
+  25:         QueryDefinition original = world.GetQueryDefinition(members);
+  26:         QueryDefinition definition = original.WithOptionalRead<TComponent>();
+  27:         bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
+  28:         QueryHandle query = temporaryQuery ? world.Query(definition) : members;
+  29:         var execution = new MemberExecution<TOutput>(world, exclude, output);
+  30:         try
+  31:         {
+  32:             world.ExecuteQuery(query, ref execution);
+  33:             return execution.Completed;
+  34:         }
+  35:         finally
+  36:         {
+  37:             output = execution.Output;
+  38:             if (temporaryQuery)
+  39:                 world.ReleaseQuery(query);
+  40:         }
+  41:     }
+  42:
+  43:     private ref struct MemberExecution<TOutput> : IQueryExecution
+  44:         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
+  45:     {
+  46:         private readonly World _world;
+  47:         private readonly bool _exclude;
+  48:
+  49:         public MemberExecution(World world, bool exclude, TOutput output)
+  50:         {
+  51:             _world = world;
+  52:             _exclude = exclude;
+  53:             Output = output;
+  54:         }
+  55:
+  56:         public TOutput Output;
+  57:         public bool Completed { get; private set; }
+  58:
+  59:         public void Execute(scoped QueryCursor members)
+  60:         {
+  61:             var keys = new HashSet<TKey>();
+  62:             var missing = new List<Entity>();
+  63:             foreach (var member in members.Rows)
+  64:             {
+  65:                 if (member.Has<TComponent>())
+  66:                     keys.Add(member.ReadRef<TComponent>().GetKey());
+  67:                 else
+  68:                     missing.Add(member.Entity);
+  69:             }
+  70:
+  71:             var firstKeys = keys.GetEnumerator();
+  72:             bool firstMissing = false;
+  73:             while (true)
+  74:             {
+  75:                 bool firstHasKey = firstKeys.MoveNext();
+  76:                 if (!firstHasKey && (firstMissing || missing.Count == 0))
+  77:                     break;
+  78:                 firstMissing = !firstHasKey;
+  79:                 TKey firstKey = firstHasKey ? firstKeys.Current : default!;
+  80:                 ReadOnlySpan<Entity> firstEntities = firstHasKey
+  81:                     ? _world.GetByIndex<TComponent, TKey>(firstKey) : CollectionsMarshal.AsSpan(missing);
+  82:                 var secondKeys = keys.GetEnumerator();
+  83:                 bool secondMissing = false;
+  84:                 while (true)
+  85:                 {
+  86:                     bool secondHasKey = secondKeys.MoveNext();
+  87:                     if (!secondHasKey && (secondMissing || missing.Count == 0))
+  88:                         break;
+  89:                     secondMissing = !secondHasKey;
+  90:                     TKey secondKey = secondHasKey ? secondKeys.Current : default!;
+  91:                     ReadOnlySpan<Entity> secondEntities = secondHasKey
+  92:                         ? _world.GetByIndex<TComponent, TKey>(secondKey) : CollectionsMarshal.AsSpan(missing);
+  93:                     bool matches = firstHasKey && secondHasKey && firstKey.Equals(secondKey);
+  94:                     if (matches == _exclude)
+  95:                         continue;
+  96:                     foreach (Entity first in firstEntities)
+  97:                     {
+  98:                         if (!members.Contains(first))
+  99:                             continue;
+ 100:                         foreach (Entity second in secondEntities)
+ 101:                         {
+ 102:                             bool ascending = first.Index < second.Index ||
+ 103:                                 first.Index == second.Index && first.Generation < second.Generation;
+ 104:                             if (!ascending || !members.Contains(second))
+ 105:                                 continue;
+ 106:                             var pair = (first, second);
+ 107:                             if (!Output.Add(in pair))
+ 108:                             {
+ 109:                                 Completed = false;
+ 110:                                 return;
+ 111:                             }
+ 112:                         }
+ 113:                     }
+ 114:                 }
+ 115:             }
+ 116:             Completed = true;
+ 117:         }
+ 118:     }
+ 119: }

@@ -1,0 +1,7 @@
+"CaseId","UsedBy","ComponentId","Kind","Access","Filters"
+"threads-small-sparse-parallel","shared","1","All","Read","None"
+"threads-small-sparse-parallel","shared","3","None","None","None"
+"threads-small-sparse-parallel","shared","2","Optional","Read","None"
+"threads-small-uniform-parallel","shared","1","All","Read","None"
+"threads-small-uniform-parallel","shared","3","None","None","None"
+"threads-small-uniform-parallel","shared","2","Optional","Read","None"

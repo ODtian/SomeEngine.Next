@@ -33,9 +33,9 @@ public sealed class RenderLightSet
 
     internal void CommitChanges() => Revision = checked(Revision + 1uL);
 
-    public void CollectDirectional(QueryCursor rows) => _directional.Append(rows);
-    public void CollectPoint(QueryCursor rows) => _points.Append(rows);
-    public void CollectSpot(QueryCursor rows) => _spots.Append(rows);
+    public void CollectDirectional(scoped QueryCursor rows) => _directional.Append(rows);
+    public void CollectPoint(scoped QueryCursor rows) => _points.Append(rows);
+    public void CollectSpot(scoped QueryCursor rows) => _spots.Append(rows);
     public void AddDirectional(in RenderDirectionalLight light) => _directional.Add(light, null);
     public void AddDirectional(in RenderDirectionalLight light, in RenderLightCookie cookie) => _directional.Add(light, cookie);
     public void AddPoint(in RenderPointLight light) => _points.Add(light, null);
@@ -48,9 +48,9 @@ public sealed class RenderLightSet
         _points.UpdateMembership(world, entity) |
         _spots.UpdateMembership(world, entity);
 
-    internal bool UpdateDirectional(QueryCursor rows) => _directional.Update(rows);
-    internal bool UpdatePoints(QueryCursor rows) => _points.Update(rows);
-    internal bool UpdateSpots(QueryCursor rows) => _spots.Update(rows);
+    internal bool UpdateDirectional(scoped QueryCursor rows) => _directional.Update(rows);
+    internal bool UpdatePoints(scoped QueryCursor rows) => _points.Update(rows);
+    internal bool UpdateSpots(scoped QueryCursor rows) => _spots.Update(rows);
 
     private sealed class LightRows<T> where T : struct, IComponent
     {
@@ -74,7 +74,7 @@ public sealed class RenderLightSet
             _entities.Add(Entity.Null);
         }
 
-        internal void Append(QueryCursor query)
+        internal void Append(scoped QueryCursor query)
         {
             foreach (QueryRow row in query.Rows)
                 Add(row.Read<T>(), row.TryRead<RenderLightCookie>(out var cookie) ? cookie : null);
@@ -100,7 +100,7 @@ public sealed class RenderLightSet
             return true;
         }
 
-        internal bool Update(QueryCursor query)
+        internal bool Update(scoped QueryCursor query)
         {
             bool changed = false;
             foreach (QueryChunkView chunk in query.Chunks)

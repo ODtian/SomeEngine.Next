@@ -1,7 +1,6 @@
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Queries;
-using SomeEngine.ECS.Entities;
 using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS;
@@ -125,8 +124,8 @@ public partial class World
         BeginQueryIteration(relationshipWrite);
         try
         {
-            execution.Execute(new QueryCursor(this, _queries.Get(query).State,
-                lastSystemVersion, currentSystemVersion));
+            var data = new QueryData(this, _queries.Get(query).State, lastSystemVersion, currentSystemVersion);
+            execution.Execute(new QueryCursor(in data));
         }
         catch (Exception bodyFault)
         {
@@ -191,11 +190,8 @@ public partial class World
         BeginQueryIteration(relationshipWrite);
         try
         {
-            execution(new QueryCursor(
-                this,
-                _queries.Get(query).State,
-                lastSystemVersion,
-                currentSystemVersion));
+            var data = new QueryData(this, _queries.Get(query).State, lastSystemVersion, currentSystemVersion);
+            execution(new QueryCursor(in data));
         }
         catch (Exception bodyFault)
         {
@@ -338,13 +334,8 @@ public partial class World
         BeginQueryIteration(relationshipWrite);
         try
         {
-            execution(
-                new QueryCursor(
-                    this,
-                    _queries.Get(query).State,
-                    lastSystemVersion,
-                    currentSystemVersion),
-                ref state);
+            var data = new QueryData(this, _queries.Get(query).State, lastSystemVersion, currentSystemVersion);
+            execution(new QueryCursor(in data), ref state);
         }
         catch (Exception bodyFault)
         {
@@ -482,40 +473,6 @@ public partial class World
     {
         using WorldJobAdmissionScope admission = EnterJobTopologyRead();
         return _queries.Get(query).Definition;
-    }
-
-    /// <summary>
-    /// Returns the observation version of the query's ordered structural membership,
-    /// including enabled and disabled filters. Compare versions with != to handle wraparound.
-    /// Component value writes retain the current membership version.
-    /// </summary>
-    /// <remarks>
-    /// Each read observes the current entity sequence. Added, Changed, and ChunkChanged filters
-    /// belong to an execution's version window; membership observes their component requirements.
-    /// Structural transactions carry the observation state with their query registry.
-    /// </remarks>
-    public uint MembershipVersion(QueryHandle query)
-    {
-        using WorldJobAdmissionScope control = EnterRootControlMutation();
-        QueryRecord record = _queries.GetMembershipRecord(query);
-        using WorldJobAdmissionScope admission = EnterJobAdmission(
-            WorldJobAdmissionRequest.ForQuery(
-                WorldTopologyAccess.Read,
-                record.Definition.MembershipStorageAccesses,
-                canWrite: false));
-        return record.ReadMembershipVersion();
-    }
-
-    internal ReadOnlySpan<Entity> ReadQueryEntities(QueryHandle query, out uint version)
-    {
-        using WorldJobAdmissionScope control = EnterRootControlMutation();
-        QueryRecord record = _queries.GetMembershipRecord(query);
-        using WorldJobAdmissionScope access = EnterJobAdmission(
-            WorldJobAdmissionRequest.ForQuery(
-                WorldTopologyAccess.Read,
-                record.Definition.MembershipStorageAccesses,
-                canWrite: false));
-        return record.ReadMembershipEntities(out version);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

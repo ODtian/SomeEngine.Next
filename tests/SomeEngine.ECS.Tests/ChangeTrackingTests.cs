@@ -439,7 +439,7 @@ public class ChangeTrackingTests
         return count;
     }
 
-    private static void CountRows(QueryCursor cursor, ref int count)
+    private static void CountRows(scoped QueryCursor cursor, ref int count)
     {
         foreach (var _ in cursor.Rows)
             count++;
@@ -456,7 +456,7 @@ public class ChangeTrackingTests
             query,
             lastSystemVersion,
             ref count,
-            static (QueryCursor cursor, ref int state) =>
+            static (scoped QueryCursor cursor, ref int state) =>
             {
                 foreach (var _ in cursor.Chunks)
                     state++;

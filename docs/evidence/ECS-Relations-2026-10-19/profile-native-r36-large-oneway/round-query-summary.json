@@ -1,0 +1,394 @@
+{
+  "Reports": 11,
+  "RoundRatios": [
+    {
+      "Series": "focused-native-r35",
+      "CaseId": "finite-small-mask1-mutual",
+      "RoundCount": 32,
+      "RoundMedianRatioMin": 0.9316364455456696,
+      "RoundMedianRatioMedian": 0.9855470237837172,
+      "RoundMedianRatioMax": 1.0430482838859803,
+      "RoundMedianRatioAbove101": 4,
+      "SideOrders": [
+        {
+          "SideOrder": "E/H",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.9870265261206996,
+          "P95Ratio": 1.0233023027927486,
+          "MeanRatio": 0.9849038286093965
+        },
+        {
+          "SideOrder": "H/E",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.9795489073273344,
+          "P95Ratio": 0.9740795126991896,
+          "MeanRatio": 0.9729004678349819
+        }
+      ],
+      "Halves": [
+        {
+          "Half": "Rounds0-15",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.9826864977922379,
+          "P95Ratio": 0.9868404743213651,
+          "MeanRatio": 0.9814986221815547
+        },
+        {
+          "Half": "Rounds16-31",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.9792830540037244,
+          "P95Ratio": 0.9858520302181619,
+          "MeanRatio": 0.9766178726271645
+        }
+      ],
+      "Overall": [
+        {
+          "Series": "focused-native-r35",
+          "CaseId": "finite-small-mask1-mutual",
+          "Boundary": "Query",
+          "SourceCommit": "a182cc35b9bbf7d63008c8cbe4a96f976091614d",
+          "QueueId": "4a8627214e5b46d4b200ea00ae6a6b13",
+          "Diagnostic": false,
+          "SamplesPerSide": 256,
+          "EMedianTicks": 4214.0,
+          "HMedianTicks": 4300.0,
+          "MedianRatio": 0.98,
+          "EP95Ticks": 4797.75,
+          "HP95Ticks": 4873.5,
+          "P95Ratio": 0.9844567559249,
+          "EMeanTicks": 4326.0,
+          "HMeanTicks": 4418.5,
+          "MeanRatio": 0.9790652936516917
+        }
+      ]
+    },
+    {
+      "Series": "focused-native-r35",
+      "CaseId": "finite-middle-mask8-oneway",
+      "RoundCount": 32,
+      "RoundMedianRatioMin": 0.9869541431116473,
+      "RoundMedianRatioMedian": 1.0115091060935506,
+      "RoundMedianRatioMax": 1.043088399850802,
+      "RoundMedianRatioAbove101": 19,
+      "SideOrders": [
+        {
+          "SideOrder": "E/H",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.0117856512271202,
+          "P95Ratio": 1.0142617635648175,
+          "MeanRatio": 1.0090763172601054
+        },
+        {
+          "SideOrder": "H/E",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.0177724070853842,
+          "P95Ratio": 1.0092730371733132,
+          "MeanRatio": 1.012626546815387
+        }
+      ],
+      "Halves": [
+        {
+          "Half": "Rounds0-15",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.0160486751025086,
+          "P95Ratio": 1.0052523879125737,
+          "MeanRatio": 1.0117368449567223
+        },
+        {
+          "Half": "Rounds16-31",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.013704484166163,
+          "P95Ratio": 1.0205756599844222,
+          "MeanRatio": 1.0099719387992732
+        }
+      ],
+      "Overall": [
+        {
+          "Series": "focused-native-r35",
+          "CaseId": "finite-middle-mask8-oneway",
+          "Boundary": "Query",
+          "SourceCommit": "a182cc35b9bbf7d63008c8cbe4a96f976091614d",
+          "QueueId": "185da0d59a22464ebc5748cbcc368be2",
+          "Diagnostic": false,
+          "SamplesPerSide": 256,
+          "EMedianTicks": 34427.5,
+          "HMedianTicks": 33965.5,
+          "MedianRatio": 1.0136020373614403,
+          "EP95Ticks": 36992.25,
+          "HP95Ticks": 36507.75,
+          "P95Ratio": 1.0132711547548123,
+          "EMeanTicks": 34798.92578125,
+          "HMeanTicks": 34425.2265625,
+          "MeanRatio": 1.0108553887966878
+        }
+      ]
+    },
+    {
+      "Series": "focused-native-r35",
+      "CaseId": "finite-large-mask8-oneway",
+      "RoundCount": 32,
+      "RoundMedianRatioMin": 0.9869549981348135,
+      "RoundMedianRatioMedian": 1.0049627875248457,
+      "RoundMedianRatioMax": 1.0191520437761001,
+      "RoundMedianRatioAbove101": 4,
+      "SideOrders": [
+        {
+          "SideOrder": "E/H",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.005129265532829,
+          "P95Ratio": 1.0175441697674623,
+          "MeanRatio": 1.0053381387592601
+        },
+        {
+          "SideOrder": "H/E",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.0046512784797532,
+          "P95Ratio": 1.0044561917588062,
+          "MeanRatio": 1.0042245633929932
+        }
+      ],
+      "Halves": [
+        {
+          "Half": "Rounds0-15",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.0045060192346493,
+          "P95Ratio": 1.0211451943869843,
+          "MeanRatio": 1.0059347939144718
+        },
+        {
+          "Half": "Rounds16-31",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.0046997339233432,
+          "P95Ratio": 0.9860318188337189,
+          "MeanRatio": 1.0036343740747196
+        }
+      ],
+      "Overall": [
+        {
+          "Series": "focused-native-r35",
+          "CaseId": "finite-large-mask8-oneway",
+          "Boundary": "Query",
+          "SourceCommit": "a182cc35b9bbf7d63008c8cbe4a96f976091614d",
+          "QueueId": "d3fe1ff145594144a3543798a0ea47dd",
+          "Diagnostic": false,
+          "SamplesPerSide": 256,
+          "EMedianTicks": 262492.0,
+          "HMedianTicks": 261154.5,
+          "MedianRatio": 1.0051214893865508,
+          "EP95Ticks": 276920.75,
+          "HP95Ticks": 274942.5,
+          "P95Ratio": 1.0071951408021678,
+          "EMeanTicks": 264671.28125,
+          "HMeanTicks": 263412.171875,
+          "MeanRatio": 1.0047799969380211
+        }
+      ]
+    },
+    {
+      "Series": "focused-native-r36",
+      "CaseId": "finite-small-mask1-mutual",
+      "RoundCount": 32,
+      "RoundMedianRatioMin": 0.963181703945715,
+      "RoundMedianRatioMedian": 0.9953740872617654,
+      "RoundMedianRatioMax": 1.044776119402985,
+      "RoundMedianRatioAbove101": 6,
+      "SideOrders": [
+        {
+          "SideOrder": "E/H",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.9942936850114126,
+          "P95Ratio": 0.9958428440680583,
+          "MeanRatio": 1.0017435505134542
+        },
+        {
+          "SideOrder": "H/E",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.9974689951910909,
+          "P95Ratio": 1.0398842137909645,
+          "MeanRatio": 1.0031979435815828
+        }
+      ],
+      "Halves": [
+        {
+          "Half": "Rounds0-15",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.997130380536494,
+          "P95Ratio": 1.0342707315819237,
+          "MeanRatio": 1.004334770139166
+        },
+        {
+          "Half": "Rounds16-31",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.9946794705424344,
+          "P95Ratio": 1.0221308994388694,
+          "MeanRatio": 1.0005244675963807
+        }
+      ],
+      "Overall": [
+        {
+          "Series": "focused-native-r36",
+          "CaseId": "finite-small-mask1-mutual",
+          "Boundary": "Query",
+          "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+          "QueueId": "e2e4e19cbeea4841aac2b0471c15319c",
+          "Diagnostic": false,
+          "SamplesPerSide": 256,
+          "EMedianTicks": 3933.0,
+          "HMedianTicks": 3950.0,
+          "MedianRatio": 0.9956962025316456,
+          "EP95Ticks": 4785.25,
+          "HP95Ticks": 4609.0,
+          "P95Ratio": 1.0382403992189195,
+          "EMeanTicks": 4076.5,
+          "HMeanTicks": 4066.421875,
+          "MeanRatio": 1.002478376644086
+        }
+      ]
+    },
+    {
+      "Series": "focused-native-r36",
+      "CaseId": "finite-middle-mask8-oneway",
+      "RoundCount": 32,
+      "RoundMedianRatioMin": 0.9382208552670491,
+      "RoundMedianRatioMedian": 0.9701884373516563,
+      "RoundMedianRatioMax": 1.0114549084958488,
+      "RoundMedianRatioAbove101": 1,
+      "SideOrders": [
+        {
+          "SideOrder": "E/H",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.9712931577526472,
+          "P95Ratio": 0.9672301014071264,
+          "MeanRatio": 0.9669610934882396
+        },
+        {
+          "SideOrder": "H/E",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.963789385407931,
+          "P95Ratio": 0.9718070391816656,
+          "MeanRatio": 0.9675919052368543
+        }
+      ],
+      "Halves": [
+        {
+          "Half": "Rounds0-15",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.9713297382214771,
+          "P95Ratio": 0.9679084424535768,
+          "MeanRatio": 0.9669351558582208
+        },
+        {
+          "Half": "Rounds16-31",
+          "SamplesPerSide": 128,
+          "MedianRatio": 0.9697840655249441,
+          "P95Ratio": 0.9695028503174564,
+          "MeanRatio": 0.9676131593766601
+        }
+      ],
+      "Overall": [
+        {
+          "Series": "focused-native-r36",
+          "CaseId": "finite-middle-mask8-oneway",
+          "Boundary": "Query",
+          "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+          "QueueId": "6f884f25b90f43e98419dbd6e338dc84",
+          "Diagnostic": false,
+          "SamplesPerSide": 256,
+          "EMedianTicks": 32293.0,
+          "HMedianTicks": 33365.0,
+          "MedianRatio": 0.967870523003147,
+          "EP95Ticks": 34777.75,
+          "HP95Ticks": 35936.75,
+          "P95Ratio": 0.9677488921507927,
+          "EMeanTicks": 32543.26953125,
+          "HMeanTicks": 33644.25,
+          "MeanRatio": 0.9672758207197366
+        }
+      ]
+    },
+    {
+      "Series": "focused-native-r36",
+      "CaseId": "finite-large-mask8-oneway",
+      "RoundCount": 32,
+      "RoundMedianRatioMin": 0.9981589583966519,
+      "RoundMedianRatioMedian": 1.0147335564169309,
+      "RoundMedianRatioMax": 1.0412347393683816,
+      "RoundMedianRatioAbove101": 24,
+      "SideOrders": [
+        {
+          "SideOrder": "E/H",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.0190192739548787,
+          "P95Ratio": 1.032199425645657,
+          "MeanRatio": 1.0212168088546483
+        },
+        {
+          "SideOrder": "H/E",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.0112796677324283,
+          "P95Ratio": 1.0459700324034198,
+          "MeanRatio": 1.0166839123403693
+        }
+      ],
+      "Halves": [
+        {
+          "Half": "Rounds0-15",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.0179422505130824,
+          "P95Ratio": 1.0297752424678819,
+          "MeanRatio": 1.0216377733082063
+        },
+        {
+          "Half": "Rounds16-31",
+          "SamplesPerSide": 128,
+          "MedianRatio": 1.0151216400646228,
+          "P95Ratio": 1.028279271084121,
+          "MeanRatio": 1.0163724997228778
+        }
+      ],
+      "Overall": [
+        {
+          "Series": "focused-native-r36",
+          "CaseId": "finite-large-mask8-oneway",
+          "Boundary": "Query",
+          "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+          "QueueId": "61fb745a57b7462e8fa4bbb697ac8fe4",
+          "Diagnostic": false,
+          "SamplesPerSide": 256,
+          "EMedianTicks": 274736.5,
+          "HMedianTicks": 270386.0,
+          "MedianRatio": 1.0160899602790086,
+          "EP95Ticks": 317240.0,
+          "HP95Ticks": 307707.25,
+          "P95Ratio": 1.030979933037002,
+          "EMeanTicks": 278923.4453125,
+          "HMeanTicks": 273739.54296875,
+          "MeanRatio": 1.0189373529579604
+        }
+      ]
+    }
+  ],
+  "TracedQuery": [
+    {
+      "Series": "profile-native-r36-large-oneway",
+      "CaseId": "finite-large-mask8-oneway",
+      "Boundary": "Query",
+      "SourceCommit": "0c267d975a26539d9b48ec7cff9bc47bc7d44b1c",
+      "QueueId": "66dd4947702b4dbd8336d1d4f0a6ad2b",
+      "Diagnostic": true,
+      "SamplesPerSide": 256,
+      "EMedianTicks": 297180.0,
+      "HMedianTicks": 294954.0,
+      "MedianRatio": 1.007546939522773,
+      "EP95Ticks": 318187.75,
+      "HP95Ticks": 317866.0,
+      "P95Ratio": 1.0010122189853585,
+      "EMeanTicks": 299831.0234375,
+      "HMeanTicks": 298086.25390625,
+      "MeanRatio": 1.0058532371365194
+    }
+  ],
+  "RatioNotes": "A zero handwritten statistic gives a null ratio; the measured statistics remain in the side distributions.",
+  "ConsumeProjection": "ElapsedTicks is a local shallow copy of RawSamples.ConsumeTicks; original Round, SideOrder, Side, and frame GC fields are retained.",
+  "FinishedAtUtc": "2026-10-19T19:59:07.2767184Z"
+}

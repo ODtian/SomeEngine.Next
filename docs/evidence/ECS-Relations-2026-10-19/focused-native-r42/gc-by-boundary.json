@@ -1,0 +1,42 @@
+[
+  {
+    "CaseId": "threads-small-sparse-parallel",
+    "Boundary": "ScheduledPairOutput",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "threads-small-sparse-parallel",
+    "Boundary": "ScheduledPairOutput",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "threads-small-uniform-parallel",
+    "Boundary": "ScheduledPairOutput",
+    "Side": "relation",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  },
+  {
+    "CaseId": "threads-small-uniform-parallel",
+    "Boundary": "ScheduledPairOutput",
+    "Side": "handwritten",
+    "Samples": 256,
+    "Gen0": 0.0,
+    "Gen1": 0.0,
+    "Gen2": 0.0,
+    "NonzeroGcFrames": 0
+  }
+]

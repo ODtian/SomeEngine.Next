@@ -1,0 +1,266 @@
+
+CaseId                              Boundary            Required MedianRatio P95Ratio Status            QueueId
+------                              --------            -------- ----------- -------- ------            -------
+finite-small-mask1-oneway           Query                   True        1.00     1.01 measured-overhead b5f54a3c5e3945бн
+finite-small-mask1-oneway           Consume                False           1     0.94 pass              b5f54a3c5e3945бн
+finite-small-mask1-mutual           Query                   True        0.99     1.02 measured-overhead 1a8bae1a745a46бн
+finite-small-mask1-mutual           Consume                False           1     0.81 pass              1a8bae1a745a46бн
+finite-small-mask4-oneway           Query                   True        1.00     0.99 pass              da01a3da246e48бн
+finite-small-mask4-oneway           Consume                False           1     0.97 pass              da01a3da246e48бн
+finite-small-mask4-mutual           Query                   True        0.99     0.94 pass              9423ec9d49da49бн
+finite-small-mask4-mutual           Consume                False           1     0.88 pass              9423ec9d49da49бн
+finite-small-mask8-oneway           Query                   True        1.01     0.95 measured-overhead f24cf4b0f8b94eбн
+finite-small-mask8-oneway           Consume                False           1     1.02 measured-overhead f24cf4b0f8b94eбн
+finite-small-mask8-mutual           Query                   True        1.01     1.02 measured-overhead d23a3c52ad384eбн
+finite-small-mask8-mutual           Consume                False        1.02     1.04 measured-overhead d23a3c52ad384eбн
+default-small-dynamic10             Query                   True        0.99     0.99 pass              754359144e7540бн
+default-small-dynamic10             Consume                False           1     0.98 pass              754359144e7540бн
+default-small-dynamic50             Query                   True        1.01     0.98 measured-overhead e71e11a1624545бн
+default-small-dynamic50             Consume                False           1     1.01 measured-overhead e71e11a1624545бн
+default-small-dynamic90             Query                   True        1.01     1.03 measured-overhead 6c55636c62324aбн
+default-small-dynamic90             Consume                False           1     0.99 pass              6c55636c62324aбн
+character-small-hair16-clustered    Query                   True        1.03     1.00 measured-overhead e2e7da815ccd46бн
+character-small-hair16-clustered    Consume                False           1     1.71 measured-overhead e2e7da815ccd46бн
+character-small-hair16-interleaved  Query                   True        1.01     1.01 measured-overhead 796b2ebbb7ee43бн
+character-small-hair16-interleaved  Consume                False           1     1.04 measured-overhead 796b2ebbb7ee43бн
+character-small-hair64-clustered    Query                   True        1.00     0.98 pass              e2631ee2c5be4bбн
+character-small-hair64-clustered    Consume                False           1     1.00 measured-overhead e2631ee2c5be4bбн
+character-small-hair64-interleaved  Query                   True        1.00     0.99 pass              cd317c94c89045бн
+character-small-hair64-interleaved  Consume                False           1     1.01 measured-overhead cd317c94c89045бн
+bitmap-space-small-sparse-oneway    Query                   True        0.95     1.00 measured-overhead cb86c52905724fбн
+bitmap-space-small-sparse-oneway    Consume                False           1     1.01 measured-overhead cb86c52905724fбн
+bitmap-space-small-sparse-mutual    Query                   True        0.94     0.70 pass              5740c5bc99e444бн
+bitmap-space-small-sparse-mutual    Consume                False        1.01     1.01 measured-overhead 5740c5bc99e444бн
+complete-small-sparse               Query                   True        0.70     0.82 pass              cefb54944a3d48бн
+complete-small-sparse               FrameTotal              True        0.79     0.87 pass              cefb54944a3d48бн
+complete-small-sparse               Consume                False           1     1.04 measured-overhead cefb54944a3d48бн
+updates-small-sparse                MaintenanceAndQuery     True        0.94     0.96 pass              08dd3dbafd634fбн
+updates-small-sparse                FrameTotal              True        1.00     1.01 measured-overhead 08dd3dbafd634fбн
+consume-small-sparse                PairsAndConsume         True        0.79     0.85 pass              423e9f53a07946бн
+consume-small-sparse                Consume                False           1     1.03 measured-overhead 423e9f53a07946бн
+threads-small-sparse-inline         ScheduledPairOutput     True        0.77     0.87 pass              f1893867c62c40бн
+threads-small-sparse-inline         Consume                False        0.98     0.87 pass              f1893867c62c40бн
+threads-small-sparse-parallel       ScheduledPairOutput     True        1.01     1.02 measured-overhead 52b610b83bf54aбн
+threads-small-sparse-parallel       Consume                False        1.00     1.09 measured-overhead 52b610b83bf54aбн
+bitmap-space-small-uniform-oneway   Query                   True        0.91     0.93 pass              ac6cfc0f2a154cбн
+bitmap-space-small-uniform-oneway   Consume                False        1.00     1.04 measured-overhead ac6cfc0f2a154cбн
+bitmap-space-small-uniform-mutual   Query                   True        0.91     0.99 pass              d7a9e8cc581b4eбн
+bitmap-space-small-uniform-mutual   Consume                False        1.00     1.02 measured-overhead d7a9e8cc581b4eбн
+complete-small-uniform              Query                   True        0.64     0.65 pass              e2c311665afe4dбн
+complete-small-uniform              FrameTotal              True        0.67     0.68 pass              e2c311665afe4dбн
+complete-small-uniform              Consume                False        1.00     0.97 pass              e2c311665afe4dбн
+updates-small-uniform               MaintenanceAndQuery     True        0.72     0.74 pass              70340720a9b74aбн
+updates-small-uniform               FrameTotal              True        0.80     0.83 pass              70340720a9b74aбн
+consume-small-uniform               PairsAndConsume         True        0.69     0.72 pass              574b94527e5947бн
+consume-small-uniform               Consume                False        1.01     1.05 measured-overhead 574b94527e5947бн
+threads-small-uniform-inline        ScheduledPairOutput     True        0.65     0.68 pass              33cdbc8bbf8647бн
+threads-small-uniform-inline        Consume                False        0.98     0.88 pass              33cdbc8bbf8647бн
+threads-small-uniform-parallel      ScheduledPairOutput     True        0.91     0.74 pass              ca15c4eacf674bбн
+threads-small-uniform-parallel      Consume                False        0.98     1.03 measured-overhead ca15c4eacf674bбн
+bitmap-space-small-dense-oneway     Query                   True        0.89     0.89 pass              f4a4a3628da446бн
+bitmap-space-small-dense-oneway     Consume                False        1.02     1.00 measured-overhead f4a4a3628da446бн
+bitmap-space-small-dense-mutual     Query                   True        0.75     0.77 pass              38cd2f14a6414bбн
+bitmap-space-small-dense-mutual     Consume                False        0.99     1.13 measured-overhead 38cd2f14a6414bбн
+complete-small-dense                Query                   True        0.70     0.71 pass              596d7ad8619049бн
+complete-small-dense                FrameTotal              True        0.73     0.74 pass              596d7ad8619049бн
+complete-small-dense                Consume                False        0.99     0.96 pass              596d7ad8619049бн
+updates-small-dense                 MaintenanceAndQuery     True        0.71     0.72 pass              25107f01053447бн
+updates-small-dense                 FrameTotal              True        0.75     0.76 pass              25107f01053447бн
+consume-small-dense                 PairsAndConsume         True        0.69     0.69 pass              629d3a1860654fбн
+consume-small-dense                 Consume                False        0.99     0.99 pass              629d3a1860654fбн
+threads-small-dense-inline          ScheduledPairOutput     True        0.70     0.70 pass              e1a2be2d2e0d4bбн
+threads-small-dense-inline          Consume                False        0.99     0.99 pass              e1a2be2d2e0d4bбн
+threads-small-dense-parallel        ScheduledPairOutput     True        0.77     0.84 pass              20ca66475adb45бн
+threads-small-dense-parallel        Consume                False        1.01     1.03 measured-overhead 20ca66475adb45бн
+character-space-small-clustered     Query                   True        0.91     0.92 pass              75fb2f25c7644cбн
+character-space-small-clustered     Consume                False        1.00     1.00 pass              75fb2f25c7644cбн
+character-space-small-interleaved   Query                   True        0.98     0.99 pass              17fb2104648d49бн
+character-space-small-interleaved   Consume                False        1.00     0.99 pass              17fb2104648d49бн
+finite-middle-mask1-oneway          Query                   True        0.99     1.00 measured-overhead bb2313e221104aбн
+finite-middle-mask1-oneway          Consume                False           1     1.10 measured-overhead bb2313e221104aбн
+finite-middle-mask1-mutual          Query                   True        1.00     1.00 pass              9717abf58b054fбн
+finite-middle-mask1-mutual          Consume                False           1     1.09 measured-overhead 9717abf58b054fбн
+finite-middle-mask4-oneway          Query                   True        0.99     0.98 pass              e8b3b02fbdf645бн
+finite-middle-mask4-oneway          Consume                False        1.00     0.99 pass              e8b3b02fbdf645бн
+finite-middle-mask4-mutual          Query                   True        1.00     0.99 pass              e5d940ed45004bбн
+finite-middle-mask4-mutual          Consume                False        1.01     0.95 measured-overhead e5d940ed45004bбн
+finite-middle-mask8-oneway          Query                   True        1.00     1.00 measured-overhead 10c62f91f7694bбн
+finite-middle-mask8-oneway          Consume                False        1.00     1.00 pass              10c62f91f7694bбн
+finite-middle-mask8-mutual          Query                   True        1.01     0.99 measured-overhead 8690fccb42054dбн
+finite-middle-mask8-mutual          Consume                False        1.01     1.05 measured-overhead 8690fccb42054dбн
+default-middle-dynamic10            Query                   True        1.00     1.02 measured-overhead 6b0bb70aff6b4bбн
+default-middle-dynamic10            Consume                False        1.00     1.01 measured-overhead 6b0bb70aff6b4bбн
+default-middle-dynamic50            Query                   True        1.01     1.01 measured-overhead 7a812c52abfb40бн
+default-middle-dynamic50            Consume                False        1.00     1.05 measured-overhead 7a812c52abfb40бн
+default-middle-dynamic90            Query                   True        1.00     0.98 pass              729bdd6faff44bбн
+default-middle-dynamic90            Consume                False        1.00     0.99 pass              729bdd6faff44bбн
+character-middle-hair16-clustered   Query                   True        0.99     0.99 pass              f067065872874fбн
+character-middle-hair16-clustered   Consume                False        0.99     0.96 pass              f067065872874fбн
+character-middle-hair16-interleaved Query                   True        1.00     1.00 measured-overhead bf30408557a149бн
+character-middle-hair16-interleaved Consume                False        1.00     0.99 measured-overhead bf30408557a149бн
+character-middle-hair64-clustered   Query                   True        0.98     0.99 pass              15b75b48c0cb46бн
+character-middle-hair64-clustered   Consume                False        0.99     1.04 measured-overhead 15b75b48c0cb46бн
+character-middle-hair64-interleaved Query                   True        1.00     0.99 pass              3e46df0c3dcc4dбн
+character-middle-hair64-interleaved Consume                False        0.99     0.96 pass              3e46df0c3dcc4dбн
+bitmap-space-middle-sparse-oneway   Query                   True        0.96     0.99 pass              357f53228d3244бн
+bitmap-space-middle-sparse-oneway   Consume                False        1.00     1.02 measured-overhead 357f53228d3244бн
+bitmap-space-middle-sparse-mutual   Query                   True        0.92     0.91 pass              f0f3306b541c47бн
+bitmap-space-middle-sparse-mutual   Consume                False        0.99     1.02 measured-overhead f0f3306b541c47бн
+complete-middle-sparse              Query                   True        0.63     0.69 pass              05ee622730d24cбн
+complete-middle-sparse              FrameTotal              True        0.69     0.73 pass              05ee622730d24cбн
+complete-middle-sparse              Consume                False        1.02     1.04 measured-overhead 05ee622730d24cбн
+updates-middle-sparse               MaintenanceAndQuery     True        0.89     0.88 pass              2961519bfd7a48бн
+updates-middle-sparse               FrameTotal              True        0.97     0.95 pass              2961519bfd7a48бн
+consume-middle-sparse               PairsAndConsume         True        0.68     0.77 pass              340804586b2147бн
+consume-middle-sparse               Consume                False        1.01     1.05 measured-overhead 340804586b2147бн
+threads-middle-sparse-inline        ScheduledPairOutput     True        0.65     0.70 pass              ac806dfe87634bбн
+threads-middle-sparse-inline        Consume                False           1     0.98 pass              ac806dfe87634bбн
+threads-middle-sparse-parallel      ScheduledPairOutput     True        0.73     0.88 pass              cc01a5a1ccad43бн
+threads-middle-sparse-parallel      Consume                False        0.97     1.05 measured-overhead cc01a5a1ccad43бн
+bitmap-space-middle-uniform-oneway  Query                   True        0.90     0.89 pass              53b8d9a9c58d42бн
+bitmap-space-middle-uniform-oneway  Consume                False        0.99     1.00 measured-overhead 53b8d9a9c58d42бн
+bitmap-space-middle-uniform-mutual  Query                   True        0.92     0.93 pass              a554ece92f9149бн
+bitmap-space-middle-uniform-mutual  Consume                False        1.00     1.02 measured-overhead a554ece92f9149бн
+complete-middle-uniform             Query                   True        0.70     0.70 pass              41f2a8cc182547бн
+complete-middle-uniform             FrameTotal              True        0.76     0.75 pass              41f2a8cc182547бн
+complete-middle-uniform             Consume                False        0.99     1.00 measured-overhead 41f2a8cc182547бн
+updates-middle-uniform              MaintenanceAndQuery     True        0.76     0.76 pass              9e470e48512a40бн
+updates-middle-uniform              FrameTotal              True        0.83     0.83 pass              9e470e48512a40бн
+consume-middle-uniform              PairsAndConsume         True        0.75     0.78 pass              fb06edf3bee749бн
+consume-middle-uniform              Consume                False        1.00     1.07 measured-overhead fb06edf3bee749бн
+threads-middle-uniform-inline       ScheduledPairOutput     True        0.71     0.71 pass              ac91d3fd560d4eбн
+threads-middle-uniform-inline       Consume                False        1.00     0.98 measured-overhead ac91d3fd560d4eбн
+threads-middle-uniform-parallel     ScheduledPairOutput     True        0.73     0.74 pass              46f4941057a347бн
+threads-middle-uniform-parallel     Consume                False        1.00     0.98 pass              46f4941057a347бн
+bitmap-space-middle-dense-oneway    Query                   True        0.90     0.90 pass              dbcd262a4d3f48бн
+bitmap-space-middle-dense-oneway    Consume                False        1.00     1.01 measured-overhead dbcd262a4d3f48бн
+bitmap-space-middle-dense-mutual    Query                   True        0.76     0.77 pass              423d2aec47ef41бн
+bitmap-space-middle-dense-mutual    Consume                False        1.03     1.08 measured-overhead 423d2aec47ef41бн
+complete-middle-dense               Query                   True        0.70     0.71 pass              9184e3e4e3c148бн
+complete-middle-dense               FrameTotal              True        0.73     0.74 pass              9184e3e4e3c148бн
+complete-middle-dense               Consume                False        1.00     0.98 pass              9184e3e4e3c148бн
+updates-middle-dense                MaintenanceAndQuery     True        0.71     0.71 pass              a2bb37d3b7514bбн
+updates-middle-dense                FrameTotal              True        0.76     0.76 pass              a2bb37d3b7514bбн
+consume-middle-dense                PairsAndConsume         True        0.75     0.75 pass              066b713fc3a949бн
+consume-middle-dense                Consume                False        1.00     0.98 pass              066b713fc3a949бн
+threads-middle-dense-inline         ScheduledPairOutput     True        0.70     0.71 pass              d30b4f9885ac44бн
+threads-middle-dense-inline         Consume                False        1.00     1.02 measured-overhead d30b4f9885ac44бн
+threads-middle-dense-parallel       ScheduledPairOutput     True        0.70     0.68 pass              71e9e493343040бн
+threads-middle-dense-parallel       Consume                False        1.00     1.03 measured-overhead 71e9e493343040бн
+character-space-middle-clustered    Query                   True        0.90     0.90 pass              0a26b27043ce4aбн
+character-space-middle-clustered    Consume                False        1.00     1.01 measured-overhead 0a26b27043ce4aбн
+character-space-middle-interleaved  Query                   True        0.98     0.99 pass              c0d4b46efa884eбн
+character-space-middle-interleaved  Consume                False        1.00     0.98 pass              c0d4b46efa884eбн
+finite-large-mask1-oneway           Query                   True        0.99     0.99 pass              ce18539cf6b446бн
+finite-large-mask1-oneway           Consume                False           1     1.03 measured-overhead ce18539cf6b446бн
+finite-large-mask1-mutual           Query                   True        1.00     0.99 pass              9c53bf2bda4744бн
+finite-large-mask1-mutual           Consume                False        1.07     1.08 measured-overhead 9c53bf2bda4744бн
+finite-large-mask4-oneway           Query                   True        1.00     0.99 pass              1427edc1ed7c4fбн
+finite-large-mask4-oneway           Consume                False        1.00     1.03 measured-overhead 1427edc1ed7c4fбн
+finite-large-mask4-mutual           Query                   True        0.98     0.99 pass              6e40cd5f87d348бн
+finite-large-mask4-mutual           Consume                False        1.01     1.03 measured-overhead 6e40cd5f87d348бн
+finite-large-mask8-oneway           Query                   True        1.00     1.00 measured-overhead d01d9da0100e41бн
+finite-large-mask8-oneway           Consume                False        1.01     1.02 measured-overhead d01d9da0100e41бн
+finite-large-mask8-mutual           Query                   True        1.00     1.00 measured-overhead 5254662538fe46бн
+finite-large-mask8-mutual           Consume                False        1.00     0.99 measured-overhead 5254662538fe46бн
+default-large-dynamic10             Query                   True        1.00     1.01 measured-overhead 3d5cc57193914bбн
+default-large-dynamic10             Consume                False        0.99     0.98 pass              3d5cc57193914bбн
+default-large-dynamic50             Query                   True        1.00     1.00 measured-overhead 81276414ff4b43бн
+default-large-dynamic50             Consume                False        1.01     1.00 measured-overhead 81276414ff4b43бн
+default-large-dynamic90             Query                   True        1.02     1.03 measured-overhead 20d1483db5b645бн
+default-large-dynamic90             Consume                False        1.00     1.01 measured-overhead 20d1483db5b645бн
+character-large-hair16-clustered    Query                   True        0.99     1.00 measured-overhead 9093c47f9a474cбн
+character-large-hair16-clustered    Consume                False        1.00     1.00 measured-overhead 9093c47f9a474cбн
+character-large-hair16-interleaved  Query                   True        0.99     0.99 pass              6565a938e8e849бн
+character-large-hair16-interleaved  Consume                False        1.00     1.00 measured-overhead 6565a938e8e849бн
+character-large-hair64-clustered    Query                   True        0.99     0.98 pass              5dd8007f088e41бн
+character-large-hair64-clustered    Consume                False        0.99     1.00 pass              5dd8007f088e41бн
+character-large-hair64-interleaved  Query                   True        0.99     0.98 pass              4b3e29d1d03e4dбн
+character-large-hair64-interleaved  Consume                False        1.00     1.01 measured-overhead 4b3e29d1d03e4dбн
+bitmap-space-large-sparse-oneway    Query                   True        0.94     0.92 pass              8aaf301bd26b47бн
+bitmap-space-large-sparse-oneway    Consume                False        1.00     1.02 measured-overhead 8aaf301bd26b47бн
+bitmap-space-large-sparse-mutual    Query                   True        0.90     0.90 pass              01e180d16e9e4aбн
+bitmap-space-large-sparse-mutual    Consume                False           1     0.99 pass              01e180d16e9e4aбн
+complete-large-sparse               Query                   True        0.59     0.57 pass              7e859d66975b43бн
+complete-large-sparse               FrameTotal              True        0.61     0.60 pass              7e859d66975b43бн
+complete-large-sparse               Consume                False        1.00     0.94 pass              7e859d66975b43бн
+updates-large-sparse                MaintenanceAndQuery     True        0.91     0.91 pass              2b748ee2a25c43бн
+updates-large-sparse                FrameTotal              True        0.97     0.97 pass              2b748ee2a25c43бн
+consume-large-sparse                PairsAndConsume         True        0.61     0.59 pass              20b3058392bf4dбн
+consume-large-sparse                Consume                False        0.99     1.01 measured-overhead 20b3058392bf4dбн
+threads-large-sparse-inline         ScheduledPairOutput     True        0.58     0.65 pass              c3c0d34ff0f34eбн
+threads-large-sparse-inline         Consume                False        0.99     0.95 pass              c3c0d34ff0f34eбн
+threads-large-sparse-parallel       ScheduledPairOutput     True        0.73     0.82 pass              4216595c6d1644бн
+threads-large-sparse-parallel       Consume                False        1.02     1.08 measured-overhead 4216595c6d1644бн
+bitmap-space-large-uniform-oneway   Query                   True        0.91     0.90 pass              60742a3c55e84fбн
+bitmap-space-large-uniform-oneway   Consume                False        0.99     1.02 measured-overhead 60742a3c55e84fбн
+bitmap-space-large-uniform-mutual   Query                   True        0.90     0.91 pass              998512825f2c4cбн
+bitmap-space-large-uniform-mutual   Consume                False        1.00     1.00 pass              998512825f2c4cбн
+complete-large-uniform              Query                   True        0.67     0.68 pass              bc1dfad6343d4cбн
+complete-large-uniform              FrameTotal              True        0.71     0.72 pass              bc1dfad6343d4cбн
+complete-large-uniform              Consume                False        0.98     1.00 measured-overhead bc1dfad6343d4cбн
+updates-large-uniform               MaintenanceAndQuery     True        0.71     0.72 pass              77e12277b6ee47бн
+updates-large-uniform               FrameTotal              True        0.77     0.78 pass              77e12277b6ee47бн
+consume-large-uniform               PairsAndConsume         True        0.71     0.71 pass              f3669c0df7614aбн
+consume-large-uniform               Consume                False        0.99     0.99 pass              f3669c0df7614aбн
+threads-large-uniform-inline        ScheduledPairOutput     True        0.67     0.66 pass              d4e51a6c950b46бн
+threads-large-uniform-inline        Consume                False        0.99     0.99 pass              d4e51a6c950b46бн
+threads-large-uniform-parallel      ScheduledPairOutput     True        0.63     0.69 pass              895f52c2c1bb48бн
+threads-large-uniform-parallel      Consume                False        1.00     1.03 measured-overhead 895f52c2c1bb48бн
+bitmap-space-large-dense-oneway     Query                   True        0.89     0.91 pass              364471c797d046бн
+bitmap-space-large-dense-oneway     Consume                False        0.99     0.98 pass              364471c797d046бн
+bitmap-space-large-dense-mutual     Query                   True        0.80     0.81 pass              4ecba44e24f447бн
+bitmap-space-large-dense-mutual     Consume                False        0.97     0.93 pass              4ecba44e24f447бн
+complete-large-dense                Query                   True        0.70     0.71 pass              3331b2c2a4ed41бн
+complete-large-dense                FrameTotal              True        0.74     0.74 pass              3331b2c2a4ed41бн
+complete-large-dense                Consume                False        1.00     1.00 pass              3331b2c2a4ed41бн
+updates-large-dense                 MaintenanceAndQuery     True        0.72     0.72 pass              3f1f4bb82cdb48бн
+updates-large-dense                 FrameTotal              True        0.77     0.78 pass              3f1f4bb82cdb48бн
+consume-large-dense                 PairsAndConsume         True        0.75     0.74 pass              bf32444e7d5245бн
+consume-large-dense                 Consume                False        1.01     1.03 measured-overhead bf32444e7d5245бн
+threads-large-dense-inline          ScheduledPairOutput     True        0.68     0.69 pass              1f1d1193069b4fбн
+threads-large-dense-inline          Consume                False        1.00     1.00 pass              1f1d1193069b4fбн
+threads-large-dense-parallel        ScheduledPairOutput     True        0.69     0.69 pass              a20ba444fb3442бн
+threads-large-dense-parallel        Consume                False        1.00     1.03 measured-overhead a20ba444fb3442бн
+character-space-large-clustered     Query                   True        0.91     0.91 pass              7276301e09a24bбн
+character-space-large-clustered     Consume                False        1.00     1.00 pass              7276301e09a24bбн
+character-space-large-interleaved   Query                   True        0.99     0.99 pass              9b0a879a178246бн
+character-space-large-interleaved   Consume                False        1.00     1.00 measured-overhead 9b0a879a178246бн
+
+{"Script":"Collect-Measurements.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Collect-Measurements.ps1","-Series","final-native-r38"],"StartedAtUtc":"2026-10-19T22:41:20.1502924Z","FinishedAtUtc":"2026-10-19T22:41:26.9972122Z","ExitCode":0}
+final-native-r38: 108 reports; F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\docs\evidence\ECS-Relations-2026-10-19\final-native-r38
+{"Script":"Export-Evidence.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Export-Evidence.ps1","-Series","final-native-r38"],"StartedAtUtc":"2026-10-19T22:41:27.1050586Z","FinishedAtUtc":"2026-10-19T22:41:34.6840066Z","ExitCode":0}
+final-native-r38: cases=108; required=126; passed=103; approved=114; approvedRatioLimit=1.01; F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next\docs\evidence\ECS-Relations-2026-10-19\final-native-r38
+CLASS bitmap-space: strict=17/18; approved=18/18; approvedRatioLimit=1.01
+CLASS character: strict=8/12; approved=10/12; approvedRatioLimit=1.01
+CLASS character-space: strict=6/6; approved=6/6; approvedRatioLimit=1.01
+CLASS complete: strict=18/18; approved=18/18; approvedRatioLimit=1.01
+CLASS consume: strict=9/9; approved=9/9; approvedRatioLimit=1.01
+CLASS default: strict=2/9; approved=4/9; approvedRatioLimit=1.01
+CLASS finite: strict=9/18; approved=15/18; approvedRatioLimit=1.01
+CLASS threads: strict=17/18; approved=17/18; approvedRatioLimit=1.01
+CLASS updates: strict=17/18; approved=17/18; approvedRatioLimit=1.01
+OVERHEAD finite-small-mask1-oneway Query median=0.99861722187303581 p95=1.0134418884213978
+OVERHEAD finite-small-mask1-mutual Query median=0.99252542580566105 p95=1.0197332458729638
+OVERHEAD finite-small-mask8-oneway Query median=1.0072167428433967 p95=0.94861599632971405
+OVERHEAD finite-small-mask8-mutual Query median=1.0068093385214008 p95=1.0239863240557723
+OVERHEAD default-small-dynamic50 Query median=1.0103383458646618 p95=0.9812706573632024
+OVERHEAD default-small-dynamic90 Query median=1.0082417582417582 p95=1.0301671422747656
+OVERHEAD character-small-hair16-clustered Query median=1.0316804407713498 p95=1.0023663971603234
+OVERHEAD character-small-hair16-interleaved Query median=1.0101528766483836 p95=1.0053133866391539
+OVERHEAD bitmap-space-small-sparse-oneway Query median=0.94765840220385678 p95=1.0035052578868302
+OVERHEAD updates-small-sparse FrameTotal median=0.99676524953789281 p95=1.0133789357207525
+OVERHEAD threads-small-sparse-parallel ScheduledPairOutput median=1.0098944591029024 p95=1.0246252676659529
+OVERHEAD finite-middle-mask1-oneway Query median=0.99092359564091759 p95=1.0033784740912826
+OVERHEAD finite-middle-mask8-oneway Query median=1.001845159125913 p95=0.99784548437621812
+OVERHEAD finite-middle-mask8-mutual Query median=1.0070969469737547 p95=0.99296289148654615
+OVERHEAD default-middle-dynamic10 Query median=1.0015028458144146 p95=1.0182033735518339
+OVERHEAD default-middle-dynamic50 Query median=1.0110666204243781 p95=1.0143947655398038
+OVERHEAD character-middle-hair16-interleaved Query median=1.0004937221852692 p95=0.99949824547773503
+OVERHEAD finite-large-mask8-oneway Query median=1.0017142410435094 p95=0.99856155105390654
+OVERHEAD finite-large-mask8-mutual Query median=1.000313902103896 p95=0.99834166667410851
+OVERHEAD default-large-dynamic10 Query median=1.0017878024172271 p95=1.0050719433621107
+OVERHEAD default-large-dynamic50 Query median=1.0044742684957577 p95=1.0013675944527007
+OVERHEAD default-large-dynamic90 Query median=1.02097231984084 p95=1.0296701510234934
+OVERHEAD character-large-hair16-clustered Query median=0.99449415153726595 p95=1.0033341659334347
+{"Script":"Write-MeasurementReport.ps1","Executable":"pwsh","Arguments":["-NoProfile","-File","F:\\.codex\\worktrees\\ecs-relations-worker-3\\SomeEngine.Next\\benchmarks\\SomeEngine.ECS.Relations.Benchmarks\\Write-MeasurementReport.ps1","-Series","final-native-r38"],"StartedAtUtc":"2026-10-19T22:41:34.6892265Z","FinishedAtUtc":"2026-10-19T22:41:44.8732828Z","ExitCode":0}
