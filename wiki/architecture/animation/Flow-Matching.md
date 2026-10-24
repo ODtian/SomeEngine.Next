@@ -80,4 +80,4 @@ Flow 叶持续提交运行状态，阶段和停止沿用共同时间线。零 De
 
 [train.py](../../../tools/FlowMatching/train.py) 独立生成样本并训练 flow 与 decoder；[learned export](../../../samples/SomeEngine.Animation.FlowMatching/example.flow.json) 是该例子的实际学习资产。脚本使用声明种子、网络宽度、优化器和迭代数；训练、数据生成及参考计算均经公共计算队列执行。
 
-[reference.py](../../../tools/FlowMatching/reference.py) 用 NumPy 独立读取该导出，执行相同输入的积分与姿势解码。公开应用例子 [FlowMatchingRenderingTests](../../../tests/SomeEngine.Runtime.Tests/FlowMatchingRenderingTests.cs) 通过共享图驱动两个角色，并与其固定数值姿势及普通 Skeleton 输入的图像比较。
+[reference.py](../../../tools/FlowMatching/reference.py) 用 NumPy 独立读取该导出，执行相同输入的积分与姿势解码。公开应用例子 [FlowMatchingRenderingTests](../../../tests/SomeEngine.Runtime.Tests/FlowMatchingRenderingTests.cs) 通过共享图驱动两个角色，比较独立数值姿势和实例历史；普通 Skeleton 按同一组逐帧参考输入推进，使 Cluster 图像覆盖当前与前一帧 G。

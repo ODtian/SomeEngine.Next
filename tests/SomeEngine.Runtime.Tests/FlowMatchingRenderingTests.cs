@@ -86,37 +86,100 @@ public sealed partial class SkinningRenderingTests
         Assert.True(final[0][1].Rotation.Z > .05f);
         Assert.True(final[1][1].Rotation.Z < -.05f);
         // Fixed example output from the independent NumPy evaluator and the learned export.
-        Matrix4x4[][] numpy =
+        Matrix4x4[][][] numpyFrames =
         [
             [
-                new(0.999636352f, 0.0269648731f, 0f, 0f,
-                    -0.0269648731f, 0.999636352f, 0f, 0f,
-                    0f, 0f, 1f, 0f,
-                    0.0522841364f, 0.00251809321f, 0f, 1f),
-                new(0.91653198f, 0.399961442f, 0f, 0f,
-                    -0.399961442f, 0.91653192f, 0f, 0f,
-                    0f, 0f, 0.99999994f, 0f,
-                    0.0562506542f, 0.023507053f, 0f, 1f),
-                new(0.999781191f, -0.020914441f, 0f, 0f,
-                    0.0209144428f, 0.999781311f, 0f, 0f,
-                    0f, 0f, 1f, 0f,
-                    0f, 1f, 0f, 1f)
+                [
+                    new(0.999984622f, 0.00554775959f, 0f, 0f,
+                        -0.00554775959f, 0.999984622f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        0.0115736499f, 0.000435302412f, 0f, 1f),
+                    new(0.983564258f, 0.180558637f, 0f, 0f,
+                        -0.180558637f, 0.983564198f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        0.0296226144f, 0.00805437285f, 0f, 1f),
+                    new(0.997609317f, -0.0691064671f, 0f, 0f,
+                        0.0691064745f, 0.997609377f, 0f, 0f,
+                        0f, 0f, 1.00000012f, 0f,
+                        0f, 1f, 0f, 1f)
+                ],
+                [
+                    new(0.999988675f, -0.00475491118f, 0f, 0f,
+                        0.00475491118f, 0.999988675f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        -0.0107172774f, -0.000849588308f, 0f, 1f),
+                    new(0.991524756f, -0.129917577f, 0f, 0f,
+                        0.129917577f, 0.991524816f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        -0.0260519199f, 0.00825549848f, 0f, 1f),
+                    new(0.984033287f, -0.177984849f, 0f, 0f,
+                        0.177984834f, 0.984033227f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        0f, 1f, 0f, 1f)
+                ]
             ],
             [
-                new(0.999710381f, -0.0240653474f, 0f, 0f,
-                    0.0240653474f, 0.999710381f, 0f, 0f,
-                    0f, 0f, 1f, 0f,
-                    -0.0485415235f, -0.00324529642f, 0f, 1f),
-                new(0.961099684f, -0.276201844f, 0f, 0f,
-                    0.276201844f, 0.961099684f, 0f, 0f,
-                    0f, 0f, 1.00000012f, 0f,
-                    -0.0516992472f, 0.0244526658f, 0f, 1f),
-                new(0.964810491f, -0.26294592f, 0f, 0f,
-                    0.26294595f, 0.96481061f, 0f, 0f,
-                    0f, 0f, 0.99999994f, 0f,
-                    0f, 1f, 0f, 1f)
+                [
+                    new(0.999889135f, 0.0148897273f, 0f, 0f,
+                        -0.0148897273f, 0.999889135f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        0.029938912f, 0.00124562893f, 0f, 1f),
+                    new(0.951367438f, 0.308058411f, 0f, 0f,
+                        -0.308058381f, 0.951367497f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        0.046416644f, 0.015888365f, 0f, 1f),
+                    new(0.999052882f, -0.0435131863f, 0f, 0f,
+                        0.0435131863f, 0.999052882f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        0f, 1f, 0f, 1f)
+                ],
+                [
+                    new(0.99991405f, -0.0131119657f, 0f, 0f,
+                        0.0131119657f, 0.99991405f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        -0.027714286f, -0.00202170247f, 0f, 1f),
+                    new(0.975978792f, -0.217865556f, 0f, 0f,
+                        0.217865556f, 0.975978792f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        -0.0419344082f, 0.0164531805f, 0f, 1f),
+                    new(0.973356247f, -0.229298323f, 0f, 0f,
+                        0.229298294f, 0.973356128f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        0f, 1f, 0f, 1f)
+                ]
             ],
+            [
+                [
+                    new(0.999636352f, 0.0269648731f, 0f, 0f,
+                        -0.0269648731f, 0.999636352f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        0.0522841364f, 0.00251809321f, 0f, 1f),
+                    new(0.91653198f, 0.399961442f, 0f, 0f,
+                        -0.399961442f, 0.91653192f, 0f, 0f,
+                        0f, 0f, 0.99999994f, 0f,
+                        0.0562506542f, 0.023507053f, 0f, 1f),
+                    new(0.999781191f, -0.020914441f, 0f, 0f,
+                        0.0209144428f, 0.999781311f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        0f, 1f, 0f, 1f)
+                ],
+                [
+                    new(0.999710381f, -0.0240653474f, 0f, 0f,
+                        0.0240653474f, 0.999710381f, 0f, 0f,
+                        0f, 0f, 1f, 0f,
+                        -0.0485415235f, -0.00324529642f, 0f, 1f),
+                    new(0.961099684f, -0.276201844f, 0f, 0f,
+                        0.276201844f, 0.961099684f, 0f, 0f,
+                        0f, 0f, 1.00000012f, 0f,
+                        -0.0516992472f, 0.0244526658f, 0f, 1f),
+                    new(0.964810491f, -0.26294592f, 0f, 0f,
+                        0.26294595f, 0.96481061f, 0f, 0f,
+                        0f, 0f, 0.99999994f, 0f,
+                        0f, 1f, 0f, 1f)
+                ]
+            ]
         ];
+        Matrix4x4[][] numpy = numpyFrames[^1];
         float[][] numpyHistory =
         [
             [0.849328578f, 1.55074096f, 1.02812171f, 0.197674602f, 1.08379519f, 0.202203691f],
@@ -139,16 +202,6 @@ public sealed partial class SkinningRenderingTests
         Assert.InRange(error, 0, .0002f);
         using SkeletonInstance referenceFirst = storage.CreateInstance(skeleton), referenceSecond = storage.CreateInstance(skeleton);
         SkeletonInstance[] references = [referenceFirst, referenceSecond];
-        for (int actor = 0; actor < 2; actor++)
-        {
-            var transforms = new BoneTransform[3];
-            for (int bone = 0; bone < 3; bone++)
-            {
-                Matrix4x4.Decompose(numpy[actor][bone], out Vector3 scale, out Quaternion rotation, out Vector3 position);
-                transforms[bone] = new() { Translation = position, Rotation = rotation, Scale = scale };
-            }
-            references[actor].Update(transforms, .3);
-        }
         SceneImage? expected = null;
         var referenceApplication = new ApplicationScene(content.Project.RootPath)
         {
@@ -158,6 +211,20 @@ public sealed partial class SkinningRenderingTests
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                     frame.World.Add(mesh, new MeshSkin(frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0
                         ? referenceSecond : referenceFirst, binding));
+            },
+            UpdateFrame = frame =>
+            {
+                for (int actor = 0; actor < 2; actor++)
+                {
+                    var transforms = new BoneTransform[3];
+                    for (int bone = 0; bone < 3; bone++)
+                    {
+                        Matrix4x4.Decompose(numpyFrames[frame.Index][actor][bone],
+                            out Vector3 scale, out Quaternion rotation, out Vector3 position);
+                        transforms[bone] = new() { Translation = position, Rotation = rotation, Scale = scale };
+                    }
+                    references[actor].Update(transforms, (frame.Index + 1) * .1);
+                }
             },
         };
         await SceneImages.RunAsync("d3d12", new SceneScript(referenceApplication, 3,
