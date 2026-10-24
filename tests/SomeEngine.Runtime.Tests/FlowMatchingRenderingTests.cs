@@ -225,39 +225,22 @@ public sealed partial class SkinningRenderingTests
         }
         _output.WriteLine($"Flow NumPy parity maximum error: {error:G9}; tolerance: 0.0002");
         Assert.InRange(error, 0, .0002f);
-        using SkeletonInstance referenceFirst = storage.CreateInstance(skeleton), referenceSecond = storage.CreateInstance(skeleton);
-        SkeletonInstance[] references = [referenceFirst, referenceSecond];
-        SceneImage? expected = null;
-        var referenceApplication = new ApplicationScene(content.Project.RootPath)
+        await content.WriteReferenceMeshesAsync((previous, right) =>
         {
-            Initialize = frame =>
-            {
-                var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.CreateTranslation(0, -1, 0)], [1, 2]);
-                foreach (Entity mesh in frame.Scene.MeshEntities)
-                    frame.World.Add(mesh, new MeshSkin(frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0
-                        ? referenceSecond : referenceFirst, binding));
-            },
-            UpdateFrame = frame =>
-            {
-                for (int actor = 0; actor < 2; actor++)
-                {
-                    var transforms = new BoneTransform[3];
-                    for (int bone = 0; bone < 3; bone++)
-                    {
-                        Matrix4x4.Decompose(numpyFrames[frame.Index][actor][bone],
-                            out Vector3 scale, out Quaternion rotation, out Vector3 position);
-                        transforms[bone] = new() { Translation = position, Rotation = rotation, Scale = scale };
-                    }
-                    references[actor].Update(transforms, (frame.Index + 1) * .1);
-                }
-            },
-        };
+            Matrix4x4[] local = numpyFrames[previous ? 1 : 2][right ? 1 : 0];
+            Matrix4x4 hips = local[1] * local[0];
+            return (hips, Matrix4x4.CreateTranslation(0, -1, 0) * local[2] * hips);
+        });
+        await content.SetReferenceShaderAsync();
+        SceneImage? expected = null;
+        var referenceApplication = new ApplicationScene(content.Project.RootPath);
         await SceneImages.RunAsync("d3d12", new SceneScript(referenceApplication, 3,
             [new(2, edit => edit.CaptureImage(value => expected = value))]), "--fixed-step", "0.1", "--no-taa", "--no-vsm");
         SceneImage reference = Assert.IsType<SceneImage>(expected);
         int visible = 0;
         foreach (byte value in reference.Pixels.Span) if (value > 32 && value < 255) visible++;
-        Assert.True(visible > 1000);
+        _output.WriteLine($"Flow independent reference visible channels: {visible}");
+        Assert.True(visible > 1000, $"Visible reference channels: {visible}");
         SceneImages.AssertEqualWithinPixel(reference, Assert.IsType<SceneImage>(actual), tolerance: 2);
     }
 
