@@ -10,11 +10,13 @@ namespace SomeEngine.Runtime;
 public sealed class ApplicationScene(string contentDirectory)
 {
     private readonly List<IApplicationGeometryFeature> _geometryFeatures = [];
+    private readonly List<Action<SceneImage>> _images = [];
     internal IReadOnlyList<IApplicationGeometryFeature> GeometryFeatures => _geometryFeatures;
 
     public string ContentDirectory { get; set; } = contentDirectory;
     public RuntimeStartupOptions Options { get; set; } = RuntimeStartupOptions.Parse([]);
     public uint GeometryMemoryBytes { get; set; } = 256u * 1024 * 1024;
+    public uint DeformCacheBytes { get; set; } = 64u * 1024 * 1024;
     public float LodThreshold { get; set; } = 1;
     public ulong GeometryBvhMemoryBytes { get; set; } = 64ul * 1024 * 1024;
     public string? StartupTraceOutput { get; set; }
@@ -26,6 +28,7 @@ public sealed class ApplicationScene(string contentDirectory)
     public bool InterfaceEnabled { get; set; }
     public Action<ApplicationFrame>? UpdateFrame { get; set; }
     public Action? DrawDebugUi { get; set; }
+    /// <summary>Receives the presented frame on the application thread before the next Game update is scheduled.</summary>
     public Action<ApplicationFrame>? FrameCompleted { get; set; }
     /// <summary>Receives this frame's Cluster results after GPU completion. Supplying this callback enables synchronous frame diagnostics.</summary>
     public Action<ClusterFrameMetrics>? FrameRendered { get; set; }
@@ -35,12 +38,24 @@ public sealed class ApplicationScene(string contentDirectory)
     public Func<ApplicationRendering, IApplicationColorFeature>? CreateColorFeature { get; set; }
     public Action<ApplicationResult>? SceneCompleted { get; set; }
     public bool ReloadRequested { get; internal set; }
+    internal bool ExitRequested { get; private set; }
 
     /// <summary>Installs the feature for each scene run, before extraction and rendering begin.</summary>
     public void InstallGeometry(IApplicationGeometryFeature feature) => _geometryFeatures.Add(feature);
 
     /// <summary>Loads the current content and settings after this scene run completes.</summary>
     public void Reload() => ReloadRequested = true;
+    /// <summary>Finishes the current frame and returns from the application.</summary>
+    public void Exit() => ExitRequested = true;
+
+    /// <summary>Captures the next presented frame through the application's normal image readback.</summary>
+    public void CaptureImage(Action<SceneImage> receive) => _images.Add(receive);
+
+    internal void ApplyImageRequests(SceneEdit scene)
+    {
+        foreach (Action<SceneImage> receive in _images) scene.CaptureImage(receive);
+        _images.Clear();
+    }
 }
 
 /// <summary>Access to the application's current frame; rendering diagnostics are read on request.</summary>
@@ -59,6 +74,7 @@ public sealed class ApplicationFrame
     /// <summary>Registers source extractors during Initialize, before the first extraction.</summary>
     public RenderExtractionSystems Extraction { get; }
     public double DeltaSeconds { get; internal set; }
+    public double SimulationSeconds { get; internal set; }
     public SceneEdit Scene { get; }
     public AdapterInfo Adapter { get; }
     public int Index { get; internal set; }

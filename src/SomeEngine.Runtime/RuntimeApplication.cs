@@ -83,7 +83,7 @@ internal static class RuntimeApplication
                     throw new ApplicationRunException(ApplicationRunException.Classify(error, ApplicationFailure.ContentLoad),
                         frames + (error is ApplicationRunException run ? run.CompletedFrames : 0), error);
                 }
-            } while (application?.ReloadRequested == true);
+            } while (application?.ReloadRequested == true && !application.ExitRequested);
             return frames;
         }
         finally { content?.Files.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
@@ -514,8 +514,9 @@ internal static class RuntimeApplication
             ? new(receiveTiming) : null;
         bool measure = application?.MeasureInterface == true || measurements is not null;
         GameUpdateTiming gameTiming = default;
+        double simulationSeconds = 0;
         long gameStarted = 0, nextGameStarted = 0;
-        bool synchronousGame = options.SynchronousFrames || script is not null || application?.UpdateFrame is not null || application?.FrameCompleted is not null;
+        bool synchronousGame = options.SynchronousFrames || script is not null || application?.UpdateFrame is not null;
 
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
             scene.Camera.View,
@@ -681,7 +682,9 @@ internal static class RuntimeApplication
 
         ClusterPipelineSystem CreatePipeline(
             in ClusterPipelineOutputDescription description,
-            bool metrics) => new(
+            bool metrics)
+        {
+            var created = new ClusterPipelineSystem(
             backend,
             device,
             renderDevice,
@@ -702,18 +705,23 @@ internal static class RuntimeApplication
                 ForceHardwareRaster = forceHardwareRaster,
                 SoftwareRasterEdgeThreshold = script?.RasterEdgePixels ?? 4,
                 UseInstanceGroups = options.UseInstanceGroups,
-                EnableFrameMetricsReadback = metrics || application?.FrameRendered is not null,
+                EnableFrameMetricsReadback = metrics || measurements is not null || application?.FrameRendered is not null,
                 LodThreshold = application?.LodThreshold ?? 1,
+                MaxDeformCacheBytes = application?.DeformCacheBytes ?? 64u * 1024 * 1024,
                 MeasureBlending = options.MeasureBlending,
                 BlendIndex = options.BlendIndex,
                 BlendTriangleCapacity = script?.BlendTriangleCapacity ?? ClusterPipelineOptions.DefaultBlendTriangleCapacity,
                 BlendReferenceCapacity = script?.BlendReferenceCapacity ?? 1_048_576,
                 MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
             }, viewGrid: blendGrid, deformBounds: skinBounds);
+            if (measurements is not null) created.FrameMeasured += measurements.ReceiveGeometry;
+            return created;
+        }
 
         GameUpdateTiming UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds, long gameUpdateStarted)
         {
             geometry.UpdateGame(deltaSeconds);
+            simulationSeconds += deltaSeconds;
             long allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
             long started = measure ? Stopwatch.GetTimestamp() : 0;
             surfacePanel?.Resize(canvasWidth, canvasHeight);
@@ -723,7 +731,7 @@ internal static class RuntimeApplication
             {
                 elementSystems.UpdateViews(deltaSeconds);
                 extraction.Extract(mainWorld);
-                return default;
+                return new(default, 0, 0, SimulationSeconds: simulationSeconds);
             }
             ViewTiming views = elementSystems.MeasureViews(deltaSeconds);
             views = views with
@@ -737,7 +745,7 @@ internal static class RuntimeApplication
             using var trace = EngineTrace.Begin(ApplicationTrace.Extraction);
             extraction.Extract(mainWorld);
             return new GameUpdateTiming(views, Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-                GC.GetAllocatedBytesForCurrentThread() - allocated, gameMs);
+                GC.GetAllocatedBytesForCurrentThread() - allocated, gameMs, simulationSeconds);
         }
 
         void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
@@ -945,6 +953,7 @@ internal static class RuntimeApplication
                 sceneEdit.Begin();
                 try
                 {
+                    application?.ApplyImageRequests(sceneEdit);
                     while (script is not null && actionIndex < script.Actions.Count && script.Actions[actionIndex].Frame == frameIndex)
                         script.Actions[actionIndex++].Execute(sceneEdit);
                     applicationFrame.Index = frameIndex;
@@ -1218,35 +1227,6 @@ internal static class RuntimeApplication
                         metrics.PhaseTwoSoftwareClusters + metrics.PhaseTwoHardwareClusters);
                 }
 
-                bool hasFutureFrame =
-                    options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit;
-                if (hasFutureFrame && !synchronousGame)
-                {
-                    bool updateScene = animateScene;
-                    float nextSceneTime = options.FixedFrameSeconds > 0 ? (frameIndex + 1) * options.FixedFrameSeconds : (float)Stopwatch.GetElapsedTime(
-                        runtimeStarted,
-                        Stopwatch.GetTimestamp()).TotalSeconds;
-                    TraceContext gameTrace = EngineTrace.Context with { Frame = traceFrameIndex + 1 };
-                    int nextCanvasWidth = width;
-                    int nextCanvasHeight = height;
-                    int nextFrameNumber = frameIndex + 1;
-                    nextGameStarted = Stopwatch.GetTimestamp();
-                    nextGameUpdate = Task.Run(() =>
-                    {
-                        long updateStarted = Stopwatch.GetTimestamp();
-                        using var association = EngineTrace.Associate(gameTrace);
-                        using var trace = EngineTrace.Begin(ApplicationTrace.GameUpdate);
-                        // CPU rendering has finished reading shared resources. Apply next-frame
-                        // resource edits here while submitted GPU work retains its device data.
-                        if (options.ScenePlayback is not null)
-                            scene.Play(nextSceneTime, options.ScenePlayback is "materials" or "camera", animateMaterial,
-                                orbitCamera: options.ScenePlayback == "camera");
-                        else if (updateScene)
-                            scene.Update(nextSceneTime);
-                        return UpdateInterface(nextFrameNumber, nextCanvasWidth, nextCanvasHeight, deltaSeconds, updateStarted);
-                    });
-                }
-
                 if (reportMilestones)
                     Console.WriteLine("First frame: presenting.");
                 PresentStatus present = backend.Present(
@@ -1272,13 +1252,42 @@ internal static class RuntimeApplication
                 applicationFrame.Timing = new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
                     prepareMs, reconcileMs, executeMs, gameTiming.Views, gameTiming.ExtractionMs,
                     gameTiming.ExtractionAllocatedBytes, frameIndex);
+                applicationFrame.SimulationSeconds = gameTiming.SimulationSeconds;
                 application?.FrameCompleted?.Invoke(applicationFrame);
-                measurements?.RecordCpu(graphFrameIdentity, frameIndex,
+                measurements?.RecordCpu(graphFrameIdentity, frameIndex, gameTiming.SimulationSeconds, !synchronousGame,
                     cpuMs,
                     gameTiming.GameMs, gameTiming.Views.AnimationMs, gameTiming.ExtractionMs,
                     prepareMs, reconcileMs, executeMs);
+                bool hasFutureFrame = (options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit)
+                    && application?.ReloadRequested != true && application?.ExitRequested != true;
+                if (hasFutureFrame && !synchronousGame)
+                {
+                    bool updateScene = animateScene;
+                    float nextSceneTime = options.FixedFrameSeconds > 0 ? (frameIndex + 1) * options.FixedFrameSeconds : (float)Stopwatch.GetElapsedTime(
+                        runtimeStarted,
+                        Stopwatch.GetTimestamp()).TotalSeconds;
+                    TraceContext gameTrace = EngineTrace.Context with { Frame = traceFrameIndex + 1 };
+                    int nextCanvasWidth = width;
+                    int nextCanvasHeight = height;
+                    int nextFrameNumber = frameIndex + 1;
+                    nextGameStarted = Stopwatch.GetTimestamp();
+                    nextGameUpdate = Task.Run(() =>
+                    {
+                        long updateStarted = Stopwatch.GetTimestamp();
+                        using var association = EngineTrace.Associate(gameTrace);
+                        using var trace = EngineTrace.Begin(ApplicationTrace.GameUpdate);
+                        // CPU rendering and application callbacks have finished reading shared resources.
+                        // Submitted GPU work retains its device data while the next Game update runs.
+                        if (options.ScenePlayback is not null)
+                            scene.Play(nextSceneTime, options.ScenePlayback is "materials" or "camera", animateMaterial,
+                                orbitCamera: options.ScenePlayback == "camera");
+                        else if (updateScene)
+                            scene.Update(nextSceneTime);
+                        return UpdateInterface(nextFrameNumber, nextCanvasWidth, nextCanvasHeight, deltaSeconds, updateStarted);
+                    });
+                }
                 frameIndex++;
-                if (application?.ReloadRequested == true) break;
+                if (application?.ReloadRequested == true || application?.ExitRequested == true) break;
             }
 
             if (frameIndex > 0)
@@ -1409,7 +1418,8 @@ internal static class RuntimeApplication
         }
     }
 
-    private readonly record struct GameUpdateTiming(ViewTiming Views, double ExtractionMs, long ExtractionAllocatedBytes, double GameMs = 0);
+    private readonly record struct GameUpdateTiming(ViewTiming Views, double ExtractionMs, long ExtractionAllocatedBytes,
+        double GameMs = 0, double SimulationSeconds = 0);
 
     private static void Prepare(
         RenderPrepareSystems systems,
