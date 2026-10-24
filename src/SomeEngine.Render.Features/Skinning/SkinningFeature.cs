@@ -70,6 +70,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _twoBonePipeline = LinkedComputePipeline.Create(backend, device, shader, "SolveTwoBone", "Solve two-bone pose");
         _aimPipeline = LinkedComputePipeline.Create(backend, device, shader, "SolveAim", "Solve aim pose");
         _stridePipeline = LinkedComputePipeline.Create(backend, device, shader, "WarpStride", "Warp stride and body");
+        _xpbdPipeline = LinkedComputePipeline.Create(backend, device, shader, "SimulateXpbdChain", "Simulate secondary bone chains");
         using RenderGraphEdit edit = graph.BeginEdit();
         _currentBones = edit.CreateBufferInput(PoseUsages);
         _previousBones = edit.CreateBufferInput(PoseUsages);
@@ -82,6 +83,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _offsetsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _rootsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _movementsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+        _xpbdFramesInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+        _xpbdPointsInput = edit.CreateBufferInput(PoseUsages);
+        _xpbdWorkInput = edit.CreateBufferInput(BufferUsages.ShaderWrite);
         _valuesInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _controlsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _sectionsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
@@ -124,7 +128,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                     || !ReferenceEquals(section.Data.Evaluation, data.Evaluation)
                     || !section.Data.CpuBones.Equals(data.CpuBones))
                     feature._definitionsChanged = true;
-                if (!ReferenceEquals(section.Data.Blend, data.Blend)) feature._membershipChanged = true;
+                if (!ReferenceEquals(section.Data.Blend, data.Blend) || !ReferenceEquals(section.Data.Rig, data.Rig)) feature._membershipChanged = true;
                 section.Data = data;
                 section.Collection = feature._collection;
             }
@@ -170,7 +174,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     {
         PrepareEvaluations();
         _controls.Clear(); _controlValues.Clear(); _cpuValues.Clear(); _cpuCopies.Clear();
-        _goalValues.Clear(); _modelOffsets.Clear(); _rootCorrections.Clear(); _movements.Clear();
+        _goalValues.Clear(); _modelOffsets.Clear(); _rootCorrections.Clear(); _movements.Clear(); _xpbdFrames.Clear();
         foreach (Section section in _sectionOrder)
         {
             RenderBoneSectionData data = section.Data;
@@ -189,6 +193,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             _rootCorrections.Add(new(new(data.RootCorrection.Translation, data.ExtractRootMotion ? 1 : 0), data.RootCorrection.Rotation));
             GpuPoseMovement movement = data.Movement;
             _movements.Add(new(new(movement.Velocity, movement.Weight), new(movement.AnimationVelocity, 0), new(movement.FacingDirection, 0)));
+            if (_xpbdPointCount > 1) _xpbdFrames.Add(ReadXpbdFrame(section));
             _controls.Add(new(data.Blend is null ? section.ClipOffset : (uint)section.BlendLocalStart,
                 data.SampleTime, flags, data.Starts, data.InputNumber, data.CalculationTime,
                 data.Blend is null ? section.MachineOffset : section.BlendOffset, inputOffset, data.PlaybackTime,
@@ -225,7 +230,11 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             RenderBoneSectionData data = section.Data;
             section.FrameInput = new(data.InputNumber, data.Starts, data.Identity.AnimationStarts, data.Clip, data.StateMachine, data.Blend, data.Rig);
             section.AdvanceSource = !section.HasResult || section.AcceptedInput != section.FrameInput;
+            if (section.XpbdCount != 0)
+                section.XpbdBinding = new(data.Identity.Target, data.Identity.Instance, data.Rig, data.Starts, data.Identity.AnimationStarts, data.BindingVersion);
+            section.ResetXpbd = section.XpbdCount != 0 && section.AcceptedXpbd != section.XpbdBinding;
             bool changed = section.AdvanceSource || data.IsGpu && !section.HasSamples || section.AcceptedBinding != data.BindingVersion
+                || section.ResetXpbd
                 || !ReferenceEquals(section.AcceptedEvaluation, data.Evaluation) || section.AcceptedExtractRoot != data.ExtractRootMotion
                 || !section.AcceptedCpuBones.Equals(data.CpuBones)
                 || (!data.IsGpu || data.CpuBones.Length != 0) && section.CpuVersion != data.Version;
@@ -337,22 +346,25 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         if (_membershipChanged)
         {
             if (_historyCurrent != default && _historyCurrent != _readyCurrent)
-            { edit.Remove(_historyCurrent); edit.Remove(_historyPrevious); edit.Remove(_playback); edit.Remove(_blendStates); }
+            { edit.Remove(_historyCurrent); edit.Remove(_historyPrevious); edit.Remove(_playback); edit.Remove(_blendStates); edit.Remove(_xpbdPoints); }
             _historyCurrent = edit.CreatePersistentBuffer(new BufferDesc((ulong)_boneCount * 128, PoseUsages, Label: "Current pose and local sample history"));
             _historyPrevious = edit.CreatePersistentBuffer(new BufferDesc((ulong)_boneCount * 128, PoseUsages, Label: "Previous pose and local sample history"));
             _playback = edit.CreatePersistentBuffer(new BufferDesc((ulong)Math.Max(1, _sectionOrder.Length) * 64,
                 PoseUsages, Label: "GPU pose playback"));
             _blendStates = edit.CreatePersistentBuffer(new BufferDesc((ulong)_blendStateCount * 32,
                 PoseUsages, Label: "GPU blend phases and selections"));
+            _xpbdPoints = edit.CreatePersistentBuffer(new BufferDesc((ulong)_xpbdPointCount * 32,
+                PoseUsages, Label: "GPU secondary positions and velocities"));
             foreach (Section section in _sectionOrder)
                 if (section.HasResult) migrations.Add(new(section.StoredRange, section.Range, section.StoredIndex, section.Index,
                     section.StoredBlendStart, section.BlendStart,
-                    ReferenceEquals(section.StoredBlend, section.Data.Blend) ? section.StoredBlend?.Steps.Length ?? 0 : 0));
+                    ReferenceEquals(section.StoredBlend, section.Data.Blend) ? section.StoredBlend?.Steps.Length ?? 0 : 0,
+                    section.StoredXpbdStart, section.XpbdStart, ReferenceEquals(section.StoredRig, section.Data.Rig) ? section.XpbdCount : 0));
             _migrationRequired = true;
         }
         var upload = new DefinitionCopy(_definitionUpload, _definitions, _definitionBytes.Length,
-            _migrationRequired, _readyCurrent, _readyPrevious, _readyPlayback, _readyBlendStates,
-            _historyCurrent, _historyPrevious, _playback, _blendStates, [.. migrations]);
+            _migrationRequired, _readyCurrent, _readyPrevious, _readyPlayback, _readyBlendStates, _readyXpbdPoints,
+            _historyCurrent, _historyPrevious, _playback, _blendStates, _xpbdPoints, [.. migrations]);
         _uploadPass = edit.AddCopyFramePass("Upload pose definitions", PassQueueSelection.AnyOfType(QueueType.Graphics), upload,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
         _posePasses.Add(_uploadPass);
@@ -378,7 +390,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             LinkedComputePipeline pipeline = solve.Kernel switch
             {
                 Kernel.Translate => _translatePipeline, Kernel.TwoBone => _twoBonePipeline,
-                Kernel.Stride => _stridePipeline, _ => _aimPipeline,
+                Kernel.Stride => _stridePipeline, Kernel.Xpbd => _xpbdPipeline, _ => _aimPipeline,
             };
             GraphPassId pass = AddKernel(edit, pipeline, solve.Kernel, solve.Work, solve.Count);
             edit.OrderAfter(pass, predecessor);
@@ -423,6 +435,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             "GpuPoseGoals" => Resource.Goals, "GpuPoseOffsets" => Resource.Offsets,
             "GpuPoseRoots" => Resource.Roots,
             "GpuPoseMovements" => Resource.Movements,
+            "GpuXpbdFrames" => Resource.XpbdFrames, "GpuXpbdPoints" => Resource.XpbdPoints, "GpuXpbdWork" => Resource.XpbdWork,
             "GpuPoseModels" => Resource.Models, "GpuPosePrevious" => Resource.Previous,
             "GpuPoseHistoryCurrent" => Resource.HistoryCurrent, "GpuPoseHistoryPrevious" => Resource.HistoryPrevious, _ => null,
         });
@@ -436,6 +449,11 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 case Resource.Offsets: pass.Bind(edit.CreateBufferSrv(_offsetsInput, structureStride: 16), PipelineSync.ComputeShading); break;
                 case Resource.Roots: pass.Bind(edit.CreateBufferSrv(_rootsInput, structureStride: 32), PipelineSync.ComputeShading); break;
                 case Resource.Movements: pass.Bind(edit.CreateBufferSrv(_movementsInput, structureStride: 48), PipelineSync.ComputeShading); break;
+                case Resource.XpbdFrames: pass.Bind(edit.CreateBufferSrv(_xpbdFramesInput, structureStride: 144), PipelineSync.ComputeShading); break;
+                case Resource.XpbdPoints: pass.Bind(edit.CreateBufferUav(_xpbdPointsInput, structureStride: 32), PipelineSync.ComputeShading,
+                    GraphAccessMode.ReadWrite); break;
+                case Resource.XpbdWork: pass.Bind(edit.CreateBufferUav(_xpbdWorkInput, structureStride: 96), PipelineSync.ComputeShading,
+                    GraphAccessMode.Write); break;
                 case Resource.Playback:
                     pass.Bind(edit.CreateBufferUav(_playbackInput, structureStride: 64), PipelineSync.ComputeShading,
                         kernel == Kernel.Advance ? GraphAccessMode.ReadWrite : GraphAccessMode.Read); break;
@@ -447,12 +465,12 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                         GraphAccessMode.Write); break;
                 case Resource.Sections: pass.Bind(edit.CreateBufferSrv(_sectionsInput, structureStride: 4), PipelineSync.ComputeShading); break;
                 case Resource.Work:
-                    pass.Bind(edit.CreateBufferSrv(_workInput, kernel is Kernel.Sample or Kernel.Translate or Kernel.TwoBone or Kernel.Aim or Kernel.Stride
+                    pass.Bind(edit.CreateBufferSrv(_workInput, kernel is Kernel.Sample or Kernel.Translate or Kernel.TwoBone or Kernel.Aim or Kernel.Stride or Kernel.Xpbd
                         ? work : new BufferRange(0, 16), structureStride: 16), PipelineSync.ComputeShading); break;
                 case Resource.Clips: pass.Bind(edit.CreateBufferSrv(_clipsInput), PipelineSync.ComputeShading); break;
                 case Resource.Models:
                     pass.Bind(edit.CreateBufferUav(_currentBones, structureStride: 64), PipelineSync.ComputeShading,
-                        kernel == Kernel.Load ? GraphAccessMode.Write : kernel is Kernel.Sample or Kernel.Translate or Kernel.TwoBone or Kernel.Aim or Kernel.Stride
+                        kernel == Kernel.Load ? GraphAccessMode.Write : kernel is Kernel.Sample or Kernel.Translate or Kernel.TwoBone or Kernel.Aim or Kernel.Stride or Kernel.Xpbd
                             ? GraphAccessMode.ReadWrite : GraphAccessMode.Read,
                         kernel == Kernel.Load ? WriteCoverage.Complete : WriteCoverage.Partial); break;
                 case Resource.Previous:
@@ -481,12 +499,17 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         if (_modelOffsets.Count == 0) _modelOffsets.Add(default);
         if (_rootCorrections.Count == 0) _rootCorrections.Add(default);
         if (_movements.Count == 0) _movements.Add(default);
+        if (_xpbdFrames.Count == 0) _xpbdFrames.Add(default);
         frame.SetBufferInput(_currentBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Current model bones")), BufferRange.Whole));
         frame.SetBufferInput(_previousBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Previous model bones")), BufferRange.Whole));
         frame.SetBufferInput(_historyCurrentInput, new(_historyCurrent, BufferRange.Whole));
         frame.SetBufferInput(_historyPreviousInput, new(_historyPrevious, BufferRange.Whole));
         frame.SetBufferInput(_playbackInput, new(_playback, BufferRange.Whole));
         frame.SetBufferInput(_blendStatesInput, new(_blendStates, BufferRange.Whole));
+        frame.SetBufferInput(_xpbdPointsInput, new(_xpbdPoints, BufferRange.Whole));
+        frame.SetBufferInput(_xpbdWorkInput, new(frame.CreateBuffer(new BufferDesc((ulong)_xpbdPointCount * 96,
+            BufferUsages.ShaderWrite, Label: "GPU secondary constraint workspace")), BufferRange.Whole));
+        frame.SetBufferInput(_xpbdFramesInput, frame.Upload<XpbdFrame>(CollectionsMarshal.AsSpan(_xpbdFrames), BufferUsages.ShaderRead));
         frame.SetBufferInput(_blendLocalsInput, new(frame.CreateBuffer(new BufferDesc((ulong)_blendLocalCount * 48,
             BufferUsages.ShaderWrite, Label: "GPU blend local workspace")), BufferRange.Whole));
         frame.SetBufferInput(_valuesInput, frame.Upload<float>(CollectionsMarshal.AsSpan(_controlValues), BufferUsages.ShaderRead));
@@ -528,14 +551,16 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             {
                 if (_readyCurrent != default)
                 { _retiredHistories.Add(_readyCurrent); _retiredHistories.Add(_readyPrevious); _retiredHistories.Add(_readyPlayback);
-                  _retiredHistories.Add(_readyBlendStates); }
+                  _retiredHistories.Add(_readyBlendStates); _retiredHistories.Add(_readyXpbdPoints); }
                 _readyCurrent = _historyCurrent; _readyPrevious = _historyPrevious;
                 _readyPlayback = _playback;
                 _readyBlendStates = _blendStates;
+                _readyXpbdPoints = _xpbdPoints;
                 foreach (Section section in _sectionOrder)
                 {
                     section.StoredRange = section.Range; section.StoredIndex = section.Index;
                     section.StoredBlendStart = section.BlendStart; section.StoredBlend = section.Data.Blend;
+                    section.StoredXpbdStart = section.XpbdStart; section.StoredRig = section.Data.Rig;
                 }
                 _migrationRequired = false;
             }
@@ -543,6 +568,11 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         if (result.TryGetPassCompletion(_storePass, out _))
             foreach (Section section in _sectionOrder)
             {
+                if (section.XpbdCount != 0 && section.Evaluate)
+                {
+                    section.AcceptedXpbd = section.XpbdBinding;
+                    section.XpbdTime = section.FrameTime;
+                }
                 section.AcceptedInput = section.FrameInput;
                 section.CpuVersion = section.Data.Version;
                 section.AcceptedBinding = section.Data.BindingVersion;
@@ -566,6 +596,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 section.StoredIndex = section.Index;
                 section.StoredBlendStart = section.BlendStart;
                 section.StoredBlend = section.Data.Blend;
+                section.StoredXpbdStart = section.XpbdStart;
+                section.StoredRig = section.Data.Rig;
             }
         AcceptReadbacks(result);
     }
@@ -577,7 +609,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         edit.Remove(_uploadPass);
         _posePasses.Remove(_uploadPass);
         var upload = new DefinitionCopy(_definitionUpload, _definitions, _definitionBytes.Length,
-            false, default, default, default, default, _historyCurrent, _historyPrevious, _playback, _blendStates, []);
+            false, default, default, default, default, default, _historyCurrent, _historyPrevious, _playback, _blendStates, _xpbdPoints, []);
         _uploadPass = edit.AddCopyFramePass("Upload pose definitions", PassQueueSelection.AnyOfType(QueueType.Graphics), upload,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
         _posePasses.Add(_uploadPass);
@@ -619,6 +651,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _readbacks.Clear();
         _advancePipeline.Dispose(); _loadPipeline.Dispose(); _samplePipeline.Dispose(); _storePipeline.Dispose();
         _translatePipeline.Dispose(); _twoBonePipeline.Dispose(); _aimPipeline.Dispose(); _stridePipeline.Dispose();
+        _xpbdPipeline.Dispose();
     }
 
     private static void Align(BinaryWriter writer, int alignment)
@@ -626,8 +659,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private static void WriteMatrix(BinaryWriter writer, Matrix4x4 matrix) =>
         writer.Write(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in matrix, 1)));
 
-    private enum Kernel { Advance, Load, Sample, Store, Translate, TwoBone, Aim, Stride }
-    private enum Resource { Controls, Values, Goals, Offsets, Roots, Movements, Playback, BlendStates, BlendLocals, Sections, Work, Clips, Models, Previous, HistoryCurrent, HistoryPrevious }
+    private enum Kernel { Advance, Load, Sample, Store, Translate, TwoBone, Aim, Stride, Xpbd }
+    private enum Resource { Controls, Values, Goals, Offsets, Roots, Movements, XpbdFrames, XpbdPoints, XpbdWork, Playback, BlendStates, BlendLocals, Sections, Work, Clips, Models, Previous, HistoryCurrent, HistoryPrevious }
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct Control(uint ClipOffset, float SampleTime, uint Flags, uint Starts, ulong InputNumber,
         double CalculationTime, uint MachineOffset, uint InputOffset, float PlaybackTime, uint BlendStart,
@@ -639,7 +672,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         GpuPoseStateMachine? StateMachine, GpuPoseBlend? Blend, GpuPoseRig? Rig);
     private readonly record struct CpuCopy(int Source, int Destination, int Count);
     private readonly record struct HistoryCopy(PoseRange Source, PoseRange Destination, int SourceIndex, int DestinationIndex,
-        int SourceBlendStart, int DestinationBlendStart, int BlendCount);
+        int SourceBlendStart, int DestinationBlendStart, int BlendCount, int SourceXpbdStart, int DestinationXpbdStart, int XpbdCount);
     private sealed class Section(Entity entity)
     {
         internal readonly Entity Entity = entity;
@@ -654,6 +687,11 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         internal int Index, StoredIndex;
         internal int BlendStart, BlendLocalStart, StoredBlendStart;
         internal int SolverEnd, GoalStart;
+        internal int XpbdStart, XpbdCount, StoredXpbdStart;
+        internal GpuPoseRig? StoredRig;
+        internal XpbdBinding AcceptedXpbd, XpbdBinding;
+        internal double XpbdTime;
+        internal bool ResetXpbd;
         internal GpuPoseBlend? StoredBlend;
         internal int[] Depths = [];
         internal uint ClipOffset, MachineOffset, BlendOffset;
@@ -692,8 +730,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     }
 
     private readonly record struct DefinitionCopy(GraphBufferInput Upload, GraphBufferId Definitions, int Bytes,
-        bool Migrate, GraphBufferId BeforeCurrent, GraphBufferId BeforePrevious, GraphBufferId BeforePlayback, GraphBufferId BeforeBlendStates,
-        GraphBufferId Current, GraphBufferId Previous, GraphBufferId Playback, GraphBufferId BlendStates, HistoryCopy[] Regions)
+        bool Migrate, GraphBufferId BeforeCurrent, GraphBufferId BeforePrevious, GraphBufferId BeforePlayback, GraphBufferId BeforeBlendStates, GraphBufferId BeforeXpbd,
+        GraphBufferId Current, GraphBufferId Previous, GraphBufferId Playback, GraphBufferId BlendStates, GraphBufferId Xpbd, HistoryCopy[] Regions)
     {
         internal static void Declare(ref PassDefinition pass, ref DefinitionCopy data)
         {
@@ -704,11 +742,13 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             pass.Write(data.Previous, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             pass.Write(data.Playback, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             pass.Write(data.BlendStates, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+            pass.Write(data.Xpbd, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             if (data.BeforeCurrent == default) return;
             pass.Read(data.BeforeCurrent, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
             pass.Read(data.BeforePrevious, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
             pass.Read(data.BeforePlayback, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
             pass.Read(data.BeforeBlendStates, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+            pass.Read(data.BeforeXpbd, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
         }
         internal static void Record(ref CopyPassCommandScope commands, in DefinitionCopy data)
         {
@@ -721,6 +761,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             commands.ClearBuffer(playback, BufferRange.Whole, 0);
             SomeEngine.Graphics.Buffer blendStates = commands.GetBuffer(data.BlendStates);
             commands.ClearBuffer(blendStates, BufferRange.Whole, 0);
+            SomeEngine.Graphics.Buffer xpbd = commands.GetBuffer(data.Xpbd);
+            commands.ClearBuffer(xpbd, BufferRange.Whole, 0);
             foreach (HistoryCopy region in data.Regions)
             {
                 commands.CopyBuffer(new(commands.GetBuffer(data.BeforeCurrent), (ulong)region.Source.Start * 64,
@@ -738,6 +780,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 if (region.BlendCount > 0)
                     commands.CopyBuffer(new(commands.GetBuffer(data.BeforeBlendStates), (ulong)region.SourceBlendStart * 32,
                         blendStates, (ulong)region.DestinationBlendStart * 32, (ulong)region.BlendCount * 32));
+                if (region.XpbdCount > 0)
+                    commands.CopyBuffer(new(commands.GetBuffer(data.BeforeXpbd), (ulong)region.SourceXpbdStart * 32,
+                        xpbd, (ulong)region.DestinationXpbdStart * 32, (ulong)region.XpbdCount * 32));
             }
         }
     }
