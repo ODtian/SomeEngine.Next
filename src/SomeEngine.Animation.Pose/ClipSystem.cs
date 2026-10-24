@@ -1,5 +1,6 @@
 using System.Numerics;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -10,22 +11,33 @@ namespace SomeEngine.Animation.Pose;
 public struct ClipSystem : ISystem<ImmediateSystemContext>
 {
     private QueryHandle _clips;
+    private Dictionary<AnimationClip, ClipSamplingRows> _groups;
+    private List<JobHandle> _jobs;
 
-    public void OnCreate(ref ImmediateSystemContext context) =>
+    public void OnCreate(ref ImmediateSystemContext context)
+    {
+        _groups = [];
+        _jobs = [];
         _clips = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
             .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<ClipInstance>()
             .OptionalBuffer<LocalPose>(QueryAccess.ReadWrite).OptionalBuffer<PoseResult>(QueryAccess.ReadWrite)
             .OptionalBuffer<TimelineEvent>(QueryAccess.ReadWrite).Optional<AnimationLayers>(QueryAccess.Read)));
+    }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
-        World world = context.World;
-        world.ExecuteQuery(_clips, ref world, static (QueryCursor rows, ref World world) =>
+        foreach (ClipSamplingRows group in _groups.Values) group.Begin();
+        _jobs.Clear();
+        var frame = new ClipFrame(context.World, _groups);
+        frame.World.ExecuteQuery(_clips, ref frame, static (scoped QueryCursor rows, ref ClipFrame frame) =>
         {
             foreach (QueryRow row in rows.Rows)
                 foreach (ref ClipInstance instance in row.Buffer<ClipInstance>().AsSpan())
                 {
-                    AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in instance.Placement);
+                    AnimationLeafTime time = AnimationGraph.ReadTime(in row, in instance.Placement);
+                    instance.Time = time;
+                    instance.Active = time.Active;
+                    instance.Sampled = false;
                     if (instance.Starts != time.Starts)
                     {
                         instance.Starts = time.Starts;
@@ -34,13 +46,41 @@ public struct ClipSystem : ISystem<ImmediateSystemContext>
                         instance.PreviousMotion = Matrix4x4.Identity;
                     }
                     if (!time.Active) continue;
-                    float weight = time.Weight;
-                    if (world.Has<AnimationLayers>(instance.Output.Entity))
+                    instance.Weight = time.Weight;
+                    if (frame.World.Has<AnimationLayers>(instance.Output.Entity))
                     {
-                        AnimationLayers layers = world.Read<AnimationLayers>(instance.Output.Entity);
-                        if (instance.Placement.Layer < layers.Count) weight *= layers.Items[instance.Placement.Layer].Weight;
+                        AnimationLayers layers = frame.World.Read<AnimationLayers>(instance.Output.Entity);
+                        if (instance.Placement.Layer < layers.Count) instance.Weight *= layers.Items[instance.Placement.Layer].Weight;
                     }
-                    if (instance.Finished)
+                    if (instance.Finished) continue;
+                    ClipParameters parameters = instance.Definition.Parameters[instance.Index];
+                    AnimationClip clip = parameters.Clip;
+                    if (!frame.Groups.TryGetValue(clip, out ClipSamplingRows? group))
+                    {
+                        var bones = new short[clip.Skeleton.BoneCount];
+                        for (int bone = 0; bone < bones.Length; bone++) bones[bone] = (short)bone;
+                        group = new(clip, bones);
+                        group.Begin();
+                        frame.Groups.Add(clip, group);
+                    }
+                    float elapsed = parameters.Loop ? time.Time.Time : Math.Min(time.Time.Time, clip.Duration);
+                    group.AddFull(parameters.Loop ? elapsed % clip.Duration : elapsed, instance.Samples, instance.SampleAccess);
+                    instance.Sampled = true;
+                }
+        });
+        foreach (ClipSamplingRows group in _groups.Values)
+            if (group.Count > 0) _jobs.Add(group.Schedule());
+        foreach (JobHandle job in _jobs) job.Complete();
+        World world = context.World;
+        world.ExecuteQuery(_clips, ref world, static (scoped QueryCursor rows, ref World world) =>
+        {
+            foreach (QueryRow row in rows.Rows)
+                foreach (ref ClipInstance instance in row.Buffer<ClipInstance>().AsSpan())
+                {
+                    if (!instance.Active) continue;
+                    AnimationLeafTime time = instance.Time;
+                    float weight = instance.Weight;
+                    if (!instance.Sampled)
                     {
                         var held = (Index: instance.Output.Index, Weight: weight);
                         world.ExecuteBufferWrite<PoseResult, (int Index, float Weight)>(instance.Output.Entity, ref held,
@@ -50,10 +90,6 @@ public struct ClipSystem : ISystem<ImmediateSystemContext>
                     ClipParameters parameters = instance.Definition.Parameters[instance.Index];
                     AnimationClip clip = parameters.Clip;
                     float elapsed = parameters.Loop ? time.Time.Time : Math.Min(time.Time.Time, clip.Duration);
-                    float sampleTime = parameters.Loop ? elapsed % clip.Duration : elapsed;
-                    JobHandle sampled = JobSystem.Schedule(new SampleClip(clip, sampleTime, instance.Samples),
-                        [JobResourceAccess.Read(JobSystem.Default.GetResourceToken(clip)), JobResourceAccess.Write(instance.Samples)]);
-                    sampled.Complete();
                     RootMotionDelta rootMotion = RootMotionDelta.Identity;
                     if (parameters.RootMotion == RootMotionMode.Extract && clip.RootMotionBone >= 0)
                         rootMotion = ((ClipRootMotion[])instance.Definition.Data!)[instance.Index]
@@ -82,7 +118,7 @@ public struct ClipSystem : ISystem<ImmediateSystemContext>
                             result.Version++;
                         });
                     instance.Finished = !parameters.Loop && elapsed >= clip.Duration;
-                    AnimationGraph.Submit(world, row.Entity, in instance.Placement, !instance.Finished);
+                    AnimationGraph.Submit(in row, in instance.Placement, !instance.Finished);
                 }
         });
     }
@@ -97,8 +133,5 @@ public struct ClipSystem : ISystem<ImmediateSystemContext>
         return after - before;
     }
 
-    private readonly record struct SampleClip(AnimationClip Clip, float Time, BoneTransform[] Destination) : IJob
-    {
-        public void Execute() => Clip.SampleLocal(Time, Destination);
-    }
+    private readonly record struct ClipFrame(World World, Dictionary<AnimationClip, ClipSamplingRows> Groups);
 }
