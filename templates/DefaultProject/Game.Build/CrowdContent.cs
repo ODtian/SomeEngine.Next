@@ -30,8 +30,15 @@ public static class CrowdContent
             sourceFormats: [new ShaderSourceFormat([Path.Combine(engineRoot, "assets/Shaders")])]);
         string template = await File.ReadAllTextAsync(Path.Combine(projectRoot, "assets/Shaders/standard.slang"));
         await WriteShaderAsync(project, template, cached: false);
-        using MeshAsset mesh = await ImportCharacterAsync(project, example);
-        project.RegisterAsset(await mesh.SaveAsync(Path.Combine(inlineRoot, "assets/Models/crowd.mesh.asset")));
+        string meshPath = Path.Combine(inlineRoot, "assets/Models/crowd.mesh.asset");
+        Guid meshId = Guid.Empty;
+        if (File.Exists(meshPath))
+        {
+            using MeshAsset previous = await MeshAsset.OpenAsync(meshPath);
+            meshId = previous.Id;
+        }
+        using MeshAsset mesh = await ImportCharacterAsync(project, example, meshId);
+        project.RegisterAsset(await mesh.SaveAsync(meshPath));
         await WriteSceneAsync(project, mesh.Id);
         await SetResolutionAsync(project);
         CopyContent(inlineRoot, cacheRoot);
@@ -74,7 +81,7 @@ public static class CrowdContent
         await project.BuildAsync("assets/Shaders/standard.shader");
     }
 
-    private static async Task<MeshAsset> ImportCharacterAsync(AssetProject project, CrowdExample example)
+    private static async Task<MeshAsset> ImportCharacterAsync(AssetProject project, CrowdExample example, Guid meshId)
     {
         double[] joints = example.VertexParts.SelectMany(part => new double[] { part * 4, part * 4 + 1, part * 4 + 2, part * 4 + 3 }).ToArray();
         double[] weights = example.VertexParts.SelectMany(_ => new double[] { 102.0 / 255, 77.0 / 255, 51.0 / 255, 25.0 / 255 }).ToArray();
@@ -104,7 +111,7 @@ public static class CrowdContent
         GltfMesh source = ModelRoot.CreateModel().CreateMesh("Crowd example");
         source.CreatePrimitive();
         MeshAsset imported = await context.GetAssetAsync<GltfMesh, MeshAsset>(source);
-        MeshAsset mesh = imported.Duplicate();
+        MeshAsset mesh = imported.CreateCopy(meshId);
         ClusterVertexAttributesBlock surface = await mesh.GetBlockAsync<ClusterVertexAttributesBlock>();
         ClusterSkinInfluencesBlock skin = await mesh.GetBlockAsync<ClusterSkinInfluencesBlock>();
         mesh.SetBlock(new ClusterVertexAttributesBlock
