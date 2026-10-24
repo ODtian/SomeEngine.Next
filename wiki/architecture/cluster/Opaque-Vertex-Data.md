@@ -19,6 +19,8 @@ position/normal/UV/color 布局、量化、bit packing、压缩方式和私有 b
 
 页记录保存两个不透明字节视图的相对地址与长度。`VertexEvalContext` 提供 `vertexBlobAddress`/`vertexBlobSize` 与 `attributeBlobAddress`/`attributeBlobSize`，两者共享 `localVertexIndex`。页组合复制字节并维护拓扑、区域与 LOD，属性语义和分量由用户 Shader 决定。
 
+[`LoadVertexData`](../../../assets/Shaders/vertex_evaluate_interfaces.slang) 同时把页记录的原始编码字节起点保留为 `vertexDataAddress`。用户材质可直接从这里解释自己定义的完整编码块；默认材质继续读取两段字节视图。光栅、变形、着色和细分入口共用这个上下文构造。DefaultGame 的 `scene_scv1_vertex.slang` 是读取既有 SCV1 页的项目解码器示例。
+
 默认线性、Opaque 材质以 `StaticPositionEval` 生成深度与阴影，以 `StaticVertexEval` 生成着色数据。用户的可见性、变形和细分实现按自己的函数消费所需字节。
 
 软件 meshlet 光栅在组内共享已求值的裁剪位置，跨三角形批次复用这些几何值。用户可见性的 Varying 仍由自己的 `readLane` 实现传递。双后端公开读回覆盖这一位置缓存的行为。
