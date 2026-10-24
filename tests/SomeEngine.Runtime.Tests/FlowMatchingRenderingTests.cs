@@ -254,7 +254,11 @@ public sealed partial class SkinningRenderingTests
         };
         await SceneImages.RunAsync("d3d12", new SceneScript(referenceApplication, 3,
             [new(2, edit => edit.CaptureImage(value => expected = value))]), "--fixed-step", "0.1", "--no-taa", "--no-vsm");
-        SceneImages.AssertEqualWithinPixel(Assert.IsType<SceneImage>(expected), Assert.IsType<SceneImage>(actual), tolerance: 2);
+        SceneImage reference = Assert.IsType<SceneImage>(expected);
+        int visible = 0;
+        foreach (byte value in reference.Pixels.Span) if (value > 32 && value < 255) visible++;
+        Assert.True(visible > 1000);
+        SceneImages.AssertEqualWithinPixel(reference, Assert.IsType<SceneImage>(actual), tolerance: 2);
     }
 
     private sealed class FlowPoseReads(SkeletonInstance[] bodies, Entity[] animations) : ISystem<ImmediateSystemContext>
