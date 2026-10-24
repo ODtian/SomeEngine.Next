@@ -6,14 +6,14 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class RelationshipJobAccessTests
+public sealed class RelationshipJobAccessTests : JobTest
 {
     [Fact]
     public void TopologyWrite_IsSharedAcrossHierarchyAndRelationsPerWorld()
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -25,8 +25,8 @@ public sealed class RelationshipJobAccessTests
         JobHandle blocker = default;
         try
         {
-            var world = new World();
-            var otherWorld = new World();
+            var world = CreateJobWorld();
+            var otherWorld = CreateJobWorld();
             blocker = HierarchyJobAccess<Domain>.ScheduleParentWrite(
                 world,
                 new BlockingJob(started, release));
@@ -46,7 +46,7 @@ public sealed class RelationshipJobAccessTests
         {
             release.Set();
             blocker.Complete();
-            JobSystem.Initialize(new JobRuntimeConfig
+            ConfigureJobs(new JobRuntimeConfig
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -57,9 +57,9 @@ public sealed class RelationshipJobAccessTests
     [Fact]
     public void CanonicalParentRead_RequiresTopologyReadAndWaitsForAnyWorldTopologyWriter()
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -71,11 +71,11 @@ public sealed class RelationshipJobAccessTests
         JobHandle blocker = default;
         try
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity child = world.CreateEntity();
             var capture = new ParentCapture();
 
-            JobHandle missingTopology = JobSystem.Schedule(
+            JobHandle missingTopology = Jobs.Schedule(
                 new CaptureParentJob(world, child, capture),
                 HierarchyJobAccess<Domain>.ParentRead(world));
             Assert.Throws<JobResourceSafetyException>(() => missingTopology.Complete());
@@ -99,7 +99,7 @@ public sealed class RelationshipJobAccessTests
         {
             release.Set();
             blocker.Complete();
-            JobSystem.Initialize(new JobRuntimeConfig
+            ConfigureJobs(new JobRuntimeConfig
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,

@@ -1,48 +1,29 @@
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
 
 namespace SomeEngine.Render.Lighting;
 
-/// <summary>One-frame publication boundary between light management and render pipelines.</summary>
-public sealed class RenderLightSetMailbox
-{
-    private RenderLightSet? _pending;
-
-    public void Publish(RenderLightSet lights)
-    {
-        ArgumentNullException.ThrowIfNull(lights);
-        if (Interlocked.CompareExchange(ref _pending, lights, null) is not null)
-        {
-            throw new InvalidOperationException("The previous render-light set was not consumed.");
-        }
-    }
-
-    public RenderLightSet TakeRequired()
-    {
-        return Interlocked.Exchange(ref _pending, null)
-            ?? throw new InvalidOperationException(
-                "No render-light set was published for this frame.");
-    }
-}
-
 /// <summary>
-/// Owns light-component queries and publishes one immutable-for-rendering light set. Geometry,
-/// light assignment, shadow and shading pipelines consume the publication without querying ECS.
+/// Owns light-component queries and one immutable-for-rendering light set. Geometry,
+/// light assignment, shadow and shading pipelines consume this system without querying ECS.
 /// </summary>
 public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
 {
-    private readonly RenderLightSetMailbox _mailbox;
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "LightSet.Update", detail: true);
+
     private readonly RenderLightSet _lights = new();
     private QueryHandle _directional;
     private QueryHandle _point;
     private QueryHandle _spot;
-    private long _topologyRevision = -1;
+    private EntityTableChanges? _tableChanges;
     private bool _created;
 
-    public RenderLightSetSystem(RenderLightSetMailbox mailbox)
-        => _mailbox = mailbox ?? throw new ArgumentNullException(nameof(mailbox));
+    public RenderLightSet RequireCurrent() => _created
+        ? _lights
+        : throw new InvalidOperationException("The render-light set system is not active.");
 
     public void OnCreate(ref RenderFrameSystemContext context)
     {
@@ -66,10 +47,12 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
                     .Optional<RenderLightCookie>(QueryAccess.Read));
             _directional = directional;
             _point = point;
+            _tableChanges = context.World.ObserveEntityTables();
             _created = true;
         }
         catch
         {
+            if (_spot.IsValid) context.World.ReleaseQuery(_spot);
             if (point.IsValid) context.World.ReleaseQuery(point);
             if (directional.IsValid) context.World.ReleaseQuery(directional);
             throw;
@@ -78,103 +61,27 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         if (!_created)
             throw new InvalidOperationException("The render-light set system was not created.");
-        long topologyRevision = context.World.PublishedTopologyRevision;
-        if (_topologyRevision == topologyRevision &&
-            !AnyLightChanged(ref context))
-        {
-            _mailbox.Publish(_lights);
-            return;
-        }
-        RenderLightSet lights = _lights;
-        lights.Clear();
-        context.World.ExecuteQuery(
-            _directional,
-            ref lights,
-            static (QueryCursor cursor, ref RenderLightSet lights) =>
-                lights.CollectDirectional(cursor));
-        context.World.ExecuteQuery(
-            _point,
-            ref lights,
-            static (QueryCursor cursor, ref RenderLightSet lights) => lights.CollectPoint(cursor));
-        context.World.ExecuteQuery(
-            _spot,
-            ref lights,
-            static (QueryCursor cursor, ref RenderLightSet lights) => lights.CollectSpot(cursor));
-        lights.CommitChanges();
-        _topologyRevision = topologyRevision;
-        _mailbox.Publish(lights);
+        EntityTableChangeBatch membership = _tableChanges!.Read();
+        var update = new LightChanges(_lights);
+        foreach (Entity entity in membership.Entities)
+            update.Changed |= _lights.UpdateMembership(context.World, entity);
+        context.World.ExecuteQuery(_directional, context.LastSystemVersion, ref update,
+            static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdateDirectional(rows));
+        context.World.ExecuteQuery(_point, context.LastSystemVersion, ref update,
+            static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdatePoints(rows));
+        context.World.ExecuteQuery(_spot, context.LastSystemVersion, ref update,
+            static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdateSpots(rows));
+        if (update.Changed) _lights.CommitChanges();
+        _tableChanges.Accept(membership);
     }
 
-    private bool AnyLightChanged(ref RenderFrameSystemContext context)
+    private struct LightChanges(RenderLightSet lights)
     {
-        bool changed = false;
-        context.World.ExecuteQuery(
-            _directional,
-            context.LastSystemVersion,
-            ref changed,
-            static (QueryCursor cursor, ref bool changed) =>
-            {
-                foreach (QueryChunkView chunk in cursor.Chunks)
-                {
-                    if (!chunk.HasChangedSinceLastSystemVersion<RenderDirectionalLight>())
-                    {
-                        if (!chunk.Has<RenderLightCookie>() ||
-                            !chunk.HasChangedSinceLastSystemVersion<RenderLightCookie>())
-                        {
-                            continue;
-                        }
-                    }
-                    changed = true;
-                    return;
-                }
-            });
-        if (changed)
-            return true;
-        context.World.ExecuteQuery(
-            _point,
-            context.LastSystemVersion,
-            ref changed,
-            static (QueryCursor cursor, ref bool changed) =>
-            {
-                foreach (QueryChunkView chunk in cursor.Chunks)
-                {
-                    if (!chunk.HasChangedSinceLastSystemVersion<RenderPointLight>())
-                    {
-                        if (!chunk.Has<RenderLightCookie>() ||
-                            !chunk.HasChangedSinceLastSystemVersion<RenderLightCookie>())
-                        {
-                            continue;
-                        }
-                    }
-                    changed = true;
-                    return;
-                }
-            });
-        if (changed)
-            return true;
-        context.World.ExecuteQuery(
-            _spot,
-            context.LastSystemVersion,
-            ref changed,
-            static (QueryCursor cursor, ref bool changed) =>
-            {
-                foreach (QueryChunkView chunk in cursor.Chunks)
-                {
-                    if (!chunk.HasChangedSinceLastSystemVersion<RenderSpotLight>())
-                    {
-                        if (!chunk.Has<RenderLightCookie>() ||
-                            !chunk.HasChangedSinceLastSystemVersion<RenderLightCookie>())
-                        {
-                            continue;
-                        }
-                    }
-                    changed = true;
-                    return;
-                }
-            });
-        return changed;
+        internal readonly RenderLightSet Lights = lights;
+        internal bool Changed;
     }
 
     public void OnDestroy(ref RenderFrameSystemContext context)
@@ -188,7 +95,8 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
         _point = default;
         _directional = default;
         _lights.Clear();
-        _topologyRevision = -1;
+        _tableChanges!.Dispose();
+        _tableChanges = null;
         _created = false;
     }
 }

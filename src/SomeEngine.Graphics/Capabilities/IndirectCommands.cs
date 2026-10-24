@@ -12,6 +12,10 @@ public sealed class IndirectCommands : DeviceCapability
 {
     private readonly ulong _supportedArguments;
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Safety",
+        "SE032:Hot-path validation is forbidden",
+        Justification = "Validates capability values returned by an external native backend.")]
     internal IndirectCommands(
         Device device,
         ReadOnlySpan<IndirectArgumentType> supportedArguments,
@@ -75,7 +79,7 @@ public enum IndirectArgumentType : byte
 /// </remarks>
 public readonly record struct IndirectArgumentDesc(
     IndirectArgumentType Type,
-    VariableLayoutReflection Parameters = default,
+    VariableLayoutReflection? Parameters = default,
     uint VertexBufferSlot = 0,
     uint ByteOffset = 0,
     uint ValueCount = 0);

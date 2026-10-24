@@ -4,7 +4,8 @@ using System.Numerics;
 using SlangShaderSharp;
 using Xunit;
 
-public sealed class VulkanRenderingTests
+[Xunit.Collection("Vulkan shader compilation")]
+public sealed class VulkanRenderingTests(VulkanTestCompiler shaderCompiler)
 {
     [Fact]
     public void Dynamic_rendering_and_persistent_parameters_draw_expected_color()
@@ -25,11 +26,11 @@ public sealed class VulkanRenderingTests
             [shader("fragment")]
             float4 pixelMain() : SV_Target0 { return Tint; }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment));
-        using var backend = new VulkanBackend();
+        using var backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
@@ -38,9 +39,9 @@ public sealed class VulkanRenderingTests
         using Pipeline pipeline = backend.CreateGraphicsPipeline(
             device,
             new GraphicsPipelineDesc(
-                shader.Program,
-                shader.Entries[0],
+                shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0),
                 shader.Entries[1],
+                shader.GetEntryCode(1),
                 [],
                 [],
                 PrimitiveTopology.TriangleList,

@@ -11,9 +11,7 @@ internal sealed unsafe partial class VulkanBackend
         private VkDescriptorSetLayout[] _setLayouts;
         private bool[] _ownedSetLayouts;
         private VkSampler[] _staticSamplers;
-        private readonly VariableLayoutReflection _globalLayout;
         private readonly Dictionary<VariableLayoutReflection, VulkanBlockLayout> _sourceBlocks;
-        private readonly Dictionary<VariableLayoutReflection, VulkanBlockLayout> _effectiveBlocks;
         private readonly Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> _spirvTargets;
         private readonly VulkanBindlessSetBinding[] _bindlessBindings;
 
@@ -34,15 +32,13 @@ internal sealed unsafe partial class VulkanBackend
             _ownedSetLayouts = ownedSetLayouts;
             _staticSamplers = staticSamplers;
             _bindlessBindings = bindlessBindings;
-            _globalLayout = globalLayout;
             _sourceBlocks = blocks;
-            _effectiveBlocks = new Dictionary<VariableLayoutReflection, VulkanBlockLayout>(blocks);
             _spirvTargets = spirvTargets;
         }
 
         internal VkPipelineLayout Native => _native;
         internal IReadOnlyDictionary<VariableLayoutReflection, VulkanBlockLayout> Blocks =>
-            _effectiveBlocks;
+            _sourceBlocks;
         internal ReadOnlySpan<VkDescriptorSetLayout> SetLayouts => _setLayouts;
         internal ReadOnlySpan<VulkanBindlessSetBinding> BindlessBindings =>
             _bindlessBindings;
@@ -56,100 +52,11 @@ internal sealed unsafe partial class VulkanBackend
                     nameof(entry));
 
         internal VulkanBlockLayout GetBlock(VariableLayoutReflection layout) =>
-            _effectiveBlocks.TryGetValue(layout, out VulkanBlockLayout? block)
+            _sourceBlocks.TryGetValue(layout, out VulkanBlockLayout? block)
                 ? block
                 : throw new ArgumentException(
                     "The Slang parameter layout is not part of the current Vulkan Pipeline.",
                     nameof(layout));
-
-        internal void ActivateEntryBindings(
-            ReadOnlySpan<VulkanSpirvEntryBindings> entries,
-            bool includeEntrySlots = true)
-        {
-            var orderedTargets = new List<VulkanSpirvBindingTarget>();
-            var active = new HashSet<VulkanSpirvBindingTarget>();
-            foreach (ref readonly VulkanSpirvEntryBindings entry in entries)
-                foreach (VulkanSpirvBindingTarget binding in entry.Bindings)
-                    if (active.Add(binding))
-                        orderedTargets.Add(binding);
-            foreach (ref readonly VulkanSpirvEntryBindings entry in entries)
-            {
-                if (entry.Entry.VarLayout != VariableLayoutReflection.Null &&
-                    _sourceBlocks.TryGetValue(entry.Entry.VarLayout, out VulkanBlockLayout? source))
-                {
-                    _effectiveBlocks[entry.Entry.VarLayout] = CreateActiveBlock(
-                        source.ReflectedLayout,
-                        [source],
-                        entry.Bindings,
-                        source.Ordinary);
-                }
-            }
-            if (_globalLayout == VariableLayoutReflection.Null ||
-                !_sourceBlocks.TryGetValue(_globalLayout, out VulkanBlockLayout? global))
-                return;
-
-            var blocks = new List<VulkanBlockLayout> { global };
-            if (includeEntrySlots)
-            {
-                foreach (ref readonly VulkanSpirvEntryBindings entry in entries)
-                {
-                    if (entry.Entry.VarLayout != VariableLayoutReflection.Null &&
-                        _sourceBlocks.TryGetValue(entry.Entry.VarLayout, out VulkanBlockLayout? block))
-                        blocks.Add(block);
-                }
-            }
-            _effectiveBlocks[_globalLayout] = CreateActiveBlock(
-                _globalLayout,
-                blocks,
-                orderedTargets,
-                global.Ordinary);
-        }
-
-        private static VulkanBlockLayout CreateActiveBlock(
-            VariableLayoutReflection reflectedLayout,
-            IReadOnlyList<VulkanBlockLayout> sourceBlocks,
-            IReadOnlyList<VulkanSpirvBindingTarget> targets,
-            VulkanOrdinaryBinding? ordinary)
-        {
-            var candidates = new Dictionary<VulkanSpirvBindingTarget, List<VulkanDescriptorSlot>>();
-            foreach (VulkanBlockLayout block in sourceBlocks)
-            {
-                foreach (VulkanDescriptorSlot slot in block.Slots)
-                {
-                    var target = new VulkanSpirvBindingTarget(
-                        slot.Set,
-                        slot.Binding,
-                        slot.Name);
-                    if (!candidates.TryGetValue(target, out List<VulkanDescriptorSlot>? values))
-                    {
-                        values = [];
-                        candidates.Add(target, values);
-                    }
-                    values.Add(slot);
-                }
-            }
-            var slots = new List<VulkanDescriptorSlot>();
-            var identities = new HashSet<(uint Set, uint Binding, uint Element)>();
-            foreach (VulkanSpirvBindingTarget target in targets)
-            {
-                if (!candidates.TryGetValue(target, out List<VulkanDescriptorSlot>? values))
-                    continue;
-                foreach (VulkanDescriptorSlot slot in values.OrderBy(static value => value.ArrayElement))
-                    if (identities.Add((slot.Set, slot.Binding, slot.ArrayElement)))
-                        slots.Add(slot);
-            }
-            var sets = new HashSet<uint>(slots.Select(static slot => slot.Set));
-            if (ordinary is VulkanOrdinaryBinding ordinaryBinding && !ordinaryBinding.PushConstants)
-                sets.Add(ordinaryBinding.Set);
-            return new VulkanBlockLayout(
-                reflectedLayout,
-                slots.ToArray(),
-                ordinary,
-                sets.Order().ToArray(),
-                sourceBlocks.SelectMany(static block => block.SpirvTargets)
-                    .Distinct()
-                    .ToArray());
-        }
 
         internal void Release()
         {
@@ -179,10 +86,6 @@ internal sealed unsafe partial class VulkanBackend
         uint[] setIndices,
         VulkanSpirvBindingTarget[] spirvTargets)
     {
-        private readonly object _slotOrderGate = new();
-        private ResourceBindingType[]? _resolvedTypes;
-        private VulkanDescriptorSlot[]? _resolvedSlots;
-
         internal VariableLayoutReflection ReflectedLayout { get; } = reflectedLayout;
         internal VulkanDescriptorSlot[] Slots { get; } = slots;
         internal VulkanOrdinaryBinding? Ordinary { get; } = ordinary;
@@ -191,62 +94,12 @@ internal sealed unsafe partial class VulkanBackend
 
         internal VulkanDescriptorSlot[] ResolveSlots(ReadOnlySpan<ResourceBinding> bindings)
         {
-            VulkanDescriptorSlot[]? resolved = Volatile.Read(ref _resolvedSlots);
-            ResourceBindingType[]? types = _resolvedTypes;
-            if (resolved is not null && types is not null && TypesMatch(types, bindings))
-                return resolved;
-            lock (_slotOrderGate)
-            {
-                resolved = _resolvedSlots;
-                types = _resolvedTypes;
-                if (resolved is not null && types is not null && TypesMatch(types, bindings))
-                    return resolved;
-                resolved = CreateSlotOrder(bindings);
-                types = bindings.ToArray().Select(static value => value.Type).ToArray();
-                _resolvedTypes = types;
-                Volatile.Write(ref _resolvedSlots, resolved);
-                return resolved;
-            }
-        }
-
-        private VulkanDescriptorSlot[] CreateSlotOrder(ReadOnlySpan<ResourceBinding> bindings)
-        {
             if (bindings.Length != Slots.Length)
-            {
-                throw new ArgumentException(
-                    $"The parameter block requires {Slots.Length} resource bindings, " +
-                    $"but received {bindings.Length}.",
-                    nameof(bindings));
-            }
-            var byType = Slots.GroupBy(static slot => slot.BindingType)
-                .ToDictionary(
-                    static values => values.Key,
-                    static values => new Queue<VulkanDescriptorSlot>(values));
-            var result = new VulkanDescriptorSlot[bindings.Length];
+                throw new ArgumentException($"The parameter block requires {Slots.Length} resource bindings, but received {bindings.Length}.", nameof(bindings));
             for (int index = 0; index < bindings.Length; index++)
-            {
-                ResourceBindingType type = bindings[index].Type;
-                if (!byType.TryGetValue(type, out Queue<VulkanDescriptorSlot>? candidates) ||
-                    !candidates.TryDequeue(out result[index]))
-                {
-                    throw new ArgumentException(
-                        $"Resource binding {index} has unexpected type {type}.",
-                        nameof(bindings));
-                }
-            }
-            return result;
-        }
-
-        private static bool TypesMatch(
-            ReadOnlySpan<ResourceBindingType> expected,
-            ReadOnlySpan<ResourceBinding> bindings)
-        {
-            if (expected.Length != bindings.Length)
-                return false;
-            for (int index = 0; index < expected.Length; index++)
-                if (expected[index] != bindings[index].Type)
-                    return false;
-            return true;
+                if (bindings[index].Type != Slots[index].BindingType)
+                    throw new ArgumentException($"Resource binding {index} ('{Slots[index].Name}') requires {Slots[index].BindingType}, but received {bindings[index].Type}.", nameof(bindings));
+            return Slots;
         }
     }
 
@@ -259,17 +112,14 @@ internal sealed unsafe partial class VulkanBackend
         DescriptorSlotDesc Shape,
         string? Name);
 
-    private readonly record struct VulkanSpirvEntryBindings(
-        EntryPointReflection Entry,
-        VulkanSpirvBindingTarget[] Bindings);
-
     private readonly record struct VulkanOrdinaryBinding(
         uint Size,
         bool PushConstants,
         uint Set,
         uint Binding,
         uint PushConstantOffset,
-        ShaderStageFlags Stages);
+        ShaderStageFlags Stages,
+        uint SourceSet);
 
     private sealed class VulkanPipelineLayoutCompiler
     {
@@ -282,6 +132,7 @@ internal sealed unsafe partial class VulkanBackend
         private readonly Dictionary<VariableReflection, SamplerDesc> _staticSamplerDescriptions = [];
         private readonly HashSet<VariableReflection> _resolvedStaticSamplers = [];
         private readonly List<VkSampler> _nativeStaticSamplers = [];
+        private uint _nextDescriptorSet;
 
         private VulkanPipelineLayoutCompiler(
             VulkanDevice device,
@@ -303,17 +154,28 @@ internal sealed unsafe partial class VulkanBackend
             ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
         {
             var compiler = new VulkanPipelineLayoutCompiler(device, staticSamplers);
-            VariableLayoutReflection global = reflection.GetGlobalParamsVarLayout()
-                ?? VariableLayoutReflection.Null;
-            if (global != VariableLayoutReflection.Null)
-                compiler.AddBlock(global, ShaderStageFlags.All);
-            foreach (EntryPointReflection entry in entries)
+            try
             {
-                if (entry.VarLayout != VariableLayoutReflection.Null)
-                    compiler.AddBlock(entry.VarLayout, ToNativeShaderStage(entry.Stage));
+                VariableLayoutReflection global = reflection.GetGlobalParamsVarLayout()
+                    ?? VariableLayoutReflection.Null;
+                if (global != VariableLayoutReflection.Null)
+                    compiler.AddBlock(global, ShaderStageFlags.All);
+                foreach (EntryPointReflection entry in entries)
+                {
+                    if (entry.VarLayout != VariableLayoutReflection.Null)
+                        compiler.AddBlock(entry.VarLayout, ToNativeShaderStage(entry.Stage));
+                }
+                compiler.RequireStaticSamplersResolved();
+                return compiler.Build(global, entries);
             }
-            compiler.RequireStaticSamplersResolved();
-            return compiler.Build(global, entries);
+            catch
+            {
+                foreach (VkSampler sampler in compiler._nativeStaticSamplers)
+                    if (sampler.Handle != 0)
+                        device.Backend.Api.DestroySampler(device.Native, sampler, null);
+                compiler._nativeStaticSamplers.Clear();
+                throw;
+            }
         }
 
         private void AddBlock(
@@ -346,10 +208,13 @@ internal sealed unsafe partial class VulkanBackend
             SlangBindingType reflectedOrdinaryType)
         {
             TypeLayoutReflection dataLayout = GetParameterDataLayout(layout);
+            // Independently bound parameter blocks must not replace each other's
+            // descriptors when Slang puts their resources in the same source set.
+            var parameterSets = new Dictionary<uint, uint>();
             uint ordinarySize = GetOrdinaryDataSize(dataLayout, layout);
             VulkanOrdinaryBinding? ordinary = ordinarySize == 0
                 ? null
-                : AddOrdinaryBinding(layout, dataLayout, ordinarySize, stages, setBase, reflectedOrdinaryType);
+                : AddOrdinaryBinding(layout, dataLayout, ordinarySize, stages, setBase, reflectedOrdinaryType, parameterSets);
             var slots = new List<VulkanDescriptorSlot>();
             var spirvTargets = new List<VulkanSpirvBindingTarget>();
             var usedSets = new HashSet<uint>();
@@ -360,6 +225,7 @@ internal sealed unsafe partial class VulkanBackend
                 dataLayout,
                 stages,
                 setBase,
+                parameterSets,
                 slots,
                 usedSets,
                 spirvTargets);
@@ -379,7 +245,8 @@ internal sealed unsafe partial class VulkanBackend
             uint size,
             ShaderStageFlags stages,
             uint setBase,
-            SlangBindingType reflectedType)
+            SlangBindingType reflectedType,
+            Dictionary<uint, uint> parameterSets)
         {
             bool pushConstants = reflectedType == SlangBindingType.PushConstant ||
                 UsesCategory(layout, SlangParameterCategory.PushConstantBuffer) ||
@@ -388,12 +255,13 @@ internal sealed unsafe partial class VulkanBackend
             {
                 uint offset = ResolveUInt(layout.GetOffset(SlangParameterCategory.PushConstantBuffer), 0);
                 _pushConstants.Add(new PushConstantRange(stages, offset, size));
-                return new VulkanOrdinaryBinding(size, true, 0, 0, offset, stages);
+                return new VulkanOrdinaryBinding(size, true, 0, 0, offset, stages, 0);
             }
             SlangParameterCategory category = SlangParameterCategory.DescriptorTableSlot;
             uint binding = NormalizeOrdinaryDescriptorBinding(
                 ResolveUInt(layout.GetOffset(category), 0));
-            uint set = checked(setBase + ResolveUInt(layout.GetBindingSpace(category), 0));
+            uint sourceSet = checked(setBase + ResolveUInt(layout.GetBindingSpace(category), 0));
+            uint set = AllocateParameterSet(parameterSets, sourceSet);
             AddSetBinding(
                 set,
                 binding,
@@ -401,7 +269,15 @@ internal sealed unsafe partial class VulkanBackend
                 1,
                 stages,
                 DescriptorBindingFlags.PartiallyBoundBit);
-            return new VulkanOrdinaryBinding(size, false, set, binding, 0, stages);
+            return new VulkanOrdinaryBinding(size, false, set, binding, 0, stages, sourceSet);
+        }
+
+        private uint AllocateParameterSet(Dictionary<uint, uint> parameterSets, uint sourceSet)
+        {
+            if (parameterSets.TryGetValue(sourceSet, out uint set)) return set;
+            set = _nextDescriptorSet++;
+            parameterSets.Add(sourceSet, set);
+            return set;
         }
 
         private void AddDescriptorBindings(
@@ -409,6 +285,7 @@ internal sealed unsafe partial class VulkanBackend
             TypeLayoutReflection dataLayout,
             ShaderStageFlags stages,
             uint setBase,
+            Dictionary<uint, uint> parameterSets,
             List<VulkanDescriptorSlot> slots,
             HashSet<uint> usedSets,
             List<VulkanSpirvBindingTarget> spirvTargets)
@@ -427,7 +304,7 @@ internal sealed unsafe partial class VulkanBackend
                     SlangBindingType source = dataLayout.GetDescriptorSetDescriptorRangeType(setIndex, descriptorRange);
                     SlangParameterCategory category = dataLayout.GetDescriptorSetDescriptorRangeCategory(setIndex, descriptorRange);
                     (ResourceBindingType bindingType, DescriptorType descriptorType) = ToNativeBinding(source, category);
-                    uint set = checked(
+                    uint sourceSet = checked(
                         setBase +
                         ResolveUInt(dataLayout.GetDescriptorSetSpaceOffset(setIndex), 0) +
                         ResolveUInt(layout.GetBindingSpace(category), 0) +
@@ -441,6 +318,7 @@ internal sealed unsafe partial class VulkanBackend
                         category);
                     nint reflectedCount = dataLayout.GetDescriptorSetDescriptorRangeDescriptorCount(setIndex, descriptorRange);
                     bool unbounded = unchecked((nuint)reflectedCount) == Slang.UnboundedSize;
+                    uint set = unbounded ? sourceSet : AllocateParameterSet(parameterSets, sourceSet);
                     uint count = unbounded ? 0 : checked((uint)reflectedCount);
                     VariableReflection declaration = dataLayout.GetBindingRangeLeafVariable(bindingRange);
                     var spirvTarget = new VulkanSpirvBindingTarget(
@@ -448,7 +326,8 @@ internal sealed unsafe partial class VulkanBackend
                         binding,
                         declaration == VariableReflection.Null
                             ? null
-                            : declaration.Name);
+                            : declaration.Name,
+                        sourceSet);
                     spirvTargets.Add(spirvTarget);
                     SamplerDesc samplerDescription = default;
                     bool staticSampler = bindingType == ResourceBindingType.Sampler &&
@@ -608,6 +487,9 @@ internal sealed unsafe partial class VulkanBackend
                 hasSets = true;
             }
             uint setCount = hasSets ? checked(maximumSet + 1) : 0;
+            if (setCount > _device.MaxBoundDescriptorSets)
+                throw new GraphicsException(GraphicsError.PipelineCreation,
+                    "The Vulkan Pipeline requires more descriptor sets than the Device supports.");
             VkDescriptorSetLayout[] setLayouts = new VkDescriptorSetLayout[setCount];
             bool[] ownedSetLayouts = new bool[setCount];
             Dictionary<uint, VulkanBindlessKind> bindlessBySet = bindlessBindings
@@ -759,7 +641,7 @@ internal sealed unsafe partial class VulkanBackend
             }
             targets.UnionWith(block.SpirvTargets);
             if (block.Ordinary is VulkanOrdinaryBinding ordinary && !ordinary.PushConstants)
-                targets.Add(new VulkanSpirvBindingTarget(ordinary.Set, ordinary.Binding));
+                targets.Add(new VulkanSpirvBindingTarget(ordinary.Set, ordinary.Binding, SourceSet: ordinary.SourceSet));
 
             TypeLayoutReflection dataLayout = GetParameterDataLayout(layout);
             for (nint index = 0; index < dataLayout.SubObjectRangeCount; index++)
@@ -1000,6 +882,7 @@ internal sealed unsafe partial class VulkanBackend
             return (type.ScalarType, components) switch
             {
                 (SlangScalarType.Bool or SlangScalarType.UInt32, 1) => RhiFormat.R32UInt,
+                (SlangScalarType.UInt64, 1) => RhiFormat.R64UInt,
                 (SlangScalarType.Bool or SlangScalarType.UInt32, 2) => RhiFormat.R32G32UInt,
                 (SlangScalarType.Bool or SlangScalarType.UInt32, 4) => RhiFormat.R32G32B32A32UInt,
                 (SlangScalarType.Int32, 1) => RhiFormat.R32SInt,

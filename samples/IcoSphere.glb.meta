@@ -1,9 +1,19 @@
-﻿{
+{
   "source_guid": "1e00a232-7680-4051-97b7-16efe4178761",
-  "importer": "GltfSourceImporter",
-  "importer_settings": {
-    "lit_material_template": "assets/Materials/DefaultPBR.material.asset",
-    "unlit_material_template": "assets/Materials/TestUnlit_1.material.asset",
-    "generate_tangents": true
+  "importers": [
+    {
+      "importer_id": "b0c10195-d8d1-46ab-81b8-f8c54db7d0aa",
+      "settings": {
+        "lit_material_template": "assets/Materials/Standard.material.asset",
+        "unlit_material_template": "assets/Materials/TestUnlit_1.material.asset",
+        "generate_tangents": true
+      },
+      "enabled": true
+    }
+  ],
+  "use_default_importers": true,
+  "element_ids": {
+    "material:index:0": "8ce87f0b-f828-58dd-8fb3-c60f28054282",
+    "mesh:index:0": "7c2bd842-d3a3-5616-a385-b8f2918c3daf"
   }
 }

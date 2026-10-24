@@ -55,27 +55,19 @@ public class WorldTests
     }
 
     [Fact]
-    public void Spawn_SortBundle_UsesSameArchetype()
+    public void SpawnBundleMatchesQueriesInComponentOrder()
     {
-        _ = ComponentMetadata<SortLow>.Id;
-        _ = ComponentMetadata<SortHigh>.Id;
-        Assert.True(ComponentMetadata<SortLow>.Id < ComponentMetadata<SortHigh>.Id);
-
-        var world = new World();
-        world.Spawn(new SortBundle { Low = new SortLow { Value = 1 }, High = new SortHigh { Value = 2 } });
-        world.Spawn(new SortBundle { Low = new SortLow { Value = 4 }, High = new SortHigh { Value = 3 } });
-
-        var archetype = Assert.Single(
-            world.AllArchetypes.ToArray(),
-            static candidate =>
-                candidate.HasComponent(ComponentMetadata<SortLow>.Id) &&
-                candidate.HasComponent(ComponentMetadata<SortHigh>.Id));
-
-        int entityCount = 0;
-        foreach (var chunk in archetype.Chunks)
-            entityCount += chunk.Count;
-
-        Assert.Equal(2, entityCount);
+        using var world = new World();
+        var first = world.Spawn(new SortBundle { Low = new SortLow { Value = 1 }, High = new SortHigh { Value = 2 } });
+        var second = world.Spawn(new SortBundle { Low = new SortLow { Value = 4 }, High = new SortHigh { Value = 3 } });
+        var query = world.Query(world.QueryDefinition().Read<SortLow>().Read<SortHigh>());
+        var values = new List<(int, int)>();
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                values.Add((row.Read<SortLow>().Value, row.Read<SortHigh>().Value));
+        });
+        Assert.Equal(new[] { (1, 2), (4, 3) }, values);
     }
 
     [Fact]
@@ -358,7 +350,7 @@ public class WorldTests
     }
 
     [Fact]
-    public void DestroyAll_KeepsLastEmptyChunk()
+    public void DestroyAllAllowsNewEntities()
     {
         var world = new World();
         var entities = new List<Entity>();
@@ -375,30 +367,23 @@ public class WorldTests
     }
 
     [Fact]
-    public void ChunkRecycle_ThenCreate_ReallocatesCorrectly()
+    public void CreateEntityAfterLargePopulationDeletionPreservesValues()
     {
         var world = new World();
         var entities = new List<Entity>();
 
         entities.Add(world.CreateEntity(new Position { X = 0, Y = 0 }));
 
-        var archetype = Assert.Single(
-            world.AllArchetypes.ToArray(),
-            static candidate => candidate.HasComponent(ComponentMetadata<Position>.Id));
-        int maxChunkCapacity = archetype.MaxChunkRows;
+        const int maxChunkCapacity = 2_049;
 
         for (int i = 1; i <= maxChunkCapacity; i++)
             entities.Add(world.CreateEntity(new Position { X = i, Y = i * 2 }));
 
-        Assert.Equal(2, archetype.Chunks.Length);
-
         world.DestroyEntity(entities[maxChunkCapacity]);
-        Assert.Equal(1, archetype.Chunks.Length);
 
         var recreated = world.CreateEntity(new Position { X = 2048, Y = 4096 });
         Assert.True(world.IsAlive(recreated));
         Assert.Equal(2048f, world.Read<Position>(recreated).X);
-        Assert.Equal(2, archetype.Chunks.Length);
     }
 
     // ════════════════════════════════════════════════

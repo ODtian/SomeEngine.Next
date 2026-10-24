@@ -10,7 +10,7 @@ namespace SomeEngine.Serialization.Tests;
 public sealed class AssetPackTests
 {
     [Fact]
-    public async Task PackRoundTripsNestedBinaryDocumentsAndOverlayUsesHighestPriorityEntry()
+    public async Task PacksRoundTripIndependentNestedBinaryDocuments()
     {
         Guid sharedAsset = Guid.Parse("11111111-2222-3333-4444-555555555555");
         Guid baseOnlyAsset = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -32,19 +32,15 @@ public sealed class AssetPackTests
         AssetPack hotfixPack = await AssetPack.OpenAsync(
             new MemoryRangeSource(hotfixBytes),
             ownsSource: true);
-        await using var overlay = new AssetPackOverlay([hotfixPack, basePack]);
+        await using var baseCleanup = basePack;
+        await using var hotfixCleanup = hotfixPack;
 
         Assert.Equal(2, basePack.Count);
         Assert.Equal(1, hotfixPack.Count);
-        Assert.True(overlay.TryResolve(sharedAsset, out AssetPack? resolvedPack, out AssetPackEntry? resolvedEntry));
-        Assert.Same(hotfixPack, resolvedPack);
-        Assert.Equal("mesh", resolvedEntry!.AssetType);
-        Assert.Equal(TestRoot.Fingerprint, resolvedEntry.SchemaFingerprint);
-
         await using BinaryDocument<TestRoot> sharedDocument =
-            await OpenPackDataAsync<TestRoot>(overlay, sharedAsset);
+            await OpenPackDataAsync<TestRoot>(hotfixPack, sharedAsset);
         await using BinaryDocument<TestRoot> baseDocument =
-            await OpenPackDataAsync<TestRoot>(overlay, baseOnlyAsset);
+            await OpenPackDataAsync<TestRoot>(basePack, baseOnlyAsset);
 
         Assert.Equal("hotfix-shared", sharedDocument.Root.Text);
         Assert.Equal(2, sharedDocument.Root.Int32Value);
@@ -87,7 +83,7 @@ public sealed class AssetPackTests
         await using AssetPack basePack = await AssetPack.OpenAsync(
             new MemoryRangeSource(baseBytes),
             ownsSource: true);
-        var patchBuilder = new AssetPackPatchBuilder(basePack)
+        var patchBuilder = new AssetPackBuilder(basePack)
             .AddAsset(unchangedId, "mesh", unchanged, TestRoot.Fingerprint)
             .AddAsset(changedId, "mesh", after, TestRoot.Fingerprint);
         using MappedTestDocument patchBytes = patchBuilder.BuildMapped();
@@ -122,7 +118,7 @@ public sealed class AssetPackTests
         await using AssetPack basePack = await AssetPack.OpenAsync(
             new MemoryRangeSource(corruptPack),
             ownsSource: true);
-        var patchBuilder = new AssetPackPatchBuilder(basePack)
+        var patchBuilder = new AssetPackBuilder(basePack)
             .AddAsset(assetId, "mesh", document, TestRoot.Fingerprint);
 
         using MappedTestDocument patchBytes = patchBuilder.BuildMapped();
@@ -148,7 +144,7 @@ public sealed class AssetPackTests
             new MemoryRangeSource(baseBytes),
             ownsSource: true);
 
-        var typePatch = new AssetPackPatchBuilder(basePack)
+        var typePatch = new AssetPackBuilder(basePack)
             .AddAsset(assetId, "collision-mesh", document, TestRoot.Fingerprint);
         using MappedTestDocument patchBytes = typePatch.BuildMapped();
         Assert.Equal([assetId], typePatch.ChangedAssetIds);
@@ -158,9 +154,8 @@ public sealed class AssetPackTests
         Assert.True(patch.TryGetEntry(assetId, out AssetPackEntry? changed));
         Assert.Equal("collision-mesh", changed!.AssetType);
 
-        var invalidFingerprint = new AssetPackPatchBuilder(basePack)
-            .AddAsset(assetId, "mesh", document, TestRoot.Fingerprint ^ 1UL);
-        Assert.Throws<ArgumentException>(() => invalidFingerprint.BuildMapped());
+        Assert.Throws<ArgumentException>(() => new AssetPackBuilder(basePack)
+            .AddAsset(assetId, "mesh", document, TestRoot.Fingerprint ^ 1UL));
     }
 
     [Fact]
@@ -183,10 +178,8 @@ public sealed class AssetPackTests
         await using AssetPack pack = await AssetPack.OpenAsync(
             new MemoryRangeSource(packBytes),
             ownsSource: true);
-        BinarySchemaMismatchException error = await Assert.ThrowsAsync<BinarySchemaMismatchException>(() =>
+        await Assert.ThrowsAsync<BinarySchemaMismatchException>(() =>
             OpenPackDataAsync<GeneratedCurrentContract>(pack, assetId).AsTask());
-
-        Assert.Contains("fingerprint", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -202,7 +195,7 @@ public sealed class AssetPackTests
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() =>
             AssetPack.OpenAsync(new MemoryRangeSource(packBytes), ownsSource: true).AsTask());
 
-        Assert.Contains("current schema", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.UnsupportedVersion, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -226,7 +219,7 @@ public sealed class AssetPackTests
 
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() =>
             document.AcquireChunkAsync(1001).AsTask());
-        Assert.Contains("SHA-256", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -290,7 +283,7 @@ public sealed class AssetPackTests
             await OpenPackDataAsync<TestRoot>(payloadVerified, assetId);
         InvalidDataException payloadError = await Assert.ThrowsAsync<InvalidDataException>(() =>
             payloadDocument.AcquireChunkAsync(1001).AsTask());
-        Assert.Contains("SHA-256", payloadError.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(payloadError));
 
         using MappedTestDocument unsigned = builder.BuildMapped();
         await Assert.ThrowsAsync<CryptographicException>(() => AssetPack.OpenVerifiedAsync(
@@ -309,24 +302,9 @@ public sealed class AssetPackTests
         Guid assetId,
         BinaryReadLimits? limits = null,
         CancellationToken cancellationToken = default)
-        where T : IBinaryContract<T>
+        where T : IBinarySerializable<T>
     {
         IRangeSource source = await pack.OpenAssetSourceAsync(assetId, cancellationToken);
-        return await BinaryDocument<T>.OpenAsync(
-            source,
-            ownsSource: true,
-            limits,
-            cancellationToken);
-    }
-
-    private static async ValueTask<BinaryDocument<T>> OpenPackDataAsync<T>(
-        AssetPackOverlay overlay,
-        Guid assetId,
-        BinaryReadLimits? limits = null,
-        CancellationToken cancellationToken = default)
-        where T : IBinaryContract<T>
-    {
-        IRangeSource source = await overlay.OpenAssetSourceAsync(assetId, cancellationToken);
         return await BinaryDocument<T>.OpenAsync(
             source,
             ownsSource: true,

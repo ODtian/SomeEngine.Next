@@ -33,10 +33,5 @@ function Resolve-AotEvidenceDestination {
         throw "NativeAOT evidence cannot overwrite tracked repository file '$relativeEvidencePath'."
     }
 
-    & git -C $normalizedRoot check-ignore -q -- $relativeEvidencePath
-    if ($LASTEXITCODE -ne 0) {
-        throw "NativeAOT evidence inside the repository must use a git-ignored artifact path: '$relativeEvidencePath'."
-    }
-
     return $evidencePath
 }

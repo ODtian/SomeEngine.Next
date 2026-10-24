@@ -1,7 +1,8 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
-using EngineTexture = SomeEngine.Assets.Schema.Texture;
+using EngineTexture = SomeEngine.Resources.Texture;
 
 namespace SomeEngine.Render;
 
@@ -9,24 +10,25 @@ namespace SomeEngine.Render;
 /// Optional per-material descriptor-value storage. Material slots remain material-local;
 /// this extension allocates a variable-length value span for each material it uses.
 /// </summary>
-public sealed class MaterialBindless : IDisposable
+public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionObserver
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
-    private readonly EngineTexture _missingTexture;
+    private readonly RenderDevice _renderDevice;
     private readonly uint[] _mirror;
     private readonly SomeEngine.Graphics.Buffer _values;
     private readonly RangeAllocator _valueRanges;
     private readonly uint _descriptorSlotsPerShape;
-    private readonly TextureDeviceRealizations _textures;
-    private readonly Dictionary<Material, MaterialState> _materials =
-        new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<long, MaterialState> _materials =
+        [];
+    private readonly Dictionary<long, Dictionary<uint, TextureRequest>> _textureRequests =
+        [];
     private readonly Dictionary<DescriptorSlotDesc, DescriptorPool> _descriptorPools = [];
-    private readonly List<PendingRemoval> _pendingRemovals = [];
     private readonly List<ValueRange> _dirty = [];
     private readonly HashSet<GraphPassId> _frameConsumers = [];
     private readonly HashSet<GraphPassId> _frameBoundPasses = [];
     private readonly List<GraphPassId> _frameUploads = [];
+    private readonly List<ValueRange> _uploadRanges = [];
     private ulong _frameIdentity;
     private GraphBufferId _frameValues;
     private GraphBufferSrvId _frameValuesView;
@@ -34,15 +36,13 @@ public sealed class MaterialBindless : IDisposable
     private bool _disposed;
 
     public MaterialBindless(
-        IGraphicsBackend backend,
-        Device device,
-        EngineTexture missingTexture,
+        RenderDevice renderDevice,
         uint maximumValueSlots,
         uint descriptorSlotsPerShape = 1024)
     {
-        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
-        _device = device ?? throw new ArgumentNullException(nameof(device));
-        _missingTexture = missingTexture ?? throw new ArgumentNullException(nameof(missingTexture));
+        _renderDevice = renderDevice ?? throw new ArgumentNullException(nameof(renderDevice));
+        _backend = renderDevice.Backend;
+        _device = renderDevice.Device;
         if (maximumValueSlots == 0)
             throw new ArgumentOutOfRangeException(nameof(maximumValueSlots));
         if (descriptorSlotsPerShape == 0)
@@ -57,11 +57,79 @@ public sealed class MaterialBindless : IDisposable
                 checked((ulong)maximumValueSlots * sizeof(uint)),
                 BufferUsages.CopyDestination | BufferUsages.ShaderRead,
                 "MaterialBindlessValues"));
-        _textures = new TextureDeviceRealizations(_backend, _device);
         AddDirty(0, maximumValueSlots);
     }
 
     public SomeEngine.Graphics.Buffer ValuesBuffer => _values;
+
+    /// <summary>
+    /// Returns this extension's compact value offset for one Material slot. Resolve this while
+    /// building the shader/pipeline binding; render code should use the resulting constant.
+    /// </summary>
+    public uint GetValueOffset(Material material, uint materialSlot)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(material);
+        foreach (ref readonly MaterialResourceBinding binding in ResolveMaterialBindings(material).AsSpan())
+        {
+            if (binding.MaterialSlot == materialSlot)
+                return binding.ValueOffset;
+        }
+        throw new ArgumentOutOfRangeException(
+            nameof(materialSlot),
+            materialSlot,
+            "The Material slot does not contribute a MaterialBindless value.");
+    }
+
+    public void SetTextureSrv(
+        Material material,
+        uint materialSlot,
+        in TextureSubresourceRange range,
+        Format? format = null,
+        SomeEngine.Graphics.TextureViewDimension? dimension = null) =>
+        SetTextureRequest(
+            material,
+            materialSlot,
+            new TextureRequest(MaterialResourceKind.TextureSrv, range, format, dimension));
+
+    public void SetTextureUav(
+        Material material,
+        uint materialSlot,
+        in TextureSubresourceRange range,
+        Format? format = null,
+        SomeEngine.Graphics.TextureViewDimension? dimension = null) =>
+        SetTextureRequest(
+            material,
+            materialSlot,
+            new TextureRequest(MaterialResourceKind.TextureUav, range, format, dimension));
+
+    private void SetTextureRequest(
+        Material material,
+        uint materialSlot,
+        in TextureRequest request)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(material);
+        if (_materials.ContainsKey(material.MaterialId))
+        {
+            throw new InvalidOperationException(
+                "MaterialBindless texture bindings must be fixed before the material is first used.");
+        }
+        IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
+        if (materialSlot >= definitions.Count)
+            throw new ArgumentOutOfRangeException(nameof(materialSlot));
+        if (!typeof(SomeEngine.Resources.Texture).IsAssignableFrom(definitions[checked((int)materialSlot)].ValueType))
+        {
+            throw new InvalidOperationException(
+                $"Material slot {materialSlot} is not a Texture slot.");
+        }
+        if (!_textureRequests.TryGetValue(material.MaterialId, out Dictionary<uint, TextureRequest>? requests))
+        {
+            requests = [];
+            _textureRequests.Add(material.MaterialId, requests);
+        }
+        requests[materialSlot] = request;
+    }
 
     public uint Use(
         ref RenderGraphFrame frame,
@@ -71,20 +139,19 @@ public sealed class MaterialBindless : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(material);
-        CollectCompleted();
         EnsureFrame(ref frame);
-
         GraphPassId consumer = pass.Id;
         if (_frameConsumers.Add(consumer))
             foreach (GraphPassId upload in _frameUploads)
                 frame.OrderAfter(consumer, upload);
 
-        if (!_materials.TryGetValue(material, out MaterialState? state))
+        if (!_materials.TryGetValue(material.MaterialId, out MaterialState? state))
         {
-            uint count = checked((uint)material.SlotCount);
+            MaterialResourceBinding[] bindings = ResolveMaterialBindings(material);
+            uint count = checked((uint)bindings.Length);
             uint baseSlot = _valueRanges.Allocate(count);
-            state = new MaterialState(baseSlot, count);
-            _materials.Add(material, state);
+            state = new MaterialState(baseSlot, bindings);
+            _materials.Add(material.MaterialId, state);
             if (count != 0)
             {
                 _mirror.AsSpan(checked((int)baseSlot), checked((int)count)).Clear();
@@ -103,22 +170,21 @@ public sealed class MaterialBindless : IDisposable
     public void Upload(ref RenderGraphFrame frame)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        CollectCompleted();
         EnsureFrame(ref frame);
         FlushDirty(ref frame);
     }
 
-    public void Remove(Material material, QueueCompletion completion)
+    public void Remove(ref RenderGraphFrame frame, Material material)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(material);
-        if (!ReferenceEquals(completion.Queue.Device, _device))
-            throw new ArgumentException(
-                "The completion must belong to the MaterialBindless Device.",
-                nameof(completion));
-        CollectCompleted();
-        if (_materials.Remove(material, out MaterialState? state))
-            _pendingRemovals.Add(new PendingRemoval(state, completion));
+        _textureRequests.Remove(material.MaterialId);
+        if (_materials.Remove(material.MaterialId, out MaterialState? state))
+        {
+            frame.RetireAfterFrame(new DisposeAction(() =>
+                _renderDevice.RetireAfterTrackedSubmissions(
+                    new DisposeAction(() => Release(state)))));
+        }
     }
 
     private void UpdateMaterial(
@@ -128,32 +194,127 @@ public sealed class MaterialBindless : IDisposable
         MaterialState state,
         PipelineSync sync)
     {
-        IReadOnlyList<MaterialSlotDefinition> definitions = material.Slots;
-        for (uint slot = 0; slot < state.Count; slot++)
+        for (int valueIndex = 0; valueIndex < state.Bindings.Length; valueIndex++)
         {
-            MaterialSlotDefinition definition = definitions[checked((int)slot)];
-            if (typeof(EngineTexture).IsAssignableFrom(definition.ValueType))
+            ref readonly MaterialResourceBinding binding = ref state.Bindings[valueIndex];
+            uint materialSlot = binding.MaterialSlot;
+            object? raw = binding.Kind switch
             {
-                object? raw = material.GetSlotValue(slot);
-                EngineTexture texture = raw switch
+                MaterialResourceKind.TextureSrv or MaterialResourceKind.TextureUav => material.GetTexture(materialSlot),
+                MaterialResourceKind.Sampler => material.GetSampler(materialSlot),
+                _ => material.GetDeviceResource(materialSlot),
+            };
+            switch (binding.Kind)
+            {
+                case MaterialResourceKind.TextureSrv:
                 {
-                    null => _missingTexture,
-                    EngineTexture value => value,
-                    _ => throw new InvalidOperationException(
-                        $"Material slot {slot} declares Texture but contains {raw.GetType().FullName}."),
-                };
-                TextureUse use = _textures.Use(ref frame, ref pass, texture, sync);
-                UpdateTextureSlot(ref frame, material, state, slot, texture, use);
+                    EngineTexture? texture = raw switch
+                    {
+                        null => null,
+                        EngineTexture value => value,
+                        _ => throw new InvalidOperationException(
+                            $"Material slot {materialSlot} declares Texture but contains {raw.GetType().FullName}."),
+                    };
+                    TextureUse use = PrepareTextureSrv(
+                        ref frame,
+                        ref pass,
+                        texture,
+                        binding.TextureRequest,
+                        sync);
+                    UpdateTextureSlot(
+                        ref frame,
+                        material,
+                        state,
+                        valueIndex,
+                        materialSlot,
+                        texture,
+                        use);
+                    break;
+                }
+                case MaterialResourceKind.TextureUav:
+                {
+                    EngineTexture texture = raw as EngineTexture ?? throw new InvalidOperationException(
+                        $"Material slot {materialSlot} must contain a Texture for writable A access.");
+                    TextureUse use = PrepareTextureUav(
+                        ref frame,
+                        ref pass,
+                        texture,
+                        binding.TextureRequest,
+                        sync);
+                    UpdateTextureSlot(
+                        ref frame,
+                        material,
+                        state,
+                        valueIndex,
+                        materialSlot,
+                        texture,
+                        use);
+                    break;
+                }
+                case MaterialResourceKind.Sampler:
+                    if (raw is not SamplerDesc sampler)
+                    {
+                        throw new InvalidOperationException(
+                            $"Material slot {materialSlot} declares SamplerDesc but has no sampler value.");
+                    }
+                    UpdateSamplerSlot(
+                        ref frame,
+                        material,
+                        state,
+                        valueIndex,
+                        materialSlot,
+                        sampler);
+                    break;
+                case MaterialResourceKind.BufferSrv:
+                    UpdateDeviceResourceSlot(
+                        ref frame,
+                        ref pass,
+                        material,
+                        state,
+                        valueIndex,
+                        materialSlot,
+                        raw as BufferSrv ?? throw InvalidResourceValue(materialSlot, raw, nameof(BufferSrv)),
+                        sync);
+                    break;
+                case MaterialResourceKind.BufferUav:
+                    UpdateDeviceResourceSlot(
+                        ref frame,
+                        ref pass,
+                        material,
+                        state,
+                        valueIndex,
+                        materialSlot,
+                        raw as BufferUav ?? throw InvalidResourceValue(materialSlot, raw, nameof(BufferUav)),
+                        sync);
+                    break;
+                case MaterialResourceKind.ConstantBuffer:
+                    UpdateDeviceResourceSlot(
+                        ref frame,
+                        ref pass,
+                        material,
+                        state,
+                        valueIndex,
+                        materialSlot,
+                        raw as BufferCbv ?? throw InvalidResourceValue(materialSlot, raw, nameof(BufferCbv)),
+                        sync);
+                    break;
+                case MaterialResourceKind.AccelerationStructure:
+                    UpdateDeviceResourceSlot(
+                        ref frame,
+                        ref pass,
+                        material,
+                        state,
+                        valueIndex,
+                        materialSlot,
+                        raw as AccelerationStructureSrv ?? throw InvalidResourceValue(
+                            materialSlot,
+                            raw,
+                            nameof(AccelerationStructureSrv)),
+                        sync);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unknown MaterialBindless resource kind {binding.Kind}.");
             }
-            else if (definition.ValueType == typeof(SamplerDesc))
-            {
-                object? raw = material.GetSlotValue(slot);
-                if (raw is not SamplerDesc sampler)
-                    throw new InvalidOperationException(
-                        $"Material slot {slot} declares SamplerDesc but has no sampler value.");
-                UpdateSamplerSlot(ref frame, material, state, slot, sampler);
-            }
-            // Ordinary scalar/vector slots intentionally remain zero in this descriptor-value extension.
         }
     }
 
@@ -161,11 +322,12 @@ public sealed class MaterialBindless : IDisposable
         ref RenderGraphFrame frame,
         Material material,
         MaterialState state,
-        uint slot,
-        EngineTexture texture,
+        int valueIndex,
+        uint materialSlot,
+        EngineTexture? texture,
         in TextureUse use)
     {
-        SlotState? current = state.Slots[checked((int)slot)];
+        SlotState? current = state.Slots[valueIndex];
         DescriptorAllocation allocation;
         if (current?.Allocation is not { } existing || existing.Pool.Shape != use.Descriptor)
         {
@@ -179,10 +341,10 @@ public sealed class MaterialBindless : IDisposable
             allocation = existing;
         }
 
-        ulong slotRevision = material.GetSlotRevision(slot);
+        ulong slotRevision = material.GetPropertyRevision(materialSlot);
         if (current is null
             || !ReferenceEquals(current.Texture, texture)
-            || current.TextureRevision != texture.Revision
+            || current.TextureRevision != (texture?.Revision ?? 0)
             || !ReferenceEquals(current.TextureView, use.View)
             || current.SlotRevision != slotRevision
             || current.Allocation != allocation)
@@ -190,14 +352,16 @@ public sealed class MaterialBindless : IDisposable
             _backend.WriteDescriptor(
                 allocation.Pool.Table,
                 allocation.Slot,
-                ResourceBinding.SampledTexture(use.View));
-            WriteValue(checked(state.Base + slot), allocation.Index.Value);
-            state.Slots[checked((int)slot)] = new SlotState
+                use.Binding);
+            WriteValue(
+                checked(state.Base + state.Bindings[valueIndex].ValueOffset),
+                allocation.Index.Value);
+            state.Slots[valueIndex] = new SlotState
             {
                 Allocation = allocation,
                 SlotRevision = slotRevision,
                 Texture = texture,
-                TextureRevision = texture.Revision,
+                TextureRevision = texture?.Revision ?? 0,
                 TextureView = use.View,
             };
         }
@@ -207,11 +371,12 @@ public sealed class MaterialBindless : IDisposable
         ref RenderGraphFrame frame,
         Material material,
         MaterialState state,
-        uint slot,
+        int valueIndex,
+        uint materialSlot,
         in SamplerDesc description)
     {
-        SlotState? current = state.Slots[checked((int)slot)];
-        ulong slotRevision = material.GetSlotRevision(slot);
+        SlotState? current = state.Slots[valueIndex];
+        ulong slotRevision = material.GetPropertyRevision(materialSlot);
         if (current is not null
             && current.SlotRevision == slotRevision
             && current.SamplerDescription == description)
@@ -241,14 +406,280 @@ public sealed class MaterialBindless : IDisposable
 
         if (current?.Sampler is { } retired)
             frame.RetireAfterSubmittedFrames(retired);
-        WriteValue(checked(state.Base + slot), allocation.Index.Value);
-        state.Slots[checked((int)slot)] = new SlotState
+        WriteValue(
+            checked(state.Base + state.Bindings[valueIndex].ValueOffset),
+            allocation.Index.Value);
+        state.Slots[valueIndex] = new SlotState
         {
             Allocation = allocation,
             SlotRevision = slotRevision,
             Sampler = sampler,
             SamplerDescription = description,
         };
+    }
+
+    private void UpdateDeviceResourceSlot(
+        ref RenderGraphFrame frame,
+        ref PassDefinition pass,
+        Material material,
+        MaterialState state,
+        int valueIndex,
+        uint materialSlot,
+        DeviceResource resource,
+        PipelineSync sync)
+    {
+        if (!ReferenceEquals(resource.Device, _device))
+        {
+            throw new InvalidOperationException(
+                $"Material slot {materialSlot} references a resource from another Device.");
+        }
+
+        DescriptorSlotDesc shape;
+        ResourceBinding descriptor;
+        switch (resource)
+        {
+            case BufferSrv srv:
+            {
+                BufferSrvDesc description = srv.Description;
+                GraphBufferId buffer = ImportBuffer(ref frame, description.Buffer);
+                _ = pass.Read(
+                    buffer,
+                    description.Range,
+                    sync,
+                    ResourceAccess.ShaderResource);
+                shape = new DescriptorSlotDesc(
+                    ResourceBindingType.BufferSrv,
+                    description.Format,
+                    description.StructureStride);
+                descriptor = ResourceBinding.ReadOnlyBuffer(srv);
+                break;
+            }
+            case BufferUav uav:
+            {
+                BufferUavDesc description = uav.Description;
+                GraphBufferId buffer = ImportBuffer(ref frame, description.Buffer);
+                _ = pass.ReadWrite(
+                    buffer,
+                    description.Range,
+                    sync,
+                    ResourceAccess.UnorderedAccess);
+                if (description.CounterBuffer is { } counter)
+                {
+                    GraphBufferId counterBuffer = ImportBuffer(ref frame, counter);
+                    _ = pass.ReadWrite(
+                        counterBuffer,
+                        new BufferRange(description.CounterOffset, sizeof(uint)),
+                        sync,
+                        ResourceAccess.UnorderedAccess);
+                }
+                shape = new DescriptorSlotDesc(
+                    ResourceBindingType.BufferUav,
+                    description.Format,
+                    description.StructureStride,
+                    HasCounter: description.CounterBuffer is not null);
+                descriptor = ResourceBinding.WritableBuffer(uav);
+                break;
+            }
+            case BufferCbv cbv:
+            {
+                BufferCbvDesc description = cbv.Description;
+                GraphBufferId buffer = ImportBuffer(ref frame, description.Buffer);
+                _ = pass.Read(
+                    buffer,
+                    description.Range,
+                    sync,
+                    ResourceAccess.ConstantBuffer);
+                shape = new DescriptorSlotDesc(ResourceBindingType.ConstantBuffer);
+                descriptor = ResourceBinding.ConstantBuffer(cbv);
+                break;
+            }
+            case AccelerationStructureSrv accelerationStructureView:
+            {
+                AccelerationStructure resourceValue = accelerationStructureView.Resource;
+                GraphBufferId storage = ImportBuffer(ref frame, resourceValue.Info.Storage);
+                _ = pass.Read(
+                    storage,
+                    resourceValue.Info.StorageRange,
+                    sync,
+                    ResourceAccess.RayTracingAccelerationStructureRead);
+                shape = new DescriptorSlotDesc(ResourceBindingType.AccelerationStructure);
+                descriptor = ResourceBinding.AccelerationStructure(accelerationStructureView);
+                break;
+            }
+            default:
+                throw new InvalidOperationException(
+                    $"Material slot {materialSlot} uses unsupported device resource type {resource.GetType().FullName}.");
+        }
+
+        SlotState? current = state.Slots[valueIndex];
+        DescriptorAllocation allocation;
+        if (current?.Allocation is not { } existing || existing.Pool.Shape != shape)
+        {
+            allocation = AllocateDescriptor(shape);
+            if (current?.Allocation is { } retired)
+            {
+                frame.RetireAfterSubmittedFrames(
+                    new DisposeAction(() => retired.Pool.Free(retired.Slot)));
+            }
+        }
+        else
+        {
+            allocation = existing;
+        }
+
+        ulong slotRevision = material.GetPropertyRevision(materialSlot);
+        if (current is not null &&
+            current.SlotRevision == slotRevision &&
+            ReferenceEquals(current.ResourceView, resource) &&
+            current.Allocation == allocation)
+        {
+            return;
+        }
+
+        _backend.WriteDescriptor(allocation.Pool.Table, allocation.Slot, descriptor);
+        WriteValue(
+            checked(state.Base + state.Bindings[valueIndex].ValueOffset),
+            allocation.Index.Value);
+        state.Slots[valueIndex] = new SlotState
+        {
+            Allocation = allocation,
+            SlotRevision = slotRevision,
+            ResourceView = resource,
+        };
+    }
+
+    private static GraphBufferId ImportBuffer(ref RenderGraphFrame frame, SomeEngine.Graphics.Buffer buffer)
+    {
+        BufferRange range = new(0, buffer.Info.Size);
+        return frame.Import(
+            buffer,
+            [new BufferBoundaryState(
+                range,
+                buffer.InitialSync,
+                buffer.InitialAccess,
+                ResourceContentState.Defined)]);
+    }
+
+    private MaterialResourceBinding[] ResolveMaterialBindings(Material material)
+    {
+        IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
+        var result = new List<MaterialResourceBinding>(definitions.Count);
+        _textureRequests.TryGetValue(material.MaterialId, out Dictionary<uint, TextureRequest>? textureRequests);
+        for (uint slot = 0; slot < definitions.Count; slot++)
+        {
+            Type type = definitions[checked((int)slot)].ValueType;
+            TextureRequest textureRequest = default;
+            MaterialResourceKind? kind =
+                typeof(SomeEngine.Resources.Texture).IsAssignableFrom(type)
+                    ? ResolveTextureKind(slot, textureRequests, out textureRequest) :
+                type == typeof(SamplerDesc) ? MaterialResourceKind.Sampler :
+                typeof(BufferSrv).IsAssignableFrom(type) ? MaterialResourceKind.BufferSrv :
+                typeof(BufferUav).IsAssignableFrom(type) ? MaterialResourceKind.BufferUav :
+                typeof(BufferCbv).IsAssignableFrom(type) ? MaterialResourceKind.ConstantBuffer :
+                typeof(AccelerationStructureSrv).IsAssignableFrom(type) ? MaterialResourceKind.AccelerationStructure :
+                null;
+            if (kind is { } resolved)
+            {
+                result.Add(new MaterialResourceBinding(
+                    slot,
+                    checked((uint)result.Count),
+                    resolved,
+                    textureRequest));
+            }
+        }
+        return [.. result];
+
+        static MaterialResourceKind ResolveTextureKind(
+            uint slot,
+            Dictionary<uint, TextureRequest>? requests,
+            out TextureRequest request)
+        {
+            if (requests is not null && requests.TryGetValue(slot, out request))
+                return request.Kind;
+            request = new TextureRequest(MaterialResourceKind.TextureSrv, null, null, null);
+            return MaterialResourceKind.TextureSrv;
+        }
+    }
+
+    private static InvalidOperationException InvalidResourceValue(
+        uint materialSlot,
+        object? value,
+        string expected) =>
+        new(
+            $"Material slot {materialSlot} expects {expected} but contains " +
+            $"{value?.GetType().FullName ?? "null"}.");
+
+    private TextureUse PrepareTextureSrv(
+        ref RenderGraphFrame frame,
+        ref PassDefinition pass,
+        EngineTexture? asset,
+        in TextureRequest request,
+        PipelineSync sync)
+    {
+        SomeEngine.Graphics.Texture resource;
+        TextureSrv view;
+        if (asset is null)
+        {
+            resource = _renderDevice.PrepareMissingTexture(ref frame, pass.Id);
+            view = _renderDevice.MissingTextureSrv;
+        }
+        else
+        {
+            resource = _renderDevice.PrepareTexture(ref frame, pass.Id, asset);
+            view = _renderDevice.GetTextureSrv(
+                asset,
+                request.Range,
+                request.Format,
+                request.Dimension);
+        }
+
+        TextureSrvDesc description = view.Description;
+        GraphTextureId graphTexture = frame.GetImported(resource);
+        GraphTextureSrvId graphView = frame.CreateTextureSrv(
+            graphTexture,
+            description.Range,
+            description.Format,
+            description.Dimension,
+            "MaterialBindless Texture SRV");
+        _ = pass.Read(graphView, sync, TextureLayout.ShaderResource);
+        DescriptorSlotDesc descriptor = new(
+            ResourceBindingType.TextureSrv,
+            description.Format,
+            TextureDimension: description.Dimension,
+            Aspects: description.Range.Aspects);
+        return new TextureUse(view, ResourceBinding.SampledTexture(view), descriptor);
+    }
+
+    private TextureUse PrepareTextureUav(
+        ref RenderGraphFrame frame,
+        ref PassDefinition pass,
+        EngineTexture asset,
+        in TextureRequest request,
+        PipelineSync sync)
+    {
+        if (request.Range is not { } range)
+            throw new InvalidOperationException("A MaterialBindless texture UAV requires an explicit subresource range.");
+        SomeEngine.Graphics.Texture resource = _renderDevice.PrepareTexture(ref frame, pass.Id, asset);
+        TextureUav view = _renderDevice.GetTextureUav(
+            asset,
+            range,
+            request.Format,
+            request.Dimension);
+        TextureUavDesc description = view.Description;
+        GraphTextureId graphTexture = frame.GetImported(resource);
+        GraphTextureUavId graphView = frame.CreateTextureUav(
+            graphTexture,
+            description.Range,
+            description.Format,
+            description.Dimension,
+            "MaterialBindless Texture UAV");
+        _ = pass.ReadWrite(graphView, sync, layout: TextureLayout.UnorderedAccess);
+        DescriptorSlotDesc descriptor = new(
+            ResourceBindingType.TextureUav,
+            description.Format,
+            TextureDimension: description.Dimension,
+            Aspects: description.Range.Aspects);
+        return new TextureUse(view, ResourceBinding.StorageTexture(view), descriptor);
     }
 
     private DescriptorAllocation AllocateDescriptor(in DescriptorSlotDesc shape)
@@ -269,7 +700,10 @@ public sealed class MaterialBindless : IDisposable
     {
         if (_frameIdentity == frame.FrameIdentity)
             return;
+        if (_uploadRanges.Count != 0)
+            throw new InvalidOperationException("Material uploads still belong to an unfinished frame.");
         _frameIdentity = frame.FrameIdentity;
+        frame.ObserveExecution(this);
         _frameConsumers.Clear();
         _frameBoundPasses.Clear();
         _frameUploads.Clear();
@@ -302,7 +736,7 @@ public sealed class MaterialBindless : IDisposable
             ReadOnlySpan<uint> values = _mirror.AsSpan(
                 checked((int)dirty.Start),
                 checked((int)dirty.Count));
-            GraphBufferId upload = frame.Upload(
+            GraphBufferSlice upload = frame.Upload(
                 values,
                 BufferUsages.CopySource,
                 "MaterialBindlessValues dirty upload");
@@ -319,8 +753,8 @@ public sealed class MaterialBindless : IDisposable
                 static (ref PassDefinition definition, ref ValuesUploadPass value) =>
                 {
                     _ = definition.Read(
-                        value.Upload,
-                        BufferRange.Whole,
+                        value.Upload.Buffer,
+                        value.Upload.Range,
                         PipelineSync.Copy,
                         ResourceAccess.CopySource);
                     _ = definition.Write(
@@ -334,18 +768,36 @@ public sealed class MaterialBindless : IDisposable
                 static (ref CopyPassCommandScope commands, in ValuesUploadPass value) =>
                 {
                     commands.CopyBuffer(new BufferCopy(
-                        commands.GetBuffer(value.Upload),
-                        0,
+                        commands.GetBuffer(value.Upload.Buffer),
+                        value.Upload.Range.Offset,
                         commands.GetBuffer(value.Destination),
                         value.DestinationOffset,
                         value.Size));
                 });
             _frameUploads.Add(copy);
+            _uploadRanges.Add(dirty);
             foreach (GraphPassId consumer in _frameConsumers)
                 frame.OrderAfter(consumer, copy);
         }
         _dirty.Clear();
-        _valuesInitialized = true;
+    }
+
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+    {
+        if (!result.SubmittedCompletions.IsEmpty)
+            _renderDevice.TrackSubmission(result.SubmittedCompletions);
+        bool allSubmitted = true;
+        for (int i = 0; i < _uploadRanges.Count; i++)
+        {
+            if (result.TryGetPassCompletion(_frameUploads[i], out _))
+                continue;
+            ValueRange range = _uploadRanges[i];
+            AddDirty(range.Start, range.Count);
+            allSubmitted = false;
+        }
+        if (allSubmitted && _uploadRanges.Count != 0)
+            _valuesInitialized = true;
+        _uploadRanges.Clear();
     }
 
     private void WriteValue(uint slot, uint value)
@@ -375,21 +827,9 @@ public sealed class MaterialBindless : IDisposable
         _dirty.Insert(index, new ValueRange(start, end - start));
     }
 
-    private void CollectCompleted()
-    {
-        for (int index = _pendingRemovals.Count - 1; index >= 0; index--)
-        {
-            PendingRemoval pending = _pendingRemovals[index];
-            if (!_backend.IsComplete(pending.Completion))
-                continue;
-            Release(pending.State);
-            _pendingRemovals.RemoveAt(index);
-        }
-    }
-
     private void Release(MaterialState state)
     {
-        _valueRanges.Free(state.Base, state.Count);
+        _valueRanges.Free(state.Base, checked((uint)state.Bindings.Length));
         foreach (SlotState? slot in state.Slots)
         {
             if (slot?.Allocation is { } allocation)
@@ -406,29 +846,25 @@ public sealed class MaterialBindless : IDisposable
         foreach (MaterialState state in _materials.Values)
             foreach (SlotState? slot in state.Slots)
                 slot?.Sampler?.Dispose();
-        foreach (PendingRemoval pending in _pendingRemovals)
-            foreach (SlotState? slot in pending.State.Slots)
-                slot?.Sampler?.Dispose();
         _materials.Clear();
-        _pendingRemovals.Clear();
+        _textureRequests.Clear();
         foreach (DescriptorPool pool in _descriptorPools.Values)
             pool.Dispose();
         _descriptorPools.Clear();
-        _textures.Dispose();
         _values.Dispose();
     }
 
     private sealed class MaterialState
     {
-        internal MaterialState(uint baseSlot, uint count)
+        internal MaterialState(uint baseSlot, MaterialResourceBinding[] bindings)
         {
             Base = baseSlot;
-            Count = count;
-            Slots = new SlotState?[checked((int)count)];
+            Bindings = bindings;
+            Slots = new SlotState?[bindings.Length];
         }
 
         internal uint Base { get; }
-        internal uint Count { get; }
+        internal MaterialResourceBinding[] Bindings { get; }
         internal SlotState?[] Slots { get; }
     }
 
@@ -438,10 +874,39 @@ public sealed class MaterialBindless : IDisposable
         internal ulong SlotRevision { get; init; }
         internal EngineTexture? Texture { get; init; }
         internal ulong TextureRevision { get; init; }
-        internal TextureSrv? TextureView { get; init; }
+        internal DeviceResource? TextureView { get; init; }
         internal Sampler? Sampler { get; init; }
         internal SamplerDesc SamplerDescription { get; init; }
+        internal DeviceResource? ResourceView { get; init; }
     }
+
+    private enum MaterialResourceKind : byte
+    {
+        TextureSrv,
+        TextureUav,
+        Sampler,
+        BufferSrv,
+        BufferUav,
+        ConstantBuffer,
+        AccelerationStructure,
+    }
+
+    private readonly record struct MaterialResourceBinding(
+        uint MaterialSlot,
+        uint ValueOffset,
+        MaterialResourceKind Kind,
+        TextureRequest TextureRequest);
+
+    private readonly record struct TextureRequest(
+        MaterialResourceKind Kind,
+        TextureSubresourceRange? Range,
+        Format? Format,
+        SomeEngine.Graphics.TextureViewDimension? Dimension);
+
+    private readonly record struct TextureUse(
+        DeviceResource View,
+        ResourceBinding Binding,
+        DescriptorSlotDesc Descriptor);
 
     private sealed class DescriptorPool : IDisposable
     {
@@ -490,14 +955,10 @@ public sealed class MaterialBindless : IDisposable
         uint Slot,
         DescriptorIndex Index);
 
-    private readonly record struct PendingRemoval(
-        MaterialState State,
-        QueueCompletion Completion);
-
     private readonly record struct ValueRange(uint Start, uint Count);
 
     private readonly record struct ValuesUploadPass(
-        GraphBufferId Upload,
+        GraphBufferSlice Upload,
         GraphBufferId Destination,
         ulong DestinationOffset,
         ulong Size);

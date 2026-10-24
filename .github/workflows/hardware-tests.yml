@@ -1,0 +1,35 @@
+name: Hardware adapter tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hardware:
+    runs-on: [self-hosted, Windows, X64, gpu]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Build projects and default content
+        run: ./tools/Build.ps1
+      - name: Run hardware adapter tests
+        run: ./tools/Test.ps1 -Category Hardware -NoBuild
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: hardware-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: |
+            artifacts/test-results/**
+            tests/**/bin/**/*.png
+            tests/**/bin/**/*.bmp
+            tests/**/bin/**/*.ppm
+            tests/**/bin/**/*.log

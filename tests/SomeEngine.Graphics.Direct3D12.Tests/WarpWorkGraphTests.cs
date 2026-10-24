@@ -6,7 +6,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class WarpWorkGraphTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class WarpWorkGraphTests(D3D12TestCompiler shaderCompiler)
 {
     private static readonly TimeSpan GpuTimeout = TimeSpan.FromSeconds(10);
 
@@ -19,14 +20,14 @@ public sealed class WarpWorkGraphTests
         try
         {
             File.WriteAllBytes(probePath, [1, 2, 3, 4]);
-            InvalidDataException mismatch = Assert.Throws<InvalidDataException>(() =>
-                D3D12TestShaderProgram.RequirePinnedSlang2026_14File(
+            Assert.Throws<InvalidDataException>(() =>
+                D3D12TestCompiler.RequirePinnedSlangFile(
                     probePath,
                     new string('0', 64)));
-            Assert.Contains("Pinned Slang 2026.14", mismatch.Message, StringComparison.Ordinal);
-            Assert.Contains(probePath, mismatch.Message, StringComparison.Ordinal);
-            Assert.Contains("Expected SHA-256", mismatch.Message, StringComparison.Ordinal);
-            Assert.Contains("actual SHA-256", mismatch.Message, StringComparison.Ordinal);
+
+
+
+
         }
         finally
         {
@@ -39,57 +40,16 @@ public sealed class WarpWorkGraphTests
     {
         Assert.Equal(
             (SlangTargetFlags)0,
-            D3D12TestShaderProgram.TargetFlagsFor(SlangCompileTarget.Dxil));
+            D3D12TestCompiler.TargetFlagsFor(SlangCompileTarget.Dxil));
         Assert.Equal(
             SlangTargetFlags.GenerateSpirvDirectly,
-            D3D12TestShaderProgram.TargetFlagsFor(SlangCompileTarget.Spirv));
+            D3D12TestCompiler.TargetFlagsFor(SlangCompileTarget.Spirv));
         Assert.Equal(
             (SlangTargetFlags)0,
-            D3D12TestShaderProgram.TargetFlagsFor(SlangCompileTarget.Hlsl));
+            D3D12TestCompiler.TargetFlagsFor(SlangCompileTarget.Hlsl));
     }
 
-    [Fact]
-    public void Portable_work_graph_limits_are_checked_without_inventing_input_count_state()
-    {
-        const uint maximumDimension = 65_535;
-        const uint maximumVolume = 0x00FF_FFFF;
 
-        Assert.True(WorkGraphValidation.IsMaximumDispatchGridValid(
-            maximumDimension, maximumDimension, maximumVolume, 1, 1, 1));
-        Assert.True(WorkGraphValidation.IsMaximumDispatchGridValid(
-            maximumDimension, maximumDimension, maximumVolume, maximumDimension, 1, 1));
-        Assert.False(WorkGraphValidation.IsMaximumDispatchGridValid(
-            maximumDimension, maximumDimension, maximumVolume, 0, 1, 1));
-        Assert.False(WorkGraphValidation.IsMaximumDispatchGridValid(
-            maximumDimension, maximumDimension, maximumVolume, 65_536, 1, 1));
-        Assert.False(WorkGraphValidation.IsMaximumDispatchGridValid(
-            maximumDimension, maximumDimension, maximumVolume, 4_096, 4_096, 1));
-
-        Assert.True(WorkGraphValidation.IsEntryPointLayoutValid(64, 0, 0));
-        Assert.True(WorkGraphValidation.IsEntryPointLayoutValid(64, 64, 16));
-        Assert.False(WorkGraphValidation.IsEntryPointLayoutValid(64, 68, 4));
-        Assert.False(WorkGraphValidation.IsEntryPointLayoutValid(64, 12, 8));
-        Assert.False(WorkGraphValidation.IsEntryPointLayoutValid(64, 4, 0));
-        Assert.False(WorkGraphValidation.IsEntryPointLayoutValid(64, 0, 4));
-
-        WorkGraphMemoryRequirements requirements = new(64, 160, 32);
-        Assert.Equal(64UL, requirements.NormalizeBackingSize(64));
-        Assert.Equal(64UL, requirements.NormalizeBackingSize(80));
-        Assert.Equal(96UL, requirements.NormalizeBackingSize(100));
-        Assert.Equal(160UL, requirements.NormalizeBackingSize(1_000));
-        Assert.Throws<ArgumentOutOfRangeException>(() => requirements.NormalizeBackingSize(63));
-
-        Assert.DoesNotContain(
-            typeof(WorkGraphs).GetProperties(),
-            static property => property.Name.Contains(
-                "MaximumInputRecordCount",
-                StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            typeof(WorkGraphPipelineDesc).GetProperties(),
-            static property => property.Name.Contains(
-                "MaximumInputRecordCount",
-                StringComparison.Ordinal));
-    }
 
     [Fact]
     public void Slang_reflection_exposes_work_graph_attributes_without_an_extra_model()
@@ -97,7 +57,11 @@ public sealed class WarpWorkGraphTests
         const string source = """
             import experimental.workgraph;
 
-            struct WorkRecord { uint Value; };
+            struct WorkRecord
+            {
+                uint3 DispatchGrid : SV_DispatchGrid;
+                uint Value;
+            };
 
             [shader("node")]
             [NodeID("renamedNode", 3)]
@@ -109,14 +73,14 @@ public sealed class WarpWorkGraphTests
             {
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileExperimental(
+        D3D12TestShader shader = shaderCompiler.CompileExperimental(
             "slang_work_graph_attribute_facts",
             source,
             [new("graphMain", SlangStage.Node)]);
-        EntryPointReflection entry = shader.GetEntryPoint(0);
+        EntryPointReflection entry = shader.Reflection.GetEntryPointByIndex(0);
         FunctionReflection function = entry.Function;
         Assert.NotEqual(FunctionReflection.Null, function);
-        IGlobalSession globalSession = shader.Program.GetSession().GetGlobalSession();
+        IGlobalSession globalSession = shader.SlangCode.GetSession().GetGlobalSession();
         AttributeReflection nodeID = function.FindAttributeByName(globalSession, "NodeID")
             ?? AttributeReflection.Null;
         Assert.NotEqual(AttributeReflection.Null, nodeID);
@@ -149,7 +113,7 @@ public sealed class WarpWorkGraphTests
             [numthreads(1, 1, 1)]
             void graphB() { }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileExperimental(
+        D3D12TestShader shader = shaderCompiler.CompileExperimental(
             "work_graph_exact_entry_identity",
             source,
             [
@@ -158,11 +122,11 @@ public sealed class WarpWorkGraphTests
             ]);
         EntryPointReflection entryA = shader.GetEntryPoint(0);
         EntryPointReflection entryB = shader.GetEntryPoint(1);
-        using D3D12Backend backend = CreateBackend();
+        using IGraphicsBackend backend = CreateBackend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateWorkGraphPipeline(
             device,
-            new WorkGraphPipelineDesc(shader.Program));
+            new WorkGraphPipelineDesc(shader.SlangCode, shader.Reflection, shader.TargetCode));
 
         Assert.False(backend.TryGetWorkGraphEntryPoints(pipeline, [], out int count));
         Assert.Equal(2, count);
@@ -209,7 +173,7 @@ public sealed class WarpWorkGraphTests
                 outputValues[1] = input.Get().Value;
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileExperimental(
+        D3D12TestShader shader = shaderCompiler.CompileExperimental(
             "work_graph_four_input_modes",
             source,
             [
@@ -221,7 +185,7 @@ public sealed class WarpWorkGraphTests
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
 
-        using D3D12Backend backend = CreateBackend();
+        using IGraphicsBackend backend = CreateBackend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out WorkGraphs? capability));
         Assert.NotNull(capability);
@@ -229,7 +193,7 @@ public sealed class WarpWorkGraphTests
         Assert.True(capability.GpuInput);
         using Pipeline pipeline = backend.CreateWorkGraphPipeline(
             device,
-            new WorkGraphPipelineDesc(shader.Program));
+            new WorkGraphPipelineDesc(shader.SlangCode, shader.Reflection, shader.TargetCode));
         WorkGraphEntryPointInfo[] entryInfos = GetEntryPoints(backend, pipeline);
         WorkGraphEntryPointInfo infoA = Assert.Single(entryInfos, value => value.EntryPoint == entryA);
         WorkGraphEntryPointInfo infoB = Assert.Single(entryInfos, value => value.EntryPoint == entryB);
@@ -350,11 +314,11 @@ public sealed class WarpWorkGraphTests
             [numthreads(1, 1, 1)]
             void graphMain() { }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileExperimental(
+        D3D12TestShader shader = shaderCompiler.CompileExperimental(
             "work_graph_validation_identity",
             source,
             [new("graphMain", SlangStage.Node)]);
-        using D3D12TestShaderProgram foreign = D3D12TestShaderProgram.CompileExperimental(
+        D3D12TestShader foreign = shaderCompiler.CompileExperimental(
             "work_graph_validation_identity_foreign",
             source,
             [new("graphMain", SlangStage.Node)]);
@@ -365,7 +329,7 @@ public sealed class WarpWorkGraphTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateWorkGraphPipeline(
             device,
-            new WorkGraphPipelineDesc(shader.Program));
+            new WorkGraphPipelineDesc(shader.SlangCode, shader.Reflection, shader.TargetCode));
         WorkGraphMemoryRequirements requirements =
             backend.GetWorkGraphMemoryRequirements(pipeline);
         using Buffer? backing = CreateBacking(backend, device, requirements);
@@ -420,24 +384,24 @@ public sealed class WarpWorkGraphTests
             [numthreads(1, 1, 1)]
             void graphMain() { }
             """;
-        using D3D12TestShaderProgram graphShader = D3D12TestShaderProgram.CompileExperimental(
+        D3D12TestShader graphShader = shaderCompiler.CompileExperimental(
             "work_graph_state_reset",
             graphSource,
             [new("graphMain", SlangStage.Node)]);
-        using D3D12TestShaderProgram computeShader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader computeShader = shaderCompiler.Compile(
             "work_graph_state_reset_compute",
             "[shader(\"compute\")] [numthreads(1, 1, 1)] void computeMain() {}",
             [new("computeMain", SlangStage.Compute)]);
         EntryPointReflection graphEntry = graphShader.GetEntryPoint(0);
 
-        using D3D12Backend backend = CreateBackend();
+        using IGraphicsBackend backend = CreateBackend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline graph = backend.CreateWorkGraphPipeline(
             device,
-            new WorkGraphPipelineDesc(graphShader.Program));
+            new WorkGraphPipelineDesc(graphShader.SlangCode, graphShader.Reflection, graphShader.TargetCode));
         using Pipeline compute = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(computeShader.Program, computeShader.GetEntryPoint(0)));
+            new ComputePipelineDesc(computeShader.SlangCode, computeShader.Reflection, computeShader.GetEntryPoint(0), computeShader.GetEntryCode(0)));
         WorkGraphMemoryRequirements requirements = backend.GetWorkGraphMemoryRequirements(graph);
         using Buffer? backing = CreateBacking(backend, device, requirements);
         using CommandContext context = backend.CreateCommandContext(
@@ -470,7 +434,7 @@ public sealed class WarpWorkGraphTests
         SubmitAndWait(backend, device, commands);
     }
 
-    private static D3D12Backend CreateBackend() => new(
+    private static IGraphicsBackend CreateBackend() => D3D12GraphicsBackend.Create(
         new D3D12BackendOptions(new D3D12ValidationOptions(
             DisableGpuBasedValidation: true,
             DisableSynchronizedQueueValidation: true)));

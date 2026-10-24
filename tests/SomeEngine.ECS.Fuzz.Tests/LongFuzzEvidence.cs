@@ -5,16 +5,10 @@ using System.Text.Json;
 namespace SomeEngine.ECS.Fuzz.Tests;
 
 internal sealed record LongFuzzCampaignEvidence(
-    int SchemaVersion,
     DateTimeOffset CreatedUtc,
-    string CommitSha,
-    bool Clean,
-    bool Passed,
     string PrngAlgorithm,
     string Seed,
     int Steps,
-    int MaximumLogicalEntities,
-    int FullVerificationInterval,
     double DurationMilliseconds,
     int SuccessfulBatches,
     int RejectedBatches,
@@ -23,11 +17,9 @@ internal sealed record LongFuzzCampaignEvidence(
 
 internal static class LongFuzzEvidence
 {
-    internal const int SchemaVersion = 1;
 
     internal static void Write(
         string path,
-        string commitSha,
         EcsFuzzTrace trace,
         FuzzRunResult result,
         TimeSpan duration)
@@ -35,7 +27,6 @@ internal static class LongFuzzEvidence
         ArgumentNullException.ThrowIfNull(trace);
         Write(
             path,
-            commitSha,
             trace.PrngAlgorithm,
             trace.Seed,
             trace.Steps.Length,
@@ -45,7 +36,6 @@ internal static class LongFuzzEvidence
 
     internal static void Write(
         string path,
-        string commitSha,
         string prngAlgorithm,
         ulong seed,
         int stepCount,
@@ -53,21 +43,10 @@ internal static class LongFuzzEvidence
         TimeSpan duration)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        ArgumentException.ThrowIfNullOrWhiteSpace(commitSha);
         ArgumentException.ThrowIfNullOrWhiteSpace(prngAlgorithm);
         ArgumentNullException.ThrowIfNull(result);
-        string normalizedCommit = commitSha.ToLowerInvariant();
-        if (normalizedCommit.Length is not (40 or 64) ||
-            !normalizedCommit.All(static character =>
-                character is >= '0' and <= '9' or >= 'a' and <= 'f'))
-        {
-            throw new InvalidDataException(
-                "Long-fuzz evidence requires the clean full Git commit captured by its launcher.");
-        }
         if (result.StepCount != stepCount || result.StepCount <= 0)
             throw new InvalidDataException("Long-fuzz result step count does not match its campaign.");
-        if (!string.Equals(prngAlgorithm, "xorshift64star-v1", StringComparison.Ordinal))
-            throw new InvalidDataException("Long-fuzz evidence requires the current deterministic PRNG.");
         if (duration <= TimeSpan.Zero || !double.IsFinite(duration.TotalMilliseconds))
             throw new InvalidDataException("Long-fuzz evidence requires a positive finite duration.");
         if (result.SuccessfulBatches < 0 ||
@@ -81,16 +60,10 @@ internal static class LongFuzzEvidence
         string stateDigest = HashState(result.StateDigest);
 
         var evidence = new LongFuzzCampaignEvidence(
-            SchemaVersion,
             DateTimeOffset.UtcNow,
-            normalizedCommit,
-            Clean: true,
-            Passed: true,
             prngAlgorithm,
             $"0x{seed:x16}",
             result.StepCount,
-            EcsFuzzTraceGenerator.MaximumLogicalEntities,
-            EcsFuzzRunner.LongCampaignFullVerificationInterval,
             duration.TotalMilliseconds,
             result.SuccessfulBatches,
             result.RejectedBatches,

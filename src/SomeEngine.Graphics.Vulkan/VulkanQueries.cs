@@ -39,6 +39,18 @@ internal sealed unsafe partial class VulkanBackend
         return RegisterChildOrDispose(nativeDevice, pool);
     }
 
+    private void ResetQueriesCore(CommandContext context, QueryPool pool, uint firstQuery, uint queryCount)
+    {
+        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        VulkanQueryPool native = RequireQueryPool(command, pool, firstQuery);
+        if (queryCount == 0 || queryCount > native.Description.Count - firstQuery)
+            throw new ArgumentOutOfRangeException(nameof(queryCount));
+        if (command.IsRendering)
+            throw new InvalidOperationException("Queries must be reset outside a rendering region.");
+        command.Capture(native);
+        Api.CmdResetQueryPool(command.NativeRecording, native.Native, firstQuery, queryCount);
+    }
+
     private void BeginQueryCore(CommandContext context, QueryPool pool, uint queryIndex)
     {
         VulkanCommandContext command = RequireCommandContext(context, nameof(context));
@@ -46,7 +58,6 @@ internal sealed unsafe partial class VulkanBackend
         if (native.Description.Type == SomeEngine.Graphics.QueryType.Timestamp)
             throw new InvalidOperationException("Timestamp queries are written, not begun.");
         command.Capture(native);
-        Api.CmdResetQueryPool(command.NativeRecording, native.Native, queryIndex, 1);
         QueryControlFlags flags = native.Description.Type == SomeEngine.Graphics.QueryType.Occlusion
             ? QueryControlFlags.PreciseBit
             : QueryControlFlags.None;
@@ -93,7 +104,6 @@ internal sealed unsafe partial class VulkanBackend
         if (native.Description.Type != SomeEngine.Graphics.QueryType.Timestamp)
             throw new InvalidOperationException("WriteTimestamp requires a Timestamp QueryPool.");
         command.Capture(native);
-        Api.CmdResetQueryPool(command.NativeRecording, native.Native, queryIndex, 1);
         Api.CmdWriteTimestamp2(
             command.NativeRecording,
             PipelineStageFlags2.AllCommandsBit,

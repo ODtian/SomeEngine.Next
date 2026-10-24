@@ -95,14 +95,16 @@ public static class WorldCheckpointCodec
         if (effectiveLimits.MaxCheckpointBytes < 0 ||
             header.PayloadLength > checked((ulong)effectiveLimits.MaxCheckpointBytes))
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"World checkpoint payload length {header.PayloadLength} exceeds the configured " +
                 $"limit {effectiveLimits.MaxCheckpointBytes}.");
         }
         Digest256 localRegistry = ComputeRegistryIdentity(registry);
         if (!localRegistry.FixedTimeEquals(header.RegistryIdentity))
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 "World checkpoint registry identity does not match the current exact registry.");
         }
 
@@ -126,7 +128,9 @@ public static class WorldCheckpointCodec
             }
             Digest256 actualPayloadHash = payload.CompleteDigest();
             if (!actualPayloadHash.FixedTimeEquals(header.PayloadHash))
-                throw new InvalidDataException("World checkpoint payload SHA-256 validation failed.");
+                throw SerializationErrors.CreateDataException(
+                    SerializationError.IntegrityMismatch,
+                    "World checkpoint payload SHA-256 validation failed.");
             source.Position = CheckedAbsolute(checkpointStart, header.TotalLength);
             return loaded;
         }
@@ -199,12 +203,15 @@ public static class WorldCheckpointCodec
 
         if (!bytes[..8].SequenceEqual(Magic))
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.UnsupportedVersion,
                 "Unsupported World checkpoint envelope; only current SEWCP003 is accepted.");
         }
         ushort version = BinaryPrimitives.ReadUInt16LittleEndian(bytes[8..10]);
         if (version != Version)
-            throw new InvalidDataException($"Unsupported World checkpoint version {version}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.UnsupportedVersion,
+                $"Unsupported World checkpoint version {version}.");
         if (BinaryPrimitives.ReadUInt16LittleEndian(bytes[10..12]) != HeaderSize)
             throw new InvalidDataException("World checkpoint header size is invalid.");
         if (BinaryPrimitives.ReadUInt32LittleEndian(bytes[12..16]) != ExactRegistryFlag)
@@ -213,7 +220,9 @@ public static class WorldCheckpointCodec
         Digest256 expectedHeaderHash = Digest256.ReadPrefix24(bytes[HeaderHashOffset..]);
         Digest256 actualHeaderHash = ComputeHash(bytes[..HeaderHashOffset]);
         if (!actualHeaderHash.FixedTimePrefix24Equals(expectedHeaderHash))
-            throw new InvalidDataException("World checkpoint header authentication failed.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
+                "World checkpoint header authentication failed.");
 
         ulong payloadOffset = BinaryPrimitives.ReadUInt64LittleEndian(bytes[16..24]);
         ulong payloadLength = BinaryPrimitives.ReadUInt64LittleEndian(bytes[24..32]);

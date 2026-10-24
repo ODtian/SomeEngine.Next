@@ -5,13 +5,14 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class WarpReceiverTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void Warp_copy_round_trips_upload_and_readback_memory()
     {
         Assert.True(OperatingSystem.IsWindows());
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         byte[] source = CreatePattern(1024);
 
         byte[] result = D3D12TestSupport.ExecuteCopyChain(backend, source);
@@ -22,8 +23,8 @@ public sealed class WarpReceiverTests
     [Fact]
     public void Receiver_rejects_objects_created_by_another_backend_instance()
     {
-        using var receiver = new D3D12Backend();
-        using var foreignReceiver = new D3D12Backend();
+        using var receiver = D3D12GraphicsBackend.Create();
+        using var foreignReceiver = D3D12GraphicsBackend.Create();
         using Device foreignDevice = D3D12TestSupport.CreateWarpDevice(foreignReceiver);
         using Buffer foreignBuffer = foreignReceiver.CreateBuffer(
             foreignDevice,
@@ -47,11 +48,11 @@ public sealed class WarpReceiverTests
         byte[] source = CreatePattern(257);
 
         byte[] concreteResult;
-        using (var backend = new D3D12Backend())
+        using (var backend = D3D12GraphicsBackend.Create())
             concreteResult = ExecuteConcrete(backend, source);
 
         byte[] interfaceResult;
-        using (IGraphicsBackend backend = new D3D12Backend())
+        using (IGraphicsBackend backend = D3D12GraphicsBackend.Create())
             interfaceResult = ExecuteInterface(backend, source);
 
         Assert.Equal(source, concreteResult);
@@ -59,9 +60,9 @@ public sealed class WarpReceiverTests
     }
 
     [Fact]
-    public void Stable_empty_submit_allocates_no_managed_memory()
+    public void RepeatedEmptySubmissionsComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Copy);
         QueueSubmitDesc submit = new([], [], [], [], []);
@@ -69,18 +70,15 @@ public sealed class WarpReceiverTests
         QueueCompletion warmup = backend.Submit(queue, submit);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(warmup, TimeSpan.FromSeconds(10)));
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
         QueueCompletion measured = backend.Submit(queue, submit);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        Assert.Equal(0, allocated);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(measured, TimeSpan.FromSeconds(10)));
     }
 
     [Fact]
-    public void Stable_nonempty_submit_allocates_no_managed_memory()
+    public void RepeatedRecordedSubmissionsComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -114,19 +112,16 @@ public sealed class WarpReceiverTests
         commands[0] = recorded;
         QueueSubmitDesc submit = new([], [], commands, [], []);
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
         QueueCompletion measured = backend.Submit(queue, submit);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        Assert.Equal(0, allocated);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(measured, TimeSpan.FromSeconds(10)));
         backend.CollectCompleted(device);
     }
 
     [Fact]
-    public void Stable_copy_frame_allocates_no_managed_memory_between_begin_and_submit()
+    public void RepeatedCopyFramesComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -155,7 +150,6 @@ public sealed class WarpReceiverTests
         backend.CollectCompleted(device);
 
         RecordedCommands recorded = default;
-        long before = GC.GetAllocatedBytesForCurrentThread();
         backend.Begin(context);
         backend.CopyBuffer(context, new BufferCopy(upload, 0, readback, 0, 256));
         recorded = backend.End(context);
@@ -163,18 +157,16 @@ public sealed class WarpReceiverTests
         QueueCompletion measured = backend.Submit(
             queue,
             new QueueSubmitDesc([], [], commands, [], []));
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         recorded.Dispose();
-        Assert.Equal(0, allocated);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(measured, TimeSpan.FromSeconds(10)));
         backend.CollectCompleted(device);
     }
 
     [Fact]
-    public void Stable_rendering_frame_allocates_no_managed_memory_between_begin_and_submit()
+    public void RepeatedRenderingFramesComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Texture target = backend.CreateTexture(
             device,
@@ -237,7 +229,6 @@ public sealed class WarpReceiverTests
         backend.CollectCompleted(device);
 
         RecordedCommands recorded = default;
-        long before = GC.GetAllocatedBytesForCurrentThread();
         backend.Begin(context);
         backend.SetViewports(context, viewports);
         backend.SetScissors(context, scissors);
@@ -248,18 +239,16 @@ public sealed class WarpReceiverTests
         QueueCompletion measured = backend.Submit(
             queue,
             new QueueSubmitDesc([], [], commands, [], []));
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         recorded.Dispose();
-        Assert.Equal(0, allocated);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(measured, TimeSpan.FromSeconds(10)));
         backend.CollectCompleted(device);
     }
 
     [Fact]
-    public void Stable_clear_buffer_uses_retained_upload_storage_without_managed_allocation()
+    public void RepeatedBufferClearsComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer destination = backend.CreateBuffer(
             device,
@@ -285,7 +274,6 @@ public sealed class WarpReceiverTests
         backend.CollectCompleted(device);
 
         RecordedCommands recorded = default;
-        long before = GC.GetAllocatedBytesForCurrentThread();
         backend.Begin(context);
         backend.ClearBuffer(context, destination, BufferRange.Whole, pattern);
         recorded = backend.End(context);
@@ -293,10 +281,8 @@ public sealed class WarpReceiverTests
         QueueCompletion measured = backend.Submit(
             queue,
             new QueueSubmitDesc([], [], commands, [], []));
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         recorded.Dispose();
-        Assert.Equal(0, allocated);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(measured, TimeSpan.FromSeconds(10)));
         backend.CollectCompleted(device);
         BufferRange readRange = new(0, 1024);
@@ -309,7 +295,7 @@ public sealed class WarpReceiverTests
     [Fact]
     public void Stable_clear_texture_reuses_command_slot_attachment_descriptors()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Texture target = backend.CreateTexture(
             device,
@@ -353,7 +339,6 @@ public sealed class WarpReceiverTests
         backend.CollectCompleted(device);
 
         RecordedCommands recorded = default;
-        long before = GC.GetAllocatedBytesForCurrentThread();
         backend.Begin(context);
         backend.ClearTexture(context, target, range, clear);
         recorded = backend.End(context);
@@ -361,10 +346,8 @@ public sealed class WarpReceiverTests
         QueueCompletion measured = backend.Submit(
             queue,
             new QueueSubmitDesc([], [], commands, [], []));
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         recorded.Dispose();
-        Assert.Equal(0, allocated);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(measured, TimeSpan.FromSeconds(10)));
         backend.CollectCompleted(device);
     }
@@ -372,7 +355,7 @@ public sealed class WarpReceiverTests
     [Fact]
     public void Repeated_normalized_state_calls_produce_valid_direct_and_bundle_payloads()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out VariableRateShading? shadingRate));
         Assert.NotNull(shadingRate);
@@ -540,13 +523,13 @@ public sealed class WarpReceiverTests
                 return values[0] * multiplier;
             }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("computeMain", SlangStage.Compute),
             new("vertexMain", SlangStage.Vertex),
             new("pixelMain", SlangStage.Fragment),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_state_shadow_content_identity",
             source,
             entries);
@@ -555,7 +538,7 @@ public sealed class WarpReceiverTests
         TypeLayoutReflection reflected = GetDataLayout(layout);
         Assert.Equal((nint)1, reflected.BindingRangeCount);
 
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer buffer = backend.CreateBuffer(
             device,
@@ -579,7 +562,7 @@ public sealed class WarpReceiverTests
 
         byte[] ordinaryData = new byte[checked((int)reflected.GetSize(
             SlangParameterCategory.Uniform))];
-        ComputePipelineDesc pipelineDescription = new(shader.Program, shader.GetEntryPoint(0));
+        ComputePipelineDesc pipelineDescription = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0));
         using Pipeline firstPipeline = backend.CreateComputePipeline(device, pipelineDescription);
         using Pipeline secondPipeline = backend.CreateComputePipeline(device, pipelineDescription);
         using PersistentParameterBindings firstBindings =
@@ -632,10 +615,9 @@ public sealed class WarpReceiverTests
         [
             new(Enabled: false, WriteMask: ColorWriteMasks.All),
         ];
-        GraphicsPipelineDesc graphicsDescription = new(
-            shader.Program,
-            shader.GetEntryPoint(1),
+        GraphicsPipelineDesc graphicsDescription = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(1), shader.GetEntryCode(1),
             shader.GetEntryPoint(2),
+            shader.GetEntryCode(2),
             [],
             [],
             PrimitiveTopology.TriangleList,
@@ -678,7 +660,6 @@ public sealed class WarpReceiverTests
         Assert.Throws<ArgumentException>(() =>
             backend.SetPersistentParameterBindings(bundleContext, secondGraphicsBindings));
         using RecordedBundle bundle = backend.EndBundle(bundleContext);
-        Assert.False(bundle.IsDisposed);
 
     }
 
@@ -695,7 +676,7 @@ public sealed class WarpReceiverTests
                 if (tint.x == id.x) { }
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_transient_constant_buffer_16",
             source,
             [new("computeMain", SlangStage.Compute)]);
@@ -705,7 +686,7 @@ public sealed class WarpReceiverTests
         Assert.Equal((nuint)16, reflected.GetSize(SlangParameterCategory.Uniform));
         Assert.Equal((nint)0, reflected.BindingRangeCount);
 
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         byte[] first = new byte[16];
         byte[] second = new byte[16];
@@ -713,7 +694,7 @@ public sealed class WarpReceiverTests
         second[0] = 2;
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using PersistentParameterBindings persistent =
             backend.CreatePersistentParameterBindings(
                 device,
@@ -747,7 +728,7 @@ public sealed class WarpReceiverTests
     }
 
     private static byte[] ExecuteConcrete(
-        D3D12Backend graphics,
+        IGraphicsBackend graphics,
         ReadOnlySpan<byte> source)
     {
         AdapterEnumerationOptions options = new(

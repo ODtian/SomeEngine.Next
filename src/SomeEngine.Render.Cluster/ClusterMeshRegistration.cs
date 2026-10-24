@@ -1,6 +1,7 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Cluster;
 
@@ -32,18 +33,22 @@ internal sealed partial class ClusterMeshes
 
     internal async ValueTask<ClusterMeshRegistration> AddMeshAsync(
         Mesh mesh,
-        CancellationToken cancellationToken = default)
-        => (await RegisterMeshAsync(mesh, cancellationToken).ConfigureAwait(false)).Registration;
+        CancellationToken cancellationToken = default,
+        MeshPayloadSource? pageSource = null)
+        => (await RegisterMeshAsync(mesh, cancellationToken, pageSource).ConfigureAwait(false)).Registration;
 
     internal async ValueTask<ClusterMeshRegistrationResult> RegisterMeshAsync(
         Mesh mesh,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        MeshPayloadSource? pageSource = null)
         => await RegisterMeshCoreAsync(
             mesh,
+            pageSource,
             cancellationToken).ConfigureAwait(false);
 
     private async ValueTask<ClusterMeshRegistrationResult> RegisterMeshCoreAsync(
         Mesh mesh,
+        MeshPayloadSource? pageSource,
         CancellationToken cancellationToken)
     {
         bool operationEntered = false;
@@ -57,6 +62,8 @@ internal sealed partial class ClusterMeshes
         try
         {
             ArgumentNullException.ThrowIfNull(mesh);
+            source = pageSource?.Retain();
+            ownsSource = source is not null;
             if (IsRegistrationOwner)
             {
                 throw new InvalidOperationException(
@@ -80,12 +87,10 @@ internal sealed partial class ClusterMeshes
                 ThrowIfDisposed();
                 if (_registrationsStopping)
                     throw new ObjectDisposedException(nameof(ClusterMeshes));
-
                 bool pagesRegistered = _pages.TryRegistration(
                     mesh,
                     out uint existingFirstPage,
-                    out uint existingPageCount,
-                    out _);
+                    out uint existingPageCount);
                 bool rootRegistered = _bvh.TryRegisteredRoot(mesh, out uint existingRoot);
                 if (pagesRegistered != rootRegistered)
                 {
@@ -94,22 +99,24 @@ internal sealed partial class ClusterMeshes
                 }
                 if (pagesRegistered)
                 {
+                    uint[] lowestDetailPageIds = source?.LowestDetailPageIndices.Span
+                        .ToArray()
+                        .Select(localPage => checked(existingFirstPage + localPage))
+                        .ToArray() ?? [];
                     return new ClusterMeshRegistrationResult(
                         new ClusterMeshRegistration(
                             mesh,
                             existingFirstPage,
                             existingPageCount,
-                            existingRoot),
+                            existingRoot,
+                            lowestDetailPageIds),
                         Added: false);
                 }
 
-                bool hasSource = mesh.TryRetainPayloadSource(out source);
-                ownsSource = hasSource;
-                if (!hasSource || source is null)
-                {
-                    throw new InvalidOperationException(
-                        "Cluster runtime accepts only range-streamed meshes; materialized payload compatibility is not supported.");
-                }
+                source ??= MeshPayloadSource.FromMesh(mesh);
+                ownsSource = true;
+                if (!source.Matches(mesh))
+                    throw new InvalidDataException("The explicit page source differs from the mesh content.");
                 if (source.Pages.Count == 0 || source.BvhLength <= 0)
                     throw new InvalidDataException("A streamed cluster mesh must contain page metadata and BVH data.");
 
@@ -121,7 +128,9 @@ internal sealed partial class ClusterMeshes
                 destinationAllocated = true;
             }
 
-            await source.ReadBvhIntoAsync(bvhDestination.Memory, token).ConfigureAwait(false);
+            // Mesh creation already acquired its required BVH. Registration consumes those ready bytes.
+            token.ThrowIfCancellationRequested();
+            mesh.ReadBvh(bvhDestination.Memory.Span);
 
             lock (_gate)
             {
@@ -151,7 +160,8 @@ internal sealed partial class ClusterMeshes
                         mesh,
                         pageRegistration.FirstPageId,
                         checked((uint)pageRegistration.PageCount),
-                        rootNode),
+                        rootNode,
+                        pageRegistration.LowestDetailPageIds),
                     Added: true);
             }
         }
@@ -236,7 +246,6 @@ internal sealed partial class ClusterMeshes
             bool pagesRegistered = _pages.TryRegistration(
                 mesh,
                 out _,
-                out _,
                 out _);
             bool rootRegistered = _bvh.IsRegistered(mesh);
             if (pagesRegistered != rootRegistered)
@@ -256,8 +265,8 @@ internal sealed partial class ClusterMeshes
                 throw new InvalidOperationException(
                     "A Cluster epoch cannot be disposed while a page stream still owns its lifecycle.");
             }
-            if (_directLoads.Count != 0)
-                throw new InvalidOperationException("A Cluster epoch cannot be disposed while direct page IO is active.");
+            if (_stagingLoads.Count != 0)
+                throw new InvalidOperationException("A Cluster epoch cannot be disposed while staged page IO is active.");
             if (_registrationOperationCount != 0)
                 throw new InvalidOperationException("A Cluster epoch cannot be disposed while mesh registration IO is active.");
         }

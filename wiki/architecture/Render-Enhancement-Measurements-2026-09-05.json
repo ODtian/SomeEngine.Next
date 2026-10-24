@@ -1,0 +1,1360 @@
+{
+  "date": "2026-09-05",
+  "adapter": "NVIDIA GeForce RTX 3080",
+  "backend": "Direct3D12",
+  "worktree": "codex/render-enhancement",
+  "sourceAudit": "Render-Enhancement-UE5-Source-Audit-2026-09-05.md",
+  "gpuMethod": "RenderDoc 1.43, capture frame 20, seven EventGPUDuration repetitions; serial replay event times, not async frame wall time",
+  "materialSplit": {
+    "images": {
+      "Cluster-scene-color": {
+        "different_elements": 15434,
+        "max_delta": 0.0419921875,
+        "mean_delta": 3.121916372846398e-05
+      },
+      "Cluster-scene-depth": {
+        "different_elements": 0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0
+      },
+      "Cluster-motion-vectors": {
+        "different_elements": 0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0
+      },
+      "Cluster-visibility-buffer": {
+        "different_elements": 0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0
+      }
+    },
+    "grouped": {
+      "capture": "F:\\.codex\\research\\render-enhancement-20260905\\materials-grouped-gpu_frame20.rdc",
+      "splitMilliseconds": [
+        0.12847999999999998,
+        0.11270400000000001,
+        0.10841599999999998,
+        0.11046400000000002,
+        0.10531200000000003,
+        0.09491199999999998,
+        0.091008
+      ],
+      "dispatches": 24
+    },
+    "separateBins": {
+      "capture": "F:\\.codex\\research\\render-enhancement-20260905\\materials-ungrouped-gpu_frame20.rdc",
+      "splitMilliseconds": [
+        0.4224639999999998,
+        0.42659199999999986,
+        0.43804800000000016,
+        0.41171200000000013,
+        0.414144,
+        0.4183680000000001,
+        0.419584
+      ],
+      "dispatches": 96
+    },
+    "residency": {
+      "fineAllocationFailures": 684,
+      "residentPageSymmetricDifference": 662,
+      "poolPages": 1024,
+      "coarseAllocationFailures": 0
+    }
+  },
+  "sparseMotion": {
+    "instances": 128,
+    "fineAllocationFailures": 5,
+    "activePages": 40,
+    "coarseAllocationFailures": 0,
+    "changedIndices": [
+      0
+    ],
+    "shadowViewCount": 24,
+    "changedInstanceCount": 1
+  },
+  "cpuMethod": "64 readers, 1/128 disjoint ranges; 16 warmups, 48 measured frames, four alternating repetitions. Execution includes submit/commit; GPU wait excluded; calling-thread allocations only. Later repetitions had less unrelated background load.",
+  "cpuRangeMeasurements": [
+    {
+      "repeat": 0,
+      "rangeCount": 1,
+      "passCount": 64,
+      "shared": false,
+      "samples": 48,
+      "RegistrationMedianUs": 42.2,
+      "RegistrationP95Us": 62.1,
+      "ExecutionMedianUs": 311.2,
+      "ExecutionP95Us": 387.9,
+      "CallingThreadAllocationMedianBytes": 264
+    },
+    {
+      "repeat": 0,
+      "rangeCount": 1,
+      "passCount": 64,
+      "shared": true,
+      "samples": 48,
+      "RegistrationMedianUs": 29.5,
+      "RegistrationP95Us": 31.6,
+      "ExecutionMedianUs": 249.8,
+      "ExecutionP95Us": 270.5,
+      "CallingThreadAllocationMedianBytes": 368
+    },
+    {
+      "repeat": 0,
+      "rangeCount": 128,
+      "passCount": 64,
+      "shared": false,
+      "samples": 48,
+      "RegistrationMedianUs": 785.5,
+      "RegistrationP95Us": 853.9,
+      "ExecutionMedianUs": 9166.4,
+      "ExecutionP95Us": 10160,
+      "CallingThreadAllocationMedianBytes": 18552
+    },
+    {
+      "repeat": 0,
+      "rangeCount": 128,
+      "passCount": 64,
+      "shared": true,
+      "samples": 48,
+      "RegistrationMedianUs": 7.7,
+      "RegistrationP95Us": 19.2,
+      "ExecutionMedianUs": 773.1,
+      "ExecutionP95Us": 843.4,
+      "CallingThreadAllocationMedianBytes": 18656
+    },
+    {
+      "repeat": 1,
+      "rangeCount": 1,
+      "passCount": 64,
+      "shared": true,
+      "samples": 48,
+      "RegistrationMedianUs": 7.2,
+      "RegistrationP95Us": 8,
+      "ExecutionMedianUs": 154.4,
+      "ExecutionP95Us": 175.7,
+      "CallingThreadAllocationMedianBytes": 368
+    },
+    {
+      "repeat": 1,
+      "rangeCount": 1,
+      "passCount": 64,
+      "shared": false,
+      "samples": 48,
+      "RegistrationMedianUs": 10,
+      "RegistrationP95Us": 10.4,
+      "ExecutionMedianUs": 154.1,
+      "ExecutionP95Us": 203.8,
+      "CallingThreadAllocationMedianBytes": 264
+    },
+    {
+      "repeat": 1,
+      "rangeCount": 128,
+      "passCount": 64,
+      "shared": true,
+      "samples": 48,
+      "RegistrationMedianUs": 7.5,
+      "RegistrationP95Us": 8.7,
+      "ExecutionMedianUs": 707.2,
+      "ExecutionP95Us": 759.2,
+      "CallingThreadAllocationMedianBytes": 18656
+    },
+    {
+      "repeat": 1,
+      "rangeCount": 128,
+      "passCount": 64,
+      "shared": false,
+      "samples": 48,
+      "RegistrationMedianUs": 764.5,
+      "RegistrationP95Us": 832.6,
+      "ExecutionMedianUs": 9490.6,
+      "ExecutionP95Us": 9829.6,
+      "CallingThreadAllocationMedianBytes": 18552
+    },
+    {
+      "repeat": 2,
+      "rangeCount": 1,
+      "passCount": 64,
+      "shared": false,
+      "samples": 48,
+      "RegistrationMedianUs": 9.5,
+      "RegistrationP95Us": 9.7,
+      "ExecutionMedianUs": 97.4,
+      "ExecutionP95Us": 111,
+      "CallingThreadAllocationMedianBytes": 264
+    },
+    {
+      "repeat": 2,
+      "rangeCount": 1,
+      "passCount": 64,
+      "shared": true,
+      "samples": 48,
+      "RegistrationMedianUs": 6.8,
+      "RegistrationP95Us": 6.9,
+      "ExecutionMedianUs": 77,
+      "ExecutionP95Us": 91.4,
+      "CallingThreadAllocationMedianBytes": 368
+    },
+    {
+      "repeat": 2,
+      "rangeCount": 128,
+      "passCount": 64,
+      "shared": false,
+      "samples": 48,
+      "RegistrationMedianUs": 754.6,
+      "RegistrationP95Us": 823.6,
+      "ExecutionMedianUs": 9290,
+      "ExecutionP95Us": 9644.6,
+      "CallingThreadAllocationMedianBytes": 18552
+    },
+    {
+      "repeat": 2,
+      "rangeCount": 128,
+      "passCount": 64,
+      "shared": true,
+      "samples": 48,
+      "RegistrationMedianUs": 6.9,
+      "RegistrationP95Us": 8.8,
+      "ExecutionMedianUs": 581.3,
+      "ExecutionP95Us": 712.8,
+      "CallingThreadAllocationMedianBytes": 18656
+    },
+    {
+      "repeat": 3,
+      "rangeCount": 1,
+      "passCount": 64,
+      "shared": true,
+      "samples": 48,
+      "RegistrationMedianUs": 6.7,
+      "RegistrationP95Us": 6.9,
+      "ExecutionMedianUs": 77.4,
+      "ExecutionP95Us": 93.1,
+      "CallingThreadAllocationMedianBytes": 368
+    },
+    {
+      "repeat": 3,
+      "rangeCount": 1,
+      "passCount": 64,
+      "shared": false,
+      "samples": 48,
+      "RegistrationMedianUs": 9.5,
+      "RegistrationP95Us": 11.3,
+      "ExecutionMedianUs": 97.1,
+      "ExecutionP95Us": 114.3,
+      "CallingThreadAllocationMedianBytes": 264
+    },
+    {
+      "repeat": 3,
+      "rangeCount": 128,
+      "passCount": 64,
+      "shared": true,
+      "samples": 48,
+      "RegistrationMedianUs": 7,
+      "RegistrationP95Us": 8.6,
+      "ExecutionMedianUs": 579.9,
+      "ExecutionP95Us": 627.2,
+      "CallingThreadAllocationMedianBytes": 18656
+    },
+    {
+      "repeat": 3,
+      "rangeCount": 128,
+      "passCount": 64,
+      "shared": false,
+      "samples": 48,
+      "RegistrationMedianUs": 747.7,
+      "RegistrationP95Us": 851.4,
+      "ExecutionMedianUs": 9375,
+      "ExecutionP95Us": 9863.8,
+      "CallingThreadAllocationMedianBytes": 18552
+    }
+  ],
+  "tests": {
+    "note": "All final suites pass. An earlier ECS allocation test reported buffer=3488 B once; isolated retry and full 311-test retry both passed without changing its threshold.",
+    "Cluster": 139,
+    "Assets": 153,
+    "RenderGraph": 68,
+    "Runtime": 13,
+    "TargetedDirect3D12Gpu": 16,
+    "Render": 81,
+    "ECSSystems": 311
+  },
+  "build": {
+    "warnings": 0,
+    "solution": "SomeEngine.slnx",
+    "errors": 0
+  },
+  "runtime": [
+    {
+      "scenario": "materials-hardware",
+      "graphMetrics": "RenderGraph structure: declaredPasses=217, livePasses=198, scheduledPasses=198, buffers=210, textures=28, accesses=2247, dependencies=2473, barriers=1240, queues=3, analysisReused=17/24, transientLogicalBytes=196083712, transientPhysicalBytes=196083712.",
+      "validationErrors": 0,
+      "frames": 24,
+      "frameMetrics": "Cluster frame 24: materials=4, candidates=32/1 groups, phase1=0 SW+20 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=52 total/0 SW, shadeBin=4221, shadePixels=21059, tessPatches=1280, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=0, visProbe=0/64."
+    },
+    {
+      "scenario": "sparse-dynamic",
+      "graphMetrics": "RenderGraph structure: declaredPasses=133, livePasses=113, scheduledPasses=113, buffers=145, textures=24, accesses=981, dependencies=986, barriers=830, queues=3, analysisReused=17/24, transientLogicalBytes=152436736, transientPhysicalBytes=152436736.",
+      "validationErrors": 0,
+      "frames": 24,
+      "frameMetrics": "Cluster frame 24: materials=1, candidates=1024/16 groups, phase1=640 SW+0 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=1536 total/1536 SW, shadeBin=62059, shadePixels=62059, tessPatches=0, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=1536, visProbe=0/64."
+    },
+    {
+      "scenario": "main-static",
+      "graphMetrics": "RenderGraph structure: declaredPasses=133, livePasses=111, scheduledPasses=111, buffers=145, textures=24, accesses=981, dependencies=975, barriers=818, queues=3, analysisReused=17/24, transientLogicalBytes=152240128, transientPhysicalBytes=152240128.",
+      "validationErrors": 0,
+      "frames": 24,
+      "frameMetrics": "Cluster frame 24: materials=1, candidates=6572/103 groups, phase1=4148 SW+0 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=10344 total/10344 SW, shadeBin=190932, shadePixels=190932, tessPatches=0, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=10344, visProbe=0/64."
+    },
+    {
+      "scenario": "main-dynamic",
+      "graphMetrics": "RenderGraph structure: declaredPasses=133, livePasses=113, scheduledPasses=113, buffers=145, textures=24, accesses=981, dependencies=986, barriers=830, queues=3, analysisReused=17/24, transientLogicalBytes=152436736, transientPhysicalBytes=152436736.",
+      "validationErrors": 0,
+      "frames": 24,
+      "frameMetrics": "Cluster frame 24: materials=1, candidates=6622/104 groups, phase1=4176 SW+0 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=10398 total/10398 SW, shadeBin=190266, shadePixels=190266, tessPatches=0, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=10398, visProbe=1/64."
+    },
+    {
+      "scenario": "wpo-hybrid-dynamic",
+      "graphMetrics": "RenderGraph structure: declaredPasses=129, livePasses=109, scheduledPasses=109, buffers=141, textures=24, accesses=862, dependencies=932, barriers=786, queues=3, analysisReused=17/24, transientLogicalBytes=148504576, transientPhysicalBytes=148504576.",
+      "validationErrors": 0,
+      "frames": 24,
+      "frameMetrics": "Cluster frame 24: materials=1, candidates=44/1 groups, phase1=8 SW+20 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=76 total/24 SW, shadeBin=15035, shadePixels=15035, tessPatches=0, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=24, visProbe=0/64."
+    },
+    {
+      "scenario": "wpo-hardware-dynamic",
+      "graphMetrics": "RenderGraph structure: declaredPasses=123, livePasses=104, scheduledPasses=104, buffers=135, textures=25, accesses=788, dependencies=758, barriers=623, queues=3, analysisReused=17/24, transientLogicalBytes=140574720, transientPhysicalBytes=140574720.",
+      "validationErrors": 0,
+      "frames": 24,
+      "frameMetrics": "Cluster frame 24: materials=1, candidates=44/1 groups, phase1=0 SW+28 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=76 total/0 SW, shadeBin=14970, shadePixels=14970, tessPatches=0, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=0, visProbe=0/64."
+    },
+    {
+      "scenario": "displacement-hybrid-static",
+      "graphMetrics": "RenderGraph structure: declaredPasses=181, livePasses=161, scheduledPasses=161, buffers=177, textures=24, accesses=1684, dependencies=1928, barriers=1262, queues=3, analysisReused=17/24, transientLogicalBytes=203816960, transientPhysicalBytes=203816960.",
+      "validationErrors": 0,
+      "frames": 24,
+      "frameMetrics": "Cluster frame 24: materials=1, candidates=32/1 groups, phase1=0 SW+20 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=52 total/0 SW, shadeBin=28200, shadePixels=28200, tessPatches=16422, tessDropped=0, tessLimited=192, tessCulled=0, swDebug=0, visProbe=0/64."
+    },
+    {
+      "scenario": "displacement-hardware-static",
+      "graphMetrics": "RenderGraph structure: declaredPasses=175, livePasses=156, scheduledPasses=156, buffers=171, textures=25, accesses=1610, dependencies=1666, barriers=1054, queues=3, analysisReused=17/24, transientLogicalBytes=195887104, transientPhysicalBytes=195887104.",
+      "validationErrors": 0,
+      "frames": 24,
+      "frameMetrics": "Cluster frame 24: materials=1, candidates=32/1 groups, phase1=0 SW+20 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=52 total/0 SW, shadeBin=28199, shadePixels=28199, tessPatches=16422, tessDropped=0, tessLimited=192, tessCulled=0, swDebug=0, visProbe=0/64."
+    },
+    {
+      "scenario": "displacement-dynamic",
+      "graphMetrics": "RenderGraph structure: declaredPasses=181, livePasses=165, scheduledPasses=165, buffers=177, textures=24, accesses=1683, dependencies=1952, barriers=1275, queues=3, analysisReused=17/24, transientLogicalBytes=203948032, transientPhysicalBytes=203948032.",
+      "validationErrors": 0,
+      "frames": 24,
+      "frameMetrics": "Cluster frame 24: materials=1, candidates=32/1 groups, phase1=0 SW+20 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=52 total/0 SW, shadeBin=28185, shadePixels=28185, tessPatches=16436, tessDropped=0, tessLimited=208, tessCulled=0, swDebug=0, visProbe=0/64."
+    }
+  ],
+  "finalApiCleanupSmoke": [
+    {
+      "scenario": "post-cleanup-materials-hardware",
+      "validationErrors": 0,
+      "frames": 16,
+      "frameMetrics": "Cluster frame 16: materials=4, candidates=32/1 groups, phase1=0 SW+20 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=52 total/0 SW, shadeBin=4221, shadePixels=21059, tessPatches=1280, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=0, visProbe=0/64.",
+      "graphMetrics": "RenderGraph structure: declaredPasses=217, livePasses=198, scheduledPasses=198, buffers=210, textures=28, accesses=2247, dependencies=2473, barriers=1240, queues=3, analysisReused=9/16, transientLogicalBytes=196083712, transientPhysicalBytes=196083712."
+    },
+    {
+      "scenario": "post-cleanup-main-dynamic",
+      "validationErrors": 0,
+      "frames": 16,
+      "frameMetrics": "Cluster frame 16: materials=1, candidates=6612/104 groups, phase1=4172 SW+0 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=10392 total/10392 SW, shadeBin=192306, shadePixels=192306, tessPatches=0, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=10392, visProbe=0/64.",
+      "graphMetrics": "RenderGraph structure: declaredPasses=133, livePasses=113, scheduledPasses=113, buffers=145, textures=24, accesses=981, dependencies=986, barriers=830, queues=3, analysisReused=9/16, transientLogicalBytes=152436736, transientPhysicalBytes=152436736."
+    }
+  ],
+  "followup": {
+    "capturePrefix": "followup-complete-displacement",
+    "method": "RenderDoc EventGPUDuration; seven replay samples; per-event sums are not overlapped frame wall time",
+    "paths": {
+      "mesh": {
+        "raster": {
+          "events": 36,
+          "entries": [
+            "ClusterRasterMeshPixelHardwareOnly",
+            "ClusterTessellationHardwareMeshPixel"
+          ],
+          "medianMs": 0.18991999999999992,
+          "samplesMs": [
+            0.19167999999999993,
+            0.18991999999999992,
+            0.19020799999999988,
+            0.19142399999999993,
+            0.18902399999999997,
+            0.18966399999999986,
+            0.18899199999999994
+          ]
+        },
+        "dice": {
+          "events": 0,
+          "entries": [],
+          "medianMs": 0,
+          "samplesMs": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "shade": {
+          "events": 1,
+          "entries": [
+            "ClusterShade"
+          ],
+          "medianMs": 0.09318399999999999,
+          "samplesMs": [
+            0.09318399999999999,
+            0.09215999999999999,
+            0.095232,
+            0.094208,
+            0.09215999999999999,
+            0.096256,
+            0.09215999999999999
+          ]
+        },
+        "shadeBinning": {
+          "events": 4,
+          "entries": [
+            "CountShadeBins",
+            "ReserveShadeBins",
+            "ResetShadeBins",
+            "ScatterShadeBins"
+          ],
+          "medianMs": 0.062335999999999996,
+          "samplesMs": [
+            0.060607999999999995,
+            0.061376,
+            0.07456,
+            0.062335999999999996,
+            0.0624,
+            0.062335999999999996,
+            0.06259200000000001
+          ]
+        },
+        "split": {
+          "events": 24,
+          "entries": [
+            "ClusterTessellationSplit"
+          ],
+          "medianMs": 0.24803199999999997,
+          "samplesMs": [
+            0.25167999999999996,
+            0.24614399999999997,
+            0.24902399999999994,
+            0.24563199999999993,
+            0.24803199999999997,
+            0.252672,
+            0.24431999999999998
+          ]
+        },
+        "tessellationHardware": {
+          "events": 4,
+          "entries": [
+            "ClusterTessellationHardwareMeshPixel"
+          ],
+          "medianMs": 0.13091199999999997,
+          "samplesMs": [
+            0.132032,
+            0.132672,
+            0.13091199999999997,
+            0.13184,
+            0.13068800000000003,
+            0.12995200000000004,
+            0.13008000000000003
+          ]
+        }
+      },
+      "vs": {
+        "raster": {
+          "events": 64,
+          "entries": [
+            "ClusterRasterPixelHardwareOnly",
+            "ClusterTessellationHardwarePixel"
+          ],
+          "medianMs": 0.16422400000000004,
+          "samplesMs": [
+            0.18185599999999993,
+            0.16140800000000002,
+            0.16089599999999996,
+            0.17878400000000003,
+            0.161184,
+            0.16422400000000004,
+            0.1797120000000001
+          ]
+        },
+        "dice": {
+          "events": 0,
+          "entries": [],
+          "medianMs": 0,
+          "samplesMs": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "shade": {
+          "events": 1,
+          "entries": [
+            "ClusterShade"
+          ],
+          "medianMs": 0.09113600000000001,
+          "samplesMs": [
+            0.09113600000000001,
+            0.09113600000000001,
+            0.09113600000000001,
+            0.090112,
+            0.09113600000000001,
+            0.09113600000000001,
+            0.090112
+          ]
+        },
+        "shadeBinning": {
+          "events": 4,
+          "entries": [
+            "CountShadeBins",
+            "ReserveShadeBins",
+            "ResetShadeBins",
+            "ScatterShadeBins"
+          ],
+          "medianMs": 0.06265599999999999,
+          "samplesMs": [
+            0.063744,
+            0.06265599999999999,
+            0.062976,
+            0.06476799999999999,
+            0.06112,
+            0.061343999999999996,
+            0.06256
+          ]
+        },
+        "split": {
+          "events": 24,
+          "entries": [
+            "ClusterTessellationSplit"
+          ],
+          "medianMs": 0.248192,
+          "samplesMs": [
+            0.248192,
+            0.247904,
+            0.250368,
+            0.24771199999999996,
+            0.251584,
+            0.24681599999999998,
+            0.2502399999999999
+          ]
+        },
+        "tessellationHardware": {
+          "events": 32,
+          "entries": [
+            "ClusterTessellationHardwarePixel"
+          ],
+          "medianMs": 0.11248000000000005,
+          "samplesMs": [
+            0.129632,
+            0.10764799999999997,
+            0.10953600000000002,
+            0.12576,
+            0.107488,
+            0.11248000000000005,
+            0.12934400000000001
+          ]
+        }
+      },
+      "hybrid": {
+        "raster": {
+          "events": 18,
+          "entries": [
+            "ClusterRasterMeshPixelImageAtomic64",
+            "ClusterRasterSoftwareImageAtomic64"
+          ],
+          "medianMs": 0.039616,
+          "samplesMs": [
+            0.039552000000000004,
+            0.040352000000000006,
+            0.038720000000000004,
+            0.040128000000000004,
+            0.036607999999999995,
+            0.039616,
+            0.041248
+          ]
+        },
+        "dice": {
+          "events": 4,
+          "entries": [
+            "ClusterTessellationDiceImageAtomic64"
+          ],
+          "medianMs": 0.04256000000000001,
+          "samplesMs": [
+            0.041344000000000006,
+            0.044095999999999996,
+            0.043328,
+            0.041631999999999995,
+            0.04256000000000001,
+            0.042496000000000006,
+            0.046015999999999994
+          ]
+        },
+        "shade": {
+          "events": 1,
+          "entries": [
+            "ClusterShade"
+          ],
+          "medianMs": 0.10239999999999999,
+          "samplesMs": [
+            0.099328,
+            0.103424,
+            0.103424,
+            0.103424,
+            0.10035200000000001,
+            0.101376,
+            0.10239999999999999
+          ]
+        },
+        "shadeBinning": {
+          "events": 4,
+          "entries": [
+            "CountShadeBins",
+            "ReserveShadeBins",
+            "ResetShadeBins",
+            "ScatterShadeBins"
+          ],
+          "medianMs": 0.066816,
+          "samplesMs": [
+            0.066688,
+            0.06553600000000001,
+            0.078464,
+            0.06553600000000001,
+            0.066816,
+            0.068288,
+            0.067552
+          ]
+        },
+        "split": {
+          "events": 24,
+          "entries": [
+            "ClusterTessellationSplit"
+          ],
+          "medianMs": 0.24937600000000004,
+          "samplesMs": [
+            0.249472,
+            0.25449600000000006,
+            0.24912000000000004,
+            0.24671999999999997,
+            0.25231999999999993,
+            0.24937600000000004,
+            0.24758399999999994
+          ]
+        },
+        "tessellationHardware": {
+          "events": 0,
+          "entries": [],
+          "medianMs": 0,
+          "samplesMs": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "comparisons": {
+      "mesh-vs": {
+        "Cluster-visibility-buffer": {
+          "bytes": 3686400,
+          "byteEqual": false,
+          "differentComponents": 28206
+        },
+        "Cluster-scene-depth": {
+          "bytes": 3686400,
+          "byteEqual": true,
+          "differentComponents": 0,
+          "maxAbsoluteDifference": 0.0,
+          "meanAbsoluteDifference": 0.0
+        },
+        "Cluster-motion-vectors": {
+          "bytes": 3686400,
+          "byteEqual": true,
+          "differentComponents": 0,
+          "maxAbsoluteDifference": 0.0,
+          "meanAbsoluteDifference": 0.0
+        },
+        "Cluster-scene-color": {
+          "bytes": 7372800,
+          "byteEqual": false,
+          "differentComponents": 5592,
+          "maxAbsoluteDifference": 0.09888458251953125,
+          "meanAbsoluteDifference": 6.715051293010927e-06
+        },
+        "shadowPageTable": {
+          "residentPages": [
+            1024,
+            1024
+          ],
+          "differentResidencyEntries": 624,
+          "commonResidentTagsAndGenerationEqual": true
+        },
+        "decodedVisibility": {
+          "identity": [
+            "pageContentSha256",
+            "instanceId",
+            "clusterAndView",
+            "triangleId"
+          ],
+          "differentPixels": 0
+        }
+      },
+      "mesh-hybrid": {
+        "Cluster-visibility-buffer": {
+          "bytes": 3686400,
+          "byteEqual": false,
+          "differentComponents": 8
+        },
+        "Cluster-scene-depth": {
+          "bytes": 3686400,
+          "byteEqual": false,
+          "differentComponents": 16223,
+          "maxAbsoluteDifference": 0.006650447845458984,
+          "meanAbsoluteDifference": 1.5572942275967862e-08
+        },
+        "Cluster-motion-vectors": {
+          "bytes": 3686400,
+          "byteEqual": false,
+          "differentComponents": 7,
+          "maxAbsoluteDifference": 0.0004627704620361328,
+          "meanAbsoluteDifference": 1.3889641397529178e-09
+        },
+        "Cluster-scene-color": {
+          "bytes": 7372800,
+          "byteEqual": false,
+          "differentComponents": 8013,
+          "maxAbsoluteDifference": 0.83624267578125,
+          "meanAbsoluteDifference": 2.0494337416797255e-05
+        },
+        "shadowPageTable": {
+          "residentPages": [
+            1024,
+            1024
+          ],
+          "differentResidencyEntries": 816,
+          "commonResidentTagsAndGenerationEqual": true
+        },
+        "decodedVisibility": {
+          "identity": [
+            "pageContentSha256",
+            "instanceId",
+            "clusterAndView",
+            "triangleId"
+          ],
+          "differentPixels": 8
+        }
+      }
+    },
+    "shadingWork": {
+      "visiblePixels": 28206,
+      "fullTiles": 352,
+      "workItems": 1963,
+      "workBytes": 15704,
+      "previousPixelWorkBytes": 112824,
+      "capacityBytesPerPixel": 8
+    },
+    "ueMainCommit": "feb0feb7f29bf3a990531f62f216223b9f0d1ea5",
+    "validation": {
+      "solutionBuild": {
+        "warnings": 0,
+        "errors": 0,
+        "log": "followup-final-solution-build.log"
+      },
+      "shaderAssetsCookedDxilAndSpirv": 20,
+      "testsPassed": {
+        "Render.Cluster": 139,
+        "Render": 81,
+        "RenderGraph": 68,
+        "Assets": 153,
+        "Runtime": 13,
+        "Direct3D12Targeted": 20,
+        "VulkanCompute": 2
+      },
+      "ecsSystems": {
+        "firstFullRun": {
+          "passed": 309,
+          "failed": 2
+        },
+        "secondFullRun": {
+          "passed": 310,
+          "failed": 1
+        },
+        "isolatedFailuresRerun": {
+          "passed": 2,
+          "failed": 0
+        },
+        "remainingFullRunFailure": "WarmedBufferAdmission_DoesNotAllocatePerCallback: buffer=3648 B",
+        "assertionsChanged": false
+      },
+      "limits": [
+        "No dedicated Primitive shader compiler/backend in D3D12 or Vulkan",
+        "Register Dice entries require wave32; wave64-only devices are not covered",
+        "Vulkan compute wave32 readback passed; window/presentation and full rendering were not validated",
+        "Static displacement still reports 207 quality-limited patches and a full VSM fine-page pool"
+      ],
+      "scenarios": [
+        {
+          "name": "followup-displacement-mesh",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 1,
+            "candidates": 32,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 52,
+            "shadeBinTiles": 352,
+            "shadeItems": 1963,
+            "tessPatches": 16740,
+            "tessDropped": 0,
+            "tessLimited": 207,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 175,
+            "livePasses": 156,
+            "scheduledPasses": 156,
+            "buffers": 170,
+            "textures": 25,
+            "accesses": 1613,
+            "dependencies": 1674,
+            "barriers": 1060,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 199557120,
+            "transientPhysicalBytes": 199557120
+          }
+        },
+        {
+          "name": "followup-displacement-vs",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 1,
+            "candidates": 32,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 52,
+            "shadeBinTiles": 352,
+            "shadeItems": 1963,
+            "tessPatches": 16740,
+            "tessDropped": 0,
+            "tessLimited": 207,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 175,
+            "livePasses": 156,
+            "scheduledPasses": 156,
+            "buffers": 171,
+            "textures": 25,
+            "accesses": 1610,
+            "dependencies": 1666,
+            "barriers": 1054,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 199557120,
+            "transientPhysicalBytes": 199557120
+          }
+        },
+        {
+          "name": "followup-displacement-hybrid",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 1,
+            "candidates": 32,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 52,
+            "shadeBinTiles": 352,
+            "shadeItems": 1963,
+            "tessPatches": 16740,
+            "tessDropped": 0,
+            "tessLimited": 207,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 181,
+            "livePasses": 161,
+            "scheduledPasses": 161,
+            "buffers": 177,
+            "textures": 24,
+            "accesses": 1684,
+            "dependencies": 1928,
+            "barriers": 1262,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 207486976,
+            "transientPhysicalBytes": 207486976
+          }
+        },
+        {
+          "name": "followup-final-materials-mesh",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 4,
+            "candidates": 32,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 52,
+            "shadeBinTiles": 42,
+            "shadeItems": 2343,
+            "tessPatches": 1280,
+            "tessDropped": 0,
+            "tessLimited": 0,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 217,
+            "livePasses": 198,
+            "scheduledPasses": 198,
+            "buffers": 209,
+            "textures": 28,
+            "accesses": 2262,
+            "dependencies": 2505,
+            "barriers": 1246,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 199753728,
+            "transientPhysicalBytes": 199753728
+          }
+        },
+        {
+          "name": "followup-final-materials-vs",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 4,
+            "candidates": 32,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 52,
+            "shadeBinTiles": 42,
+            "shadeItems": 2343,
+            "tessPatches": 1280,
+            "tessDropped": 0,
+            "tessLimited": 0,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 217,
+            "livePasses": 198,
+            "scheduledPasses": 198,
+            "buffers": 210,
+            "textures": 28,
+            "accesses": 2247,
+            "dependencies": 2473,
+            "barriers": 1240,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 199753728,
+            "transientPhysicalBytes": 199753728
+          }
+        },
+        {
+          "name": "followup-final-materials-hybrid",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 4,
+            "candidates": 32,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 52,
+            "shadeBinTiles": 42,
+            "shadeItems": 2343,
+            "tessPatches": 1280,
+            "tessDropped": 0,
+            "tessLimited": 0,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 235,
+            "livePasses": 215,
+            "scheduledPasses": 215,
+            "buffers": 228,
+            "textures": 27,
+            "accesses": 2529,
+            "dependencies": 3721,
+            "barriers": 1510,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 207683584,
+            "transientPhysicalBytes": 207683584
+          }
+        },
+        {
+          "name": "followup-final-wpo-alpha-mesh",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 1,
+            "candidates": 44,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 76,
+            "shadeBinTiles": 186,
+            "shadeItems": 1048,
+            "tessPatches": 0,
+            "tessDropped": 0,
+            "tessLimited": 0,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 123,
+            "livePasses": 102,
+            "scheduledPasses": 102,
+            "buffers": 134,
+            "textures": 25,
+            "accesses": 787,
+            "dependencies": 747,
+            "barriers": 611,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 144048128,
+            "transientPhysicalBytes": 144048128
+          }
+        },
+        {
+          "name": "followup-final-wpo-alpha-vs",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 1,
+            "candidates": 44,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 76,
+            "shadeBinTiles": 186,
+            "shadeItems": 1048,
+            "tessPatches": 0,
+            "tessDropped": 0,
+            "tessLimited": 0,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 123,
+            "livePasses": 102,
+            "scheduledPasses": 102,
+            "buffers": 135,
+            "textures": 25,
+            "accesses": 788,
+            "dependencies": 747,
+            "barriers": 611,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 144048128,
+            "transientPhysicalBytes": 144048128
+          }
+        },
+        {
+          "name": "followup-final-wpo-alpha-hybrid",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 1,
+            "candidates": 44,
+            "phase1": 8,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 76,
+            "shadeBinTiles": 186,
+            "shadeItems": 1048,
+            "tessPatches": 0,
+            "tessDropped": 0,
+            "tessLimited": 0,
+            "tessCulled": 0,
+            "swDebug": 24,
+            "visProbe": 0,
+            "declaredPasses": 129,
+            "livePasses": 107,
+            "scheduledPasses": 107,
+            "buffers": 141,
+            "textures": 24,
+            "accesses": 862,
+            "dependencies": 921,
+            "barriers": 774,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 151977984,
+            "transientPhysicalBytes": 151977984
+          }
+        },
+        {
+          "name": "followup-final-wpo-alpha-mesh-dynamic",
+          "frames": 16,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 1,
+            "candidates": 44,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 76,
+            "shadeBinTiles": 194,
+            "shadeItems": 922,
+            "tessPatches": 0,
+            "tessDropped": 0,
+            "tessLimited": 0,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 123,
+            "livePasses": 104,
+            "scheduledPasses": 104,
+            "buffers": 134,
+            "textures": 25,
+            "accesses": 787,
+            "dependencies": 758,
+            "barriers": 623,
+            "queues": 3,
+            "analysisReused": 9,
+            "transientLogicalBytes": 144244736,
+            "transientPhysicalBytes": 144244736
+          }
+        },
+        {
+          "name": "followup-final-wpo-alpha-hybrid-dynamic",
+          "frames": 16,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": false,
+          "metrics": {
+            "materials": 1,
+            "candidates": 44,
+            "phase1": 8,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 76,
+            "shadeBinTiles": 192,
+            "shadeItems": 948,
+            "tessPatches": 0,
+            "tessDropped": 0,
+            "tessLimited": 0,
+            "tessCulled": 0,
+            "swDebug": 24,
+            "visProbe": 0,
+            "declaredPasses": 129,
+            "livePasses": 109,
+            "scheduledPasses": 109,
+            "buffers": 141,
+            "textures": 24,
+            "accesses": 862,
+            "dependencies": 932,
+            "barriers": 786,
+            "queues": 3,
+            "analysisReused": 9,
+            "transientLogicalBytes": 152174592,
+            "transientPhysicalBytes": 152174592
+          }
+        },
+        {
+          "name": "followup-complete-displacement-mesh",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": true,
+          "metrics": {
+            "materials": 1,
+            "candidates": 32,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 52,
+            "shadeBinTiles": 352,
+            "shadeItems": 1963,
+            "tessPatches": 16740,
+            "tessDropped": 0,
+            "tessLimited": 207,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 175,
+            "livePasses": 156,
+            "scheduledPasses": 156,
+            "buffers": 170,
+            "textures": 25,
+            "accesses": 1613,
+            "dependencies": 1674,
+            "barriers": 1060,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 199557120,
+            "transientPhysicalBytes": 199557120
+          }
+        },
+        {
+          "name": "followup-complete-displacement-vs",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": true,
+          "metrics": {
+            "materials": 1,
+            "candidates": 32,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 52,
+            "shadeBinTiles": 352,
+            "shadeItems": 1963,
+            "tessPatches": 16740,
+            "tessDropped": 0,
+            "tessLimited": 207,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 175,
+            "livePasses": 156,
+            "scheduledPasses": 156,
+            "buffers": 171,
+            "textures": 25,
+            "accesses": 1610,
+            "dependencies": 1666,
+            "barriers": 1054,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 199557120,
+            "transientPhysicalBytes": 199557120
+          }
+        },
+        {
+          "name": "followup-complete-displacement-hybrid",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": true,
+          "metrics": {
+            "materials": 1,
+            "candidates": 32,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 52,
+            "shadeBinTiles": 352,
+            "shadeItems": 1963,
+            "tessPatches": 16740,
+            "tessDropped": 0,
+            "tessLimited": 207,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 181,
+            "livePasses": 161,
+            "scheduledPasses": 161,
+            "buffers": 177,
+            "textures": 24,
+            "accesses": 1684,
+            "dependencies": 1928,
+            "barriers": 1262,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 207486976,
+            "transientPhysicalBytes": 207486976
+          }
+        },
+        {
+          "name": "followup-complete-wpo-alpha-mesh",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": true,
+          "metrics": {
+            "materials": 1,
+            "candidates": 44,
+            "phase1": 0,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 76,
+            "shadeBinTiles": 186,
+            "shadeItems": 1048,
+            "tessPatches": 0,
+            "tessDropped": 0,
+            "tessLimited": 0,
+            "tessCulled": 0,
+            "swDebug": 0,
+            "visProbe": 0,
+            "declaredPasses": 123,
+            "livePasses": 102,
+            "scheduledPasses": 102,
+            "buffers": 134,
+            "textures": 25,
+            "accesses": 787,
+            "dependencies": 747,
+            "barriers": 611,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 144048128,
+            "transientPhysicalBytes": 144048128
+          }
+        },
+        {
+          "name": "followup-complete-wpo-alpha-hybrid",
+          "frames": 24,
+          "gpuValidationErrors": 0,
+          "afterUint8MeshCorrection": true,
+          "metrics": {
+            "materials": 1,
+            "candidates": 44,
+            "phase1": 8,
+            "phase2Candidates": 0,
+            "phase2": 0,
+            "rasterBatches": 76,
+            "shadeBinTiles": 186,
+            "shadeItems": 1048,
+            "tessPatches": 0,
+            "tessDropped": 0,
+            "tessLimited": 0,
+            "tessCulled": 0,
+            "swDebug": 24,
+            "visProbe": 0,
+            "declaredPasses": 129,
+            "livePasses": 107,
+            "scheduledPasses": 107,
+            "buffers": 141,
+            "textures": 24,
+            "accesses": 862,
+            "dependencies": 921,
+            "barriers": 774,
+            "queues": 3,
+            "analysisReused": 17,
+            "transientLogicalBytes": 151977984,
+            "transientPhysicalBytes": 151977984
+          }
+        }
+      ],
+      "scenarioFrames": 368,
+      "finalMeshScenarioFrames": 120
+    }
+  }
+}

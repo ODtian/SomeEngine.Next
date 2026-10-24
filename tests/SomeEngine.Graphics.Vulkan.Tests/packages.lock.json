@@ -34,11 +34,6 @@
         "resolved": "17.14.1",
         "contentHash": "pmTrhfFIoplzFVbhVwUquT+77CbGH+h4/3mBpdmIlYtBi9nAB+kKI6dN3A/nV4DFi3wLLx/BlHIPK+MkbQ6Tpg=="
       },
-      "Microsoft.Direct3D.D3D12": {
-        "type": "Transitive",
-        "resolved": "1.619.5",
-        "contentHash": "CvdG5PGPvj2EIbgaMj793fFqXSsNhFhdwmZy/OIBHMbueqPYHz5fFnlHeipcutB6YwFiOSrEKzv5bCj5yYHbnQ=="
-      },
       "Microsoft.DotNet.PlatformAbstractions": {
         "type": "Transitive",
         "resolved": "3.1.6",
@@ -77,29 +72,6 @@
           "Microsoft.Extensions.DependencyModel": "9.0.9"
         }
       },
-      "Silk.NET.Direct3D12": {
-        "type": "Transitive",
-        "resolved": "2.23.0",
-        "contentHash": "XKDJPNYRvLD0nrw8UM4jfx1ddMLgs1J/T1CaEPCIZq0iVJiS9ZNPRHkkiFcMSg3PTCBVYZj1wXjwPx2Fpk1PEA==",
-        "dependencies": {
-          "Silk.NET.Core": "2.23.0",
-          "Silk.NET.DXGI": "2.23.0"
-        }
-      },
-      "Silk.NET.DXGI": {
-        "type": "Transitive",
-        "resolved": "2.23.0",
-        "contentHash": "UBzimKRqdsLQ9EirkpwpLRHiSIZoEg0Ytczh0fUnox72yP51hr4sYhGqd16a3+v8jqmZqpJofc68eZW4KYAs5Q==",
-        "dependencies": {
-          "Silk.NET.Core": "2.23.0",
-          "Silk.NET.Maths": "2.23.0"
-        }
-      },
-      "Silk.NET.Maths": {
-        "type": "Transitive",
-        "resolved": "2.23.0",
-        "contentHash": "r8PdIVzME8EH0qAgbmRPO87I4GfgR2j8TofT7EMuRJDf1QluoQwnVypDoFJjQ2ZBSRsGYk5unYxxogI05Ogsmw=="
-      },
       "Silk.NET.Vulkan": {
         "type": "Transitive",
         "resolved": "2.23.0",
@@ -134,6 +106,11 @@
           "Silk.NET.Core": "2.23.0",
           "Silk.NET.Vulkan": "2.23.0"
         }
+      },
+      "SlangShaderSharp": {
+        "type": "Transitive",
+        "resolved": "2026.17.1",
+        "contentHash": "9jkYED/4WFGikxpM0gUC7a2R75n5XDBAL0HLF2lV0EdIIga8e916ZRtqnD9ZLjgpPQQgtyM1Cu0HGoFxFySFXA=="
       },
       "xunit.abstractions": {
         "type": "Transitive",
@@ -175,32 +152,43 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
-      "slangshadersharp": {
+      "someengine.core": {
+        "type": "Project",
+        "dependencies": {
+          "SomeEngine.ECS": "[1.0.0, )",
+          "SomeEngine.ECS.Systems": "[1.0.0, )",
+          "SomeEngine.Job": "[1.0.0, )"
+        }
+      },
+      "someengine.diagnostics": {
         "type": "Project"
+      },
+      "someengine.ecs": {
+        "type": "Project",
+        "dependencies": {
+          "SomeEngine.Job.Contracts": "[1.0.0, )"
+        }
+      },
+      "someengine.ecs.systems": {
+        "type": "Project",
+        "dependencies": {
+          "SomeEngine.ECS": "[1.0.0, )",
+          "SomeEngine.Job": "[1.0.0, )",
+          "SomeEngine.Job.Contracts": "[1.0.0, )"
+        }
       },
       "someengine.graphics": {
         "type": "Project",
         "dependencies": {
-          "SlangShaderSharp": "[1.0.0, )"
-        }
-      },
-      "someengine.graphics.direct3d12": {
-        "type": "Project",
-        "dependencies": {
-          "Microsoft.Direct3D.D3D12": "[1.619.5, )",
-          "Silk.NET.DXGI": "[2.23.0, )",
-          "Silk.NET.Direct3D12": "[2.23.0, )",
-          "SomeEngine.Graphics": "[1.0.0, )"
+          "SlangShaderSharp": "[2026.17.1, )",
+          "SomeEngine.Diagnostics": "[1.0.0, )"
         }
       },
       "someengine.graphics.validation": {
         "type": "Project",
         "dependencies": {
-          "Silk.NET.DXGI": "[2.23.0, )",
-          "Silk.NET.Direct3D12": "[2.23.0, )",
-          "SlangShaderSharp": "[1.0.0, )",
-          "SomeEngine.Graphics": "[1.0.0, )",
-          "SomeEngine.Graphics.Direct3D12": "[1.0.0, )"
+          "SlangShaderSharp": "[2026.17.1, )",
+          "SomeEngine.Graphics": "[1.0.0, )"
         }
       },
       "someengine.graphics.vulkan": {
@@ -216,6 +204,7 @@
       "someengine.job": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.Job.Contracts": "[1.0.0, )"
         }
       },
@@ -225,7 +214,8 @@
       "someengine.rendergraph": {
         "type": "Project",
         "dependencies": {
-          "SlangShaderSharp": "[1.0.0, )",
+          "SlangShaderSharp": "[2026.17.1, )",
+          "SomeEngine.Core": "[1.0.0, )",
           "SomeEngine.Graphics": "[1.0.0, )",
           "SomeEngine.Job": "[1.0.0, )"
         }

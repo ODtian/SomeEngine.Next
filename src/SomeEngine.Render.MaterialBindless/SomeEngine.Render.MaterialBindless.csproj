@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SomeEngine.Assets\SomeEngine.Assets.csproj" />
     <ProjectReference Include="..\SomeEngine.Graphics\SomeEngine.Graphics.csproj" />
+    <ProjectReference Include="..\SomeEngine.Render\SomeEngine.Render.csproj" />
     <ProjectReference Include="..\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
   </ItemGroup>
   <ItemGroup>

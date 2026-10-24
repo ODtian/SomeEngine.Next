@@ -17,6 +17,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public Buffer CreateReservedBuffer(Device device, in BufferDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<SparseResources>(nameof(CreateReservedBuffer));
         if (desc.Size == 0)
@@ -61,7 +62,7 @@ internal sealed unsafe partial class D3D12Backend
             if (result is null)
             {
                 sparse?.Dispose();
-                _ = native->Release();
+                _ = ResourceTrace.Release(native);
             }
             else
             {
@@ -73,6 +74,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public Texture CreateReservedTexture(Device device, in TextureDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         SparseResources capability =
             nativeDevice.RequireCapability<SparseResources>(nameof(CreateReservedTexture));
@@ -122,7 +124,7 @@ internal sealed unsafe partial class D3D12Backend
             if (result is null)
             {
                 sparse?.Dispose();
-                _ = native->Release();
+                _ = ResourceTrace.Release(native);
             }
             else
             {
@@ -162,6 +164,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public SparseResourceInfo GetSparseResourceInfo(Resource resource)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         RequireBackendOwner(resource, nameof(resource));
         _ = RequireDevice(resource.Device, nameof(resource))
             .RequireCapability<SparseResources>(nameof(GetSparseResourceInfo));
@@ -172,6 +175,7 @@ internal sealed unsafe partial class D3D12Backend
         Queue queue,
         ReadOnlySpan<SparseMappingDesc> mappings)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Queue nativeQueue = RequireQueue(queue, nameof(queue));
         SparseResources capability = nativeQueue.NativeDevice.RequireCapability<SparseResources>(
             nameof(UpdateSparseMappings));
@@ -332,23 +336,24 @@ internal sealed unsafe partial class D3D12Backend
         TileRangeFlags rangeFlags = mapping.RangeFlags;
         uint heapOffset = mapping.HeapOffset;
         uint tileCount = mapping.TileCount;
-        nativeQueue.Native->UpdateTileMappings(
-            mapping.Resource,
-            1,
-            &coordinate,
-            &region,
-            nativeHeap,
-            1,
-            &rangeFlags,
-            &heapOffset,
-            &tileCount,
-            TileMappingFlags.None);
+        QueueTrace.UpdateTileMappings(
+                nativeQueue.Native, mapping.Resource,
+                    1,
+                    &coordinate,
+                    &region,
+                    nativeHeap,
+                    1,
+                    &rangeFlags,
+                    &heapOffset,
+                    &tileCount,
+                    TileMappingFlags.None);
     }
 
     public QueueCompletion CopySparseMappings(
         Queue queue,
         ReadOnlySpan<SparseMappingCopyDesc> copies)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Queue nativeQueue = RequireQueue(queue, nameof(queue));
         SparseResources capability = nativeQueue.NativeDevice.RequireCapability<SparseResources>(
             nameof(CopySparseMappings));
@@ -408,13 +413,13 @@ internal sealed unsafe partial class D3D12Backend
                         TiledResourceCoordinate destination = copy.DestinationCoordinate;
                         TiledResourceCoordinate source = copy.SourceCoordinate;
                         TileRegionSize region = copy.Region;
-                        nativeQueue.Native->CopyTileMappings(
-                            copy.Destination,
-                            &destination,
-                            copy.Source,
-                            &source,
-                            &region,
-                            TileMappingFlags.None);
+                        QueueTrace.CopyTileMappings(
+                                                nativeQueue.Native, copy.Destination,
+                                                    &destination,
+                                                    copy.Source,
+                                                    &source,
+                                                    &region,
+                                                    TileMappingFlags.None);
                         accepted = true;
                     }
 
@@ -453,6 +458,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public ResidencyInfo GetResidencyInfo(Device device)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<Residency>(nameof(GetResidencyInfo));
         IDXGIAdapter3* adapter = (IDXGIAdapter3*)nativeDevice.NativeAdapter;
@@ -469,12 +475,12 @@ internal sealed unsafe partial class D3D12Backend
             QueryVideoMemoryInfo nonLocal = default;
             ThrowIfFailed(
                 nativeDevice,
-                adapter->QueryVideoMemoryInfo(node, MemorySegmentGroup.Local, &local),
+                    PresentationTrace.QueryVideoMemoryInfo(adapter, node, MemorySegmentGroup.Local, &local),
                 NativeOperationType.Ordinary,
                 "IDXGIAdapter3::QueryVideoMemoryInfo(Local)");
             ThrowIfFailed(
                 nativeDevice,
-                adapter->QueryVideoMemoryInfo(node, MemorySegmentGroup.NonLocal, &nonLocal),
+                    PresentationTrace.QueryVideoMemoryInfo(adapter, node, MemorySegmentGroup.NonLocal, &nonLocal),
                 NativeOperationType.Ordinary,
                 "IDXGIAdapter3::QueryVideoMemoryInfo(NonLocal)");
             localBudget = SaturatingAdd(localBudget, local.Budget);
@@ -487,6 +493,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public ResidencyResource GetResidencyResource(Heap heap)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Heap native = RequireHeap(heap);
         _ = RequireDevice(heap.Device, nameof(heap))
             .RequireCapability<Residency>(nameof(GetResidencyResource));
@@ -498,6 +505,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public ResidencyResource GetResidencyResource(Resource resource)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         RequireBackendOwner(resource, nameof(resource));
         D3D12Device device = RequireDevice(resource.Device, nameof(resource));
         _ = device.RequireCapability<Residency>(nameof(GetResidencyResource));
@@ -526,6 +534,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public ResidencyResource GetResidencyResource(QueryPool pool)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12QueryPool native = RequireQueryPool(pool);
         D3D12Device device = RequireDevice(pool.Device, nameof(pool));
         _ = device.RequireCapability<Residency>(nameof(GetResidencyResource));
@@ -540,6 +549,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public ResidencyResource GetResidencyResource(DescriptorTable table)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12DescriptorTable native = RequireDescriptorTable(table);
         _ = RequireDevice(table.Device, nameof(table))
             .RequireCapability<Residency>(nameof(GetResidencyResource));
@@ -552,6 +562,7 @@ internal sealed unsafe partial class D3D12Backend
         Queue queue,
         ReadOnlySpan<ResidencyResource> resources)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Queue nativeQueue = RequireQueue(queue, nameof(queue));
         _ = nativeQueue.NativeDevice.RequireCapability<Residency>(nameof(EnqueueMakeResident));
         if (resources.IsEmpty)
@@ -584,7 +595,7 @@ internal sealed unsafe partial class D3D12Backend
                     accepted = true;
                     ThrowIfFailed(
                         nativeQueue.NativeDevice,
-                        nativeQueue.Native->Wait(residency.Fence, residency.Value),
+                            QueueTrace.Wait(nativeQueue.Native, residency.Fence, residency.Value),
                         NativeOperationType.Ordinary,
                         "ID3D12CommandQueue::Wait(residency)");
                 }
@@ -616,6 +627,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public void Evict(Device device, ReadOnlySpan<ResidencyResource> resources)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<Residency>(nameof(Evict));
         if (resources.IsEmpty)
@@ -640,8 +652,8 @@ internal sealed unsafe partial class D3D12Backend
             {
                 ThrowIfFailed(
                     nativeDevice,
-                    nativeDevice.Native->Evict(
-                        (uint)resources.Length,
+                        DeviceQueryTrace.Evict(
+                    nativeDevice.Native, (uint)resources.Length,
                         (ID3D12Pageable**)nativePointers),
                     NativeOperationType.Ordinary,
                     "ID3D12Device::Evict");
@@ -679,8 +691,8 @@ internal sealed unsafe partial class D3D12Backend
             {
                 ThrowIfFailed(
                     device,
-                    device.Native->CreateReservedResource2(
-                        &copy,
+                        DeviceResourceTrace.CreateReservedResource2(
+                    device.Native, &copy,
                         InitialLayout(MemoryType.DeviceLocal, description.Dimension),
                         null,
                         null,
@@ -696,8 +708,8 @@ internal sealed unsafe partial class D3D12Backend
         {
             ThrowIfFailed(
                 device,
-                device.Native->CreateReservedResource(
-                    &copy,
+                    DeviceResourceTrace.CreateReservedResource(
+                device.Native, &copy,
                     ResourceStates.Common,
                     null,
                     &iid,
@@ -722,14 +734,14 @@ internal sealed unsafe partial class D3D12Backend
         uint tilingCount = requestedSubresourceCount;
         fixed (SubresourceTiling* nativeTilings = tilings)
         {
-            device.Native->GetResourceTiling(
-                resource,
-                &totalTiles,
-                &packed,
-                &shape,
-                &tilingCount,
-                0,
-                nativeTilings);
+            DeviceQueryTrace.GetResourceTiling(
+                        device.Native, resource,
+                            &totalTiles,
+                            &packed,
+                            &shape,
+                            &tilingCount,
+                            0,
+                            nativeTilings);
         }
         if (tilingCount > requestedSubresourceCount)
             throw new GraphicsException(GraphicsError.NativeFailure, "D3D12 returned an invalid sparse tiling count.");
@@ -1944,8 +1956,8 @@ internal sealed unsafe partial class D3D12Backend
                     ID3D12Fence* fence = null;
                     ThrowIfFailed(
                         this,
-                        Native->CreateFence(
-                            0,
+                            DevicePipelineTrace.CreateFence(
+                        Native, 0,
                             FenceFlags.None,
                             &iid,
                             (void**)&fence),
@@ -1956,8 +1968,8 @@ internal sealed unsafe partial class D3D12Backend
                 ulong value = _nextResidencyValue;
                 ThrowIfFailed(
                     this,
-                    ((ID3D12Device3*)Native)->EnqueueMakeResident(
-                        ResidencyFlags.None,
+                        DeviceQueryTrace.EnqueueMakeResident(
+                    ((ID3D12Device3*)Native), ResidencyFlags.None,
                         count,
                         objects,
                         _residencyFence,
@@ -1997,7 +2009,7 @@ internal sealed unsafe partial class D3D12Backend
                 ID3D12Fence* fence = _residencyFence;
                 _residencyFence = null;
                 if (fence is not null)
-                    _ = fence->Release();
+                    _ = ResourceTrace.Release(fence);
             }
         }
     }

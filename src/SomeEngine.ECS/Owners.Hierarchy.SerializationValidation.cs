@@ -24,21 +24,6 @@ internal sealed partial class HierarchyDomainStore<TDomain>
 
         private Dictionary<Entity, int>? _parentImportOrdinals;
         private bool _parentsSealed;
-        private long _cycleValidationPasses;
-        private long _cycleValidationEntityVisits;
-
-        internal long CycleValidationPasses => _cycleValidationPasses;
-
-        internal long CycleValidationEntityVisits => _cycleValidationEntityVisits;
-
-        internal int RetainedCycleMetadataCount => _parentImportOrdinals?.Count ?? 0;
-
-        internal long CanonicalParentFullScanCount =>
-            _store.CanonicalParentFullScanCount;
-
-        internal int RetainedAllocationMetadataCount =>
-            _childrenPerParent?.Count ?? 0;
-
         internal void SetOrderedSequenceCount(int count)
         {
             RequireOpen();
@@ -61,7 +46,6 @@ internal sealed partial class HierarchyDomainStore<TDomain>
                     $"Hierarchy Parent payload declared {_expectedParentCount} entries but supplied {_parentCount}.");
             }
 
-            _cycleValidationPasses++;
             var states = new Dictionary<Entity, byte>(_parentCount);
             var path = new List<Entity>();
             int earliestClosingOrdinal = int.MaxValue;
@@ -111,7 +95,6 @@ internal sealed partial class HierarchyDomainStore<TDomain>
 
                     states.Add(current, Visiting);
                     path.Add(current);
-                    _cycleValidationEntityVisits++;
                     current = parent;
                 }
 

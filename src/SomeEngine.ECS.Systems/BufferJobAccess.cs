@@ -98,110 +98,28 @@ public static class BufferJobAccess<T>
 
 internal static class WorldStorageJobResources
 {
-    private static readonly ConditionalWeakTable<World, WorldResources> s_resources = new();
-
-    /// <summary>
-    /// Installs synchronous World admission before a deferred launcher is visible to callers.
-    /// Binding alone acquires no resource and therefore does not block semantic predecessors.
-    /// </summary>
-    internal static void Bind(World world)
+    internal static WorldJobs RequireJobs(World world)
     {
         ArgumentNullException.ThrowIfNull(world);
-        world.BindJobAdmission(WorldJobAdmission.Instance);
+        return world.Execution as WorldJobs
+            ?? throw new InvalidOperationException(
+                "This World is synchronous. Supply WorldJobs when creating it to use scheduled ECS access.");
     }
 
     internal static JobResourceAccess Read(World world, WorldStorageResourceKey storage) =>
-        JobResourceAccess.Read(Key(world, storage));
+        JobResourceAccess.Read(RequireJobs(world).Resource(storage));
 
     internal static JobResourceAccess Write(World world, WorldStorageResourceKey storage) =>
-        JobResourceAccess.Write(Key(world, storage));
+        JobResourceAccess.Write(RequireJobs(world).Resource(storage));
 
-    internal static JobResourceAccess Read(
-        World world,
-        WorldStorageResourceKey storage,
-        long start,
-        long length) =>
-        JobResourceAccess.Read(Key(world, storage), start, length);
+    internal static JobResourceAccess Read(World world, WorldStorageResourceKey storage, long start, long length) =>
+        JobResourceAccess.Read(RequireJobs(world).Resource(storage), start, length);
 
-    internal static JobResourceAccess Write(
-        World world,
-        WorldStorageResourceKey storage,
-        long start,
-        long length) =>
-        JobResourceAccess.Write(Key(world, storage), start, length);
+    internal static JobResourceAccess Write(World world, WorldStorageResourceKey storage, long start, long length) =>
+        JobResourceAccess.Write(RequireJobs(world).Resource(storage), start, length);
 
-    internal static bool TryDescribe(
-        World world,
-        JobResourceAccess access,
-        out WorldStorageResourceKey storage)
-    {
-        ArgumentNullException.ThrowIfNull(world);
-        if (s_resources.TryGetValue(world, out WorldResources? resources))
-            return resources.TryDescribe(access, out storage);
-
-        storage = default;
-        return false;
-    }
-
-    private static JobResourceKey Key(World world, WorldStorageResourceKey storage)
-    {
-        ArgumentNullException.ThrowIfNull(world);
-        Bind(world);
-        return s_resources
-            .GetValue(world, static owner => new WorldResources(owner.JobSubmissionObserver))
-            .Key(storage);
-    }
-
-    private sealed class WorldResources
-    {
-        private readonly IJobSubmissionObserver _submissionObserver;
-        private readonly Lock _gate = new();
-        private readonly Dictionary<WorldStorageResourceKey, JobResourceKey> _keys = new();
-
-        internal WorldResources(IJobSubmissionObserver submissionObserver)
-        {
-            _submissionObserver = submissionObserver;
-        }
-
-        internal JobResourceKey Key(WorldStorageResourceKey storage)
-        {
-            lock (_gate)
-            {
-                if (_keys.TryGetValue(storage, out JobResourceKey? key))
-                    return key;
-
-                key = new JobResourceKey(_submissionObserver);
-                _keys.Add(storage, key);
-                return key;
-            }
-        }
-
-        internal bool TryDescribe(
-            JobResourceAccess access,
-            out WorldStorageResourceKey storage)
-        {
-            lock (_gate)
-            {
-                foreach (var pair in _keys)
-                {
-                    JobResourceAccess known = JobResourceAccess.Read(pair.Value);
-                    if (known.Kind == access.Kind &&
-                        known.Id == access.Id &&
-                        known.Version == access.Version &&
-                        known.Generation == access.Generation)
-                    {
-                        storage = pair.Key;
-                        return true;
-                    }
-                }
-            }
-
-            storage = default;
-            return false;
-        }
-    }
+    internal static bool TryDescribe(World world, JobResourceAccess access, out WorldStorageResourceKey storage) =>
+        RequireJobs(world).TryDescribe(access, out storage);
 }
 
-internal readonly record struct WorldStorageResourceKey(
-    WorldStorageKind Kind,
-    int ComponentId);
+internal readonly record struct WorldStorageResourceKey(WorldStorageKind Kind, int ComponentId);

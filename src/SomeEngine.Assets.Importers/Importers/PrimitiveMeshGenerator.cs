@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 
 namespace SomeEngine.Assets.Importers;
 
@@ -180,9 +180,9 @@ public static class PrimitiveMeshGenerator
         // Canonical SoA stream order: NORMAL → TANGENT → TEXCOORD → COLOR → ...
         var attributes = new List<RawAttribute>
         {
-            new("NORMAL", normals, 3, SomeEngine.Assets.Data.ValueType.Int8, 3, true),
-            new("TANGENT", tangents, 4, SomeEngine.Assets.Data.ValueType.Int8, 4, true),
-            new("TEXCOORD_0", uvs, 2, SomeEngine.Assets.Data.ValueType.Float16, 2, false),
+            new("NORMAL", normals, 3, SomeEngine.Resources.Geometry.ValueType.Int8, 3, true),
+            new("TANGENT", tangents, 4, SomeEngine.Resources.Geometry.ValueType.Int8, 4, true),
+            new("TEXCOORD_0", uvs, 2, SomeEngine.Resources.Geometry.ValueType.Float16, 2, false),
         };
         return attributes;
     }

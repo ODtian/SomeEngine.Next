@@ -1,71 +1,57 @@
 using SomeEngine.Assets.Importers;
 using SomeEngine.Tests;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
+using SlangShaderSharp;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
 public class ShaderSourcePolicyTests
 {
-    [Fact]
-    public void ShaderSourcesUseSlangExtension()
-    {
-        string projectRoot = TestProjectPaths.ProjectRoot();
-        string shaderDir = TestProjectPaths.ShaderDirectory();
-        string[] hlslSources = Directory
-            .EnumerateFiles(shaderDir, "*.hlsl", SearchOption.AllDirectories)
-            .Select(path => Path.GetRelativePath(projectRoot, path))
-            .ToArray();
-
-        Assert.Empty(hlslSources);
-    }
-
     [Theory]
-    [InlineData("triangle.slang", "VSMain", "PSMain")]
-    [InlineData("hello_triangle.slang", "VSMain", "PSMain")]
-    public void MigratedShadersImportAsSlang(string shaderFile, params string[] entryPoints)
+    [InlineData("triangle.shader", "VSMain", "PSMain")]
+    [InlineData("hello_triangle.shader", "VSMain", "PSMain")]
+    public async Task DefinitionsCompileOriginalSlangEntryPoints(string shaderFile, params string[] entryPoints)
     {
-        var asset = SlangShaderImporter.Import(TestProjectPaths.ShaderPath(shaderFile));
+        string path = TestProjectPaths.ShaderPath(shaderFile);
+        using var definition = await ShaderAsset.OpenSourceAsync(path);
+        using var asset = SlangShaderImporter.CompileDefinition(definition, path);
+        Shader shader = await ShaderTestCompilation.CreateAsync(asset);
 
         foreach (string entryPoint in entryPoints)
         {
-            Assert.Contains(asset.Variants!, v =>
-                v.EntryPoint == entryPoint
-                && v.Data.HasValue
-                && v.Data.Value.Length > 0);
-        }
-    }
-
-    [Fact]
-    public void ClusterShaderLayoutsDoNotDeclareAPageTable()
-    {
-        string[] layoutSources =
-        [
-            "cluster_draw.slang",
-            "cluster_resolve.slang",
-            "cluster_shade_pipeline.slang",
-            "debug_sphere.slang",
-        ];
-
-        foreach (string shaderFile in layoutSources)
-        {
-            string source = File.ReadAllText(TestProjectPaths.ShaderPath(shaderFile));
-            Assert.DoesNotContain("PageTable", source, StringComparison.OrdinalIgnoreCase);
+            int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+            Assert.True(shader.TryGetSlangEntry(
+                targetIndex,
+                entryPoint,
+                out EntryPointReflection entry));
+            Assert.True(
+                shader.GetSlangEntryBlob(targetIndex, entry) is not null ||
+                !shader.GetSlangEntryBytes(targetIndex, entry).IsEmpty);
         }
     }
 
     [Theory]
-    [InlineData("cluster_draw.slang")]
-    [InlineData("cluster_resolve.slang")]
-    [InlineData("cluster_shade_material.slang")]
-    [InlineData("cluster_shade_unlit.slang")]
-    [InlineData("debug_sphere.slang")]
-    public void ClusterEntryModulesImportAfterLayoutChange(string shaderFile)
+    [InlineData("cluster_draw.shader")]
+    [InlineData("cluster_resolve.shader")]
+    [InlineData("standard.shader")]
+    [InlineData("unlit.shader")]
+    [InlineData("cluster_tessellation_phong.shader")]
+    [InlineData("debug_sphere.shader")]
+    public async Task ClusterDefinitionsCompileAfterLayoutChange(string shaderFile)
     {
-        var asset = SlangShaderImporter.ImportTransient(TestProjectPaths.ShaderPath(shaderFile));
+        string path = shaderFile is "standard.shader" or "unlit.shader"
+            ? Path.Combine(TestProjectPaths.ProjectRoot(), "templates", "DefaultProject", "assets", "Shaders", shaderFile)
+            : TestProjectPaths.ShaderPath(shaderFile);
+        using var definition = await ShaderAsset.OpenSourceAsync(path);
+        using var asset = SlangShaderImporter.CompileDefinition(definition, path,
+            includeDirectories: [TestProjectPaths.ShaderDirectory()]);
 
-        Assert.NotNull(asset.Variants);
-        Assert.NotEmpty(asset.Variants);
-        Assert.NotNull(asset.EntryPointReflections);
-        Assert.NotEmpty(asset.EntryPointReflections);
+        ShaderBlock code = asset.GetBlock<ShaderBlock>();
+        Assert.False((await code.ReadBytesAsync(ShaderBlock.EntryCodeKey(ShaderTestCompilation.CreateSessionDescription(), 0, 0))).IsEmpty);
+        Assert.False((await asset.GetBlock<ShaderSourceBlock>().ReadBytesAsync(ShaderSourceBlock.SerializedSourceKey(0))).IsEmpty);
+        Shader shader = await ShaderTestCompilation.CreateAsync(asset);
+        Assert.True(shader.SlangEntryCount > 0);
     }
 
 }

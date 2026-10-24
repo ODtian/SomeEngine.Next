@@ -181,7 +181,7 @@ public sealed class JobCommandBuffer : IDisposable
         JobHandle dependency = default)
         where TProducer : struct, IJobCommandProducer
     {
-        using JobSubmissionScope submissions = _world.EnterJobSubmissionScope();
+        using JobSubmissionScope submissions = WorldStorageJobResources.RequireJobs(_world).BeginSubmission();
         _world.ThrowIfJobCommandProducerControlPlane();
         lock (_lifecycleGate)
         {
@@ -199,7 +199,7 @@ public sealed class JobCommandBuffer : IDisposable
             try
             {
                 var adapter = new SerialProducerAdapter<TProducer>(this, producerKey, in producer);
-                JobHandle handle = JobSystem.Schedule(adapter, options, dependency);
+                JobHandle handle = WorldStorageJobResources.RequireJobs(_world).Scheduler.Schedule(adapter, options, dependency);
                 segment.Handle = handle;
                 return handle;
             }
@@ -269,7 +269,7 @@ public sealed class JobCommandBuffer : IDisposable
         JobHandle dependency = default)
         where TProducer : struct, IJobParallelCommandProducer
     {
-        using JobSubmissionScope submissions = _world.EnterJobSubmissionScope();
+        using JobSubmissionScope submissions = WorldStorageJobResources.RequireJobs(_world).BeginSubmission();
         _world.ThrowIfJobCommandProducerControlPlane();
         lock (_lifecycleGate)
         {
@@ -285,7 +285,7 @@ public sealed class JobCommandBuffer : IDisposable
                 _emptyProducerScheduled = true;
                 try
                 {
-                    _emptyProducerDependency = JobSystem.ScheduleParallel(
+                    _emptyProducerDependency = WorldStorageJobResources.RequireJobs(_world).Scheduler.ScheduleParallel(
                         new ParallelProducerAdapter<TProducer>(this, in producer),
                         0,
                         batchSize,
@@ -318,7 +318,7 @@ public sealed class JobCommandBuffer : IDisposable
                 }
 
                 var adapter = new ParallelProducerAdapter<TProducer>(this, in producer);
-                JobHandle handle = JobSystem.ScheduleParallel(
+                JobHandle handle = WorldStorageJobResources.RequireJobs(_world).Scheduler.ScheduleParallel(
                     adapter,
                     _segments.Length,
                     batchSize,
@@ -350,7 +350,7 @@ public sealed class JobCommandBuffer : IDisposable
     /// </summary>
     public JobHandle SchedulePlayback(JobScheduleOptions options = default)
     {
-        using JobSubmissionScope submissions = _world.EnterJobSubmissionScope();
+        using JobSubmissionScope submissions = WorldStorageJobResources.RequireJobs(_world).BeginSubmission();
         _world.ThrowIfJobCommandProducerControlPlane();
         JobHandle publication;
         Exception? finalizerScheduleFault = null;
@@ -361,7 +361,7 @@ public sealed class JobCommandBuffer : IDisposable
             {
                 JobHandle dependency = CombineProducerHandles();
                 JobResourceAccess topology = RelationshipJobAccess.TopologyWrite(_world);
-                publication = JobSystem.Schedule(
+                publication = WorldStorageJobResources.RequireJobs(_world).Scheduler.Schedule(
                     new PublicationAdapter(this),
                     topology,
                     options,
@@ -375,7 +375,7 @@ public sealed class JobCommandBuffer : IDisposable
 
             try
             {
-                return JobSystem.ScheduleFinally(
+                return WorldStorageJobResources.RequireJobs(_world).Scheduler.ScheduleFinally(
                     new CompletionAdapter(this, publication),
                     options,
                     publication);
@@ -675,7 +675,7 @@ public sealed class JobCommandBuffer : IDisposable
             }
             handles[i] = _segments[i].Handle;
         }
-        return JobSystem.CombineDependencies(handles);
+        return WorldStorageJobResources.RequireJobs(_world).Scheduler.CombineDependencies(handles);
     }
 
     private void OwnPlaybackLifecycle()

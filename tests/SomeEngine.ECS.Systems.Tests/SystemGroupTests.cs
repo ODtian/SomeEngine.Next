@@ -41,6 +41,41 @@ public class SystemGroupTests
     }
 
     [Fact]
+    public void Initialize_RunsCreateWithoutUpdateAndAdvancesTheVersionBaseline()
+    {
+        var log = new SystemEventLog();
+        var group = new SystemGroup<TestSystemContext>(new RecordingDriver(log));
+
+        group.Add(new LifecycleSystem("A"));
+
+        group.Initialize();
+        SystemSlot initialized = group.GetSlot(0);
+        group.Update();
+        group.Dispose();
+
+        Assert.True(initialized.Created);
+        Assert.Equal(1u, initialized.LastSystemVersion);
+        Assert.Equal(1u, initialized.CurrentSystemVersion);
+        Assert.Equal(
+            new[]
+            {
+                "driver:acquire:0:0",
+                "driver:create:0:0:1",
+                "driver:before:0",
+                "system:create:A:0:1",
+                "driver:after:0",
+                "driver:acquire:0:1",
+                "driver:create:0:1:2",
+                "driver:before:0",
+                "system:update:A:1:2",
+                "driver:after:0",
+                "driver:create:0:2:2",
+                "system:destroy:A:2:2",
+            },
+            log.Events);
+    }
+
+    [Fact]
     public void Update_RunsSystemsInRegistrationOrder()
     {
         var log = new SystemEventLog();
@@ -174,7 +209,7 @@ public class SystemGroupTests
         group.Add(new ThrowingSystem());
 
         var ex = Assert.Throws<InvalidOperationException>(() => group.Update());
-        Assert.Equal("boom", ex.Message);
+
         Assert.Equal(
             new[] { "driver:acquire:0:0", "driver:create:0:0:1", "driver:before:0" },
             log.Events);

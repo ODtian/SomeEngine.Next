@@ -37,8 +37,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new RasterFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphPassId AddRasterFramePass<TState>(
         string label,
@@ -62,8 +61,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new RasterFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphPassId AddComputeFramePass<TState>(
         string label,
@@ -84,8 +82,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new ComputeFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphPassId AddComputeFramePass<TState>(
         string label,
@@ -109,8 +106,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new ComputeFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphPassId AddCopyFramePass<TState>(
         string label,
@@ -131,8 +127,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new CopyFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphPassId AddGeneralFramePass<TState>(
         string label,
@@ -153,8 +148,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new GeneralFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphBufferCbvId CreateBufferCbv(
         GraphBufferId buffer,
@@ -298,9 +292,10 @@ public ref partial struct RenderGraphEdit
             CallbackStorage = callbackStorage,
             Pipeline = pipeline,
             ParameterLayout = parameterLayout,
-            DeclarationOrdinal = Staging.Passes.Count,
+            DeclarationOrdinal = checked(Staging.NextDeclarationOrdinal++),
         };
         GraphIdentity identity = Staging.Passes.Add(Graph.Identity, pass);
+        Changes.TouchPass(identity, membership: true);
         TState mutable = declarationState;
         try
         {
@@ -314,7 +309,7 @@ public ref partial struct RenderGraphEdit
         {
             foreach (GraphIdentity access in pass.Accesses)
             {
-                if (Staging.Accesses.Contains(access))
+                if (Structure.Accesses.Contains(access))
                     _ = Staging.Accesses.Remove(access);
             }
             _ = Staging.Passes.Remove(identity);
@@ -325,6 +320,7 @@ public ref partial struct RenderGraphEdit
     private void RemoveView(in GraphIdentity view)
     {
         ValidateOwner(view);
+        Changes.TouchView(view, membership: true);
         _ = Staging.Views.Remove(view);
     }
 
@@ -384,6 +380,6 @@ public ref partial struct RenderGraphEdit
     private GraphTexture ResolveTexture(GraphTextureId texture)
     {
         ValidateTexture(texture);
-        return Staging.Textures.Get(texture.Value);
+        return Structure.Textures.Get(texture.Value);
     }
 }

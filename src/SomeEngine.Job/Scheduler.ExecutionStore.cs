@@ -3,7 +3,7 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
     private readonly struct WorkRelease
     {
@@ -19,11 +19,11 @@ internal sealed partial class Scheduler
 
     private readonly struct WorkCallbacks
     {
-        internal readonly List<DependencyContinuation>? Continuations;
+        internal readonly DependencyContinuation[]? Continuations;
         internal readonly ExceptionDispatchInfo? Fault;
 
         internal WorkCallbacks(
-            List<DependencyContinuation>? continuations,
+            DependencyContinuation[]? continuations,
             ExceptionDispatchInfo? fault)
         {
             Continuations = continuations;
@@ -46,16 +46,16 @@ internal sealed partial class Scheduler
     private readonly struct CompleteCallbacks
     {
         internal readonly bool Completed;
-        internal readonly List<DependencyContinuation>? Continuations;
-        internal readonly List<ExternalCompletionContinuation>? ExternalContinuations;
+        internal readonly DependencyContinuation[]? Continuations;
+        internal readonly ExternalCompletionContinuation[]? ExternalContinuations;
         internal readonly CompletionLease ExternalContinuationLease;
         internal readonly ScopeToken Parent;
         internal readonly ExceptionDispatchInfo? Fault;
 
         internal CompleteCallbacks(
             bool completed,
-            List<DependencyContinuation>? continuations,
-            List<ExternalCompletionContinuation>? externalContinuations,
+            DependencyContinuation[]? continuations,
+            ExternalCompletionContinuation[]? externalContinuations,
             CompletionLease externalContinuationLease,
             ScopeToken parent,
             ExceptionDispatchInfo? fault)
@@ -71,6 +71,9 @@ internal sealed partial class Scheduler
 
     private sealed partial class CompletionStore
     {
+        public SomeEngine.Diagnostics.TraceContext GetTraceContext(JobHandle handle)
+            => GetState(handle)?.TraceContext ?? default;
+
         public bool CanExecute(JobHandle handle)
         {
             CompletionState? state = GetState(handle);
@@ -190,8 +193,7 @@ internal sealed partial class Scheduler
                     return new WorkCallbacks(null, fault);
                 }
 
-                List<DependencyContinuation> continuations = state.WorkContinuationDispatchBuffer;
-                continuations.AddRange(state.WorkContinuations);
+                DependencyContinuation[] continuations = state.WorkContinuations.ToArray();
                 state.WorkContinuations.Clear();
                 return new WorkCallbacks(continuations, fault);
             }
@@ -252,8 +254,8 @@ internal sealed partial class Scheduler
                 state.CompletionDispatchInProgress = false;
                 ExceptionDispatchInfo? fault = state.Fault;
                 ScopeToken parent = state.Parent;
-                List<DependencyContinuation>? continuations;
-                List<ExternalCompletionContinuation>? externalContinuations;
+                DependencyContinuation[]? continuations;
+                ExternalCompletionContinuation[]? externalContinuations;
                 CompletionLease externalContinuationLease = default;
 
                 if (state.Continuations.Count == 0)
@@ -262,8 +264,7 @@ internal sealed partial class Scheduler
                 }
                 else
                 {
-                    continuations = state.ContinuationDispatchBuffer;
-                    continuations.AddRange(state.Continuations);
+                    continuations = state.Continuations.ToArray();
                     state.Continuations.Clear();
                 }
 
@@ -273,9 +274,7 @@ internal sealed partial class Scheduler
                 }
                 else
                 {
-                    state.ExternalContinuationDispatchBuffer ??= [];
-                    externalContinuations = state.ExternalContinuationDispatchBuffer;
-                    externalContinuations.AddRange(state.ExternalContinuations);
+                    externalContinuations = state.ExternalContinuations.ToArray();
                     state.ExternalContinuations.Clear();
                     state.ActiveCompleters++;
                     externalContinuationLease = new CompletionLease(state, handle);

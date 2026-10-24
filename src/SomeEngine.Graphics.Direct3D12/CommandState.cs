@@ -18,6 +18,7 @@ internal sealed unsafe partial class D3D12Backend
         uint firstSlot,
         ReadOnlySpan<VertexBufferBinding> bindings)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if ((uint)bindings.Length > MaximumVertexBufferSlots ||
             firstSlot > MaximumVertexBufferSlots - (uint)bindings.Length)
@@ -39,7 +40,7 @@ internal sealed unsafe partial class D3D12Backend
                 D3D12Buffer buffer = RequireBuffer(binding.Buffer);
                 command.StoreResolvedResource(index, buffer);
                 native[index] = new VertexBufferView(
-                    buffer.Native->GetGPUVirtualAddress() + binding.Offset,
+                    ResourceTrace.GetGPUVirtualAddress(buffer.Native) + binding.Offset,
                     checked((uint)binding.Size),
                     binding.Stride);
             }
@@ -50,28 +51,29 @@ internal sealed unsafe partial class D3D12Backend
             throw;
         }
         command.CaptureResolvedResources(bindings.Length);
-        command.List->IASetVertexBuffers(
-            firstSlot,
-            checked((uint)bindings.Length),
-            native);
+        CommandBindingTrace.IASetVertexBuffers(
+                command.List, firstSlot,
+                    checked((uint)bindings.Length),
+                    native);
         command.RememberVertexBuffers(firstSlot, bindings);
     }
 
     public void SetIndexBuffer(CommandContext context, in IndexBufferBinding binding)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.IndexBufferEquals(binding))
             return;
         D3D12Buffer buffer = RequireBuffer(binding.Buffer);
         IndexBufferView native = new(
-            buffer.Native->GetGPUVirtualAddress() + binding.Offset,
+            ResourceTrace.GetGPUVirtualAddress(buffer.Native) + binding.Offset,
             checked((uint)binding.Size),
             binding.Type == IndexType.UInt16
                 ? DxgiFormat.FormatR16Uint
                 : DxgiFormat.FormatR32Uint);
         command.PrepareCaptures(1, 0, 1);
         command.Capture(buffer);
-        command.List->IASetIndexBuffer(&native);
+        CommandBindingTrace.IASetIndexBuffer(command.List, &native);
         command.RememberIndexBuffer(binding);
     }
 
@@ -80,6 +82,7 @@ internal sealed unsafe partial class D3D12Backend
         uint firstSlot,
         ReadOnlySpan<StreamOutputBufferBinding> bindings)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.Bundle)
         {
@@ -111,10 +114,10 @@ internal sealed unsafe partial class D3D12Backend
                     D3D12Buffer filledNative = RequireBuffer(filled);
                     command.StoreResolvedResource(index * 2 + 1, filledNative);
                     filledSizeLocation =
-                        filledNative.Native->GetGPUVirtualAddress() + binding.FilledSizeOffset;
+                        ResourceTrace.GetGPUVirtualAddress(filledNative.Native) + binding.FilledSizeOffset;
                 }
                 native[index] = new StreamOutputBufferView(
-                    buffer.Native->GetGPUVirtualAddress() + binding.Offset,
+                    ResourceTrace.GetGPUVirtualAddress(buffer.Native) + binding.Offset,
                     binding.Size,
                     filledSizeLocation);
             }
@@ -125,13 +128,14 @@ internal sealed unsafe partial class D3D12Backend
             throw;
         }
         command.CaptureResolvedResources(checked(bindings.Length * 2));
-        command.List->SOSetTargets(firstSlot, checked((uint)bindings.Length), native);
+        CommandBindingTrace.SOSetTargets(command.List, firstSlot, checked((uint)bindings.Length), native);
         command.RememberStreamOutputBuffers(firstSlot, bindings);
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     public void SetViewports(CommandContext context, ReadOnlySpan<Viewport> viewports)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.Bundle)
             throw new InvalidOperationException("Viewports are not legal in a D3D12 command bundle.");
@@ -192,6 +196,7 @@ internal sealed unsafe partial class D3D12Backend
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     public void SetScissors(CommandContext context, ReadOnlySpan<ScissorRect> scissors)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.Bundle)
             throw new InvalidOperationException("Scissors are not legal in a D3D12 command bundle.");
@@ -235,30 +240,33 @@ internal sealed unsafe partial class D3D12Backend
 
     public void SetBlendConstants(CommandContext context, in Vector4 value)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.BlendConstantsEqual(value))
             return;
         Vector4 copy = value;
-        command.List->OMSetBlendFactor((float*)&copy);
+        CommandBindingTrace.OMSetBlendFactor(command.List, (float*)&copy);
         command.RememberBlendConstants(value);
     }
 
     public void SetStencilReference(CommandContext context, uint value)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.StencilReferenceEqual(value))
             return;
-        command.List->OMSetStencilRef(value);
+        CommandBindingTrace.OMSetStencilRef(command.List, value);
         command.RememberStencilReference(value);
     }
 
     public void SetDepthBounds(CommandContext context, float minimum, float maximum)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         RequireDynamicStateSupport(command, DynamicStates.DepthBounds);
         if (command.DepthBoundsEqual(minimum, maximum))
             return;
-        command.List->OMSetDepthBounds(minimum, maximum);
+        CommandBindingTrace.OMSetDepthBounds(command.List, minimum, maximum);
         command.RememberDepthBounds(minimum, maximum);
     }
 
@@ -268,16 +276,18 @@ internal sealed unsafe partial class D3D12Backend
         float clamp,
         float slopeScaledBias)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         RequireDynamicStateSupport(command, DynamicStates.DepthBias);
         if (command.DepthBiasEqual(bias, clamp, slopeScaledBias))
             return;
-        command.List->RSSetDepthBias(bias, clamp, slopeScaledBias);
+        CommandBindingTrace.RSSetDepthBias(command.List, bias, clamp, slopeScaledBias);
         command.RememberDepthBias(bias, clamp, slopeScaledBias);
     }
 
     public void SetPrimitiveTopology(CommandContext context, PrimitiveTopology topology)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.PrimitiveTopologyEqual(topology))
             return;
@@ -289,11 +299,12 @@ internal sealed unsafe partial class D3D12Backend
 
     public void SetStripCut(CommandContext context, StripCut stripCut)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         RequireDynamicStateSupport(command, DynamicStates.StripCut);
         if (command.StripCutEqual(stripCut))
             return;
-        command.List->IASetIndexBufferStripCutValue(stripCut switch
+        CommandBindingTrace.IASetIndexBufferStripCutValue(command.List, stripCut switch
         {
             StripCut.Disabled => IndexBufferStripCutValue.ValueDisabled,
             StripCut.UInt16 => IndexBufferStripCutValue.Value0xFfff,
@@ -320,6 +331,7 @@ internal sealed unsafe partial class D3D12Backend
         ulong offset = 0,
         PredicationOperation operation = PredicationOperation.NotEqualZero)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.PredicationEqual(buffer, offset, operation))
             return;
@@ -330,18 +342,19 @@ internal sealed unsafe partial class D3D12Backend
             command.Capture(native);
         }
         ID3D12Resource* predicate = native is null ? null : native.Native;
-        command.List->SetPredication(
-            predicate,
-            offset,
-            operation == PredicationOperation.EqualZero
-                ? PredicationOp.EqualZero
-                : PredicationOp.NotEqualZero);
+        CommandBindingTrace.SetPredication(
+                command.List, predicate,
+                    offset,
+                    operation == PredicationOperation.EqualZero
+                        ? PredicationOp.EqualZero
+                        : PredicationOp.NotEqualZero);
         command.RememberPredication(buffer, offset, operation);
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public void Draw(CommandContext context, in DrawArguments arguments)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12CommandListFastCalls.DrawInstanced(
             command.List,
@@ -353,6 +366,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public void DrawIndexed(CommandContext context, in DrawIndexedArguments arguments)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12CommandListFastCalls.DrawIndexedInstanced(
             command.List,
@@ -365,6 +379,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public void Dispatch(CommandContext context, in DispatchArguments arguments)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12CommandListFastCalls.Dispatch(
             command.List,
@@ -375,32 +390,36 @@ internal sealed unsafe partial class D3D12Backend
 
     public void ExecuteBundle(CommandContext context, RecordedBundle bundle)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12RecordedBundle native = RequireBundle(bundle);
         command.PrepareBundles(1);
         command.CaptureBundle(native);
-        command.List->ExecuteBundle((ID3D12GraphicsCommandList*)native.NativeList);
+        CommandExecutionTrace.ExecuteBundle(command.List, (ID3D12GraphicsCommandList*)native.NativeList);
         command.InvalidateStateShadow();
     }
 
     public void BeginEvent(CommandContext context, ReadOnlySpan<byte> utf8Label)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         fixed (byte* label = utf8Label)
-            command.List->BeginEvent(0, label, checked((uint)utf8Label.Length));
+            CommandExecutionTrace.BeginEvent(command.List, 0, label, checked((uint)utf8Label.Length));
     }
 
     public void EndEvent(CommandContext context)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
-        command.List->EndEvent();
+        CommandExecutionTrace.EndEvent(command.List);
     }
 
     public void SetMarker(CommandContext context, ReadOnlySpan<byte> utf8Label)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         fixed (byte* label = utf8Label)
-            command.List->SetMarker(0, label, checked((uint)utf8Label.Length));
+            CommandBindingTrace.SetMarker(command.List, 0, label, checked((uint)utf8Label.Length));
     }
 
     private static D3DPrimitiveTopology ToNativeTopology(PrimitiveTopology topology) =>

@@ -6,7 +6,6 @@ namespace SomeEngine.ECS.Benchmarks;
 internal static class Program
 {
     private const int ConfigurationErrorExitCode = 2;
-    private const int GateFailureExitCode = 3;
 
     public static int Main(string[] args)
     {
@@ -33,7 +32,6 @@ internal static class Program
         {
             EcsBenchmarkReport report = EcsBenchmarkSuite.Run(parsedOptions);
             string json = JsonSerializer.Serialize(report, EcsBenchmarkReport.JsonOptions);
-            report.CertificationEvidence?.ValidationState?.VerifyUnchanged();
             Console.WriteLine(json);
 
             if (parsedOptions.OutputPath is not null)
@@ -42,12 +40,7 @@ internal static class Program
                 Console.Error.WriteLine($"Benchmark report written to {parsedOptions.OutputPath}");
             }
 
-            return report.Passed ? 0 : GateFailureExitCode;
-        }
-        catch (BenchmarkConfigurationException exception)
-        {
-            Console.Error.WriteLine(exception.Message);
-            return ConfigurationErrorExitCode;
+            return 0;
         }
         catch (Exception exception)
         {

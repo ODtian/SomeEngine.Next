@@ -20,6 +20,7 @@ struct GPULight
 struct ClusteredLightGridParameters
 {
     float4x4 View;
+    float4x4 Projection;
     uint TileSizeX;
     uint TileSizeY;
     uint TileCountX;
@@ -29,10 +30,10 @@ struct ClusteredLightGridParameters
     uint MaxLightsPerCluster;
     uint DirectionalCount;
     uint NonDirectionalCount;
-    float P00;
-    float P11;
     uint ScreenWidth;
     uint ScreenHeight;
+    uint CellCountPerView;
+    uint GroupsPerLight;
 };
 
 uint ClusteredLightDepthSlice(
@@ -49,13 +50,15 @@ uint ClusteredLightDepthSlice(
 
 uint ClusteredLightCellIndex(
     ClusteredLightGridParameters parameters,
+    uint viewIndex,
     uint2 pixelCoord,
     float viewDepth)
 {
     uint2 tileCoord = pixelCoord / uint2(parameters.TileSizeX, parameters.TileSizeY);
     uint sliceIndex = ClusteredLightDepthSlice(parameters, viewDepth);
-    return (sliceIndex * parameters.TileCountY + tileCoord.y) *
-        parameters.TileCountX + tileCoord.x;
+    return viewIndex * parameters.CellCountPerView +
+        (sliceIndex * parameters.TileCountY + tileCoord.y) *
+            parameters.TileCountX + tileCoord.x;
 }
 
 #endif

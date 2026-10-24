@@ -11,53 +11,25 @@ using SomeEngine.ECS.Sparse;
 
 namespace SomeEngine.ECS.Owners;
 
-internal sealed class Bundles
+internal readonly struct Bundles
 {
-    private const int MaximumStackSharedValues = 256;
-    private Entities _entities = null!;
-    private Tables _tables = null!;
-    private Components _components = null!;
-    private Buffers _buffers = null!;
-    private Shared _shared = null!;
-    private Sparse _sparse = null!;
-    private Indices _indices = null!;
-    private Hooks _hooks = null!;
-    private Clock _clock = null!;
-    private Iteration _iteration = null!;
-    private Hierarchy _hierarchy = null!;
-    private readonly Dictionary<SortedValueKey, BundleSpawnMap> _plans =
-        new(SortedValueComparer.Instance);
-    private BundleSpawnMap? _plan;
-    private long _nextExecutionToken;
-    private long _activeExecutionToken;
-    private int _activeExecutionThread;
-    private BundleWriteRuntime? _activeRuntime;
+    private readonly WorldStructureRoot _structure;
 
-    internal void Bind(
-        Entities entities,
-        Tables tables,
-        Components components,
-        Buffers buffers,
-        Shared shared,
-        Sparse sparse,
-        Indices indices,
-        Hooks hooks,
-        Clock clock,
-        Iteration iteration,
-        Hierarchy hierarchy)
-    {
-        _entities = entities;
-        _tables = tables;
-        _components = components;
-        _buffers = buffers;
-        _shared = shared;
-        _sparse = sparse;
-        _indices = indices;
-        _hooks = hooks;
-        _clock = clock;
-        _iteration = iteration;
-        _hierarchy = hierarchy;
-    }
+    internal Bundles(WorldStructureRoot structure) => _structure = structure;
+
+    private const int MaximumStackSharedValues = 256;
+    private Entities _entities => _structure.Entities;
+    private Tables _tables => _structure.Tables;
+    private Components _components => _structure.Components;
+    private Buffers _buffers => _structure.Buffers;
+    private Shared _shared => _structure.Shared;
+    private Sparse _sparse => _structure.Sparse;
+    private Indices _indices => _structure.Indices;
+    private Hooks _hooks => _structure.Hooks;
+    private Clock _clock => _structure.Clock;
+    private Iteration _iteration => _structure.Iteration;
+    private Hierarchy _hierarchy => _structure.Hierarchy;
+
 
     internal Entity ExecuteSpawn(
         ReadOnlySpan<int> componentIds,
@@ -242,13 +214,13 @@ internal sealed class Bundles
 
     internal BundleSpawnMap ResolveSortedMap(ReadOnlySpan<int> sortedComponentIds)
     {
-        if (_plan is { } cached &&
+        if (_structure.BundleData.LastMap is { } cached &&
             sortedComponentIds.SequenceEqual(cached.ComponentIds))
         {
             return cached;
         }
 
-        var lookup = _plans.GetAlternateLookup<ReadOnlySpan<int>>();
+        var lookup = _structure.BundleData.Maps.GetAlternateLookup<ReadOnlySpan<int>>();
         if (lookup.TryGetValue(sortedComponentIds, out BundleSpawnMap? plan))
         {
             Cache(plan);
@@ -258,7 +230,7 @@ internal sealed class Bundles
         ValidateTableDescriptor(sortedComponentIds);
         Archetype archetype = _tables.Registry.GetOrCreate(sortedComponentIds);
         plan = new BundleSpawnMap(sortedComponentIds, archetype);
-        _plans.Add(new SortedValueKey(plan.ComponentIds), plan);
+        _structure.BundleData.Maps.Add(new SortedValueKey(plan.ComponentIds), plan);
         Cache(plan);
         return plan;
     }
@@ -290,9 +262,9 @@ internal sealed class Bundles
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void ValidateExecution(long token, int currentThreadId)
     {
-        if (Volatile.Read(ref _activeExecutionToken) != token)
+        if (Volatile.Read(ref _structure.BundleData.ActiveWrite) != token)
             throw new InvalidOperationException("Bundle callback root epoch is no longer active.");
-        if (Volatile.Read(ref _activeExecutionThread) != currentThreadId)
+        if (Volatile.Read(ref _structure.BundleData.WritingThread) != currentThreadId)
         {
             throw new InvalidOperationException("Bundle callback is not owned by the current thread.");
         }
@@ -301,26 +273,26 @@ internal sealed class Bundles
     internal void AttachRuntime(BundleWriteRuntime runtime, long token)
     {
         ArgumentNullException.ThrowIfNull(runtime);
-        if (Volatile.Read(ref _activeExecutionToken) != token ||
-            _activeRuntime is not null)
+        if (Volatile.Read(ref _structure.BundleData.ActiveWrite) != token ||
+            _structure.BundleData.WriteData is not null)
         {
             throw new InvalidOperationException("Bundle runtime attachment is unbalanced.");
         }
-        _activeRuntime = runtime;
+        _structure.BundleData.WriteData = runtime;
     }
 
     internal void DetachRuntime(BundleWriteRuntime runtime)
     {
-        if (!ReferenceEquals(_activeRuntime, runtime))
+        if (!ReferenceEquals(_structure.BundleData.WriteData, runtime))
             throw new InvalidOperationException("Bundle runtime detachment is unbalanced.");
-        _activeRuntime = null;
+        _structure.BundleData.WriteData = null;
     }
 
     internal void ThrowIfReentrantWorldMutation(bool writeAccess)
     {
         if (!writeAccess ||
-            Volatile.Read(ref _activeExecutionToken) == 0 ||
-            Volatile.Read(ref _activeExecutionThread) != Environment.CurrentManagedThreadId)
+            Volatile.Read(ref _structure.BundleData.ActiveWrite) == 0 ||
+            Volatile.Read(ref _structure.BundleData.WritingThread) != Environment.CurrentManagedThreadId)
         {
             return;
         }
@@ -333,13 +305,13 @@ internal sealed class Bundles
     internal void ThrowIfPendingIndexBackfill(int componentId, bool requiresBackfill)
     {
         if (!requiresBackfill ||
-            Volatile.Read(ref _activeExecutionToken) == 0 ||
-            Volatile.Read(ref _activeExecutionThread) != Environment.CurrentManagedThreadId)
+            Volatile.Read(ref _structure.BundleData.ActiveWrite) == 0 ||
+            Volatile.Read(ref _structure.BundleData.WritingThread) != Environment.CurrentManagedThreadId)
         {
             return;
         }
 
-        _activeRuntime?.ThrowIfPendingIndexBackfill(componentId);
+        _structure.BundleData.WriteData?.ThrowIfPendingIndexBackfill(componentId);
     }
 
     internal int AddSharedIndex<T>(int componentId, in T value)
@@ -434,11 +406,11 @@ internal sealed class Bundles
 
     internal void Reset()
     {
-        if (Volatile.Read(ref _activeExecutionToken) != 0)
+        if (Volatile.Read(ref _structure.BundleData.ActiveWrite) != 0)
             throw new InvalidOperationException("Cannot reset bundle runtime during an active callback.");
 
-        _plans.Clear();
-        _plan = null;
+        _structure.BundleData.Maps.Clear();
+        _structure.BundleData.LastMap = null;
     }
 
     private Entity ExecuteSpawn(
@@ -714,23 +686,23 @@ internal sealed class Bundles
     private long ClaimExecution()
     {
         _iteration.Throw();
-        long token = Interlocked.Increment(ref _nextExecutionToken);
+        long token = Interlocked.Increment(ref _structure.BundleData.NextWrite);
         if (token <= 0)
             throw new InvalidOperationException("Bundle callback token space was exhausted.");
-        if (Interlocked.CompareExchange(ref _activeExecutionToken, token, comparand: 0) != 0)
+        if (Interlocked.CompareExchange(ref _structure.BundleData.ActiveWrite, token, comparand: 0) != 0)
         {
             throw new InvalidOperationException(
                 "A bundle callback is already active for this World; nested bundle execution is not allowed.");
         }
 
-        Volatile.Write(ref _activeExecutionThread, Environment.CurrentManagedThreadId);
+        Volatile.Write(ref _structure.BundleData.WritingThread, Environment.CurrentManagedThreadId);
         return token;
     }
 
     private void ReleaseExecution(long token)
     {
-        Volatile.Write(ref _activeExecutionThread, 0);
-        if (Interlocked.CompareExchange(ref _activeExecutionToken, 0, token) != token)
+        Volatile.Write(ref _structure.BundleData.WritingThread, 0);
+        if (Interlocked.CompareExchange(ref _structure.BundleData.ActiveWrite, 0, token) != token)
             throw new InvalidOperationException("Bundle callback token release is unbalanced.");
     }
 
@@ -850,7 +822,7 @@ internal sealed class Bundles
 
     private void Cache(BundleSpawnMap plan)
     {
-        _plan = plan;
+        _structure.BundleData.LastMap = plan;
     }
 
     private static void ValidateTableDescriptor(ReadOnlySpan<int> componentIds)

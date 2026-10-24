@@ -1,7 +1,6 @@
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using SomeEngine.ECS.SourceGen;
-using System.Text.RegularExpressions;
 using Xunit;
 
 namespace SomeEngine.ECS.SourceGen.Tests;
@@ -21,20 +20,22 @@ public partial struct RootGenerated : global::SomeEngine.ECS.IComponent
 {
     public int Value;
 }
+public static class Consumer
+{
+    public static bool Execute()
+    {
+        var registry = new SerializationRegistry();
+        global::GameSerializationModule.RegisterAll(registry);
+        var value = new RootGenerated { Value = 42 };
+        using var stream = new System.IO.MemoryStream();
+        WorldSerializer.WriteDurableComponent(stream, in value, registry);
+        stream.Position = 0;
+        return WorldSerializer.ReadDurableComponent<RootGenerated>(stream, registry).Value == 42;
+    }
+}
 """);
 
-        Assert.DoesNotContain(
-            result.Diagnostics,
-            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = Assert.Single(
-            result.Sources,
-            source => source.HintName == "SomeEngine.ECS.Serialization.Module.g.cs")
-            .SourceText
-            .ToString();
-        Assert.Contains(
-            "registry.RegisterCanonical<global::SomeEngine.ECS.SourceGen.TestInput.RootGenerated",
-            generated,
-            StringComparison.Ordinal);
+        Assert.True((bool)Execute(result, "SomeEngine.ECS.SourceGen.TestInput.Consumer")!);
     }
 
     [Fact]
@@ -57,18 +58,28 @@ public partial struct GeneratedNested : SomeEngine.ECS.IComponent
 public partial struct GeneratedPosition : SomeEngine.ECS.IComponent
 {
     public int X;
-    public string Name;
     public GeneratedNested Nested;
+}
+public static class Consumer
+{
+    public static bool Execute()
+    {
+        var registry = new SerializationRegistry();
+        global::GameSerializationModule.RegisterAll(registry);
+        var world = new SomeEngine.ECS.World();
+        var target = world.CreateEntity();
+        var entity = world.CreateEntity(new GeneratedPosition { X = 17, Nested = new GeneratedNested { Target = target } });
+        using var stream = new System.IO.MemoryStream();
+        WorldSerializer.WriteCheckpointWorld(stream, world, registry);
+        stream.Position = 0;
+        var loaded = WorldSerializer.ReadCheckpointWorld(stream, registry);
+        var value = loaded.Read<GeneratedPosition>(entity);
+        return value.X == 17 && value.Nested.Target == target && loaded.IsAlive(target);
+    }
 }
 """);
 
-        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = Assert.Single(result.Sources, source => source.HintName == "SomeEngine.ECS.Serialization.Module.g.cs").SourceText.ToString();
-        Assert.Contains("GameSerializationModule", generated);
-        Assert.Contains("registry.Register<global::SomeEngine.ECS.SourceGen.TestInput.GeneratedPosition", generated);
-        Assert.Contains("IReferencePatcher<global::SomeEngine.ECS.SourceGen.TestInput.GeneratedPosition>", generated);
-        Assert.Contains("writer.WriteString(value.Name)", generated);
-        Assert.Contains("writer.WriteEntity(value.Target)", generated);
+        Assert.True((bool)Execute(result, "SomeEngine.ECS.SourceGen.TestInput.Consumer")!);
     }
 
     [Fact]
@@ -93,7 +104,7 @@ public partial struct SecondGenerated : SomeEngine.ECS.IComponent
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSER002");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSER002" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
@@ -112,7 +123,7 @@ public partial struct InvalidGenerated : SomeEngine.ECS.IComponent
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSER003");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSER003" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
@@ -131,7 +142,7 @@ public struct InvalidGenerated : SomeEngine.ECS.IComponent
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSER006");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSER006" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
@@ -273,14 +284,22 @@ using SomeEngine.ECS.Serialization;
 public enum WideMode : ulong { Maximum = 18446744073709551615UL }
 [SerializableComponent("BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")]
 public struct StableShape : SomeEngine.ECS.IComponent { public WideMode Value; }
+public static class Consumer
+{
+    public static bool Execute()
+    {
+        var registry = new SerializationRegistry();
+        global::GameSerializationModule.RegisterAll(registry);
+        var value = new StableShape { Value = WideMode.Maximum };
+        using var stream = new System.IO.MemoryStream();
+        WorldSerializer.WriteDurableComponent(stream, in value, registry);
+        stream.Position = 0;
+        return WorldSerializer.ReadDurableComponent<StableShape>(stream, registry).Value == WideMode.Maximum;
+    }
+}
 """);
 
-        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = Assert.Single(
-            result.Sources,
-            item => item.HintName == "SomeEngine.ECS.Serialization.Module.g.cs").SourceText.ToString();
-        Assert.Contains("writer.WriteUInt64", generated);
-        Assert.Contains("reader.ReadUInt64", generated);
+        Assert.True((bool)Execute(result, "SomeEngine.ECS.SourceGen.TestInput.Consumer")!);
     }
 
     [Fact]
@@ -298,16 +317,23 @@ public struct PackedPosition : SomeEngine.ECS.IComponent
     public int X;
     public float Y;
 }
+public static class Consumer
+{
+    public static bool Execute()
+    {
+        var registry = new SerializationRegistry();
+        global::GameSerializationModule.RegisterAll(registry);
+        var value = new PackedPosition { X = int.MinValue, Y = 123.5f };
+        using var stream = new System.IO.MemoryStream();
+        WorldSerializer.WriteDurableComponent(stream, in value, registry);
+        stream.Position = 0;
+        var loaded = WorldSerializer.ReadDurableComponent<PackedPosition>(stream, registry);
+        return loaded.X == int.MinValue && loaded.Y == 123.5f;
+    }
+}
 """);
 
-        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = Assert.Single(
-            result.Sources,
-            source => source.HintName == "SomeEngine.ECS.Serialization.Module.g.cs").SourceText.ToString();
-        Assert.Contains("registry.RegisterCanonical<global::SomeEngine.ECS.SourceGen.TestInput.PackedPosition", generated);
-        Assert.Contains(", 8, 0x", generated);
-        Assert.DoesNotContain(", 8, 0x0000000000000000ul);", generated);
-        Assert.Contains("ICanonicalComponentCodec<global::SomeEngine.ECS.SourceGen.TestInput.PackedPosition>", generated);
+        Assert.True((bool)Execute(result, "SomeEngine.ECS.SourceGen.TestInput.Consumer")!);
     }
 
     [Fact]
@@ -342,26 +368,37 @@ public partial struct PartialPacked
             reversed.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        string forwardSource = Assert.Single(
-            forward.Sources,
-            source => source.HintName == "SomeEngine.ECS.Serialization.Module.g.cs").SourceText.ToString();
-        string reversedSource = Assert.Single(
-            reversed.Sources,
-            source => source.HintName == "SomeEngine.ECS.Serialization.Module.g.cs").SourceText.ToString();
-        Assert.Contains(", -1, 0x0000000000000000ul);", forwardSource);
-        Assert.Equal(forwardSource, reversedSource);
+        Assert.Equal(ReadFingerprint(forward), ReadFingerprint(reversed));
     }
 
-    private static ulong GeneratedFingerprint(string source)
+    private static ulong GeneratedFingerprint(string source) => ReadFingerprint(RunGenerator(source));
+
+    private static ulong ReadFingerprint(GeneratorRunResult result)
     {
-        var result = RunGenerator(source);
+        const string consumer = """
+public static class FingerprintConsumer
+{
+    public static ulong Execute()
+    {
+        var registry = new SomeEngine.ECS.Serialization.SerializationRegistry();
+        GameSerializationModule.RegisterAll(registry);
+        return registry.Entries[0].TypeKey.SchemaFingerprint;
+    }
+}
+""";
+        Compilation compilation = result.Compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(
+            consumer, new CSharpParseOptions(LanguageVersion.Preview)));
+        return (ulong)Execute(result with { Compilation = compilation }, "FingerprintConsumer")!;
+    }
+
+    private static object? Execute(GeneratorRunResult result, string type)
+    {
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = Assert.Single(
-            result.Sources,
-            item => item.HintName == "SomeEngine.ECS.Serialization.Module.g.cs").SourceText.ToString();
-        Match match = Regex.Match(generated, @"0x([0-9A-F]{16})ul");
-        Assert.True(match.Success, generated);
-        return Convert.ToUInt64(match.Groups[1].Value, 16);
+        using var stream = new MemoryStream();
+        var emitted = result.Compilation.Emit(stream);
+        Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+        var assembly = System.Reflection.Assembly.Load(stream.ToArray());
+        return assembly.GetType(type, throwOnError: true)!.GetMethod("Execute")!.Invoke(null, null);
     }
 
     private static GeneratorRunResult RunGenerator(params string[] sources)
@@ -374,7 +411,7 @@ public partial struct PartialPacked
                 path: $"Input{index}.cs"))
             .ToArray();
         var compilation = CSharpCompilation.Create(
-            assemblyName: "SerializationGeneratorTests",
+            assemblyName: "SerializationGeneratorTests_" + Guid.NewGuid().ToString("N"),
             syntaxTrees: syntaxTrees,
             references: GetReferences(),
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
@@ -389,7 +426,7 @@ public partial struct PartialPacked
             .Concat(outputCompilation.GetDiagnostics())
             .ToArray();
 
-        return new GeneratorRunResult(diagnostics, runResult.Results.SelectMany(result => result.GeneratedSources).ToArray());
+        return new GeneratorRunResult(diagnostics, outputCompilation);
     }
 
     private static MetadataReference[] GetReferences()
@@ -406,5 +443,5 @@ public partial struct PartialPacked
 
     private sealed record GeneratorRunResult(
         Diagnostic[] Diagnostics,
-        GeneratedSourceResult[] Sources);
+        Compilation Compilation);
 }

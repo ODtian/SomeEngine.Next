@@ -1,47 +1,52 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
+using SlangShaderSharp;
 using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
 
 namespace SomeEngine.Render.Assets;
 
-/// <summary>Owns one linked compute entry point and its RHI pipeline.</summary>
+/// <summary>Owns one RHI pipeline created from a direct Slang compute entry point.</summary>
 public sealed class LinkedComputePipeline : IDisposable
 {
     private bool _disposed;
 
-    private LinkedComputePipeline(LiveShaderProgram program, GraphicsPipeline pipeline)
+    private LinkedComputePipeline(
+        ShaderReflection reflection,
+        EntryPointReflection entryPoint,
+        GraphicsPipeline pipeline)
     {
-        Program = program;
+        Reflection = reflection;
+        EntryPoint = entryPoint;
         Pipeline = pipeline;
     }
 
-    public LiveShaderProgram Program { get; }
+    public ShaderReflection Reflection { get; }
+    public EntryPointReflection EntryPoint { get; }
+    public VariableLayoutReflection ParameterLayout =>
+        Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
     public GraphicsPipeline Pipeline { get; }
 
     public static LinkedComputePipeline Create(
         IGraphicsBackend backend,
         Device device,
-        AssetLoader assets,
-        ShaderRef? shader,
+        Shader? shader,
+        EntryPointReflection entry,
         string label)
     {
-        ArgumentNullException.ThrowIfNull(backend);
-        ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(assets);
-        ArgumentException.ThrowIfNullOrWhiteSpace(label);
-        if (shader is null ||
-            shader.Stage != ShaderStage.Compute ||
-            string.IsNullOrWhiteSpace(shader.EntryPoint) ||
-            !AssetGuid.TryParse(shader.AssetGuid, out AssetGuid shaderGuid) ||
-            shaderGuid.IsEmpty)
-        {
-            throw new InvalidDataException(
-                $"Compute pipeline '{label}' has no valid shader entry.");
-        }
-        Shader loaded = assets.LoadAsync(new AssetId<Shader>(shaderGuid))
-            .AsTask().GetAwaiter().GetResult();
-        return Create(backend, device, loaded, shader.EntryPoint, label);
+        ArgumentNullException.ThrowIfNull(shader);
+        if (entry == EntryPointReflection.Null || entry.Stage != SlangStage.Compute)
+            throw new InvalidDataException($"Compute pipeline '{label}' has no compute entry.");
+        int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+        return Create(
+            backend,
+            device,
+            shader,
+            entry,
+            shader.GetSlangEntryBytes(targetIndex, entry),
+            shader.GetSlangEntryBlob(targetIndex, entry),
+            label);
     }
 
     public static LinkedComputePipeline Create(
@@ -56,26 +61,28 @@ public sealed class LinkedComputePipeline : IDisposable
         ArgumentNullException.ThrowIfNull(shader);
         ArgumentException.ThrowIfNullOrWhiteSpace(entryPoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
-        LiveShaderProgram? program = null;
         GraphicsPipeline? pipeline = null;
         try
         {
-            program = LiveShaderProgram.Link(
-                shader,
-                [new LiveShaderEntry(entryPoint, LiveShaderStage.Compute)]);
-            pipeline = backend.CreateComputePipeline(
+            int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+            ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+            EntryPointReflection entry = shader.RequireSlangEntry(
+                targetIndex,
+                entryPoint,
+                SlangStage.Compute);
+            return Create(
+                backend,
                 device,
-                new ComputePipelineDesc(
-                    program.Program,
-                    program.GetEntryPoint(0),
-                    label));
-            return new LinkedComputePipeline(program, pipeline);
+                shader,
+                entry,
+                shader.GetSlangEntryBytes(targetIndex, entry),
+                shader.GetSlangEntryBlob(targetIndex, entry),
+                label);
         }
         catch (Exception primary)
         {
             List<Exception>? cleanupFailures = null;
             if (pipeline is not null) TryDispose(pipeline, ref cleanupFailures);
-            if (program is not null) TryDispose(program, ref cleanupFailures);
             if (cleanupFailures is not null)
             {
                 cleanupFailures.Insert(0, primary);
@@ -87,13 +94,44 @@ public sealed class LinkedComputePipeline : IDisposable
         }
     }
 
+    private static LinkedComputePipeline Create(
+        IGraphicsBackend backend,
+        Device device,
+        Shader shader,
+        EntryPointReflection entry,
+        System.Buffers.ReadOnlySequence<byte> code,
+        ISlangBlob? codeBlob,
+        string label)
+    {
+        GraphicsPipeline? pipeline = null;
+        try
+        {
+            int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+            ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+            pipeline = backend.CreateComputePipeline(
+                device,
+                new ComputePipelineDesc(
+                    shader.SlangCode,
+                    reflection,
+                    entry,
+                    code,
+                    label,
+                    CodeBlob: codeBlob));
+            return new LinkedComputePipeline(reflection, entry, pipeline);
+        }
+        catch
+        {
+            pipeline?.Dispose();
+            throw;
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
             return;
         List<Exception>? failures = null;
         TryDispose(Pipeline, ref failures);
-        TryDispose(Program, ref failures);
         _disposed = true;
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);

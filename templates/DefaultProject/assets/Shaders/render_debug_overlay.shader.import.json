@@ -1,0 +1,40 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 29,
+  "input_hash": "fa3077a11c068c49e7fcdd8dd7d431101206397fa5ca03902c51c7c0745d2c07",
+  "inputs": [
+    {
+      "relative_path": "../../assets/Shaders/fullscreen_triangle.slang",
+      "content_hash": "a379eb11e577feb64d5fa47621d9ecad73fc1708619af7c527677c7f53055e1c"
+    },
+    {
+      "relative_path": "../../assets/Shaders/render_debug_overlay.slang",
+      "content_hash": "b41e242f7ae30bc4cf855e572f0bd7b41e895644a4e7ef2585438664838a78d6"
+    },
+    {
+      "relative_path": "assets/Shaders/Pipeline/build_render_debug_overlay.slang",
+      "content_hash": "7d6348d967e6633fcdbd9a3064ce71a97c6e8e2669e9706b370afed47149920d"
+    },
+    {
+      "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+    },
+    {
+      "relative_path": "assets/Shaders/render_debug_overlay.shader",
+      "content_hash": "3f29abb1063e85cd991c04de0acc2bf183f47998605d4e44fcd930146e8385b5"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "451577f6-27d5-553a-a428-ec2d950deca0",
+      "sub_asset_key": "",
+      "input_hash": "fa3077a11c068c49e7fcdd8dd7d431101206397fa5ca03902c51c7c0745d2c07",
+      "dependencies": [],
+      "asset_path": "render_debug_overlay.shader.asset",
+      "version": "508d1ae2-c83d-4f52-711e-862a3342e825",
+      "content_hash": "A865A8E727E252955BFAC2B405C6A9B824DEE3A2DDE4CF6E9597B748CDDD3CFE",
+      "asset_dependencies": []
+    }
+  ]
+}

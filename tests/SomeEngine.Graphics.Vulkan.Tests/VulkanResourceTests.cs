@@ -9,7 +9,7 @@ public sealed class VulkanResourceTests
     [Fact]
     public void Device_creates_maps_places_and_views_core_resources()
     {
-        using var backend = new VulkanBackend();
+        using var backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
 

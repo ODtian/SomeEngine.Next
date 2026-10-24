@@ -271,8 +271,6 @@ internal sealed unsafe partial class VulkanBackend
                     if (ResolveKind(shape) != kind)
                         continue;
                     ResourceBinding value = table.GetStagedValue(slot);
-                    if (value.IsNull)
-                        continue;
                     generation.Write(
                         table.FirstIndex + slot,
                         shape,
@@ -495,6 +493,12 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         internal VkDescriptorSet Set { get; }
+        internal void CaptureSparseBindings(VulkanCommandSlot commands)
+        {
+            foreach (IVulkanRetained resource in _retained)
+                commands.CaptureSparseBindings(resource);
+        }
+
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
 
@@ -598,6 +602,12 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         internal VulkanBoundDescriptorSet[] Sets { get; }
+        internal void CaptureSparseBindings(VulkanCommandSlot commands)
+        {
+            foreach (IVulkanRetained resource in _generations)
+                commands.CaptureSparseBindings(resource);
+        }
+
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
 

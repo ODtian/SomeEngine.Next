@@ -3,7 +3,8 @@ namespace SomeEngine.Graphics.Vulkan.Tests;
 using SlangShaderSharp;
 using Xunit;
 
-public sealed class VulkanAdvancedStateTests
+[Xunit.Collection("Vulkan shader compilation")]
+public sealed class VulkanAdvancedStateTests(VulkanTestCompiler shaderCompiler)
 {
     [Fact]
     public void Extended_dynamic_conditional_mesh_and_vrs_capabilities_are_enabled()
@@ -76,7 +77,7 @@ public sealed class VulkanAdvancedStateTests
             [shader("fragment")]
             float4 pixelMain() : SV_Target0 { return float4(0.25, 0.5, 0.75, 1); }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("meshMain", SlangStage.Mesh),
             ("pixelMain", SlangStage.Fragment));
@@ -91,10 +92,11 @@ public sealed class VulkanAdvancedStateTests
         using Pipeline pipeline = backend.CreateMeshPipeline(
             device,
             new MeshPipelineDesc(
-                shader.Program,
-                shader.Entries[0],
+                shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0),
                 EntryPointReflection.Null,
+                default,
                 shader.Entries[1],
+                shader.GetEntryCode(1),
                 new RasterizerState(Cull: CullType.None),
                 new MultisampleState(),
                 new DepthStencilState(),
@@ -287,7 +289,7 @@ public sealed class VulkanAdvancedStateTests
             [shader("raygeneration")]
             void rayGenerationMain() { outputValues[0] = 11; }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("rayGenerationMain", SlangStage.RayGeneration));
         EntryPointReflection rayGeneration = shader.Entries[0];
@@ -302,7 +304,9 @@ public sealed class VulkanAdvancedStateTests
         using Pipeline pipeline = backend.CreateRayTracingPipeline(
             device,
             new RayTracingPipelineDesc(
-                shader.Program,
+                shader.SlangCode,
+                shader.Reflection,
+                shader.TargetCode,
                 [rayGeneration],
                 [],
                 [],
@@ -390,7 +394,7 @@ public sealed class VulkanAdvancedStateTests
                 outputValues[0] = recordValue;
             }
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("rayGenerationMain", SlangStage.RayGeneration),
             ("callableMain", SlangStage.Callable));
@@ -407,7 +411,9 @@ public sealed class VulkanAdvancedStateTests
         using Pipeline pipeline = backend.CreateRayTracingPipeline(
             device,
             new RayTracingPipelineDesc(
-                shader.Program,
+                shader.SlangCode,
+                shader.Reflection,
+                shader.TargetCode,
                 [rayGeneration],
                 [],
                 [callable],

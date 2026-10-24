@@ -10,11 +10,13 @@ public readonly struct ImmediateSystemContext
     public ImmediateSystemContext(
         World world,
         uint lastSystemVersion,
-        uint currentSystemVersion)
+        uint currentSystemVersion,
+        double deltaTime = 0)
     {
         World = world ?? throw new ArgumentNullException(nameof(world));
         LastSystemVersion = lastSystemVersion;
         CurrentSystemVersion = currentSystemVersion;
+        DeltaTime = deltaTime;
     }
 
     public World World { get; }
@@ -22,6 +24,8 @@ public readonly struct ImmediateSystemContext
     public uint LastSystemVersion { get; }
 
     public uint CurrentSystemVersion { get; }
+
+    public double DeltaTime { get; }
 
 }
 

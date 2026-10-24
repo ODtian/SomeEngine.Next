@@ -5,12 +5,12 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class JobBufferCommandTests
+public sealed class JobBufferCommandTests : JobTest
 {
     [Fact]
     public void CommandBufferOwnsAddReplaceAndRemovePayloads()
     {
-        var world = new World();
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         BufferItem[] source = [new(1), new(2), new(3)];
         using var commands = new CommandBuffer(world);
@@ -39,7 +39,7 @@ public sealed class JobBufferCommandTests
     [Fact]
     public void FailedBufferCommandRollsBackTheCompleteStructuralImage()
     {
-        var world = new World();
+        var world = CreateJobWorld();
         Entity first = world.CreateEntity();
         Entity duplicate = world.CreateEntity();
         world.AddBuffer<BufferItem>(duplicate);
@@ -57,8 +57,8 @@ public sealed class JobBufferCommandTests
     [Fact]
     public void ParallelJobSegmentsPublishPipelineOwnedBuffersByStableProducerKey()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity[] entities = new Entity[8];
         BufferItem[] items = new BufferItem[entities.Length * 2];
         for (int index = 0; index < entities.Length; index++)
@@ -81,7 +81,7 @@ public sealed class JobBufferCommandTests
         }
     }
 
-    private static int[] Read(World world, Entity entity)
+    private int[] Read(World world, Entity entity)
     {
         int[]? values = null;
         world.ExecuteBufferRead<BufferItem>(entity, buffer =>
@@ -107,28 +107,4 @@ public sealed class JobBufferCommandTests
 
     private readonly record struct BufferItem(int Value) : IBufferElement;
 
-    private sealed class JobRuntimeScope : IDisposable
-    {
-        private readonly JobSafetyMode _safety = JobSystem.SafetyMode;
-        private readonly ManagedPayloadPolicy _payload = JobSystem.ManagedPayloadPolicy;
-
-        internal JobRuntimeScope(int workerCount)
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                WorkerCount = workerCount,
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-            });
-        }
-
-        public void Dispose()
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = _payload,
-            });
-        }
-    }
 }

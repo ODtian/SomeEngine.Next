@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace SomeEngine.Runtime;
@@ -14,6 +15,7 @@ internal sealed class NativeWindow : IDisposable
     private const uint QueueAllInput = 0x04FF;
     private const uint WaitInputAvailable = 0x0004;
     private const uint TrackMouseLeave = 0x00000002;
+    private const uint SetPositionNoMove = 0x0002;
     private const uint SetPositionNoActivate = 0x0010;
     private const uint SetPositionNoZOrder = 0x0004;
     private const int ShowNormal = 5;
@@ -75,7 +77,7 @@ internal sealed class NativeWindow : IDisposable
     private bool _closeRequested;
     private bool _disposed;
 
-    internal NativeWindow(string title, int clientWidth, int clientHeight)
+    internal NativeWindow(string title, int clientWidth, int clientHeight, bool visible = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(clientWidth);
@@ -85,7 +87,7 @@ internal sealed class NativeWindow : IDisposable
         _selfHandle = GCHandle.Alloc(this, GCHandleType.Normal);
         try
         {
-            uint style = WindowStyleOverlapped | WindowStyleVisible;
+            uint style = WindowStyleOverlapped | (visible ? WindowStyleVisible : 0u);
             var outer = new NativeRect(0, 0, clientWidth, clientHeight);
             if (!AdjustWindowRectEx(ref outer, style, false, 0))
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "AdjustWindowRectEx failed.");
@@ -106,12 +108,15 @@ internal sealed class NativeWindow : IDisposable
             if (Handle == 0)
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateWindowExW failed.");
 
+            VisibleTimestamp = visible ? Stopwatch.GetTimestamp() : 0;
+
             ClientWidth = clientWidth;
             ClientHeight = clientHeight;
             uint dpi = GetDpiForWindow(Handle);
             DpiScale = dpi == 0 ? 1.0f : dpi / 96.0f;
             HasFocus = GetFocus() == Handle;
-            _ = ShowWindow(Handle, ShowNormal);
+            if (visible)
+                _ = ShowWindow(Handle, ShowNormal);
             if (!UpdateWindow(Handle))
             {
                 int error = Marshal.GetLastWin32Error();
@@ -129,6 +134,8 @@ internal sealed class NativeWindow : IDisposable
 
     internal nint Handle { get; private set; }
 
+    internal long VisibleTimestamp { get; }
+
     internal int ClientWidth { get; private set; }
 
     internal int ClientHeight { get; private set; }
@@ -140,6 +147,18 @@ internal sealed class NativeWindow : IDisposable
     internal bool IsMinimized { get; private set; }
 
     internal bool CloseRequested => _closeRequested;
+
+    internal void SetClientSize(int width, int height)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        var outer = new NativeRect(0, 0, width, height);
+        if (!AdjustWindowRectEx(ref outer, WindowStyleOverlapped, false, 0) ||
+            !SetWindowPos(Handle, 0, 0, 0, outer.Right - outer.Left, outer.Bottom - outer.Top,
+                SetPositionNoActivate | SetPositionNoZOrder | SetPositionNoMove))
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Window size change failed.");
+        ThrowDispatchFailure();
+    }
 
     internal bool PumpMessages()
     {
@@ -176,17 +195,35 @@ internal sealed class NativeWindow : IDisposable
 
     internal void WaitForEvents(TimeSpan timeout)
     {
+        _ = MsgWaitForMultipleObjectsEx(0, 0, GetWaitMilliseconds(timeout), QueueAllInput, WaitInputAvailable);
+    }
+
+    internal void WaitForEvents(WaitHandle completion, TimeSpan timeout)
+    {
+        var handle = completion.SafeWaitHandle;
+        bool referenced = false;
+        try
+        {
+            handle.DangerousAddRef(ref referenced);
+            nint value = handle.DangerousGetHandle();
+            uint result = MsgWaitForMultipleObjectsEx(
+                1, in value, GetWaitMilliseconds(timeout), QueueAllInput, WaitInputAvailable);
+            if (result == uint.MaxValue)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Waiting for task completion and window messages failed.");
+        }
+        finally
+        {
+            if (referenced) handle.DangerousRelease();
+        }
+    }
+
+    private static uint GetWaitMilliseconds(TimeSpan timeout)
+    {
         if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
             throw new ArgumentOutOfRangeException(nameof(timeout));
-        uint milliseconds = timeout == Timeout.InfiniteTimeSpan
+        return timeout == Timeout.InfiniteTimeSpan
             ? uint.MaxValue
             : checked((uint)Math.Clamp((long)Math.Ceiling(timeout.TotalMilliseconds), 0, uint.MaxValue - 1L));
-        _ = MsgWaitForMultipleObjectsEx(
-            0,
-            0,
-            milliseconds,
-            QueueAllInput,
-            WaitInputAvailable);
     }
 
     public void Dispose()
@@ -633,6 +670,14 @@ internal sealed class NativeWindow : IDisposable
     private static extern uint MsgWaitForMultipleObjectsEx(
         uint count,
         nint handles,
+        uint milliseconds,
+        uint wakeMask,
+        uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint MsgWaitForMultipleObjectsEx(
+        uint count,
+        in nint handles,
         uint milliseconds,
         uint wakeMask,
         uint flags);

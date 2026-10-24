@@ -76,7 +76,7 @@ internal readonly struct EntityRecordWriter
     public Archetype? Archetype
     {
         get => _store.ResolveArchetypeIdentity(_store.StoredRecordSnapshot(_index).ArchetypeIdentity);
-        set => _store.WritableRecord(_index).ArchetypeIdentity = value?.PersistentIdentity ?? 0;
+        set => _store.ChangeTable(_index, value?.PersistentIdentity ?? 0);
     }
 
     public Chunk? Chunk

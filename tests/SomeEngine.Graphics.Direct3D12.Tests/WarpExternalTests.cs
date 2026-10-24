@@ -1,4 +1,4 @@
-using Silk.NET.Direct3D12;
+﻿using Silk.NET.Direct3D12;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Graphics.Validation;
 using Xunit;
@@ -10,7 +10,7 @@ public sealed class WarpExternalTests
     [Fact]
     public unsafe void Failed_native_buffer_import_obeys_transferred_and_borrowed_ownership()
     {
-        using D3D12Backend backend = new();
+        using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         BufferDesc description = new(65_536, BufferUsages.CopyDestination);
         ImportedResourceState state = new(
@@ -46,7 +46,7 @@ public sealed class WarpExternalTests
     [Fact]
     public unsafe void Feedback_usage_import_failure_preserves_native_and_shared_handle_ownership()
     {
-        using D3D12Backend backend = new();
+        using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         TextureDesc description = new(
             TextureDimension.Texture2D,
@@ -119,7 +119,7 @@ public sealed class WarpExternalTests
     [Fact]
     public unsafe void Transferred_native_texture_survives_source_wrapper_disposal()
     {
-        using D3D12Backend backend = new();
+        using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         TextureDesc description = new(
             TextureDimension.Texture2D,
@@ -182,7 +182,7 @@ public sealed class WarpExternalTests
     [Fact]
     public void External_handle_support_is_reported_per_object_family_and_direction()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         Assert.True(backend.TryGetCapability(device, out ExternalResources? resources));
@@ -211,7 +211,7 @@ public sealed class WarpExternalTests
     [Fact]
     public void Imported_timeline_preserves_existing_value_and_orders_queue_work()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using ExternalTimeline source = backend.CreateExternalTimeline(device, initialValue: 9);
         using ExternalHandle handle = backend.ExportTimeline(
@@ -263,7 +263,7 @@ public sealed class WarpExternalTests
     [Fact]
     public void Shared_resource_import_is_description_exact_and_failure_atomic()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         ImportedResourceState bufferState = new(
             PipelineSync.None,
@@ -373,7 +373,7 @@ public sealed class WarpExternalTests
     [Fact]
     public void Shared_heap_import_validates_native_metadata()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         HeapDesc description = new(
             131_072,
@@ -404,7 +404,7 @@ public sealed class WarpExternalTests
     [Fact]
     public unsafe void Native_object_import_separates_borrowed_and_transferred_COM_ownership()
     {
-        using D3D12Backend backend = new();
+        using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         ImportedResourceState bufferState = new(
             PipelineSync.None,
@@ -511,8 +511,8 @@ public sealed class WarpExternalTests
     [Fact]
     public unsafe void Native_object_import_checks_native_device_identity_and_validation_tracks_wrappers()
     {
-        using D3D12Backend backend = new();
-        using var validation = new ValidationLayer(backend);
+        using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
+        using var validation = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device first = D3D12TestSupport.CreateWarpDevice(backend);
         using Device second = D3D12TestSupport.CreateWarpDevice(backend);
         BufferDesc description = new(65_536, BufferUsages.CopyDestination);

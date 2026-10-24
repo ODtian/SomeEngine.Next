@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
@@ -6,20 +8,20 @@ internal sealed partial class FrameExecutor
     {
         int index = ResolveBuffer(id.Value);
         EnsurePassUsesResource(pass, GraphAccessTargetKind.Buffer, index);
-        return _buffers[index].Resource
-            ?? throw new InvalidOperationException("The Buffer was not materialized.");
+        Buffer? resource = _buffers[index].Resource;
+        DevelopmentCheck.Require(resource is not null, "The Buffer was not materialized.");
+        return resource!;
     }
 
     internal Texture GetTexture(int pass, GraphTextureId id)
     {
         int index = ResolveTexture(id.Value);
         EnsurePassUsesResource(pass, GraphAccessTargetKind.Texture, index);
-        return _textures[index].Resource
-            ?? throw new InvalidOperationException("The Texture was not materialized.");
+        Texture? resource = _textures[index].Resource;
+        DevelopmentCheck.Require(resource is not null, "The Texture was not materialized.");
+        return resource!;
     }
 
-    internal BufferCbv GetBufferCbv(int pass, GraphBufferCbvId id) =>
-        GetView<BufferCbv>(pass, id.Value, GraphViewKind.BufferCbv);
     internal BufferSrv GetBufferSrv(int pass, GraphBufferSrvId id) =>
         GetView<BufferSrv>(pass, id.Value, GraphViewKind.BufferSrv);
     internal BufferUav GetBufferUav(int pass, GraphBufferUavId id) =>
@@ -40,6 +42,17 @@ internal sealed partial class FrameExecutor
         bool write)
     {
         int resource = ResolveQueryPool(id.Value);
+        ValidateQueryPoolAccess(pass, resource, range, write);
+        return _queryPools[resource].Resource;
+    }
+
+    [Conditional("DEBUG")]
+    private void ValidateQueryPoolAccess(
+        int pass,
+        int resource,
+        in QueryRange range,
+        bool write)
+    {
         foreach (int accessIndex in _passAccesses[pass])
         {
             FrameResourceAccess access = _accesses[accessIndex];
@@ -49,9 +62,9 @@ internal sealed partial class FrameExecutor
                 continue;
             if (write && access.Mode == GraphAccessMode.Read) continue;
             if (!write && access.Mode == GraphAccessMode.Write) continue;
-            return _queryPools[resource].Resource;
+            return;
         }
-        throw new InvalidOperationException(
+        DevelopmentCheck.Fail(
             "RG8001: A Query command operand is not covered by the Pass declaration.");
     }
 
@@ -61,6 +74,13 @@ internal sealed partial class FrameExecutor
         bool write)
     {
         int resource = ResolveShaderTable(id.Value);
+        ValidateShaderTableAccess(pass, resource, write);
+        return _shaderTables[resource].Resource;
+    }
+
+    [Conditional("DEBUG")]
+    private void ValidateShaderTableAccess(int pass, int resource, bool write)
+    {
         foreach (int accessIndex in _passAccesses[pass])
         {
             FrameResourceAccess access = _accesses[accessIndex];
@@ -69,9 +89,9 @@ internal sealed partial class FrameExecutor
                 continue;
             if (write && access.Mode == GraphAccessMode.Read) continue;
             if (!write && access.Mode == GraphAccessMode.Write) continue;
-            return _shaderTables[resource].Resource;
+            return;
         }
-        throw new InvalidOperationException(
+        DevelopmentCheck.Fail(
             "RG8001: A RayTracingShaderTable command operand is not covered by the Pass declaration.");
     }
 
@@ -79,34 +99,54 @@ internal sealed partial class FrameExecutor
         int pass,
         GraphPersistentParameterBindingsId id)
     {
-        if (!_frame.StructureIndex.Structure.PersistentBindings.Contains(id.Value))
-            throw new ArgumentException("The PersistentParameterBindings identity is invalid or stale.");
-        List<GraphIdentity>? allowed = _passes[pass].PersistentBindings;
-        if (allowed is null || !allowed.Contains(id.Value))
-        {
-            throw new InvalidOperationException(
-                "RG8001: The Pass did not declare these PersistentParameterBindings.");
-        }
+        ValidatePersistentParameterBindings(pass, id.Value);
         return _frame.StructureIndex.Structure.PersistentBindings.Get(id.Value).Resource;
+    }
+
+    [Conditional("DEBUG")]
+    private void ValidatePersistentParameterBindings(int pass, in GraphIdentity identity)
+    {
+        DevelopmentCheck.Require(
+            _frame.StructureIndex.Structure.PersistentBindings.Contains(identity),
+            "The PersistentParameterBindings identity is invalid or stale.");
+        List<GraphIdentity>? allowed = _passes[pass].PersistentBindings;
+        DevelopmentCheck.Require(
+            allowed is not null && allowed.Contains(identity),
+            "RG8001: The Pass did not declare these PersistentParameterBindings.");
     }
 
     private T GetView<T>(int pass, in GraphIdentity identity, GraphViewKind kind)
         where T : DeviceResource
     {
-        if (!_viewIndices.TryGetValue(identity, out int index))
-            throw new ArgumentException("The View identity is invalid or stale.");
+        bool found = TryResolveView(identity, out int index);
+        DevelopmentCheck.Require(found, "The View identity is invalid or stale.");
         FrameView view = _views[index];
-        if (view.Kind != kind || view.View is not T result)
-            throw new ArgumentException("The View identity has the wrong type.");
-        if (view.Buffer.IsValid)
-            ValidateBuffer(pass, _buffers[ResolveBuffer(view.Buffer)].Resource!, view.BufferRange,
+        DevelopmentCheck.Require(
+            view.Kind == kind && view.View is T,
+            "The View identity has the wrong type.");
+        if (view.BufferIndex >= 0)
+            ValidateBuffer(pass, _buffers[view.BufferIndex].Resource!, view.BufferRange,
                 kind is GraphViewKind.BufferUav);
-        if (view.Texture.IsValid)
-            ValidateTexture(pass, _textures[ResolveTexture(view.Texture)].Resource!, view.TextureRange,
+        if (view.TextureIndex >= 0)
+            ValidateTexture(pass, _textures[view.TextureIndex].Resource!, view.TextureRange,
                 kind is GraphViewKind.TextureUav or GraphViewKind.ColorAttachment or GraphViewKind.DepthStencil);
-        return result;
+        return (T)view.View!;
     }
 
+    [Conditional("DEBUG")]
+    internal void ValidateTextureCopyBuffer(int pass, in BufferTextureCopy copy, bool write)
+    {
+        TextureInfo info = copy.Texture.Info;
+        var description = new TextureDesc(
+            info.Dimension, info.Width, info.Height, info.Depth,
+            info.MipLevelCount, info.ArrayLayerCount, info.SampleCount,
+            info.Format, info.Usages, info.PermittedViewFormats);
+        TextureCopyFootprint footprint = _frame.Backend.GetTextureCopyFootprint(
+            copy.Texture.Device, description, copy, copy.BufferOffset);
+        ValidateBuffer(pass, copy.Buffer, footprint.GetBufferRange(copy), write);
+    }
+
+    [Conditional("DEBUG")]
     internal void ValidateBuffer(int pass, Buffer buffer, in BufferRange range, bool write)
     {
         int resource = FindBuffer(buffer);
@@ -116,16 +156,20 @@ internal sealed partial class FrameExecutor
             FrameResourceAccess access = _accesses[accessIndex];
             if (access.TargetKind != GraphAccessTargetKind.Buffer || access.ResourceIndex != resource)
                 continue;
-            if (!Contains(access.BufferRange, normalized)) continue;
+            bool covered = false;
+            foreach (BufferRange declared in access.BufferRanges)
+                if (Contains(declared, normalized)) { covered = true; break; }
+            if (!covered) continue;
             if (write
                     ? access.Mode == GraphAccessMode.Read
                     : access.Mode == GraphAccessMode.Write)
                 continue;
             return;
         }
-        throw new InvalidOperationException("RG8001: A Buffer command operand is not covered by the Pass declaration.");
+        DevelopmentCheck.Fail("RG8001: A Buffer command operand is not covered by the Pass declaration.");
     }
 
+    [Conditional("DEBUG")]
     internal void ValidateTexture(
         int pass,
         Texture texture,
@@ -151,9 +195,10 @@ internal sealed partial class FrameExecutor
                 continue;
             return;
         }
-        throw new InvalidOperationException("RG8001: A Texture command operand is not covered by the Pass declaration.");
+        DevelopmentCheck.Fail("RG8001: A Texture command operand is not covered by the Pass declaration.");
     }
 
+    [Conditional("DEBUG")]
     internal void ValidateBindings(int pass, ReadOnlySpan<ResourceBinding> bindings)
     {
         foreach (ref readonly ResourceBinding binding in bindings)
@@ -161,6 +206,9 @@ internal sealed partial class FrameExecutor
             if (binding.IsNull) continue;
             switch (binding.Value)
             {
+                case Buffer buffer when binding.Type == ResourceBindingType.ConstantBuffer:
+                    ValidateBuffer(pass, buffer, binding.BufferRange, false);
+                    break;
                 case BufferCbv view:
                     ValidateBuffer(pass, view.Description.Buffer, view.Description.Range, false);
                     break;
@@ -188,19 +236,21 @@ internal sealed partial class FrameExecutor
                     ValidateAccelerationStructure(pass, view.Resource, write: false);
                     break;
                 default:
-                    throw new ArgumentException(
-                        "The ResourceBinding has an unknown resource type.",
-                        nameof(bindings));
+                    DevelopmentCheck.Fail("The ResourceBinding has an unknown resource type.");
+                    break;
             }
         }
     }
 
+    [Conditional("DEBUG")]
     internal void ValidateAccelerationStructure(
         int pass,
         AccelerationStructure accelerationStructure,
         bool write)
     {
-        ArgumentNullException.ThrowIfNull(accelerationStructure);
+        DevelopmentCheck.Require(
+            accelerationStructure is not null,
+            "The AccelerationStructure cannot be null.");
         ValidateBuffer(
             pass,
             accelerationStructure.Info.Storage,
@@ -208,12 +258,13 @@ internal sealed partial class FrameExecutor
             write);
     }
 
+    [Conditional("DEBUG")]
     internal void ValidateSamplerFeedback(
         int pass,
         SamplerFeedbackUav feedback,
         bool write)
     {
-        ArgumentNullException.ThrowIfNull(feedback);
+        DevelopmentCheck.Require(feedback is not null, "The SamplerFeedbackUav cannot be null.");
         ValidateTexture(
             pass,
             feedback.Description.Texture,
@@ -222,15 +273,17 @@ internal sealed partial class FrameExecutor
         ValidateTexture(pass, feedback.SampledTexture, range: null, write: false);
     }
 
+    [Conditional("DEBUG")]
     internal void ValidateSamplerFeedbackSource(
         int pass,
         SamplerFeedbackTexture source)
     {
-        ArgumentNullException.ThrowIfNull(source);
+        DevelopmentCheck.Require(source is not null, "The SamplerFeedbackTexture cannot be null.");
         ValidateTexture(pass, source, range: null, write: false);
         ValidateTexture(pass, source.SampledTexture, range: null, write: false);
     }
 
+    [Conditional("DEBUG")]
     internal void ValidateAccelerationStructureBuild(
         int pass,
         in AccelerationStructureBuildDesc description)
@@ -254,6 +307,7 @@ internal sealed partial class FrameExecutor
         }
     }
 
+    [Conditional("DEBUG")]
     private void EnsurePassUsesResource(int pass, GraphAccessTargetKind kind, int resource)
     {
         foreach (int accessIndex in _passAccesses[pass])
@@ -261,29 +315,33 @@ internal sealed partial class FrameExecutor
             FrameResourceAccess access = _accesses[accessIndex];
             if (access.TargetKind == kind && access.ResourceIndex == resource) return;
         }
-        throw new InvalidOperationException("RG8001: The Pass does not declare this resource.");
+        DevelopmentCheck.Fail("RG8001: The Pass does not declare this resource.");
     }
 
     private int FindBuffer(Buffer buffer)
     {
-        for (int i = 0; i < _buffers.Length; i++)
+        for (int i = 0; i < _buffers.Count; i++)
             if (ReferenceEquals(_buffers[i].Resource, buffer)) return i;
-        throw new InvalidOperationException("The Buffer is not owned or imported by this frame.");
+        DevelopmentCheck.Fail("The Buffer is not owned or imported by this frame.");
+        return 0;
     }
 
     private int FindTexture(Texture texture)
     {
-        for (int i = 0; i < _textures.Length; i++)
+        for (int i = 0; i < _textures.Count; i++)
             if (ReferenceEquals(_textures[i].Resource, texture)) return i;
-        throw new InvalidOperationException("The Texture is not owned or imported by this frame.");
+        DevelopmentCheck.Fail("The Texture is not owned or imported by this frame.");
+        return 0;
     }
 
     private static bool Contains(in BufferRange container, in BufferRange value) =>
         value.Offset >= container.Offset &&
+        value.Offset - container.Offset <= container.Size &&
         value.Size <= container.Size - (value.Offset - container.Offset);
 
     private static bool Contains(in QueryRange container, in QueryRange value) =>
         value.FirstQuery >= container.FirstQuery &&
+        value.FirstQuery - container.FirstQuery <= container.QueryCount &&
         value.QueryCount <= container.QueryCount -
             (value.FirstQuery - container.FirstQuery);
 
@@ -292,9 +350,11 @@ internal sealed partial class FrameExecutor
         in TextureSubresourceRange value)
     {
         return value.FirstMipLevel >= container.FirstMipLevel &&
+               value.FirstMipLevel - container.FirstMipLevel <= container.MipLevelCount &&
                value.MipLevelCount <= container.MipLevelCount -
                    (value.FirstMipLevel - container.FirstMipLevel) &&
                value.FirstArrayLayer >= container.FirstArrayLayer &&
+               value.FirstArrayLayer - container.FirstArrayLayer <= container.ArrayLayerCount &&
                value.ArrayLayerCount <= container.ArrayLayerCount -
                    (value.FirstArrayLayer - container.FirstArrayLayer) &&
                (value.Aspects & ~container.Aspects) == 0;

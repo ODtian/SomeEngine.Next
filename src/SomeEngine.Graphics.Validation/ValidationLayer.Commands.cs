@@ -93,7 +93,10 @@ public sealed partial class ValidationLayer
                 result = Backend.End(context);
                 backendEnded = true;
                 lock (_gate)
+                {
                     _recorded.Add(new RecordedCommandsKey(result), validation);
+                    result.Lease.Discarded += ForgetDiscardedCommands;
+                }
                 ResetContextRecordingState(state);
                 return result;
             }
@@ -107,7 +110,7 @@ public sealed partial class ValidationLayer
                 else
                 {
                     _ = validation.ReleasePayload();
-                    state.AvailableRecordings.Push(validation);
+                    state.ReturnRecording(validation);
                     state.RestorePayload(payload);
                 }
                 throw;
@@ -399,8 +402,15 @@ public sealed partial class ValidationLayer
                 Reject("Commands", "Rendering width and height must be nonzero.", context.Label);
             if (desc.Colors.Length > 8)
                 Reject("Commands", "Rendering supports at most eight color attachments.", context.Label);
-            if (desc.Colors.IsEmpty && desc.DepthStencil is null)
-                Reject("Commands", "A rendering scope requires an attachment.", context.Label);
+            if (desc.Colors.IsEmpty &&
+                desc.DepthStencil is null &&
+                (desc.Options & RenderingOptions.AllowUnorderedAccessWrites) == 0)
+            {
+                Reject(
+                    "Commands",
+                    "An attachment-less rendering scope must explicitly allow unordered-access writes.",
+                    context.Label);
+            }
             foreach (ColorAttachmentDesc attachment in desc.Colors)
                 RequireOnDevice(context.Device, attachment.View, "Color attachment");
             if (desc.DepthStencil is { } depthStencil)
@@ -896,6 +906,19 @@ public sealed partial class ValidationLayer
         }
     }
 
+    private void ForgetDiscardedCommands(RecordedCommandsLease commands, ulong sequence)
+    {
+        lock (_gate)
+        {
+            var key = new RecordedCommandsKey(commands, sequence);
+            if (_recorded.Remove(key, out RecordedValidationState? recording))
+            {
+                commands.Discarded -= ForgetDiscardedCommands;
+                recording.Owner.RecycleRecording(recording);
+            }
+        }
+    }
+
     private void ForgetRecordedSubmission(
         ReadOnlySpan<RecordedCommands> commands,
         bool onlyConsumed)
@@ -908,7 +931,10 @@ public sealed partial class ValidationLayer
                 {
                     var key = new RecordedCommandsKey(command);
                     if (_recorded.Remove(key, out RecordedValidationState? recording))
+                    {
+                        key.Lease.Discarded -= ForgetDiscardedCommands;
                         recording.Owner.RecycleRecording(recording);
+                    }
                 }
             }
         }
@@ -1112,8 +1138,12 @@ public sealed partial class ValidationLayer
     {
         switch (operation)
         {
+            case QueryValidationEventType.Reset:
+                if (phase == QueryValidationPhase.Active)
+                    Reject("Queries", "An active query cannot be reset.", slot.Pool.Label);
+                return QueryValidationPhase.Reset;
             case QueryValidationEventType.Begin:
-                if (phase is QueryValidationPhase.Active or QueryValidationPhase.Ready)
+                if (phase != QueryValidationPhase.Reset)
                     Reject("Queries", "Query index was reused before its prior result was resolved.", slot.Pool.Label);
                 return QueryValidationPhase.Active;
             case QueryValidationEventType.End:
@@ -1121,7 +1151,7 @@ public sealed partial class ValidationLayer
                     Reject("Queries", "EndQuery has no matching BeginQuery in Queue execution order.", slot.Pool.Label);
                 return QueryValidationPhase.Ready;
             case QueryValidationEventType.Write:
-                if (phase is QueryValidationPhase.Active or QueryValidationPhase.Ready)
+                if (phase != QueryValidationPhase.Reset)
                     Reject("Queries", "Timestamp query index was reused before resolve.", slot.Pool.Label);
                 return QueryValidationPhase.Ready;
             case QueryValidationEventType.Resolve:

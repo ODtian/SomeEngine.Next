@@ -1,7 +1,10 @@
 using System.IO;
 using System.Linq;
+using SlangShaderSharp;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Tests;
 
 namespace SomeEngine.Assets.Tests.Assets;
@@ -9,7 +12,7 @@ namespace SomeEngine.Assets.Tests.Assets;
 public class WaveQueueCompilationTest
 {
     [Fact]
-    public void WaveQueue_CompilesWithTrivialTask()
+    public async Task WaveQueue_CompilesWithTrivialTask()
     {
         // Inline Slang source that includes wave_queue.slang and implements a trivial IWaveTask.
         // Each lane "produces" 1 task that writes lane index to a UAV buffer.
@@ -51,32 +54,30 @@ public class WaveQueueCompilationTest
 
         try
         {
-            var asset = SlangShaderImporter.Import(slangFile, source);
+            using var assetFile = ShaderTestCompilation.Compile(slangFile);
+            Shader asset = await ShaderTestCompilation.CreateAsync(assetFile);
 
-            Assert.NotNull(asset);
-            Assert.NotNull(asset.Variants);
-            Assert.NotEmpty(asset.Variants!);
+            int spirvTarget = asset.RequireSlangTarget(SlangCompileTarget.Spirv);
+            Assert.True(asset.TryGetSlangEntry(
+                spirvTarget,
+                "CSMain",
+                SlangStage.Compute,
+                out EntryPointReflection spirvEntry));
+            Assert.Equal(SlangStage.Compute, spirvEntry.Stage);
+            Assert.True(
+                asset.GetSlangEntryBlob(spirvTarget, spirvEntry) is not null ||
+                !asset.GetSlangEntryBytes(spirvTarget, spirvEntry).IsEmpty);
 
-            // At least SPIR-V should compile. DXIL requires DXC which may not be available.
-            var csSpirv = asset.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == "spirv");
-            Assert.NotNull(csSpirv);
-            Assert.True(csSpirv!.Data.HasValue && csSpirv.Data.Value.Length > 0, "SPIR-V bytecode should be non-empty");
-
-            var csDxil = asset.Variants.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == "dxil");
-            if (csDxil != null)
-            {
-                Assert.True(csDxil.Data.HasValue && csDxil.Data.Value.Length > 0, "DXIL bytecode should be non-empty");
-            }
-            else
-            {
-                Console.WriteLine("WARNING: DXIL variant not produced (DXC not found). SPIR-V OK.");
-            }
-
-            Console.WriteLine($"WaveQueue compilation OK: {asset.Variants.Count} variants");
-            foreach (var v in asset.Variants)
-            {
-                Console.WriteLine($"  {v.Backend} / {v.Stage} / {v.EntryPoint}: {v.Data?.Length ?? 0} bytes");
-            }
+            int dxilTarget = asset.RequireSlangTarget(SlangCompileTarget.Dxil);
+            Assert.True(asset.TryGetSlangEntry(
+                dxilTarget,
+                "CSMain",
+                SlangStage.Compute,
+                out EntryPointReflection dxilEntry));
+            Assert.Equal(SlangStage.Compute, dxilEntry.Stage);
+            Assert.True(
+                asset.GetSlangEntryBlob(dxilTarget, dxilEntry) is not null ||
+                !asset.GetSlangEntryBytes(dxilTarget, dxilEntry).IsEmpty);
         }
         finally
         {

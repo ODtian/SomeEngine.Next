@@ -1,0 +1,233 @@
+using System.Runtime.InteropServices;
+using SomeEngine.Graphics;
+
+namespace SomeEngine.RenderGraph.Tests;
+
+public sealed class RetainedHeapTests
+{
+    [Fact]
+    public void EarlierTransientResourceIsReactivatedAfterItsLaterAliasIsDisabled()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        using Buffer result = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(128, BufferUsages.CopyDestination), MemoryType.Readback);
+        GraphPassId laterRead;
+        GraphPassId earlierRead;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphBufferId later = edit.CreateBuffer(new(64, BufferUsages.CopySource | BufferUsages.CopyDestination));
+            GraphBufferId earlier = edit.CreateBuffer(new(64, BufferUsages.CopySource | BufferUsages.CopyDestination));
+            GraphBufferId destination = edit.RegisterExternalBuffer(result,
+                [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphPassId earlierWrite = Initialize(edit, earlier, 0x11111111);
+            earlierRead = Copy(edit, earlier, destination, 0);
+            GraphPassId laterWrite = Initialize(edit, later, 0x77777777);
+            laterRead = Copy(edit, later, destination, 64);
+            edit.OrderAfter(earlierRead, earlierWrite);
+            edit.OrderAfter(laterWrite, earlierRead);
+            edit.OrderAfter(laterRead, laterWrite);
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int iteration = 0; iteration < 12; iteration++)
+        {
+            using (RenderGraphFrame frame = graph.BeginFrame())
+            {
+                frame.SetPassEnabled(earlierRead, iteration != 1);
+                frame.SetPassEnabled(laterRead, iteration < 6);
+                frame.Execute(completions);
+                support.Wait(completions);
+            }
+            using MappedBuffer mapping = support.Backend.Map(result, MapType.Read, BufferRange.Whole);
+            mapping.Invalidate(mapping.Range);
+            Assert.All(mapping.Bytes[..64].ToArray(), value => Assert.Equal(0x11, value));
+            if (iteration < 6)
+                Assert.All(mapping.Bytes[64..128].ToArray(), value => Assert.Equal(0x77, value));
+        }
+
+        static GraphPassId Initialize(RenderGraphEdit edit, GraphBufferId buffer, uint value) =>
+            edit.AddCopyFramePass("initialize shared bytes", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                (buffer, value), default,
+                static (ref PassDefinition pass, ref (GraphBufferId Buffer, uint Value) data) =>
+                    pass.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy,
+                        ResourceAccess.CopyDestination, WriteCoverage.Complete),
+                static (ref CopyPassCommandScope commands, in (GraphBufferId Buffer, uint Value) data) =>
+                    commands.ClearBuffer(commands.GetBuffer(data.Buffer), BufferRange.Whole, data.Value));
+
+        static GraphPassId Copy(RenderGraphEdit edit, GraphBufferId source, GraphBufferId destination, ulong offset) =>
+            edit.AddCopyFramePass("read shared bytes", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                (source, destination, offset), new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition pass, ref (GraphBufferId Source, GraphBufferId Destination, ulong Offset) data) =>
+                {
+                    pass.Read(data.Source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+                    pass.Write(data.Destination, new(data.Offset, 64), PipelineSync.Copy,
+                        ResourceAccess.CopyDestination, WriteCoverage.Complete);
+                },
+                static (ref CopyPassCommandScope commands, in (GraphBufferId Source, GraphBufferId Destination, ulong Offset) data) =>
+                    commands.CopyBuffer(new(commands.GetBuffer(data.Source), 0, commands.GetBuffer(data.Destination), data.Offset, 64)));
+    }
+
+    [Fact]
+    public void UploadInputsAndReadbackOutputsCoexistAcrossDisjointGpuUses()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        Buffer[] outputs = new Buffer[2];
+        for (uint iteration = 0; iteration < 4; iteration++)
+        {
+            using RenderGraphFrame frame = graph.BeginFrame();
+            GraphPassId previous = default;
+            for (int index = 0; index < 2; index++)
+            {
+                uint value = 0x12345678u + iteration * 2 + (uint)index;
+                GraphBufferSlice source = frame.Upload<uint>(value, BufferUsages.CopySource);
+                GraphBufferId destination = frame.CreateBuffer(new BufferDesc(4, BufferUsages.CopyDestination), MemoryType.Readback);
+                GraphPassId pass = frame.AddCopyPass("copy retained host data", PassQueueSelection.Exact(support.GraphicsQueue),
+                    (Source: source, Destination: destination, Index: index, Outputs: outputs),
+                    new PassOptions(Culling: PassCullingMode.NeverCull),
+                    static (ref PassDefinition definition, ref (GraphBufferSlice Source, GraphBufferId Destination, int Index, Buffer[] Outputs) data) =>
+                    {
+                        definition.Read(data.Source.Buffer, data.Source.Range, PipelineSync.Copy, ResourceAccess.CopySource);
+                        definition.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+                    },
+                    static (ref CopyPassCommandScope commands, in (GraphBufferSlice Source, GraphBufferId Destination, int Index, Buffer[] Outputs) data) =>
+                    {
+                        Buffer destination = commands.GetBuffer(data.Destination);
+                        data.Outputs[data.Index] = destination;
+                        commands.CopyBuffer(new(commands.GetBuffer(data.Source.Buffer), data.Source.Range.Offset, destination, 0, 4));
+                    });
+                if (index != 0) frame.OrderAfter(pass, previous);
+                previous = pass;
+            }
+            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+            int count = frame.Execute(completions);
+            support.Wait(completions.AsSpan(0, count));
+            for (int index = 0; index < outputs.Length; index++)
+            {
+                using MappedBuffer mapped = support.Backend.Map(outputs[index], MapType.Read, BufferRange.Whole);
+                Assert.Equal(0x12345678u + iteration * 2 + (uint)index, MemoryMarshal.Read<uint>(mapped.Bytes));
+            }
+        }
+    }
+
+
+
+    [Fact]
+    public void TransientValuesSurviveOverlappingLifetimesAfterQueueOrderEdits()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue, support.CopyQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        using Buffer readback = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(8, BufferUsages.CopyDestination), MemoryType.Readback);
+        GraphBufferId left, right;
+        GraphPassId leftRead, rightWrite;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphBufferId result = edit.RegisterExternalBuffer(readback,
+                [new BufferBoundaryState(new(0, 8), readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
+            left = edit.CreateTransientBuffer(new BufferDesc(4, BufferUsages.CopySource | BufferUsages.CopyDestination, "first alias"));
+            right = edit.CreateTransientBuffer(new BufferDesc(4, BufferUsages.CopySource | BufferUsages.CopyDestination, "second alias"));
+            edit.AddCopyFramePass("occupy graphics queue", PassQueueSelection.Exact(support.GraphicsQueue), (byte)0,
+                new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedExecutionCost: 1000),
+                static (ref PassDefinition _, ref byte _) => { }, static (ref CopyPassCommandScope _, in byte _) => { });
+            AddClear(edit, support.CopyQueue, left, 0x12345678);
+            leftRead = AddRead(edit, support.GraphicsQueue, left, result, 0, 100);
+            rightWrite = AddClear(edit, support.GraphicsQueue, right, 0x87654321);
+            AddRead(edit, support.GraphicsQueue, right, result, 4, 1);
+            edit.Commit();
+        }
+        Execute(); Execute();
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.OrderAfter(leftRead, rightWrite);
+            edit.Commit();
+        }
+        Execute(); Execute();
+        void Execute()
+        {
+            using RenderGraphFrame frame = graph.BeginFrame();
+            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+            int count = frame.Execute(completions);
+            support.Wait(completions.AsSpan(0, count));
+            using MappedBuffer mapped = support.Backend.Map(readback, MapType.Read, BufferRange.Whole);
+            Assert.Equal(0x12345678u, MemoryMarshal.Read<uint>(mapped.Bytes));
+            Assert.Equal(0x87654321u, MemoryMarshal.Read<uint>(mapped.Bytes[4..]));
+        }
+    }
+
+
+
+    [Fact]
+    public void CrossQueueBufferReadersRemainIndependentAndOrderTheNextWriter()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        Assert.True(support.Device.Capabilities.SupportsConcurrentBufferReads);
+        using var graph = new RenderGraph(support.Backend, support.Device,
+            [support.GraphicsQueue, support.ComputeQueue, support.CopyQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        using Buffer first = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(8, BufferUsages.CopyDestination), MemoryType.Readback);
+        using Buffer second = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(4, BufferUsages.CopyDestination), MemoryType.Readback);
+        GraphPassId firstReader, secondReader, overwrite;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphBufferId firstResult = edit.RegisterExternalBuffer(first,
+                [new(new(0, 8), first.InitialSync, first.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId secondResult = edit.RegisterExternalBuffer(second,
+                [new(new(0, 4), second.InitialSync, second.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId source = edit.CreateBuffer(new BufferDesc(4,
+                BufferUsages.CopySource | BufferUsages.CopyDestination));
+            AddClear(edit, support.CopyQueue, source, 0x12345678);
+            firstReader = AddRead(edit, support.GraphicsQueue, source, firstResult, 0, 1);
+            secondReader = AddRead(edit, support.ComputeQueue, source, secondResult, 0, 1);
+            overwrite = AddClear(edit, support.CopyQueue, source, 0x87654321);
+            edit.OrderAfter(overwrite, firstReader);
+            edit.OrderAfter(overwrite, secondReader);
+            AddRead(edit, support.GraphicsQueue, source, firstResult, 4, 1);
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int iteration = 0; iteration < 4; iteration++)
+        {
+            using RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(Diagnostics: Inspect));
+            int count = frame.Execute(completions);
+            support.Wait(completions.AsSpan(0, count));
+            using MappedBuffer a = support.Backend.Map(first, MapType.Read, BufferRange.Whole);
+            using MappedBuffer b = support.Backend.Map(second, MapType.Read, BufferRange.Whole);
+            Assert.Equal(0x12345678u, MemoryMarshal.Read<uint>(a.Bytes));
+            Assert.Equal(0x12345678u, MemoryMarshal.Read<uint>(b.Bytes));
+            Assert.Equal(0x87654321u, MemoryMarshal.Read<uint>(a.Bytes[4..]));
+        }
+        void Inspect(in RenderGraphDiagnosticsView diagnostics)
+        {
+            foreach (RenderGraphDependencyDiagnostic dependency in diagnostics.Dependencies)
+                Assert.False((dependency.Predecessor == firstReader && dependency.Consumer == secondReader) ||
+                    (dependency.Predecessor == secondReader && dependency.Consumer == firstReader));
+            foreach (RenderGraphBarrierDiagnostic barrier in diagnostics.Barriers)
+                Assert.False(barrier.Kind is RenderGraphBarrierKind.QueueAcquire or RenderGraphBarrierKind.QueueRelease);
+        }
+    }
+
+    private static GraphPassId AddClear(RenderGraphEdit edit, Queue queue, GraphBufferId buffer, uint value) =>
+        edit.AddCopyFramePass("initialize alias", PassQueueSelection.Exact(queue), (Buffer: buffer, Value: value), default,
+            static (ref PassDefinition pass, ref (GraphBufferId Buffer, uint Value) data) =>
+                pass.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
+            static (ref CopyPassCommandScope commands, in (GraphBufferId Buffer, uint Value) data) =>
+                commands.ClearBuffer(commands.GetBuffer(data.Buffer), BufferRange.Whole, data.Value));
+
+    private static GraphPassId AddRead(RenderGraphEdit edit, Queue queue, GraphBufferId source, GraphBufferId destination, ulong offset, uint cost) =>
+        edit.AddCopyFramePass("read alias", PassQueueSelection.Exact(queue), (Source: source, Destination: destination, Offset: offset),
+            new PassOptions(EstimatedExecutionCost: cost),
+            static (ref PassDefinition pass, ref (GraphBufferId Source, GraphBufferId Destination, ulong Offset) data) =>
+            {
+                pass.Read(data.Source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+                pass.Write(data.Destination, new(data.Offset, 4), PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+            },
+            static (ref CopyPassCommandScope commands, in (GraphBufferId Source, GraphBufferId Destination, ulong Offset) data) =>
+                commands.CopyBuffer(new(commands.GetBuffer(data.Source), 0, commands.GetBuffer(data.Destination), data.Offset, 4)));
+}

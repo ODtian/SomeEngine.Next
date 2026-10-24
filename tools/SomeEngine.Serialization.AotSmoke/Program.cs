@@ -1,7 +1,10 @@
+using System.Buffers;
+using System.Collections.Immutable;
 using System.Runtime.InteropServices;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
+using SomeEngine.Serialization.Streaming;
 
 namespace SomeEngine.Tools.SerializationAotSmoke;
 
@@ -20,6 +23,8 @@ internal static class Program
         try
         {
             int serializedLength = RunContractViewSmoke();
+            RunStandardBufferSmoke();
+            RunManagedValuesSmoke();
 
             var catalog = new BinaryContractCatalog();
             global::SomeEngine.GeneratedContracts.Assembly_SomeEngine_Serialization_AotSmoke
@@ -65,11 +70,32 @@ internal static class Program
         }
     }
 
+    private static void RunManagedValuesSmoke()
+    {
+        var writer = new ArrayBufferWriter<byte>();
+        SmokeContract expected = CreateExpected();
+        BinarySerializer.Write(writer, expected);
+        SmokeContract actual = BinarySerializer.Deserialize<SmokeContract>(writer.WrittenSpan);
+        Require(actual.AssetId == expected.AssetId, "Managed encoding lost the root identity.");
+        var points = new List<SmokePoint>();
+        var target = new SmokeContract { Points = points };
+        BinarySerializer.DeserializeInto(writer.WrittenSpan, target);
+        Require(ReferenceEquals(target.Points, points) && points.Count == 2,
+            "Decoding replaced the selected point collection.");
+        var original = new SmokeValues { Name = "first", Bytes = ImmutableArray.Create<byte>(1, 2, 3) };
+        var changed = original with { Name = "second" };
+        Require(original.Name == "first" && original.Bytes == changed.Bytes, "Immutable value sharing changed.");
+        var encoded = new ArrayBufferWriter<byte>();
+        BinarySerializer.Write(encoded, original);
+        SmokeValues decoded = BinarySerializer.Deserialize<SmokeValues>(encoded.WrittenSpan);
+        Require(decoded.Bytes.AsSpan().SequenceEqual(original.Bytes.AsSpan()), "Immutable array encoding changed.");
+    }
+
     private static int RunContractViewSmoke()
     {
         SmokeContract expected = CreateExpected();
         byte[] serialized = GC.AllocateUninitializedArray<byte>(ContractDestinationCapacity);
-        if (!BinaryContractSerializer.TryWrite(serialized, expected, out int serializedLength))
+        if (!BinarySerializer.TryWrite(serialized, expected, out int serializedLength))
         {
             throw new InvalidOperationException(
                 $"The fixed {ContractDestinationCapacity}-byte contract destination is too small; " +
@@ -107,6 +133,32 @@ internal static class Program
         Require(!longView.GetPointsEncoded().IsEmpty,
             "Generated long-lived View collection slice changed.");
         return serializedLength;
+    }
+
+    private static void RunStandardBufferSmoke()
+    {
+        SmokeContract expected = CreateExpected();
+        var output = new ArrayBufferWriter<byte>();
+        BinarySerializer.Write(output, expected);
+        var first = new BytesSegment(output.WrittenMemory[..3]);
+        BytesSegment last = first.Append(output.WrittenMemory[3..]);
+        var sequence = new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
+        SmokeContract decoded = BinarySerializer.Deserialize<SmokeContract>(sequence);
+        Require(decoded.Revision == expected.Revision && decoded.Name == expected.Name,
+            "Standard segmented input changed encoded fields under Native AOT.");
+        Require(decoded.Payload!.Value.Span.SequenceEqual(expected.Payload!.Value.Span),
+            "Standard segmented input changed the payload under Native AOT.");
+    }
+
+    private sealed class BytesSegment : ReadOnlySequenceSegment<byte>
+    {
+        internal BytesSegment(ReadOnlyMemory<byte> memory) => Memory = memory;
+        internal BytesSegment Append(ReadOnlyMemory<byte> memory)
+        {
+            var next = new BytesSegment(memory) { RunningIndex = RunningIndex + Memory.Length };
+            Next = next;
+            return next;
+        }
     }
 
     private static int RunNativeBlockSmoke()
@@ -195,6 +247,23 @@ internal static class Program
                 "Indexed document chunk count changed.");
             Require(rootViewDocument.TotalLength == documentLength,
                 "Indexed document length metadata changed.");
+            await using BinaryDocument<SmokeContract> chunkDocument = await BinaryDocument<SmokeContract>.OpenAsync(
+                FileRangeSource.Open(documentPath), ownsSource: true);
+            using ChunkLease plain = await chunkDocument.AcquireChunkAsync(PlainChunkKey);
+            Require(plain.Memory.Span.SequenceEqual(new byte[] { 4, 8, 15, 16, 23, 42 }),
+                "Uncompressed chunk contents did not round-trip under NativeAOT.");
+            using ChunkLease compressed = await chunkDocument.AcquireChunkAsync(CompressedChunkKey);
+            Require(compressed.Memory.Length == CompressedChunkLength,
+                "Decompressed chunk length did not round-trip under NativeAOT.");
+            for (int index = 0; index < compressed.Memory.Length; index++)
+                Require(compressed.Memory.Span[index] == (byte)(index % 251),
+                    "Decompressed chunk contents did not round-trip under NativeAOT.");
+            byte[]? decodedBytes = null;
+            await chunkDocument.TryReadChunkAsync(CompressedChunkKey, length => decodedBytes = new byte[length]);
+            await chunkDocument.DisposeAsync();
+            Require(decodedBytes is not null && decodedBytes.Length == CompressedChunkLength, "Managed decoded length changed.");
+            for (int index = 0; index < decodedBytes!.Length; index++)
+                Require(decodedBytes[index] == (byte)(index % 251), "Managed decoded bytes changed after document closure.");
             generation = rootViewDocument.Generation;
         }
 
@@ -289,7 +358,7 @@ internal static class Program
     }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 internal sealed partial class SmokeContract
 {
     public int Revision { get; set; }
@@ -300,14 +369,21 @@ internal sealed partial class SmokeContract
     public IList<SmokePoint>? Points { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 internal partial struct SmokePoint
 {
     public float X { get; set; }
     public float Y { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable]
+internal sealed partial record SmokeValues
+{
+    public string Name { get; init; } = "";
+    public ImmutableArray<byte> Bytes { get; init; } = [];
+}
+
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 [BinaryNativeLayout("SomeEngine.NativeVertex.v1")]
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
 internal partial struct NativeVertex

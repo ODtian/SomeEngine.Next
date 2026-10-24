@@ -6,6 +6,7 @@ public sealed record ClusteredLightGridSettings
     public uint TileSize { get; init; } = 16;
     public uint DepthSliceCount { get; init; } = 16;
     public uint MaxLightsPerCell { get; init; } = 64;
+    public int MaxLights { get; init; } = 4_096;
 
     public void Validate()
     {
@@ -15,5 +16,7 @@ public sealed record ClusteredLightGridSettings
             throw new ArgumentOutOfRangeException(nameof(DepthSliceCount));
         if (MaxLightsPerCell is 0 or > 256)
             throw new ArgumentOutOfRangeException(nameof(MaxLightsPerCell));
+        if (MaxLights is <= 0 or > 65_536)
+            throw new ArgumentOutOfRangeException(nameof(MaxLights));
     }
 }

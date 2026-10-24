@@ -10,8 +10,8 @@ namespace SomeEngine.Graphics.Benchmarks;
 
 internal static partial class RhiBenchmarkRunner
 {
-    private static WorkloadRun RunRepresentativeFrame<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static WorkloadRun RunRepresentativeFrame(
+        IGraphicsBackend receiver,
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
@@ -19,7 +19,7 @@ internal static partial class RhiBenchmarkRunner
         string shaderManifest,
         in WorkerConfiguration configuration,
         GraphicsWorkload workload)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
         byte[] materialSequence = RepresentativeFrameProfile.LoadMaterials(configuration.ShaderDirectory);
         PersistentParameterBindings[] materials = CreateRepresentativeMaterials(
@@ -29,10 +29,10 @@ internal static partial class RhiBenchmarkRunner
             layout);
         ValidateRepresentativeInputs(materialSequence, materials);
         CommandContext[] contexts = CreateRepresentativeContexts(backend, device);
-        RhiRepresentativeWorker<TReceiver, TDispatch>[] workers = [];
+        RhiRepresentativeWorker[] workers = [];
         try
         {
-            return RunRepresentativeFrameCore<TReceiver, TDispatch>(
+            return RunRepresentativeFrameCore(
                 receiver,
                 backend,
                 device,
@@ -53,8 +53,8 @@ internal static partial class RhiBenchmarkRunner
         }
     }
 
-    private static WorkloadRun RunRepresentativeFrameCore<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static WorkloadRun RunRepresentativeFrameCore(
+        IGraphicsBackend receiver,
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
@@ -64,15 +64,15 @@ internal static partial class RhiBenchmarkRunner
         byte[] materialSequence,
         PersistentParameterBindings[] materials,
         CommandContext[] contexts,
-        ref RhiRepresentativeWorker<TReceiver, TDispatch>[] workers)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+        ref RhiRepresentativeWorker[] workers)
+
     {
         using Texture target = backend.CreateTexture(
             device,
             new TextureDesc(
                 TextureDimension.Texture2D,
-                FixedGraphicsProtocol.RenderWidth,
-                FixedGraphicsProtocol.RenderHeight,
+                BenchmarkDefaults.RenderWidth,
+                BenchmarkDefaults.RenderHeight,
                 1,
                 1,
                 1,
@@ -97,11 +97,11 @@ internal static partial class RhiBenchmarkRunner
         ];
         Viewport[] viewports =
         [
-            new(0, 0, FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight),
+            new(0, 0, BenchmarkDefaults.RenderWidth, BenchmarkDefaults.RenderHeight),
         ];
         ScissorRect[] scissors =
         [
-            new(0, 0, FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight),
+            new(0, 0, BenchmarkDefaults.RenderWidth, BenchmarkDefaults.RenderHeight),
         ];
         using Buffer objectData = backend.CreateBuffer(
             device,
@@ -111,7 +111,7 @@ internal static partial class RhiBenchmarkRunner
                 "representative frame object data"),
             MemoryType.Upload);
         BufferRange objectRange = new(0, objectData.Info.Size);
-        using MappedBuffer mapping = TDispatch.Map(receiver, objectData, MapType.Write, objectRange);
+        using MappedBuffer mapping = receiver.Map(objectData, MapType.Write, objectRange);
         CommandRecordingDesc recording = new(
             InitialCapturedResourceCapacity: 64,
             Label: workload.ToString());
@@ -126,7 +126,7 @@ internal static partial class RhiBenchmarkRunner
 
         if (workload == GraphicsWorkload.RepresentativeFrameParallel)
         {
-            workers = CreateRhiRepresentativeWorkers<TReceiver, TDispatch>(
+            workers = CreateRhiRepresentativeWorkers(
                 receiver,
                 contexts,
                 pipeline,
@@ -142,7 +142,7 @@ internal static partial class RhiBenchmarkRunner
         var samples = new FrameSample[configuration.MeasuredFrames];
         for (int frame = 0; frame < configuration.WarmupFrames; frame++)
         {
-            _ = ExecuteRepresentativeFrame<TReceiver, TDispatch>(
+            _ = ExecuteRepresentativeFrame(
                 receiver,
                 contexts,
                 workers,
@@ -162,12 +162,12 @@ internal static partial class RhiBenchmarkRunner
         }
         if (measureBreakdown)
         {
-            foreach (RhiRepresentativeWorker<TReceiver, TDispatch> worker in workers)
+            foreach (RhiRepresentativeWorker worker in workers)
                 worker.ClearTiming();
         }
         for (int frame = 0; frame < samples.Length; frame++)
         {
-            samples[frame] = ExecuteRepresentativeFrame<TReceiver, TDispatch>(
+            samples[frame] = ExecuteRepresentativeFrame(
                 receiver,
                 contexts,
                 workers,
@@ -188,7 +188,7 @@ internal static partial class RhiBenchmarkRunner
         if (measureBreakdown)
         {
             var timing = new long[6];
-            foreach (RhiRepresentativeWorker<TReceiver, TDispatch> worker in workers)
+            foreach (RhiRepresentativeWorker worker in workers)
                 worker.AddTimingTo(timing);
             Console.Error.WriteLine(
                 $"RHI_BREAKDOWN begin={BenchmarkClock.TicksToMicroseconds(timing[0])} " +
@@ -311,8 +311,8 @@ internal static partial class RhiBenchmarkRunner
         }
     }
 
-    private static RhiRepresentativeWorker<TReceiver, TDispatch>[] CreateRhiRepresentativeWorkers<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static RhiRepresentativeWorker[] CreateRhiRepresentativeWorkers(
+        IGraphicsBackend receiver,
         CommandContext[] contexts,
         Pipeline pipeline,
         PersistentParameterBindings[] materials,
@@ -322,15 +322,15 @@ internal static partial class RhiBenchmarkRunner
         ScissorRect[] scissors,
         in CommandRecordingDesc recording,
         bool measureBreakdown)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
-        var result = new RhiRepresentativeWorker<TReceiver, TDispatch>[RepresentativeFrameProfile.WorkerCount];
+        var result = new RhiRepresentativeWorker[RepresentativeFrameProfile.WorkerCount];
         try
         {
             for (int worker = 0; worker < result.Length; worker++)
             {
                 (int start, int count) = RepresentativeFrameProfile.GetWorkerRange(worker);
-                result[worker] = new RhiRepresentativeWorker<TReceiver, TDispatch>(
+                result[worker] = new RhiRepresentativeWorker(
                     receiver,
                     contexts[3 + worker],
                     contexts[6 + worker],
@@ -355,10 +355,10 @@ internal static partial class RhiBenchmarkRunner
         }
     }
 
-    private static FrameSample ExecuteRepresentativeFrame<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static FrameSample ExecuteRepresentativeFrame(
+        IGraphicsBackend receiver,
         CommandContext[] contexts,
-        RhiRepresentativeWorker<TReceiver, TDispatch>[] workers,
+        RhiRepresentativeWorker[] workers,
         Pipeline pipeline,
         PersistentParameterBindings[] materials,
         byte[] materialSequence,
@@ -372,7 +372,7 @@ internal static partial class RhiBenchmarkRunner
         in CommandRecordingDesc recording,
         bool parallel,
         int frameIndex)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
 #if !SOMEENGINE_DISABLE_REPRESENTATIVE_ALLOCATION_MEASUREMENT
         long beforeBytes = GC.GetAllocatedBytesForCurrentThread();
@@ -385,7 +385,7 @@ internal static partial class RhiBenchmarkRunner
         try
         {
             RepresentativeFrameProfile.WriteObjectPacketsUnchecked(objectBytes, frameIndex);
-            commands[0] = RecordRepresentativeMainList<TReceiver, TDispatch>(
+            commands[0] = RecordRepresentativeMainList(
                 receiver,
                 contexts[0],
                 clearAttachments,
@@ -396,7 +396,7 @@ internal static partial class RhiBenchmarkRunner
 
             if (parallel)
             {
-                foreach (RhiRepresentativeWorker<TReceiver, TDispatch> worker in workers)
+                foreach (RhiRepresentativeWorker worker in workers)
                     worker.StartShadow();
                 for (int worker = 0; worker < workers.Length; worker++)
                 {
@@ -409,7 +409,7 @@ internal static partial class RhiBenchmarkRunner
                 for (int worker = 0; worker < RepresentativeFrameProfile.WorkerCount; worker++)
                 {
                     (int start, int count) = RepresentativeFrameProfile.GetWorkerRange(worker);
-                    commands[3 + worker] = RecordRepresentativePass<TReceiver, TDispatch>(
+                    commands[3 + worker] = RecordRepresentativePass(
                         receiver,
                         contexts[3 + worker],
                         pipeline,
@@ -425,7 +425,7 @@ internal static partial class RhiBenchmarkRunner
                 }
             }
 
-            commands[1] = RecordRepresentativeMainList<TReceiver, TDispatch>(
+            commands[1] = RecordRepresentativeMainList(
                 receiver,
                 contexts[1],
                 clearAttachments,
@@ -436,7 +436,7 @@ internal static partial class RhiBenchmarkRunner
 
             if (parallel)
             {
-                foreach (RhiRepresentativeWorker<TReceiver, TDispatch> worker in workers)
+                foreach (RhiRepresentativeWorker worker in workers)
                     worker.StartScene();
                 for (int worker = 0; worker < workers.Length; worker++)
                 {
@@ -449,7 +449,7 @@ internal static partial class RhiBenchmarkRunner
                 for (int worker = 0; worker < RepresentativeFrameProfile.WorkerCount; worker++)
                 {
                     (int start, int count) = RepresentativeFrameProfile.GetWorkerRange(worker);
-                    commands[6 + worker] = RecordRepresentativePass<TReceiver, TDispatch>(
+                    commands[6 + worker] = RecordRepresentativePass(
                         receiver,
                         contexts[6 + worker],
                         pipeline,
@@ -465,7 +465,7 @@ internal static partial class RhiBenchmarkRunner
                 }
             }
 
-            commands[2] = RecordRepresentativeMainList<TReceiver, TDispatch>(
+            commands[2] = RecordRepresentativeMainList(
                 receiver,
                 contexts[2],
                 clearAttachments,
@@ -507,51 +507,51 @@ internal static partial class RhiBenchmarkRunner
     }
 
     [SkipLocalsInit]
-    private static RecordedCommands RecordRepresentativeMainList<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static RecordedCommands RecordRepresentativeMainList(
+        IGraphicsBackend receiver,
         CommandContext context,
         ColorAttachmentDesc[] attachments,
         in MemoryBarrier barrier,
         in CommandRecordingDesc recording,
         int barrierCount,
         bool clear)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
-        TDispatch.Begin(receiver, context, recording);
+        receiver.Begin(context, recording);
         bool rendering = false;
         try
         {
 #if !REPRESENTATIVE_LIFECYCLE_ONLY && !REPRESENTATIVE_STATE_ONLY
             for (int index = 0; index < barrierCount; index++)
-                TDispatch.Barrier(receiver, context, barrier);
+                receiver.Barrier(context, barrier);
             if (clear)
             {
                 RenderingDesc renderingDesc = new(
                     attachments,
                     null,
-                    FixedGraphicsProtocol.RenderWidth,
-                    FixedGraphicsProtocol.RenderHeight);
-                TDispatch.BeginRendering(receiver, context, renderingDesc);
+                    BenchmarkDefaults.RenderWidth,
+                    BenchmarkDefaults.RenderHeight);
+                receiver.BeginRendering(context, renderingDesc);
                 rendering = true;
-                TDispatch.EndRendering(receiver, context);
+                receiver.EndRendering(context);
                 rendering = false;
             }
 #endif
-            RecordedCommands result = TDispatch.End(receiver, context);
+            RecordedCommands result = receiver.End(context);
             return result;
         }
         catch
         {
             if (rendering)
-                TDispatch.EndRendering(receiver, context);
-            TDispatch.Discard(receiver, context);
+                receiver.EndRendering(context);
+            receiver.Discard(context);
             throw;
         }
     }
 
     [SkipLocalsInit]
-    private static RecordedCommands RecordRepresentativePass<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static RecordedCommands RecordRepresentativePass(
+        IGraphicsBackend receiver,
         CommandContext context,
         Pipeline pipeline,
         PersistentParameterBindings[] materials,
@@ -564,10 +564,10 @@ internal static partial class RhiBenchmarkRunner
         int count,
         bool scene,
         long[]? timing = null)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
         long phaseStarted = timing is null ? 0 : Stopwatch.GetTimestamp();
-        TDispatch.Begin(receiver, context, recording);
+        receiver.Begin(context, recording);
         if (timing is not null)
             timing[0] += Stopwatch.GetTimestamp() - phaseStarted;
         bool rendering = false;
@@ -575,12 +575,12 @@ internal static partial class RhiBenchmarkRunner
         {
 #if !REPRESENTATIVE_LIFECYCLE_ONLY
             phaseStarted = timing is null ? 0 : Stopwatch.GetTimestamp();
-            TDispatch.SetPipeline(receiver, context, pipeline);
-            TDispatch.SetViewports(receiver, context, viewports);
-            TDispatch.SetScissors(receiver, context, scissors);
+            receiver.SetPipeline(context, pipeline);
+            receiver.SetViewports(context, viewports);
+            receiver.SetScissors(context, scissors);
 #if !REPRESENTATIVE_PER_DRAW_BINDINGS
             if (!scene)
-                TDispatch.SetPersistentBindings(receiver, context, materials[0]);
+                receiver.SetPersistentParameterBindings(context, materials[0]);
 #endif
             if (timing is not null)
                 timing[1] += Stopwatch.GetTimestamp() - phaseStarted;
@@ -588,10 +588,10 @@ internal static partial class RhiBenchmarkRunner
             RenderingDesc renderingDesc = new(
                 attachments,
                 null,
-                FixedGraphicsProtocol.RenderWidth,
-                FixedGraphicsProtocol.RenderHeight);
+                BenchmarkDefaults.RenderWidth,
+                BenchmarkDefaults.RenderHeight);
             phaseStarted = timing is null ? 0 : Stopwatch.GetTimestamp();
-            TDispatch.BeginRendering(receiver, context, renderingDesc);
+            receiver.BeginRendering(context, renderingDesc);
             if (timing is not null)
                 timing[2] += Stopwatch.GetTimestamp() - phaseStarted;
             rendering = true;
@@ -613,9 +613,9 @@ internal static partial class RhiBenchmarkRunner
                 for (int index = start; index < end; index++)
                 {
 #if REPRESENTATIVE_PER_DRAW_BINDINGS
-                    TDispatch.SetPersistentBindings(receiver, context, materials[0]);
+                    receiver.SetPersistentParameterBindings(context, materials[0]);
 #endif
-                    TDispatch.Draw(receiver, context, draw);
+                    receiver.Draw(context, draw);
                 }
 #endif
             }
@@ -632,22 +632,18 @@ internal static partial class RhiBenchmarkRunner
                     int material = Unsafe.Add(ref firstMaterial, index);
 #endif
 #if REPRESENTATIVE_PER_DRAW_BINDINGS
-                    TDispatch.SetPersistentBindings(
-                        receiver,
-                        context,
+                    receiver.SetPersistentParameterBindings(context,
                         Unsafe.Add(ref firstBinding, material));
 #else
                     if (material != currentMaterial)
                     {
-                        TDispatch.SetPersistentBindings(
-                            receiver,
-                            context,
+                        receiver.SetPersistentParameterBindings(context,
                             Unsafe.Add(ref firstBinding, material));
                         currentMaterial = material;
                     }
 #endif
 #if !REPRESENTATIVE_BINDINGS_ONLY
-                    TDispatch.Draw(receiver, context, draw);
+                    receiver.Draw(context, draw);
 #endif
                 }
             }
@@ -655,14 +651,14 @@ internal static partial class RhiBenchmarkRunner
                 timing[3] += Stopwatch.GetTimestamp() - phaseStarted;
 #if !REPRESENTATIVE_STATE_ONLY
             phaseStarted = timing is null ? 0 : Stopwatch.GetTimestamp();
-            TDispatch.EndRendering(receiver, context);
+            receiver.EndRendering(context);
             if (timing is not null)
                 timing[4] += Stopwatch.GetTimestamp() - phaseStarted;
             rendering = false;
 #endif
 #endif
             phaseStarted = timing is null ? 0 : Stopwatch.GetTimestamp();
-            RecordedCommands result = TDispatch.End(receiver, context);
+            RecordedCommands result = receiver.End(context);
             if (timing is not null)
                 timing[5] += Stopwatch.GetTimestamp() - phaseStarted;
             return result;
@@ -670,8 +666,8 @@ internal static partial class RhiBenchmarkRunner
         catch
         {
             if (rendering)
-                TDispatch.EndRendering(receiver, context);
-            TDispatch.Discard(receiver, context);
+                receiver.EndRendering(context);
+            receiver.Discard(context);
             throw;
         }
     }
@@ -685,12 +681,12 @@ internal static partial class RhiBenchmarkRunner
         }
     }
 
-    private static long SumWorkerAllocations<TReceiver, TDispatch>(
-        RhiRepresentativeWorker<TReceiver, TDispatch>[] workers)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+    private static long SumWorkerAllocations(
+        RhiRepresentativeWorker[] workers)
+
     {
         long result = 0;
-        foreach (RhiRepresentativeWorker<TReceiver, TDispatch> worker in workers)
+        foreach (RhiRepresentativeWorker worker in workers)
             result = checked(result + worker.TakeAllocatedBytes());
         return result;
     }
@@ -702,10 +698,10 @@ internal static partial class RhiBenchmarkRunner
             values[index]?.Dispose();
     }
 
-    private sealed class RhiRepresentativeWorker<TReceiver, TDispatch> : IDisposable
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+    private sealed class RhiRepresentativeWorker : IDisposable
+
     {
-        private readonly TReceiver _receiver;
+        private readonly IGraphicsBackend _receiver;
         private readonly CommandContext _shadowContext;
         private readonly CommandContext _sceneContext;
         private readonly Pipeline _pipeline;
@@ -731,7 +727,7 @@ internal static partial class RhiBenchmarkRunner
         private bool _stop;
 
         internal RhiRepresentativeWorker(
-            TReceiver receiver,
+            IGraphicsBackend receiver,
             CommandContext shadowContext,
             CommandContext sceneContext,
             Pipeline pipeline,
@@ -851,7 +847,7 @@ internal static partial class RhiBenchmarkRunner
 #if !SOMEENGINE_DISABLE_REPRESENTATIVE_ALLOCATION_MEASUREMENT
                 long before = GC.GetAllocatedBytesForCurrentThread();
 #endif
-                commands = RecordRepresentativePass<TReceiver, TDispatch>(
+                commands = RecordRepresentativePass(
                     _receiver,
                     context,
                     _pipeline,

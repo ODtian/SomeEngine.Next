@@ -39,10 +39,6 @@
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="../../external/SlangShaderSharp/runtimes/win-x64/native/slang-compiler.dll"
-             Link="slang-compiler.dll"
-             CopyToOutputDirectory="PreserveNewest"
-             CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../external/dxc/bin/x64/dxcompiler.dll"
              Link="dxcompiler.dll"
              CopyToOutputDirectory="PreserveNewest"

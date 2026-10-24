@@ -15,6 +15,10 @@ namespace SomeEngine.ECS.Owners;
 /// </summary>
 internal sealed partial class Hierarchy
 {
+    private readonly WorldStructureRoot _structure;
+
+    internal Hierarchy(WorldStructureRoot structure) => _structure = structure;
+
     // GetChildren is a relaxed inverse read and deliberately does not acquire topology
     // admission. Domain discovery must therefore remain safe while a topology writer registers
     // another domain, but the read path must never create a domain as a side effect.
@@ -24,10 +28,10 @@ internal sealed partial class Hierarchy
     private readonly object _registrationLock = new();
     private readonly HashSet<Entity> _destroyingEntities = new();
     private HashSet<Entity>? _terminalDestroyEntities;
-    private Entities _entities = null!;
-    private Tables _tables = null!;
-    private Components _components = null!;
-    private Clock _clock = null!;
+    private Entities _entities => _structure.Entities;
+    private Tables _tables => _structure.Tables;
+    private Components _components => _structure.Components;
+    private Clock _clock => _structure.Clock;
 
     private int _editDepth;
 
@@ -38,7 +42,7 @@ internal sealed partial class Hierarchy
     /// generation. Each wrapper detaches its mutable registries, maintenance state and physical
     /// shards immediately before the first write; published child arrays remain immutable.
     /// </summary>
-    internal Hierarchy CloneDetached()
+    internal Hierarchy CloneDetached(WorldStructureRoot structure)
     {
         if (_editDepth != 0 ||
             _destroyingEntities.Count != 0 ||
@@ -48,24 +52,12 @@ internal sealed partial class Hierarchy
                 "Cannot clone hierarchy state while an edit or terminal destroy is active.");
         }
 
-        var clone = new Hierarchy();
-        clone.Bind(_entities, _tables, _components, _clock);
+        var clone = new Hierarchy(structure);
         foreach (IHierarchyDomainStore store in _domains.Values)
             clone.Register(store.CloneDetached(clone));
         return clone;
     }
 
-    internal void Bind(
-        Entities entities,
-        Tables tables,
-        Components components,
-        Clock clock)
-    {
-        _entities = entities;
-        _tables = tables;
-        _components = components;
-        _clock = clock;
-    }
 
     internal bool IsEditing => _editDepth != 0;
 
@@ -345,7 +337,6 @@ internal sealed partial class HierarchyDomainStore<TDomain> : IHierarchyDomainSt
     private ulong _generation = 1;
     private long _deferredSequence;
     private long _inverseRevision = NextInverseRevision();
-    private long _canonicalParentFullScanCount;
     private long _dirtyParentIndexRebuildEntityVisits;
     private long _dirtyParentLookupCount;
     private long _dirtyParentLookupEntityVisits;
@@ -387,7 +378,6 @@ internal sealed partial class HierarchyDomainStore<TDomain> : IHierarchyDomainSt
         _generation = source._generation;
         _deferredSequence = source._deferredSequence;
         _inverseRevision = source._inverseRevision;
-        _canonicalParentFullScanCount = source._canonicalParentFullScanCount;
         _dirtyParentIndexRebuildEntityVisits = source._dirtyParentIndexRebuildEntityVisits;
         _dirtyParentLookupCount = source._dirtyParentLookupCount;
         _dirtyParentLookupEntityVisits = source._dirtyParentLookupEntityVisits;
@@ -419,7 +409,6 @@ internal sealed partial class HierarchyDomainStore<TDomain> : IHierarchyDomainSt
     /// Monotonic count of intentional complete Parent-column passes. The historical property
     /// name is retained for diagnostics compatibility; it does not count all-live-entity scans.
     /// </summary>
-    internal long CanonicalParentFullScanCount => _canonicalParentFullScanCount;
 
     internal long DirtyParentIndexRebuildEntityVisits =>
         _dirtyParentIndexRebuildEntityVisits;
@@ -1926,7 +1915,6 @@ internal sealed partial class HierarchyDomainStore<TDomain> : IHierarchyDomainSt
 
     private IEnumerable<(Entity Child, Entity Parent)> EnumerateCanonicalParents()
     {
-        _canonicalParentFullScanCount++;
         int componentId = ParentComponentId;
         for (int archetypeIndex = 0; archetypeIndex < _owner.ArchetypeCount; archetypeIndex++)
         {

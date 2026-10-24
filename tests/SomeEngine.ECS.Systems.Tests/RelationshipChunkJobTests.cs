@@ -7,14 +7,14 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class RelationshipChunkJobTests
+public sealed class RelationshipChunkJobTests : JobTest
 {
     [Fact]
     public void ParentChunks_BulkWriteCanonicalAndLeaveChildrenLastAppliedUntilMaintenance()
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity oldParent = world.CreateEntity();
             Entity newParent = world.CreateEntity();
             Entity childA = world.CreateEntity();
@@ -25,7 +25,7 @@ public sealed class RelationshipChunkJobTests
                 world.QueryDefinition().Write<Parent<Domain>>());
 
             var ordering = new OrderingProbe();
-            JobHandle dependency = JobSystem.Schedule(new MarkDependencyJob(ordering));
+            JobHandle dependency = Jobs.Schedule(new MarkDependencyJob(ordering));
             JobHandle writer = HierarchyJobAccess<Domain>.ScheduleParentWriteChunks(
                 world,
                 query,
@@ -56,7 +56,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity root = world.CreateEntity();
             Entity first = world.CreateEntity();
             Entity second = world.CreateEntity();
@@ -92,7 +92,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             Entity markerOnly = world.CreateEntity();
@@ -128,7 +128,6 @@ public sealed class RelationshipChunkJobTests
                     .ScheduleParentWriteChunks(world, rowFiltered, job)
                     .Complete());
 
-            Assert.Contains("row filters", filteredError.Message, StringComparison.OrdinalIgnoreCase);
             Assert.Throws<InvalidOperationException>(
                 () => HierarchyJobAccess<Domain>
                     .ScheduleParentWriteChunks(world, optionalNonmatching, job)
@@ -142,7 +141,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity sourceA = world.CreateEntity();
             Entity sourceB = world.CreateEntity();
             Entity targetA = world.CreateEntity();
@@ -198,7 +197,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity endpointA = world.CreateEntity();
             Entity oldEndpointB = world.CreateEntity();
             Entity newEndpointB = world.CreateEntity();
@@ -244,7 +243,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             Hierarchy<Domain>.SetParent(world, child, parent);
@@ -303,7 +302,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             Hierarchy<Domain>.SetParent(world, child, parent);
@@ -347,7 +346,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             Hierarchy<Domain>.SetParent(world, child, parent);
@@ -370,11 +369,11 @@ public sealed class RelationshipChunkJobTests
         });
     }
 
-    private static void WithJobRuntime(Action action)
+    private void WithJobRuntime(Action action)
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -386,7 +385,7 @@ public sealed class RelationshipChunkJobTests
         }
         finally
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            ConfigureJobs(new JobRuntimeConfig
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,

@@ -1,8 +1,13 @@
 #ifndef MATERIAL_INTERFACES_SLANG
 #define MATERIAL_INTERFACES_SLANG
 
-#include "material_vertex_interfaces.slang"
-#include "triangle_surface.slang"
+#include "domain_interfaces.slang"
+#include "visibility_evaluate.slang"
+
+[__AttributeUsage(_AttributeTargets.Struct)]
+struct MaterialScalarsAttribute
+{
+};
 
 [__AttributeUsage(_AttributeTargets.Var)]
 struct InstancePropertyAttribute
@@ -11,39 +16,44 @@ struct InstancePropertyAttribute
     string accessor;
 };
 
-interface ISurfaceEvaluate<TVE : IMaterialVertex>
+struct SurfacePixelInput
+{
+    uint3 PixelCoord;
+    uint InstanceID;
+    uint MaterialIndex;
+    float3 CameraPosition;
+    // World-space position differences for one screen pixel along each axis.
+    float3 PositionDx;
+    float3 PositionDy;
+};
+
+interface ISurfaceEvaluate<TSurface, TTriangle>
 {
     void evaluateSurface(
-        uniform TVE eval,
-        uint2 pixelCoord,
-        uint instanceID,
-        SurfaceEval surface,
+        SurfacePixelInput input,
+        TSurface surface,
         float3 bary,
-        TVE.DeformedVertex v0,
-        TVE.DeformedVertex v1,
-        TVE.DeformedVertex v2,
-        RWTexture2D<float4> outputColor);
+        TTriangle triangle,
+        RWTexture2DArray<float4> outputColor);
 
     void evaluateDebug(
-        uniform TVE eval,
         uint debugMode,
-        uint2 pixelCoord,
-        uint instanceID,
-        SurfaceEval surface,
+        SurfacePixelInput input,
+        TSurface surface,
         float3 bary,
-        TVE.DeformedVertex v0,
-        TVE.DeformedVertex v1,
-        TVE.DeformedVertex v2,
-        RWTexture2D<float4> outputColor);
+        TTriangle triangle,
+        RWTexture2DArray<float4> outputColor);
 };
 
 static const uint MATERIAL_SCALAR_HEADER_BYTES = 16;
 
 ByteAddressBuffer MaterialScalarRegion;
+StructuredBuffer<uint> MaterialScalarOffsets;
 
-T LoadMaterialScalars<T>()
+T LoadMaterialScalars<T>(uint materialSlot)
 {
-    return MaterialScalarRegion.Load<T>(MATERIAL_SCALAR_HEADER_BYTES);
+    return MaterialScalarRegion.Load<T>(
+        MaterialScalarOffsets[materialSlot] + MATERIAL_SCALAR_HEADER_BYTES);
 }
 
 #endif

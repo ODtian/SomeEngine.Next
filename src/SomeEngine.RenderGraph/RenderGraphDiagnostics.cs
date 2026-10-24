@@ -12,7 +12,9 @@ public readonly ref struct RenderGraphDiagnosticsView
         ReadOnlySpan<RenderGraphAccessDiagnostic> accesses,
         ReadOnlySpan<RenderGraphDependencyDiagnostic> dependencies,
         ReadOnlySpan<RenderGraphBarrierDiagnostic> barriers,
-        in RenderGraphStatistics statistics)
+        in RenderGraphStatistics statistics,
+        ReadOnlySpan<RenderGraphQueryPoolDiagnostic> queryPools,
+        ReadOnlySpan<RenderGraphShaderTableDiagnostic> shaderTables)
     {
         StructureVersion = structureVersion;
         Passes = passes;
@@ -22,8 +24,12 @@ public readonly ref struct RenderGraphDiagnosticsView
         Dependencies = dependencies;
         Barriers = barriers;
         Statistics = statistics;
+        QueryPools = queryPools;
+        ShaderTables = shaderTables;
     }
 
+    public ReadOnlySpan<RenderGraphQueryPoolDiagnostic> QueryPools { get; }
+    public ReadOnlySpan<RenderGraphShaderTableDiagnostic> ShaderTables { get; }
     public ulong StructureVersion { get; }
     public ReadOnlySpan<RenderGraphPassDiagnostic> Passes { get; }
     public ReadOnlySpan<RenderGraphBufferDiagnostic> Buffers { get; }
@@ -40,7 +46,7 @@ public readonly record struct RenderGraphPassDiagnostic(
     GraphPassKind Kind,
     bool Enabled,
     bool Live,
-    int DeclarationOrdinal,
+    long DeclarationOrdinal,
     int ScheduledOrdinal,
     Queue? Queue);
 
@@ -68,6 +74,9 @@ public readonly record struct RenderGraphTextureDiagnostic(
     int FirstScheduledUse,
     int LastScheduledUse);
 
+public readonly record struct RenderGraphQueryPoolDiagnostic(GraphQueryPoolId Id, string? Label, uint Count, QueryType Type);
+public readonly record struct RenderGraphShaderTableDiagnostic(GraphRayTracingShaderTableId Id, string? Label);
+
 public readonly record struct RenderGraphAccessDiagnostic(
     GraphPassId Pass,
     GraphAccessTargetKind TargetKind,
@@ -79,7 +88,9 @@ public readonly record struct RenderGraphAccessDiagnostic(
     BufferRange BufferRange,
     TextureSubresourceRange TextureRange,
     TextureLayout TextureLayout,
-    ResourceContentState? ResultContents);
+    ResourceContentState? ResultContents,
+    BufferContentScope BufferContentScope,
+    QueryRange QueryRange = default);
 
 public enum RenderGraphDependencyKind : byte
 {
@@ -107,6 +118,20 @@ public readonly record struct RenderGraphBarrierDiagnostic(
     RenderGraphBarrierKind Kind,
     BarrierPhase Phase);
 
+/// <summary>Counts and memory usage for the execution being diagnosed.</summary>
+/// <param name="DeclaredPassCount">Number of declared passes.</param>
+/// <param name="LivePassCount">Number of passes retained by value analysis.</param>
+/// <param name="ScheduledPassCount">Number of scheduled passes.</param>
+/// <param name="BufferCount">Number of buffer declarations.</param>
+/// <param name="TextureCount">Number of texture declarations.</param>
+/// <param name="AccessCount">Number of resource accesses.</param>
+/// <param name="DependencyCount">Number of pass dependencies.</param>
+/// <param name="BarrierCount">Number of diagnostic barrier entries.</param>
+/// <param name="QueueCount">Number of queues used by this execution.</param>
+/// <param name="TransientResourceBytes">Sum of the live transient resource allocation requirements, before aliasing.</param>
+/// <param name="TransientOccupiedBytes">Bytes occupied by distinct transient regions in this execution's retained heaps.</param>
+/// <param name="TransientHeapBytes">Actual capacity of this execution's retained transient heaps, including unused space.</param>
+/// <param name="GraphHeapBytes">Actual heap capacity charged to the graph, including persistent resources and every frame in flight.</param>
 public readonly record struct RenderGraphStatistics(
     int DeclaredPassCount,
     int LivePassCount,
@@ -117,6 +142,12 @@ public readonly record struct RenderGraphStatistics(
     int DependencyCount,
     int BarrierCount,
     int QueueCount,
-    ulong LogicalTransientBytes,
-    ulong PhysicalTransientBytes);
+    ulong TransientResourceBytes,
+    ulong TransientOccupiedBytes,
+    ulong TransientHeapBytes,
+    ulong GraphHeapBytes)
+{
+    public bool AnalysisReused { get; init; }
+    public ulong TransientUnusedBytes => TransientHeapBytes - TransientOccupiedBytes;
+}
 

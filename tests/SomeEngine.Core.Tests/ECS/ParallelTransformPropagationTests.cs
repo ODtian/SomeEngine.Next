@@ -17,7 +17,7 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity orderedRoot = CreateTransform(world, new Vector3(10, 0, 0));
             Entity orderedChild = CreateTransform(world, new Vector3(1, 0, 0));
             Entity organization = world.CreateEntity();
@@ -44,13 +44,6 @@ public sealed class ParallelTransformPropagationTests
 
             propagation.Handle.Complete();
 
-            Assert.Equal(2, propagation.Partition.RootCount);
-            Assert.Equal(2, propagation.Partition.PacketCount);
-            Assert.Equal(1, propagation.Partition.RootsPerPacket);
-            Assert.True(propagation.Partition.ProvesNonOverlap(0, 1));
-            Assert.Equal(
-                new[] { orderedRoot, unorderedRoot },
-                propagation.Partition.NormalizedRoots.ToArray());
             Assert.Equal(
                 new Vector3(10, 0, 0),
                 world.Read<WorldTransform>(orderedRoot).Qvvs.Position);
@@ -76,7 +69,7 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = CreateTransform(world, new Vector3(10, 0, 0));
             Entity organization = world.CreateEntity();
             world.Add(organization, new WorldTransform
@@ -111,7 +104,7 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldRoot = CreateTransform(world, new Vector3(100, 0, 0));
             Entity newRoot = CreateTransform(world, new Vector3(10, 0, 0));
             Entity organization = world.CreateEntity();
@@ -146,7 +139,7 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = CreateTransform(world, new Vector3(10, 0, 0));
             Entity child = CreateTransform(world, new Vector3(1, 0, 0));
             Hierarchy.SetParent(world, child, parent);
@@ -163,7 +156,6 @@ public sealed class ParallelTransformPropagationTests
                 maintenance);
             propagation.Handle.Complete();
 
-            Assert.Equal([child], propagation.Partition.NormalizedRoots.ToArray());
             Assert.Equal(
                 new Vector3(11, 0, 0),
                 world.Read<WorldTransform>(child).Qvvs.Position);

@@ -51,6 +51,19 @@ public interface IRenderInstanceBatchComposer<TGroupKey>
         ReadOnlyQueryPacket packet,
         uint lastSystemVersion);
 
+    /// <summary>Collects update data before any batch is bound or written.</summary>
+    /// <remarks>Packets may be collected concurrently; shared update data must support concurrent writes.</remarks>
+    RenderInstanceChanges CollectChanges(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
+        GetChanges(packet, lastSystemVersion);
+
+    /// <summary>
+    /// Returns true when every row in this packet must be rewritten. Implementations may use a
+    /// cheap dense-change test; returning false preserves the row-range fallback.
+    /// </summary>
+    bool AllRowsChanged(
+        ReadOnlyQueryPacket packet,
+        uint lastSystemVersion) => false;
+
     /// <summary>Returns how many exact-layout groups one RenderWorld entity contributes to.</summary>
     int CountGroups(ReadOnlyQueryPacket packet, int entityRow);
 
@@ -63,8 +76,15 @@ public interface IRenderInstanceBatchComposer<TGroupKey>
     /// <summary>Resolves the exact property layout for one concrete group.</summary>
     RenderInstancePropertyLayout GetLayout(in TGroupKey group);
 
+    /// <summary>Columns whose bindings and every row will be replaced during this update.</summary>
+    RenderInstancePropertyLayout? GetReplacedProperties(in TGroupKey group, bool writeAll) => null;
+
     /// <summary>Binds shared/per-instance metadata once for one allocated group.</summary>
     void Bind(in TGroupKey group, RenderInstanceWriteSlice destination);
+
+    /// <summary>Binds columns for an existing batch; a forced rewrite must initialize every column.</summary>
+    void BindUpdate(in TGroupKey group, RenderInstanceWriteSlice destination, bool writeAll) =>
+        Bind(in group, destination);
 
     /// <summary>
     /// Writes one entity contribution into a one-row destination. The group index is local to the
@@ -329,7 +349,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 }
                 else if (current.GroupCount != 0)
                 {
-                    _owner.Rewrite(_context, ref packets, current, in _composer);
+                    _owner.Rewrite(_context, ref packets, current, in _composer,
+                        _forcedChanges != RenderInstanceChanges.None);
                 }
                 Changed = true;
             }
@@ -529,15 +550,6 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         int entityCount = packets.RowCount;
-        if (entityCount == 0)
-        {
-            RenderInstanceBatches<TGroupKey>? previous = Current;
-            Current = new RenderInstanceBatches<TGroupKey>(0, [], [0], []);
-            if (previous is not null)
-                Retire(context, previous);
-            return;
-        }
-
         TGroupKey key = default!;
         RenderInstancePropertyLayout layout = composer.GetLayout(in key)
             ?? throw new InvalidOperationException(
@@ -557,7 +569,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 composer,
                 [],
                 [],
-                destinations);
+                destinations,
+                true);
             if (packets.RowCount <= InlinePacketRowLimit)
             {
                 _ = packets.ExecuteInline(in fill);
@@ -763,7 +776,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         RenderPrepareSystemContext context,
         ref ReadOnlyQueryPacketPlan packets,
         RenderInstanceBatches<TGroupKey> current,
-        in TComposer composer)
+        in TComposer composer,
+        bool writeAll)
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         int groupCount = current.GroupCount;
@@ -777,21 +791,23 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
             for (int group = 0; group < groupCount; group++)
             {
                 RenderInstanceBatchGroup<TGroupKey> currentGroup = groups[group];
+                TGroupKey key = currentGroup.Key;
                 RenderInstanceWriteHandle handle = context.RewriteBatch(
                     currentGroup.Batch,
-                    currentGroup.Layout);
+                    currentGroup.Layout,
+                    composer.GetReplacedProperties(in key, writeAll));
                 handles[group] = handle;
                 RenderInstanceWriteSlice destination = handle.OpenWrite(currentGroup.Layout);
                 destinations[group] = destination;
-                TGroupKey key = currentGroup.Key;
-                composer.Bind(in key, destination);
+                composer.BindUpdate(in key, destination, writeAll);
             }
 
             var fillJob = new RewriteCurrentJob<TComposer>(
                 composer,
                 current.EntityOffsets,
                 current.Addresses,
-                destinations);
+                destinations,
+                writeAll);
             if (packets.RowCount <= InlinePacketRowLimit)
                 _ = packets.ExecuteInline(in fillJob);
             else
@@ -815,13 +831,23 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         {
             Current = null;
             List<Exception>? failures = null;
+            for (int group = 0; group < groupCount; group++)
+            {
+                RenderInstanceWriteHandle? handle = handles[group];
+                handles[group] = null;
+                try { handle?.Dispose(); }
+                catch (Exception cleanupFailure)
+                {
+                    (failures ??= [failure]).Add(cleanupFailure);
+                }
+            }
             try
             {
                 Retire(context, current);
             }
             catch (Exception cleanupFailure)
             {
-                failures = [failure, cleanupFailure];
+                (failures ??= [failure]).Add(cleanupFailure);
             }
             if (failures is not null)
                 throw new AggregateException(
@@ -883,7 +909,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
             in ReadOnlyQueryPacketContext context,
             ReadOnlyQueryPacket packet)
         {
-            RenderInstanceChanges changes = composer.GetChanges(
+            RenderInstanceChanges changes = composer.CollectChanges(
                 packet,
                 context.LastSystemVersion);
             if ((changes & ~KnownChanges) != 0)
@@ -1044,7 +1070,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         TComposer composer,
         int[] entityOffsets,
         RenderInstanceBatchAddress<TGroupKey>[] addresses,
-        RenderInstanceWriteSlice[] destinations) : IReadOnlyQueryPacketJob
+        RenderInstanceWriteSlice[] destinations,
+        bool writeAll) : IReadOnlyQueryPacketJob
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         public void Execute(
@@ -1056,16 +1083,33 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 local.OneInstancePerEntity)
             {
                 TGroupKey key = default!;
-                local.WritePacket(
-                    in key,
-                    0,
-                    packet,
-                    destinations[0].Slice(context.OutputStart, packet.Count));
+                if (writeAll || local.AllRowsChanged(packet, context.LastSystemVersion))
+                    local.WritePacket(in key, 0, packet, destinations[0].Slice(context.OutputStart, packet.Count));
+                else
+                {
+                    int start = 0;
+                    while (start < packet.Count)
+                    {
+                        while (start < packet.Count &&
+                            local.GetChanges(packet.Slice(start, 1), context.LastSystemVersion) == RenderInstanceChanges.None)
+                            start++;
+                        if (start == packet.Count) break;
+                        int end = start + 1;
+                        while (end < packet.Count &&
+                            local.GetChanges(packet.Slice(end, 1), context.LastSystemVersion) != RenderInstanceChanges.None)
+                            end++;
+                        local.WritePacket(in key, 0, packet.Slice(start, end - start),
+                            destinations[0].Slice(context.OutputStart + start, end - start));
+                        start = end;
+                    }
+                }
                 return;
             }
 
             for (int row = 0; row < packet.Count; row++)
             {
+                if (!writeAll && local.GetChanges(packet.Slice(row, 1), context.LastSystemVersion) == RenderInstanceChanges.None)
+                    continue;
                 int entity = checked(context.OutputStart + row);
                 int start = entityOffsets[entity];
                 int count = entityOffsets[entity + 1] - start;

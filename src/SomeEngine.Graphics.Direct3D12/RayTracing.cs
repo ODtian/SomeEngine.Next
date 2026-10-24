@@ -17,6 +17,7 @@ internal sealed unsafe partial class D3D12Backend
         AccelerationStructureType type,
         string? label = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<RayTracing>(nameof(CreateAccelerationStructure));
         D3D12Buffer nativeStorage = RequireBuffer(storage);
@@ -53,6 +54,7 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in AccelerationStructureSrvDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<RayTracing>(nameof(CreateAccelerationStructureSrv));
         D3D12AccelerationStructure structure =
@@ -89,6 +91,7 @@ internal sealed unsafe partial class D3D12Backend
         AccelerationStructureBuildOptions options,
         ReadOnlySpan<AccelerationStructureGeometry> geometries)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         RayTracing capability =
             nativeDevice.RequireCapability<RayTracing>(nameof(GetAccelerationStructureBuildInfo));
@@ -109,7 +112,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (nativeGeometries.Length != 0)
                 inputs.PGeometryDescs = geometryPointer;
-            nativeDevice.Native->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &info);
+            DeviceQueryTrace.GetRaytracingAccelerationStructurePrebuildInfo(nativeDevice.Native, &inputs, &info);
         }
         _ = RequireValidAccelerationStructurePrebuildInfo(info, mode);
 
@@ -126,13 +129,20 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in RayTracingPipelineDesc desc,
         PipelineCache? cache = null)
+        => CreateRayTracingPipeline(device, desc, cache, null);
+
+    private Pipeline CreateRayTracingPipeline(
+        Device device,
+        in RayTracingPipelineDesc desc,
+        PipelineCache? cache,
+        IComponentType? capturedSlangCode)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ValidateRayTracingPipelineDescription(nativeDevice, desc);
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
-        IComponentType program = desc.Program;
         StaticSamplerBinding[] staticSamplers = desc.StaticSamplers.ToArray();
-        ShaderReflection reflection = GetProgramReflection(program);
+        ShaderReflection reflection = desc.Reflection;
         int localRootCapacity = checked(
             desc.RayGeneration.Length + desc.Miss.Length +
             desc.Callable.Length + desc.HitGroups.Length);
@@ -174,8 +184,9 @@ internal sealed unsafe partial class D3D12Backend
             EntryPointReflection[] allEntries = GetOrderedRayTracingEntries(
                 reflection,
                 shaderExports.Values);
-            CompiledProgramLibrary library = CompileProgramLibrary(
-                program,
+            CompiledShaderLibrary library = CompileShaderLibrary(
+                desc.Code,
+                desc.CodeBlob,
                 reflection,
                 allEntries);
             D3D12RootSignatureState global = CompileRayTracingGlobalRootSignature(
@@ -188,7 +199,6 @@ internal sealed unsafe partial class D3D12Backend
             return MaterializeRayTracingPipeline(
                 nativeDevice,
                 nativeCache,
-                program,
                 desc,
                 global,
                 localRootArray,
@@ -198,6 +208,7 @@ internal sealed unsafe partial class D3D12Backend
                 hitGroups,
                 entryExports,
                 hitGroupExports,
+                capturedSlangCode,
                 ref rootsTransferred);
         }
         finally
@@ -219,7 +230,9 @@ internal sealed unsafe partial class D3D12Backend
             nativeDevice.RequireCapability<RayTracing>(nameof(CreateRayTracingPipeline));
         if (!capability.PipelineRayTracing)
             throw new NotSupportedException("Pipeline ray tracing is unavailable.");
-        ArgumentNullException.ThrowIfNull(desc.Program);
+        ArgumentNullException.ThrowIfNull(desc.SlangCode);
+        if (desc.Reflection == ShaderReflection.Null)
+            throw new ArgumentException("A ray-tracing pipeline requires Slang reflection.", nameof(desc));
         if (desc.RayGeneration.IsEmpty)
         {
             throw new ArgumentException(
@@ -464,9 +477,9 @@ internal sealed unsafe partial class D3D12Backend
                 "Two Slang entry points use the same state-object export name.",
                 "desc");
         }
+        if (existing == entry) return name;
         shaderExports[name] = entry;
-        if (!stateObjectNames.Add(name) &&
-            !records.Any(record => record.EntryPoint == entry))
+        if (!stateObjectNames.Add(name))
         {
             throw new ArgumentException(
                 "Ray-tracing state-object export names must be unique.",
@@ -540,43 +553,30 @@ internal sealed unsafe partial class D3D12Backend
     private D3D12RayTracingPipeline MaterializeRayTracingPipeline(
         D3D12Device nativeDevice,
         D3D12PipelineCache? nativeCache,
-        IComponentType program,
         in RayTracingPipelineDesc desc,
         D3D12RootSignatureState global,
         D3D12RootSignatureState[] localRoots,
-        CompiledProgramLibrary library,
+        CompiledShaderLibrary library,
         EntryPointReflection[] allEntries,
         IReadOnlyList<D3D12RayTracingExport> records,
         IReadOnlyList<RayTracingHitGroupState> hitGroups,
         Dictionary<EntryPointReflection, D3D12RayTracingExport> entryExports,
         Dictionary<string, D3D12RayTracingExport> hitGroupExports,
+        IComponentType? capturedSlangCode,
         ref bool rootsTransferred)
     {
-        byte[] key = CreateRayTracingPipelineKey(
-            nativeDevice,
-            global,
-            localRoots,
-            library,
-            records,
-            hitGroups,
-            desc);
-        byte[][] replayLibraries = ResolveStateObjectReplayCode(
-            nativeCache,
-            4,
-            key,
-            library);
         ID3D12StateObject* stateObject = null;
         ID3D12StateObjectProperties* properties = null;
         NativeLease? nativeState = null;
         NativeLease? propertiesLease = null;
-        RetainedSlangProgram? retainedProgram = null;
+        IComponentType? retainedCode = null;
         D3D12RayTracingPipeline? result = null;
         try
         {
             stateObject = CreateNativeRayTracingStateObject(
                 nativeDevice,
                 global,
-                replayLibraries,
+                library.Code,
                 allEntries,
                 records,
                 hitGroups,
@@ -595,7 +595,7 @@ internal sealed unsafe partial class D3D12Backend
                 ownsReference: true,
                 rootDependencies);
             stateObject = null;
-            retainedProgram = RetainProgram(program);
+            retainedCode = capturedSlangCode ?? desc.SlangCode;
             NativeLease[] additionalLeases = [propertiesLease];
             result = new D3D12RayTracingPipeline(
                 nativeDevice,
@@ -603,16 +603,15 @@ internal sealed unsafe partial class D3D12Backend
                 global,
                 localRoots,
                 additionalLeases,
-                retainedProgram,
+                retainedCode,
                 entryExports,
                 hitGroupExports,
                 desc.Label);
             rootsTransferred = true;
             nativeState = null;
             propertiesLease = null;
-            retainedProgram = null;
+            retainedCode = null;
             nativeDevice.RegisterChild(result);
-            StoreStateObjectReplay(nativeCache, 4, key, library);
             return result;
         }
         catch
@@ -622,8 +621,7 @@ internal sealed unsafe partial class D3D12Backend
                 nativeState,
                 propertiesLease,
                 stateObject,
-                properties,
-                retainedProgram);
+                properties);
             throw;
         }
     }
@@ -631,7 +629,7 @@ internal sealed unsafe partial class D3D12Backend
     private ID3D12StateObject* CreateNativeRayTracingStateObject(
         D3D12Device nativeDevice,
         D3D12RootSignatureState global,
-        byte[][] replayLibraries,
+        byte[] code,
         EntryPointReflection[] allEntries,
         IReadOnlyList<D3D12RayTracingExport> records,
         IReadOnlyList<RayTracingHitGroupState> hitGroups,
@@ -639,11 +637,11 @@ internal sealed unsafe partial class D3D12Backend
     {
         using NativeStateObjectArena arena = new();
         int subobjectCount = checked(
-            replayLibraries.Length + 4 + hitGroups.Count + (records.Count * 2));
+            1 + 4 + hitGroups.Count + (records.Count * 2));
         StateSubobject* subobjects = arena.Allocate<StateSubobject>(subobjectCount);
-        int ordinal = AddRayTracingLibraries(
+        int ordinal = AddRayTracingLibrary(
             arena,
-            replayLibraries,
+            code,
             allEntries,
             subobjects);
         GlobalRootSignature* globalDescription = arena.Allocate<GlobalRootSignature>();
@@ -665,8 +663,8 @@ internal sealed unsafe partial class D3D12Backend
             subobjects);
         ID3D12StateObject* stateObject = null;
         Guid iid = ID3D12StateObject.Guid;
-        int stateObjectResult = nativeDevice.Native->CreateStateObject(
-            &native,
+        int stateObjectResult = DevicePipelineTrace.CreateStateObject(
+nativeDevice.Native, &native,
             &iid,
             (void**)&stateObject);
         try
@@ -681,34 +679,32 @@ internal sealed unsafe partial class D3D12Backend
         catch
         {
             if (stateObject is not null)
-                _ = stateObject->Release();
+                _ = PipelineTrace.Release(stateObject);
             throw;
         }
     }
 
-    private static int AddRayTracingLibraries(
+    private static int AddRayTracingLibrary(
         NativeStateObjectArena arena,
-        byte[][] replayLibraries,
+        byte[] code,
         EntryPointReflection[] allEntries,
         StateSubobject* subobjects)
     {
-        int ordinal = 0;
-        for (int index = 0; index < replayLibraries.Length; index++)
+        ExportDesc* exports = arena.Allocate<ExportDesc>(allEntries.Length);
+        for (int index = 0; index < allEntries.Length; index++)
         {
             string name = GetStableEntryPointName(allEntries[index]);
-            ExportDesc* export = arena.Allocate<ExportDesc>();
-            *export = new ExportDesc(arena.String(name), null, ExportFlags.None);
-            byte[] code = replayLibraries[index];
-            DxilLibraryDesc* libraryDescription = arena.Allocate<DxilLibraryDesc>();
-            *libraryDescription = new DxilLibraryDesc(
-                new ShaderBytecode(arena.Bytes(code), (nuint)code.Length),
-                1,
-                export);
-            subobjects[ordinal++] = new StateSubobject(
-                StateSubobjectType.DxilLibrary,
-                libraryDescription);
+            exports[index] = new ExportDesc(arena.String(name), null, ExportFlags.None);
         }
-        return ordinal;
+        DxilLibraryDesc* libraryDescription = arena.Allocate<DxilLibraryDesc>();
+        *libraryDescription = new DxilLibraryDesc(
+            new ShaderBytecode(arena.Bytes(code), (nuint)code.Length),
+            checked((uint)allEntries.Length),
+            exports);
+        subobjects[0] = new StateSubobject(
+            StateSubobjectType.DxilLibrary,
+            libraryDescription);
+        return 1;
     }
 
     private static int AddNativeRayTracingHitGroups(
@@ -799,7 +795,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         ID3D12StateObjectProperties* properties = null;
         Guid iid = ID3D12StateObjectProperties.Guid;
-        int result = stateObject->QueryInterface(&iid, (void**)&properties);
+        int result = PipelineTrace.QueryInterface(stateObject, &iid, (void**)&properties);
         try
         {
             ThrowIfFailed(
@@ -812,7 +808,7 @@ internal sealed unsafe partial class D3D12Backend
         catch
         {
             if (properties is not null)
-                _ = properties->Release();
+                _ = PipelineTrace.Release(properties);
             throw;
         }
     }
@@ -823,7 +819,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         foreach (D3D12RayTracingExport record in records)
         {
-            void* identifier = properties->GetShaderIdentifier(record.Name);
+            void* identifier = PipelineTrace.GetShaderIdentifier(properties, record.Name);
             if (identifier is null)
             {
                 throw new GraphicsException(
@@ -864,8 +860,7 @@ internal sealed unsafe partial class D3D12Backend
         NativeLease? nativeState,
         NativeLease? propertiesLease,
         ID3D12StateObject* stateObject,
-        ID3D12StateObjectProperties* properties,
-        RetainedSlangProgram? retainedProgram)
+        ID3D12StateObjectProperties* properties)
     {
         if (result is not null)
         {
@@ -875,16 +870,16 @@ internal sealed unsafe partial class D3D12Backend
         nativeState?.Release();
         propertiesLease?.Release();
         if (properties is not null)
-            _ = properties->Release();
+            _ = PipelineTrace.Release(properties);
         if (stateObject is not null)
-            _ = stateObject->Release();
-        retainedProgram?.Dispose();
+            _ = PipelineTrace.Release(stateObject);
     }
 
     public RayTracingShaderTable CreateRayTracingShaderTable(
         Device device,
         in RayTracingShaderTableDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         RayTracing capability =
             nativeDevice.RequireCapability<RayTracing>(nameof(CreateRayTracingShaderTable));
@@ -917,6 +912,7 @@ internal sealed unsafe partial class D3D12Backend
         RayTracingShaderTable table,
         in RayTracingShaderTableUpdate update)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         RayTracing capability = command.NativeDevice
             .RequireCapability<RayTracing>(nameof(UpdateRayTracingShaderTable));
@@ -946,6 +942,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public void DispatchRays(CommandContext context, in DispatchRaysDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         RayTracing capability =
             command.NativeDevice.RequireCapability<RayTracing>(nameof(DispatchRays));
@@ -962,7 +959,7 @@ internal sealed unsafe partial class D3D12Backend
         native.Depth = desc.Depth;
         command.PrepareCaptures(1);
         command.CapturePipeline(table.Pipeline);
-        command.List->DispatchRays(&native);
+        CommandExecutionTrace.DispatchRays(command.List, &native);
     }
 
     private static ulong GetRayTableSize(
@@ -996,6 +993,7 @@ internal sealed unsafe partial class D3D12Backend
         CommandContext context,
         in AccelerationStructureBuildDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         RayTracing capability = command.NativeDevice
             .RequireCapability<RayTracing>(nameof(BuildAccelerationStructure));
@@ -1038,9 +1036,9 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (nativeGeometries.Length != 0)
                 inputs.PGeometryDescs = geometryPointer;
-            command.NativeDevice.Native->GetRaytracingAccelerationStructurePrebuildInfo(
-                &inputs,
-                &requirements);
+            DeviceQueryTrace.GetRaytracingAccelerationStructurePrebuildInfo(
+                        command.NativeDevice.Native, &inputs,
+                            &requirements);
             ulong requiredScratch = RequireValidAccelerationStructurePrebuildInfo(
                 requirements,
                 mode);
@@ -1058,14 +1056,14 @@ internal sealed unsafe partial class D3D12Backend
                 Inputs = inputs,
                 SourceAccelerationStructureData = source?.Address ?? 0,
                 ScratchAccelerationStructureData =
-                    scratch.Native->GetGPUVirtualAddress() + scratchRange.Offset,
+                    ResourceTrace.GetGPUVirtualAddress(scratch.Native) + scratchRange.Offset,
             };
             command.Capture(destination);
             if (source is not null)
                 command.Capture(source);
             command.Capture(scratch);
             CaptureGeometryResources(command, desc.Geometries);
-            command.List->BuildRaytracingAccelerationStructure(&native, 0, null);
+            CommandExecutionTrace.BuildRaytracingAccelerationStructure(command.List, &native, 0, null);
         }
     }
 
@@ -1097,6 +1095,7 @@ internal sealed unsafe partial class D3D12Backend
         AccelerationStructure source,
         AccelerationStructureCopyType type)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         RayTracing capability = command.NativeDevice
             .RequireCapability<RayTracing>(nameof(CopyAccelerationStructure));
@@ -1110,10 +1109,10 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareCaptures(2);
         command.Capture(nativeDestination);
         command.Capture(nativeSource);
-        command.List->CopyRaytracingAccelerationStructure(
-            nativeDestination.Address,
-            nativeSource.Address,
-            ToNativeCopyMode(type));
+        CommandTransferTrace.CopyRaytracingAccelerationStructure(
+                command.List, nativeDestination.Address,
+                    nativeSource.Address,
+                    ToNativeCopyMode(type));
     }
 
     public void SerializeAccelerationStructure(
@@ -1121,6 +1120,7 @@ internal sealed unsafe partial class D3D12Backend
         in BufferRegion destination,
         AccelerationStructure source)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         RayTracing capability = command.NativeDevice
             .RequireCapability<RayTracing>(nameof(SerializeAccelerationStructure));
@@ -1141,10 +1141,10 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareCaptures(2, 0, 1);
         command.Capture(nativeDestination);
         command.Capture(nativeSource);
-        command.List->CopyRaytracingAccelerationStructure(
-            nativeDestination.Native->GetGPUVirtualAddress() + destinationRange.Offset,
-            nativeSource.Address,
-            RaytracingAccelerationStructureCopyMode.Serialize);
+        CommandTransferTrace.CopyRaytracingAccelerationStructure(
+                command.List, ResourceTrace.GetGPUVirtualAddress(nativeDestination.Native) + destinationRange.Offset,
+                    nativeSource.Address,
+                    RaytracingAccelerationStructureCopyMode.Serialize);
     }
 
     public void DeserializeAccelerationStructure(
@@ -1152,6 +1152,7 @@ internal sealed unsafe partial class D3D12Backend
         AccelerationStructure destination,
         in BufferRegion source)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         RayTracing capability = command.NativeDevice
             .RequireCapability<RayTracing>(nameof(DeserializeAccelerationStructure));
@@ -1172,10 +1173,10 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareCaptures(2, 0, 1);
         command.Capture(nativeDestination);
         command.Capture(nativeSource);
-        command.List->CopyRaytracingAccelerationStructure(
-            nativeDestination.Address,
-            nativeSource.Native->GetGPUVirtualAddress() + sourceRange.Offset,
-            RaytracingAccelerationStructureCopyMode.Deserialize);
+        CommandTransferTrace.CopyRaytracingAccelerationStructure(
+                command.List, nativeDestination.Address,
+                    ResourceTrace.GetGPUVirtualAddress(nativeSource.Native) + sourceRange.Offset,
+                    RaytracingAccelerationStructureCopyMode.Deserialize);
     }
 
     public void EmitAccelerationStructurePostBuildInfo(
@@ -1185,6 +1186,7 @@ internal sealed unsafe partial class D3D12Backend
         Buffer destination,
         ulong destinationOffset)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         RayTracing capability = command.NativeDevice
             .RequireCapability<RayTracing>(nameof(EmitAccelerationStructurePostBuildInfo));
@@ -1216,14 +1218,14 @@ internal sealed unsafe partial class D3D12Backend
 
         RaytracingAccelerationStructurePostbuildInfoDesc native = new()
         {
-            DestBuffer = nativeDestination.Native->GetGPUVirtualAddress() + destinationOffset,
+            DestBuffer = ResourceTrace.GetGPUVirtualAddress(nativeDestination.Native) + destinationOffset,
             InfoType = ToNativePostBuildInfo(type),
         };
         ulong address = nativeSource.Address;
         command.PrepareCaptures(2, 0, 1);
         command.Capture(nativeSource);
         command.Capture(nativeDestination);
-        command.List->EmitRaytracingAccelerationStructurePostbuildInfo(&native, 1, &address);
+        CommandExecutionTrace.EmitRaytracingAccelerationStructurePostbuildInfo(command.List, &native, 1, &address);
     }
 
     private static AccelerationStructurePrebuildMode RequireAccelerationStructureBuildSupport(
@@ -1352,7 +1354,7 @@ internal sealed unsafe partial class D3D12Backend
             nameof(geometries),
             out BufferRange range);
         result.NumDescs = geometry.Count;
-        result.InstanceDescs = instances.Native->GetGPUVirtualAddress() + range.Offset;
+        result.InstanceDescs = ResourceTrace.GetGPUVirtualAddress(instances.Native) + range.Offset;
     }
 
     private RaytracingGeometryDesc CreateNativeGeometry(
@@ -1408,7 +1410,7 @@ internal sealed unsafe partial class D3D12Backend
             VertexFormat = FormatMappings.ToDxgi(geometry.PrimaryFormat),
             VertexCount = geometry.Count,
             VertexBuffer = new GpuVirtualAddressAndStride(
-                vertices.Native->GetGPUVirtualAddress() + vertexRange.Offset,
+                ResourceTrace.GetGPUVirtualAddress(vertices.Native) + vertexRange.Offset,
                 geometry.PrimaryStride),
             IndexFormat = NativeFormat.FormatUnknown,
         };
@@ -1423,7 +1425,7 @@ internal sealed unsafe partial class D3D12Backend
                 16,
                 "geometries",
                 out BufferRange transformRange);
-            result.Transform3x4 = transform.Native->GetGPUVirtualAddress() + transformRange.Offset;
+            result.Transform3x4 = ResourceTrace.GetGPUVirtualAddress(transform.Native) + transformRange.Offset;
         }
         return result;
     }
@@ -1455,7 +1457,7 @@ internal sealed unsafe partial class D3D12Backend
             _ => throw new ArgumentOutOfRangeException("geometries"),
         };
         triangles.IndexCount = checked((uint)(indexRange.Size / indexSize));
-        triangles.IndexBuffer = indices.Native->GetGPUVirtualAddress() + indexRange.Offset;
+        triangles.IndexBuffer = ResourceTrace.GetGPUVirtualAddress(indices.Native) + indexRange.Offset;
     }
 
     private RaytracingGeometryAabbsDesc CreateAabbGeometry(
@@ -1478,7 +1480,7 @@ internal sealed unsafe partial class D3D12Backend
         return new RaytracingGeometryAabbsDesc(
             geometry.Count,
             new GpuVirtualAddressAndStride(
-                aabbs.Native->GetGPUVirtualAddress() + range.Offset,
+                ResourceTrace.GetGPUVirtualAddress(aabbs.Native) + range.Offset,
                 geometry.PrimaryStride));
     }
 
@@ -1524,20 +1526,20 @@ internal sealed unsafe partial class D3D12Backend
 
     private static (uint PositionSize, uint ComponentAlignment)
         GetRayTracingVertexLayout(Format format) => format switch
-    {
-        Format.R32G32Float => (8, 4),
-        Format.R32G32B32Float => (12, 4),
-        Format.R16G16Float or Format.R16G16SNorm => (4, 2),
-        Format.R16G16B16A16Float or Format.R16G16B16A16SNorm => (6, 2),
-        Format.R16G16UNorm => (4, 2),
-        Format.R16G16B16A16UNorm => (6, 2),
-        Format.R10G10B10A2UNorm => (4, 4),
-        Format.R8G8UNorm or Format.R8G8SNorm => (2, 1),
-        Format.R8G8B8A8UNorm or Format.R8G8B8A8SNorm => (3, 1),
-        _ => throw new ArgumentException(
-            $"{format} is not a D3D12 ray-tracing vertex format.",
-            nameof(format)),
-    };
+        {
+            Format.R32G32Float => (8, 4),
+            Format.R32G32B32Float => (12, 4),
+            Format.R16G16Float or Format.R16G16SNorm => (4, 2),
+            Format.R16G16B16A16Float or Format.R16G16B16A16SNorm => (6, 2),
+            Format.R16G16UNorm => (4, 2),
+            Format.R16G16B16A16UNorm => (6, 2),
+            Format.R10G10B10A2UNorm => (4, 4),
+            Format.R8G8UNorm or Format.R8G8SNorm => (2, 1),
+            Format.R8G8B8A8UNorm or Format.R8G8B8A8SNorm => (3, 1),
+            _ => throw new ArgumentException(
+                $"{format} is not a D3D12 ray-tracing vertex format.",
+                nameof(format)),
+        };
 
     private static RaytracingAccelerationStructureBuildFlags ToNativeBuildFlags(
         AccelerationStructureBuildOptions value)
@@ -1575,62 +1577,6 @@ internal sealed unsafe partial class D3D12Backend
         return result;
     }
 
-    private static byte[] CreateRayTracingPipelineKey(
-        D3D12Device device,
-        D3D12RootSignatureState global,
-        IReadOnlyList<D3D12RootSignatureState> localRoots,
-        CompiledProgramLibrary library,
-        IReadOnlyList<D3D12RayTracingExport> exports,
-        IReadOnlyList<RayTracingHitGroupState> hitGroups,
-        in RayTracingPipelineDesc desc)
-    {
-        uint nodeMask = desc.NodeMask;
-        uint maximumRecursionDepth = desc.MaximumRecursionDepth;
-        uint maximumPayloadSize = desc.MaximumPayloadSize;
-        uint maximumAttributeSize = desc.MaximumAttributeSize;
-        RayTracingPipelineOptions options = desc.Options;
-        return CreateCanonicalPipelineKey(
-            device,
-            4,
-            writer =>
-            {
-                writer.Write(1u);
-                writer.Write(true);
-                WriteCompiledProgramIdentity(writer, library);
-            },
-            writer =>
-            {
-                writer.Write(1u);
-                WriteCanonicalBytes(writer, global.Serialized);
-                writer.Write(checked((uint)localRoots.Count));
-                foreach (D3D12RootSignatureState root in localRoots)
-                    WriteCanonicalBytes(writer, root.Serialized);
-            },
-            writer =>
-            {
-                writer.Write(nodeMask);
-                writer.Write(checked((uint)exports.Count));
-                foreach (D3D12RayTracingExport value in exports)
-                {
-                    writer.Write((byte)value.Type);
-                    WriteCanonicalString(writer, value.Name);
-                }
-                writer.Write(checked((uint)hitGroups.Count));
-                foreach (RayTracingHitGroupState value in hitGroups)
-                {
-                    WriteCanonicalString(writer, value.Name);
-                    WriteCanonicalString(writer, value.ClosestHit ?? string.Empty);
-                    WriteCanonicalString(writer, value.AnyHit ?? string.Empty);
-                    WriteCanonicalString(writer, value.Intersection ?? string.Empty);
-                    writer.Write((int)value.Type);
-                }
-                writer.Write(maximumRecursionDepth);
-                writer.Write(maximumPayloadSize);
-                writer.Write(maximumAttributeSize);
-                writer.Write((byte)options);
-            });
-    }
-
     private static RaytracingGeometryFlags ToNativeGeometryFlags(
         AccelerationStructureGeometryOptions value)
     {
@@ -1649,23 +1595,23 @@ internal sealed unsafe partial class D3D12Backend
 
     private static RaytracingAccelerationStructureCopyMode ToNativeCopyMode(
         AccelerationStructureCopyType value) => value switch
-    {
-        AccelerationStructureCopyType.Clone => RaytracingAccelerationStructureCopyMode.Clone,
-        AccelerationStructureCopyType.Compact => RaytracingAccelerationStructureCopyMode.Compact,
-        _ => throw new ArgumentOutOfRangeException(nameof(value)),
-    };
+        {
+            AccelerationStructureCopyType.Clone => RaytracingAccelerationStructureCopyMode.Clone,
+            AccelerationStructureCopyType.Compact => RaytracingAccelerationStructureCopyMode.Compact,
+            _ => throw new ArgumentOutOfRangeException(nameof(value)),
+        };
 
     private static RaytracingAccelerationStructurePostbuildInfoType ToNativePostBuildInfo(
         AccelerationStructurePostBuildInfoType value) => value switch
-    {
-        AccelerationStructurePostBuildInfoType.CompactedSize =>
-            RaytracingAccelerationStructurePostbuildInfoType.CompactedSize,
-        AccelerationStructurePostBuildInfoType.SerializationSize =>
-            RaytracingAccelerationStructurePostbuildInfoType.Serialization,
-        AccelerationStructurePostBuildInfoType.CurrentSize =>
-            RaytracingAccelerationStructurePostbuildInfoType.CurrentSize,
-        _ => throw new ArgumentOutOfRangeException(nameof(value)),
-    };
+        {
+            AccelerationStructurePostBuildInfoType.CompactedSize =>
+                RaytracingAccelerationStructurePostbuildInfoType.CompactedSize,
+            AccelerationStructurePostBuildInfoType.SerializationSize =>
+                RaytracingAccelerationStructurePostbuildInfoType.Serialization,
+            AccelerationStructurePostBuildInfoType.CurrentSize =>
+                RaytracingAccelerationStructurePostbuildInfoType.CurrentSize,
+            _ => throw new ArgumentOutOfRangeException(nameof(value)),
+        };
 
     private static void WriteAccelerationStructureSrv(
         D3D12Device device,
@@ -1680,7 +1626,7 @@ internal sealed unsafe partial class D3D12Backend
         };
         native.RaytracingAccelerationStructure = new RaytracingAccelerationStructureSrv(
             structure.Address);
-        device.Native->CreateShaderResourceView(null, &native, destination);
+        DeviceResourceTrace.CreateShaderResourceView(device.Native, null, &native, destination);
     }
 
     private static void RegisterAccelerationStructureView(
@@ -1711,7 +1657,7 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         internal ulong Address =>
-            _storage.Native->GetGPUVirtualAddress() + Info.StorageRange.Offset;
+        ResourceTrace.GetGPUVirtualAddress(_storage.Native) + Info.StorageRange.Offset;
         internal D3D12Buffer Storage => _storage;
         internal NativeLease NativeLifetime => _storageLifetime;
 
@@ -1775,7 +1721,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12RootSignatureState root,
             D3D12RootSignatureState[] localRoots,
             NativeLease[] additionalLeases,
-            RetainedSlangProgram program,
+            IComponentType slangCode,
             Dictionary<EntryPointReflection, D3D12RayTracingExport> entries,
             Dictionary<string, D3D12RayTracingExport> hitGroups,
             string? label)
@@ -1785,7 +1731,7 @@ internal sealed unsafe partial class D3D12Backend
                 root,
                 localRoots,
                 additionalLeases,
-                program,
+                slangCode,
                 PipelineType.RayTracing,
                 label)
         {
@@ -1836,7 +1782,7 @@ internal sealed unsafe partial class D3D12Backend
     private sealed class D3D12RayTracingShaderTable : RayTracingShaderTable
     {
         private readonly D3D12Device _device;
-        private RetainedSlangProgram? _program;
+        private IComponentType? _slangCode;
         private readonly NativeLease _pipelineState;
 
         internal D3D12RayTracingShaderTable(
@@ -1847,20 +1793,19 @@ internal sealed unsafe partial class D3D12Backend
         {
             _device = device;
             Pipeline = pipeline;
-            RetainedSlangProgram? program = null;
+            IComponentType? slangCode = null;
             NativeLease? pipelineState = null;
             try
             {
-                program = pipeline.RetainProgramReference();
+                slangCode = pipeline.GetSlangCodeReference();
                 pipelineState = pipeline.RetainNativeState();
-                _program = program;
-                program = null;
+                _slangCode = slangCode;
+                slangCode = null;
                 _pipelineState = pipelineState;
             }
             catch
             {
                 pipelineState?.Release();
-                program?.Dispose();
                 throw;
             }
         }
@@ -1870,7 +1815,7 @@ internal sealed unsafe partial class D3D12Backend
         internal override void Release(bool fromParent)
         {
             _pipelineState.Release();
-            Interlocked.Exchange(ref _program, null)?.Dispose();
+            _ = Interlocked.Exchange(ref _slangCode, null);
             _device.UnregisterChild(this);
         }
     }
@@ -2077,7 +2022,6 @@ internal sealed unsafe partial class D3D12Backend
                         checked((int)block.OrdinaryDataOffset),
                         checked((int)block.OrdinaryDataSize));
                     RequireNativeParameterBindings(
-                        block.Layout,
                         export.LocalRoot.GetBlock(block.Layout),
                         bindings,
                         data);
@@ -2404,18 +2348,11 @@ internal sealed unsafe partial class D3D12Backend
                     GraphicsError.NativeFailure,
                     "The DXR local-record binding count does not match its Slang-reflected descriptor shape.");
             }
-            for (int ordinal = 0; ordinal < bindings.Length; ordinal++)
+            command.CopyTransientDescriptors(resourceCursor, samplerCursor, bindings, layout.Slots);
+            foreach (ref readonly DescriptorSlotDesc slot in layout.Slots.AsSpan())
             {
-                ref readonly ResourceBinding binding = ref bindings[ordinal];
-                ref readonly DescriptorSlotDesc slot = ref layout.Slots[ordinal];
-                ParameterHeap heap = slot.Type == ResourceBindingType.Sampler
-                    ? ParameterHeap.Sampler
-                    : ParameterHeap.Resource;
-                command.CopyTransientDescriptor(
-                    heap,
-                    heap == ParameterHeap.Resource ? resourceCursor++ : samplerCursor++,
-                    binding,
-                    slot);
+                if (slot.Type == ResourceBindingType.Sampler) samplerCursor++;
+                else resourceCursor++;
             }
         }
 
@@ -2652,10 +2589,8 @@ internal sealed unsafe partial class D3D12Backend
         internal void Capture(AccelerationStructureSrv value)
         {
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12AccelerationStructure structure =
-                RequireD3D12.AccelerationStructure(value.Resource);
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, structure.NativeLifetime);
+            RequireSameDevice(value, nameof(value));
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
     }
 

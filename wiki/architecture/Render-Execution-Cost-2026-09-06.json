@@ -1,0 +1,3674 @@
+{
+  "method": "C# instrumentation; exclusive thread elapsed time, not sampled CPU time",
+  "hardware": {
+    "cpu": "Intel Xeon E5-2698B v3 @ 2.00GHz",
+    "gpu": "NVIDIA GeForce RTX 3080",
+    "driver": "32.0.16.1074"
+  },
+  "captures": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event",
+  "runs": [
+    {
+      "name": "motion-async-frames-1",
+      "seconds": 14.329997777938843,
+      "frames": 256,
+      "meanMs": 12.636999609375,
+      "p50Ms": 12.17775,
+      "p95Ms": 14.5127,
+      "traceBytes": 153501,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-frames-1.setrace",
+        "--trace-frames-only"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-frames-1.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-frames-1.setrace"
+    },
+    {
+      "name": "motion-async-full-1",
+      "seconds": 21.66627311706543,
+      "frames": 256,
+      "meanMs": 13.393739453125,
+      "p50Ms": 13.29545,
+      "p95Ms": 14.366000000000001,
+      "traceBytes": 446428229,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-full-1.setrace",
+        "--trace-detail",
+        "--trace-allocations"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-full-1.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-full-1.setrace"
+    },
+    {
+      "name": "materials-async-frames-1",
+      "seconds": 14.61824083328247,
+      "frames": 256,
+      "meanMs": 13.154247656250003,
+      "p50Ms": 12.719550000000002,
+      "p95Ms": 15.3031,
+      "traceBytes": 153510,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "materials",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-frames-1.setrace",
+        "--trace-frames-only"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-frames-1.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-frames-1.setrace"
+    },
+    {
+      "name": "materials-async-full-1",
+      "seconds": 21.776811361312866,
+      "frames": 256,
+      "meanMs": 13.423963671874995,
+      "p50Ms": 13.345,
+      "p95Ms": 14.3648,
+      "traceBytes": 446553602,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "materials",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-full-1.setrace",
+        "--trace-detail",
+        "--trace-allocations"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-full-1.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-full-1.setrace"
+    },
+    {
+      "name": "motion-graphics-frames-1",
+      "seconds": 13.656668186187744,
+      "frames": 256,
+      "meanMs": 11.337707421875006,
+      "p50Ms": 11.2384,
+      "p95Ms": 12.7683,
+      "traceBytes": 153524,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-frames-1.setrace",
+        "--trace-frames-only",
+        "--no-async-compute"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-frames-1.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-frames-1.setrace"
+    },
+    {
+      "name": "motion-graphics-full-1",
+      "seconds": 21.8655047416687,
+      "frames": 256,
+      "meanMs": 12.306478906250002,
+      "p50Ms": 12.226750000000001,
+      "p95Ms": 13.6788,
+      "traceBytes": 420536791,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-full-1.setrace",
+        "--trace-detail",
+        "--trace-allocations",
+        "--no-async-compute"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-full-1.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-full-1.setrace"
+    },
+    {
+      "name": "motion-async-full-2",
+      "seconds": 21.486753463745117,
+      "frames": 256,
+      "meanMs": 13.191041015625007,
+      "p50Ms": 13.087250000000001,
+      "p95Ms": 14.2112,
+      "traceBytes": 446418521,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-full-2.setrace",
+        "--trace-detail",
+        "--trace-allocations"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-full-2.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-full-2.setrace"
+    },
+    {
+      "name": "motion-async-frames-2",
+      "seconds": 13.974422454833984,
+      "frames": 256,
+      "meanMs": 11.554071093750009,
+      "p50Ms": 11.43075,
+      "p95Ms": 12.514100000000001,
+      "traceBytes": 153501,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-frames-2.setrace",
+        "--trace-frames-only"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-frames-2.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-frames-2.setrace"
+    },
+    {
+      "name": "materials-async-full-2",
+      "seconds": 21.755082845687866,
+      "frames": 256,
+      "meanMs": 14.15335703124999,
+      "p50Ms": 13.6849,
+      "p95Ms": 16.3144,
+      "traceBytes": 446555040,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "materials",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-full-2.setrace",
+        "--trace-detail",
+        "--trace-allocations"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-full-2.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-full-2.setrace"
+    },
+    {
+      "name": "materials-async-frames-2",
+      "seconds": 14.321203708648682,
+      "frames": 256,
+      "meanMs": 12.367057031249999,
+      "p50Ms": 12.214300000000001,
+      "p95Ms": 13.74,
+      "traceBytes": 153510,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "materials",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-frames-2.setrace",
+        "--trace-frames-only"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-frames-2.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-frames-2.setrace"
+    },
+    {
+      "name": "motion-graphics-full-2",
+      "seconds": 21.076507091522217,
+      "frames": 256,
+      "meanMs": 11.903592578124995,
+      "p50Ms": 11.854600000000001,
+      "p95Ms": 13.2422,
+      "traceBytes": 420543605,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-full-2.setrace",
+        "--trace-detail",
+        "--trace-allocations",
+        "--no-async-compute"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-full-2.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-full-2.setrace"
+    },
+    {
+      "name": "motion-graphics-frames-2",
+      "seconds": 13.224413394927979,
+      "frames": 256,
+      "meanMs": 10.744704296875009,
+      "p50Ms": 10.6353,
+      "p95Ms": 12.1037,
+      "traceBytes": 153524,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-frames-2.setrace",
+        "--trace-frames-only",
+        "--no-async-compute"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-frames-2.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-frames-2.setrace"
+    },
+    {
+      "name": "motion-async-frames-3",
+      "seconds": 13.931949138641357,
+      "frames": 256,
+      "meanMs": 12.029461328125004,
+      "p50Ms": 11.9319,
+      "p95Ms": 13.0302,
+      "traceBytes": 153501,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-frames-3.setrace",
+        "--trace-frames-only"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-frames-3.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-frames-3.setrace"
+    },
+    {
+      "name": "motion-async-full-3",
+      "seconds": 21.57065725326538,
+      "frames": 256,
+      "meanMs": 13.05159375,
+      "p50Ms": 12.997300000000001,
+      "p95Ms": 14.1272,
+      "traceBytes": 446431719,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-full-3.setrace",
+        "--trace-detail",
+        "--trace-allocations"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-full-3.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-full-3.setrace"
+    },
+    {
+      "name": "materials-async-frames-3",
+      "seconds": 14.317649126052856,
+      "frames": 256,
+      "meanMs": 11.901092968749996,
+      "p50Ms": 11.768150000000002,
+      "p95Ms": 13.257200000000001,
+      "traceBytes": 153510,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "materials",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-frames-3.setrace",
+        "--trace-frames-only"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-frames-3.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-frames-3.setrace"
+    },
+    {
+      "name": "materials-async-full-3",
+      "seconds": 21.28774929046631,
+      "frames": 256,
+      "meanMs": 13.162804687499994,
+      "p50Ms": 13.08125,
+      "p95Ms": 14.3404,
+      "traceBytes": 446563682,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "materials",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-full-3.setrace",
+        "--trace-detail",
+        "--trace-allocations"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-full-3.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-full-3.setrace"
+    },
+    {
+      "name": "motion-graphics-frames-3",
+      "seconds": 13.267135381698608,
+      "frames": 256,
+      "meanMs": 10.817490234375002,
+      "p50Ms": 10.66085,
+      "p95Ms": 12.1744,
+      "traceBytes": 153524,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-frames-3.setrace",
+        "--trace-frames-only",
+        "--no-async-compute"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-frames-3.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-frames-3.setrace"
+    },
+    {
+      "name": "motion-graphics-full-3",
+      "seconds": 21.236377716064453,
+      "frames": 256,
+      "meanMs": 11.788683203125002,
+      "p50Ms": 11.7229,
+      "p95Ms": 13.1003,
+      "traceBytes": 420545052,
+      "outsideFrameMeanMs": 0.0,
+      "command": [
+        "F:\\SomeEngine.Next-render-enhancement\\src\\SomeEngine.Runtime\\bin\\Release\\net10.0\\SomeEngine.Runtime.exe",
+        "--frames",
+        "512",
+        "--hidden-window",
+        "--no-vsync",
+        "--dynamic-scene",
+        "--synchronous-frames",
+        "--scene-playback",
+        "motion",
+        "--fixed-step",
+        "0.016666667",
+        "--trace",
+        "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-full-3.setrace",
+        "--trace-detail",
+        "--trace-allocations",
+        "--no-async-compute"
+      ],
+      "report": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-full-3.json",
+      "trace": "F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-full-3.setrace"
+    }
+  ],
+  "measuredAssemblies": {
+    "SomeEngine.Assets.dll": "315b19387d83029ba051321742f3b1c0444e1f38551af33b713f4b39878dd7e6",
+    "SomeEngine.Core.dll": "d27da9ee354862da97155f956b06b59b7c06693002eb8f9968a893f2f3b24c9d",
+    "SomeEngine.Diagnostics.dll": "282a203179187ef7d8838b8388f1c0cbd42f7099f8f857184f6a54fe049e1007",
+    "SomeEngine.ECS.dll": "7a343985e6dac46a270cd516f0e2900a3b5dac542d0ad93b47e9093fabc564b1",
+    "SomeEngine.ECS.Systems.dll": "ca38702c6d098b35c9b03d3541e09eef00a1365e856b321f87b6cae75b00891a",
+    "SomeEngine.Graphics.Direct3D12.dll": "f54f966de7647c3b3db79319062af6dfd98144b5a7ca4ba03a580fa42969a39a",
+    "SomeEngine.Graphics.dll": "9a0042baad6018fc68b139a4cd83c2ef55a15f68b356af63b65cf7216ea4356f",
+    "SomeEngine.Graphics.Validation.dll": "d5f3887ea01a6d256fe8a0eafb61d6b5703992673554777fd0f0df2fae859d6a",
+    "SomeEngine.Graphics.Vulkan.dll": "300b74e25c9959674ac2ac8ab67033cdab7e7b5bbd5ae5cfabb8369637e9bc94",
+    "SomeEngine.Job.Contracts.dll": "0ac70cce9dab00096d9a051bc899a47f26329b2c567d11f47fe6676e1d1b381f",
+    "SomeEngine.Job.dll": "7ff010ee3e186e71f44f9b1979c0e49f637a479cfc86f11ddb143ce12f7b424e",
+    "SomeEngine.Render.Cluster.dll": "b058a47f11cb06116b3670b0245e46057cd5e200a1bacd33acfc013ca8b1fe20",
+    "SomeEngine.Render.Cluster.Pipeline.dll": "94fee575b891cdac9c2bd3a2231b0ca619141f70ce7ed641f3e4e656cd1b130f",
+    "SomeEngine.Render.dll": "37a854b4af5cce2caf357677af6bad2c94333a652d672dd8fc43296867e5673b",
+    "SomeEngine.Render.Features.dll": "fa7644cb9199eb3aec0eeb2b1ce82b463edd93d3794fd7c0395e4d3f566eb1cc",
+    "SomeEngine.RenderGraph.Diagnostics.dll": "89f9a94ee1791a955ee21ff8fda7ab4811d0cd4b96189cf760fe54a7875736a6",
+    "SomeEngine.RenderGraph.dll": "b58df8888a4110d5565972e22e90385191f36fc824d2127126717566c614cb11",
+    "SomeEngine.Runtime.dll": "048033c0ed41e1d6ad003f85d5948bf3b0af7513940572bb22b7ad66906ba7ee",
+    "SomeEngine.Serialization.dll": "f59272713572de47d32fc213df3c3ce8944f0b973a4454ee31fc58f6030187db"
+  },
+  "calibration": [
+    {
+      "Mode": "baseline",
+      "Repeat": 0,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 1.7704,
+      "RecordedNanosecondsPerScope": 0,
+      "AllocatedBytes": 0,
+      "Events": 0,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "disabled",
+      "Repeat": 0,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 3.2444,
+      "RecordedNanosecondsPerScope": 0,
+      "AllocatedBytes": 0,
+      "Events": 0,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "enabled",
+      "Repeat": 0,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 144.0596,
+      "RecordedNanosecondsPerScope": 67.2716,
+      "AllocatedBytes": 0,
+      "Events": 508192,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "allocations",
+      "Repeat": 0,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 97.6028,
+      "RecordedNanosecondsPerScope": 44.2312,
+      "AllocatedBytes": 0,
+      "Events": 508192,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "baseline",
+      "Repeat": 1,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 1.77,
+      "RecordedNanosecondsPerScope": 0,
+      "AllocatedBytes": 0,
+      "Events": 0,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "disabled",
+      "Repeat": 1,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 3.2444,
+      "RecordedNanosecondsPerScope": 0,
+      "AllocatedBytes": 0,
+      "Events": 0,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "enabled",
+      "Repeat": 1,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 143.2504,
+      "RecordedNanosecondsPerScope": 66.7972,
+      "AllocatedBytes": 0,
+      "Events": 508192,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "allocations",
+      "Repeat": 1,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 96.9528,
+      "RecordedNanosecondsPerScope": 43.6152,
+      "AllocatedBytes": 0,
+      "Events": 508192,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "baseline",
+      "Repeat": 2,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 1.77,
+      "RecordedNanosecondsPerScope": 0,
+      "AllocatedBytes": 0,
+      "Events": 0,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "disabled",
+      "Repeat": 2,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 3.2444,
+      "RecordedNanosecondsPerScope": 0,
+      "AllocatedBytes": 0,
+      "Events": 0,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "enabled",
+      "Repeat": 2,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 152.13,
+      "RecordedNanosecondsPerScope": 71.3912,
+      "AllocatedBytes": 0,
+      "Events": 508192,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "allocations",
+      "Repeat": 2,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 100.1592,
+      "RecordedNanosecondsPerScope": 45.2292,
+      "AllocatedBytes": 0,
+      "Events": 508192,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "baseline",
+      "Repeat": 3,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 1.9356,
+      "RecordedNanosecondsPerScope": 0,
+      "AllocatedBytes": 0,
+      "Events": 0,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "disabled",
+      "Repeat": 3,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 3.2444,
+      "RecordedNanosecondsPerScope": 0,
+      "AllocatedBytes": 0,
+      "Events": 0,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "enabled",
+      "Repeat": 3,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 145.9068,
+      "RecordedNanosecondsPerScope": 67.9808,
+      "AllocatedBytes": 0,
+      "Events": 508192,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "allocations",
+      "Repeat": 3,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 96.7872,
+      "RecordedNanosecondsPerScope": 43.706,
+      "AllocatedBytes": 0,
+      "Events": 508192,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "baseline",
+      "Repeat": 4,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 1.9104,
+      "RecordedNanosecondsPerScope": 0,
+      "AllocatedBytes": 0,
+      "Events": 0,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "disabled",
+      "Repeat": 4,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 4.1908,
+      "RecordedNanosecondsPerScope": 0,
+      "AllocatedBytes": 0,
+      "Events": 0,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "enabled",
+      "Repeat": 4,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 146.9124,
+      "RecordedNanosecondsPerScope": 68.4404,
+      "AllocatedBytes": 0,
+      "Events": 508192,
+      "DroppedEvents": 0,
+      "Complete": true
+    },
+    {
+      "Mode": "allocations",
+      "Repeat": 4,
+      "Scopes": 250000,
+      "NanosecondsPerScope": 99.502,
+      "RecordedNanosecondsPerScope": 44.7484,
+      "AllocatedBytes": 0,
+      "Events": 508192,
+      "DroppedEvents": 0,
+      "Complete": true
+    }
+  ],
+  "cases": {
+    "motion-async": {
+      "frames": {
+        "frameCount": 768,
+        "meanMs": 12.073510677083334,
+        "medianMs": 11.83005,
+        "p95Ms": 14.029200000000001,
+        "runMeanMs": [
+          12.636999609375001,
+          11.55407109375,
+          12.029461328125
+        ],
+        "workerElapsedMs": 0,
+        "counters": {
+          "MovingMeshes": [
+            1024
+          ],
+          "MovingLights": [
+            3
+          ],
+          "ChangingMaterials": [
+            0
+          ]
+        },
+        "metadata": {
+          "application": "SomeEngine",
+          "backend": "Direct3D12",
+          "dynamicScene": "True",
+          "asyncCompute": "True",
+          "synchronousFrames": "True",
+          "scenePlayback": "motion",
+          "fixedFrameSeconds": "0.016666668",
+          "frameLimit": "512",
+          "arguments": "--frames 512 --hidden-window --no-vsync --dynamic-scene --synchronous-frames --scene-playback motion --fixed-step 0.016666667 --trace F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-frames-3.setrace --trace-frames-only",
+          "trace.scopes": "False",
+          "trace.bufferMegabytes": "64"
+        },
+        "categories": {
+          "main/frame": {
+            "selfMs": 12.073510677083336,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          }
+        },
+        "costs": {
+          "main/frame/Frame": {
+            "selfMs": 12.073510677083336,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          }
+        }
+      },
+      "full": {
+        "frameCount": 768,
+        "meanMs": 13.212124739583334,
+        "medianMs": 13.11555,
+        "p95Ms": 14.2355,
+        "runMeanMs": [
+          13.393739453125,
+          13.191041015625,
+          13.05159375
+        ],
+        "workerElapsedMs": 0.367863671875,
+        "counters": {
+          "MovingMeshes": [
+            1024
+          ],
+          "MovingLights": [
+            3
+          ],
+          "ChangingMaterials": [
+            0
+          ]
+        },
+        "metadata": {
+          "application": "SomeEngine",
+          "backend": "Direct3D12",
+          "dynamicScene": "True",
+          "asyncCompute": "True",
+          "synchronousFrames": "True",
+          "scenePlayback": "motion",
+          "fixedFrameSeconds": "0.016666668",
+          "frameLimit": "512",
+          "arguments": "--frames 512 --hidden-window --no-vsync --dynamic-scene --synchronous-frames --scene-playback motion --fixed-step 0.016666667 --trace F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-async-full-3.setrace --trace-detail --trace-allocations",
+          "trace.scopes": "True",
+          "trace.bufferMegabytes": "64"
+        },
+        "categories": {
+          "main/native": {
+            "selfMs": 6.465145182291671,
+            "calls": 4305.968750000324,
+            "bytes": 0.0
+          },
+          "main/app": {
+            "selfMs": 1.429357291666664,
+            "calls": 4.999999999999954,
+            "bytes": 389521.187499997
+          },
+          "main/rg": {
+            "selfMs": 3.435653645833341,
+            "calls": 1767.9999999998222,
+            "bytes": 281640.67708333506
+          },
+          "main/rhi": {
+            "selfMs": 1.5266282552083346,
+            "calls": 1238.994791666668,
+            "bytes": 41719.99999999989
+          },
+          "main/pass": {
+            "selfMs": 0.0874497395833333,
+            "calls": 101.00000000000087,
+            "bytes": 0.0
+          },
+          "main/wait": {
+            "selfMs": 0.1653963541666685,
+            "calls": 4.993489583333289,
+            "bytes": 40.00000000000007
+          },
+          "main/frame": {
+            "selfMs": 0.07906497395833338,
+            "calls": 1.0000000000000113,
+            "bytes": 66008.15624999929
+          },
+          "worker/job": {
+            "selfMs": 0.05683828125000032,
+            "calls": 3.000000000000068,
+            "bytes": 32.00000000000036
+          },
+          "main/ecs": {
+            "selfMs": 0.023429296875000023,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native": {
+            "selfMs": 0.2061204427083442,
+            "calls": 249.00000000001674,
+            "bytes": 0.0
+          },
+          "worker/rhi": {
+            "selfMs": 0.06914283854166704,
+            "calls": 34.00000000000047,
+            "bytes": 0.0
+          },
+          "worker/rg": {
+            "selfMs": 0.03057890624999998,
+            "calls": 16.00000000000018,
+            "bytes": 0.625
+          },
+          "worker/pass": {
+            "selfMs": 0.0051832031249998255,
+            "calls": 6.0,
+            "bytes": 0.0
+          }
+        },
+        "costs": {
+          "main/native/ID3D12CommandQueue.ExecuteCommandLists": {
+            "selfMs": 1.8349518229166666,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/app/ExecuteFrame": {
+            "selfMs": 1.0691981770833352,
+            "calls": 1.0000000000000113,
+            "bytes": 387225.1874999999
+          },
+          "main/native/ID3D12GraphicsCommandList10.Reset": {
+            "selfMs": 0.8321278645833324,
+            "calls": 80.00000000000014,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12CommandQueue.Wait": {
+            "selfMs": 0.7307604166666671,
+            "calls": 38.00000000000002,
+            "bytes": 0.0
+          },
+          "main/rg/StateCommit": {
+            "selfMs": 0.7272973958333334,
+            "calls": 107.00000000000102,
+            "bytes": 102120.0
+          },
+          "main/native/ID3D12CommandQueue.Signal": {
+            "selfMs": 0.6461191406249996,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/rg/Rows": {
+            "selfMs": 0.6031434895833343,
+            "calls": 1.0000000000000113,
+            "bytes": 120279.9999999987
+          },
+          "main/rg/RecordSubmit": {
+            "selfMs": 0.5297600260416657,
+            "calls": 1.0000000000000113,
+            "bytes": 8.718750000000002
+          },
+          "main/native/ID3D12GraphicsCommandList10.Barrier": {
+            "selfMs": 0.5203169270833335,
+            "calls": 178.000000000001,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiBindings": {
+            "selfMs": 0.5177804687500002,
+            "calls": 150.99999999999986,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.Close": {
+            "selfMs": 0.4300536458333335,
+            "calls": 80.00000000000014,
+            "bytes": 0.0
+          },
+          "main/rg/Synchronization": {
+            "selfMs": 0.36919869791666676,
+            "calls": 1.0000000000000113,
+            "bytes": 5116.333333333336
+          },
+          "main/rhi/RhiCommandsAndOther": {
+            "selfMs": 0.32844648437499996,
+            "calls": 256.9947916666639,
+            "bytes": 0.0
+          },
+          "main/native/IDXGISwapChain4.Present": {
+            "selfMs": 0.31499986979166633,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/app/Prepare": {
+            "selfMs": 0.24912734375000006,
+            "calls": 1.0000000000000113,
+            "bytes": 2295.999999999992
+          },
+          "main/rhi/RhiBarriers": {
+            "selfMs": 0.20384752604166667,
+            "calls": 178.000000000001,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12CommandAllocator.Reset": {
+            "selfMs": 0.19115338541666657,
+            "calls": 80.00000000000014,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetViewRow": {
+            "selfMs": 0.19109257812500038,
+            "calls": 462.9999999999951,
+            "bytes": 9912.0
+          },
+          "main/rg/Materialize": {
+            "selfMs": 0.17921471354166646,
+            "calls": 1.0000000000000113,
+            "bytes": 24840.0
+          },
+          "main/rg/BindingResolution": {
+            "selfMs": 0.1705546874999998,
+            "calls": 75.0,
+            "bytes": 3.125
+          },
+          "main/rhi/RhiCommandLifecycle": {
+            "selfMs": 0.14518658854166688,
+            "calls": 160.00000000000028,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetAccessRow": {
+            "selfMs": 0.14018945312499997,
+            "calls": 696.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.ExecuteIndirect": {
+            "selfMs": 0.13971692708333328,
+            "calls": 33.999999999999766,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.Dispatch": {
+            "selfMs": 0.10773515625000007,
+            "calls": 33.999999999999766,
+            "bytes": 0.0
+          },
+          "main/app/Scene.Update": {
+            "selfMs": 0.10629583333333334,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rg/SubmitAssembly": {
+            "selfMs": 0.09691523437500005,
+            "calls": 27.999999999999712,
+            "bytes": 2240.0000000000114
+          },
+          "main/wait/Job.JoinLatencyWork": {
+            "selfMs": 0.09562786458333342,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitExecuteSubmissionUnderGate": {
+            "selfMs": 0.09193502604166669,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CreateShaderResourceView": {
+            "selfMs": 0.08771601562499995,
+            "calls": 271.9999999999981,
+            "bytes": 0.0
+          },
+          "main/pass/Callbacks": {
+            "selfMs": 0.0874497395833333,
+            "calls": 101.00000000000087,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiResourceCreation": {
+            "selfMs": 0.0849238281249999,
+            "calls": 199.00000000000168,
+            "bytes": 41719.99999999989
+          },
+          "main/rg/RowsSetBufferRow": {
+            "selfMs": 0.08032343750000008,
+            "calls": 78.0,
+            "bytes": 5295.875000000016
+          },
+          "main/frame/Frame": {
+            "selfMs": 0.07906497395833338,
+            "calls": 1.0000000000000113,
+            "bytes": 66008.15624999929
+          },
+          "main/rg/CommandLists": {
+            "selfMs": 0.07451067708333335,
+            "calls": 67.00000000000053,
+            "bytes": 0.0
+          },
+          "main/rg/LateReleases": {
+            "selfMs": 0.0720135416666667,
+            "calls": 24.99999999999979,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CopyDescriptorsSimple": {
+            "selfMs": 0.07025013020833336,
+            "calls": 706.0000000000038,
+            "bytes": 0.0
+          },
+          "main/rg/PassDispatch": {
+            "selfMs": 0.06685312500000001,
+            "calls": 101.00000000000087,
+            "bytes": 0.0
+          },
+          "main/wait/CpuFenceWait": {
+            "selfMs": 0.06596953124999995,
+            "calls": 0.9934895833333445,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetPipelineState": {
+            "selfMs": 0.06595351562499997,
+            "calls": 66.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.GetDescriptorHandleIncrementSize": {
+            "selfMs": 0.0635545572916667,
+            "calls": 1006.0000000000114,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.CopyBufferRegion": {
+            "selfMs": 0.06341731770833337,
+            "calls": 36.0,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiWaitAndCollect": {
+            "selfMs": 0.057676953125,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Reset": {
+            "selfMs": 0.056121093750000024,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmit": {
+            "selfMs": 0.05574296874999999,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "worker/job/Execute": {
+            "selfMs": 0.05552200520833339,
+            "calls": 1.9999999999999545,
+            "bytes": 32.00000000000036
+          },
+          "main/native/ID3D12DescriptorHeap.GetCPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.050210026041666606,
+            "calls": 928.0000000000099,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetDescriptorHeaps": {
+            "selfMs": 0.04415585937499999,
+            "calls": 46.0000000000003,
+            "bytes": 0.0
+          },
+          "worker/rhi/RhiBindings": {
+            "selfMs": 0.04400911458333337,
+            "calls": 12.0,
+            "bytes": 0.0
+          },
+          "main/rg/BatchConstruction": {
+            "selfMs": 0.04110520833333336,
+            "calls": 64.00000000000072,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Barrier": {
+            "selfMs": 0.03503437499999998,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Close": {
+            "selfMs": 0.03408072916666673,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CreateUnorderedAccessView": {
+            "selfMs": 0.03315078125000004,
+            "calls": 61.000000000000675,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetPassRow": {
+            "selfMs": 0.03293463541666666,
+            "calls": 46.999999999999666,
+            "bytes": 11544.625000000065
+          },
+          "main/native/ID3D12GraphicsCommandList10.OMSetRenderTargets": {
+            "selfMs": 0.030590624999999937,
+            "calls": 13.000000000000119,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetComputeRootDescriptorTable": {
+            "selfMs": 0.02582278645833333,
+            "calls": 66.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Resource.Map": {
+            "selfMs": 0.02403828124999994,
+            "calls": 60.0,
+            "bytes": 0.0
+          },
+          "main/rg/WaitCollection": {
+            "selfMs": 0.023903255208333318,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/ecs/RenderExtraction": {
+            "selfMs": 0.023429296875000023,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rg/BoundaryObservation": {
+            "selfMs": 0.02200286458333332,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.ClearRenderTargetView": {
+            "selfMs": 0.021202734375000046,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Dispatch": {
+            "selfMs": 0.0196024739583333,
+            "calls": 5.000000000000009,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.CopyTextureRegion": {
+            "selfMs": 0.01958085937500002,
+            "calls": 3.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12CommandAllocator.Reset": {
+            "selfMs": 0.015588932291666689,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "worker/rg/BindingResolution": {
+            "selfMs": 0.013625911458333275,
+            "calls": 6.0,
+            "bytes": 0.625
+          },
+          "worker/rg/CommandLists": {
+            "selfMs": 0.012442578125000015,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetComputeRootSignature": {
+            "selfMs": 0.012409244791666656,
+            "calls": 55.00000000000055,
+            "bytes": 0.0
+          },
+          "worker/rhi/RhiBarriers": {
+            "selfMs": 0.012402864583333251,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitClaimCommandPayloads": {
+            "selfMs": 0.012369661458333391,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitCollectReferencedSwapchainImages": {
+            "selfMs": 0.011655468750000005,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/native/CreateWaitEvent": {
+            "selfMs": 0.011631380208333299,
+            "calls": 0.9934895833333445,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Fence.SetEventOnCompletion": {
+            "selfMs": 0.011225000000000008,
+            "calls": 0.9934895833333445,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetTextureRow": {
+            "selfMs": 0.010980208333333354,
+            "calls": 6.999999999999928,
+            "bytes": 280.0000000000014
+          },
+          "worker/rhi/RhiCommandLifecycle": {
+            "selfMs": 0.009755078124999924,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.DrawInstanced": {
+            "selfMs": 0.009411718749999982,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CreateConstantBufferView": {
+            "selfMs": 0.009285156249999977,
+            "calls": 76.00000000000004,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12DescriptorHeap.GetGPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.008289062500000001,
+            "calls": 78.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Resource.Unmap": {
+            "selfMs": 0.008152604166666633,
+            "calls": 60.0,
+            "bytes": 0.0
+          },
+          "main/native/CloseWaitEvent": {
+            "selfMs": 0.00791080729166659,
+            "calls": 0.9934895833333445,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CreateRenderTargetView": {
+            "selfMs": 0.007701692708333266,
+            "calls": 12.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.ExecuteIndirect": {
+            "selfMs": 0.007410156249999926,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Resource.GetGPUVirtualAddress": {
+            "selfMs": 0.005978515625000032,
+            "calls": 51.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetPipelineState": {
+            "selfMs": 0.0059506510416665204,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateShaderResourceView": {
+            "selfMs": 0.005796614583333369,
+            "calls": 21.999999999999883,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.RSSetViewports": {
+            "selfMs": 0.005204687500000068,
+            "calls": 6.999999999999928,
+            "bytes": 0.0
+          },
+          "worker/pass/Callbacks": {
+            "selfMs": 0.0051832031249998255,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.GetDescriptorHandleIncrementSize": {
+            "selfMs": 0.005110546874999853,
+            "calls": 69.0,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitValidateSwapchainImages": {
+            "selfMs": 0.0049385416666667134,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetDescriptorHeaps": {
+            "selfMs": 0.0048927083333332065,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Fence.GetCompletedValue": {
+            "selfMs": 0.004711328125000035,
+            "calls": 35.98828125,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CopyDescriptorsSimple": {
+            "selfMs": 0.0046391927083332275,
+            "calls": 33.999999999999766,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitPrepareSubmissionWaits": {
+            "selfMs": 0.004569921874999995,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "worker/rg/PassDispatch": {
+            "selfMs": 0.004510416666666543,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiPresentation": {
+            "selfMs": 0.004242447916666623,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/app/Scene.Playback": {
+            "selfMs": 0.003991796874999968,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12DescriptorHeap.GetCPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.003747005208333289,
+            "calls": 63.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetGraphicsRootSignature": {
+            "selfMs": 0.003483593749999985,
+            "calls": 10.999999999999941,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitClaimSwapchainImages": {
+            "selfMs": 0.003312369791666669,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetComputeRootDescriptorTable": {
+            "selfMs": 0.0029888020833332657,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/rhi/RhiCommandsAndOther": {
+            "selfMs": 0.002975781249999913,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetGraphicsRootDescriptorTable": {
+            "selfMs": 0.0029332031250000204,
+            "calls": 12.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.DrawIndexedInstanced": {
+            "selfMs": 0.0027596354166666863,
+            "calls": 2.0000000000000226,
+            "bytes": 0.0
+          },
+          "main/wait/GpuFrameCompletion": {
+            "selfMs": 0.002695833333333347,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateUnorderedAccessView": {
+            "selfMs": 0.002197656249999997,
+            "calls": 3.0,
+            "bytes": 0.0
+          },
+          "main/rg/Execute": {
+            "selfMs": 0.0021739583333333346,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.DiscardResource": {
+            "selfMs": 0.0020916666666666627,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.RSSetScissorRects": {
+            "selfMs": 0.0018815104166666494,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetComputeRootSignature": {
+            "selfMs": 0.0015968749999999542,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/job/LatencyWork": {
+            "selfMs": 0.0013162760416666759,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rg/ParameterUpdates": {
+            "selfMs": 0.0011572916666666693,
+            "calls": 2.0000000000000226,
+            "bytes": 0.0
+          },
+          "main/native/IDXGISwapChain4.GetCurrentBackBufferIndex": {
+            "selfMs": 0.0010855468749999947,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.IASetPrimitiveTopology": {
+            "selfMs": 0.0007885416666666668,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/app/ReconcileGraph": {
+            "selfMs": 0.0007441406250000022,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12DescriptorHeap.GetGPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.0007326822916666573,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateConstantBufferView": {
+            "selfMs": 0.0006299479166666719,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/wait/Job.Complete": {
+            "selfMs": 0.0006214843750000007,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/wait/TaskCompletion": {
+            "selfMs": 0.00048164062499999965,
+            "calls": 1.0000000000000113,
+            "bytes": 40.00000000000007
+          },
+          "main/rg/Diagnostics": {
+            "selfMs": 0.00032916666666666836,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.IASetVertexBuffers": {
+            "selfMs": 0.0003290364583333371,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.IASetIndexBuffer": {
+            "selfMs": 0.00030260416666666917,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          }
+        }
+      },
+      "observedCaptureDifferenceMs": 1.1386140625000003,
+      "observedRgRhiMainMs": 4.962281901041676,
+      "conditionalRemainingInstrumentedMs": 8.249842838541658
+    },
+    "materials-async": {
+      "frames": {
+        "frameCount": 768,
+        "meanMs": 12.474132552083335,
+        "medianMs": 12.173250000000001,
+        "p95Ms": 14.5343,
+        "runMeanMs": [
+          13.15424765625,
+          12.36705703125,
+          11.901092968750001
+        ],
+        "workerElapsedMs": 0,
+        "counters": {
+          "MovingMeshes": [
+            1024
+          ],
+          "MovingLights": [
+            3
+          ],
+          "ChangingMaterials": [
+            1
+          ]
+        },
+        "metadata": {
+          "application": "SomeEngine",
+          "backend": "Direct3D12",
+          "dynamicScene": "True",
+          "asyncCompute": "True",
+          "synchronousFrames": "True",
+          "scenePlayback": "materials",
+          "fixedFrameSeconds": "0.016666668",
+          "frameLimit": "512",
+          "arguments": "--frames 512 --hidden-window --no-vsync --dynamic-scene --synchronous-frames --scene-playback materials --fixed-step 0.016666667 --trace F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-frames-3.setrace --trace-frames-only",
+          "trace.scopes": "False",
+          "trace.bufferMegabytes": "64"
+        },
+        "categories": {
+          "main/frame": {
+            "selfMs": 12.474132552083331,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          }
+        },
+        "costs": {
+          "main/frame/Frame": {
+            "selfMs": 12.474132552083331,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          }
+        }
+      },
+      "full": {
+        "frameCount": 768,
+        "meanMs": 13.580041796875001,
+        "medianMs": 13.344550000000002,
+        "p95Ms": 15.5896,
+        "runMeanMs": [
+          13.423963671875,
+          14.153357031250001,
+          13.162804687500001
+        ],
+        "workerElapsedMs": 0.369900390625,
+        "counters": {
+          "MovingMeshes": [
+            1024
+          ],
+          "MovingLights": [
+            3
+          ],
+          "ChangingMaterials": [
+            1
+          ]
+        },
+        "metadata": {
+          "application": "SomeEngine",
+          "backend": "Direct3D12",
+          "dynamicScene": "True",
+          "asyncCompute": "True",
+          "synchronousFrames": "True",
+          "scenePlayback": "materials",
+          "fixedFrameSeconds": "0.016666668",
+          "frameLimit": "512",
+          "arguments": "--frames 512 --hidden-window --no-vsync --dynamic-scene --synchronous-frames --scene-playback materials --fixed-step 0.016666667 --trace F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\materials-async-full-3.setrace --trace-detail --trace-allocations",
+          "trace.scopes": "True",
+          "trace.bufferMegabytes": "64"
+        },
+        "categories": {
+          "main/native": {
+            "selfMs": 6.587300911458257,
+            "calls": 4305.910156250326,
+            "bytes": 0.0
+          },
+          "main/app": {
+            "selfMs": 1.5952255208333412,
+            "calls": 4.999999999999954,
+            "bytes": 505377.4999999989
+          },
+          "main/rg": {
+            "selfMs": 3.484307812499972,
+            "calls": 1767.999999999822,
+            "bytes": 281663.34375000175
+          },
+          "main/rhi": {
+            "selfMs": 1.553284374999999,
+            "calls": 1240.9986979166672,
+            "bytes": 41719.99999999989
+          },
+          "main/pass": {
+            "selfMs": 0.09116992187499998,
+            "calls": 101.00000000000087,
+            "bytes": 0.0
+          },
+          "main/frame": {
+            "selfMs": 0.07632591145833338,
+            "calls": 1.0000000000000113,
+            "bytes": 66008.15624999929
+          },
+          "worker/job": {
+            "selfMs": 0.05736731770833361,
+            "calls": 3.000000000000068,
+            "bytes": 32.00000000000036
+          },
+          "main/wait": {
+            "selfMs": 0.16917213541666798,
+            "calls": 4.977864583333292,
+            "bytes": 40.00000000000007
+          },
+          "main/ecs": {
+            "selfMs": 0.023255208333333326,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native": {
+            "selfMs": 0.20629830729167858,
+            "calls": 249.00000000001674,
+            "bytes": 0.0
+          },
+          "worker/rhi": {
+            "selfMs": 0.07022200520833358,
+            "calls": 34.00000000000047,
+            "bytes": 0.0
+          },
+          "worker/rg": {
+            "selfMs": 0.030542187499999807,
+            "calls": 16.00000000000018,
+            "bytes": 0.625
+          },
+          "worker/pass": {
+            "selfMs": 0.005470572916666519,
+            "calls": 6.0,
+            "bytes": 0.0
+          }
+        },
+        "costs": {
+          "main/native/ID3D12CommandQueue.ExecuteCommandLists": {
+            "selfMs": 1.867470312500003,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/app/ExecuteFrame": {
+            "selfMs": 1.097273177083333,
+            "calls": 1.0000000000000113,
+            "bytes": 387255.66666666605
+          },
+          "main/native/ID3D12GraphicsCommandList10.Reset": {
+            "selfMs": 0.8514054687499985,
+            "calls": 80.00000000000014,
+            "bytes": 0.0
+          },
+          "main/rg/StateCommit": {
+            "selfMs": 0.7478800781250001,
+            "calls": 107.00000000000102,
+            "bytes": 102120.0
+          },
+          "main/native/ID3D12CommandQueue.Wait": {
+            "selfMs": 0.740558072916666,
+            "calls": 38.00000000000002,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12CommandQueue.Signal": {
+            "selfMs": 0.6685945312500002,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/rg/Rows": {
+            "selfMs": 0.6116966145833332,
+            "calls": 1.0000000000000113,
+            "bytes": 120279.9999999987
+          },
+          "main/rg/RecordSubmit": {
+            "selfMs": 0.5367971354166665,
+            "calls": 1.0000000000000113,
+            "bytes": 10.656249999999998
+          },
+          "main/rhi/RhiBindings": {
+            "selfMs": 0.5343657552083328,
+            "calls": 150.99999999999986,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.Barrier": {
+            "selfMs": 0.5299902343750005,
+            "calls": 178.000000000001,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.Close": {
+            "selfMs": 0.4403157552083334,
+            "calls": 80.00000000000014,
+            "bytes": 0.0
+          },
+          "main/rg/Synchronization": {
+            "selfMs": 0.37420833333333386,
+            "calls": 1.0000000000000113,
+            "bytes": 5130.708333333343
+          },
+          "main/rhi/RhiCommandsAndOther": {
+            "selfMs": 0.3305007812500001,
+            "calls": 258.9986979166693,
+            "bytes": 0.0
+          },
+          "main/native/IDXGISwapChain4.Present": {
+            "selfMs": 0.31687447916666683,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/app/Prepare": {
+            "selfMs": 0.24304492187500007,
+            "calls": 1.0000000000000113,
+            "bytes": 2295.999999999992
+          },
+          "main/rhi/RhiBarriers": {
+            "selfMs": 0.2137717447916663,
+            "calls": 178.000000000001,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12CommandAllocator.Reset": {
+            "selfMs": 0.2017287760416666,
+            "calls": 80.00000000000014,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetViewRow": {
+            "selfMs": 0.19072226562499997,
+            "calls": 462.9999999999951,
+            "bytes": 9912.0
+          },
+          "main/rg/Materialize": {
+            "selfMs": 0.1812127604166669,
+            "calls": 1.0000000000000113,
+            "bytes": 24840.0
+          },
+          "main/rg/BindingResolution": {
+            "selfMs": 0.167770703125,
+            "calls": 75.0,
+            "bytes": 3.4375
+          },
+          "main/app/ReconcileGraph": {
+            "selfMs": 0.15137526041666663,
+            "calls": 1.0000000000000113,
+            "bytes": 115801.83333333384
+          },
+          "main/rhi/RhiCommandLifecycle": {
+            "selfMs": 0.1508134114583334,
+            "calls": 160.00000000000028,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.ExecuteIndirect": {
+            "selfMs": 0.14098385416666692,
+            "calls": 33.999999999999766,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetAccessRow": {
+            "selfMs": 0.13919999999999996,
+            "calls": 696.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.Dispatch": {
+            "selfMs": 0.11122552083333323,
+            "calls": 33.999999999999766,
+            "bytes": 0.0
+          },
+          "main/rg/SubmitAssembly": {
+            "selfMs": 0.0995264322916666,
+            "calls": 27.999999999999712,
+            "bytes": 2240.0000000000114
+          },
+          "main/app/Scene.Update": {
+            "selfMs": 0.09861588541666688,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/wait/Job.JoinLatencyWork": {
+            "selfMs": 0.09427304687499992,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitExecuteSubmissionUnderGate": {
+            "selfMs": 0.0923015625000001,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/pass/Callbacks": {
+            "selfMs": 0.09116992187499998,
+            "calls": 101.00000000000087,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CreateShaderResourceView": {
+            "selfMs": 0.08661510416666662,
+            "calls": 271.9999999999981,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetBufferRow": {
+            "selfMs": 0.08128697916666662,
+            "calls": 78.0,
+            "bytes": 5295.875000000016
+          },
+          "main/rhi/RhiResourceCreation": {
+            "selfMs": 0.07737135416666674,
+            "calls": 199.00000000000168,
+            "bytes": 41719.99999999989
+          },
+          "main/frame/Frame": {
+            "selfMs": 0.07632591145833338,
+            "calls": 1.0000000000000113,
+            "bytes": 66008.15624999929
+          },
+          "main/rg/LateReleases": {
+            "selfMs": 0.07602018229166671,
+            "calls": 24.99999999999979,
+            "bytes": 0.0
+          },
+          "main/rg/CommandLists": {
+            "selfMs": 0.07564557291666667,
+            "calls": 67.00000000000053,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CopyDescriptorsSimple": {
+            "selfMs": 0.07135872395833337,
+            "calls": 706.0000000000038,
+            "bytes": 0.0
+          },
+          "main/wait/CpuFenceWait": {
+            "selfMs": 0.07108072916666659,
+            "calls": 0.977864583333344,
+            "bytes": 0.0
+          },
+          "main/rg/PassDispatch": {
+            "selfMs": 0.06798750000000002,
+            "calls": 101.00000000000087,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetPipelineState": {
+            "selfMs": 0.06624322916666665,
+            "calls": 66.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.GetDescriptorHandleIncrementSize": {
+            "selfMs": 0.06457565104166672,
+            "calls": 1006.0000000000114,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.CopyBufferRegion": {
+            "selfMs": 0.06275651041666673,
+            "calls": 36.0,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmit": {
+            "selfMs": 0.05720169270833342,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiWaitAndCollect": {
+            "selfMs": 0.056748307291666654,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/job/Execute": {
+            "selfMs": 0.05605963541666668,
+            "calls": 1.9999999999999545,
+            "bytes": 32.00000000000036
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Reset": {
+            "selfMs": 0.05602955729166671,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12DescriptorHeap.GetCPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.05080859374999999,
+            "calls": 928.0000000000099,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetDescriptorHeaps": {
+            "selfMs": 0.04411054687499998,
+            "calls": 46.0000000000003,
+            "bytes": 0.0
+          },
+          "worker/rhi/RhiBindings": {
+            "selfMs": 0.04409583333333332,
+            "calls": 12.0,
+            "bytes": 0.0
+          },
+          "main/rg/BatchConstruction": {
+            "selfMs": 0.04049283854166668,
+            "calls": 64.00000000000072,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Barrier": {
+            "selfMs": 0.03496640624999997,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Close": {
+            "selfMs": 0.03459036458333335,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetPassRow": {
+            "selfMs": 0.03344205729166662,
+            "calls": 46.999999999999666,
+            "bytes": 11550.666666666732
+          },
+          "main/native/ID3D12Device10.CreateUnorderedAccessView": {
+            "selfMs": 0.032060286458333434,
+            "calls": 61.000000000000675,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.OMSetRenderTargets": {
+            "selfMs": 0.029895312499999948,
+            "calls": 13.000000000000119,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetComputeRootDescriptorTable": {
+            "selfMs": 0.02603906250000004,
+            "calls": 66.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Resource.Map": {
+            "selfMs": 0.02379804687499994,
+            "calls": 60.0,
+            "bytes": 0.0
+          },
+          "main/rg/WaitCollection": {
+            "selfMs": 0.023684114583333336,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/ecs/RenderExtraction": {
+            "selfMs": 0.023255208333333326,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rg/BoundaryObservation": {
+            "selfMs": 0.02206458333333329,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.ClearRenderTargetView": {
+            "selfMs": 0.02123697916666671,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Dispatch": {
+            "selfMs": 0.01977135416666665,
+            "calls": 5.000000000000009,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.CopyTextureRegion": {
+            "selfMs": 0.019688671875000018,
+            "calls": 3.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12CommandAllocator.Reset": {
+            "selfMs": 0.01543294270833333,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "worker/rg/BindingResolution": {
+            "selfMs": 0.013583723958333273,
+            "calls": 6.0,
+            "bytes": 0.625
+          },
+          "worker/rhi/RhiBarriers": {
+            "selfMs": 0.012954166666666638,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Fence.SetEventOnCompletion": {
+            "selfMs": 0.012804427083333299,
+            "calls": 0.977864583333344,
+            "bytes": 0.0
+          },
+          "worker/rg/CommandLists": {
+            "selfMs": 0.012308593749999971,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/native/CreateWaitEvent": {
+            "selfMs": 0.012196223958333283,
+            "calls": 0.977864583333344,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitClaimCommandPayloads": {
+            "selfMs": 0.012154296874999998,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitCollectReferencedSwapchainImages": {
+            "selfMs": 0.011730468750000014,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetComputeRootSignature": {
+            "selfMs": 0.011658203124999995,
+            "calls": 55.00000000000055,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetTextureRow": {
+            "selfMs": 0.010948958333333357,
+            "calls": 6.999999999999928,
+            "bytes": 280.0000000000014
+          },
+          "worker/rhi/RhiCommandLifecycle": {
+            "selfMs": 0.010080078124999907,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.DrawInstanced": {
+            "selfMs": 0.00951432291666669,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CreateConstantBufferView": {
+            "selfMs": 0.009138671874999959,
+            "calls": 76.00000000000004,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Resource.Unmap": {
+            "selfMs": 0.00817382812499995,
+            "calls": 60.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12DescriptorHeap.GetGPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.008073177083333332,
+            "calls": 78.0,
+            "bytes": 0.0
+          },
+          "main/native/CloseWaitEvent": {
+            "selfMs": 0.0077027343749999306,
+            "calls": 0.977864583333344,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CreateRenderTargetView": {
+            "selfMs": 0.0075776041666666,
+            "calls": 12.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.ExecuteIndirect": {
+            "selfMs": 0.0072610677083332605,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetPipelineState": {
+            "selfMs": 0.006051692708333164,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateShaderResourceView": {
+            "selfMs": 0.0058186197916667015,
+            "calls": 21.999999999999883,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Resource.GetGPUVirtualAddress": {
+            "selfMs": 0.0057772135416667165,
+            "calls": 51.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.RSSetViewports": {
+            "selfMs": 0.00558619791666672,
+            "calls": 6.999999999999928,
+            "bytes": 0.0
+          },
+          "worker/pass/Callbacks": {
+            "selfMs": 0.005470572916666519,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.GetDescriptorHandleIncrementSize": {
+            "selfMs": 0.0051546874999998495,
+            "calls": 69.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Fence.GetCompletedValue": {
+            "selfMs": 0.005059244791666711,
+            "calls": 35.9765625,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetDescriptorHeaps": {
+            "selfMs": 0.004987890624999875,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/app/Scene.Playback": {
+            "selfMs": 0.004916276041666693,
+            "calls": 1.0000000000000113,
+            "bytes": 24.0
+          },
+          "worker/rg/PassDispatch": {
+            "selfMs": 0.004649869791666576,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitValidateSwapchainImages": {
+            "selfMs": 0.004551822916666681,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitPrepareSubmissionWaits": {
+            "selfMs": 0.00445403645833334,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CopyDescriptorsSimple": {
+            "selfMs": 0.00441015624999987,
+            "calls": 33.999999999999766,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiPresentation": {
+            "selfMs": 0.00394882812499998,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12DescriptorHeap.GetCPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.0037847656249999613,
+            "calls": 63.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetGraphicsRootSignature": {
+            "selfMs": 0.003556380208333316,
+            "calls": 10.999999999999941,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitClaimSwapchainImages": {
+            "selfMs": 0.0033703125,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "worker/rhi/RhiCommandsAndOther": {
+            "selfMs": 0.003091927083333232,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetComputeRootDescriptorTable": {
+            "selfMs": 0.0028878906249999495,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetGraphicsRootDescriptorTable": {
+            "selfMs": 0.0028677083333333493,
+            "calls": 12.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.DrawIndexedInstanced": {
+            "selfMs": 0.0026743489583333615,
+            "calls": 2.0000000000000226,
+            "bytes": 0.0
+          },
+          "main/wait/GpuFrameCompletion": {
+            "selfMs": 0.002387500000000001,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateUnorderedAccessView": {
+            "selfMs": 0.0021785156249999977,
+            "calls": 3.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.DiscardResource": {
+            "selfMs": 0.002157291666666666,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/rg/Execute": {
+            "selfMs": 0.0021259114583333264,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.RSSetScissorRects": {
+            "selfMs": 0.0018843749999999837,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetComputeRootSignature": {
+            "selfMs": 0.0015880208333332866,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/job/LatencyWork": {
+            "selfMs": 0.0013076822916666799,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rg/ParameterUpdates": {
+            "selfMs": 0.0012067708333333392,
+            "calls": 2.0000000000000226,
+            "bytes": 0.0
+          },
+          "main/native/IDXGISwapChain4.GetCurrentBackBufferIndex": {
+            "selfMs": 0.0011018229166666654,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/wait/Job.Complete": {
+            "selfMs": 0.000977213541666669,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.IASetPrimitiveTopology": {
+            "selfMs": 0.0007855468750000003,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12DescriptorHeap.GetGPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.0007173177083333265,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateConstantBufferView": {
+            "selfMs": 0.0006670572916666735,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/wait/TaskCompletion": {
+            "selfMs": 0.0004536458333333357,
+            "calls": 1.0000000000000113,
+            "bytes": 40.00000000000007
+          },
+          "main/rg/Diagnostics": {
+            "selfMs": 0.00038802083333333516,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.IASetVertexBuffers": {
+            "selfMs": 0.0003845052083333366,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.IASetIndexBuffer": {
+            "selfMs": 0.00029335937500000206,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          }
+        }
+      },
+      "observedCaptureDifferenceMs": 1.1059092447916665,
+      "observedRgRhiMainMs": 5.037592187499971,
+      "conditionalRemainingInstrumentedMs": 8.54244960937503
+    },
+    "motion-graphics": {
+      "frames": {
+        "frameCount": 768,
+        "meanMs": 10.966633984375001,
+        "medianMs": 10.838600000000001,
+        "p95Ms": 12.379100000000001,
+        "runMeanMs": [
+          11.337707421875,
+          10.744704296875,
+          10.817490234375
+        ],
+        "workerElapsedMs": 0,
+        "counters": {
+          "MovingMeshes": [
+            1024
+          ],
+          "MovingLights": [
+            3
+          ],
+          "ChangingMaterials": [
+            0
+          ]
+        },
+        "metadata": {
+          "application": "SomeEngine",
+          "backend": "Direct3D12",
+          "dynamicScene": "True",
+          "asyncCompute": "False",
+          "synchronousFrames": "True",
+          "scenePlayback": "motion",
+          "fixedFrameSeconds": "0.016666668",
+          "frameLimit": "512",
+          "arguments": "--frames 512 --hidden-window --no-vsync --dynamic-scene --synchronous-frames --scene-playback motion --fixed-step 0.016666667 --trace F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-frames-3.setrace --trace-frames-only --no-async-compute",
+          "trace.scopes": "False",
+          "trace.bufferMegabytes": "64"
+        },
+        "categories": {
+          "main/frame": {
+            "selfMs": 10.966633984375008,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          }
+        },
+        "costs": {
+          "main/frame/Frame": {
+            "selfMs": 10.966633984375008,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          }
+        }
+      },
+      "full": {
+        "frameCount": 768,
+        "meanMs": 11.999584895833333,
+        "medianMs": 11.958400000000001,
+        "p95Ms": 13.359200000000001,
+        "runMeanMs": [
+          12.30647890625,
+          11.903592578125,
+          11.788683203125
+        ],
+        "workerElapsedMs": 0.95508203125,
+        "counters": {
+          "MovingMeshes": [
+            1024
+          ],
+          "MovingLights": [
+            3
+          ],
+          "ChangingMaterials": [
+            0
+          ]
+        },
+        "metadata": {
+          "application": "SomeEngine",
+          "backend": "Direct3D12",
+          "dynamicScene": "True",
+          "asyncCompute": "False",
+          "synchronousFrames": "True",
+          "scenePlayback": "motion",
+          "fixedFrameSeconds": "0.016666668",
+          "frameLimit": "512",
+          "arguments": "--frames 512 --hidden-window --no-vsync --dynamic-scene --synchronous-frames --scene-playback motion --fixed-step 0.016666667 --trace F:\\.codex\\research\\render-execution-cost-20260906\\measurements-event\\motion-graphics-full-3.setrace --trace-detail --trace-allocations --no-async-compute",
+          "trace.scopes": "True",
+          "trace.bufferMegabytes": "64"
+        },
+        "categories": {
+          "main/rg": {
+            "selfMs": 4.053631901041694,
+            "calls": 1643.999999999912,
+            "bytes": 280411.98958333925
+          },
+          "main/native": {
+            "selfMs": 4.297792317708208,
+            "calls": 3404.7031250001837,
+            "bytes": 0.0
+          },
+          "main/app": {
+            "selfMs": 1.4578867187500004,
+            "calls": 4.999999999999954,
+            "bytes": 389535.0833333314
+          },
+          "main/wait": {
+            "selfMs": 0.8274842447916767,
+            "calls": 7.999999999999544,
+            "bytes": 40.00000000000007
+          },
+          "main/rhi": {
+            "selfMs": 1.1952032552083134,
+            "calls": 911.6718750000252,
+            "bytes": 41862.36458333323
+          },
+          "main/frame": {
+            "selfMs": 0.07368333333333335,
+            "calls": 1.0000000000000113,
+            "bytes": 66008.15624999929
+          },
+          "main/pass": {
+            "selfMs": 0.06823320312500006,
+            "calls": 76.00000000000004,
+            "bytes": 0.0
+          },
+          "worker/rhi": {
+            "selfMs": 0.2457246093750006,
+            "calls": 158.999999999999,
+            "bytes": 15.677083333333334
+          },
+          "worker/native": {
+            "selfMs": 0.5435722656250471,
+            "calls": 969.0026041667896,
+            "bytes": 0.0
+          },
+          "main/ecs": {
+            "selfMs": 0.025669921875,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/job": {
+            "selfMs": 0.04839088541666707,
+            "calls": 5.999999999999751,
+            "bytes": 32.00000000000036
+          },
+          "worker/rg": {
+            "selfMs": 0.09197968750000118,
+            "calls": 66.00000000000101,
+            "bytes": 3.125
+          },
+          "worker/pass": {
+            "selfMs": 0.025414583333333705,
+            "calls": 30.999999999999734,
+            "bytes": 0.0
+          }
+        },
+        "costs": {
+          "main/rg/RecordSubmit": {
+            "selfMs": 1.337310807291665,
+            "calls": 1.0000000000000113,
+            "bytes": 8.718750000000002
+          },
+          "main/native/ID3D12CommandQueue.ExecuteCommandLists": {
+            "selfMs": 1.170331119791667,
+            "calls": 24.0,
+            "bytes": 0.0
+          },
+          "main/app/ExecuteFrame": {
+            "selfMs": 1.1108283854166665,
+            "calls": 1.0000000000000113,
+            "bytes": 387239.0833333343
+          },
+          "main/rg/StateCommit": {
+            "selfMs": 0.716281901041666,
+            "calls": 107.00000000000102,
+            "bytes": 102120.0
+          },
+          "main/rg/Rows": {
+            "selfMs": 0.6177701822916669,
+            "calls": 1.0000000000000113,
+            "bytes": 120279.9999999987
+          },
+          "main/native/ID3D12GraphicsCommandList10.Reset": {
+            "selfMs": 0.4935444010416662,
+            "calls": 48.0,
+            "bytes": 0.0
+          },
+          "main/wait/CpuFenceWait": {
+            "selfMs": 0.4474733072916665,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12CommandQueue.Wait": {
+            "selfMs": 0.4255893229166664,
+            "calls": 24.0,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiBindings": {
+            "selfMs": 0.4178678385416669,
+            "calls": 107.00000000000102,
+            "bytes": 24.322916666666668
+          },
+          "main/native/ID3D12CommandQueue.Signal": {
+            "selfMs": 0.3950808593749995,
+            "calls": 24.0,
+            "bytes": 0.0
+          },
+          "main/wait/Job.JoinLatencyWork": {
+            "selfMs": 0.37642486979166706,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.Barrier": {
+            "selfMs": 0.35439335937500005,
+            "calls": 123.66796874999908,
+            "bytes": 0.0
+          },
+          "main/rg/Synchronization": {
+            "selfMs": 0.32626393229166667,
+            "calls": 1.0000000000000113,
+            "bytes": 4770.458333333351
+          },
+          "main/native/IDXGISwapChain4.Present": {
+            "selfMs": 0.30681458333333333,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiCommandsAndOther": {
+            "selfMs": 0.29962148437500047,
+            "calls": 211.00390625000196,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.Close": {
+            "selfMs": 0.2725345052083336,
+            "calls": 48.0,
+            "bytes": 0.0
+          },
+          "main/app/Prepare": {
+            "selfMs": 0.24598763020833345,
+            "calls": 1.0000000000000113,
+            "bytes": 2295.999999999992
+          },
+          "main/rg/RowsSetViewRow": {
+            "selfMs": 0.1877273437499999,
+            "calls": 462.9999999999951,
+            "bytes": 9912.0
+          },
+          "main/rg/Materialize": {
+            "selfMs": 0.1836415364583333,
+            "calls": 1.0000000000000113,
+            "bytes": 24840.0
+          },
+          "worker/rhi/RhiBindings": {
+            "selfMs": 0.1539915364583331,
+            "calls": 56.00000000000107,
+            "bytes": 2.7395833333333335
+          },
+          "main/rhi/RhiBarriers": {
+            "selfMs": 0.14264765625000012,
+            "calls": 123.66796874999908,
+            "bytes": 0.5208333333333334
+          },
+          "main/rg/RowsSetAccessRow": {
+            "selfMs": 0.13983736979166683,
+            "calls": 696.0,
+            "bytes": 0.0
+          },
+          "main/rg/BindingResolution": {
+            "selfMs": 0.13258867187500004,
+            "calls": 52.999999999999496,
+            "bytes": 0.3125
+          },
+          "main/native/ID3D12GraphicsCommandList10.ExecuteIndirect": {
+            "selfMs": 0.12000091145833343,
+            "calls": 30.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12CommandAllocator.Reset": {
+            "selfMs": 0.11867812500000005,
+            "calls": 48.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Barrier": {
+            "selfMs": 0.10739518229166706,
+            "calls": 37.00000000000015,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Reset": {
+            "selfMs": 0.10050078125000009,
+            "calls": 6.9999999999998,
+            "bytes": 0.0
+          },
+          "main/app/Scene.Update": {
+            "selfMs": 0.09677682291666677,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiCommandLifecycle": {
+            "selfMs": 0.08370898437500011,
+            "calls": 96.0,
+            "bytes": 117.52083333333334
+          },
+          "main/rhi/RhiResourceCreation": {
+            "selfMs": 0.08303333333333343,
+            "calls": 199.00000000000168,
+            "bytes": 41719.99999999989
+          },
+          "main/rg/RowsSetBufferRow": {
+            "selfMs": 0.08085690104166664,
+            "calls": 78.0,
+            "bytes": 5295.875000000016
+          },
+          "main/native/ID3D12Device10.CreateShaderResourceView": {
+            "selfMs": 0.07553567708333325,
+            "calls": 228.0,
+            "bytes": 0.0
+          },
+          "main/frame/Frame": {
+            "selfMs": 0.07368333333333335,
+            "calls": 1.0000000000000113,
+            "bytes": 66008.15624999929
+          },
+          "main/rg/SubmitAssembly": {
+            "selfMs": 0.07179101562499998,
+            "calls": 16.999999999999883,
+            "bytes": 1359.9999999999943
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Close": {
+            "selfMs": 0.07018411458333348,
+            "calls": 6.9999999999998,
+            "bytes": 0.0
+          },
+          "main/pass/Callbacks": {
+            "selfMs": 0.06823320312500006,
+            "calls": 76.00000000000004,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.Dispatch": {
+            "selfMs": 0.06273203124999994,
+            "calls": 18.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.CopyBufferRegion": {
+            "selfMs": 0.057216796874999996,
+            "calls": 30.999999999999655,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitExecuteSubmissionUnderGate": {
+            "selfMs": 0.05677656250000008,
+            "calls": 24.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CopyDescriptorsSimple": {
+            "selfMs": 0.055594661458333396,
+            "calls": 585.9999999999985,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.GetDescriptorHandleIncrementSize": {
+            "selfMs": 0.05101263020833331,
+            "calls": 805.0000000000069,
+            "bytes": 0.0
+          },
+          "main/rg/CommandLists": {
+            "selfMs": 0.04975416666666672,
+            "calls": 40.999999999999886,
+            "bytes": 0.0
+          },
+          "main/rg/PassDispatch": {
+            "selfMs": 0.04924817708333336,
+            "calls": 76.00000000000004,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiWaitAndCollect": {
+            "selfMs": 0.04745000000000007,
+            "calls": 6.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetPipelineState": {
+            "selfMs": 0.046789973958333286,
+            "calls": 49.00000000000039,
+            "bytes": 0.0
+          },
+          "worker/rg/BindingResolution": {
+            "selfMs": 0.046473177083333324,
+            "calls": 28.000000000000536,
+            "bytes": 3.125
+          },
+          "worker/native/ID3D12GraphicsCommandList10.Dispatch": {
+            "selfMs": 0.046163281250000104,
+            "calls": 21.000000000000025,
+            "bytes": 0.0
+          },
+          "main/rg/LateReleases": {
+            "selfMs": 0.04435156250000001,
+            "calls": 13.000000000000119,
+            "bytes": 0.0
+          },
+          "worker/job/Execute": {
+            "selfMs": 0.04321875000000001,
+            "calls": 1.9999999999999545,
+            "bytes": 32.00000000000036
+          },
+          "worker/rhi/RhiBarriers": {
+            "selfMs": 0.0427385416666668,
+            "calls": 37.00000000000015,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12DescriptorHeap.GetCPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.04129062500000001,
+            "calls": 748.9999999999948,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmit": {
+            "selfMs": 0.034676171875000016,
+            "calls": 24.0,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetPassRow": {
+            "selfMs": 0.030570833333333332,
+            "calls": 46.999999999999666,
+            "bytes": 11544.625000000065
+          },
+          "worker/rhi/RhiCommandsAndOther": {
+            "selfMs": 0.030232552083333704,
+            "calls": 51.999999999999424,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CreateUnorderedAccessView": {
+            "selfMs": 0.028710546875,
+            "calls": 52.999999999999496,
+            "bytes": 0.0
+          },
+          "main/rg/BatchConstruction": {
+            "selfMs": 0.02862018229166668,
+            "calls": 36.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12CommandAllocator.Reset": {
+            "selfMs": 0.028294531249999807,
+            "calls": 6.9999999999998,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetDescriptorHeaps": {
+            "selfMs": 0.026335807291666694,
+            "calls": 27.0,
+            "bytes": 0.0
+          },
+          "worker/rg/CommandLists": {
+            "selfMs": 0.025975520833333234,
+            "calls": 6.9999999999998,
+            "bytes": 0.0
+          },
+          "main/ecs/RenderExtraction": {
+            "selfMs": 0.025669921875,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/pass/Callbacks": {
+            "selfMs": 0.025414583333333705,
+            "calls": 30.999999999999734,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.ExecuteIndirect": {
+            "selfMs": 0.025349739583333232,
+            "calls": 4.999999999999981,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetPipelineState": {
+            "selfMs": 0.023675911458333424,
+            "calls": 22.0000000000002,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Resource.Map": {
+            "selfMs": 0.023499479166666615,
+            "calls": 60.0,
+            "bytes": 0.0
+          },
+          "main/rg/BoundaryObservation": {
+            "selfMs": 0.02252721354166667,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rg/WaitCollection": {
+            "selfMs": 0.02017838541666663,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/rg/PassDispatch": {
+            "selfMs": 0.019530989583333734,
+            "calls": 30.999999999999734,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetComputeRootDescriptorTable": {
+            "selfMs": 0.019332942708333294,
+            "calls": 48.0,
+            "bytes": 0.0
+          },
+          "worker/rhi/RhiCommandLifecycle": {
+            "selfMs": 0.0187619791666665,
+            "calls": 13.9999999999996,
+            "bytes": 12.9375
+          },
+          "main/native/ID3D12GraphicsCommandList10.CopyTextureRegion": {
+            "selfMs": 0.018602473958333313,
+            "calls": 3.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.GetDescriptorHandleIncrementSize": {
+            "selfMs": 0.018326171875000283,
+            "calls": 270.0000000000003,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateShaderResourceView": {
+            "selfMs": 0.01622851562499992,
+            "calls": 66.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.OMSetRenderTargets": {
+            "selfMs": 0.015403645833333344,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CopyDescriptorsSimple": {
+            "selfMs": 0.01499153645833345,
+            "calls": 153.99999999999994,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.OMSetRenderTargets": {
+            "selfMs": 0.014523307291666615,
+            "calls": 5.000000000000009,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12DescriptorHeap.GetCPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.013165755208333565,
+            "calls": 242.000000000005,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.ClearRenderTargetView": {
+            "selfMs": 0.012064453124999956,
+            "calls": 5.000000000000009,
+            "bytes": 0.0
+          },
+          "main/native/CreateWaitEvent": {
+            "selfMs": 0.011811197916666637,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.ClearRenderTargetView": {
+            "selfMs": 0.011489453124999948,
+            "calls": 3.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Fence.SetEventOnCompletion": {
+            "selfMs": 0.011008333333333347,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rg/RowsSetTextureRow": {
+            "selfMs": 0.010696875000000043,
+            "calls": 6.999999999999928,
+            "bytes": 280.0000000000014
+          },
+          "main/native/ID3D12Device10.CreateDescriptorHeap": {
+            "selfMs": 0.010192447916666666,
+            "calls": 0.01953125,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.CopyBufferRegion": {
+            "selfMs": 0.008805729166666613,
+            "calls": 5.000000000000009,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitClaimCommandPayloads": {
+            "selfMs": 0.008418880208333276,
+            "calls": 24.0,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitCollectReferencedSwapchainImages": {
+            "selfMs": 0.008402473958333304,
+            "calls": 24.0,
+            "bytes": 0.0
+          },
+          "main/native/CloseWaitEvent": {
+            "selfMs": 0.008172135416666596,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetComputeRootSignature": {
+            "selfMs": 0.008106119791666613,
+            "calls": 42.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Resource.Unmap": {
+            "selfMs": 0.007929687499999939,
+            "calls": 60.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CreateConstantBufferView": {
+            "selfMs": 0.007829817708333273,
+            "calls": 70.00000000000036,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetDescriptorHeaps": {
+            "selfMs": 0.007694661458332907,
+            "calls": 5.9999999999998845,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetComputeRootDescriptorTable": {
+            "selfMs": 0.0073611979166663495,
+            "calls": 24.000000000000025,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateUnorderedAccessView": {
+            "selfMs": 0.006273307291666677,
+            "calls": 11.000000000000114,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Resource.GetGPUVirtualAddress": {
+            "selfMs": 0.005711718750000032,
+            "calls": 51.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12DescriptorHeap.GetGPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.005369791666666709,
+            "calls": 55.999999999999424,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Device10.CreateRenderTargetView": {
+            "selfMs": 0.0053631510416667135,
+            "calls": 10.999999999999941,
+            "bytes": 0.0
+          },
+          "worker/job/LatencyWork": {
+            "selfMs": 0.005172135416666449,
+            "calls": 4.000000000000165,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12Fence.GetCompletedValue": {
+            "selfMs": 0.0048968750000000305,
+            "calls": 36.00390625,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.DrawInstanced": {
+            "selfMs": 0.004796874999999988,
+            "calls": 1.9999999999999551,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.DrawInstanced": {
+            "selfMs": 0.0045053385416666866,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiPresentation": {
+            "selfMs": 0.004034505208333314,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitValidateSwapchainImages": {
+            "selfMs": 0.003899348958333336,
+            "calls": 24.0,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetComputeRootSignature": {
+            "selfMs": 0.0036490885416664964,
+            "calls": 18.000000000000007,
+            "bytes": 0.0
+          },
+          "main/app/Scene.Playback": {
+            "selfMs": 0.003588671875000003,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.DrawIndexedInstanced": {
+            "selfMs": 0.0032078125000000028,
+            "calls": 2.0000000000000226,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.RSSetViewports": {
+            "selfMs": 0.003017447916666674,
+            "calls": 4.000000000000045,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitPrepareSubmissionWaits": {
+            "selfMs": 0.002757421875000011,
+            "calls": 24.0,
+            "bytes": 0.0
+          },
+          "main/wait/GpuFrameCompletion": {
+            "selfMs": 0.002505729166666669,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12DescriptorHeap.Release": {
+            "selfMs": 0.002277994791666667,
+            "calls": 0.01171875,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12DescriptorHeap.GetGPUDescriptorHandleForHeapStart": {
+            "selfMs": 0.0022535156249999357,
+            "calls": 28.000000000000536,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateRenderTargetView": {
+            "selfMs": 0.0021984374999999977,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/rg/Execute": {
+            "selfMs": 0.002119140624999994,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.DiscardResource": {
+            "selfMs": 0.0021074218750000337,
+            "calls": 3.9999999999999103,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.RSSetViewports": {
+            "selfMs": 0.0020286458333333727,
+            "calls": 1.9999999999999551,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetGraphicsRootSignature": {
+            "selfMs": 0.0020018229166666617,
+            "calls": 6.999999999999928,
+            "bytes": 0.0
+          },
+          "main/rhi/RhiSubmitClaimSwapchainImages": {
+            "selfMs": 0.0019085937499999895,
+            "calls": 24.0,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.SetGraphicsRootDescriptorTable": {
+            "selfMs": 0.0018377604166666655,
+            "calls": 8.00000000000009,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateConstantBufferView": {
+            "selfMs": 0.0014691406249999974,
+            "calls": 10.000000000000018,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.RSSetScissorRects": {
+            "selfMs": 0.0013567708333333476,
+            "calls": 5.000000000000009,
+            "bytes": 0.0
+          },
+          "main/rg/ParameterUpdates": {
+            "selfMs": 0.0012486979166666798,
+            "calls": 2.0000000000000226,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetGraphicsRootSignature": {
+            "selfMs": 0.0011902343750000027,
+            "calls": 3.9999999999999103,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12Device10.CreateDescriptorHeap": {
+            "selfMs": 0.0010654947916666666,
+            "calls": 0.0013020833333333333,
+            "bytes": 0.0
+          },
+          "main/native/IDXGISwapChain4.GetCurrentBackBufferIndex": {
+            "selfMs": 0.0010545572916666596,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.SetGraphicsRootDescriptorTable": {
+            "selfMs": 0.0009645833333333513,
+            "calls": 3.9999999999999103,
+            "bytes": 0.0
+          },
+          "main/app/ReconcileGraph": {
+            "selfMs": 0.0007052083333333357,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.RSSetScissorRects": {
+            "selfMs": 0.000664453124999996,
+            "calls": 1.9999999999999551,
+            "bytes": 0.0
+          },
+          "main/wait/Job.Complete": {
+            "selfMs": 0.0006432291666666681,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12GraphicsCommandList10.IASetPrimitiveTopology": {
+            "selfMs": 0.0004822916666666841,
+            "calls": 1.9999999999999551,
+            "bytes": 0.0
+          },
+          "main/wait/TaskCompletion": {
+            "selfMs": 0.00043710937500000146,
+            "calls": 1.0000000000000113,
+            "bytes": 40.00000000000007
+          },
+          "main/native/ID3D12GraphicsCommandList10.IASetPrimitiveTopology": {
+            "selfMs": 0.00042669270833333513,
+            "calls": 2.0000000000000226,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.IASetIndexBuffer": {
+            "selfMs": 0.00031731770833333633,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "main/native/ID3D12GraphicsCommandList10.IASetVertexBuffers": {
+            "selfMs": 0.0003085937500000023,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          },
+          "worker/native/ID3D12DescriptorHeap.Release": {
+            "selfMs": 0.00027890625,
+            "calls": 0.0013020833333333333,
+            "bytes": 0.0
+          },
+          "main/rg/Diagnostics": {
+            "selfMs": 0.0002470052083333353,
+            "calls": 1.0000000000000113,
+            "bytes": 0.0
+          }
+        }
+      },
+      "observedCaptureDifferenceMs": 1.0329509114583324,
+      "observedRgRhiMainMs": 5.248835156250007,
+      "conditionalRemainingInstrumentedMs": 6.750749739583326
+    }
+  },
+  "validation": {
+    "full": [
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192051.trx",
+        "counts": {
+          "total": 154,
+          "executed": 154,
+          "passed": 154,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192054.trx",
+        "counts": {
+          "total": 58,
+          "executed": 58,
+          "passed": 58,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192056.trx",
+        "counts": {
+          "total": 19,
+          "executed": 19,
+          "passed": 19,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192104.trx",
+        "counts": {
+          "total": 83,
+          "executed": 83,
+          "passed": 83,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192108.trx",
+        "counts": {
+          "total": 19,
+          "executed": 19,
+          "passed": 19,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192112.trx",
+        "counts": {
+          "total": 190,
+          "executed": 190,
+          "passed": 190,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192119.trx",
+        "counts": {
+          "total": 39,
+          "executed": 39,
+          "passed": 39,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192132.trx",
+        "counts": {
+          "total": 311,
+          "executed": 311,
+          "passed": 309,
+          "failed": 2,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": [
+          {
+            "name": "SomeEngine.ECS.Systems.Tests.LifecycleClosureTests.WorldClosing_RejectsUnrelatedJobCallback",
+            "message": "Assert.Throws() Failure: Exception type was not an exact match\r\nExpected: typeof(System.ObjectDisposedException)\r\nActual:   typeof(SomeEngine.Job.JobResourceSafetyException)\r\n---- SomeEngine.Job.JobResourceSafetyException : The current job did not declare a covering read access."
+          },
+          {
+            "name": "SomeEngine.ECS.Systems.Tests.BufferJobAccessTests.WarmedBufferAdmission_DoesNotAllocatePerCallback",
+            "message": "unbound=0, buffer=3744, topology=0"
+          }
+        ]
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192136.trx",
+        "counts": {
+          "total": 662,
+          "executed": 662,
+          "passed": 662,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192139.trx",
+        "counts": {
+          "total": 71,
+          "executed": 71,
+          "passed": 71,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192528.trx",
+        "counts": {
+          "total": 422,
+          "executed": 421,
+          "passed": 420,
+          "failed": 1,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 1,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": [
+          {
+            "name": "SomeEngine.Graphics.Direct3D12.Tests.D3D12ObjectConversionTests.Command_list_helpers_use_Silk_methods_and_never_emit_calli",
+            "message": "Assert.Contains() Failure: Filter not matched in collection\r\nCollection: [Instruction { OpCode = ldarg.0, Method =  }, Instruction { OpCode = ldarg.1, Method =  }, Instruction { OpCode = ldarg.2, Method =  }, Instruction { OpCode = ldarg.3, Method =  }, Instruction { OpCode = ldarg.s, Method =  }, \u00b7\u00b7\u00b7]"
+          }
+        ]
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192530.trx",
+        "counts": {
+          "total": 29,
+          "executed": 29,
+          "passed": 29,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192543.trx",
+        "counts": {
+          "total": 48,
+          "executed": 48,
+          "passed": 48,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192545.trx",
+        "counts": {
+          "total": 5,
+          "executed": 5,
+          "passed": 5,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192557.trx",
+        "counts": {
+          "total": 209,
+          "executed": 209,
+          "passed": 209,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192608.trx",
+        "counts": {
+          "total": 139,
+          "executed": 139,
+          "passed": 139,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192617.trx",
+        "counts": {
+          "total": 81,
+          "executed": 81,
+          "passed": 81,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192703.trx",
+        "counts": {
+          "total": 70,
+          "executed": 70,
+          "passed": 70,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192705.trx",
+        "counts": {
+          "total": 19,
+          "executed": 19,
+          "passed": 19,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results\\trace-delivery_net10.0_20260906192713.trx",
+        "counts": {
+          "total": 143,
+          "executed": 143,
+          "passed": 143,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      }
+    ],
+    "final": [
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results-final\\diagnostics-final.trx",
+        "counts": {
+          "total": 20,
+          "executed": 20,
+          "passed": 20,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results-final\\job-final.trx",
+        "counts": {
+          "total": 209,
+          "executed": 209,
+          "passed": 209,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      },
+      {
+        "file": "F:\\.codex\\research\\render-execution-cost-20260906\\test-results-final\\native-shape-final.trx",
+        "counts": {
+          "total": 2,
+          "executed": 2,
+          "passed": 2,
+          "failed": 0,
+          "error": 0,
+          "timeout": 0,
+          "aborted": 0,
+          "inconclusive": 0,
+          "passedButRunAborted": 0,
+          "notRunnable": 0,
+          "notExecuted": 0,
+          "disconnected": 0,
+          "warning": 0,
+          "completed": 0,
+          "inProgress": 0,
+          "pending": 0
+        },
+        "failures": []
+      }
+    ],
+    "fullTotals": {
+      "total": 2771,
+      "passed": 2767,
+      "failed": 3,
+      "notExecuted": 1
+    },
+    "finalAssemblies": {
+      "SomeEngine.Assets.dll": "315b19387d83029ba051321742f3b1c0444e1f38551af33b713f4b39878dd7e6",
+      "SomeEngine.Core.dll": "d27da9ee354862da97155f956b06b59b7c06693002eb8f9968a893f2f3b24c9d",
+      "SomeEngine.Diagnostics.dll": "51c79d9ff62ecef7c237d9d5ecbf687fffd3e35351b21618114de5bb6b16915f",
+      "SomeEngine.ECS.dll": "7a343985e6dac46a270cd516f0e2900a3b5dac542d0ad93b47e9093fabc564b1",
+      "SomeEngine.ECS.Systems.dll": "ca38702c6d098b35c9b03d3541e09eef00a1365e856b321f87b6cae75b00891a",
+      "SomeEngine.Graphics.Direct3D12.dll": "c70aafda4f27081552c9679603ee23fcedfdfdf53abb668178fc43e1e0913f92",
+      "SomeEngine.Graphics.dll": "9a0042baad6018fc68b139a4cd83c2ef55a15f68b356af63b65cf7216ea4356f",
+      "SomeEngine.Graphics.Validation.dll": "d5f3887ea01a6d256fe8a0eafb61d6b5703992673554777fd0f0df2fae859d6a",
+      "SomeEngine.Graphics.Vulkan.dll": "300b74e25c9959674ac2ac8ab67033cdab7e7b5bbd5ae5cfabb8369637e9bc94",
+      "SomeEngine.Job.Contracts.dll": "0ac70cce9dab00096d9a051bc899a47f26329b2c567d11f47fe6676e1d1b381f",
+      "SomeEngine.Job.dll": "7ff010ee3e186e71f44f9b1979c0e49f637a479cfc86f11ddb143ce12f7b424e",
+      "SomeEngine.Render.Cluster.dll": "b058a47f11cb06116b3670b0245e46057cd5e200a1bacd33acfc013ca8b1fe20",
+      "SomeEngine.Render.Cluster.Pipeline.dll": "94fee575b891cdac9c2bd3a2231b0ca619141f70ce7ed641f3e4e656cd1b130f",
+      "SomeEngine.Render.dll": "37a854b4af5cce2caf357677af6bad2c94333a652d672dd8fc43296867e5673b",
+      "SomeEngine.Render.Features.dll": "fa7644cb9199eb3aec0eeb2b1ce82b463edd93d3794fd7c0395e4d3f566eb1cc",
+      "SomeEngine.RenderGraph.Diagnostics.dll": "89f9a94ee1791a955ee21ff8fda7ab4811d0cd4b96189cf760fe54a7875736a6",
+      "SomeEngine.RenderGraph.dll": "3a4ffe69c617d1a397e2df4cb645f24e9eadbd2f1352d1f1a8de3d6a58d4383e",
+      "SomeEngine.Runtime.dll": "048033c0ed41e1d6ad003f85d5948bf3b0af7513940572bb22b7ad66906ba7ee",
+      "SomeEngine.Serialization.dll": "f59272713572de47d32fc213df3c3ce8944f0b973a4454ee31fc58f6030187db"
+    },
+    "note": "Full suite preceded final Context race fix and the forwarding-aware IL assertion. Final targeted runs cover Diagnostics (20), Job (209), native shape (2); final material playback/GPU validation uses final binaries. Formal timing is from the 18 captures listed under measuredAssemblies.",
+    "remainingFailures": [
+      {
+        "name": "SomeEngine.ECS.Systems.Tests.LifecycleClosureTests.WorldClosing_RejectsUnrelatedJobCallback",
+        "message": "Assert.Throws() Failure: Exception type was not an exact match\r\nExpected: typeof(System.ObjectDisposedException)\r\nActual:   typeof(SomeEngine.Job.JobResourceSafetyException)\r\n---- SomeEngine.Job.JobResourceSafetyException : The current job did not declare a covering read access."
+      },
+      {
+        "name": "SomeEngine.ECS.Systems.Tests.BufferJobAccessTests.WarmedBufferAdmission_DoesNotAllocatePerCallback",
+        "message": "unbound=0, buffer=3744, topology=0"
+      }
+    ]
+  }
+}

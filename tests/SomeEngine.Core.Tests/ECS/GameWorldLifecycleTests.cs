@@ -9,34 +9,11 @@ namespace SomeEngine.Core.Tests.ECS;
 public sealed class GameWorldLifecycleTests
 {
     [Fact]
-    public void GameWorldUsesTheCanonicalImmediateSystemContextWithoutForwardingAliases()
-    {
-        Assembly assembly = typeof(GameWorld).Assembly;
-        Assert.Null(assembly.GetType(
-            "SomeEngine.Core.ECS.EngineSystemContext",
-            throwOnError: false));
-        Assert.Null(assembly.GetType(
-            "SomeEngine.Core.ECS.EngineDriver",
-            throwOnError: false));
-        Assert.Null(assembly.GetType(
-            "SomeEngine.Core.ECS.SystemContext",
-            throwOnError: false));
-
-        PropertyInfo? systems = typeof(GameWorld).GetProperty(
-            nameof(GameWorld.Systems),
-            BindingFlags.Instance | BindingFlags.Public);
-        Assert.NotNull(systems);
-        Assert.Equal(
-            typeof(SystemGroup<ImmediateSystemContext>),
-            systems!.PropertyType);
-    }
-
-    [Fact]
     public async Task Dispose_WaitsWorldJobsAndClosesSystemsAndWorld()
     {
         using var runtime = new JobRuntimeScope();
         using var state = new BlockingState();
-        var gameWorld = new GameWorld();
+        var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         ComponentJobAccess<LocalTransform>.ScheduleRead(
             gameWorld.World,
             new BlockingJob(state));
@@ -66,7 +43,7 @@ public sealed class GameWorldLifecycleTests
     {
         using var runtime = new JobRuntimeScope();
         using var state = new BlockingDestroyState();
-        var gameWorld = new GameWorld();
+        var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         gameWorld.Systems.Add(new BlockingDestroySystem(state));
         gameWorld.Update(0);
 
@@ -97,13 +74,12 @@ public sealed class GameWorldLifecycleTests
     public void Dispose_StillClosesWorldWhenSystemDestroyFaults()
     {
         using var runtime = new JobRuntimeScope();
-        var gameWorld = new GameWorld();
+        var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         gameWorld.Systems.Add(new FaultingDestroySystem());
         gameWorld.Update(0);
 
         AggregateException error = Assert.Throws<AggregateException>(gameWorld.Dispose).Flatten();
-
-        Assert.Contains(error.InnerExceptions, exception => exception.Message == "engine-destroy-fault");
+        Assert.IsType<InvalidOperationException>(Assert.Single(error.InnerExceptions));
         Assert.Throws<ObjectDisposedException>(() => _ = gameWorld.World.EntityCount);
         gameWorld.Dispose();
     }
@@ -112,13 +88,12 @@ public sealed class GameWorldLifecycleTests
     public void DisposeFromJobCallback_RejectsBeforeMutatingGameWorldState()
     {
         using var runtime = new JobRuntimeScope();
-        var gameWorld = new GameWorld();
+        var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
 
         JobHandle disposer = JobSystem.Schedule(new DisposeGameWorldJob(gameWorld));
         InvalidOperationException error =
             Assert.Throws<InvalidOperationException>(() => disposer.Complete());
 
-        Assert.Contains("Job callback", error.Message, StringComparison.Ordinal);
         gameWorld.Update(0);
         _ = gameWorld.World.EntityCount;
         gameWorld.Dispose();
@@ -128,7 +103,7 @@ public sealed class GameWorldLifecycleTests
     public void DisposeFromSystemCallback_RejectsBeforeMutatingGameWorldState()
     {
         using var runtime = new JobRuntimeScope();
-        var gameWorld = new GameWorld();
+        var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         var state = new ReentrantDisposeState();
         gameWorld.Systems.Add(new DisposeGameWorldSystem(gameWorld, state));
 

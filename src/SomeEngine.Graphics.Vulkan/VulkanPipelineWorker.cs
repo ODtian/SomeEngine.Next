@@ -1,5 +1,4 @@
 using SlangShaderSharp;
-using System.Runtime.InteropServices.Marshalling;
 using System.Threading.Channels;
 
 namespace SomeEngine.Graphics.Vulkan;
@@ -120,19 +119,22 @@ internal sealed partial class VulkanBackend
         private readonly TaskCompletionSource<Pipeline> _completion = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly VulkanDevice _device;
-        private RetainedSlangProgram? _program;
+        private IComponentType? _slangCode;
+        private object? _code;
         private VulkanPipelineCache? _cache;
         private Func<Pipeline>? _create;
         private int _state;
 
         internal VulkanPipelineJob(
             VulkanDevice device,
-            RetainedSlangProgram program,
+            IComponentType slangCode,
+            object code,
             VulkanPipelineCache? cache,
             Func<Pipeline> create)
         {
             _device = device;
-            _program = program;
+            _slangCode = slangCode;
+            _code = code;
             _cache = cache;
             _create = create;
         }
@@ -174,7 +176,8 @@ internal sealed partial class VulkanBackend
         private void ReleaseCapturedState()
         {
             Interlocked.Exchange(ref _create, null);
-            Interlocked.Exchange(ref _program, null)?.Dispose();
+            _ = Interlocked.Exchange(ref _code, null);
+            _ = Interlocked.Exchange(ref _slangCode, null);
             Interlocked.Exchange(ref _cache, null)?.ReleasePipelineCreationUse();
         }
     }
@@ -182,7 +185,8 @@ internal sealed partial class VulkanBackend
     private Task<Pipeline> EnqueuePipelineCreation(
         VulkanDevice device,
         VulkanPipelineCache? cache,
-        RetainedSlangProgram program,
+        IComponentType slangCode,
+        object code,
         Func<Pipeline> create)
     {
         bool cacheRetained = false;
@@ -194,101 +198,13 @@ internal sealed partial class VulkanBackend
                 cacheRetained = true;
             }
             return device.PipelineWorker.Enqueue(
-                new VulkanPipelineJob(device, program, cache, create));
+                new VulkanPipelineJob(device, slangCode, code, cache, create));
         }
         catch
         {
             if (cacheRetained)
                 cache!.ReleasePipelineCreationUse();
-            program.Dispose();
             throw;
-        }
-    }
-
-    private sealed class RetainedSlangProgram : IDisposable
-    {
-        private IComponentType? _program;
-        private ISession? _session;
-        private IGlobalSession? _globalSession;
-
-        private RetainedSlangProgram(
-            IComponentType program,
-            ISession session,
-            IGlobalSession globalSession)
-        {
-            _program = program;
-            _session = session;
-            _globalSession = globalSession;
-        }
-
-        internal IComponentType Program => Volatile.Read(ref _program)
-            ?? throw new ObjectDisposedException(nameof(RetainedSlangProgram));
-
-        internal static RetainedSlangProgram Capture(IComponentType program)
-        {
-            ArgumentNullException.ThrowIfNull(program);
-            IGlobalSession? globalReference = null;
-            ISession? sessionReference = null;
-            IComponentType? programReference = null;
-            try
-            {
-                ISession session = program.GetSession();
-                IGlobalSession globalSession = session.GetGlobalSession();
-                globalReference = RetainComReference(globalSession);
-                sessionReference = RetainComReference(session);
-                programReference = RetainComReference(program);
-                var retained = new RetainedSlangProgram(
-                    programReference,
-                    sessionReference,
-                    globalReference);
-                programReference = null;
-                sessionReference = null;
-                globalReference = null;
-                return retained;
-            }
-            finally
-            {
-                ReleaseComReference(programReference);
-                ReleaseComReference(sessionReference);
-                ReleaseComReference(globalReference);
-            }
-        }
-
-        public void Dispose()
-        {
-            ReleaseComReference(Interlocked.Exchange(ref _program, null));
-            ReleaseComReference(Interlocked.Exchange(ref _session, null));
-            ReleaseComReference(Interlocked.Exchange(ref _globalSession, null));
-        }
-
-        private static unsafe T RetainComReference<T>(T value)
-            where T : class
-        {
-            try
-            {
-                void* pointer = ComInterfaceMarshaller<T>.ConvertToUnmanaged(value);
-                try
-                {
-                    return UniqueComInterfaceMarshaller<T>.ConvertToManaged(pointer)
-                        ?? throw new InvalidOperationException(
-                            $"The {typeof(T).Name} COM reference could not be materialized.");
-                }
-                finally
-                {
-                    ComInterfaceMarshaller<T>.Free(pointer);
-                }
-            }
-            catch (InvalidCastException)
-            {
-                return value;
-            }
-        }
-
-        private static void ReleaseComReference<T>(T? value)
-            where T : class
-        {
-            if (value is System.Runtime.InteropServices.Marshalling.ComObject wrapper)
-                wrapper.FinalRelease();
         }
     }
 }

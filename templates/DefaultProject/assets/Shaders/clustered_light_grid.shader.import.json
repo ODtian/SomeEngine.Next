@@ -1,0 +1,48 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 29,
+  "input_hash": "a61198a74f4f6f6dec4cad48152af978eae4ba66e2f07f7561dd630dd3df69e1",
+  "inputs": [
+    {
+      "relative_path": "../../assets/Shaders/clustered_light_grid.slang",
+      "content_hash": "3ce3d32009eb6b753d250444a31ee63e535f6dbef52610e50d712feeab72cf73"
+    },
+    {
+      "relative_path": "../../assets/Shaders/common.slang",
+      "content_hash": "15b848671166b0f7760a59b569030982263a5486a537cf5bc0543279f04166dd"
+    },
+    {
+      "relative_path": "../../assets/Shaders/render_lighting.slang",
+      "content_hash": "b1f856269f4f8ab8811fe6a976965ca3835ceb787fd86559f289be687bc73032"
+    },
+    {
+      "relative_path": "../../assets/Shaders/resource_effects.slang",
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+    },
+    {
+      "relative_path": "assets/Shaders/Pipeline/build_clustered_light_grid.slang",
+      "content_hash": "abebf8885d819ecb47230c59b8e5517c1d190647228448a5006207b28577d600"
+    },
+    {
+      "relative_path": "assets/Shaders/clustered_light_grid.shader",
+      "content_hash": "c84737a020d726ffba622740bf66e46760f04cb9bec15b47dd9a25958f999ff9"
+    },
+    {
+      "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "f6e9d4ed-6534-5cda-be15-c733ae158d48",
+      "sub_asset_key": "",
+      "input_hash": "a61198a74f4f6f6dec4cad48152af978eae4ba66e2f07f7561dd630dd3df69e1",
+      "dependencies": [],
+      "asset_path": "clustered_light_grid.shader.asset",
+      "version": "f416561a-afff-f3cd-d314-060f8bb7bbcd",
+      "content_hash": "5018F5C5C6B233B95DB9BAED463684391E49EA171F8B2A08CC09763DC9404692",
+      "asset_dependencies": []
+    }
+  ]
+}

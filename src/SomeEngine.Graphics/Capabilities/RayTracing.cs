@@ -1,3 +1,4 @@
+using System.Buffers;
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics;
@@ -344,7 +345,9 @@ public enum RayTracingPipelineOptions : byte
 public readonly ref struct RayTracingPipelineDesc
 {
     public RayTracingPipelineDesc(
-        IComponentType program,
+        IComponentType slangCode,
+        ShaderReflection reflection,
+        ReadOnlySequence<byte> code,
         ReadOnlySpan<EntryPointReflection> rayGeneration,
         ReadOnlySpan<EntryPointReflection> miss,
         ReadOnlySpan<EntryPointReflection> callable,
@@ -355,9 +358,13 @@ public readonly ref struct RayTracingPipelineDesc
         RayTracingPipelineOptions options = RayTracingPipelineOptions.None,
         uint nodeMask = 1,
         string? label = null,
-        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
+        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default,
+        ISlangBlob? codeBlob = null)
     {
-        Program = program;
+        SlangCode = slangCode;
+        Reflection = reflection;
+        Code = code;
+        CodeBlob = codeBlob;
         RayGeneration = rayGeneration;
         Miss = miss;
         Callable = callable;
@@ -371,7 +378,10 @@ public readonly ref struct RayTracingPipelineDesc
         StaticSamplers = staticSamplers;
     }
 
-    public IComponentType Program { get; }
+    public IComponentType SlangCode { get; }
+    public ShaderReflection Reflection { get; }
+    public ReadOnlySequence<byte> Code { get; }
+    public ISlangBlob? CodeBlob { get; }
     public ReadOnlySpan<EntryPointReflection> RayGeneration { get; }
     public ReadOnlySpan<EntryPointReflection> Miss { get; }
     public ReadOnlySpan<EntryPointReflection> Callable { get; }

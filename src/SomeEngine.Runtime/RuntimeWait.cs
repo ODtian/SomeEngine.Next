@@ -8,19 +8,41 @@ internal static class RuntimeWait
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(2);
 
-    internal static T Task<T>(Task<T> task, NativeWindow window, TimeSpan timeout)
+    internal static void Task(Task task, NativeWindow window, TimeSpan timeout)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.TaskCompletion);
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(window);
         ValidateTimeout(timeout);
+        WaitForTask(task, window, timeout);
+        task.GetAwaiter().GetResult();
+    }
+
+    internal static T Task<T>(Task<T> task, NativeWindow window, TimeSpan timeout)
+    {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.TaskCompletion);
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(window);
+        ValidateTimeout(timeout);
+        WaitForTask(task, window, timeout);
+        return task.GetAwaiter().GetResult();
+    }
+
+    private static void WaitForTask(Task task, NativeWindow window, TimeSpan timeout)
+    {
+        if (task.IsCompleted) return;
         var elapsed = Stopwatch.StartNew();
+        WaitHandle completion = ((IAsyncResult)task).AsyncWaitHandle;
         while (!task.IsCompleted)
         {
-            Pump(window);
-            if (HasExpired(elapsed, timeout))
+            _ = window.PumpMessages();
+            if (task.IsCompleted) break;
+            TimeSpan remaining = timeout == Timeout.InfiniteTimeSpan
+                ? Timeout.InfiniteTimeSpan : timeout - elapsed.Elapsed;
+            if (timeout != Timeout.InfiniteTimeSpan && remaining <= TimeSpan.Zero)
                 throw new TimeoutException("The runtime operation did not complete before its timeout.");
+            window.WaitForEvents(completion, remaining);
         }
-        return task.GetAwaiter().GetResult();
     }
 
     internal static void Position(

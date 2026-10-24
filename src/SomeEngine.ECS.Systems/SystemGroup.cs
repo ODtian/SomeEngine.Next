@@ -28,19 +28,13 @@ public sealed class SystemGroup<TContext> : IDisposable
     {
         get
         {
-            ThrowIfJobCallbackWouldWaitForLifecycleControl();
-            ThrowIfDisposed();
             lock (_gate)
             {
-                WaitForLifecycleControlUnderGate();
                 ThrowIfDisposed();
                 return _nodes.Count;
             }
         }
     }
-
-    internal bool IsLifecycleControlPending =>
-        Volatile.Read(ref _lifecycleControlState) != LifecycleControlIdle;
 
     public int Add<TSystem>()
         where TSystem : struct, ISystem<TContext>
@@ -75,11 +69,8 @@ public sealed class SystemGroup<TContext> : IDisposable
 
     public SystemSlot GetSlot(int index)
     {
-        ThrowIfJobCallbackWouldWaitForLifecycleControl();
-        ThrowIfDisposed();
         lock (_gate)
         {
-            WaitForLifecycleControlUnderGate();
             ThrowIfDisposed();
             ValidateIndex(index);
             return _slots[index];
@@ -157,7 +148,20 @@ public sealed class SystemGroup<TContext> : IDisposable
     public void Update(ref TContext template) =>
         UpdateCore(useTemplate: true, ref template);
 
-    private void UpdateCore(bool useTemplate, ref TContext template)
+    /// <summary>
+    /// Creates enabled systems without running their update callbacks. This is used when a
+    /// system must publish long-lived structure before the first update boundary.
+    /// </summary>
+    public void Initialize()
+    {
+        TContext template = default!;
+        InitializeCore(useTemplate: false, ref template);
+    }
+
+    public void Initialize(ref TContext template) =>
+        InitializeCore(useTemplate: true, ref template);
+
+    private void InitializeCore(bool useTemplate, ref TContext template)
     {
         ThrowIfLifecycleCallbackReentry();
         ThrowIfJobCallbackWouldWaitForLifecycleControl();
@@ -169,8 +173,8 @@ public sealed class SystemGroup<TContext> : IDisposable
 
             for (int i = 0; i < _nodes.Count; i++)
             {
-                var slot = _slots[i];
-                if (!slot.Enabled)
+                SystemSlot slot = _slots[i];
+                if (!slot.Enabled || slot.Created)
                     continue;
 
                 using JobSubmissionScope submissions =
@@ -179,14 +183,6 @@ public sealed class SystemGroup<TContext> : IDisposable
                 try
                 {
                     slot.CurrentSystemVersion = _driver.AcquireSystemVersion(ref slot);
-                }
-                finally
-                {
-                    ExitLifecycleCallback();
-                }
-                EnterLifecycleCallback();
-                try
-                {
                     TContext context;
                     if (useTemplate)
                     {
@@ -198,25 +194,114 @@ public sealed class SystemGroup<TContext> : IDisposable
                         context = _driver.CreateContext(ref slot);
                     }
                     _driver.BeforeUpdate(ref slot, ref context);
-
-                    if (!slot.Created)
-                    {
-                        _nodes[i].OnCreate(ref context);
-                        slot.Created = true;
-                        _slots[i] = slot;
-                    }
-
-                    _nodes[i].OnUpdate(ref context);
+                    _nodes[i].OnCreate(ref context);
+                    slot.Created = true;
                     _driver.AfterUpdate(ref slot, ref context);
+                    slot.LastSystemVersion = slot.CurrentSystemVersion;
+                    _slots[i] = slot;
                 }
                 finally
                 {
                     ExitLifecycleCallback();
                 }
-
-                slot.LastSystemVersion = slot.CurrentSystemVersion;
-                _slots[i] = slot;
             }
+        }
+    }
+
+    /// <summary>
+    /// Completes work submitted by previous updates, including child tasks. Systems remain
+    /// enabled and may run again. Use this at a data-visibility boundary, not after each system.
+    /// </summary>
+    public void Complete()
+    {
+        ThrowIfLifecycleCallbackReentry();
+        ThrowIfJobCallbackTeardown("completed");
+        lock (_gate)
+        {
+            WaitForLifecycleControlUnderGate();
+            ThrowIfDisposed();
+            Volatile.Write(ref _lifecycleControlState, LifecycleControlPending);
+        }
+
+        List<Exception> failures = [];
+        try
+        {
+            foreach (SystemSlot slot in _slots)
+            {
+                if (!slot.Enabled)
+                    continue;
+                try { slot.RequireJobLifetime().CompleteCurrentRoots(failures); }
+                catch (Exception failure) { failures.Add(failure); }
+            }
+        }
+        finally
+        {
+            CompleteLifecycleControl();
+        }
+        ThrowIfTeardownFailed(failures, "System work failed.");
+    }
+
+    private void UpdateCore(bool useTemplate, ref TContext template)
+    {
+        ThrowIfLifecycleCallbackReentry();
+        ThrowIfJobCallbackWouldWaitForLifecycleControl();
+        lock (_gate)
+        {
+            WaitForLifecycleControlUnderGate();
+            ThrowIfDisposed();
+            Volatile.Write(ref _lifecycleControlState, LifecycleControlPending);
+        }
+
+        try
+        {
+            // Registration and teardown wait for this execution boundary. The collection cannot
+            // change, but no lock is held while drivers or user systems run or wait for Jobs.
+            for (int i = 0; i < _nodes.Count; i++)
+            {
+                SystemSlot slot;
+                lock (_gate)
+                    slot = _slots[i];
+                if (!slot.Enabled)
+                    continue;
+
+                using JobSubmissionScope submissions = slot.RequireJobLifetime().EnterSubmissionScope();
+                EnterLifecycleCallback();
+                try
+                {
+                    slot.CurrentSystemVersion = _driver.AcquireSystemVersion(ref slot);
+                    TContext context;
+                    if (useTemplate)
+                    {
+                        context = template;
+                        _driver.CreateContext(ref slot, ref context);
+                    }
+                    else
+                    {
+                        context = _driver.CreateContext(ref slot);
+                    }
+                    _driver.BeforeUpdate(ref slot, ref context);
+                    if (!slot.Created)
+                    {
+                        _nodes[i].OnCreate(ref context);
+                        slot.Created = true;
+                        lock (_gate)
+                            _slots[i] = slot;
+                    }
+                    _nodes[i].OnUpdate(ref context);
+                    _driver.AfterUpdate(ref slot, ref context);
+                    slot.LastSystemVersion = slot.CurrentSystemVersion;
+                    lock (_gate)
+                        _slots[i] = slot;
+                }
+                finally
+                {
+                    ExitLifecycleCallback();
+                }
+            }
+        }
+        finally
+        {
+            CompleteLifecycleControl();
         }
     }
 
@@ -255,11 +340,11 @@ public sealed class SystemGroup<TContext> : IDisposable
             exceptions.Add(exception);
         }
 
-        lock (_gate)
+        try
         {
-            try
+            DestroySlot(index, ref slot, exceptions);
+            lock (_gate)
             {
-                DestroySlot(index, ref slot, exceptions);
                 _nodes.RemoveAt(index);
                 _slots.RemoveAt(index);
                 for (int i = index; i < _slots.Count; i++)
@@ -269,11 +354,10 @@ public sealed class SystemGroup<TContext> : IDisposable
                     _slots[i] = shifted;
                 }
             }
-            finally
-            {
-                Volatile.Write(ref _lifecycleControlState, LifecycleControlIdle);
-                Monitor.PulseAll(_gate);
-            }
+        }
+        finally
+        {
+            CompleteLifecycleControl();
         }
 
         ThrowIfTeardownFailed(exceptions, "System removal failed.");
@@ -319,15 +403,15 @@ public sealed class SystemGroup<TContext> : IDisposable
                 }
             }
 
+            for (int i = 0; i < _nodes.Count; i++)
+            {
+                SystemSlot slot = _slots[i];
+                DestroySlot(i, ref slot, exceptions);
+                lock (_gate)
+                    _slots[i] = slot;
+            }
             lock (_gate)
             {
-                for (int i = 0; i < _nodes.Count; i++)
-                {
-                    SystemSlot slot = _slots[i];
-                    DestroySlot(i, ref slot, exceptions);
-                    _slots[i] = slot;
-                }
-
                 _nodes.Clear();
                 _slots.Clear();
             }

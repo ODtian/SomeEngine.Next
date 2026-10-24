@@ -1,7 +1,7 @@
 #ifndef SOMEENGINE_RENDER_INSTANCE_LAYOUT_INCLUDED
 #define SOMEENGINE_RENDER_INSTANCE_LAYOUT_INCLUDED
 
-// Exact dense metadata layout for the currently cooked Cluster shader variant. Shader-cook
+// Exact dense metadata layout for the currently cooked Cluster shader variant. ShaderAsset-cook
 // integration must emit one such document for each pipeline/material composition.
 static const uint RENDER_INSTANCE_METADATA_WORD_COUNT = 5u;
 static const uint RENDER_INSTANCE_METADATA_VECTOR_COUNT =

@@ -18,7 +18,6 @@ internal sealed unsafe partial class D3D12Backend
     private const ulong D3D12PipelineCacheBackendTag = 0x0000_0032_3144_3344UL;
     private const uint PipelineKeySchemaVersion = 2;
     private const uint D3D12BackendAbiVersion = 1;
-    private const uint StateObjectReplaySchemaVersion = 2;
     private const byte SlangTargetSettingsIdentityVersion = 1;
     private const string AgilityPackageVersion = "1.619.5";
 
@@ -27,6 +26,7 @@ internal sealed unsafe partial class D3D12Backend
         in PipelineCacheDesc desc,
         CancellationToken cancellationToken = default)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         cancellationToken.ThrowIfCancellationRequested();
         ValidatePipelineCachePolicy(desc);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
@@ -49,6 +49,7 @@ internal sealed unsafe partial class D3D12Backend
         out int requiredByteCount,
         CancellationToken cancellationToken = default)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         cancellationToken.ThrowIfCancellationRequested();
         byte[] data = RequirePipelineCache(cache).Serialize(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
@@ -64,6 +65,7 @@ internal sealed unsafe partial class D3D12Backend
         ReadOnlySpan<PipelineCache> sources,
         CancellationToken cancellationToken = default)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         cancellationToken.ThrowIfCancellationRequested();
         D3D12PipelineCache nativeDestination = RequirePipelineCache(destination);
         var nativeSources = new D3D12PipelineCache[sources.Length];
@@ -500,7 +502,6 @@ internal sealed unsafe partial class D3D12Backend
                 writer.Write(PipelineKeySchemaVersion);
                 writer.Write(D3D12BackendAbiVersion);
                 writer.Write(RootSignatureSchemaVersion);
-                writer.Write(StateObjectReplaySchemaVersion);
                 writer.Write(AgilitySdkVersion);
                 WriteCanonicalString(writer, AgilityPackageVersion);
                 WriteCanonicalString(writer, SlangToolchainIdentity.Version);
@@ -612,145 +613,20 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        private static void ComputeSha256(
-            ReadOnlySpan<byte> source,
-            Span<byte> destination,
+        private static void ComputeSha256(ReadOnlySpan<byte> source, Span<byte> destination,
             CancellationToken cancellationToken)
         {
-            if (destination.Length < PipelineCacheHashByteCount)
-                throw new ArgumentException("A SHA-256 destination must contain at least 32 bytes.");
-
-            Span<uint> state = stackalloc uint[8]
-            {
-                0x6A09E667u,
-                0xBB67AE85u,
-                0x3C6EF372u,
-                0xA54FF53Au,
-                0x510E527Fu,
-                0x9B05688Cu,
-                0x1F83D9ABu,
-                0x5BE0CD19u,
-            };
-            Span<uint> schedule = stackalloc uint[64];
-            int offset = 0;
-            while (source.Length - offset >= 64)
+            using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            while (!source.IsEmpty)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                TransformSha256(source.Slice(offset, 64), state, schedule);
-                offset += 64;
+                int count = Math.Min(source.Length, PipelineCacheCancellationChunkByteCount);
+                hash.AppendData(source[..count]);
+                source = source[count..];
             }
-
-            Span<byte> tail = stackalloc byte[128];
-            tail.Clear();
-            ReadOnlySpan<byte> remaining = source[offset..];
-            remaining.CopyTo(tail);
-            tail[remaining.Length] = 0x80;
-            int paddedByteCount = remaining.Length <= 55 ? 64 : 128;
-            BinaryPrimitives.WriteUInt64BigEndian(
-                tail.Slice(paddedByteCount - sizeof(ulong), sizeof(ulong)),
-                checked((ulong)source.Length * 8UL));
-            for (int tailOffset = 0; tailOffset < paddedByteCount; tailOffset += 64)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                TransformSha256(tail.Slice(tailOffset, 64), state, schedule);
-            }
-
-            for (int index = 0; index < state.Length; index++)
-            {
-                BinaryPrimitives.WriteUInt32BigEndian(
-                    destination.Slice(index * sizeof(uint), sizeof(uint)),
-                    state[index]);
-            }
+            cancellationToken.ThrowIfCancellationRequested();
+            hash.GetHashAndReset(destination);
         }
-
-        private static void TransformSha256(
-            ReadOnlySpan<byte> block,
-            Span<uint> state,
-            Span<uint> schedule)
-        {
-            for (int index = 0; index < 16; index++)
-            {
-                schedule[index] = BinaryPrimitives.ReadUInt32BigEndian(
-                    block.Slice(index * sizeof(uint), sizeof(uint)));
-            }
-
-            unchecked
-            {
-                for (int index = 16; index < schedule.Length; index++)
-                {
-                    uint value15 = schedule[index - 15];
-                    uint sigma0 = BitOperations.RotateRight(value15, 7) ^
-                        BitOperations.RotateRight(value15, 18) ^
-                        (value15 >> 3);
-                    uint value2 = schedule[index - 2];
-                    uint sigma1 = BitOperations.RotateRight(value2, 17) ^
-                        BitOperations.RotateRight(value2, 19) ^
-                        (value2 >> 10);
-                    schedule[index] = schedule[index - 16] + sigma0 +
-                        schedule[index - 7] + sigma1;
-                }
-
-                uint a = state[0];
-                uint b = state[1];
-                uint c = state[2];
-                uint d = state[3];
-                uint e = state[4];
-                uint f = state[5];
-                uint g = state[6];
-                uint h = state[7];
-                ReadOnlySpan<uint> constants = Sha256RoundConstants;
-                for (int index = 0; index < schedule.Length; index++)
-                {
-                    uint sum1 = BitOperations.RotateRight(e, 6) ^
-                        BitOperations.RotateRight(e, 11) ^
-                        BitOperations.RotateRight(e, 25);
-                    uint choose = (e & f) ^ (~e & g);
-                    uint temporary1 = h + sum1 + choose + constants[index] + schedule[index];
-                    uint sum0 = BitOperations.RotateRight(a, 2) ^
-                        BitOperations.RotateRight(a, 13) ^
-                        BitOperations.RotateRight(a, 22);
-                    uint majority = (a & b) ^ (a & c) ^ (b & c);
-                    uint temporary2 = sum0 + majority;
-                    h = g;
-                    g = f;
-                    f = e;
-                    e = d + temporary1;
-                    d = c;
-                    c = b;
-                    b = a;
-                    a = temporary1 + temporary2;
-                }
-
-                state[0] += a;
-                state[1] += b;
-                state[2] += c;
-                state[3] += d;
-                state[4] += e;
-                state[5] += f;
-                state[6] += g;
-                state[7] += h;
-            }
-        }
-
-        private static ReadOnlySpan<uint> Sha256RoundConstants =>
-        [
-            0x428A2F98u, 0x71374491u, 0xB5C0FBCFu, 0xE9B5DBA5u,
-            0x3956C25Bu, 0x59F111F1u, 0x923F82A4u, 0xAB1C5ED5u,
-            0xD807AA98u, 0x12835B01u, 0x243185BEu, 0x550C7DC3u,
-            0x72BE5D74u, 0x80DEB1FEu, 0x9BDC06A7u, 0xC19BF174u,
-            0xE49B69C1u, 0xEFBE4786u, 0x0FC19DC6u, 0x240CA1CCu,
-            0x2DE92C6Fu, 0x4A7484AAu, 0x5CB0A9DCu, 0x76F988DAu,
-            0x983E5152u, 0xA831C66Du, 0xB00327C8u, 0xBF597FC7u,
-            0xC6E00BF3u, 0xD5A79147u, 0x06CA6351u, 0x14292967u,
-            0x27B70A85u, 0x2E1B2138u, 0x4D2C6DFCu, 0x53380D13u,
-            0x650A7354u, 0x766A0ABBu, 0x81C2C92Eu, 0x92722C85u,
-            0xA2BFE8A1u, 0xA81A664Bu, 0xC24B8B70u, 0xC76C51A3u,
-            0xD192E819u, 0xD6990624u, 0xF40E3585u, 0x106AA070u,
-            0x19A4C116u, 0x1E376C08u, 0x2748774Cu, 0x34B0BCB5u,
-            0x391C0CB3u, 0x4ED8AA4Au, 0x5B9CCA4Fu, 0x682E6FF3u,
-            0x748F82EEu, 0x78A5636Fu, 0x84C87814u, 0x8CC70208u,
-            0x90BEFFFAu, 0xA4506CEBu, 0xBEF9A3F7u, 0xC67178F2u,
-        ];
 
         internal sealed class CacheEntry
         {
@@ -1088,6 +964,7 @@ internal sealed unsafe partial class D3D12Backend
         writer.Write(limits.ConstantBufferAlignment);
         writer.Write(limits.TextureDataPitchAlignment);
         writer.Write(limits.TextureDataPlacementAlignment);
+        writer.Write(limits.MaximumConstantBufferRange);
     }
 
     private static void WriteFormatSupport(

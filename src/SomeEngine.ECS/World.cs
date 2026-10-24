@@ -35,10 +35,12 @@ public partial class World : IDisposable
     private Owners.Copy _copy => CurrentStructureRoot.Copy;
     private Owners.Shared _shared => CurrentStructureRoot.Shared;
     private Owners.Clock _clock => CurrentStructureRoot.Clock;
-    private Owners.Iteration _iteration => CurrentStructureRoot.Iteration;
+    private readonly Owners.Iteration _iteration = new();
+
+    internal Owners.Iteration QueryExecutions => _iteration;
     private Owners.Hierarchy _hierarchy => CurrentStructureRoot.Hierarchy;
 
-    public World(int initialEntityCapacity = 256)
+    public World(int initialEntityCapacity = 256, WorldExecution? execution = null)
     {
         _hooks = new Owners.Hooks();
         _hooks.Bind(this);
@@ -49,6 +51,8 @@ public partial class World : IDisposable
             initialEntityCapacity,
             _hooks);
         _publishedStructure = new WorldStructurePublication(root, epoch: 0);
+        _execution = execution;
+        execution?.Attach(this);
     }
 
     private WorldStructureRoot CurrentStructureRoot

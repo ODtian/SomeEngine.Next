@@ -1,6 +1,6 @@
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
     private const string InvalidManagedPayloadPolicyMessage = "Managed payload policy is invalid.";
     private const string StaleScopeRuntimeMessage = "Cannot create work or resources from a job scope that belongs to a previous runtime generation.";

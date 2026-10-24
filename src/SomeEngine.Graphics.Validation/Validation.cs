@@ -60,6 +60,10 @@ public sealed class DelegateValidationMessageSink : IValidationMessageSink
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
+/// <param name="MessageSink">Receives validation messages when supplied.</param>
+/// <param name="ReportLiveObjectsOnDispose">Reports device objects that remain alive when the layer is disposed.</param>
+/// <param name="NativeValidationDisabled">Keep engine validation active without enabling the backend's native validation layer.</param>
 public readonly record struct ValidationOptions(
     IValidationMessageSink? MessageSink = null,
-    bool ReportLiveObjectsOnDispose = true);
+    bool ReportLiveObjectsOnDispose = true,
+    bool NativeValidationDisabled = false);

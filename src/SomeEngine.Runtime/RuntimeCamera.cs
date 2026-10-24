@@ -24,6 +24,21 @@ internal sealed class RuntimeCamera
     }
 
     internal Vector3 Position { get; private set; }
+    internal Vector3 Forward => _forward;
+
+    internal void SetView(Vector3 position, Vector3 target)
+    {
+        SetPosition(position);
+        Vector3 direction = Vector3.Normalize(target - position);
+        if (MathF.Abs(Vector3.Dot(direction, _worldUp)) < MaximumUpAlignment)
+            _forward = direction;
+    }
+
+    internal void SetPosition(Vector3 position)
+    {
+        if (!IsFinite(position)) throw new ArgumentException("Camera position must be finite.", nameof(position));
+        Position = position;
+    }
 
     internal Matrix4x4 View => Matrix4x4.CreateLookAt(Position, Position + _forward, _worldUp);
 
@@ -61,7 +76,7 @@ internal sealed class RuntimeCamera
             Rotate(input.MouseDelta * new Vector2(0.0035f, -0.0035f));
     }
 
-    private Vector3 Right => Vector3.Normalize(Vector3.Cross(_worldUp, _forward));
+    private Vector3 Right => Vector3.Normalize(Vector3.Cross(_forward, _worldUp));
 
     private void Rotate(Vector2 radians)
     {

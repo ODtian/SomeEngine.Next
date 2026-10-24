@@ -1,10 +1,14 @@
 #ifndef TRIANGLE_SURFACE_SLANG
 #define TRIANGLE_SURFACE_SLANG
 
+#include "domain_interfaces.slang"
+#include "vertex_evaluate.slang"
+
 struct SurfaceVertex
 {
     float3 Position;
     float3 Normal;
+    float4 Tangent;
     float2 TexCoord;
 };
 
@@ -16,6 +20,9 @@ struct Triangle
     float3 Normal0;
     float3 Normal1;
     float3 Normal2;
+    float4 Tangent0;
+    float4 Tangent1;
+    float4 Tangent2;
     float2 TexCoord0;
     float2 TexCoord1;
     float2 TexCoord2;
@@ -25,29 +32,11 @@ struct SurfaceEval
 {
     float3 Position;
     float3 Normal;
+    float4 Tangent;
     float2 TexCoord;
     float3 DpDu;
     float3 DpDv;
 };
-
-interface ITriangleSurface
-{
-    float3 position(Triangle triangle, float3 barycentric);
-    SurfaceEval eval(Triangle triangle, float3 barycentric);
-    void bounds(Triangle triangle, out float3 minimum, out float3 maximum);
-};
-
-float3 Barycentric(float2 uv)
-{
-    return float3(1.0 - uv.x - uv.y, uv.x, uv.y);
-}
-
-float3 ClampBarycentric(float3 value)
-{
-    value = max(value, 0.0);
-    float sum = value.x + value.y + value.z;
-    return sum > 1e-8 ? value / sum : float3(1.0, 0.0, 0.0);
-}
 
 float3 SafeNormalize(float3 value, float3 fallback)
 {
@@ -62,18 +51,21 @@ SurfaceVertex Corner(Triangle triangle, uint index)
     {
         result.Position = triangle.Position0;
         result.Normal = triangle.Normal0;
+        result.Tangent = triangle.Tangent0;
         result.TexCoord = triangle.TexCoord0;
     }
     else if (index == 1u)
     {
         result.Position = triangle.Position1;
         result.Normal = triangle.Normal1;
+        result.Tangent = triangle.Tangent1;
         result.TexCoord = triangle.TexCoord1;
     }
     else
     {
         result.Position = triangle.Position2;
         result.Normal = triangle.Normal2;
+        result.Tangent = triangle.Tangent2;
         result.TexCoord = triangle.TexCoord2;
     }
     return result;
@@ -91,10 +83,34 @@ Triangle MakeTriangle(
     result.Normal0 = first.Normal;
     result.Normal1 = second.Normal;
     result.Normal2 = third.Normal;
+    result.Tangent0 = first.Tangent;
+    result.Tangent1 = second.Tangent;
+    result.Tangent2 = third.Tangent;
     result.TexCoord0 = first.TexCoord;
     result.TexCoord1 = second.TexCoord;
     result.TexCoord2 = third.TexCoord;
     return result;
+}
+
+SurfaceVertex MakeSurfaceVertex(StandardVertex vertex)
+{
+    SurfaceVertex result;
+    result.Position = vertex.position;
+    result.Normal = vertex.worldNormal;
+    result.Tangent = vertex.worldTangent;
+    result.TexCoord = vertex.uv0;
+    return result;
+}
+
+Triangle MakeStandardTriangle(
+    StandardVertex first,
+    StandardVertex second,
+    StandardVertex third)
+{
+    return MakeTriangle(
+        MakeSurfaceVertex(first),
+        MakeSurfaceVertex(second),
+        MakeSurfaceVertex(third));
 }
 
 Triangle ReorderTriangle(Triangle triangle, uint3 order)
@@ -117,6 +133,13 @@ SurfaceEval EvalLinearSurface(Triangle triangle, float3 barycentric)
         triangle.Normal1 * barycentric.y +
         triangle.Normal2 * barycentric.z,
         float3(0.0, 0.0, 1.0));
+    float4 tangent =
+        triangle.Tangent0 * barycentric.x +
+        triangle.Tangent1 * barycentric.y +
+        triangle.Tangent2 * barycentric.z;
+    result.Tangent = float4(
+        SafeNormalize(tangent.xyz, float3(1.0, 0.0, 0.0)),
+        tangent.w < 0.0 ? -1.0 : 1.0);
     result.TexCoord =
         triangle.TexCoord0 * barycentric.x +
         triangle.TexCoord1 * barycentric.y +
@@ -134,8 +157,26 @@ float3 EvalLinearPosition(Triangle triangle, float3 barycentric)
         triangle.Position2 * barycentric.z;
 }
 
-struct LinearSurface : ITriangleSurface
+struct LinearSurface : IDomainEvaluate<StandardVertex>
 {
+    typealias TriangleData = Triangle;
+    typealias Surface = SurfaceEval;
+
+    Triangle makeTriangle(
+        StandardVertex first,
+        StandardVertex second,
+        StandardVertex third)
+    {
+        return MakeStandardTriangle(first, second, third);
+    }
+
+    float3 cornerPosition(Triangle triangle, uint corner)
+    {
+        if (corner == 0u) return triangle.Position0;
+        if (corner == 1u) return triangle.Position1;
+        return triangle.Position2;
+    }
+
     float3 position(Triangle triangle, float3 barycentric)
     {
         return EvalLinearPosition(triangle, barycentric);
@@ -146,7 +187,24 @@ struct LinearSurface : ITriangleSurface
         return EvalLinearSurface(triangle, barycentric);
     }
 
-    void bounds(Triangle triangle, out float3 minimum, out float3 maximum)
+    SurfaceBarycentrics reconstruct(
+        Triangle triangle,
+        SurfaceReconstructionInput input)
+    {
+        SurfaceBarycentrics result;
+        result.Value = ClampBarycentric(input.ParentValue);
+        result.Dx = input.ParentDx;
+        result.Dy = input.ParentDy;
+        result.Residual = length(
+            EvalLinearPosition(triangle, result.Value) - input.TargetPosition);
+        result.Valid = all(isfinite(result.Value)) ? 1u : 0u;
+        return result;
+    }
+
+    void bounds(
+        Triangle triangle,
+        out float3 minimum,
+        out float3 maximum)
     {
         minimum = min(
             triangle.Position0,
@@ -154,6 +212,36 @@ struct LinearSurface : ITriangleSurface
         maximum = max(
             triangle.Position0,
             max(triangle.Position1, triangle.Position2));
+    }
+
+    void patchBounds(
+        Triangle triangle,
+        float3 bary0,
+        float3 bary1,
+        float3 bary2,
+        out float3 minimum,
+        out float3 maximum)
+    {
+        float3 p0 = EvalLinearPosition(triangle, bary0);
+        float3 p1 = EvalLinearPosition(triangle, bary1);
+        float3 p2 = EvalLinearPosition(triangle, bary2);
+        minimum = min(p0, min(p1, p2));
+        maximum = max(p0, max(p1, p2));
+    }
+
+    DomainErrorBounds errorBounds(
+        Triangle triangle,
+        float3 bary0,
+        float3 bary1,
+        float3 bary2,
+        float3 position0,
+        float3 position1,
+        float3 position2)
+    {
+        DomainErrorBounds result;
+        result.Edge = 0.0.xxx;
+        result.Interior = 0.0;
+        return result;
     }
 };
 

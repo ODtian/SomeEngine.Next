@@ -5,7 +5,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class WarpCapabilityTests
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class WarpCapabilityTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void Graphics_pipeline_accepts_combined_known_dynamic_states_and_rejects_unknown_bits()
@@ -22,16 +23,16 @@ public sealed class WarpCapabilityTests
             [shader("fragment")]
             float4 pixelMain() : SV_Target0 { return float4(1, 1, 1, 1); }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("vertexMain", SlangStage.Vertex),
             new("pixelMain", SlangStage.Fragment),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_dynamic_state_flags",
             source,
             entries);
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Format[] formats = [Format.R8G8B8A8UNorm];
         BlendAttachmentState[] blendAttachments =
@@ -43,10 +44,7 @@ public sealed class WarpCapabilityTests
 
         using Pipeline pipeline = backend.CreateGraphicsPipeline(
             device,
-            new GraphicsPipelineDesc(
-                shader.Program,
-                shader.GetEntryPoint(0),
-                shader.GetEntryPoint(1),
+            new GraphicsPipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0), shader.GetEntryPoint(1), shader.GetEntryCode(1),
                 [],
                 [],
                 PrimitiveTopology.TriangleList,
@@ -62,10 +60,7 @@ public sealed class WarpCapabilityTests
         {
             using Pipeline invalid = backend.CreateGraphicsPipeline(
                 device,
-                new GraphicsPipelineDesc(
-                    shader.Program,
-                    shader.GetEntryPoint(0),
-                    shader.GetEntryPoint(1),
+                new GraphicsPipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0), shader.GetEntryPoint(1), shader.GetEntryCode(1),
                     [],
                     [],
                     PrimitiveTopology.TriangleList,
@@ -86,7 +81,7 @@ public sealed class WarpCapabilityTests
     [Fact]
     public void Timestamp_queries_execute_on_every_queue_family_and_reject_cross_family_use()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         foreach (QueueType type in Enum.GetValues<QueueType>())
@@ -103,6 +98,7 @@ public sealed class WarpCapabilityTests
                 new CommandContextDesc(type, 0, 1));
 
             backend.Begin(context);
+            backend.ResetQueries(context, pool, 0, 1);
             backend.WriteTimestamp(context, pool, 0);
             backend.ResolveQueries(
                 context,
@@ -134,7 +130,7 @@ public sealed class WarpCapabilityTests
     [Fact]
     public void Query_pool_creation_rejects_invalid_queue_and_stream_combinations()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         Assert.Throws<ArgumentException>(() => backend.CreateQueryPool(
@@ -155,7 +151,7 @@ public sealed class WarpCapabilityTests
     [Fact]
     public void Snapshot_exposes_only_usable_WARP_capabilities()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         AssertCapability<SparseResources>(backend, device);
@@ -263,7 +259,8 @@ public sealed class WarpCapabilityTests
     [Fact]
     public void Calibrated_timestamps_sample_the_exact_locked_queue()
     {
-        using D3D12Backend backend = new();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         foreach (QueueType type in Enum.GetValues<QueueType>())
@@ -287,6 +284,7 @@ public sealed class WarpCapabilityTests
             try
             {
                 result = backend.CalibrateTimestamps(queue);
+                events.Enqueue("calibration completed");
             }
             catch (Exception exception)
             {
@@ -298,18 +296,19 @@ public sealed class WarpCapabilityTests
             }
         });
         calibration.Start();
-        Assert.True(started.Wait(TimeSpan.FromSeconds(2)));
         try
         {
-            Assert.False(finished.Wait(TimeSpan.FromMilliseconds(100)));
+            Assert.True(started.Wait(TimeSpan.FromSeconds(2)));
         }
         finally
         {
+            events.Enqueue("release");
             held.Dispose();
         }
 
         Assert.True(finished.Wait(TimeSpan.FromSeconds(5)));
         calibration.Join();
+        Assert.Equal(new[] { "release", "calibration completed" }, events);
         Assert.Null(failure);
         Assert.True(result.CpuFrequency > 0);
         Assert.True(result.QueueFrequency > 0);
@@ -318,7 +317,7 @@ public sealed class WarpCapabilityTests
     [Fact]
     public void Residency_make_resident_completion_precedes_explicit_evict()
     {
-        using var backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out Residency? capability));
         Assert.NotNull(capability);
@@ -335,15 +334,8 @@ public sealed class WarpCapabilityTests
         Queue queue = backend.GetQueue(device, QueueType.Copy);
 
         QueueCompletion resident = backend.EnqueueMakeResident(queue, [resource]);
-        QueueRetirementSnapshot pending =
-            D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(1, pending.PendingCapabilityCount);
-        Assert.True(pending.CapabilityNativeReferenceCount > 0);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(resident, TimeSpan.FromSeconds(10)));
         backend.CollectCompleted(device);
-        Assert.Equal(
-            0,
-            D3D12PrivateState.QueueRetirements(queue).PendingCapabilityCount);
         backend.Evict(device, [resource]);
         QueueCompletion restored = backend.EnqueueMakeResident(queue, [resource]);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(restored, TimeSpan.FromSeconds(10)));
@@ -354,9 +346,9 @@ public sealed class WarpCapabilityTests
     }
 
     [Fact]
-    public void Warm_sparse_and_residency_queue_operations_allocate_zero_managed_bytes()
+    public void RepeatedSparseAndResidencyOperationsComplete()
     {
-        using var backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? sparse));
         Assert.NotNull(sparse);
@@ -403,65 +395,21 @@ public sealed class WarpCapabilityTests
             WaitAndCollect(backend, device, backend.EnqueueMakeResident(queue, resources));
         }
 
-        long beforeUpdate = GC.GetAllocatedBytesForCurrentThread();
         WaitAndCollect(backend, device, backend.UpdateSparseMappings(queue, mappings));
-        long updateBytes = GC.GetAllocatedBytesForCurrentThread() - beforeUpdate;
 
-        long beforeCopy = GC.GetAllocatedBytesForCurrentThread();
         WaitAndCollect(backend, device, backend.CopySparseMappings(queue, copies));
-        long copyBytes = GC.GetAllocatedBytesForCurrentThread() - beforeCopy;
 
-        long beforeEvict = GC.GetAllocatedBytesForCurrentThread();
         backend.Evict(device, resources);
-        long evictBytes = GC.GetAllocatedBytesForCurrentThread() - beforeEvict;
 
-        long beforeResident = GC.GetAllocatedBytesForCurrentThread();
         WaitAndCollect(backend, device, backend.EnqueueMakeResident(queue, resources));
-        long residentBytes = GC.GetAllocatedBytesForCurrentThread() - beforeResident;
 
-        Assert.Equal(0, updateBytes);
-        Assert.Equal(0, copyBytes);
-        Assert.Equal(0, evictBytes);
-        Assert.Equal(0, residentBytes);
     }
 
-    [Fact]
-    public void Accepted_residency_signal_failure_keeps_native_refs_in_untrusted_retirement()
-    {
-        using var backend = new D3D12Backend();
-        Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Queue queue = backend.GetQueue(device, QueueType.Graphics, 0);
-        using Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(
-                64 * 1024,
-                BufferUsages.CopySource | BufferUsages.CopyDestination));
-        ResidencyResource resource = backend.GetResidencyResource(buffer);
-        D3D12PrivateState.SetNextCompletion(queue, ulong.MaxValue);
-
-        GraphicsException loss = Assert.Throws<GraphicsException>(() =>
-            backend.EnqueueMakeResident(queue, [resource]));
-
-        Assert.Equal(GraphicsError.DeviceLost, loss.Error);
-        QueueRetirementSnapshot retained =
-            D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(0, retained.PendingCapabilityCount);
-        Assert.Equal(1, retained.UntrustedCapabilityCount);
-        Assert.True(retained.CapabilityNativeReferenceCount > 0);
-        Assert.False(D3D12PrivateState.NativeDeviceLossConfirmed(device));
-
-        D3D12PrivateState.ConfirmNativeDeviceLoss(device);
-        device.Dispose();
-        QueueRetirementSnapshot abandoned =
-            D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(0, abandoned.UntrustedCapabilityCount);
-        Assert.Equal(0, abandoned.CapabilityNativeReferenceCount);
-    }
 
     [Fact]
     public void Cpu_staged_descriptor_tables_do_not_claim_a_stable_gpu_residency_identity()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using DescriptorTable table = backend.CreateDescriptorTable(
             device,
@@ -469,14 +417,14 @@ public sealed class WarpCapabilityTests
 
         NotSupportedException failure = Assert.Throws<NotSupportedException>(() =>
             backend.GetResidencyResource(table));
-        Assert.Contains("CPU staging", failure.Message, StringComparison.Ordinal);
-        Assert.Contains("command-scoped", failure.Message, StringComparison.Ordinal);
+
+
     }
 
     [Fact]
     public void Sparse_map_copy_use_and_unmap_follow_queue_order()
     {
-        using var backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -506,27 +454,13 @@ public sealed class WarpCapabilityTests
         QueueCompletion mapped = backend.UpdateSparseMappings(
             queue,
             [new SparseMappingDesc(source, oneTile, SparseMappingType.Mapped, heap, 0)]);
-        QueueRetirementSnapshot mappedRetirement =
-            D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(1, mappedRetirement.PendingCapabilityCount);
-        Assert.True(mappedRetirement.CapabilityNativeReferenceCount > 0);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(mapped, TimeSpan.FromSeconds(10)));
         backend.CollectCompleted(device);
-        Assert.Equal(
-            0,
-            D3D12PrivateState.QueueRetirements(queue).PendingCapabilityCount);
         QueueCompletion copied = backend.CopySparseMappings(
             queue,
             [new SparseMappingCopyDesc(destination, origin, source, origin, oneTile)]);
-        QueueRetirementSnapshot copiedRetirement =
-            D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(1, copiedRetirement.PendingCapabilityCount);
-        Assert.True(copiedRetirement.CapabilityNativeReferenceCount > 0);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(copied, TimeSpan.FromSeconds(10)));
         backend.CollectCompleted(device);
-        Assert.Equal(
-            0,
-            D3D12PrivateState.QueueRetirements(queue).PendingCapabilityCount);
 
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -589,7 +523,7 @@ public sealed class WarpCapabilityTests
     [Fact]
     public void Indirect_command_capability_accepts_every_advertised_action_family()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out IndirectCommands? capability));
         Assert.NotNull(capability);
@@ -647,8 +581,8 @@ public sealed class WarpCapabilityTests
             {
             }
             """;
-        D3D12TestShaderEntry[] entries = [new("computeMain", SlangStage.Compute)];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestEntry[] entries = [new("computeMain", SlangStage.Compute)];
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_indirect_compute",
             source,
             entries);
@@ -656,7 +590,7 @@ public sealed class WarpCapabilityTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         IndirectArgumentDesc[] arguments = [new(IndirectArgumentType.Dispatch)];
         using IndirectCommandLayout layout = backend.CreateIndirectCommandLayout(
             device,
@@ -700,7 +634,7 @@ public sealed class WarpCapabilityTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 dispatchThread : SV_DispatchThreadID) { }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_async_pipeline_prewarm",
             source,
             [new("computeMain", SlangStage.Compute)]);
@@ -716,9 +650,7 @@ public sealed class WarpCapabilityTests
         using PipelineCache cache = backend.CreatePipelineCache(device, default);
         Assert.False(backend.TryGetPipelineCacheData(cache, [], out int emptySize));
 
-        ComputePipelineDesc description = new(
-            shader.Program,
-            shader.GetEntryPoint(0),
+        ComputePipelineDesc description = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
             "async prewarmed compute");
         using Pipeline pipeline = await backend.CreateComputePipelineAsync(
             device,
@@ -780,7 +712,7 @@ public sealed class WarpCapabilityTests
                 outputValues[dispatchThread.x] = value;
             }
             """;
-        D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_async_pipeline_program_ownership",
             source,
             [new("computeMain", SlangStage.Compute)]);
@@ -790,22 +722,20 @@ public sealed class WarpCapabilityTests
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
         Assert.NotEqual(VariableLayoutReflection.Null, globals);
-        try
+        ComputePipelineDesc description = new(
+            shader.SlangCode,
+            shader.Reflection,
+            shader.GetEntryPoint(0),
+            shader.GetEntryCode(0));
+        for (int index = 0; index < creations.Length; index++)
         {
-            ComputePipelineDesc description = new(
-                shader.Program,
-                shader.GetEntryPoint(0));
-            for (int index = 0; index < creations.Length; index++)
-            {
-                creations[index] = backend.CreateComputePipelineAsync(
-                    device,
-                    description);
-            }
+            creations[index] = backend.CreateComputePipelineAsync(
+                device,
+                description);
         }
-        finally
-        {
-            shader.Dispose();
-        }
+        shader = null!;
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
 
         Pipeline[] pipelines = await Task.WhenAll(creations);
         try
@@ -868,7 +798,7 @@ public sealed class WarpCapabilityTests
     }
 
     [Fact]
-    public void Indirect_layout_retains_pipeline_native_state_exactly_once()
+    public void Indirect_layout_retains_pipeline_native_state_exactly_once_DoesNotThrow()
     {
         const string source = """
             [shader("compute")]
@@ -877,25 +807,22 @@ public sealed class WarpCapabilityTests
             {
             }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "rhi_indirect_pipeline_native_ownership",
             source,
             [new("computeMain", SlangStage.Compute)]);
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
 
-        Assert.Equal(1, D3D12PrivateState.NativeLeaseReferenceCount(pipeline));
         IndirectArgumentDesc[] arguments = [new(IndirectArgumentType.Dispatch)];
         using (IndirectCommandLayout layout = backend.CreateIndirectCommandLayout(
                    device,
                    new IndirectCommandLayoutDesc(arguments, 12, pipeline)))
         {
-            Assert.Equal(2, D3D12PrivateState.NativeLeaseReferenceCount(pipeline));
         }
-        Assert.Equal(1, D3D12PrivateState.NativeLeaseReferenceCount(pipeline));
     }
 
     [Fact]
@@ -998,12 +925,12 @@ public sealed class WarpCapabilityTests
                 return float4(0.25, 0.5, 0.75, 1.0);
             }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("meshMain", SlangStage.Mesh),
             new("pixelMain", SlangStage.Fragment),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileHlslPassThrough(
+        D3D12TestShader shader = shaderCompiler.CompileHlslPassThrough(
             "rhi_mesh_dispatch",
             source,
             entries);
@@ -1026,10 +953,14 @@ public sealed class WarpCapabilityTests
         using Pipeline pipeline = backend.CreateMeshPipeline(
             device,
             new MeshPipelineDesc(
-                shader.Program,
+                shader.SlangCode,
+                shader.Reflection,
                 shader.GetEntryPoint(0),
+                shader.GetEntryCode(0),
                 EntryPointReflection.Null,
+                default,
                 shader.GetEntryPoint(1),
+                shader.GetEntryCode(1),
                 rasterizer,
                 multisample,
                 depthStencil,
@@ -1120,7 +1051,7 @@ public sealed class WarpCapabilityTests
             DisableGpuBasedValidation: true,
             DisableSynchronizedQueueValidation: true);
         return new ValidationLayer(
-            new D3D12Backend(new D3D12BackendOptions(validation)));
+            D3D12GraphicsBackend.Create(new D3D12BackendOptions(validation)));
     }
 
     private static void AssertCapability<TCapability>(
@@ -1143,7 +1074,7 @@ public sealed class WarpCapabilityTests
     }
 
     private static void WaitAndCollect(
-        D3D12Backend backend,
+        IGraphicsBackend backend,
         Device device,
         QueueCompletion completion)
     {

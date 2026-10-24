@@ -196,7 +196,10 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (resourceCount == 0 && samplerCount == 0)
                 return;
-            EnsureDescriptorArenaReady();
+            // The first binding already supplies its descriptor counts. Allocate
+            // them together with the bindless prefix before recording any use,
+            // rather than creating a minimal heap and immediately replacing it.
+            EnsureDescriptorArenaReady(resourceCount, samplerCount);
             EnsureRecordingCapacity(
                 checked(_resourceUsed + resourceCount),
                 checked(_samplerUsed + samplerCount));

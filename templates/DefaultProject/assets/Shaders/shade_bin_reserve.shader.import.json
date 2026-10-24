@@ -1,0 +1,76 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 29,
+  "input_hash": "accfaacedb37542d7290ebf86f79eae6e3662c8877758bfdfe8fa79c2e91bf54",
+  "inputs": [
+    {
+      "relative_path": "../../assets/Shaders/cluster_bin_io.slang",
+      "content_hash": "9bdcb1cbe3238c73e5afa78b11ce6c0883b59f684336d1382e7b5460a4c66284"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_instance_properties.slang",
+      "content_hash": "a881c699f3ae666c6d0cda6a391ac173605c29c5f87cb028185a5d57b4726a01"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_structures.slang",
+      "content_hash": "89677843803ec893351df7ca9e5652bdf398ba2803ae4167189a7836cf30cfd2"
+    },
+    {
+      "relative_path": "../../assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "b3deb519f6691bbb7bbd28a7d6e5f162dc95b49212ad3bdcf4ff4d78eee5cc06"
+    },
+    {
+      "relative_path": "../../assets/Shaders/render_instance_properties.slang",
+      "content_hash": "d63867a87e179b0b11ab4cd4a06b5a8f937f1d219d2816853db156eef7c14b8a"
+    },
+    {
+      "relative_path": "../../assets/Shaders/render_instance_transform.slang",
+      "content_hash": "bee8de55a909be0fe22219acb566c9275974e7a7e2f42966b3452cbb5d979927"
+    },
+    {
+      "relative_path": "../../assets/Shaders/resource_effects.slang",
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+    },
+    {
+      "relative_path": "../../assets/Shaders/shade_bin_common.slang",
+      "content_hash": "321a2128f22a2fa599091befc3ecfc507ffcf05fd7d96d794b4770582b2abdf9"
+    },
+    {
+      "relative_path": "../../assets/Shaders/shade_bin_reserve.slang",
+      "content_hash": "c33309f35c7aa5aee44fe60fc180b86f24d2bb3fa730bf7342d08672db296d75"
+    },
+    {
+      "relative_path": "../../assets/Shaders/visbuffer_encoding.slang",
+      "content_hash": "f1148b395dd0151f0da387694369667b9f17d330bdf8b84668ca9d6b2ca4bf70"
+    },
+    {
+      "relative_path": "../../assets/Shaders/wave_aggregation.slang",
+      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+    },
+    {
+      "relative_path": "assets/Shaders/Pipeline/build_shade_bin_reserve.slang",
+      "content_hash": "888f00c10614cb281dedbde5c6dbcb8eee8378100431c8bf03300748268c1cf0"
+    },
+    {
+      "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+    },
+    {
+      "relative_path": "assets/Shaders/shade_bin_reserve.shader",
+      "content_hash": "808cbc0271d3c30b1fe4952827911b22450316bbe482bb2a8fe0f4d8b577ea91"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "ed49f5f8-6bdb-5e5d-8de7-9d665d43b672",
+      "sub_asset_key": "",
+      "input_hash": "accfaacedb37542d7290ebf86f79eae6e3662c8877758bfdfe8fa79c2e91bf54",
+      "dependencies": [],
+      "asset_path": "shade_bin_reserve.shader.asset",
+      "version": "f473abdf-7f06-0dce-db40-3279aae9f54e",
+      "content_hash": "0E63A443E31344AC08AA6991E987152851224CECE63688AFD4D935EFFACDA521",
+      "asset_dependencies": []
+    }
+  ]
+}

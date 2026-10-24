@@ -21,6 +21,29 @@ public sealed partial class SerializationRegistry
 
     public ReadOnlySpan<SerializationTypeEntry> Entries => _publishedEntries;
 
+    /// <summary>Registers a caller-supplied codec with its per-registry data.</summary>
+    /// <remarks>The codec value is copied for each value read or written. Reference fields retain caller-selected shared data.</remarks>
+    public SerializationRegistry RegisterCodec<T, TCodec>(TCodec codec)
+        where T : struct, IComponent
+        where TCodec : struct, IComponentCodec<T>
+    {
+        ValidateOrdinaryComponent<T>();
+        return Register(new ComponentSerializationRuntime<T>(
+            CreateTypeKey<T>(ComponentMetadata<T>.Storage, SerializationValueKind.Component),
+            CreateExplicitCodec<T, TCodec>(codec),
+            patcher: null,
+            schemaSource: SerializationSchemaSource.RuntimeDerived));
+    }
+
+    /// <summary>Registers a caller-supplied codec for an explicitly identified serialized type.</summary>
+    public SerializationRegistry RegisterCodec<T, TCodec>(SerializationTypeKey typeKey, TCodec codec)
+        where T : struct, IComponent
+        where TCodec : struct, IComponentCodec<T>
+    {
+        ValidateOrdinaryComponent<T>();
+        return Register(new ComponentSerializationRuntime<T>(typeKey, CreateExplicitCodec<T, TCodec>(codec), patcher: null));
+    }
+
     public SerializationRegistry Register<T>()
         where T : struct, IComponent
     {
@@ -138,6 +161,27 @@ public sealed partial class SerializationRegistry
             typeKey,
             new CustomValueCodec<T, TCodec>(),
             new CustomReferencePatcher<T, TPatcher>()));
+
+    /// <summary>Registers a caller-supplied codec with its per-registry data.</summary>
+    /// <remarks>The codec value is copied for each value read or written. Reference fields retain caller-selected shared data.</remarks>
+    public SerializationRegistry RegisterBufferCodec<T, TCodec>(TCodec codec)
+        where T : struct, IBufferElement
+        where TCodec : struct, IComponentCodec<T>
+    {
+        return Register(new BufferSerializationRuntime<T>(
+            CreateTypeKey<T>(StoragePath.Table, SerializationValueKind.Buffer),
+            CreateExplicitCodec<T, TCodec>(codec),
+            patcher: null,
+            schemaSource: SerializationSchemaSource.RuntimeDerived));
+    }
+
+    /// <summary>Registers a caller-supplied codec for an explicitly identified serialized type.</summary>
+    public SerializationRegistry RegisterBufferCodec<T, TCodec>(SerializationTypeKey typeKey, TCodec codec)
+        where T : struct, IBufferElement
+        where TCodec : struct, IComponentCodec<T>
+    {
+        return Register(new BufferSerializationRuntime<T>(typeKey, CreateExplicitCodec<T, TCodec>(codec), patcher: null));
+    }
 
     public SerializationRegistry RegisterBuffer<T>()
         where T : struct, IBufferElement =>
@@ -321,14 +365,16 @@ public sealed partial class SerializationRegistry
     {
         if (!_byStableId.TryGetValue(fileKey.StableId, out var runtime))
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.UnknownType,
                 $"Unknown serialized type '{fileKey.StableName}' ({fileKey.StableId}).");
         }
 
         if (fileKey.SchemaFingerprint == 0 ||
             runtime.Entry.TypeKey.SchemaFingerprint != fileKey.SchemaFingerprint)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Schema mismatch for '{fileKey.StableName}': file=0x{fileKey.SchemaFingerprint:X16}, " +
                 $"local=0x{runtime.Entry.TypeKey.SchemaFingerprint:X16}.");
         }
@@ -337,7 +383,8 @@ public sealed partial class SerializationRegistry
                 fileKey.StableName,
                 StringComparison.Ordinal))
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Serialized type key name '{fileKey.StableName}' does not exactly match " +
                 $"registered name '{runtime.Entry.TypeKey.StableName}'.");
         }
@@ -409,13 +456,13 @@ public sealed partial class SerializationRegistry
             : RawValueCodec<T>.Instance;
     }
 
-    private static IValueCodec<T> CreateExplicitCodec<T, TCodec>()
+    private static IValueCodec<T> CreateExplicitCodec<T, TCodec>(TCodec codec = default)
         where T : struct
         where TCodec : struct, IComponentCodec<T>
     {
         return typeof(ICanonicalComponentCodec<T>).IsAssignableFrom(typeof(TCodec))
-            ? new CanonicalValueCodec<T, TCodec>()
-            : new CustomValueCodec<T, TCodec>();
+            ? new CanonicalValueCodec<T, TCodec>(codec)
+            : new CustomValueCodec<T, TCodec>(codec);
     }
 
     private static IValueCodec<T> CreateGeneratedCodec<
@@ -552,17 +599,21 @@ internal sealed class CustomValueCodec<T, TCodec> : IValueCodec<T>
     where T : struct
     where TCodec : struct, IComponentCodec<T>
 {
+    private readonly TCodec _codec;
+
+    internal CustomValueCodec(TCodec codec = default) => _codec = codec;
+
     public ComponentCodecKind Kind => ComponentCodecKind.Custom;
 
     public void Write(ref DataWriter writer, in T value)
     {
-        var codec = default(TCodec);
+        var codec = _codec;
         codec.Write(ref writer, in value);
     }
 
     public T Read(ref DataReader reader)
     {
-        var codec = default(TCodec);
+        var codec = _codec;
         codec.Read(ref reader, out var value);
         return value;
     }
@@ -572,17 +623,21 @@ internal sealed class CanonicalValueCodec<T, TCodec> : IValueCodec<T>
     where T : struct
     where TCodec : struct, IComponentCodec<T>
 {
+    private readonly TCodec _codec;
+
+    internal CanonicalValueCodec(TCodec codec = default) => _codec = codec;
+
     public ComponentCodecKind Kind => ComponentCodecKind.Canonical;
 
     public void Write(ref DataWriter writer, in T value)
     {
-        var codec = default(TCodec);
+        var codec = _codec;
         codec.Write(ref writer, in value);
     }
 
     public T Read(ref DataReader reader)
     {
-        var codec = default(TCodec);
+        var codec = _codec;
         codec.Read(ref reader, out T value);
         return value;
     }

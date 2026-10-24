@@ -276,7 +276,7 @@ public sealed partial class ValidationLayer
         ValidateDynamicStates(device, desc.DynamicStates);
         EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, entries);
+            ReflectPipelineBindings(desc.Reflection, entries);
         bindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -318,7 +318,7 @@ public sealed partial class ValidationLayer
         ValidateDynamicStates(device, desc.DynamicStates);
         EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, entries);
+            ReflectPipelineBindings(desc.Reflection, entries);
         bindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         Task<Pipeline> creation = Backend.CreateGraphicsPipelineAsync(device, desc, cache);
@@ -335,7 +335,7 @@ public sealed partial class ValidationLayer
             RequireOnDevice(device, cache, "PipelineCache");
         EntryPointReflection[] entries = [desc.Compute];
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, entries);
+            ReflectPipelineBindings(desc.Reflection, entries);
         bindings.AddStaticSamplers(desc.StaticSamplers.Span);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -376,7 +376,7 @@ public sealed partial class ValidationLayer
             RequireOnDevice(device, cache, "PipelineCache");
         EntryPointReflection[] entries = [desc.Compute];
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, entries);
+            ReflectPipelineBindings(desc.Reflection, entries);
         bindings.AddStaticSamplers(desc.StaticSamplers.Span);
         var objectInfo = new ValidationObjectInfo(device);
         Task<Pipeline> creation = Backend.CreateComputePipelineAsync(device, desc, cache);
@@ -398,7 +398,7 @@ public sealed partial class ValidationLayer
         if (desc.Pixel != EntryPointReflection.Null)
             entries.Add(desc.Pixel);
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, CollectionsMarshal.AsSpan(entries));
+            ReflectPipelineBindings(desc.Reflection, CollectionsMarshal.AsSpan(entries));
         bindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -444,7 +444,7 @@ public sealed partial class ValidationLayer
         if (desc.Pixel != EntryPointReflection.Null)
             entries.Add(desc.Pixel);
         PipelineBindingValidationState bindings =
-            ReflectPipelineBindings(desc.Program, CollectionsMarshal.AsSpan(entries));
+            ReflectPipelineBindings(desc.Reflection, CollectionsMarshal.AsSpan(entries));
         bindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         Task<Pipeline> creation = Backend.CreateMeshPipelineAsync(device, desc, cache);
@@ -547,6 +547,18 @@ public sealed partial class ValidationLayer
                 continue;
             Require(resource);
             RequireSameDevice(device, resource.Device, "ResourceBinding");
+            if (resource is Buffer buffer)
+            {
+                BufferRange range = binding.BufferRange;
+                uint alignment = Math.Max(1u, device.Capabilities.Limits.ConstantBufferAlignment);
+                if (binding.Type != ResourceBindingType.ConstantBuffer ||
+                    (buffer.Info.Usages & BufferUsages.Constant) == 0 ||
+                    range.Size == 0 || range.Size > device.Capabilities.Limits.MaximumConstantBufferRange ||
+                    range.Offset > buffer.Info.Size ||
+                    range.Size > buffer.Info.Size - range.Offset ||
+                    range.Offset % alignment != 0 || range.Size % alignment != 0)
+                    Reject("Bindings", $"A direct constant buffer binding requires a contained, aligned Constant buffer range: '{buffer.Label}', offset={range.Offset}, size={range.Size}, bufferSize={buffer.Info.Size}, alignment={alignment}, usages={buffer.Info.Usages}.", buffer.Label);
+            }
             GraphicsObject? current = resource;
             while (current is not null && current is not Device)
             {
@@ -560,25 +572,18 @@ public sealed partial class ValidationLayer
     }
 
     private PipelineBindingValidationState ReflectPipelineBindings(
-        IComponentType program,
+        ShaderReflection reflection,
         ReadOnlySpan<EntryPointReflection> entries,
         bool useConservativeWorkGraphEntries = false)
     {
-        ArgumentNullException.ThrowIfNull(program);
-        ISlangBlob? diagnostics = null;
         try
         {
-            ShaderReflection reflection = program.GetLayout(0, out diagnostics);
             if (reflection == ShaderReflection.Null)
-            {
-                Reject(
-                    "Bindings",
-                    "Slang did not expose the selected linked program layout.");
-            }
+                throw new ArgumentException("Pipeline Slang reflection is null.", nameof(reflection));
 
             var result = new PipelineBindingValidationState(reflection);
-            VariableLayoutReflection global = reflection.GetGlobalParamsVarLayout()
-                ?? VariableLayoutReflection.Null;
+            VariableLayoutReflection global =
+                reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
             result.Add(global);
             if (useConservativeWorkGraphEntries)
             {
@@ -599,11 +604,6 @@ public sealed partial class ValidationLayer
         {
             Reject("Bindings", exception.Message);
             throw;
-        }
-        finally
-        {
-            if ((object?)diagnostics is ComObject wrapper)
-                wrapper.FinalRelease();
         }
     }
 }

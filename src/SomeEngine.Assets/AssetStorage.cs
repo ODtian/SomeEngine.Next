@@ -1,41 +1,48 @@
-using System.Security.Cryptography;
-using System.Text;
+using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.IO;
 using SomeEngine.Serialization.Packs;
 
 namespace SomeEngine.Assets;
 
-/// <summary>
-/// Exact metadata returned by one immutable storage publication. Storage implementations validate
-/// the publication token again before opening the corresponding byte range.
-/// </summary>
+/// <summary>Rebuildable directory information and the version selected by storage.</summary>
 public readonly record struct AssetEntry
 {
-    public AssetEntry(
-        AssetGuid assetGuid,
-        string assetType,
-        ulong schemaFingerprint,
-        Guid publication)
+    public AssetEntry(Guid assetGuid, string assetType, ulong schemaFingerprint, Guid version)
     {
-        if (assetGuid.IsEmpty)
-            throw new ArgumentException("A storage entry asset GUID cannot be empty.", nameof(assetGuid));
+        if (assetGuid == Guid.Empty)
+            throw new ArgumentException("An asset GUID cannot be empty.", nameof(assetGuid));
         ArgumentException.ThrowIfNullOrWhiteSpace(assetType);
         if (schemaFingerprint == 0)
             throw new ArgumentOutOfRangeException(nameof(schemaFingerprint));
-        if (publication == Guid.Empty)
-            throw new ArgumentException("A storage entry publication cannot be empty.", nameof(publication));
-
         AssetGuid = assetGuid;
         AssetType = assetType;
         SchemaFingerprint = schemaFingerprint;
-        Publication = publication;
+        Version = version;
     }
 
-    public AssetGuid AssetGuid { get; }
-    public string AssetType { get; }
-    public ulong SchemaFingerprint { get; }
-    public Guid Publication { get; }
+    public AssetEntry(Guid assetGuid, string name, string path, string assetType,
+        ulong schemaFingerprint, SourceGuid sourceGuid = default, string subAssetKey = "")
+        : this(assetGuid, assetType, schemaFingerprint, Guid.Empty)
+    {
+        Name = name;
+        Path = path;
+        SourceGuid = sourceGuid;
+        SubAssetKey = subAssetKey;
+    }
+
+    public Guid AssetGuid { get; init; }
+    public string Name { get; init; } = "";
+    public string Path { get; init; } = "";
+    public string AssetType { get; init; }
+    public ulong SchemaFingerprint { get; init; }
+    /// <summary>Storage-selected version used to open and cache this entry; a pack uses its own generation.</summary>
+    public Guid Version { get; init; }
+    public SourceGuid SourceGuid { get; init; }
+    public string SubAssetKey { get; init; } = "";
+    /// <summary>Editable native definition, when this entry is its built output. Independent of imported source metadata.</summary>
+    public string DefinitionPath { get; init; } = "";
+    public IReadOnlyList<Guid> Dependencies { get; init; } = [];
 }
 
 /// <summary>
@@ -44,8 +51,9 @@ public readonly record struct AssetEntry
 /// </summary>
 public interface IAssetStorage
 {
-    bool TryFind(AssetGuid assetGuid, out AssetEntry entry);
+    bool TryFind(Guid assetGuid, out AssetEntry entry);
 
+    /// <summary>Opens the selected entry and rejects a changed storage version before returning its bytes.</summary>
     ValueTask<IRangeSource> OpenAsync(
         AssetEntry entry,
         CancellationToken cancellationToken = default);
@@ -59,27 +67,21 @@ public interface IAssetStorage
 public sealed class LooseAssetStorage : IAssetStorage
 {
     private readonly string _projectRoot;
-    private readonly Dictionary<AssetGuid, AssetManifestRecord> _entries;
+    private readonly Dictionary<Guid, AssetEntry> _entries;
 
     public LooseAssetStorage(string projectRoot, AssetManifest manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);
         _projectRoot = Path.GetFullPath(projectRoot);
         _entries = manifest.Assets.ToDictionary(static pair => pair.Key, static pair => pair.Value);
-        _publication = ComputePublication();
     }
 
-    private readonly Guid _publication;
 
-    public bool TryFind(AssetGuid assetGuid, out AssetEntry entry)
+    public bool TryFind(Guid assetGuid, out AssetEntry entry)
     {
-        if (_entries.TryGetValue(assetGuid, out AssetManifestRecord record))
+        if (_entries.TryGetValue(assetGuid, out AssetEntry record))
         {
-            entry = new AssetEntry(
-                assetGuid,
-                record.AssetType,
-                record.SchemaFingerprint,
-                _publication);
+            entry = record with { Version = ComputeVersion(record.Path) };
             return true;
         }
 
@@ -87,13 +89,12 @@ public sealed class LooseAssetStorage : IAssetStorage
         return false;
     }
 
-    public ValueTask<IRangeSource> OpenAsync(
+    public async ValueTask<IRangeSource> OpenAsync(
         AssetEntry entry,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ValidatePublication(entry);
-        if (!_entries.TryGetValue(entry.AssetGuid, out AssetManifestRecord record))
+        if (!_entries.TryGetValue(entry.AssetGuid, out AssetEntry record))
             throw new KeyNotFoundException($"Asset {entry.AssetGuid} was not found in the loose storage publication.");
         if (!StringComparer.Ordinal.Equals(record.AssetType, entry.AssetType)
             || record.SchemaFingerprint != entry.SchemaFingerprint)
@@ -103,16 +104,19 @@ public sealed class LooseAssetStorage : IAssetStorage
         }
 
         string fullPath = ResolveContainedPath(record.Path);
-        if (!File.Exists(fullPath))
-            throw new FileNotFoundException($"Stored asset file '{fullPath}' does not exist.", fullPath);
-
-        return ValueTask.FromResult<IRangeSource>(FileRangeSource.Open(fullPath));
-    }
-
-    private void ValidatePublication(AssetEntry entry)
-    {
-        if (entry.Publication != _publication)
-            throw new InvalidDataException("Asset entry belongs to a different loose storage publication.");
+        FileRangeSource source = FileRangeSource.Open(fullPath);
+        try
+        {
+            Guid version = await BinaryDocument.ReadVersionAsync(source, cancellationToken).ConfigureAwait(false);
+            if (entry.Version != version)
+                throw new IOException("The selected asset file version has been replaced. Open the new entry.");
+            return source;
+        }
+        catch
+        {
+            await source.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     private string ResolveContainedPath(string manifestPath)
@@ -131,68 +135,48 @@ public sealed class LooseAssetStorage : IAssetStorage
         return fullPath;
     }
 
-    private Guid ComputePublication()
+    private Guid ComputeVersion(string path)
     {
-        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        foreach (AssetManifestRecord record in _entries.Values
-                     .OrderBy(static value => value.Guid.ToString(), StringComparer.Ordinal))
-        {
-            string fullPath = ResolveContainedPath(record.Path);
-            var info = new FileInfo(fullPath);
-            Append(hash, record.Guid.ToString());
-            Append(hash, record.AssetType);
-            Append(hash, record.Path);
-            Append(hash, record.SchemaFingerprint.ToString("X16"));
-            Append(hash, info.Exists ? info.Length.ToString() : "missing");
-            Append(hash, info.Exists ? info.LastWriteTimeUtc.Ticks.ToString() : "missing");
-        }
-        Digest256 digest = Digest256.Finish(hash);
-        Span<byte> bytes = stackalloc byte[Digest256.Size];
-        digest.Write(bytes);
-        return new Guid(bytes[..16], bigEndian: true);
-    }
-
-    private static void Append(IncrementalHash hash, string value)
-    {
-        Encoder encoder = Encoding.UTF8.GetEncoder();
-        ReadOnlySpan<char> remaining = value;
-        Span<byte> bytes = stackalloc byte[256];
-        do
-        {
-            encoder.Convert(
-                remaining,
-                bytes,
-                flush: true,
-                out int charsUsed,
-                out int bytesUsed,
-                out bool completed);
-            if (bytesUsed != 0)
-                hash.AppendData(bytes[..bytesUsed]);
-            remaining = remaining[charsUsed..];
-            if (completed)
-                break;
-        }
-        while (true);
-        hash.AppendData("\0"u8);
+        FileRangeSource source = FileRangeSource.Open(ResolveContainedPath(path));
+        try { return BinaryDocument.ReadVersionAsync(source).AsTask().GetAwaiter().GetResult(); }
+        finally { source.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
 }
 
 /// <summary>Highest-priority-first base/DLC/hotfix storage over immutable asset packs.</summary>
 public sealed class AssetPackStorage : IAssetStorage, IAsyncDisposable
 {
-    private readonly AssetPackOverlay _overlay;
+    private readonly AssetPack[] _packs;
     private int _disposed;
 
-    /// <summary>Creates storage and takes exclusive ownership of <paramref name="overlay"/>.</summary>
-    public AssetPackStorage(AssetPackOverlay overlay)
+    /// <summary>Creates storage over packs in highest-priority-first order.</summary>
+    public AssetPackStorage(IEnumerable<AssetPack> packsHighestPriorityFirst)
     {
-        _overlay = overlay ?? throw new ArgumentNullException(nameof(overlay));
+        ArgumentNullException.ThrowIfNull(packsHighestPriorityFirst);
+        _packs = packsHighestPriorityFirst.ToArray();
+        if (_packs.Length == 0 || _packs.Any(static pack => pack is null))
+            throw new ArgumentException("At least one non-null pack is required.", nameof(packsHighestPriorityFirst));
     }
 
-    public bool TryFind(AssetGuid assetGuid, out AssetEntry entry)
+    private bool TryResolve(Guid assetId, out AssetPack? pack, out AssetPackEntry? entry)
+    {
+        foreach (AssetPack candidate in _packs)
+        {
+            if (candidate.TryGetEntry(assetId, out entry))
+            {
+                pack = candidate;
+                return true;
+            }
+        }
+        pack = null;
+        entry = null;
+        return false;
+    }
+
+    public bool TryFind(Guid assetGuid, out AssetEntry entry)
     {
         ThrowIfDisposed();
-        if (_overlay.TryResolve(assetGuid.Value, out AssetPack? pack, out AssetPackEntry? packEntry))
+        if (TryResolve(assetGuid, out AssetPack? pack, out AssetPackEntry? packEntry))
         {
             entry = new AssetEntry(
                 assetGuid,
@@ -211,9 +195,9 @@ public sealed class AssetPackStorage : IAssetStorage, IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        if (!_overlay.TryResolve(entry.AssetGuid.Value, out AssetPack? pack, out AssetPackEntry? packEntry))
+        if (!TryResolve(entry.AssetGuid, out AssetPack? pack, out AssetPackEntry? packEntry))
             throw new KeyNotFoundException($"Asset {entry.AssetGuid} was not found in pack storage.");
-        if (pack!.Generation != entry.Publication)
+        if (pack!.Generation != entry.Version)
             throw new InvalidDataException("Asset entry belongs to a different pack publication.");
         if (!StringComparer.Ordinal.Equals(packEntry!.AssetType, entry.AssetType)
             || packEntry.SchemaFingerprint != entry.SchemaFingerprint)
@@ -221,7 +205,7 @@ public sealed class AssetPackStorage : IAssetStorage, IAsyncDisposable
             throw new InvalidDataException($"Asset {entry.AssetGuid} entry does not match its pack record.");
         }
 
-        return await pack.OpenAssetSourceAsync(entry.AssetGuid.Value, cancellationToken)
+        return await pack.OpenAssetSourceAsync(entry.AssetGuid, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -229,7 +213,12 @@ public sealed class AssetPackStorage : IAssetStorage, IAsyncDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
-        await _overlay.DisposeAsync().ConfigureAwait(false);
+        var errors = new List<Exception>();
+        foreach (AssetPack pack in _packs)
+            try { await pack.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception error) { errors.Add(error); }
+        if (errors.Count != 0)
+            throw new AggregateException("Some asset packs could not be closed.", errors);
     }
 
     private void ThrowIfDisposed()

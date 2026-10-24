@@ -18,6 +18,7 @@ internal static class WorldStorageJobSchedule
     {
         ArgumentNullException.ThrowIfNull(world);
         return Schedule(
+            WorldStorageJobResources.RequireJobs(world).Scheduler,
             storage,
             RelationshipJobAccess.TopologyRead(world),
             in job,
@@ -34,6 +35,7 @@ internal static class WorldStorageJobSchedule
     {
         ArgumentNullException.ThrowIfNull(world);
         return Schedule(
+            WorldStorageJobResources.RequireJobs(world).Scheduler,
             storage,
             RelationshipJobAccess.TopologyRead(world),
             in job,
@@ -50,6 +52,7 @@ internal static class WorldStorageJobSchedule
     {
         ArgumentNullException.ThrowIfNull(world);
         return Schedule(
+            WorldStorageJobResources.RequireJobs(world).Scheduler,
             storage,
             RelationshipJobAccess.TopologyWrite(world),
             in job,
@@ -66,6 +69,7 @@ internal static class WorldStorageJobSchedule
     {
         ArgumentNullException.ThrowIfNull(world);
         return Schedule(
+            WorldStorageJobResources.RequireJobs(world).Scheduler,
             storage,
             RelationshipJobAccess.TopologyWrite(world),
             in job,
@@ -74,6 +78,7 @@ internal static class WorldStorageJobSchedule
     }
 
     private static JobHandle Schedule<TJob>(
+        Scheduler scheduler,
         JobResourceAccess storage,
         JobResourceAccess topology,
         in TJob job,
@@ -83,10 +88,11 @@ internal static class WorldStorageJobSchedule
         Span<JobResourceAccess> accesses = stackalloc JobResourceAccess[2];
         accesses[0] = storage;
         accesses[1] = topology;
-        return JobSystem.Schedule(job, accesses, dependency);
+        return scheduler.Schedule(job, accesses, dependency);
     }
 
     private static JobHandle Schedule<TJob>(
+        Scheduler scheduler,
         JobResourceAccess storage,
         JobResourceAccess topology,
         in TJob job,
@@ -97,6 +103,6 @@ internal static class WorldStorageJobSchedule
         Span<JobResourceAccess> accesses = stackalloc JobResourceAccess[2];
         accesses[0] = storage;
         accesses[1] = topology;
-        return JobSystem.Schedule(job, accesses, options, dependency);
+        return scheduler.Schedule(job, accesses, options, dependency);
     }
 }

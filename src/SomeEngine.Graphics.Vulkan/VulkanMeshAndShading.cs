@@ -62,6 +62,8 @@ internal sealed unsafe partial class VulkanBackend
     private void SetShadingRateImageCore(CommandContext context, RhiTexture? texture)
     {
         VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        if (command.IsRendering)
+            throw new InvalidOperationException("A shading-rate image must be selected before rendering begins.");
         VulkanDevice device = (VulkanDevice)command.Device;
         if (!device.TryGetCapability(out VariableRateShading? shading) || shading is null ||
             !shading.ShadingRateImage)

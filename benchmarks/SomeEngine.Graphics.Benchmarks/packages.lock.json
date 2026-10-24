@@ -84,13 +84,41 @@
           "Silk.NET.Vulkan": "2.23.0"
         }
       },
-      "slangshadersharp": {
+      "SlangShaderSharp": {
+        "type": "Transitive",
+        "resolved": "2026.17.1",
+        "contentHash": "9jkYED/4WFGikxpM0gUC7a2R75n5XDBAL0HLF2lV0EdIIga8e916ZRtqnD9ZLjgpPQQgtyM1Cu0HGoFxFySFXA=="
+      },
+      "someengine.core": {
+        "type": "Project",
+        "dependencies": {
+          "SomeEngine.ECS": "[1.0.0, )",
+          "SomeEngine.ECS.Systems": "[1.0.0, )",
+          "SomeEngine.Job": "[1.0.0, )"
+        }
+      },
+      "someengine.diagnostics": {
         "type": "Project"
+      },
+      "someengine.ecs": {
+        "type": "Project",
+        "dependencies": {
+          "SomeEngine.Job.Contracts": "[1.0.0, )"
+        }
+      },
+      "someengine.ecs.systems": {
+        "type": "Project",
+        "dependencies": {
+          "SomeEngine.ECS": "[1.0.0, )",
+          "SomeEngine.Job": "[1.0.0, )",
+          "SomeEngine.Job.Contracts": "[1.0.0, )"
+        }
       },
       "someengine.graphics": {
         "type": "Project",
         "dependencies": {
-          "SlangShaderSharp": "[1.0.0, )"
+          "SlangShaderSharp": "[2026.17.1, )",
+          "SomeEngine.Diagnostics": "[1.0.0, )"
         }
       },
       "someengine.graphics.direct3d12": {
@@ -105,11 +133,8 @@
       "someengine.graphics.validation": {
         "type": "Project",
         "dependencies": {
-          "Silk.NET.DXGI": "[2.23.0, )",
-          "Silk.NET.Direct3D12": "[2.23.0, )",
-          "SlangShaderSharp": "[1.0.0, )",
-          "SomeEngine.Graphics": "[1.0.0, )",
-          "SomeEngine.Graphics.Direct3D12": "[1.0.0, )"
+          "SlangShaderSharp": "[2026.17.1, )",
+          "SomeEngine.Graphics": "[1.0.0, )"
         }
       },
       "someengine.graphics.vulkan": {
@@ -125,6 +150,7 @@
       "someengine.job": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.Job.Contracts": "[1.0.0, )"
         }
       },
@@ -134,7 +160,8 @@
       "someengine.rendergraph": {
         "type": "Project",
         "dependencies": {
-          "SlangShaderSharp": "[1.0.0, )",
+          "SlangShaderSharp": "[2026.17.1, )",
+          "SomeEngine.Core": "[1.0.0, )",
           "SomeEngine.Graphics": "[1.0.0, )",
           "SomeEngine.Job": "[1.0.0, )"
         }

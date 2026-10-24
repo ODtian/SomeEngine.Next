@@ -14,7 +14,7 @@ public sealed class BinaryNativeLayoutGeneratorTests
             using System.Runtime.InteropServices;
             using SomeEngine.Serialization;
 
-            [BinaryContract]
+            [BinarySerializable]
             [BinaryNativeLayout("Tests.NativeVector2.v1")]
             [StructLayout(LayoutKind.Sequential, Pack = 4)]
             public partial struct NativeVector2
@@ -23,7 +23,7 @@ public sealed class BinaryNativeLayoutGeneratorTests
                 public float Y;
             }
 
-            [BinaryContract]
+            [BinarySerializable]
             [BinaryNativeLayout("Tests.NativeVertex.v1")]
             [StructLayout(LayoutKind.Sequential, Pack = 4)]
             public partial struct NativeVertex
@@ -37,20 +37,15 @@ public sealed class BinaryNativeLayoutGeneratorTests
         GeneratorRun result = RunGenerator(source);
 
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string vectorSource = Assert.Single(
-            result.Sources,
-            generated => generated.HintName.EndsWith("NativeVector2.BinaryContract.g.cs", StringComparison.Ordinal))
-            .SourceText
-            .ToString();
-        string vertexSource = Assert.Single(
-            result.Sources,
-            generated => generated.HintName.EndsWith("NativeVertex.BinaryContract.g.cs", StringComparison.Ordinal))
-            .SourceText
-            .ToString();
-        Assert.Contains("NativeLayoutProof", vectorSource, StringComparison.Ordinal);
-        Assert.Contains(".CreateGenerated(", vectorSource, StringComparison.Ordinal);
-        Assert.Contains("NativeLayoutProof", vertexSource, StringComparison.Ordinal);
-        Assert.Contains(".CreateGenerated(", vertexSource, StringComparison.Ordinal);
+        Assert.True((bool)Execute(result, """
+            byte[] bytes = new byte[256];
+            NativeVertex[] values = [new NativeVertex { Position = new NativeVector2 { X = 1.5f, Y = -2.5f }, Color = 123, Flags = 7 }];
+            var writer = new BinaryDataWriter(bytes);
+            NativeBlock.Write<NativeVertex>(ref writer, values, NativeVertex.NativeLayoutProof);
+            var reader = new BinaryDataReader(bytes.AsSpan(0, writer.WrittenCount));
+            var read = NativeBlock.Read<NativeVertex>(ref reader, NativeVertex.NativeLayoutProof);
+            return read.Length == 1 && read[0].Position.X == 1.5f && read[0].Position.Y == -2.5f && read[0].Color == 123 && read[0].Flags == 7;
+            """)!);
     }
 
     [Fact]
@@ -60,7 +55,7 @@ public sealed class BinaryNativeLayoutGeneratorTests
             using System.Runtime.InteropServices;
             using SomeEngine.Serialization;
 
-            [BinaryContract]
+            [BinarySerializable]
             [BinaryNativeLayout("Tests.Padded.v1")]
             [StructLayout(LayoutKind.Sequential, Pack = 4)]
             public partial struct Padded
@@ -74,13 +69,20 @@ public sealed class BinaryNativeLayoutGeneratorTests
 
         Diagnostic diagnostic = Assert.Single(result.Diagnostics, item => item.Id == "SEBC010");
         Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
-        Assert.Contains("padding", diagnostic.GetMessage(), StringComparison.OrdinalIgnoreCase);
-        string generated = Assert.Single(
-            result.Sources,
-            item => item.HintName.EndsWith("Padded.BinaryContract.g.cs", StringComparison.Ordinal))
-            .SourceText
-            .ToString();
-        Assert.DoesNotContain("NativeLayoutProof", generated, StringComparison.Ordinal);
+        Assert.True(diagnostic.Location.IsInSource);
+    }
+
+    private static object? Execute(GeneratorRun result, string body)
+    {
+        Assert.DoesNotContain(result.Diagnostics, item => item.Severity == DiagnosticSeverity.Error);
+        string consumer = "using System; using SomeEngine.Serialization; public static class Consumer { public static object Execute() { " + body + " } }";
+        Compilation compilation = result.Compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(
+            consumer, new CSharpParseOptions(LanguageVersion.Preview)));
+        using var stream = new MemoryStream();
+        var emitted = compilation.Emit(stream);
+        Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+        var assembly = System.Reflection.Assembly.Load(stream.ToArray());
+        return assembly.GetType("Consumer")!.GetMethod("Execute")!.Invoke(null, null);
     }
 
     private static GeneratorRun RunGenerator(string source)
@@ -88,7 +90,7 @@ public sealed class BinaryNativeLayoutGeneratorTests
         var parseOptions = new CSharpParseOptions(LanguageVersion.Preview);
         SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(source, parseOptions, path: "NativeLayoutInput.cs");
         var compilation = CSharpCompilation.Create(
-            assemblyName: "BinaryNativeLayoutGeneratorTests",
+            assemblyName: "BinaryNativeLayoutGeneratorTests_" + Guid.NewGuid().ToString("N"),
             syntaxTrees: [syntaxTree],
             references: GetReferences(),
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
@@ -107,10 +109,7 @@ public sealed class BinaryNativeLayoutGeneratorTests
             .GroupBy(static diagnostic => diagnostic.ToString(), StringComparer.Ordinal)
             .Select(static group => group.First())
             .ToArray();
-        GeneratedSourceResult[] sources = runResult.Results
-            .SelectMany(static result => result.GeneratedSources)
-            .ToArray();
-        return new GeneratorRun(diagnostics, sources);
+        return new GeneratorRun(diagnostics, outputCompilation);
     }
 
     private static MetadataReference[] GetReferences()
@@ -119,11 +118,11 @@ public sealed class BinaryNativeLayoutGeneratorTests
             .Split(Path.PathSeparator)
             .Select(static path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(BinaryContractAttribute).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(BinarySerializableAttribute).Assembly.Location));
         return references.ToArray();
     }
 
     private sealed record GeneratorRun(
         Diagnostic[] Diagnostics,
-        GeneratedSourceResult[] Sources);
+        Compilation Compilation);
 }

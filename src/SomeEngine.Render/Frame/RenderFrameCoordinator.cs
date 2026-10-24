@@ -15,11 +15,9 @@ public sealed class RenderFrameCoordinator : IDisposable
     private const int LifecycleClosed = 2;
     private static readonly TimeSpan DefaultDisposeTimeout = TimeSpan.FromSeconds(30);
 
-    private readonly IGraphicsBackend _backend;
-    private readonly Device _device;
+    private readonly RenderDevice _renderDevice;
     private readonly TimeSpan _disposeTimeout;
     private QueueCompletion[] _readerFences = [];
-    private QueueCompletion[] _shutdownFences = [];
     private readonly HashSet<RenderTimeline> _frameTimelines = [];
     private readonly Dictionary<RenderTimeline, int> _frameTimelineGenerationMasks = [];
     private readonly object _gate = new();
@@ -33,12 +31,10 @@ public sealed class RenderFrameCoordinator : IDisposable
     private int _lifecycleState;
 
     public RenderFrameCoordinator(
-        IGraphicsBackend backend,
-        Device device,
+        RenderDevice renderDevice,
         TimeSpan? disposeTimeout = null)
     {
-        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
-        _device = device ?? throw new ArgumentNullException(nameof(device));
+        _renderDevice = renderDevice ?? throw new ArgumentNullException(nameof(renderDevice));
         _disposeTimeout = disposeTimeout ?? DefaultDisposeTimeout;
         if (_disposeTimeout <= TimeSpan.Zero || _disposeTimeout == Timeout.InfiniteTimeSpan)
         {
@@ -62,7 +58,7 @@ public sealed class RenderFrameCoordinator : IDisposable
         lock (_gate)
         {
             ThrowIfNotActive();
-            return new RenderTimeline(this, _backend, _device, generationCount);
+            return new RenderTimeline(this, _renderDevice, generationCount);
         }
     }
 
@@ -169,7 +165,8 @@ public sealed class RenderFrameCoordinator : IDisposable
                     "Frame resources can only be admitted between render ownership scopes.");
             }
             // Automatic RHI retirement is advanced by Queue submission/completion. This boundary
-            // remains the renderer's ownership admission point and requires no Device-side arena.
+            // is also where the RenderDevice releases completed replacement resources.
+            _renderDevice.CollectCompleted();
         }
     }
 
@@ -191,17 +188,10 @@ public sealed class RenderFrameCoordinator : IDisposable
                     "Tracked render submissions can only be drained without an open read or prepare scope.");
             }
 
-            foreach (QueueCompletion fence in _shutdownFences)
-            {
-                if (_backend.WaitCpu(fence, Remaining(started)) != WaitStatus.Completed)
-                {
-                    throw new TimeoutException(
-                        $"Render submission {fence.Queue}:{fence.Value} did not complete before shutdown.");
-                }
-            }
-            _readerFences = [];
-            _shutdownFences = [];
         }
+        _renderDevice.WaitForTrackedSubmissions(Remaining(started));
+        lock (_gate)
+            ReleaseCompletedReadersLocked();
     }
 
     internal void RegisterFrameTimelines(ReadOnlySpan<RenderTimeline> timelines)
@@ -284,16 +274,6 @@ public sealed class RenderFrameCoordinator : IDisposable
             ThrowIfClosed();
             ValidateOpenReadLocked(kind);
 
-            foreach (QueueCompletion fence in fences)
-            {
-                if (!ReferenceEquals(fence.Queue.Device, _device))
-                {
-                    throw new ArgumentException(
-                        "A render completion belongs to another graphics Device.",
-                        nameof(completions));
-                }
-            }
-
             if (kind == RenderReadKind.Frame)
             {
                 foreach (RenderTimeline timeline in _frameTimelines)
@@ -306,7 +286,7 @@ public sealed class RenderFrameCoordinator : IDisposable
                 }
             }
 
-            _shutdownFences = RenderQueueCompletions.Merge(_shutdownFences, fences);
+            _renderDevice.TrackSubmission(fences);
             if (kind == RenderReadKind.Observation
                 || HasUnversionedFrameTimelineLocked())
             {
@@ -470,11 +450,11 @@ public sealed class RenderFrameCoordinator : IDisposable
 
     private bool ReleaseCompletedReadersLocked()
     {
-        QueueCompletion[] pending = new QueueCompletion[3];
+        QueueCompletion[] pending = new QueueCompletion[_readerFences.Length];
         int pendingCount = 0;
         foreach (QueueCompletion fence in _readerFences)
         {
-            if (!_backend.IsComplete(fence))
+            if (!_renderDevice.IsComplete(fence))
                 pending[pendingCount++] = fence;
         }
         _readerFences = pending.AsSpan(0, pendingCount).ToArray();
@@ -521,24 +501,17 @@ public sealed class RenderFrameCoordinator : IDisposable
 
                 foreach (QueueCompletion fence in _readerFences)
                 {
-                    if (_backend.WaitCpu(fence, Remaining(started)) != WaitStatus.Completed)
+                    if (!_renderDevice.WaitAll([fence], Remaining(started)))
                     {
                         throw new TimeoutException(
                             $"Render reader {fence.Queue}:{fence.Value} did not complete before shutdown.");
                     }
                 }
                 _readerFences = [];
-
-                foreach (QueueCompletion fence in _shutdownFences)
-                {
-                    if (_backend.WaitCpu(fence, Remaining(started)) != WaitStatus.Completed)
-                    {
-                        throw new TimeoutException(
-                            $"Render submission {fence.Queue}:{fence.Value} did not complete before shutdown.");
-                    }
-                }
-                _shutdownFences = [];
-
+            }
+            _renderDevice.WaitForTrackedSubmissions(Remaining(started));
+            lock (_gate)
+            {
                 Volatile.Write(ref _lifecycleState, LifecycleClosed);
                 Monitor.PulseAll(_gate);
             }

@@ -47,9 +47,9 @@ internal static class BinaryDocumentFormat
 {
     internal const int HeaderSize = 128;
     internal const int DirectoryEntrySize = 96;
-    internal const ushort Version = 3;
+    internal const ushort Version = 4;
     internal const int HashSize = Digest256.Size;
-    private static ReadOnlySpan<byte> Magic => "SEBDOC03"u8;
+    private static ReadOnlySpan<byte> Magic => "SEBDOC04"u8;
 
     internal static void WriteHeader(Span<byte> destination, in BinaryDocumentHeader header)
     {
@@ -82,12 +82,16 @@ internal static class BinaryDocumentFormat
             throw new InvalidDataException("Truncated binary document header.");
         uint expectedChecksum = BinaryPrimitives.ReadUInt32LittleEndian(source[124..]);
         if (Checksum32(source[..124]) != expectedChecksum)
-            throw new InvalidDataException("Binary document header checksum is invalid.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
+                "Binary document header checksum is invalid.");
         if (!source[..Magic.Length].SequenceEqual(Magic))
             throw new InvalidDataException("Binary document magic is invalid.");
         ushort version = BinaryPrimitives.ReadUInt16LittleEndian(source[8..]);
         if (version != Version)
-            throw new InvalidDataException($"Unsupported binary document version {version}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.UnsupportedVersion,
+                $"Unsupported binary document version {version}.");
         ushort headerSize = BinaryPrimitives.ReadUInt16LittleEndian(source[10..]);
         if (headerSize != HeaderSize)
             throw new InvalidDataException($"Binary document header size {headerSize} is invalid.");
@@ -114,10 +118,12 @@ internal static class BinaryDocumentFormat
             Digest256.Read(source[88..120]));
     }
 
-    internal static byte[] WriteTypeCatalog(IEnumerable<BinaryWireTypeDescriptor> descriptors)
+    internal static byte[] WriteTypeCatalog(BinaryWireTypeDescriptor root, IEnumerable<BinaryWireTypeDescriptor> descriptors)
     {
         BinaryWireTypeDescriptor[] ordered = descriptors
+            .Where(descriptor => descriptor.TypeId != root.TypeId)
             .OrderBy(static descriptor => descriptor.TypeId)
+            .Prepend(root)
             .ToArray();
         int payloadLength = checked(4 + ordered.Length * 32);
         byte[] bytes = new byte[checked(payloadLength + HashSize)];
@@ -145,8 +151,10 @@ internal static class BinaryDocumentFormat
         if (bytes.Length < 4 + HashSize)
             throw new InvalidDataException("Binary type catalog is truncated.");
         int count = BinaryPrimitives.ReadInt32LittleEndian(bytes);
-        if (count < 0 || count > limits.MaxTypeCatalogEntries)
-            throw new InvalidDataException($"Binary type catalog count {count} exceeds configured limits.");
+        if (count <= 0 || count > limits.MaxTypeCatalogEntries)
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"Binary type catalog count {count} exceeds configured limits.");
         int expected;
         try
         {
@@ -161,7 +169,8 @@ internal static class BinaryDocumentFormat
         long allocationEstimate = checked(256L + (long)count * 112L);
         if (allocationEstimate > limits.MaxAllocationBytes)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Binary type catalog allocation estimate {allocationEstimate} exceeds configured " +
                 $"allocation limit {limits.MaxAllocationBytes}.");
         }
@@ -169,7 +178,9 @@ internal static class BinaryDocumentFormat
         Span<byte> actualHash = stackalloc byte[HashSize];
         SHA256.HashData(bytes[..payloadLength], actualHash);
         if (!CryptographicOperations.FixedTimeEquals(actualHash, bytes[payloadLength..]))
-            throw new InvalidDataException("Binary type catalog checksum is invalid.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
+                "Binary type catalog checksum is invalid.");
 
         var result = new BinaryWireTypeDescriptor[count];
         var typeIds = new HashSet<Guid>();
@@ -214,7 +225,9 @@ internal static class BinaryDocumentFormat
             throw new InvalidDataException("Truncated binary directory entry.");
         uint expectedChecksum = BinaryPrimitives.ReadUInt32LittleEndian(source[84..]);
         if (Checksum32(source[..84]) != expectedChecksum)
-            throw new InvalidDataException("Binary directory entry checksum is invalid.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.IntegrityMismatch,
+                "Binary directory entry checksum is invalid.");
         if (!source[45..48].SequenceEqual("\0\0\0"u8)
             || ContainsNonZero(source[88..96]))
         {

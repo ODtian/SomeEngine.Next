@@ -8,21 +8,20 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 internal struct ClusterViewUniforms
 {
-    internal const int SizeInBytes = 352;
-    internal const int ConstantBufferSizeInBytes = 512;
+    internal const int SizeInBytes = 432;
 
     internal Matrix4x4 ViewProj;
     internal Vector3 CameraPos;
     internal float LodThreshold;
 
-    internal float LodScale;
+    internal uint Pad0;
     internal uint MaxCandidates;
-    internal uint MaxTraversalDepth;
+    internal float CullingRadius;
     internal uint InstanceCount;
 
     internal uint MaxPageFaults;
-    internal uint ForceHardwareRaster;
-    internal float SoftwareRasterAreaThreshold;
+    internal uint RasterMode;
+    internal float SoftwareRasterEdgeThreshold;
     internal uint CullingEnabled;
 
     internal Matrix4x4 PrevViewProj;
@@ -41,9 +40,17 @@ internal struct ClusterViewUniforms
     internal float PrevP11;
     internal Vector2 Pad3;
 
+    internal Matrix4x4 ClipToWorld;
+
+    internal uint TargetPolicy;
+    internal uint TargetViewIndex;
+    internal uint CullingProjectionIndex;
+    internal uint Pad6;
+
     internal static ClusterViewUniforms Create(
         in RenderView source,
         ClusterPipelineOptions options,
+        ClusterViewRasterMode rasterMode,
         bool cullingEnabled,
         int instanceCount,
         int pageFaultCapacity)
@@ -51,7 +58,7 @@ internal struct ClusterViewUniforms
         ArgumentNullException.ThrowIfNull(options);
         if (source.ViewportWidth == 0 || source.ViewportHeight == 0)
             throw new ArgumentException("A render view requires a non-empty viewport.", nameof(source));
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(instanceCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(instanceCount);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageFaultCapacity);
         if (!IsFinite(source.View) || !IsFinite(source.Projection))
             throw new ArgumentException("Render-view matrices must be finite.", nameof(source));
@@ -59,11 +66,11 @@ internal struct ClusterViewUniforms
             throw new ArgumentException("The render-view matrix must be invertible.", nameof(source));
 
         Matrix4x4 viewProjection = source.View * source.Projection;
-        float lodScale = MathF.Abs(source.Projection.M22) * source.ViewportHeight * 0.5f;
+        if (!Matrix4x4.Invert(viewProjection, out Matrix4x4 clipToWorld))
+            throw new ArgumentException("The render-view projection must be invertible.", nameof(source));
         Vector3 cameraPosition = new(worldFromView.M41, worldFromView.M42, worldFromView.M43);
         if (!IsFinite(viewProjection)
-            || !IsFinite(cameraPosition)
-            || !float.IsFinite(lodScale))
+            || !IsFinite(cameraPosition))
         {
             throw new ArgumentException(
                 "The render view cannot be represented by the Cluster uniform contract.",
@@ -75,13 +82,11 @@ internal struct ClusterViewUniforms
             ViewProj = viewProjection,
             CameraPos = cameraPosition,
             LodThreshold = options.LodThreshold,
-            LodScale = lodScale,
             MaxCandidates = options.MaxCandidates,
-            MaxTraversalDepth = options.MaxTraversalDepth,
             InstanceCount = checked((uint)instanceCount),
             MaxPageFaults = checked((uint)pageFaultCapacity),
-            ForceHardwareRaster = options.ForceHardwareRaster ? 1u : 0u,
-            SoftwareRasterAreaThreshold = options.SoftwareRasterAreaThreshold,
+            RasterMode = (uint)rasterMode,
+            SoftwareRasterEdgeThreshold = options.SoftwareRasterEdgeThreshold,
             CullingEnabled = cullingEnabled ? 1u : 0u,
             PrevViewProj = viewProjection,
             HasPrevHistory = 0,
@@ -96,6 +101,9 @@ internal struct ClusterViewUniforms
             PrevP00 = source.Projection.M11,
             PrevP11 = source.Projection.M22,
             Pad3 = default,
+            ClipToWorld = clipToWorld,
+            TargetPolicy = 0u,
+            TargetViewIndex = 0u,
         };
     }
 
@@ -113,4 +121,11 @@ internal struct ClusterViewUniforms
         float.IsFinite(value.X)
         && float.IsFinite(value.Y)
         && float.IsFinite(value.Z);
+}
+
+internal enum ClusterViewRasterMode : uint
+{
+    Adaptive = 0,
+    Hardware = 1,
+    Software = 2,
 }

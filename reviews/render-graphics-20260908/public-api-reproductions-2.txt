@@ -1,0 +1,22 @@
+CHECK synchronization failure recovery
+iteration 0 failed=InvalidOperationException: Pass 'texture reader' declares conflicting layouts for Texture ''.
+iteration 1 failed=KeyNotFoundException: The given key '0' was not present in the dictionary.
+CHECK failed sparse declaration cleanup
+declaration rejected=injected declaration failure
+replacement failed=RG4001: Pass 'empty' reads undefined Buffer 'Buffer[0]'. empty: Read/Partial at declaration 1
+CHECK region added to existing declaration
+version unchanged=True
+new region failed=ArgumentOutOfRangeException: Index was out of range. Must be non-negative and less than the size of the collection. (Parameter 'index')
+CHECK persistent allocation rollback retry
+first commit rejected=A Buffer view cannot be both typed and structured.
+retry failed=ObjectDisposedException: Cannot access a disposed object.
+Object name: 'NativeLease'.
+CHECK bound external range completion
+submission unfinished=True
+reported range completions=0
+CHECK four queue observation
+prepare failed=IndexOutOfRangeException
+CHECK failed wait preserves prepare exclusion
+wait timed out
+submission unfinished=True
+exclusive prepare granted=True

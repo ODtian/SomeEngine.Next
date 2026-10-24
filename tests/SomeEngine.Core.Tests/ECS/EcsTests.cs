@@ -5,11 +5,55 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Core.Tests.ECS;
 
 public class EcsTests
 {
+    [Fact]
+    public void UpdateCompletesSimulationAndCommandsBeforeComputingTransforms()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var game = new GameWorld(new WorldJobs(scheduler));
+        Entity entity = game.World.CreateEntity(new LocalTransform
+        {
+            Value = new TransformQvvs(Vector3.Zero, Quaternion.Identity),
+        });
+        game.World.Add(entity, new WorldTransform());
+        game.Systems.Add(new AdvanceSystem(entity));
+
+        game.Update(0.5);
+        Assert.Equal(new Vector3(0.5f, 0, 0), game.World.Read<WorldTransform>(entity).Qvvs.Position);
+        Assert.True(game.World.Has<UpdatedTag>(entity));
+        game.Update(0.25);
+        Assert.Equal(new Vector3(0.75f, 0, 0), game.World.Read<WorldTransform>(entity).Qvvs.Position);
+    }
+
+    private readonly struct AdvanceSystem(Entity entity) : ISystem<ImmediateSystemContext>
+    {
+        public void OnUpdate(ref ImmediateSystemContext context)
+        {
+            ComponentJobAccess<LocalTransform>.ScheduleWrite(
+                context.World, new AdvanceJob(context.World, entity, (float)context.DeltaTime));
+            if (!context.World.Has<UpdatedTag>(entity))
+                context.World.Commands().AddTag<UpdatedTag>(entity);
+        }
+    }
+
+    private readonly struct AdvanceJob(World world, Entity entity, float distance) : IJob
+    {
+        public void Execute()
+        {
+            LocalTransform transform = world.Read<LocalTransform>(entity);
+            transform.Value.Position.X += distance;
+            world.Replace(entity, transform);
+        }
+    }
+
+    private readonly struct UpdatedTag : SomeEngine.ECS.Components.ITag;
+
     [Fact]
     public void TestTransformHierarchy()
     {

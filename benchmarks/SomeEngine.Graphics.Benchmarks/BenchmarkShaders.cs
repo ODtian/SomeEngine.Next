@@ -1,10 +1,10 @@
-using System.Runtime.InteropServices.Marshalling;
+using System.Buffers;
 using System.Text.Json;
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Benchmarks;
 
-internal readonly record struct BenchmarkShaderEntry(string Name, SlangStage Stage, string FileName);
+internal readonly record struct BenchmarkEntry(string Name, SlangStage Stage, string FileName);
 
 [method: System.Text.Json.Serialization.JsonConstructor]
 internal sealed record ShaderManifest(
@@ -13,39 +13,43 @@ internal sealed record ShaderManifest(
     string Compiler,
     Dictionary<string, string> EntrySha256);
 
-internal sealed class BenchmarkShaderProgram : IDisposable
+internal sealed class BenchmarkShader
 {
-    private readonly List<ComObject> _owned;
-    private bool _disposed;
+    private readonly ISession _session;
+    private readonly IModule _sourceUnit;
+    private readonly IEntryPoint[] _slangEntries;
+    private readonly IComponentType _combinedCode;
+    private readonly byte[][] _entryCode;
 
-    internal BenchmarkShaderProgram(
-        List<ComObject> owned,
-        IComponentType program,
+    internal BenchmarkShader(
+        ISession session,
+        IModule sourceUnit,
+        IEntryPoint[] slangEntries,
+        IComponentType combinedCode,
+        IComponentType slangCode,
         ShaderReflection reflection,
         EntryPointReflection[] entries,
+        byte[][] entryCode,
         string manifestSha256)
     {
-        _owned = owned;
-        Program = program;
+        _session = session;
+        _sourceUnit = sourceUnit;
+        _slangEntries = slangEntries;
+        _combinedCode = combinedCode;
+        _entryCode = entryCode;
+        SlangCode = slangCode;
         Reflection = reflection;
         Entries = entries;
         ManifestSha256 = manifestSha256;
     }
 
-    internal IComponentType Program { get; }
+    internal IComponentType SlangCode { get; }
     internal ShaderReflection Reflection { get; }
     internal EntryPointReflection[] Entries { get; }
     internal string ManifestSha256 { get; }
 
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-        for (int index = _owned.Count - 1; index >= 0; index--)
-            _owned[index].FinalRelease();
-        _owned.Clear();
-        _disposed = true;
-    }
+    internal ReadOnlySequence<byte> GetEntryCode(int index) =>
+        new(_entryCode[index]);
 }
 
 internal static class BenchmarkShaders
@@ -95,7 +99,7 @@ internal static class BenchmarkShaders
         }
         """;
 
-    internal static readonly BenchmarkShaderEntry[] Entries =
+    internal static readonly BenchmarkEntry[] Entries =
     [
         new("vertexMain", SlangStage.Vertex, "vertex.dxil"),
         new("pixelMain", SlangStage.Fragment, "pixel.dxil"),
@@ -111,32 +115,25 @@ internal static class BenchmarkShaders
         Directory.CreateDirectory(directory);
         RepresentativeFrameProfile.EmitSharedArtifacts(directory);
         Compiled compiled = Compile();
-        try
+        var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (int index = 0; index < Entries.Length; index++)
         {
-            var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
-            for (int index = 0; index < Entries.Length; index++)
-            {
-                string path = Path.Combine(directory, Entries[index].FileName);
-                WriteIfDifferent(path, compiled.Code[index]);
-                hashes.Add(Entries[index].Name, BenchmarkEnvironment.Sha256Bytes(compiled.Code[index]));
-            }
-            ShaderManifest manifest = new(
-                BenchmarkEnvironment.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(Source)),
-                ProfileName,
-                "repository-pinned SlangShaderSharp/Slang 2026.4.2",
-                hashes);
-            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
-                manifest,
-                ProcessRunJsonContext.Default.ShaderManifest);
-            WriteIfDifferent(Path.Combine(directory, ManifestFileName), bytes);
+            string path = Path.Combine(directory, Entries[index].FileName);
+            WriteIfDifferent(path, compiled.Code[index]);
+            hashes.Add(Entries[index].Name, BenchmarkEnvironment.Sha256Bytes(compiled.Code[index]));
         }
-        finally
-        {
-            Release(compiled.Owned);
-        }
+        ShaderManifest manifest = new(
+            BenchmarkEnvironment.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(Source)),
+            ProfileName,
+            compiled.Compiler,
+            hashes);
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
+            manifest,
+            ProcessRunJsonContext.Default.ShaderManifest);
+        WriteIfDifferent(Path.Combine(directory, ManifestFileName), bytes);
     }
 
-    internal static BenchmarkShaderProgram Open(string directory)
+    internal static BenchmarkShader Open(string directory)
     {
         string manifestPath = Path.Combine(directory, ManifestFileName);
         if (!File.Exists(manifestPath))
@@ -148,58 +145,32 @@ internal static class BenchmarkShaders
             throw new InvalidDataException("The shared shader source hash does not match this runner build.");
 
         Compiled compiled = Compile();
-        try
+        for (int index = 0; index < Entries.Length; index++)
         {
-            for (int index = 0; index < Entries.Length; index++)
+            BenchmarkEntry entry = Entries[index];
+            string filePath = Path.Combine(directory, entry.FileName);
+            byte[] emitted = File.ReadAllBytes(filePath);
+            if (!emitted.AsSpan().SequenceEqual(compiled.Code[index]))
             {
-                BenchmarkShaderEntry entry = Entries[index];
-                string filePath = Path.Combine(directory, entry.FileName);
-                byte[] emitted = File.ReadAllBytes(filePath);
-                if (!emitted.AsSpan().SequenceEqual(compiled.Code[index]))
-                {
-                    throw new InvalidDataException(
-                        $"The Slang-produced DXIL for '{entry.Name}' differs from the shared artifact.");
-                }
-                string hash = BenchmarkEnvironment.Sha256Bytes(emitted);
-                if (!manifest.EntrySha256.TryGetValue(entry.Name, out string? expected) ||
-                    !string.Equals(hash, expected, StringComparison.Ordinal))
-                {
-                    throw new InvalidDataException($"The shader manifest hash for '{entry.Name}' is invalid.");
-                }
+                throw new InvalidDataException(
+                    $"The Slang-produced DXIL for '{entry.Name}' differs from the shared artifact.");
             }
-            return new BenchmarkShaderProgram(
-                compiled.Owned,
-                compiled.Program,
-                compiled.Reflection,
-                compiled.ReflectedEntries,
-                BenchmarkEnvironment.Sha256Bytes(manifestBytes));
+            string hash = BenchmarkEnvironment.Sha256Bytes(emitted);
+            if (!manifest.EntrySha256.TryGetValue(entry.Name, out string? expected) ||
+                !string.Equals(hash, expected, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException($"The shader manifest hash for '{entry.Name}' is invalid.");
+            }
         }
-        catch
-        {
-            Release(compiled.Owned);
-            throw;
-        }
+        return CreateShader(compiled, BenchmarkEnvironment.Sha256Bytes(manifestBytes));
     }
 
-    internal static BenchmarkShaderProgram OpenVulkan()
+    internal static BenchmarkShader OpenVulkan()
     {
         Compiled compiled = Compile(SlangCompileTarget.Spirv);
-        try
-        {
-            string identity = BenchmarkEnvironment.Sha256Bytes(
-                System.Text.Encoding.UTF8.GetBytes(Source + "\nspirv/glsl_460"));
-            return new BenchmarkShaderProgram(
-                compiled.Owned,
-                compiled.Program,
-                compiled.Reflection,
-                compiled.ReflectedEntries,
-                identity);
-        }
-        catch
-        {
-            Release(compiled.Owned);
-            throw;
-        }
+        string identity = BenchmarkEnvironment.Sha256Bytes(
+            System.Text.Encoding.UTF8.GetBytes(Source + "\nspirv/glsl_460"));
+        return CreateShader(compiled, identity);
     }
 
     private static ShaderManifest ReadManifest(ReadOnlyMemory<byte> bytes)
@@ -256,18 +227,14 @@ internal static class BenchmarkShaders
 
     private static Compiled Compile(SlangCompileTarget target = SlangCompileTarget.Dxil)
     {
-        var owned = new List<ComObject>();
-        var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
-        try
+        IGlobalSession global = GlobalSession.Value;
+        SlangProfileID profile = global.FindProfile(
+            target == SlangCompileTarget.Spirv ? "glsl_460" : ProfileName);
+        SessionDesc description = new()
         {
-            IGlobalSession global = GlobalSession.Value;
-            SlangProfileID profile = global.FindProfile(
-                target == SlangCompileTarget.Spirv ? "glsl_460" : ProfileName);
-            SessionDesc description = new()
-            {
-                Targets =
-                [
-                    new TargetDesc
+            Targets =
+            [
+                new TargetDesc
                     {
                         Format = target,
                         Profile = profile,
@@ -284,95 +251,76 @@ internal static class BenchmarkShaders
                             : [],
                     },
                 ],
-                DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
-                CompilerOptionEntries =
-                [
-                    new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1, 0)),
+            DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
+            CompilerOptionEntries =
+            [
+                new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1, 0)),
                     new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
                 ],
-            };
-            RequireSuccess(global.CreateSession(description, out ISession session), "Slang session creation", null);
-            Track(session);
-            ISlangBlob source = Track(Slang.CreateBlob(Source));
-            string virtualPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "graphics_benchmark.slang"));
-            IModule? module = session.LoadModuleFromSource(
-                "graphics_benchmark",
-                virtualPath,
-                source,
-                out ISlangBlob? moduleDiagnostics);
-            TrackOptional(moduleDiagnostics);
-            if (module is null)
-                throw new InvalidDataException(FormatFailure("Slang module load failed", moduleDiagnostics));
-            Track(module);
+        };
+        RequireSuccess(global.CreateSession(description, out ISession session), "Slang session creation", null);
+        ISlangBlob source = Slang.CreateBlob(Source);
+        string virtualPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "graphics_benchmark.slang"));
+        IModule? module = session.LoadModuleFromSource(
+            "graphics_benchmark",
+            virtualPath,
+            source,
+            out ISlangBlob? moduleDiagnostics);
+        if (module is null)
+            throw new InvalidDataException(FormatFailure("Slang module load failed", moduleDiagnostics));
 
-            IComponentType[] components = new IComponentType[Entries.Length + 1];
-            components[0] = module;
-            for (int index = 0; index < Entries.Length; index++)
-            {
-                RequireSuccess(
-                    module.FindEntryPointByName(Entries[index].Name, out IEntryPoint entry),
-                    $"Slang entry lookup '{Entries[index].Name}'",
-                    null);
-                Track(entry);
-                components[index + 1] = entry;
-            }
-            SlangResult compose = session.CreateCompositeComponentType(
-                components,
-                out IComponentType? composite,
-                out ISlangBlob? composeDiagnostics);
-            TrackOptional(composeDiagnostics);
-            if (!compose.Succeeded || composite is null)
-                throw new InvalidDataException(FormatFailure("Slang composition failed", composeDiagnostics));
-            Track(composite);
-            SlangResult link = composite.Link(out IComponentType? linked, out ISlangBlob? linkDiagnostics);
-            TrackOptional(linkDiagnostics);
-            if (!link.Succeeded || linked is null)
-                throw new InvalidDataException(FormatFailure("Slang link failed", linkDiagnostics));
-            Track(linked);
-
-            ShaderReflection reflection = linked.GetLayout(0, out ISlangBlob? layoutDiagnostics);
-            TrackOptional(layoutDiagnostics);
-            if (reflection == ShaderReflection.Null || reflection.EntryPointCount != checked((nuint)Entries.Length))
-                throw new InvalidDataException(FormatFailure("Slang reflection failed", layoutDiagnostics));
-            var reflected = new EntryPointReflection[Entries.Length];
-            var code = new byte[Entries.Length][];
-            for (int index = 0; index < Entries.Length; index++)
-            {
-                reflected[index] = reflection.GetEntryPointByIndex(checked((uint)index));
-                if (reflected[index] == EntryPointReflection.Null ||
-                    !string.Equals(reflected[index].Name, Entries[index].Name, StringComparison.Ordinal) ||
-                    reflected[index].Stage != Entries[index].Stage)
-                {
-                    throw new InvalidDataException($"Slang reflection entry {index} is not '{Entries[index].Name}'.");
-                }
-                RequireSuccess(
-                    linked.GetEntryPointCode(index, 0, out ISlangBlob blob, out ISlangBlob? diagnostics),
-                    $"Slang {target} emission '{Entries[index].Name}'",
-                    diagnostics);
-                Track(blob);
-                TrackOptional(diagnostics);
-                code[index] = blob.Buffer.ToArray();
-            }
-            return new Compiled(owned, linked, reflection, reflected, code);
-
-            T Track<T>(T value) where T : class
-            {
-                if (value is ComObject wrapper && seen.Add(wrapper))
-                    owned.Add(wrapper);
-                return value;
-            }
-
-            void TrackOptional(object? value)
-            {
-                if (value is ComObject wrapper && seen.Add(wrapper))
-                    owned.Add(wrapper);
-            }
-        }
-        catch
+        var slangEntries = new IEntryPoint[Entries.Length];
+        IComponentType[] components = new IComponentType[Entries.Length + 1];
+        components[0] = module;
+        for (int index = 0; index < Entries.Length; index++)
         {
-            Release(owned);
-            throw;
+            RequireSuccess(
+                module.FindEntryPointByName(Entries[index].Name, out IEntryPoint entry),
+                $"Slang entry lookup '{Entries[index].Name}'",
+                null);
+            slangEntries[index] = entry;
+            components[index + 1] = entry;
         }
+        SlangResult compose = session.CreateCompositeComponentType(
+            components,
+            out IComponentType? composite,
+            out ISlangBlob? composeDiagnostics);
+        if (!compose.Succeeded || composite is null)
+            throw new InvalidDataException(FormatFailure("Slang composition failed", composeDiagnostics));
+        SlangResult link = composite.Link(out IComponentType? linked, out ISlangBlob? linkDiagnostics);
+        if (!link.Succeeded || linked is null)
+            throw new InvalidDataException(FormatFailure("Slang link failed", linkDiagnostics));
+
+        ShaderReflection reflection = linked.GetLayout(0, out ISlangBlob? layoutDiagnostics);
+        if (reflection == ShaderReflection.Null || reflection.EntryPointCount != checked((nuint)Entries.Length))
+            throw new InvalidDataException(FormatFailure("Slang reflection failed", layoutDiagnostics));
+        var reflected = new EntryPointReflection[Entries.Length];
+        var code = new byte[Entries.Length][];
+        for (int index = 0; index < Entries.Length; index++)
+        {
+            reflected[index] = reflection.GetEntryPointByIndex(checked((uint)index));
+            if (reflected[index] == EntryPointReflection.Null ||
+                !string.Equals(reflected[index].Name, Entries[index].Name, StringComparison.Ordinal) ||
+                reflected[index].Stage != Entries[index].Stage)
+            {
+                throw new InvalidDataException($"Slang reflection entry {index} is not '{Entries[index].Name}'.");
+            }
+            RequireSuccess(
+                linked.GetEntryPointCode(index, 0, out ISlangBlob blob, out ISlangBlob? diagnostics),
+                $"Slang {target} emission '{Entries[index].Name}'",
+                diagnostics);
+            code[index] = blob.Buffer.ToArray();
+        }
+        return new Compiled(
+            session,
+            module,
+            slangEntries,
+            composite,
+            linked,
+            reflection,
+            reflected,
+            code,
+            global.GetBuildTagString());
     }
 
     private static IGlobalSession CreateGlobalSession()
@@ -401,17 +349,25 @@ internal static class BenchmarkShaders
         File.WriteAllBytes(path, bytes);
     }
 
-    private static void Release(List<ComObject> objects)
-    {
-        for (int index = objects.Count - 1; index >= 0; index--)
-            objects[index].FinalRelease();
-        objects.Clear();
-    }
+    private static BenchmarkShader CreateShader(Compiled compiled, string identity) =>
+        new(
+            compiled.Session,
+            compiled.SourceUnit,
+            compiled.SlangEntries,
+            compiled.CombinedCode,
+            compiled.SlangCode,
+            compiled.Reflection,
+            compiled.Entries,
+            compiled.Code,
+            identity);
 
     private sealed record Compiled(
-        List<ComObject> Owned,
-        IComponentType Program,
+        ISession Session,
+        IModule SourceUnit,
+        IEntryPoint[] SlangEntries,
+        IComponentType CombinedCode,
+        IComponentType SlangCode,
         ShaderReflection Reflection,
-        EntryPointReflection[] ReflectedEntries,
-        byte[][] Code);
+        EntryPointReflection[] Entries,
+        byte[][] Code, string Compiler);
 }

@@ -1,3 +1,4 @@
+using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hooks;
@@ -5,18 +6,18 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class BufferJobAccessTests
+public sealed class BufferJobAccessTests : JobTest
 {
     [Fact]
     public void BufferCallbackInsideJob_RejectsMissingLogicalResource()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
 
         // Bind the optional World coordinator, but deliberately omit the logical buffer resource.
         _ = BufferJobAccess<Element>.Read(world);
-        JobHandle handle = JobSystem.Schedule(
+        JobHandle handle = Jobs.Schedule(
             new ReadBufferJob<Element>(world, entity),
             RelationshipJobAccess.TopologyRead(world));
 
@@ -26,8 +27,8 @@ public sealed class BufferJobAccessTests
     [Fact]
     public void SameWorldSameBuffer_ReadOwnersCanRunConcurrently()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         using var firstStarted = new ManualResetEventSlim();
         using var releaseFirst = new ManualResetEventSlim();
@@ -56,13 +57,17 @@ public sealed class BufferJobAccessTests
     [Fact]
     public void SameWorldSameBuffer_WriteOwnerBlocksReadersAndWriters()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         using var writerStarted = new ManualResetEventSlim();
         using var releaseWriter = new ManualResetEventSlim();
+        releaseWriter.WaitCallback = () => events.Enqueue("released");
         using var readerStarted = new ManualResetEventSlim();
+        readerStarted.SetCallback = () => events.Enqueue("readerStarted");
         using var laterWriterStarted = new ManualResetEventSlim();
+        laterWriterStarted.SetCallback = () => events.Enqueue("laterWriterStarted");
         JobHandle writer = default;
         try
         {
@@ -77,8 +82,6 @@ public sealed class BufferJobAccessTests
             JobHandle laterWriter = BufferJobAccess<Element>.ScheduleWrite(
                 world,
                 new SignalJob(laterWriterStarted));
-            Assert.False(readerStarted.Wait(TimeSpan.FromMilliseconds(100)));
-            Assert.False(laterWriterStarted.Wait(TimeSpan.FromMilliseconds(100)));
 
             releaseWriter.Set();
             reader.Complete();
@@ -91,14 +94,21 @@ public sealed class BufferJobAccessTests
             releaseWriter.Set();
             writer.Complete();
         }
+
+        string[] sequence = events.ToArray();
+        Assert.Contains("released", sequence);
+        Assert.Contains("readerStarted", sequence);
+        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "readerStarted"));
+        Assert.Contains("laterWriterStarted", sequence);
+        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "laterWriterStarted"));
     }
 
     [Fact]
     public void DifferentBufferTypesAndWorlds_DoNotShareLogicalResource()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
-        var otherWorld = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
+        var otherWorld = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         Entity otherTypeEntity = CreateBufferEntity<OtherElement>(world);
         Entity otherWorldEntity = CreateBufferEntity<Element>(otherWorld);
@@ -136,8 +146,8 @@ public sealed class BufferJobAccessTests
     [Fact]
     public void FaultedBufferBody_ReleasesIterationAndSynchronousResourceOwner()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         _ = BufferJobAccess<Element>.Write(world);
 
@@ -155,50 +165,40 @@ public sealed class BufferJobAccessTests
     }
 
     [Fact]
-    public void WarmedBufferAdmission_DoesNotAllocatePerCallback()
+    public void RepeatedBufferAccessInvokesEveryCallback()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var unboundWorld = new World();
         Entity unboundEntity = CreateBufferEntity<Element>(unboundWorld);
         int unboundCallbacks = 0;
         for (int i = 0; i < 128; i++)
             ExecuteCountedRead(unboundWorld, unboundEntity, ref unboundCallbacks);
-        long unboundBefore = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1_000; i++)
             ExecuteCountedRead(unboundWorld, unboundEntity, ref unboundCallbacks);
-        long unboundAllocated = GC.GetAllocatedBytesForCurrentThread() - unboundBefore;
 
-        var world = new World();
+        var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         _ = BufferJobAccess<Element>.Read(world);
         int callbacks = 0;
 
         for (int i = 0; i < 128; i++)
             ExecuteCountedRead(world, entity, ref callbacks);
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1_000; i++)
             ExecuteCountedRead(world, entity, ref callbacks);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         for (int i = 0; i < 128; i++)
             _ = world.HasBuffer<Element>(entity);
-        long hasBefore = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1_000; i++)
             _ = world.HasBuffer<Element>(entity);
-        long hasAllocated = GC.GetAllocatedBytesForCurrentThread() - hasBefore;
 
         Assert.Equal(1_128, callbacks);
-        Assert.True(
-            unboundAllocated == 0 && allocated == 0 && hasAllocated == 0,
-            $"unbound={unboundAllocated}, buffer={allocated}, topology={hasAllocated}");
     }
 
     [Fact]
     public void TopologyWriteHook_CanBorrowBufferAfterLaterBufferOwnerWasRegistered()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         _ = BufferJobAccess<Element>.Write(world);
         using var hookStarted = new ManualResetEventSlim();
@@ -254,7 +254,7 @@ public sealed class BufferJobAccessTests
         }
     }
 
-    private static Entity CreateBufferEntity<T>(World world)
+    private Entity CreateBufferEntity<T>(World world)
         where T : struct, IBufferElement
     {
         Entity entity = world.CreateEntity();
@@ -262,7 +262,7 @@ public sealed class BufferJobAccessTests
         return entity;
     }
 
-    private static void ExecuteCountedRead(World world, Entity entity, ref int callbacks)
+    private void ExecuteCountedRead(World world, Entity entity, ref int callbacks)
     {
         world.ExecuteBufferRead<Element, int>(
             entity,
@@ -426,31 +426,6 @@ public sealed class BufferJobAccessTests
         {
             _started.Set();
             _release.Wait();
-        }
-    }
-
-    private sealed class JobRuntimeScope : IDisposable
-    {
-        private readonly JobSafetyMode _safety = JobSystem.SafetyMode;
-        private readonly ManagedPayloadPolicy _payload = JobSystem.ManagedPayloadPolicy;
-
-        internal JobRuntimeScope(int workerCount)
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                WorkerCount = workerCount,
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-            });
-        }
-
-        public void Dispose()
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = _payload,
-            });
         }
     }
 

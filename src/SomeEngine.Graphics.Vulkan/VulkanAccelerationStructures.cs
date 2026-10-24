@@ -440,7 +440,10 @@ internal sealed unsafe partial class VulkanBackend
                 DeviceAddress = transformAddress,
             },
         };
-        primitiveCount = geometry.Count / 3;
+        uint indexSize = geometry.IndexType == IndexType.UInt16 ? 2u : 4u;
+        primitiveCount = indexed
+            ? checked((uint)(indexRange.Size / indexSize / 3))
+            : geometry.Count / 3;
     }
 
     private VulkanDevice RequireRayTracingDevice(RhiDevice device)

@@ -1,6 +1,8 @@
 using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Materials;
 using SomeEngine.Serialization;
@@ -18,193 +20,155 @@ public sealed class ClusterAssetLoaderTests
         ClusterShaderOperationRole[] roles = Enum.GetValues<ClusterShaderOperationRole>()
             .Where(static role => role != ClusterShaderOperationRole.None)
             .ToArray();
-        AssetGuid[] shaderGuids = new AssetGuid[roles.Length];
+        Guid[] shaderGuids = new Guid[roles.Length];
         for (int index = 0; index < shaderGuids.Length; index++)
         {
-            shaderGuids[index] = project.CreateAsset(
-                $"assets/shaders/cluster-{index}.shader.asset",
-                CreateShaderData($"cluster-{index}"));
+            using ShaderAsset shader = CreateShaderData($"cluster-{index}", directory.Path);
+            shaderGuids[index] = project.RegisterAsset(await shader.SaveAsync(
+                Path.Combine(project.RootPath, $"assets/shaders/cluster-{index}.shader.asset")));
         }
 
-        AssetGuid clusterGuid = project.CreateAsset(
-            "assets/pipelines/main.clusterrender.asset",
-            CreateClusterRoot(shaderGuids));
+        using ClusterShadersAsset cluster = CreateClusterRoot(shaderGuids);
+        Guid clusterGuid = project.RegisterAsset(await cluster.SaveAsync(
+            Path.Combine(project.RootPath, "assets/pipelines/main.clusterrender.asset")));
         await using var loader = new AssetLoader(project.CreateStorage());
 
-        ClusterShaders[] loaded = await Task.WhenAll(
-            loader.LoadAsync(new AssetId<ClusterShaders>(clusterGuid)).AsTask(),
-            loader.LoadAsync(new AssetId<ClusterShaders>(clusterGuid)).AsTask());
-        ClusterShaders shaders = loaded[0];
-
-        Assert.Same(shaders, loaded[1]);
+        ClusterShadersAsset[] opened = await Task.WhenAll(
+            ClusterShadersAsset.OpenAsync(loader, new AssetId<ClusterShadersAsset>(clusterGuid)).AsTask(),
+            ClusterShadersAsset.OpenAsync(loader, new AssetId<ClusterShadersAsset>(clusterGuid)).AsTask());
+        await using ClusterShadersAsset first = opened[0];
+        await using ClusterShadersAsset second = opened[1];
+        Assert.NotSame(first, second);
+        Assert.Equal(shaderGuids.Order(), first.Describe().Dependencies.Order());
+        ClusterShaders shaders = await first.GetBlock<ClusterShadersBlock>().CreateAsync(
+            first.Name,
+            loader,
+            TestShaderLoading.Slang,
+            TestShaderLoading.CreateSessionDescription());
+        ClusterShaders other = await second.GetBlock<ClusterShadersBlock>().CreateAsync(
+            second.Name,
+            loader,
+            TestShaderLoading.Slang,
+            TestShaderLoading.CreateSessionDescription());
+        Assert.NotSame(shaders, other);
         Assert.Equal("MainCluster", shaders.Name);
         Assert.Equal(roles.Length, shaders.Operations?.Count);
         for (int index = 0; index < roles.Length; index++)
         {
-            ClusterShaderOperation operation = shaders.Operations![index];
+            ShaderOperation operation = shaders.Operations![index];
             Assert.Equal(roles[index], operation.Role);
-            ShaderRef shader = Assert.IsAssignableFrom<IList<ShaderRef>>(operation.Shaders)[0];
-            Assert.True(AssetGuid.TryParse(shader.AssetGuid, out AssetGuid shaderGuid));
-            Assert.NotNull(shader.Asset);
-            Assert.Equal($"cluster-{index}", shader.Asset.Name);
-            Assert.True(loader.TryGetAssetId(shader.Asset, out AssetId<Shader> shaderId));
-            Assert.Equal(shaderGuid, shaderId.Value);
+            Shader shader = operation.Shaders[0];
+            Guid shaderGuid = first.GetBlock<ClusterShadersBlock>().Operations[index].Shaders![0].Asset.Value;
+            Assert.Equal($"cluster-{index}", shader.Name);
+            Assert.NotSame(shader, other.Operations[index].Shaders[0]);
+            Assert.Equal(shaderGuids[index], shaderGuid);
         }
     }
 
     [Fact]
-    public async Task ClusterRenderAssetWithMalformedLastShaderGuidFailsBeforeDependenciesOrPublication()
+    public async Task ClusterRenderAssetWithEmptyLastShaderReferenceFailsBeforeWriting()
     {
         using var directory = new TemporaryDirectory();
-        AssetGuid clusterGuid = AssetGuid.New();
         string relativePath = "assets/pipelines/invalid.clusterrender.asset";
         string fullPath = Path.Combine(directory.Path, relativePath.Replace('/', Path.DirectorySeparatorChar));
-        AssetGuid valid = AssetGuid.New();
+        Guid valid = Guid.NewGuid();
         int operationCount = Enum.GetValues<ClusterShaderOperationRole>()
             .Count(static role => role != ClusterShaderOperationRole.None);
-        ClusterShaders root = CreateClusterRoot(
+        using ClusterShadersAsset root = CreateClusterRoot(
             Enumerable.Repeat(valid, operationCount).ToArray());
-        root.AssetGuid = clusterGuid.ToFlatString();
-        root.Operations![^1].Shaders![0].AssetGuid = "not-a-guid";
-        AssetWriter.Write(BinaryDocumentWriter.Create(root), fullPath);
+        ClusterShadersBlock settings = root.GetBlock<ClusterShadersBlock>();
+        ClusterShaderOperation last = settings.Operations[^1];
+        settings.Operations[^1] = last with { Shaders = last.Shaders!.SetItem(0, last.Shaders[0] with { Asset = default }) };
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => root.SaveAsync(fullPath).AsTask());
+        Assert.False(File.Exists(fullPath));
+    }
+    private static ShaderAsset CreateShaderData(string name, string directory)
+    {
+        const string source = """
+            [shader("vertex")]
+            float4 vertex(uint id : SV_VertexID) : SV_Position
+            {
+                return float4(id == 1 ? 1 : -1, id == 2 ? 1 : -1, 0, 1);
+            }
 
-        var manifest = new AssetManifest();
-        manifest.AddAsset(
-            clusterGuid,
-            "invalid",
-            relativePath,
-            AssetType<ClusterShaders>.Name,
-            ClusterShaders.SchemaFingerprint);
-        var storage = new DependencyCountingStorage(
-            new LooseAssetStorage(directory.Path, manifest),
-            clusterGuid);
-        await using var loader = new AssetLoader(storage);
+            [shader("fragment")]
+            float4 pixel() : SV_Target0
+            {
+                return float4(1, 1, 1, 1);
+            }
 
-        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => loader.LoadAsync(new AssetId<ClusterShaders>(clusterGuid)).AsTask());
-        Assert.Contains($"Operations[{operationCount - 1}].Shader", error.Message);
-        Assert.Equal(0, storage.DependencyResolutions);
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void compute()
+            {
+            }
+            """;
+        string sourcePath = Path.Combine(directory, "cluster-test.slang");
+        File.WriteAllText(sourcePath, source);
+        using var definition = new ShaderAsset { Name = name };
+        definition.GetBlock<ShaderSourceBlock>().SourceNames = ["cluster-test.slang"];
+        return SlangShaderImporter.CompileDefinition(
+            definition,
+            Path.Combine(directory, name + ".shader"),
+            projectRoot: directory);
     }
 
-    private static Shader CreateShaderData(string name)
-        => new()
-        {
-            Name = name,
-            Variants =
-            [
-                new ShaderBytecode
-                {
-                    Backend = "test",
-                    EntryPoint = "main",
-                    Stage = SomeEngine.Assets.Schema.ShaderStage.Compute,
-                    Data = new byte[] { 4, 2, 1 },
-                },
-            ],
-            EntryPointReflections =
-            [
-                new ShaderEntryPointReflection
-                {
-                    Backend = "test",
-                    EntryPoint = "main",
-                    Stage = SomeEngine.Assets.Schema.ShaderStage.Compute,
-                },
-            ],
-        };
-
-    private static ClusterShaders CreateClusterRoot(IReadOnlyList<AssetGuid> shaders)
+    private static ClusterShadersAsset CreateClusterRoot(IReadOnlyList<Guid> shaders)
     {
         ClusterShaderOperationRole[] roles = Enum.GetValues<ClusterShaderOperationRole>()
             .Where(static role => role != ClusterShaderOperationRole.None)
             .ToArray();
         Assert.Equal(roles.Length, shaders.Count);
-        return new ClusterShaders
+        var asset = new ClusterShadersAsset { Name = "MainCluster" };
+        using var settings = new ClusterShadersBlock
         {
-            Name = "MainCluster",
             Operations = roles
                 .Select((role, index) => Operation(role, shaders[index]))
                 .ToArray(),
         };
+        asset.SetBlock(settings);
+        return asset;
     }
 
     private static ClusterShaderOperation Operation(
         ClusterShaderOperationRole role,
-        AssetGuid guid)
+        Guid guid)
     {
         var result = new ClusterShaderOperation
         {
             Role = role,
-            BoundsSupport = IsPositionOperation(role)
-                ? ClusterBoundsSupport.Finite
-                : ClusterBoundsSupport.NotApplicable,
         };
         if (role is ClusterShaderOperationRole.HardwareVisibilityRaster
-            or ClusterShaderOperationRole.SoftwareDepthMerge
-            or ClusterShaderOperationRole.TemporalResolve
-            or ClusterShaderOperationRole.ToneMapAndPresent)
+            or ClusterShaderOperationRole.VisibilityResolveImage
+            or ClusterShaderOperationRole.VisibilityResolveBuffer)
         {
-            result.Shaders =
+            result = result with { Shaders =
             [
                 new ShaderRef
                 {
-                    AssetGuid = guid.ToFlatString(),
+                    Asset = new(guid),
                     EntryPoint = "vertex",
-                    Stage = ShaderStage.Vertex,
                 },
                 new ShaderRef
                 {
-                    AssetGuid = guid.ToFlatString(),
+                    Asset = new(guid),
                     EntryPoint = "pixel",
-                    Stage = ShaderStage.Pixel,
                 },
-            ];
+            ] };
         }
         else
         {
-            result.Shaders =
+            result = result with { Shaders =
             [
                 new ShaderRef
                 {
-                    AssetGuid = guid.ToFlatString(),
+                    Asset = new(guid),
                     EntryPoint = "compute",
-                    Stage = ShaderStage.Compute,
                 },
-            ];
+            ] };
         }
         return result;
-    }
-
-    private static bool IsPositionOperation(ClusterShaderOperationRole role)
-        => role is ClusterShaderOperationRole.DeformCachePopulate
-            or ClusterShaderOperationRole.SoftwareVisibilityRaster
-            or ClusterShaderOperationRole.HardwareVisibilityRaster
-            or ClusterShaderOperationRole.MotionVectors
-            or ClusterShaderOperationRole.VisibilityResolve;
-
-    private sealed class DependencyCountingStorage : IAssetStorage
-    {
-        private readonly IAssetStorage _inner;
-        private readonly AssetGuid _rootGuid;
-        private int _dependencyResolutions;
-
-        internal DependencyCountingStorage(IAssetStorage inner, AssetGuid rootGuid)
-        {
-            _inner = inner;
-            _rootGuid = rootGuid;
-        }
-
-        internal int DependencyResolutions => Volatile.Read(ref _dependencyResolutions);
-
-        public bool TryFind(AssetGuid assetGuid, out AssetEntry entry)
-        {
-            if (assetGuid != _rootGuid)
-                Interlocked.Increment(ref _dependencyResolutions);
-            return _inner.TryFind(assetGuid, out entry);
-        }
-
-        public ValueTask<SomeEngine.Serialization.IO.IRangeSource> OpenAsync(
-            AssetEntry entry,
-            CancellationToken cancellationToken = default)
-            => _inner.OpenAsync(entry, cancellationToken);
     }
 
     private sealed class TemporaryDirectory : IDisposable

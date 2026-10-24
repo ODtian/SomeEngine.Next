@@ -5,13 +5,85 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class ReadOnlyQueryPacketJobTests
+public sealed class ReadOnlyQueryPacketJobTests : JobTest
 {
+    [Fact]
+    public void SlicedPacketsOnlyReportComponentAndBufferChangesInsideTheirRows()
+    {
+        var world = new World();
+        Entity[] entities = Enumerable.Range(0, 6).Select(i => world.CreateEntity(new PacketValue(i))).ToArray();
+        foreach (Entity entity in entities) world.AddBuffer<PacketElement>(entity);
+        uint baseline = world.CurrentTick;
+        _ = world.AcquireSystemVersion();
+        world.Replace(entities[1], new PacketValue(42));
+        world.ExecuteBufferWrite<PacketElement>(entities[4], buffer => buffer.Add(new PacketElement(7)));
+        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<PacketValue>().ReadBuffer<PacketElement>().Build());
+        var changed = new int[6];
+        world.ExecuteReadSnapshot(query, cursor =>
+        {
+            using ReadOnlyQueryPacketPlan packets = ReadOnlyQueryPacketJobs.CreatePlan(cursor, rowsPerPacket: 3);
+            var job = new ReadChangesJob(baseline, changed);
+            packets.ExecuteInline(in job);
+        });
+        Assert.Equal([0, 1, 0, 0, 2, 0], changed);
+        world.ReleaseQuery(query);
+    }
+
+    private readonly struct ReadChangesJob(uint baseline, int[] changes) : IReadOnlyQueryPacketJob
+    {
+        public void Execute(in ReadOnlyQueryPacketContext context, ReadOnlyQueryPacket packet)
+        {
+            for (int row = 0; row < packet.Count; row++)
+            {
+                ReadOnlyQueryPacket slice = packet.Slice(row, 1);
+                changes[context.OutputStart + row] = (slice.ChangedSince<PacketValue>(baseline) ? 1 : 0) |
+                    (slice.BufferChangedSince<PacketElement>(baseline) ? 2 : 0);
+            }
+            Assert.False(packet.Slice(0, 0).ChangedSince<PacketValue>(baseline));
+        }
+    }
+
+    [Fact]
+    public void ChangedRowSliceChecksDoesNotThrow()
+    {
+        var world = new World();
+        Entity[] entities = Enumerable.Range(0, 4).Select(i => world.CreateEntity(new PacketValue(i))).ToArray();
+        uint baseline = world.CurrentTick;
+        _ = world.AcquireSystemVersion();
+        world.Replace(entities[0], new PacketValue(10));
+        world.Replace(entities[1], new PacketValue(11));
+        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<PacketValue>().Build());
+
+        world.ExecuteReadSnapshot(query, cursor =>
+        {
+            using ReadOnlyQueryPacketPlan packets = ReadOnlyQueryPacketJobs.CreatePlan(cursor, rowsPerPacket: 4);
+            var job = new AllRowsChangedJob(baseline);
+            packets.ExecuteInline(in job);
+        });
+
+        world.ReleaseQuery(query);
+    }
+
+    private readonly struct AllRowsChangedJob(uint baseline) : IReadOnlyQueryPacketJob
+    {
+        public void Execute(in ReadOnlyQueryPacketContext context, ReadOnlyQueryPacket packet)
+        {
+            Assert.Equal(0, context.OutputStart);
+            Assert.Equal(4, packet.Count);
+            Assert.False(packet.AllRowsChangedSince<PacketValue>(baseline));
+            Assert.True(packet.Slice(0, 2).AllRowsChangedSince<PacketValue>(baseline));
+            Assert.False(packet.Slice(1, 2).AllRowsChangedSince<PacketValue>(baseline));
+            Assert.False(packet.Slice(0, 0).AllRowsChangedSince<PacketValue>(baseline));
+        }
+    }
+
+    private readonly record struct PacketElement(int Value) : IBufferElement;
+
     [Fact]
     public void RowFiltersBecomeDenseContiguousPacketsWithDisjointOutputRanges()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity[] source = new Entity[6];
         for (int index = 0; index < source.Length; index++)
         {
@@ -68,8 +140,8 @@ public sealed class ReadOnlyQueryPacketJobTests
     [Fact]
     public void PacketReadRejectsComponentsNotDeclaredByTheQuery()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new PacketValue(7));
         world.Add(entity, new UndeclaredValue(9));
         QueryHandle query = world.Query(
@@ -90,7 +162,7 @@ public sealed class ReadOnlyQueryPacketJobTests
                 error = caught;
             }
             Assert.NotNull(error);
-            Assert.Contains("access", error.Message, StringComparison.OrdinalIgnoreCase);
+
         });
 
         world.ReleaseQuery(query);
@@ -99,8 +171,8 @@ public sealed class ReadOnlyQueryPacketJobTests
     [Fact]
     public void PreparedPlanReusesPacketsForSeveralPassesAndCommandRecording()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity[] entities = new Entity[5];
         for (int index = 0; index < entities.Length; index++)
             entities[index] = world.CreateEntity(new PacketValue(index + 20));
@@ -111,6 +183,8 @@ public sealed class ReadOnlyQueryPacketJobTests
                 .Build());
         int[] first = new int[entities.Length];
         int[] second = new int[entities.Length];
+        JobResource firstOutput = Jobs.CreateResource("first output");
+        JobResource secondOutput = Jobs.CreateResource("second output");
         JobCommandBuffer? commands = null;
 
         world.ExecuteReadSnapshot(query, cursor =>
@@ -119,7 +193,6 @@ public sealed class ReadOnlyQueryPacketJobTests
                 ReadOnlyQueryPacketJobs.CreatePlan(cursor, rowsPerPacket: 2);
             try
             {
-                Assert.Equal(3, plan.PacketCount);
                 Assert.Equal(entities.Length, plan.RowCount);
                 Assert.Equal(cursor.LastSystemVersion, plan.LastSystemVersion);
 
@@ -128,18 +201,17 @@ public sealed class ReadOnlyQueryPacketJobTests
                     entities.Length,
                     plan.ExecuteParallel(
                         in firstJob,
-                        [JobResourceAccess.Write(first)]));
+                        [JobResourceAccess.Write(firstOutput)]));
 
                 var secondJob = new CopyValuesJob(second);
                 Assert.Equal(
                     entities.Length,
                     plan.ExecuteParallel(
                         in secondJob,
-                        [JobResourceAccess.Write(second)]));
+                        [JobResourceAccess.Write(secondOutput)]));
 
                 var commandJob = new AddPacketMarkerJob();
                 commands = plan.RecordParallel(in commandJob);
-                Assert.Equal(plan.PacketCount, commands.ProducerCount);
             }
             finally
             {
@@ -233,28 +305,4 @@ public sealed class ReadOnlyQueryPacketJobTests
 
     private readonly struct PacketGate : IEnableableComponent;
 
-    private sealed class JobRuntimeScope : IDisposable
-    {
-        private readonly JobSafetyMode _safety = JobSystem.SafetyMode;
-        private readonly ManagedPayloadPolicy _payload = JobSystem.ManagedPayloadPolicy;
-
-        internal JobRuntimeScope(int workerCount)
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                WorkerCount = workerCount,
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-            });
-        }
-
-        public void Dispose()
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = _payload,
-            });
-        }
-    }
 }

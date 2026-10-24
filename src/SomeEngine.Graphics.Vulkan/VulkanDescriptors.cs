@@ -359,6 +359,9 @@ internal sealed unsafe partial class VulkanBackend
                     slot.ArrayElement,
                     acceleration.Native);
                 return;
+            case VulkanBuffer direct when value.Type == ResourceBindingType.ConstantBuffer:
+                bufferInfo = new DescriptorBufferInfo(direct.Native, value.BufferRange.Offset, value.BufferRange.Size);
+                break;
             case VulkanBufferCbv cbv:
             {
                 VulkanBuffer buffer = (VulkanBuffer)cbv.Resource;
@@ -537,6 +540,17 @@ internal sealed unsafe partial class VulkanBackend
                 Result result = AllocateFrom(_active, layout, out VkDescriptorSet set);
                 if (result is Result.ErrorOutOfPoolMemory or Result.ErrorFragmentedPool)
                 {
+                    foreach (VkDescriptorPool pool in _pools)
+                    {
+                        if (pool.Handle == _active.Handle)
+                            continue;
+                        result = AllocateFrom(pool, layout, out set);
+                        if (result is Result.ErrorOutOfPoolMemory or Result.ErrorFragmentedPool)
+                            continue;
+                        _device.ThrowIfDeviceCallFailed(result, "vkAllocateDescriptorSets");
+                        _active = pool;
+                        return new VulkanDescriptorSetAllocation(pool, set);
+                    }
                     _active = CreatePool();
                     result = AllocateFrom(_active, layout, out set);
                 }
@@ -927,6 +941,12 @@ internal sealed unsafe partial class VulkanBackend
         internal VulkanBoundDescriptorSet[] Sets { get; }
         internal byte[] PushConstants { get; }
         internal VulkanBlockLayout Block { get; }
+        internal void CaptureSparseBindings(VulkanCommandSlot commands)
+        {
+            foreach (IVulkanRetained resource in _retained)
+                commands.CaptureSparseBindings(resource);
+        }
+
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
 
@@ -1084,6 +1104,8 @@ internal sealed unsafe partial class VulkanBackend
         value.Value!.ThrowIfDisposed();
         bool valid = value.Value switch
         {
+            VulkanBuffer direct => shape.Type == ResourceBindingType.ConstantBuffer &&
+                ReferenceEquals(direct.Device, device),
             VulkanBufferCbv cbv =>
                 shape.Type == ResourceBindingType.ConstantBuffer &&
                 ReferenceEquals(cbv.Device, device),
