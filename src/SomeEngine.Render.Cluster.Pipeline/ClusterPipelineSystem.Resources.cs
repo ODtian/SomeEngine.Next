@@ -25,7 +25,9 @@ public sealed partial class ClusterPipelineSystem
     internal const int PhaseOneTessellationCountersReadbackOffset = 84;
     internal const int PhaseTwoTessellationCountersReadbackOffset = 116;
     internal const int WorkMetricsReadbackOffset = 160;
-    internal const int WorkMetricsByteSize = 96;
+    internal const int WorkMetricsByteSize = 112;
+    internal const int DeformAllocationReadbackOffset = 272;
+    internal const int MetricsFrameIdentityOffset = 280;
     internal const int MetricsFrameIndexOffset = 152;
     internal const int VisibilityProbeReadbackOffset = 512;
     internal const int VisibilityProbePixelCount = 64;
@@ -797,6 +799,9 @@ public sealed partial class ClusterPipelineSystem
             ulong frameIndex = checked(++_metricFrameIndex);
             graph.WriteBuffer(GraphData.Resources.FrameMetricsBuffer, MetricsFrameIndexOffset,
                 MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref frameIndex, 1)));
+            ulong frameIdentity = graph.FrameIdentity;
+            graph.WriteBuffer(GraphData.Resources.FrameMetricsBuffer, MetricsFrameIdentityOffset,
+                MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref frameIdentity, 1)));
         }
         WriteUniform(parametersBytes, _sceneValues, GraphData.SceneUniforms);
         WriteUniform(parametersBytes, new ClusterTraversalSeedUniforms

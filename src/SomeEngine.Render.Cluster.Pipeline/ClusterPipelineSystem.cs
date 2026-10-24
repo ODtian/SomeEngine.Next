@@ -88,6 +88,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ViewCollector _viewCollector = new();
     private ulong _metricFrameIndex;
     private ClusterFrameMetrics? _latestFrameMetrics;
+    /// <summary>Delivers the counters belonging to each completed GPU frame.</summary>
+    public event Action<ClusterFrameMetrics>? FrameMeasured;
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
     private bool _hasPendingFrame;
     private bool _created;
@@ -1107,7 +1109,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
     private void ReceiveFrameMetrics(ReadOnlySpan<byte> bytes, ulong epoch)
     {
-        if (epoch != _resources.Residency.EpochId.Value) return;
         uint phaseOneFinal = ReadUInt32(
             bytes,
             PhaseOneTessellationCountersReadbackOffset + 2 * sizeof(uint));
@@ -1155,6 +1156,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             ReadUInt32(bytes, SoftwareDebugReadbackOffset),
             CountNonZeroVisibilityProbe(bytes))
         {
+            FrameIdentity = BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(MetricsFrameIdentityOffset, sizeof(ulong))),
+            SelectedVertices = ReadWorkMetric(bytes, 96),
+            SelectedTriangles = ReadWorkMetric(bytes, 104),
+            DeformCacheBytes = ReadUInt32(bytes, DeformAllocationReadbackOffset),
             ResidencyEpoch = epoch,
             Work = new ClusterWorkMetrics(
                 (ClusterWorkOverflow)ReadUInt32(bytes, WorkMetricsReadbackOffset),
@@ -1163,7 +1168,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 ReadWorkMetric(bytes, 56), ReadWorkMetric(bytes, 64), ReadWorkMetric(bytes, 72),
                 ReadWorkMetric(bytes, 80), ReadWorkMetric(bytes, 88)),
         };
-        if (_latestFrameMetrics is not { } latest || metrics.FrameIndex > latest.FrameIndex)
+        FrameMeasured?.Invoke(metrics);
+        if (epoch == _resources.Residency.EpochId.Value &&
+            (_latestFrameMetrics is not { } latest || metrics.FrameIndex > latest.FrameIndex))
             _latestFrameMetrics = metrics;
     }
 

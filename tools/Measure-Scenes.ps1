@@ -15,6 +15,7 @@ public static class SceneTestKeys {
 $started = [DateTime]::UtcNow
 $timer = [Diagnostics.Stopwatch]::StartNew()
 $start = [Diagnostics.ProcessStartInfo]::new($application)
+$start.ArgumentList.Add('--regression')
 $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
 $start.RedirectStandardOutput = $true
