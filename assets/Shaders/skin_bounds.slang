@@ -21,13 +21,27 @@ struct SkinBoundsTransform
 struct SkinBoundsGroup
 {
     uint instance;
+    uint cull;
+    uint lod;
+    uint output;
+    float error;
+    uint padding0;
+    uint padding1;
+    uint padding2;
+};
+struct SkinBoundsRange
+{
+    uint instance;
     uint firstBox;
     uint boxCount;
     uint output;
-    uint firstLodBox;
-    uint lodBoxCount;
-    float error;
-    uint padding;
+};
+struct SkinBoundsRangeResult
+{
+    float4 currentMin;
+    float4 currentMax;
+    float4 previousMin;
+    float4 previousMax;
 };
 
 StructuredBuffer<float4x4> SkinCurrentBones;
@@ -36,8 +50,10 @@ StructuredBuffer<uint> SkinJointIndices;
 StructuredBuffer<float4x4> SkinInverseBind;
 StructuredBuffer<SkinBoundsControl> SkinBoundsControls;
 StructuredBuffer<SkinBoundsGroup> SkinBoundsWork;
+StructuredBuffer<SkinBoundsRange> SkinBoundsRanges;
 StructuredBuffer<SkinBoundsBox> SkinBoundsBoxes;
 RWStructuredBuffer<SkinBoundsTransform> SkinJointTransforms;
+RWStructuredBuffer<SkinBoundsRangeResult> SkinRangeResults;
 RWStructuredBuffer<ModelBounds> SkinCurrentBounds;
 RWStructuredBuffer<ModelBounds> SkinPreviousBounds;
 
@@ -83,19 +99,18 @@ void TransformSkinJoints(uint3 thread : SV_DispatchThreadID)
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
+void TransformSkinRanges(uint3 thread : SV_DispatchThreadID)
 {
     uint count, stride;
-    SkinBoundsWork.GetDimensions(count, stride);
+    SkinBoundsRanges.GetDimensions(count, stride);
     uint group = thread.x / 4u;
     uint lane = WaveGetLaneIndex() & 3u;
     if (group >= count) return;
-    SkinBoundsGroup work = SkinBoundsWork[group];
+    SkinBoundsRange work = SkinBoundsRanges[group];
     SkinBoundsControl control = SkinBoundsControls[work.instance];
     if (control.update == 0u) return;
     float3 currentMin = 1e30.xxx, currentMax = -1e30.xxx;
     float3 previousMin = 1e30.xxx, previousMax = -1e30.xxx;
-    bool sameBoxes = work.firstBox == work.firstLodBox && work.boxCount == work.lodBoxCount;
     float currentStretch = 0.0, previousStretch = 0.0;
     for (uint index = lane; index < work.boxCount; index += 4u)
     {
@@ -103,30 +118,8 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
         SkinBoundsTransform transform = SkinJointTransforms[control.joints + box.joint];
         IncludeBox(box, transform.current, currentMin, currentMax);
         IncludeBox(box, transform.previous, previousMin, previousMax);
-        if (sameBoxes)
-        {
-            currentStretch = max(currentStretch, transform.stretch.x);
-            previousStretch = max(previousStretch, transform.stretch.y);
-        }
-    }
-    float3 currentLodMin = 1e30.xxx, currentLodMax = -1e30.xxx;
-    float3 previousLodMin = 1e30.xxx, previousLodMax = -1e30.xxx;
-    if (sameBoxes)
-    {
-        currentLodMin = currentMin; currentLodMax = currentMax;
-        previousLodMin = previousMin; previousLodMax = previousMax;
-    }
-    else
-    {
-        for (uint index = lane; index < work.lodBoxCount; index += 4u)
-        {
-            SkinBoundsBox box = SkinBoundsBoxes[work.firstLodBox + index];
-            SkinBoundsTransform transform = SkinJointTransforms[control.joints + box.joint];
-            IncludeBox(box, transform.current, currentLodMin, currentLodMax);
-            IncludeBox(box, transform.previous, previousLodMin, previousLodMax);
-            currentStretch = max(currentStretch, transform.stretch.x);
-            previousStretch = max(previousStretch, transform.stretch.y);
-        }
+        currentStretch = max(currentStretch, transform.stretch.x);
+        previousStretch = max(previousStretch, transform.stretch.y);
     }
     [unroll]
     for (uint width = 1u; width < 4u; width *= 2u)
@@ -136,21 +129,39 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
         currentMax = max(currentMax, WaveReadLaneAt(currentMax, other));
         previousMin = min(previousMin, WaveReadLaneAt(previousMin, other));
         previousMax = max(previousMax, WaveReadLaneAt(previousMax, other));
-        currentLodMin = min(currentLodMin, WaveReadLaneAt(currentLodMin, other));
-        currentLodMax = max(currentLodMax, WaveReadLaneAt(currentLodMax, other));
-        previousLodMin = min(previousLodMin, WaveReadLaneAt(previousLodMin, other));
-        previousLodMax = max(previousLodMax, WaveReadLaneAt(previousLodMax, other));
         currentStretch = max(currentStretch, WaveReadLaneAt(currentStretch, other));
         previousStretch = max(previousStretch, WaveReadLaneAt(previousStretch, other));
     }
     if (lane != 0u) return;
+    SkinBoundsRangeResult result;
+    result.currentMin = float4(currentMin, currentStretch);
+    result.currentMax = float4(currentMax, 0.0);
+    result.previousMin = float4(previousMin, previousStretch);
+    result.previousMax = float4(previousMax, 0.0);
+    SkinRangeResults[work.output] = result;
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
+{
+    uint count, stride;
+    SkinBoundsWork.GetDimensions(count, stride);
+    if (thread.x >= count) return;
+    SkinBoundsGroup work = SkinBoundsWork[thread.x];
+    SkinBoundsControl control = SkinBoundsControls[work.instance];
+    if (control.update == 0u) return;
+    SkinBoundsRangeResult cull = SkinRangeResults[work.cull];
+    SkinBoundsRangeResult lod = SkinRangeResults[work.lod];
     ModelBounds current, previous;
-    current.minimum = float4(currentMin, work.error * currentStretch);
-    current.maximum = float4(currentMax, 0.0);
-    current.lodSphere = float4((currentLodMin + currentLodMax) * 0.5, length(currentLodMax - currentLodMin) * 0.5);
-    previous.minimum = float4(previousMin, work.error * previousStretch);
-    previous.maximum = float4(previousMax, 0.0);
-    previous.lodSphere = float4((previousLodMin + previousLodMax) * 0.5, length(previousLodMax - previousLodMin) * 0.5);
+    current.minimum = float4(cull.currentMin.xyz, work.error * lod.currentMin.w);
+    current.maximum = cull.currentMax;
+    current.lodSphere = float4((lod.currentMin.xyz + lod.currentMax.xyz) * 0.5,
+        length(lod.currentMax.xyz - lod.currentMin.xyz) * 0.5);
+    previous.minimum = float4(cull.previousMin.xyz, work.error * lod.previousMin.w);
+    previous.maximum = cull.previousMax;
+    previous.lodSphere = float4((lod.previousMin.xyz + lod.previousMax.xyz) * 0.5,
+        length(lod.previousMax.xyz - lod.previousMin.xyz) * 0.5);
     SkinCurrentBounds[control.output + work.output] = current;
     SkinPreviousBounds[control.output + work.output] = previous;
 }

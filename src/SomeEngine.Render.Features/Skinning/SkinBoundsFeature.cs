@@ -23,10 +23,10 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     private const BufferUsages BoundsUsages = BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly SkinningFeature _skinning;
-    private readonly LinkedComputePipeline _pipeline, _jointPipeline;
-    private readonly GraphBufferId _current, _previous, _definitions, _jointTransforms;
-    private readonly GraphBufferInput _controlsInput, _workInput, _boxesInput, _uploadInput;
-    private readonly GraphPassId _boundsPass, _jointPass;
+    private readonly LinkedComputePipeline _pipeline, _jointPipeline, _rangePipeline;
+    private readonly GraphBufferId _current, _previous, _definitions, _jointTransforms, _rangeResults;
+    private readonly GraphBufferInput _controlsInput, _workInput, _boxesInput, _rangesInput, _uploadInput;
+    private readonly GraphPassId _boundsPass, _jointPass, _rangePass;
     private readonly Dictionary<Entity, MeshBounds> _instances = [];
     private readonly Dictionary<GeometryKey, GeometryBounds> _geometry = [];
     private readonly List<Entity> _removed = [];
@@ -36,7 +36,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     private QueryHandle _query;
     private GraphPassId _uploadPass;
     private byte[] _definitionBytes = [];
-    private BufferRange _boxRange, _workRange;
+    private BufferRange _boxRange, _workRange, _rangeWorkRange;
     private ulong _collection;
     private bool _layoutChanged = true, _uploadRequired;
 
@@ -55,6 +55,8 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             "TransformSkinBounds", "Transform skin influence bounds");
         _jointPipeline = LinkedComputePipeline.Create(backend, device, shader,
             "TransformSkinJoints", "Transform skin bounds joints");
+        _rangePipeline = LinkedComputePipeline.Create(backend, device, shader,
+            "TransformSkinRanges", "Transform skin influence ranges");
         RenderGraphEdit edit = graph.BeginEdit();
         try
         {
@@ -62,15 +64,22 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             PreviousBounds = edit.CreateBufferInput(BoundsUsages);
             _controlsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
             _workInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+            _rangesInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
             _boxesInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
             _uploadInput = edit.CreateBufferInput(BufferUsages.CopySource);
             _current = edit.CreatePersistentBuffer(new BufferDesc(48, BoundsUsages, Label: "Current skin model bounds"));
             _previous = edit.CreatePersistentBuffer(new BufferDesc(48, BoundsUsages, Label: "Previous skin model bounds"));
             _jointTransforms = edit.CreatePersistentBuffer(new BufferDesc(144, BoundsUsages, Label: "Skin bounds joint transforms"));
+            _rangeResults = edit.CreatePersistentBuffer(new BufferDesc(64, BoundsUsages, Label: "Skin influence range results"));
             _definitions = edit.CreatePersistentBuffer(new BufferDesc(64, BufferUsages.ShaderRead | BufferUsages.CopyDestination, Label: "Skin bounds definitions"));
             _jointPass = edit.AddComputeFramePass("Transform skin bounds joints", PassQueueSelection.AnyCompatible(),
                 new DispatchArguments(1, 1, 1), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 _jointPipeline.Pipeline, _jointPipeline.ParameterLayout, default,
+                static (ref PassDefinition _, ref DispatchArguments _) => { },
+                static (ref ComputePassCommandScope commands, in DispatchArguments data) => commands.Dispatch(data));
+            _rangePass = edit.AddComputeFramePass("Transform skin influence ranges", PassQueueSelection.AnyCompatible(),
+                new DispatchArguments(1, 1, 1), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+                _rangePipeline.Pipeline, _rangePipeline.ParameterLayout, default,
                 static (ref PassDefinition _, ref DispatchArguments _) => { },
                 static (ref ComputePassCommandScope commands, in DispatchArguments data) => commands.Dispatch(data));
             _boundsPass = edit.AddComputeFramePass("Transform skin model bounds", PassQueueSelection.AnyCompatible(),
@@ -78,16 +87,18 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
                 _pipeline.Pipeline, _pipeline.ParameterLayout, default,
                 static (ref PassDefinition _, ref DispatchArguments _) => { },
                 static (ref ComputePassCommandScope commands, in DispatchArguments data) => commands.Dispatch(data));
-            foreach ((GraphPassId passId, LinkedComputePipeline pipeline, GraphAccessMode transformsAccess) in new[]
+            foreach ((GraphPassId passId, LinkedComputePipeline pipeline, GraphAccessMode transformsAccess, GraphAccessMode rangesAccess) in new[]
             {
-                (_jointPass, _jointPipeline, GraphAccessMode.Write),
-                (_boundsPass, _pipeline, GraphAccessMode.Read),
+                (_jointPass, _jointPipeline, GraphAccessMode.Write, GraphAccessMode.Read),
+                (_rangePass, _rangePipeline, GraphAccessMode.Read, GraphAccessMode.Write),
+                (_boundsPass, _pipeline, GraphAccessMode.Read, GraphAccessMode.Read),
             })
             {
                 PassDefinition pass = edit.GetPass(passId);
                 Resource[] resources = ShaderResourceLayout.Resolve<Resource>(pipeline.ParameterLayout, static (name, _) => name switch
                 {
                     "SkinBoundsControls" => Resource.Controls, "SkinBoundsWork" => Resource.Work, "SkinBoundsBoxes" => Resource.Boxes,
+                    "SkinBoundsRanges" => Resource.Ranges, "SkinRangeResults" => Resource.RangeResults,
                     "SkinCurrentBounds" => Resource.Current, "SkinPreviousBounds" => Resource.Previous,
                     "SkinCurrentBones" => Resource.CurrentBones, "SkinPreviousBones" => Resource.PreviousBones,
                     "SkinJointIndices" => Resource.Joints, "SkinInverseBind" => Resource.InverseBind,
@@ -99,9 +110,12 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
                     {
                         case Resource.Controls: pass.Bind(edit.CreateBufferSrv(_controlsInput, structureStride: 32), PipelineSync.ComputeShading); break;
                         case Resource.Work: pass.Bind(edit.CreateBufferSrv(_workInput, structureStride: 32), PipelineSync.ComputeShading); break;
+                        case Resource.Ranges: pass.Bind(edit.CreateBufferSrv(_rangesInput, structureStride: 16), PipelineSync.ComputeShading); break;
                         case Resource.Boxes: pass.Bind(edit.CreateBufferSrv(_boxesInput, structureStride: 48), PipelineSync.ComputeShading); break;
                         case Resource.Transforms: pass.Bind(edit.CreateBufferUav(_jointTransforms, structureStride: 144), PipelineSync.ComputeShading,
                             transformsAccess, WriteCoverage.Partial, ResourceContentState.Defined); break;
+                        case Resource.RangeResults: pass.Bind(edit.CreateBufferUav(_rangeResults, structureStride: 64), PipelineSync.ComputeShading,
+                            rangesAccess, WriteCoverage.Partial, ResourceContentState.Defined); break;
                         case Resource.Current: pass.Bind(edit.CreateBufferUav(CurrentBounds, structureStride: 48), PipelineSync.ComputeShading,
                             GraphAccessMode.Write, WriteCoverage.Partial, ResourceContentState.Defined); break;
                         case Resource.Previous: pass.Bind(edit.CreateBufferUav(PreviousBounds, structureStride: 48), PipelineSync.ComputeShading,
@@ -119,7 +133,8 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
                 new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 static (ref PassDefinition _, ref int _) => { }, static (ref CopyPassCommandScope _, in int _) => { });
             edit.OrderAfter(_jointPass, skinning.CompletePass);
-            edit.OrderAfter(_boundsPass, _jointPass);
+            edit.OrderAfter(_rangePass, _jointPass);
+            edit.OrderAfter(_boundsPass, _rangePass);
             edit.OrderAfter(CompletePass, _boundsPass);
             edit.Commit();
         }
@@ -208,8 +223,9 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         foreach (GeometryKey key in _geometry.Keys.Where(key => !used.Contains(key)).ToArray()) _geometry.Remove(key);
         var boxes = new List<Box>();
         var work = new List<Work>();
+        var rangeWork = new List<RangeWork>();
         var boxStarts = new Dictionary<GeometryKey, uint>();
-        uint output = 0, jointCapacity = 1, maximumJoints = 0;
+        uint output = 0, rangeOutput = 0, jointCapacity = 1, maximumJoints = 0;
         for (int index = 0; index < _order.Length; index++)
         {
             MeshBounds instance = _order[index];
@@ -225,21 +241,31 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             }
             instance.First = output;
             instance.Input++;
-            for (uint group = 0; group < geometry.Ranges.Length; group++)
+            for (uint range = 0; range < geometry.Ranges.Length; range++)
             {
-                BoundsGroup ranges = geometry.Ranges[group];
-                work.Add(new((uint)index, boxStart + ranges.Cull.First, ranges.Cull.Count, group,
-                    boxStart + ranges.Lod.First, ranges.Lod.Count, ranges.Error, 0));
+                InfluenceRange boxesRange = geometry.Ranges[range];
+                rangeWork.Add(new((uint)index, boxStart + boxesRange.First, boxesRange.Count, rangeOutput + range));
             }
+            for (uint group = 0; group < geometry.Groups.Length; group++)
+            {
+                BoundsGroup ranges = geometry.Groups[group];
+                work.Add(new((uint)index, rangeOutput + ranges.Cull, rangeOutput + ranges.Lod, group, ranges.Error, 0, 0, 0));
+            }
+            rangeOutput += (uint)geometry.Ranges.Length;
             _world.Replace(instance.Entity, new RenderDeformBounds(output, geometry.NodeCount));
-            output += (uint)geometry.Ranges.Length;
+            output += (uint)geometry.Groups.Length;
         }
         if (boxes.Count == 0) boxes.Add(default);
         int workCount = work.Count;
+        int rangeWorkCount = rangeWork.Count;
         if (work.Count == 0) work.Add(default);
+        if (rangeWork.Count == 0) rangeWork.Add(default);
         using var stream = new MemoryStream();
         stream.Write(MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(boxes)));
         _boxRange = new(0, (ulong)stream.Position);
+        stream.Position = (stream.Position + 31) / 32 * 32;
+        _rangeWorkRange = new((ulong)stream.Position, (ulong)(rangeWork.Count * 16));
+        stream.Write(MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(rangeWork)));
         stream.Position = (stream.Position + 31) / 32 * 32;
         _workRange = new((ulong)stream.Position, (ulong)(work.Count * 32));
         stream.Write(MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(work)));
@@ -250,22 +276,25 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         edit.SetBufferDescription(_current, new BufferDesc(Math.Max(1u, output) * 48ul, BoundsUsages, Label: "Current skin model bounds"));
         edit.SetBufferDescription(_previous, new BufferDesc(Math.Max(1u, output) * 48ul, BoundsUsages, Label: "Previous skin model bounds"));
         edit.SetBufferDescription(_jointTransforms, new BufferDesc(jointCapacity * 144ul, BoundsUsages, Label: "Skin bounds joint transforms"));
+        edit.SetBufferDescription(_rangeResults, new BufferDesc(Math.Max(1u, rangeOutput) * 64ul, BoundsUsages, Label: "Skin influence range results"));
         if (_uploadPass != default) edit.Remove(_uploadPass);
         _uploadPass = edit.AddCopyFramePass("Upload skin bounds definitions", PassQueueSelection.AnyOfType(QueueType.Graphics),
-            new DefinitionCopy(_uploadInput, _definitions, _current, _previous, _jointTransforms, (ulong)_definitionBytes.Length),
+            new DefinitionCopy(_uploadInput, _definitions, _current, _previous, _jointTransforms, _rangeResults, (ulong)_definitionBytes.Length),
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
         edit.OrderAfter(_boundsPass, _uploadPass);
         edit.OrderAfter(_jointPass, _uploadPass);
+        edit.OrderAfter(_rangePass, _uploadPass);
         edit.OrderAfter(CompletePass, _uploadPass);
         edit.Commit();
-        _dispatch = new((uint)((workCount + 15) / 16), 1, 1);
+        _dispatch = new((uint)((workCount + 63) / 64), 1, 1);
+        _rangeDispatch = new((uint)((rangeWorkCount + 15) / 16), 1, 1);
         _jointDispatch = new((maximumJoints + 63) / 64, (uint)_order.Length, 1);
         _layoutChanged = false;
         _uploadRequired = true;
         Revision++;
     }
 
-    private DispatchArguments _dispatch, _jointDispatch;
+    private DispatchArguments _dispatch, _jointDispatch, _rangeDispatch;
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
@@ -284,13 +313,16 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         frame.SetBufferInput(PreviousBounds, new(_previous, BufferRange.Whole));
         frame.SetBufferInput(_boxesInput, new(_definitions, _boxRange));
         frame.SetBufferInput(_workInput, new(_definitions, _workRange));
+        frame.SetBufferInput(_rangesInput, new(_definitions, _rangeWorkRange));
         frame.SetBufferInput(_controlsInput, frame.Upload<Control>(CollectionsMarshal.AsSpan(_controls), BufferUsages.ShaderRead));
         if (_uploadRequired) frame.SetBufferInput(_uploadInput, frame.Upload(_definitionBytes, BufferUsages.CopySource));
         frame.SetPassEnabled(_uploadPass, _uploadRequired);
         frame.SetPassEnabled(_boundsPass, changed);
         frame.SetPassEnabled(_jointPass, changed);
+        frame.SetPassEnabled(_rangePass, changed);
         frame.SetPassDataIfChanged(_boundsPass, _dispatch);
         frame.SetPassDataIfChanged(_jointPass, _jointDispatch);
+        frame.SetPassDataIfChanged(_rangePass, _rangeDispatch);
         frame.ObserveExecution(this);
     }
 
@@ -362,16 +394,18 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             }
         }
         var boxes = new List<Box>();
-        var locations = new Dictionary<SkinJointBounds[], InfluenceRange>();
+        var locations = new Dictionary<SkinJointBounds[], uint>();
+        var influenceRanges = new List<InfluenceRange>();
         var ranges = new BoundsGroup[groups.Length];
         for (int group = 0; group < groups.Length; group++)
             ranges[group] = new(AddBoxes(groups[group]), AddBoxes(selection[group]), errors[group]);
-        return new((uint)nodes.Length, ranges, [.. boxes]);
+        return new((uint)nodes.Length, ranges, [.. influenceRanges], [.. boxes]);
 
-        InfluenceRange AddBoxes(SkinJointBounds[] source)
+        uint AddBoxes(SkinJointBounds[] source)
         {
-            if (locations.TryGetValue(source, out InfluenceRange range)) return range;
-            range = new((uint)boxes.Count, (uint)source.Length);
+            if (locations.TryGetValue(source, out uint range)) return range;
+            range = (uint)influenceRanges.Count;
+            influenceRanges.Add(new((uint)boxes.Count, (uint)source.Length));
             foreach (SkinJointBounds box in source) boxes.Add(new(new(box.Minimum, 0), new(box.Maximum, 0), box.Joint, 0, 0, 0));
             locations.Add(source, range);
             return range;
@@ -388,13 +422,13 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     }
 
     public void OnDestroy(ref RenderPrepareSystemContext context) => context.World.ReleaseQuery(_query);
-    public void Dispose() { _pipeline.Dispose(); _jointPipeline.Dispose(); }
+    public void Dispose() { _pipeline.Dispose(); _jointPipeline.Dispose(); _rangePipeline.Dispose(); }
 
-    private enum Resource { Controls, Work, Boxes, Current, Previous, CurrentBones, PreviousBones, Joints, InverseBind, Transforms }
+    private enum Resource { Controls, Work, Boxes, Ranges, RangeResults, Current, Previous, CurrentBones, PreviousBones, Joints, InverseBind, Transforms }
     private readonly record struct GeometryKey(ReadOnlyMemory<byte> Bvh, ImmutableArray<uint> Clusters, ClusterSkinBounds Data);
     private readonly record struct InfluenceRange(uint First, uint Count);
-    private readonly record struct BoundsGroup(InfluenceRange Cull, InfluenceRange Lod, float Error);
-    private sealed record GeometryBounds(uint NodeCount, BoundsGroup[] Ranges, Box[] Boxes);
+    private readonly record struct BoundsGroup(uint Cull, uint Lod, float Error);
+    private sealed record GeometryBounds(uint NodeCount, BoundsGroup[] Groups, InfluenceRange[] Ranges, Box[] Boxes);
     private sealed class LodGroup
     {
         internal readonly List<SkinJointBounds[]> Boxes = [];
@@ -402,8 +436,9 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     }
     [StructLayout(LayoutKind.Sequential)] private readonly record struct Control(uint Joints, uint InverseBind, uint Output,
         uint Update, uint JointCount, uint Pad0, uint Pad1, uint Pad2);
-    [StructLayout(LayoutKind.Sequential)] private readonly record struct Work(uint Instance, uint FirstBox, uint BoxCount, uint Output,
-        uint FirstLodBox, uint LodBoxCount, float Error, uint Pad);
+    [StructLayout(LayoutKind.Sequential)] private readonly record struct Work(uint Instance, uint Cull, uint Lod, uint Output,
+        float Error, uint Pad0, uint Pad1, uint Pad2);
+    [StructLayout(LayoutKind.Sequential)] private readonly record struct RangeWork(uint Instance, uint FirstBox, uint BoxCount, uint Output);
     [StructLayout(LayoutKind.Sequential)] private readonly record struct Box(Vector4 Minimum, Vector4 Maximum, uint Joint, uint Pad0, uint Pad1, uint Pad2);
     private sealed class MeshBounds(Entity entity)
     {
@@ -418,7 +453,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         internal ulong Collection, Input, AcceptedInput;
     }
     private readonly record struct DefinitionCopy(GraphBufferInput Upload, GraphBufferId Definitions, GraphBufferId Current,
-        GraphBufferId Previous, GraphBufferId Transforms, ulong Bytes)
+        GraphBufferId Previous, GraphBufferId Transforms, GraphBufferId Ranges, ulong Bytes)
     {
         internal static void Declare(ref PassDefinition pass, ref DefinitionCopy data)
         {
@@ -427,6 +462,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             pass.Write(data.Current, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             pass.Write(data.Previous, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             pass.Write(data.Transforms, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+            pass.Write(data.Ranges, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
         }
         internal static void Record(ref CopyPassCommandScope commands, in DefinitionCopy data)
         {
@@ -435,6 +471,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             commands.ClearBuffer(commands.GetBuffer(data.Current), BufferRange.Whole, 0);
             commands.ClearBuffer(commands.GetBuffer(data.Previous), BufferRange.Whole, 0);
             commands.ClearBuffer(commands.GetBuffer(data.Transforms), BufferRange.Whole, 0);
+            commands.ClearBuffer(commands.GetBuffer(data.Ranges), BufferRange.Whole, 0);
         }
     }
 }
