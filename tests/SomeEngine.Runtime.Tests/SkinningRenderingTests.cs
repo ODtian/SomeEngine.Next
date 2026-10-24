@@ -22,7 +22,7 @@ using GltfMesh = SharpGLTF.Schema2.Mesh;
 
 namespace SomeEngine.Runtime.Tests;
 
-public sealed class SkinningRenderingTests
+public sealed partial class SkinningRenderingTests
 {
     [Fact]
     public async Task PosesOutsideBindBoundsRemainVisibleForTwoInstancesOfTheSameMesh()
