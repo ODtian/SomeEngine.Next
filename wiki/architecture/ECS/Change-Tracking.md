@@ -35,6 +35,9 @@
 调用方沿原 `RowIndices` 取得选中行，再索引 `ComponentWriteColumn<T>` 与 `BufferReadColumn<T>`；索引组件写列时沿同一 `WriteRef` 发布该行版本，索引只读 buffer 列时取得现有 `BufferView<T>`。
 列视图的有效期为当前查询回调。源码：[chunk 列入口](../../../src/SomeEngine.ECS/Queries/QueryChunkView.Columns.cs)。
 
+`WriteBufferColumn<T>()` 在相同边界绑定 buffer 写列及当前查询版本，各行返回原 `DynamicBuffer<T>`，实际写入沿其既有版本路径发布。
+`ReadEnabledColumn<T>()` 绑定组件读取权限及 enable-mask 索引，`ComponentEnabledColumn[row]` 读取该行的当前启用位。
+
 `ExecuteQuery` 的 managed 函数指针重载提供相同的无状态、`ref TState` 和显式系统基线形式，复用查询权限、当前版本和关系提交边界。一次查询回调分发一次，具体数据循环由回调保存类型。
 
 ## 组件类型写版本
