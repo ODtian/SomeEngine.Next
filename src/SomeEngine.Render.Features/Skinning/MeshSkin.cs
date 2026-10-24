@@ -43,7 +43,6 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
     private readonly HashSet<Entity> _targetSources = [];
     private readonly Dictionary<Entity, SourceMesh> _meshes = [];
     private readonly Dictionary<SkeletonInstance, SourceSection> _sections = [];
-    private readonly Dictionary<SkeletonInstance, SourceTarget> _gpuControls = [];
     private readonly Dictionary<Entity, SourceTarget> _targets = [];
     private readonly List<SkeletonInstance> _removedSections = [];
     private readonly List<Entity> _removedMeshes = [];
@@ -65,7 +64,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
         query.Write<RenderGpuPoseTarget>();
     }
 
-    public void Reset() { _input++; _gpuControls.Clear(); }
+    public void Reset() => _input++;
 
     public void Collect(QueryChunkView chunk)
     {
@@ -111,14 +110,14 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
             });
         }
         _canApplyChangesDirect = true;
-        foreach (Entity entity in _targetSources)
+        foreach ((Entity entity, SourceTarget sourceTarget) in _targets)
         {
-            SourceTarget sourceTarget = _targets[entity];
             ref readonly GpuPoseTarget target = ref sourceTarget.Data;
-            _gpuControls[target.Skeleton] = sourceTarget;
             SourceSection section = Section(target.Skeleton);
             sourceTarget.Section = section;
             _canApplyChangesDirect &= section.Entity != Entity.Null && sourceTarget.PublishedSection == section.Entity;
+            section.GpuTarget = sourceTarget;
+            section.GpuInput = _input;
             section.Target = entity;
             if (target.Rig is GpuPoseRig rig)
             {
@@ -146,8 +145,8 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
         {
             if (section.Input != _input) { _removedSections.Add(source); continue; }
             _canApplyChangesDirect &= section.Entity != Entity.Null && !section.Rebound;
-            ref readonly GpuPoseTarget gpu = ref (_gpuControls.TryGetValue(source, out SourceTarget? target)
-                ? ref target.Data : ref cpuTarget);
+            ref readonly GpuPoseTarget gpu = ref (section.GpuInput == _input
+                ? ref section.GpuTarget!.Data : ref cpuTarget);
             ModelPose model = source.ModelPose;
             bool isGpu = gpu.Clip is not null || gpu.StateMachine is not null || gpu.Blend is not null;
             bool copied = (!isGpu || source.CpuBones.Length != 0)
@@ -186,7 +185,8 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                 gpu.Evaluation, gpu.ExtractRootMotion, gpu.RootCorrection);
         }
         _removedMeshes.Clear();
-        foreach (Entity source in _meshes.Keys) if (!_meshSources.Contains(source)) _removedMeshes.Add(source);
+        if (fullCollection)
+            foreach (Entity source in _meshes.Keys) if (!_meshSources.Contains(source)) _removedMeshes.Add(source);
         _canApplyChangesDirect &= _removedSections.Count == 0 && _removedMeshes.Count == 0;
         return _sections.Count != 0 || _removedMeshes.Count != 0;
     }
@@ -330,7 +330,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
     public void Dispose()
     {
         _meshSources.Clear(); _targetSources.Clear(); _meshes.Clear(); _sections.Clear(); _targets.Clear();
-        _gpuControls.Clear(); _removedSections.Clear(); _removedMeshes.Clear();
+        _removedSections.Clear(); _removedMeshes.Clear();
     }
 
     private readonly record struct SourceJoint(SourceSection? Section, int Bone);
@@ -351,6 +351,8 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
     private sealed class SourceSection(SkeletonInstance source)
     {
         internal Entity Target;
+        internal SourceTarget? GpuTarget;
+        internal ulong GpuInput;
         internal readonly SkeletonInstance Source = source;
         internal Entity Entity;
         internal SourceSection? Parent;
