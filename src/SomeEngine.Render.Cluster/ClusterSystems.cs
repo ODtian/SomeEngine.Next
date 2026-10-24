@@ -219,7 +219,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
                 int fields = 0;
                 if (packet.ChangedSince<RenderTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.CurrentTransform;
                 if (packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.PreviousTransform;
-                if (packet.ChangedSince<RenderMesh>(lastSystemVersion) ||
+                if (packet.ChangedSince<RenderClusterGeometry>(lastSystemVersion) ||
                     packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastSystemVersion)) fields |= InstanceColumnChanges.Mesh;
                 if (producer.Second.GetChanges(packet, lastSystemVersion) != RenderInstanceChanges.None)
                     fields |= InstanceColumnChanges.Additional;
@@ -233,7 +233,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
             uint lastSystemVersion) =>
             columns.AllTransformsChanged || packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion)
             || packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion)
-            || packet.AllRowsChangedSince<RenderMesh>(lastSystemVersion);
+            || packet.AllRowsChangedSince<RenderClusterGeometry>(lastSystemVersion);
 
         public int CountGroups(ReadOnlyQueryPacket packet, int entityRow) => 1;
 
@@ -294,7 +294,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
             producer.First.Write(destination.Restrict(producer.First.Properties), packet,
                 all || (fields & InstanceColumnChanges.CurrentTransform) != 0 && packet.ChangedSince<RenderTransform>(lastVersion),
                 all || (fields & InstanceColumnChanges.PreviousTransform) != 0 && packet.ChangedSince<RenderPreviousTransform>(lastVersion),
-                all || (fields & InstanceColumnChanges.Mesh) != 0 && (packet.ChangedSince<RenderMesh>(lastVersion) ||
+                all || (fields & InstanceColumnChanges.Mesh) != 0 && (packet.ChangedSince<RenderClusterGeometry>(lastVersion) ||
                     packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastVersion)));
             if (all || (fields & InstanceColumnChanges.Additional) != 0 &&
                 producer.Second.GetChanges(packet, lastVersion) != RenderInstanceChanges.None)

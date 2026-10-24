@@ -59,7 +59,7 @@ interface IDomainEvaluate<TVertex>
     associatedtype TriangleData;
     associatedtype Surface;
 
-    TriangleData makeTriangle(TVertex first, TVertex second, TVertex third);
+    TriangleData makeTriangle(TVertex first, TVertex second, TVertex third, uint materialIndex);
     float3 cornerPosition(TriangleData triangle, uint corner);
     float3 position(TriangleData triangle, float3 barycentric);
     Surface eval(TriangleData triangle, float3 barycentric);

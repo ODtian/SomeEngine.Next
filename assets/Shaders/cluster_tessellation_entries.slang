@@ -5,11 +5,18 @@
 #ifndef CLUSTER_TESSELLATION_ENTRIES_SLANG
 #define CLUSTER_TESSELLATION_ENTRIES_SLANG
 
+#ifndef CLUSTER_VERTEX_ENCODING
+#define CLUSTER_VERTEX_ENCODING "someengine.vertex.standard.cluster.v1"
+#endif
+#ifndef CLUSTER_TESSELLATION_BOUNDS
+#define CLUSTER_TESSELLATION_BOUNDS "unbounded"
+#endif
+
 #include "cluster_tessellation_core.slang"
 #include "cluster_policy_raster_output.slang"
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void ClusterTessellationSeed(
@@ -21,7 +28,7 @@ void ClusterTessellationSeed(
 }
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void ClusterTessellationSplit(
@@ -34,7 +41,7 @@ void ClusterTessellationSplit(
 }
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -56,7 +63,7 @@ void ClusterTessellationDiceImageAtomic64(
 }
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -74,7 +81,7 @@ void ClusterTessellationDiceBufferAtomic64(
 }
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("vertex")]
 ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareVertex(
     uniform VertexEvaluate vertex,
@@ -143,7 +150,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
 }
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("unbounded")]
+[ConservativeBounds(CLUSTER_TESSELLATION_BOUNDS)]
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(32, 1, 1)]

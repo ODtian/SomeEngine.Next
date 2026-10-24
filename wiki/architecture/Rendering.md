@@ -82,6 +82,8 @@
 ## World and features
 - [[architecture/rendering/GameWorld-and-RenderWorld|GameWorld and RenderWorld]]
 - [[architecture/rendering/Extraction|Extraction]]
+- [[architecture/rendering/Geometry-Features|Geometry Features]]
+- [[architecture/Terrain|Terrain]]
 - [[architecture/rendering/Frame-CPU-Overlap|Frame CPU Overlap]]
 - [[architecture/rendering/Delayed-Feedback|Delayed Feedback]]
 - [[architecture/rendering/Multi-View|Multi-View]]

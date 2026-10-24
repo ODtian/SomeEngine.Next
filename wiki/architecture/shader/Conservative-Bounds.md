@@ -11,3 +11,9 @@
 
 ## Relations
 [[User-Stage-Interfaces]] · [[architecture/cluster/LOD-DAG]]
+
+## 材质位移范围
+
+[`Material.BoundsExpansion`](../../../src/SomeEngine.Resources/Material.cs) 返回材质位移的保守世界空间半径，默认值为零。具体材质从自己的几何参数推导该值；参数通过普通材质属性更新。Mesh 提取把所绑定材质中的最大半径加到 `MeshInstance.BoundsExpansion`，GPU 地形准备按同一规则设置 `RenderClusterGeometry.BoundsExpansion`；该字段进入现有实例数据和场景、Cluster 裁剪。
+
+Mesh 提取订阅材质变化，在位移半径改变时更新渲染几何的包围参数。GPU 地形准备从已经提取的材质引用取得当前半径。用户曲面的 `bounds`、`patchBounds` 和 `errorBounds` 同时给出细分所需的包围与误差；[地形材质示例](../terrain/Terrain-Materials.md) 通过同一世界空间位移参数提供两类结果。实现入口为 [MeshRenderExtractor](../../../src/SomeEngine.Render/Systems/MeshRenderExtractor.cs)、[RenderTerrainGeometry](../../../src/SomeEngine.Terrain/RenderTerrainGeometry.cs) 和 [cluster_bvh_cull_common](../../../assets/Shaders/cluster_bvh_cull_common.slang)。

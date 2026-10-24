@@ -6,7 +6,11 @@
     <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" />
     <ProjectReference Include="SceneContent/DefaultGame.SceneContent.csproj" Condition="'$(SomeEngineDevelopment)' == 'true'" />
     <Compile Remove="SceneContent/**/*.cs" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
     <Compile Remove="Content/**/*.cs" Condition="'$(SomeEngineDevelopment)' != 'true'" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../assets/Fonts/Example.otf" LogicalName="DefaultGame.Fonts.Example.otf" />
   </ItemGroup>
   <Target Name="WriteTestScenes" AfterTargets="Build">
     <PropertyGroup>

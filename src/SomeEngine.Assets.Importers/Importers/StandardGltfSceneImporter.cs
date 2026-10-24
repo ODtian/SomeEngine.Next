@@ -1,3 +1,4 @@
+using SomeEngine.Geometry.Cluster;
 using Microsoft.Extensions.DependencyInjection;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;

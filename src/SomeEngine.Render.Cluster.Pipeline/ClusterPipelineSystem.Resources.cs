@@ -804,6 +804,17 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphFrame graph,
         in ClusterRenderBinding binding)
     {
+        foreach (GraphPassId build in _resources.GeometryBuilds(graph.FrameIdentity))
+        {
+            graph.OrderAfter(_sceneBoundsPass, build);
+            if (_traversalSeedPass != default) graph.OrderAfter(_traversalSeedPass, build);
+            if (_continuationTraversalSeedPass != default) graph.OrderAfter(_continuationTraversalSeedPass, build);
+            foreach (GraphPassId pass in _pageHeapReaderPasses) graph.OrderAfter(pass, build);
+            foreach (GraphPassId pass in _traversalLevelPasses) graph.OrderAfter(pass, build);
+            foreach (GraphPassId pass in _primaryPostTraversalLevelPasses) graph.OrderAfter(pass, build);
+            foreach (GraphPassId pass in _continuationTraversalLevelPasses) graph.OrderAfter(pass, build);
+            foreach (GraphPassId pass in _continuationPostTraversalLevelPasses) graph.OrderAfter(pass, build);
+        }
         foreach (GraphPassId passId in _pageHeapReaderPasses)
         {
             PassDefinition pass = graph.GetPass(passId);
@@ -811,62 +822,62 @@ public sealed partial class ClusterPipelineSystem
                 PipelineSync.AllShading, ResourceAccess.ShaderResource);
         }
 
-        BufferRange bvhRange = binding.BvhRange;
-        if (!bvhRange.IsWhole && bvhRange.Size != 0)
+        BufferRangeSet bvhReads = _outputs.Geometry.BvhReads;
+        if (bvhReads.Count != 0)
         {
             PassDefinition sceneBounds = graph.GetPass(_sceneBoundsPass);
-            _ = sceneBounds.Read(_frameResources.Bvh, bvhRange, PipelineSync.ComputeShading, ResourceAccess.ShaderResource);
+            sceneBounds.ReadRanges(_frameResources.Bvh, bvhReads, PipelineSync.ComputeShading, ResourceAccess.ShaderResource);
             if (_traversalSeedPass != default)
             {
                 PassDefinition seed = graph.GetPass(_traversalSeedPass);
-                _ = seed.Read(
+                seed.ReadRanges(
                     _frameResources.Bvh,
-                    bvhRange,
+                    bvhReads,
                     PipelineSync.ComputeShading,
                     ResourceAccess.ShaderResource);
             }
             foreach (GraphPassId traversalLevel in _traversalLevelPasses)
             {
                 PassDefinition traversal = graph.GetPass(traversalLevel);
-                _ = traversal.Read(
+                traversal.ReadRanges(
                     _frameResources.Bvh,
-                    bvhRange,
+                    bvhReads,
                     PipelineSync.ComputeShading,
                     ResourceAccess.ShaderResource);
             }
             foreach (GraphPassId traversalLevel in _primaryPostTraversalLevelPasses)
             {
                 PassDefinition traversal = graph.GetPass(traversalLevel);
-                _ = traversal.Read(
+                traversal.ReadRanges(
                     _frameResources.Bvh,
-                    bvhRange,
+                    bvhReads,
                     PipelineSync.ComputeShading,
                     ResourceAccess.ShaderResource);
             }
             if (_continuationTraversalSeedPass != default)
             {
                 PassDefinition seed = graph.GetPass(_continuationTraversalSeedPass);
-                _ = seed.Read(
+                seed.ReadRanges(
                     _frameResources.Bvh,
-                    bvhRange,
+                    bvhReads,
                     PipelineSync.ComputeShading,
                     ResourceAccess.ShaderResource);
             }
             foreach (GraphPassId traversalLevel in _continuationTraversalLevelPasses)
             {
                 PassDefinition traversal = graph.GetPass(traversalLevel);
-                _ = traversal.Read(
+                traversal.ReadRanges(
                     _frameResources.Bvh,
-                    bvhRange,
+                    bvhReads,
                     PipelineSync.ComputeShading,
                     ResourceAccess.ShaderResource);
             }
             foreach (GraphPassId traversalLevel in _continuationPostTraversalLevelPasses)
             {
                 PassDefinition traversal = graph.GetPass(traversalLevel);
-                _ = traversal.Read(
+                traversal.ReadRanges(
                     _frameResources.Bvh,
-                    bvhRange,
+                    bvhReads,
                     PipelineSync.ComputeShading,
                     ResourceAccess.ShaderResource);
             }

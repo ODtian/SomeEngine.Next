@@ -81,13 +81,7 @@ bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
         packedCounts);
     tri.vertexCount = packedCounts & 0xFFu;
 
-    uint clusterOffset =
-        req.PageOffset + PageHeap.Load(req.PageOffset + 16u) +
-        DrawRequestClusterID(req) * PACKED_CLUSTER_STRIDE_BYTES;
-    uint localMaterial = LocalMaterial(
-        LoadClusterMaterials(PageHeap, req.PageOffset, clusterOffset),
-        PageHeap.Load(clusterOffset + 72u),
-        tri.triangleID);
+    uint localMaterial = GetClusterLocalMaterial(PageHeap, req.PageOffset, DrawRequestClusterID(req), tri.triangleID);
     uint slotOffset = LoadClusterMaterialSlotOffset(
         InstanceData,
         LoadRenderInstanceMetadata(
@@ -146,7 +140,7 @@ TDomain.TriangleData evaluateTriangleWithTransform<TVE, TDomain>(
         evaluator,
         makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi2),
         tri.visibleClusterIndex);
-    return domain.makeTriangle(v0, v1, v2);
+    return domain.makeTriangle(v0, v1, v2, tri.materialSlot);
 }
 
 TDomain.TriangleData evaluateTriangle<TVE, TDomain>(

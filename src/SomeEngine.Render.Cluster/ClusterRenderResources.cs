@@ -46,7 +46,7 @@ internal readonly ref struct ClusterRenderBinding
         Bvh = residency.Bvh;
         PageFaultCapacity = residency.PageFaultCapacity;
         ResidentPageRanges = residency.ResidentPageRanges;
-        BvhRange = residency.BvhRange;
+        BvhRanges = residency.BvhRanges;
         Publication = residency.Publication;
         PropertyData = instanceProperties.PropertyData ??
             throw new ArgumentException(
@@ -77,7 +77,7 @@ internal readonly ref struct ClusterRenderBinding
 
     internal BufferRange[] ResidentPageRanges { get; }
 
-    internal BufferRange BvhRange { get; }
+    internal BufferRange[] BvhRanges { get; }
 
     internal ClusterResidencyPublication? Publication { get; }
 
@@ -107,7 +107,7 @@ internal readonly ref struct ClusterRenderBinding
 /// Owns one Cluster algorithm-resource epoch. It borrows the Render-owned shared instance storage
 /// and owns only residency, mesh preparation, and Cluster's instance-field contributor.
 /// </summary>
-public sealed class ClusterRenderResources : IDisposable
+public sealed partial class ClusterRenderResources : IDisposable
 {
     private static readonly SomeEngine.Diagnostics.TraceSite UseTrace = new("render", "Cluster.ResourceUse");
     private static readonly ConditionalWeakTable<RenderWorld, ClusterWorldClaim> s_worldClaims = new();
@@ -121,7 +121,6 @@ public sealed class ClusterRenderResources : IDisposable
     private readonly RenderInstanceResources _instances;
     private readonly RenderInstanceBorrowerLease _instanceBorrower;
     private readonly RenderWorld _renderWorld;
-    private readonly ClusterMeshCache _meshes;
     private readonly ClusterMeshPrepareSystem _meshPrepare;
     private readonly RenderTimeline _residencyTimeline;
     private readonly ClusterEpochId _epoch;
@@ -179,7 +178,6 @@ public sealed class ClusterRenderResources : IDisposable
         }
 
         ClusterResidency? residency = null;
-        ClusterMeshCache? meshes = null;
         ClusterMeshPrepareSystem? meshPrepare = null;
         try
         {
@@ -205,14 +203,12 @@ public sealed class ClusterRenderResources : IDisposable
                 device,
                 residencyTimeline,
                 selected.Residency);
-            meshes = new ClusterMeshCache(residency);
-            meshPrepare = new ClusterMeshPrepareSystem(renderWorld, meshes);
+            meshPrepare = new ClusterMeshPrepareSystem(renderWorld, residency);
 
             _residency = residency;
             _instances = instances.Storage;
             _instanceBorrower = instanceBorrower;
             _renderWorld = renderWorld;
-            _meshes = meshes;
             _meshPrepare = meshPrepare;
             _residencyTimeline = residencyTimeline;
             _epoch = residency.EpochId;
@@ -239,7 +235,7 @@ public sealed class ClusterRenderResources : IDisposable
 
     internal RenderTimeline InstanceTimeline => _instances.Timeline;
 
-    internal int PublishedMeshCount => _meshes.PublishedMeshCount;
+    internal int PublishedMeshCount => _residency.PublishedMeshCount;
 
     internal int HierarchyLevels => _residency.HierarchyLevels;
 
@@ -309,6 +305,7 @@ public sealed class ClusterRenderResources : IDisposable
                         scope.AcquireTimeline(_residencyTimeline);
 
                     bool prepared = _residency.PreparePublication();
+                    _meshPrepare.ApplyGeometry();
                     return new ClusterPrepareResult(prepared);
                 }
                 finally
@@ -364,7 +361,7 @@ public sealed class ClusterRenderResources : IDisposable
         }
     }
 
-    internal ClusterGeometryProducer CreateGeometryProducer() => new(_meshes);
+    internal ClusterGeometryProducer CreateGeometryProducer() => new();
 
     /// <summary>
     /// Exposes a non-cacheable binding for the opaque metadata contract carried by the actual
@@ -792,16 +789,14 @@ public sealed class ClusterRenderResources : IDisposable
 
     internal readonly struct ClusterGeometryProducer : IRenderInstanceProducer
     {
-        private readonly ClusterMeshCache _meshes;
         private readonly ResolvedRenderInstanceProperty<RenderTransform> _currentTransform;
         private readonly ResolvedRenderInstanceProperty<RenderPreviousTransform> _previousTransform;
         private readonly ResolvedRenderInstanceProperty<uint> _bvhRoot;
         private readonly ResolvedRenderInstanceProperty<float> _boundsExpansion;
         private readonly ResolvedRenderInstanceProperty<RenderDeformBounds> _deformBounds;
 
-        internal ClusterGeometryProducer(ClusterMeshCache meshes)
+        public ClusterGeometryProducer()
         {
-            _meshes = meshes;
             RenderInstancePropertyLayout clusterProperties = ClusterRenderFeature.GeometryLayout;
             _currentTransform = clusterProperties.Resolve<RenderTransform>(
                 RenderInstanceTransformProperties.CurrentTransformKey);
@@ -819,7 +814,7 @@ public sealed class ClusterRenderResources : IDisposable
             uint lastSystemVersion) =>
             packet.ChangedSince<RenderTransform>(lastSystemVersion)
             || packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)
-            || packet.ChangedSince<RenderMesh>(lastSystemVersion)
+            || packet.ChangedSince<RenderClusterGeometry>(lastSystemVersion)
             || packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastSystemVersion)
                 ? RenderInstanceChanges.Values
                 : RenderInstanceChanges.None;
@@ -849,7 +844,7 @@ public sealed class ClusterRenderResources : IDisposable
             if (previous) destination.Write(_previousTransform, packet.Read<RenderPreviousTransform>());
             if (!mesh) return;
 
-            ReadOnlySpan<RenderMesh> renderMeshes = packet.Read<RenderMesh>();
+            ReadOnlySpan<RenderClusterGeometry> geometries = packet.Read<RenderClusterGeometry>();
             uint[]? rentedRoots = null;
             float[]? rentedExpansions = null;
             scoped Span<uint> roots;
@@ -868,11 +863,11 @@ public sealed class ClusterRenderResources : IDisposable
             }
             try
             {
-                _meshes.ResolveInstanceGeometry(
-                    packet.Entities,
-                    renderMeshes,
-                    roots,
-                    expansions);
+                for (int row = 0; row < geometries.Length; row++)
+                {
+                    roots[row] = geometries[row].Geometry.RootBvh;
+                    expansions[row] = geometries[row].BoundsExpansion;
+                }
                 destination.Write(_bvhRoot, roots);
                 destination.Write(_boundsExpansion, expansions);
                 if (packet.TryRead<RenderDeformBounds>(out var bounds)) destination.Write(_deformBounds, bounds);

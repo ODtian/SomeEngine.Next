@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SomeEngine.Diagnostics;
+using SomeEngine.Core.Diagnostics;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Runtime;
 
@@ -16,13 +17,16 @@ public sealed class SceneTestPlatform
     public static TestScene[] ReadScenes(string path) =>
         JsonSerializer.Deserialize(File.ReadAllText(path), SceneJsonContext.Default.TestSceneArray)!;
 
-    public SceneTestPlatform(IReadOnlyList<TestScene> scenes, RuntimeStartupOptions options)
+    public SceneTestPlatform(IReadOnlyList<TestScene> scenes, RuntimeStartupOptions? options = null)
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
         Scenes = scenes.ToArray();
         Application = new ApplicationScene(scenes[0].ContentDirectory)
         {
-            Options = options with { WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true },
+            Options = (options ?? RuntimeStartupOptions.Parse([])) with { WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true, SurfacePanel = true, WorldNameplates = true },
+            InterfaceEnabled = true,
+            Initialize = frame => _views = new SceneViews(frame.World, frame.Extraction, frame.Width, frame.Height, Application.Options),
+            Shutdown = _ => { _views?.Dispose(); _views = null; },
             SceneStarted = BeginScene,
             UpdateFrame = UpdateFrame,
             DrawDebugUi = Draw,
@@ -34,6 +38,9 @@ public sealed class SceneTestPlatform
     public IReadOnlyList<TestScene> Scenes { get; }
     public int SelectedScene { get; private set; }
     public ApplicationScene Application { get; }
+    private SceneViews? _views;
+    public bool HudOverlayEnabled => Options.HudOverlay;
+    public bool HudNumbersChange => Options.HudNumbersChange;
     private RuntimeStartupOptions Options { get => Application.Options; set => Application.Options = value; }
     private bool ReloadRequested => Application.ReloadRequested;
     internal TestScene Current => Scenes[SelectedScene];
@@ -75,12 +82,14 @@ public sealed class SceneTestPlatform
 
     private void UpdateFrame(ApplicationFrame frame)
     {
+        _views?.Update(frame.Index, frame.Width, frame.Height);
         SetRenderingInfo(frame.Width, frame.Height, frame.Adapter.Name, frame.Adapter.DriverVersion);
         if (!IsMeasuring)
         {
             for (int index = 0; index < Math.Min(Scenes.Count, 3); index++)
                 if (frame.WasKeyPressed(0x71 + index)) SelectScene(index);
             if (frame.WasKeyPressed(0x77)) CaptureImage();
+            if (frame.WasKeyPressed(0x75)) SetHudOverlay(!HudOverlayEnabled, HudNumbersChange);
             if (frame.WasKeyPressed(0x78)) StartMeasurements();
             if (frame.WasKeyPressed(0x79)) StartMeasurements(recordTrace: true);
         }
@@ -103,6 +112,14 @@ public sealed class SceneTestPlatform
         => (_renderWidth, _renderHeight, _graphicsDevice, _graphicsDriver) = (width, height, device, driver);
 
     public void CaptureImage() => ImageRequested = true;
+
+    public void SetHudOverlay(bool enabled, bool changeNumbers = true)
+    {
+        DevelopmentCheck.Require(!IsMeasuring, "Change the HUD between scene measurements.");
+        if (Options.HudOverlay == enabled && Options.HudNumbersChange == changeNumbers) return;
+        Options = Options with { HudOverlay = enabled, HudNumbersChange = changeNumbers };
+        Application.Reload();
+    }
 
     private string ImageDestination()
     {
@@ -137,6 +154,7 @@ public sealed class SceneTestPlatform
         _sceneStarted = 0;
         _testStarted = Stopwatch.GetTimestamp();
         IsMeasuring = true;
+        Application.MeasureInterface = true;
         Application.DebugUiEnabled = false;
         SelectScene(0);
     }
@@ -296,6 +314,7 @@ public sealed class SceneTestPlatform
         File.WriteAllText(LastReport, report.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Performance report: {LastReport}");
         IsMeasuring = false;
+        Application.MeasureInterface = false;
         Application.DebugUiEnabled = true;
         Options = _interactiveOptions!;
         SelectedScene = _interactiveScene;

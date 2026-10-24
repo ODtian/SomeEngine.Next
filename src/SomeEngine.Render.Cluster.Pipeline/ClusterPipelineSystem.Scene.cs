@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SomeEngine.Graphics;
@@ -79,8 +79,9 @@ public sealed partial class ClusterPipelineSystem
     private void BindSceneBounds(ref RenderGraphFrame graph, RenderInstanceBatch batch, bool hasTargetViews)
     {
         bool hasPrevious = ReferenceEquals(_sceneBatch, batch);
-        bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision || _sceneGeometryRevision != GeometryRevision
-            || _sceneDeformRevision != (_deformBounds?.Revision ?? 0);
+        bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision ||
+            _sceneGeometryRevision != GeometryRevision || _sceneDeformRevision != (_deformBounds?.Revision ?? 0) ||
+            !_resources.GeometryBuilds(graph.FrameIdentity).IsEmpty;
         // Movement changes bounds, not the instance membership of the spatial groups.
         // Keep their order until batch replacement changes the row mapping; the GPU refits
         // the existing groups below. Geometry residency changes also preserve that mapping.

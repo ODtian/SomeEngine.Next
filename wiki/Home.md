@@ -5,6 +5,7 @@
 ## Architecture
 
 - [[architecture/Rendering|Rendering]]
+- [[architecture/Terrain|Terrain]]
 - [[architecture/RHI/Index|RHI]]
 - [[architecture/ECS-Architecture|ECS]]
 - [[architecture/Product-Boundary|Product Boundary]]

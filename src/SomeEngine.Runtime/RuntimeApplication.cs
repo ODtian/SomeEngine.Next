@@ -51,7 +51,7 @@ internal static class RuntimeApplication
             int frames = 0;
             do
             {
-                if (application is not null) options = application.Options;
+                if (script is null && application is not null) options = application.Options;
                 if (application is not null) application.ReloadRequested = false;
                 string contentRoot = Path.GetFullPath(script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot());
                 DateTime catalogWriteTime = File.GetLastWriteTimeUtc(Path.Combine(contentRoot, "Library", "AssetManifest", AssetManifest.CatalogFileName));
@@ -489,54 +489,17 @@ internal static class RuntimeApplication
         bool forceHardwareRaster, Func<Material, float, bool>? animateMaterial, ApplicationScene? application, SceneScript? script)
     {
         using World mainWorld = loadedWorld;
-        using ScreenText? screenText = options.SurfacePanel || options.HudOverlay ? new ScreenText(mainWorld) : null;
-        using SurfacePanelExample? surfacePanel = options.SurfacePanel
-            ? new SurfacePanelExample(mainWorld, boot.Width, boot.Height, screenText!) : null;
-        using HudOverlay? hud = options.HudOverlay ? new HudOverlay(mainWorld, boot.Width, boot.Height, screenText!) : null;
-        using SphereNameplates? nameplates = options.WorldNameplates ? new SphereNameplates(mainWorld) : null;
-        var shaderOptions = new ClusterPipelineOptions { ForceHardwareRaster = forceHardwareRaster };
-        foreach (Shader shader in scene.Materials.Select(static material => material.Shader!).Distinct())
-            ClusterPipelineSystem.PrepareMaterialShader(backend, device, shader, shaderOptions);
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor(),
             new SurfaceRenderExtractor(), new SkinRenderExtractor(), new SkinBoundsRenderExtractor());
-        if (screenText is not null) extraction.Add(new GlyphRenderExtractor(screenText.AtlasSource));
 
 
-        bool includeInterface = application?.InterfaceEnabled == true || options.SurfacePanel || options.WorldNameplates || options.HudOverlay;
+        bool includeInterface = application?.InterfaceEnabled == true;
         using var elementSystems = new GameFrameSystems(mainWorld, includeInterface);
         using WindowInput? elementInput = includeInterface ? new WindowInput(mainWorld) : null;
         bool measure = application?.MeasureInterface == true;
         GameUpdateTiming gameTiming = default;
-        bool synchronousGame = options.SynchronousFrames || script is not null || application?.UpdateFrame is not null;
-
-        GameUpdateTiming UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds)
-        {
-            long allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
-            long started = measure ? Stopwatch.GetTimestamp() : 0;
-            surfacePanel?.Resize(canvasWidth, canvasHeight);
-            hud?.Resize(canvasWidth, canvasHeight);
-            if (options.HudNumbersChange) hud?.Update(frameNumber);
-            nameplates?.Update();
-            if (!measure)
-            {
-                elementSystems.UpdateViews(deltaSeconds);
-                extraction.Extract(mainWorld);
-                return default;
-            }
-            ViewTiming views = elementSystems.MeasureViews(deltaSeconds);
-            views = views with
-            {
-                TotalMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-                AllocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocated,
-            };
-            allocated = GC.GetAllocatedBytesForCurrentThread();
-            started = Stopwatch.GetTimestamp();
-            using var trace = EngineTrace.Begin(ApplicationTrace.Extraction);
-            extraction.Extract(mainWorld);
-            return new GameUpdateTiming(views, Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-                GC.GetAllocatedBytesForCurrentThread() - allocated);
-        }
+        bool synchronousGame = options.SynchronousFrames || script is not null || application?.UpdateFrame is not null || application?.FrameCompleted is not null;
 
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
             scene.Camera.View,
@@ -556,7 +519,7 @@ internal static class RuntimeApplication
             coordinator,
             renderWorld,
             instanceLayout,
-            script is null ? new RenderInstanceOptions
+            script is null && application is null ? new RenderInstanceOptions
             {
                 RowCapacity = Math.Max(1, scene.MeshInstanceCount),
                 BatchCapacity = 1,
@@ -572,6 +535,7 @@ internal static class RuntimeApplication
                 Residency = new ClusterResidencyOptions
                 {
                     PageHeapCapacityBytes = script?.GeometryMemoryBytes ?? application!.GeometryMemoryBytes,
+                    BvhCapacityBytes = application?.GeometryBvhMemoryBytes ?? 64ul * 1024 * 1024,
                 },
             });
         var materialAssignments = new ClusterMaterialAssignments();
@@ -579,14 +543,12 @@ internal static class RuntimeApplication
         var instanceSystem = new ClusterInstanceSystem<RenderInstanceProducerBundle<ClusterMaterialOffsetProducer, SkinInstanceProducer>>(
             cluster,
             new QueryDefinitionBuilder().Read<RenderInstance>().Read<RenderTransform>().Read<RenderPreviousTransform>()
-                .Read<RenderMesh>().ReadBuffer<RenderMaterialBinding>().Optional<RenderSkinBinding>(QueryAccess.Read).Build(),
+                .Read<RenderClusterGeometry>().ReadBuffer<RenderMaterialBinding>().Optional<RenderSkinBinding>(QueryAccess.Read).Build(),
             instanceLayout,
             new(materialAssignments.CreateProducer(), new SkinInstanceProducer()));
         var prepareSystems = new RenderPrepareSystems(renderWorld, instances, extraction);
         var viewSystem = new RuntimeViewPrepareSystem(viewEntity);
         _ = prepareSystems.Add(viewSystem);
-        _ = prepareSystems.Add(new ClusterResidencySystem(cluster));
-        _ = prepareSystems.Add(materialSystem);
 
         Queue graphicsQueue = backend.GetQueue(device, QueueType.Graphics);
         Queue computeQueue = backend.GetQueue(device, QueueType.Compute);
@@ -602,12 +564,9 @@ internal static class RuntimeApplication
                 Label: "SomeEngine Runtime Render Graph"));
         using var skinning = new SkinningFeature(backend, device, renderGraph);
         using var skinBounds = new SkinBoundsFeature(backend, device, renderGraph, skinning);
-        _ = prepareSystems.Add(skinning);
-        _ = prepareSystems.Add(skinBounds);
-        _ = prepareSystems.Add(instanceSystem);
-        using SurfaceMaterial? surfaceMaterial = options.SurfacePanel || options.WorldNameplates || options.HudOverlay
+        using SurfaceMaterial? surfaceMaterial = includeInterface
             ? SurfaceMaterial.Create(device.Capabilities.CompileTarget) : null;
-        using GlyphsMaterial? glyphMaterial = screenText is not null
+        using GlyphsMaterial? glyphMaterial = includeInterface
             ? GlyphsMaterial.Create(device.Capabilities.CompileTarget) : null;
         using CanvasRenderer? surfaces = surfaceMaterial is null ? null
             : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat, glyphMaterial);
@@ -640,9 +599,9 @@ internal static class RuntimeApplication
             pipeline,
             lighting);
         stageResources.Add(virtualShadows);
-        RenderFrameSystems frameSystems = CreateFrameSystems(
-            pipeline,
-            virtualShadows);
+        var frameSystems = new RenderFrameSystems(renderWorld, instances);
+        var geometry = new ApplicationGeometryContext(backend, device, renderDevice, cluster, renderGraph,
+            mainWorld, renderWorld, extraction, prepareSystems, frameSystems, () => scene.Camera.Position);
         var graphCompletionSlots = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         var graphCompletions = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         FrameOutputVerifier? outputVerifier = null;
@@ -684,6 +643,32 @@ internal static class RuntimeApplication
                 EnableFrameMetricsReadback = metrics,
             }, skinBounds);
 
+        GameUpdateTiming UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds)
+        {
+            long allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
+            long started = measure ? Stopwatch.GetTimestamp() : 0;
+            if (!measure)
+            {
+                elementSystems.UpdateViews(deltaSeconds);
+                geometry.UpdateGame(deltaSeconds);
+                extraction.Extract(mainWorld);
+                return default;
+            }
+            ViewTiming views = elementSystems.MeasureViews(deltaSeconds);
+            views = views with
+            {
+                TotalMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                AllocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocated,
+            };
+            allocated = GC.GetAllocatedBytesForCurrentThread();
+            started = Stopwatch.GetTimestamp();
+            geometry.UpdateGame(deltaSeconds);
+            using var trace = EngineTrace.Begin(ApplicationTrace.Extraction);
+            extraction.Extract(mainWorld);
+            return new GameUpdateTiming(views, Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                GC.GetAllocatedBytesForCurrentThread() - allocated);
+        }
+
         void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
         {
             latestGraphStatistics = diagnostics.Statistics;
@@ -692,11 +677,11 @@ internal static class RuntimeApplication
             if (latestGraphStatistics.AnalysisReused) reusedAnalysisFrames++;
         }
 
-        RenderFrameSystems CreateFrameSystems(
+        void AddFrameSystems(
+            RenderFrameSystems systems,
             ClusterPipelineSystem receiver,
             VirtualShadowFeature virtualShadowFeature)
         {
-            var systems = new RenderFrameSystems(renderWorld, instances);
             _ = systems.Add(skinning);
             _ = systems.Add(skinBounds);
             _ = systems.Add(lightSystem);
@@ -708,30 +693,36 @@ internal static class RuntimeApplication
                 virtualShadowFeature,
                 lightSystem));
             _ = systems.Add(receiver);
-            return systems;
         }
 
         int frameIndex = 0;
         uint submittedFrames = 0;
         var sceneEdit = new SceneEdit(scene, window);
-        var applicationFrame = new ApplicationFrame(mainWorld, elementSystems, sceneEdit, input, cluster, startup, device.Adapter)
+        var applicationFrame = new ApplicationFrame(mainWorld, elementSystems, extraction, sceneEdit, input, cluster, startup, device.Adapter)
             { Width = boot.Width, Height = boot.Height };
-        sceneEdit.Begin();
-        try { application?.Initialize?.Invoke(applicationFrame); }
-        finally { sceneEdit.End(); }
-        elementSystems.UpdateViews(0);
-        if (!synchronousGame)
-        {
-            if (options.ScenePlayback is not null)
-                scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
-                    orbitCamera: options.ScenePlayback == "camera");
-            gameTiming = UpdateInterface(0, boot.Width, boot.Height, 0);
-        }
-
         int actionIndex = 0;
         try
         {
+            geometry.Install(application?.GeometryFeatures ?? []);
+            _ = prepareSystems.Add(new ClusterResidencySystem(cluster));
+            _ = prepareSystems.Add(skinning);
+            _ = prepareSystems.Add(skinBounds);
+            _ = prepareSystems.Add(materialSystem);
+            _ = prepareSystems.Add(instanceSystem);
+            AddFrameSystems(frameSystems, pipeline, virtualShadows);
             frameSystems.Initialize();
+            sceneEdit.Begin();
+            try { application?.Initialize?.Invoke(applicationFrame); }
+            finally { sceneEdit.End(); }
+            if (synchronousGame) elementSystems.UpdateViews(0);
+            else
+            {
+                if (options.ScenePlayback is not null)
+                    scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
+                        orbitCamera: options.ScenePlayback == "camera");
+                gameTiming = UpdateInterface(0, boot.Width, boot.Height, 0);
+            }
+
             outputVerifier = options.VerifyFrameOutput || options.FrameOutputPath is not null
                 ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
                 : null;
@@ -1044,6 +1035,7 @@ internal static class RuntimeApplication
                     graphCompletions,
                     coordinator,
                     frameSystems,
+                    geometry,
                     pipeline,
                     streamingConsumer,
                     virtualShadows,
@@ -1269,11 +1261,14 @@ internal static class RuntimeApplication
             outputVerifier?.Dispose();
             coordinator.WaitForTrackedSubmissions();
             application?.Shutdown?.Invoke(applicationFrame);
+            geometry.FinishGame();
             ui?.Dispose();
             presentation?.Dispose();
             temporal?.Dispose();
             frameSystems.Dispose();
             Shutdown(prepareSystems, cluster, instances, coordinator);
+            extraction.Dispose();
+            geometry.DisposeFeatures();
             scene.Dispose();
             if (device.Status == DeviceStatus.Active)
                 backend.CollectCompleted(device);
@@ -1334,6 +1329,7 @@ internal static class RuntimeApplication
         QueueCompletion[] completions,
         RenderFrameCoordinator coordinator,
         RenderFrameSystems systems,
+        ApplicationGeometryContext geometry,
         ClusterPipelineSystem pipeline,
         ClusterStreamingFeedbackConsumer streamingConsumer,
         VirtualShadowFeature virtualShadows,
@@ -1380,6 +1376,7 @@ internal static class RuntimeApplication
                         Diagnostics: graphDiagnostics));
                 try
                 {
+                    geometry.Observe(ref graphFrame);
                     if (reportMilestones)
                         Console.WriteLine("First frame: recording render systems.");
                     if (image is { } acquired) presentation.Bind(ref graphFrame, acquired, graphicsQueue);

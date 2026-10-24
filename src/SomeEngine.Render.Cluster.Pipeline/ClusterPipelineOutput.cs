@@ -112,7 +112,9 @@ public sealed class ClusterGeometryCapabilities
     private BufferRange[] _lastResidentPageRanges = [];
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
     private BufferRangeSet _lastResidentPageReads = BufferRangeSet.Empty;
-    private BufferRange _bvhRange;
+    private BufferRange[] _lastBvhRanges = [];
+    private BufferRangeSet _bvhReads = BufferRangeSet.Empty;
+    private BufferRangeSet _lastBvhReads = BufferRangeSet.Empty;
 
     internal ClusterGeometryCapabilities(
         GraphBufferId packedViews,
@@ -187,13 +189,13 @@ public sealed class ClusterGeometryCapabilities
     public void ReadPageHeap(ref PassDefinition pass, PipelineSync sync) =>
         pass.ReadRanges(PageHeap, _residentPageReads, sync, ResourceAccess.ShaderResource);
 
-    public bool HasBvhData => !_bvhRange.IsWhole && _bvhRange.Size != 0;
+    public bool HasBvhData => _bvhReads.Count != 0;
 
     internal BufferRangeSet ResidentPageReads => _residentPageReads;
 
-    internal BufferRange BvhRange => _bvhRange;
+    internal BufferRangeSet BvhReads => _bvhReads;
 
-    internal void SetFrameRanges(BufferRange[] pageRanges, in BufferRange bvhRange)
+    internal void SetFrameRanges(BufferRange[] pageRanges, BufferRange[] bvhRanges)
     {
         ArgumentNullException.ThrowIfNull(pageRanges);
         if (!ReferenceEquals(pageRanges, _lastResidentPageRanges))
@@ -202,12 +204,17 @@ public sealed class ClusterGeometryCapabilities
             _lastResidentPageReads = new BufferRangeSet(pageRanges);
         }
         _residentPageReads = _lastResidentPageReads;
-        _bvhRange = bvhRange;
+        if (!ReferenceEquals(bvhRanges, _lastBvhRanges))
+        {
+            _lastBvhRanges = bvhRanges;
+            _lastBvhReads = new BufferRangeSet(bvhRanges);
+        }
+        _bvhReads = _lastBvhReads;
     }
 
     internal void ClearFrame()
     {
         _residentPageReads = BufferRangeSet.Empty;
-        _bvhRange = default;
+        _bvhReads = BufferRangeSet.Empty;
     }
 }

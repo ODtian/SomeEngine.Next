@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Library</OutputType>
@@ -29,10 +29,10 @@
     <ProjectReference Include="..\SomeEngine.Render.Features\SomeEngine.Render.Features.csproj" />
     <ProjectReference Include="..\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="..\SomeEngine.RenderGraph.Diagnostics\SomeEngine.RenderGraph.Diagnostics.csproj" />
+    <ProjectReference Include="..\SomeEngine.Terrain\SomeEngine.Terrain.csproj" />
     <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="../../assets/Fonts/Example.otf" LogicalName="SomeEngine.Runtime.Fonts.Example.otf" />
     <Content Include="../../assets/Fonts/OFL-Example.txt" Link="Fonts/OFL-Example.txt"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="imgui.ini" Condition="Exists('imgui.ini')">

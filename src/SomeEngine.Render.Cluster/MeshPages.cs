@@ -96,12 +96,14 @@ internal sealed class MeshPages
     private readonly HashSet<uint> _pendingEvictions = new();
     private readonly HashSet<uint> _lowestDetailPageIds = new();
     private readonly List<uint> _offsets = [];
-    private readonly List<LinkedListNode<uint>> _lruNodes = [];
+    private readonly List<LinkedListNode<uint>?> _lruNodes = [];
     private readonly LinkedList<uint> _residentLru = new();
+    private uint _registeredPages;
 
     public uint Count => (uint)_offsets.Count;
+    public uint RegisteredCount => _registeredPages;
     public uint ResidentCount => (uint)_residentPages.Count;
-    public uint MissingCount => Count - ResidentCount;
+    public uint MissingCount => RegisteredCount - ResidentCount;
     public int PendingLoadCount => _pendingLoads.Count;
     public int PendingEvictionCount => _pendingEvictions.Count;
 
@@ -189,6 +191,7 @@ internal sealed class MeshPages
         }
         foreach (uint pageId in registration.LowestDetailPageIds)
             _lowestDetailPageIds.Add(pageId);
+        _registeredPages += checked((uint)registration.PageCount);
     }
 
     public bool TryRegistration(
@@ -269,7 +272,7 @@ internal sealed class MeshPages
 
     public bool TrySource(uint pageId, out uint size, out MeshPageReadSource source)
     {
-        if (pageId >= _pageRegistrationIndices.Count)
+        if (pageId >= _pageRegistrationIndices.Count || _pageRegistrationIndices[(int)pageId] < 0)
         {
             size = 0;
             source = default;
@@ -282,6 +285,37 @@ internal sealed class MeshPages
         size = checked((uint)descriptor.Size);
         source = new MeshPageReadSource(registration.Source, localPageIndex);
         return true;
+    }
+
+    internal bool IsRemoved(uint pageId) =>
+        pageId < _pageRegistrationIndices.Count && _pageRegistrationIndices[(int)pageId] < 0;
+
+    internal RegisteredMeshPages RemoveMesh(Mesh mesh)
+    {
+        int index = _registrationByMesh[mesh];
+        RegisteredMeshPages registration = _registrations[index];
+        _registrationByMesh.Remove(mesh);
+        _registrations[index] = default;
+        _registeredPages -= checked((uint)registration.PageCount);
+        for (uint page = registration.FirstPageId; page < registration.FirstPageId + registration.PageCount; page++)
+        {
+            _pageRegistrationIndices[(int)page] = -1;
+            _lowestDetailPageIds.Remove(page);
+        }
+        return registration;
+    }
+
+    internal ResidencyReservation? RemovePage(uint pageId, out bool uploadReady)
+    {
+        uploadReady = _pendingLoads.Remove(pageId);
+        _residentPages.Remove(pageId);
+        _pendingEvictions.Remove(pageId);
+        Remove(pageId);
+        _lruNodes[(int)pageId] = null;
+        _offsets[(int)pageId] = 0;
+        _gpuReservations.TryGetValue(pageId, out ResidencyReservation? reservation);
+        _gpuReservations.Remove(pageId);
+        return reservation;
     }
 
     public void StageResident(
@@ -468,7 +502,7 @@ internal sealed class MeshPages
             _pendingEvictions.Contains(pageId))
             return;
 
-        LinkedListNode<uint> node = _lruNodes[checked((int)pageId)];
+        LinkedListNode<uint> node = _lruNodes[checked((int)pageId)]!;
         if (node.List is not null)
         {
             _residentLru.Remove(node);
@@ -535,6 +569,7 @@ internal sealed class MeshPages
         _residentLru.Clear();
         _offsets.Clear();
         _lruNodes.Clear();
+        _registeredPages = 0;
     }
 
     private void Ensure(uint pageId)
@@ -545,8 +580,8 @@ internal sealed class MeshPages
 
     private void Remove(uint pageId)
     {
-        LinkedListNode<uint> node = _lruNodes[checked((int)pageId)];
-        if (node.List is null)
+        LinkedListNode<uint>? node = _lruNodes[checked((int)pageId)];
+        if (node?.List is null)
             return;
 
         _residentLru.Remove(node);

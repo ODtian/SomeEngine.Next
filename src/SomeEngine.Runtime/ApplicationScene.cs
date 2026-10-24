@@ -1,5 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.Graphics;
+using SomeEngine.Render.Systems;
 using SomeEngine.Render.Cluster;
 
 namespace SomeEngine.Runtime;
@@ -7,9 +8,13 @@ namespace SomeEngine.Runtime;
 /// <summary>Application content, rendering settings and callbacks executed on the application thread.</summary>
 public sealed class ApplicationScene(string contentDirectory)
 {
+    private readonly List<IApplicationGeometryFeature> _geometryFeatures = [];
+    internal IReadOnlyList<IApplicationGeometryFeature> GeometryFeatures => _geometryFeatures;
+
     public string ContentDirectory { get; set; } = contentDirectory;
     public RuntimeStartupOptions Options { get; set; } = RuntimeStartupOptions.Parse([]);
     public uint GeometryMemoryBytes { get; set; } = 256u * 1024 * 1024;
+    public ulong GeometryBvhMemoryBytes { get; set; } = 64ul * 1024 * 1024;
     public string? StartupTraceOutput { get; set; }
     public bool DebugUiEnabled { get; set; } = true;
     public bool MeasureInterface { get; set; }
@@ -23,6 +28,9 @@ public sealed class ApplicationScene(string contentDirectory)
     public Action<ApplicationResult>? SceneCompleted { get; set; }
     public bool ReloadRequested { get; internal set; }
 
+    /// <summary>Installs the feature for each scene run, before extraction and rendering begin.</summary>
+    public void InstallGeometry(IApplicationGeometryFeature feature) => _geometryFeatures.Add(feature);
+
     /// <summary>Loads the current content and settings after this scene run completes.</summary>
     public void Reload() => ReloadRequested = true;
 }
@@ -34,12 +42,14 @@ public sealed class ApplicationFrame
     private readonly ClusterRenderResources _rendering;
     private readonly ApplicationStartupTiming _startup;
 
-    internal ApplicationFrame(World world, GameFrameSystems systems, SceneEdit scene, RuntimeInput input, ClusterRenderResources rendering,
+    internal ApplicationFrame(World world, GameFrameSystems systems, RenderExtractionSystems extraction, SceneEdit scene, RuntimeInput input, ClusterRenderResources rendering,
         ApplicationStartupTiming startup, AdapterInfo adapter)
-        => (World, Systems, Scene, _input, _rendering, _startup, Adapter) = (world, systems, scene, input, rendering, startup, adapter);
+        => (World, Systems, Extraction, Scene, _input, _rendering, _startup, Adapter) = (world, systems, extraction, scene, input, rendering, startup, adapter);
 
     public World World { get; }
     public GameFrameSystems Systems { get; }
+    /// <summary>Registers source extractors during Initialize, before the first extraction.</summary>
+    public RenderExtractionSystems Extraction { get; }
     public double DeltaSeconds { get; internal set; }
     public SceneEdit Scene { get; }
     public AdapterInfo Adapter { get; }

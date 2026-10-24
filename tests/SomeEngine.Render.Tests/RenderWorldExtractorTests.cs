@@ -20,6 +20,56 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
 {
     private readonly TestAssets assets = new();
     [Fact]
+    public void SharedMaterialRemainsUntilBothGeometryExtractorsReleaseTheirEntities()
+    {
+        using World main = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor(), new CustomGeometryExtractor());
+        var material = new StandardMaterial();
+        Entity mesh = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
+        SetSourceBindings(main, mesh, material, default!, 1);
+        Entity custom = main.CreateEntity(new CustomGeometry(material));
+        ExtractAndApply(extraction, main, render);
+
+        main.DestroyEntity(mesh);
+        ExtractAndApply(extraction, main, render);
+        Assert.Same(material, render.ReadMaterial(material.MaterialId));
+
+        main.DestroyEntity(custom);
+        ExtractAndApply(extraction, main, render);
+        Assert.Throws<KeyNotFoundException>(() => render.ReadMaterial(material.MaterialId));
+    }
+
+    private readonly record struct CustomGeometry(Material Material) : IComponent;
+
+    private sealed class CustomGeometryExtractor : IRenderExtractionSystem
+    {
+        private readonly List<(Entity Source, Material Material)> _values = [];
+        public void DeclareReads(RenderExtractionQuery query)
+        {
+            query.ReadOptional<CustomGeometry>();
+            query.Write<RenderMaterialReference>();
+        }
+        public void Reset() => _values.Clear();
+        public void Collect(QueryChunkView chunk)
+        {
+            if (!chunk.TryRead<CustomGeometry>(out var values)) return;
+            for (int index = 0; index < values.Length; index++)
+                _values.Add((chunk.Entities[index], values[index].Material));
+        }
+        public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) => false;
+        public void ApplyChanges(RenderExtractionContext context) => Apply(context);
+        public void Apply(RenderExtractionContext context)
+        {
+            foreach (var value in _values)
+            {
+                Entity entity = context.RetainMirror(value.Source);
+                context.SetMaterials(entity, [value.Material]);
+            }
+        }
+    }
+
+    [Fact]
     public void MeshPagesApplyTheirRevisionThroughExtraction()
     {
         using World game = new();
