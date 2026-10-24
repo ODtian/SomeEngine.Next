@@ -2,6 +2,8 @@
 
 此独立程序集通过公开 API 执行动画、ECS 与视图行为，并提供纯算法和完整字段路径测量。消费者自己的值运算、缓动、Spring、带托管历史的算法和批次算法定义在 `ConsumerMotions.cs`。
 
+姿势的独立 NativeAOT 消费者见 [PoseExample](PoseExample/README.md)：用户 Importer、codec、Leaf 和条件经过普通图、继承骨架与预测采样，最终通过公共 Application 和 Cluster 呈现。该目录包含示例动作、shader 定义、顶点布局和资源重建步骤。
+
 默认执行字段、字节、生成通道、managed 查询与系统入口、强类型 `.Animate`、引用 `State.Value`、算法生命周期、时钟、阶段与事件检查。ECS 与 Views 的行为源文件由测试工程和本消费者共同编译。
 
 ## 执行
