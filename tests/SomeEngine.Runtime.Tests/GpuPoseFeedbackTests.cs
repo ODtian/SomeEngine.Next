@@ -36,7 +36,11 @@ public sealed partial class SkinningRenderingTests
                 using var builder = new AnimationBuilder(frame.World);
                 using (builder.Sequence())
                 {
-                    using (builder.Parallel()) builder.Leaf<FeedbackParameters, FeedbackLeaf>(target, new(clip, trace));
+                    using (builder.Parallel())
+                    {
+                        builder.Leaf<FeedbackParameters, FeedbackLeaf>(target, new(clip, trace));
+                        builder.Delay(.25f);
+                    }
                     builder.Delay(.5f);
                 }
                 graph = builder.Compile();
