@@ -129,7 +129,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 for (int index = 0; index < entities.Length; index++)
                 {
                     Entity entity = entities[index];
-                    RenderBoneSectionData data = values[index];
+                    ref readonly RenderBoneSectionData data = ref values[index];
                     if (!feature._sections.TryGetValue(entity, out Section? section))
                     {
                         feature._sections.Add(entity, section = new(entity));
@@ -189,7 +189,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 for (int index = 0; index < entities.Length; index++)
                 {
                     Section section = feature._sections[entities[index]];
-                    RenderBoneSectionData data = section.Data;
+                    ref readonly RenderBoneSectionData data = ref section.Data;
                     values[index] = new(section.Range, data.Starts, data.InputNumber, section.FrameTime,
                         data.StateMachine is null && data.Blend is null ? data.SampleTime : data.PlaybackTime, section.Index, section.FrameVersion);
                 }
@@ -204,7 +204,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _goalValues.Clear(); _modelOffsets.Clear(); _rootCorrections.Clear(); _movements.Clear(); _xpbdFrames.Clear();
         foreach (Section section in _sectionOrder)
         {
-            RenderBoneSectionData data = section.Data;
+            ref readonly RenderBoneSectionData data = ref section.Data;
             uint flags = (section.Evaluate ? 1u : 0u) | (!section.HasResult ? 2u : 0u) | (data.IsGpu ? 4u : 0u)
                 | (data.StateMachine is not null ? 8u : 0u) | (data.Playing ? 16u : 0u)
                 | (section.AcceptedInput.AnimationStarts != data.Identity.AnimationStarts
@@ -254,7 +254,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         {
             if (section.EvaluationVisited) return;
             section.EvaluationVisited = true;
-            RenderBoneSectionData data = section.Data;
+            ref readonly RenderBoneSectionData data = ref section.Data;
             section.FrameInput = new(data.InputNumber, data.Starts, data.Identity.AnimationStarts, data.Clip, data.StateMachine, data.Blend, data.Rig);
             section.AdvanceSource = !section.HasResult || section.AcceptedInput != section.FrameInput;
             if (section.XpbdCount != 0)

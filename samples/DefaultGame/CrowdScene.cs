@@ -130,11 +130,16 @@ public sealed class CrowdScene(CrowdExample example) : IDisposable
             CrowdControls controls = this;
             context.World.ExecuteQuery(_characters, ref controls, static (scoped QueryCursor rows, ref CrowdControls controls) =>
             {
-                foreach (QueryRow row in rows.Rows)
+                foreach (QueryChunkView chunk in rows.Chunks)
                 {
-                    int state = CrowdExample.RequestedState(row.Read<CrowdCharacter>().Index, controls.Seconds);
-                    row.Buffer<GpuStateInstance>()[0].Controls[0] = state;
-                    controls.Counts[state]++;
+                    ReadOnlySpan<CrowdCharacter> characters = chunk.Read<CrowdCharacter>();
+                    BufferWriteColumn<GpuStateInstance> states = chunk.WriteBufferColumn<GpuStateInstance>();
+                    foreach (int row in chunk.RowIndices)
+                    {
+                        int state = CrowdExample.RequestedState(characters[row].Index, controls.Seconds);
+                        states[row][0].Controls[0] = state;
+                        controls.Counts[state]++;
+                    }
                 }
             });
         }

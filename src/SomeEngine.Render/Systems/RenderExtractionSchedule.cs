@@ -187,7 +187,6 @@ public sealed class RenderExtractionSystems : IDisposable
         query.Write<RenderTextureVersions>();
         query.Write<RenderMaterialReference>();
         query.ReadDestination<RenderMaterialIndex>();
-        query.ReadOptionalBuffer<MeshMaterialBinding>();
         query.ReadOptional<LightCookie>();
         for (int index = 0; index < _systems.Count; index++)
             _systems[index].DeclareReads(query);
