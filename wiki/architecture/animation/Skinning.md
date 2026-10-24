@@ -23,6 +23,10 @@ Rendering world 的网格组件保存 source joint 到区段实体及区段内�
 已有区段的逐帧值更新通过 `IRenderExtractionSystem.CanApplyChangesDirect` 进入共同值更新
 边界；创建、移除及重绑沿原有结构事务发布，组件 hook 仍由共同提取调度选择事务路径。
 
+渲染准备从已声明的 chunk 列读取区段和网格绑定，再按同一成员列写出 `RenderPoseSection`。
+`PrepareEvaluations` 在这个阶段确定当前输入、模型版本和采样身份；帧资源更新直接使用
+同一区段持有的结果来生成 GPU 控制上传。
+
 渲染准备阶段生成每个网格的 `RenderSkinBinding`，其中两个 uint 分别是 joint 映射起点
 和逆绑定矩阵起点。`SkinInstanceProducer` 将它写入普通实例属性存储，与 Cluster 的
 空间、几何及材质属性组合。静态网格使用零值。

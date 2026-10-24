@@ -154,7 +154,7 @@ public sealed partial class VirtualShadowFeature
             LightLayerRowCount = layerRows,
         };
         _uniformData.Write(ref graph, projection.Uniforms, in uniforms);
-        graph.SetPassData(projection.Pass, new VirtualShadowDispatchPassData(new(
+        graph.SetPassDataIfChanged(projection.Pass, new VirtualShadowDispatchPassData(new(
             DivideRoundUp(width, 8u), checked(DivideRoundUp(height, 8u) * layerRows), dispatchDepth)));
     }
 

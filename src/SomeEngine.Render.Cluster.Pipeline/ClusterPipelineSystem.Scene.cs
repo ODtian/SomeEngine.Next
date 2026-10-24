@@ -114,7 +114,7 @@ public sealed partial class ClusterPipelineSystem
             UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
             PreviousWorldTranslation = hasPrevious ? _sceneOrigin.RelativeTo(worldOrigin) : Vector3.Zero,
         };
-        graph.SetPassData(GraphData.SceneBounds.Pass, new ClusterDispatchParameters(new DispatchArguments(
+        graph.SetPassDataIfChanged(GraphData.SceneBounds.Pass, new ClusterDispatchParameters(new DispatchArguments(
             (checked((uint)batch.InstanceCount) + 63u) / 64u, 1, 1)));
         bool hasGeometry = batch.InstanceCount != 0 && GraphData.Outputs.Geometry.HasBvhData;
         graph.SetRegionEnabled(GraphData.SceneBoundsRegion, changed && hasGeometry);

@@ -738,10 +738,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             uint workerGroups = Math.Max(1u, Math.Min(256u, checked((uint)((work + 3u) / 4u))));
             foreach (GraphPassId phase in GraphData.Resources.Work.Phases)
                 if (phase != default)
-                    graph.SetPassData(phase, new ClusterDispatchParameters(new DispatchArguments(workerGroups, 1, 1)));
+                    graph.SetPassDataIfChanged(phase, new ClusterDispatchParameters(new DispatchArguments(workerGroups, 1, 1)));
             UpdateShadeInputs(ref graph, _installedShadeStages!);
             uint viewGroups = ClusterRenderContext.GetViewWorkGroupCount(checked((uint)primaryViewCount));
-            graph.SetPassData(
+            graph.SetPassDataIfChanged(
                 GraphData.PrimarySeed.Pass,
                 new ClusterDispatchParameters(new DispatchArguments(
                     checked((checked((uint)binding.DispatchExtent) + 63u) / 64u),
@@ -749,7 +749,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     Math.Max(1u, (viewGroups + 65534u) / 65535u))));
             foreach (ClusterLayerDispatch dispatch in GraphData.LayerDispatches)
             {
-                graph.SetPassData(
+                graph.SetPassDataIfChanged(
                     dispatch.Pass,
                     new ClusterDispatchParameters(new DispatchArguments(
                         dispatch.GroupX,
@@ -758,7 +758,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             }
             foreach (ClusterLayerDispatch dispatch in GraphData.WinnerDispatches)
             {
-                graph.SetPassData(
+                graph.SetPassDataIfChanged(
                     dispatch.Pass,
                     new ClusterFullscreenParameters(
                         _outputDescription.Width,

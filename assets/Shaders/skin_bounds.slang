@@ -87,13 +87,15 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
 {
     uint count, stride;
     SkinBoundsWork.GetDimensions(count, stride);
-    if (thread.x >= count) return;
-    SkinBoundsGroup work = SkinBoundsWork[thread.x];
+    uint group = thread.x / 4u;
+    uint lane = WaveGetLaneIndex() & 3u;
+    if (group >= count) return;
+    SkinBoundsGroup work = SkinBoundsWork[group];
     SkinBoundsControl control = SkinBoundsControls[work.instance];
     if (control.update == 0u) return;
     float3 currentMin = 1e30.xxx, currentMax = -1e30.xxx;
     float3 previousMin = 1e30.xxx, previousMax = -1e30.xxx;
-    for (uint index = 0u; index < work.boxCount; index++)
+    for (uint index = lane; index < work.boxCount; index += 4u)
     {
         SkinBoundsBox box = SkinBoundsBoxes[work.firstBox + index];
         SkinBoundsTransform transform = SkinJointTransforms[control.joints + box.joint];
@@ -103,7 +105,7 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
     float3 currentLodMin = 1e30.xxx, currentLodMax = -1e30.xxx;
     float3 previousLodMin = 1e30.xxx, previousLodMax = -1e30.xxx;
     float currentStretch = 0.0, previousStretch = 0.0;
-    for (uint index = 0u; index < work.lodBoxCount; index++)
+    for (uint index = lane; index < work.lodBoxCount; index += 4u)
     {
         SkinBoundsBox box = SkinBoundsBoxes[work.firstLodBox + index];
         SkinBoundsTransform transform = SkinJointTransforms[control.joints + box.joint];
@@ -112,6 +114,22 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
         currentStretch = max(currentStretch, transform.stretch.x);
         previousStretch = max(previousStretch, transform.stretch.y);
     }
+    [unroll]
+    for (uint width = 1u; width < 4u; width *= 2u)
+    {
+        uint other = WaveGetLaneIndex() ^ width;
+        currentMin = min(currentMin, WaveReadLaneAt(currentMin, other));
+        currentMax = max(currentMax, WaveReadLaneAt(currentMax, other));
+        previousMin = min(previousMin, WaveReadLaneAt(previousMin, other));
+        previousMax = max(previousMax, WaveReadLaneAt(previousMax, other));
+        currentLodMin = min(currentLodMin, WaveReadLaneAt(currentLodMin, other));
+        currentLodMax = max(currentLodMax, WaveReadLaneAt(currentLodMax, other));
+        previousLodMin = min(previousLodMin, WaveReadLaneAt(previousLodMin, other));
+        previousLodMax = max(previousLodMax, WaveReadLaneAt(previousLodMax, other));
+        currentStretch = max(currentStretch, WaveReadLaneAt(currentStretch, other));
+        previousStretch = max(previousStretch, WaveReadLaneAt(previousStretch, other));
+    }
+    if (lane != 0u) return;
     ModelBounds current, previous;
     current.minimum = float4(currentMin, work.error * currentStretch);
     current.maximum = float4(currentMax, 0.0);
