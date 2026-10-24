@@ -38,9 +38,6 @@ public readonly record struct FootLockParameters(FootLockRig Rig, PosePrediction
     ICollisionQueries Scene, FootSupportSettings Support, float ContactWindow = 1,
     float Duration = float.PositiveInfinity);
 
-/// <summary>The authored freedom and the current support-local contact anchor.</summary>
-public readonly record struct FootLockContact(FootContactKind Kind, FootContactTarget Support);
-
 [BufferCapacity(1)]
 public struct FootLockInstance : IBufferElement
 {
@@ -50,7 +47,7 @@ public struct FootLockInstance : IBufferElement
     public Entity Target;
     /// <summary>The movement stage's entity providing the current WorldTransform; initially the target.</summary>
     public Entity Actor;
-    public ReadOnlySpan<FootLockContact> Contacts => Samples.Contacts;
+    public ReadOnlySpan<FootContactTarget> Contacts => Samples.Contacts;
     internal FootLockSamples Samples;
     internal uint Starts;
 }

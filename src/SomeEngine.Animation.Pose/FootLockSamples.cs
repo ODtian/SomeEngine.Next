@@ -5,7 +5,7 @@ namespace SomeEngine.Animation.Pose;
 internal sealed class FootLockSamples
 {
     internal readonly FootLockParameters Parameters;
-    internal readonly FootLockContact[] Contacts;
+    internal readonly FootContactTarget[] Contacts;
     internal readonly GpuPoseGoal[] Goals;
     internal Vector3 PelvisOffset;
     private readonly PosePredictionBatch _poses;
@@ -22,7 +22,7 @@ internal sealed class FootLockSamples
     internal FootLockSamples(in FootLockParameters parameters, SkeletonInstance skeleton)
     {
         Parameters = parameters;
-        Contacts = new FootLockContact[parameters.Rig.Legs.Length];
+        Contacts = new FootContactTarget[parameters.Rig.Legs.Length];
         Goals = new GpuPoseGoal[parameters.Rig.Legs.Length];
         _models = new Matrix4x4[1 + Goals.Length * 5];
         _slidingOffsets = new Vector3[Goals.Length];
@@ -77,13 +77,13 @@ internal sealed class FootLockSamples
         for (int foot = 0; foot < Goals.Length; foot++)
         {
             FootContactKind kind = _prediction.Sample(foot, time, calculationTime).Contact.Kind;
-            FootLockContact before = Contacts[foot];
-            if (kind == FootContactKind.Free) { Contacts[foot] = new(kind, default); continue; }
+            FootContactTarget before = Contacts[foot];
+            if (kind == FootContactKind.Free) { Contacts[foot] = new(time, kind, false, default, default, default); continue; }
             Vector3 point = Vector3.Transform(Pivot(foot, kind), actor);
-            if (_queries.TryRefresh(before.Support, out FootContactTarget current))
+            if (_queries.TryRefresh(in before, out FootContactTarget current))
             {
                 if (kind == before.Kind && kind != FootContactKind.Sliding)
-                { Contacts[foot] = new(kind, current); continue; }
+                { Contacts[foot] = current; continue; }
                 if (before.Kind == FootContactKind.Sliding)
                     point += Vector3.TransformNormal(_slidingOffsets[foot], current.Support.Transform);
                 else
@@ -100,7 +100,7 @@ internal sealed class FootLockSamples
         {
             int foot = _queryFeet[query];
             FootContactTarget target = _targets[query];
-            Contacts[foot] = new(_requests[query].Kind, target);
+            Contacts[foot] = target;
             if (target.Kind == FootContactKind.Sliding && target.HasSupport)
             {
                 Matrix4x4.Invert(target.Support.Transform, out Matrix4x4 inverse);
@@ -112,10 +112,10 @@ internal sealed class FootLockSamples
         Vector3 up = Vector3.Normalize(Vector3.TransformNormal(Parameters.Support.Up, worldToActor));
         for (int foot = 0; foot < Goals.Length; foot++)
         {
-            FootLockContact contact = Contacts[foot];
-            if (!contact.Support.HasSupport) continue;
+            FootContactTarget contact = Contacts[foot];
+            if (!contact.HasSupport) continue;
             GpuPoseGoal source = Goals[foot];
-            Goals[foot] = ContactGoal(foot, in source, contact.Kind, contact.Support, in actor, in worldToActor);
+            Goals[foot] = ContactGoal(foot, in source, contact.Kind, in contact, in actor, in worldToActor);
             preferred += Vector3.Dot(Goals[foot].Position - source.Position, up);
             supports++;
         }
