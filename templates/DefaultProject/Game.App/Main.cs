@@ -31,7 +31,11 @@ TestScene[] crowdScenes =
 ];
 if (crowdOnly) scenes = crowdScenes.ToList();
 else if (!regressionOnly) scenes.AddRange(crowdScenes);
-var platform = new SceneTestPlatform(scenes, startup) { ExitAfterMeasurements = measure };
+var platform = new SceneTestPlatform(scenes, startup)
+{
+    ExitAfterMeasurements = measure,
+    MeasurementFrames = crowdOnly ? new(64, 128) : null,
+};
 if (measure) platform.StartMeasurements();
 return await Application.RunAsync(engineArgs, static (material, seconds) =>
 {

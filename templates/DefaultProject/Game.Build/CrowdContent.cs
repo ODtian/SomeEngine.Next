@@ -149,7 +149,7 @@ public static class CrowdContent
         world.CreateEntity(new SceneCamera
         {
             Position = new(0, 30, -35), Target = new(0, .8f, 20), Up = Vector3.UnitY,
-            VerticalFieldOfView = .8f, NearPlane = 10, FarPlane = 120,
+            VerticalFieldOfView = .8f, NearPlane = 40, FarPlane = 90,
         });
         world.CreateEntity(new DirectionalLight(new(.35f, -.85f, .4f), new(1, .96f, .9f), 3));
         AssetEntry entry = project.Manifest.List(WorldAsset.FileType).Single(value => value.Name == "Default");

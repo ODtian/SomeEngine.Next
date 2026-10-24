@@ -516,6 +516,7 @@ internal static class RuntimeApplication
             }) : null;
         bool measure = platform?.IsMeasuring == true || measurements is not null;
         GameUpdateTiming gameTiming = default;
+        double simulationSeconds = 0;
         long gameStarted = 0, nextGameStarted = 0;
 
         GameUpdateTiming UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds)
@@ -526,6 +527,8 @@ internal static class RuntimeApplication
             applicationFrame.Width = canvasWidth;
             applicationFrame.Height = canvasHeight;
             applicationFrame.DeltaSeconds = deltaSeconds;
+            simulationSeconds += deltaSeconds;
+            applicationFrame.SimulationSeconds = simulationSeconds;
             sceneEdit.Begin(clearImages: script is null);
             try { application?.UpdateFrame?.Invoke(applicationFrame); }
             finally { sceneEdit.End(); }
@@ -550,7 +553,7 @@ internal static class RuntimeApplication
             using var trace = EngineTrace.Begin(ApplicationTrace.Extraction);
             extraction.Extract(mainWorld);
             return new GameUpdateTiming(views, Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-                GC.GetAllocatedBytesForCurrentThread() - allocated);
+                GC.GetAllocatedBytesForCurrentThread() - allocated, simulationSeconds);
         }
 
         if (!options.SynchronousFrames && script is null)
@@ -1144,7 +1147,7 @@ internal static class RuntimeApplication
                     platform.RecordFrame(new(frameIndex, cpuMs,
                         prepareMs, reconcileMs, executeMs, gameTiming.Views, gameTiming.ExtractionMs,
                         gameTiming.ExtractionAllocatedBytes), cluster.CaptureDiagnostics());
-                measurements?.RecordCpu(graphFrameIdentity, frameIndex,
+                measurements?.RecordCpu(graphFrameIdentity, frameIndex, gameTiming.SimulationSeconds,
                     cpuMs,
                     gameTiming.Views.TotalMs, gameTiming.Views.AnimationMs, gameTiming.ExtractionMs,
                     prepareMs, reconcileMs, executeMs);
@@ -1274,7 +1277,8 @@ internal static class RuntimeApplication
         }
     }
 
-    private readonly record struct GameUpdateTiming(ViewTiming Views, double ExtractionMs, long ExtractionAllocatedBytes);
+    private readonly record struct GameUpdateTiming(ViewTiming Views, double ExtractionMs, long ExtractionAllocatedBytes,
+        double SimulationSeconds);
 
     private static void Prepare(
         RenderPrepareSystems systems,

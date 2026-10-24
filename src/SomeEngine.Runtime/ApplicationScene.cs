@@ -33,4 +33,5 @@ public sealed class ApplicationFrame
     public int Width { get; internal set; }
     public int Height { get; internal set; }
     public double DeltaSeconds { get; internal set; }
+    public double SimulationSeconds { get; internal set; }
 }

@@ -8,17 +8,20 @@ namespace SomeEngine.Runtime;
 /// <param name="GameMs">Game callbacks, animation and interface updates before extraction.</param>
 public sealed record ApplicationFrameTiming(
     int Frame, double CpuMs, double GameMs, double AnimationMs, double ExtractionMs,
-    double PrepareMs, double ReconcileMs, double ExecuteMs, RenderGraphGpuTimes Gpu, ClusterFrameMetrics Geometry);
+    double PrepareMs, double ReconcileMs, double ExecuteMs, RenderGraphGpuTimes Gpu, ClusterFrameMetrics Geometry)
+{
+    public double SimulationSeconds { get; init; }
+}
 
 internal sealed class ApplicationFrameMeasurements(Action<ApplicationFrameTiming> receive)
 {
     private readonly Dictionary<ulong, FrameTimes> _frames = [];
 
-    internal void RecordCpu(ulong identity, int frame, double cpuMs, double gameMs, double animationMs, double extractionMs,
+    internal void RecordCpu(ulong identity, int frame, double simulationSeconds, double cpuMs, double gameMs, double animationMs, double extractionMs,
         double prepareMs, double reconcileMs, double executeMs)
     {
         FrameTimes times = Get(identity);
-        times.Cpu = new(frame, cpuMs, gameMs, animationMs, extractionMs, prepareMs, reconcileMs, executeMs);
+        times.Cpu = new(frame, simulationSeconds, cpuMs, gameMs, animationMs, extractionMs, prepareMs, reconcileMs, executeMs);
         times.HasCpu = true;
         Deliver(identity, times);
     }
@@ -49,7 +52,7 @@ internal sealed class ApplicationFrameMeasurements(Action<ApplicationFrameTiming
         _frames.Remove(identity);
         CpuFrameTime cpu = times.Cpu;
         receive(new(cpu.Frame, cpu.CpuMs, cpu.GameMs, cpu.AnimationMs, cpu.ExtractionMs,
-            cpu.PrepareMs, cpu.ReconcileMs, cpu.ExecuteMs, times.Gpu, times.Geometry.Value));
+            cpu.PrepareMs, cpu.ReconcileMs, cpu.ExecuteMs, times.Gpu, times.Geometry.Value) { SimulationSeconds = cpu.SimulationSeconds });
     }
 
     private sealed class FrameTimes
@@ -60,6 +63,6 @@ internal sealed class ApplicationFrameMeasurements(Action<ApplicationFrameTiming
         internal ClusterFrameMetrics? Geometry;
     }
 
-    private readonly record struct CpuFrameTime(int Frame, double CpuMs, double GameMs, double AnimationMs, double ExtractionMs,
+    private readonly record struct CpuFrameTime(int Frame, double SimulationSeconds, double CpuMs, double GameMs, double AnimationMs, double ExtractionMs,
         double PrepareMs, double ReconcileMs, double ExecuteMs);
 }

@@ -35,7 +35,7 @@ API 的程序生成示例夹具。24 段人体表面各连接四根骨骼，共 
 $queue = '<primary checkout>/tools/Invoke-Benchmark.ps1'
 $env:DOTNET_PROCESSOR_COUNT = '4'
 & $queue --cpu --session crowd dotnet build templates/DefaultProject/Game.Build/Game.Build.csproj -c Release --no-restore --disable-build-servers /m:1 /nodeReuse:false /p:UseSharedCompilation=false
-& $queue --session crowd dotnet templates/DefaultProject/Game.Build/bin/Release/net10.0/Game.Build.dll --crowd templates/DefaultProject .
+& $queue --session crowd templates/DefaultProject/Game.Build/bin/Release/net10.0/Game.Build.exe --crowd templates/DefaultProject .
 & $queue --cpu --session crowd dotnet build templates/DefaultProject/Game.App/Game.App.csproj -c Release --no-restore --disable-build-servers /m:1 /nodeReuse:false /p:UseSharedCompilation=false
 ```
 
@@ -49,18 +49,22 @@ $env:DOTNET_PROCESSOR_COUNT = '4'
 $env:DOTNET_PROCESSOR_COUNT = '4'
 $env:DOTNET_TieredCompilation = '0'
 $env:DOTNET_ReadyToRun = '0'
-& $queue --session crowd templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe --crowd --measure --hardware-adapter --no-vsync --no-debug-ui --no-taa --no-vsm --async-compute --fixed-step 0.016666667
+& $queue --session crowd templates/DefaultProject/Game.App/bin/Release/net10.0/Game.App.exe --crowd --measure --hardware-adapter --hidden-window --no-vsync --no-debug-ui --no-taa --no-vsm --async-compute --fixed-step 0.016666667
 ```
 
 角色场景的启动内容固定为 1920×1080，相机位于 `(0,30,-35)`，观察 `(0,.8,20)`，
-垂直视角为 `.8` 弧度，近远面为 `10/120`，覆盖角色区域并保持关节相接表面的深度精度；
+垂直视角为 `.8` 弧度，近远面为 `40/90`，覆盖角色区域并保持关节相接表面的深度精度；
 几何 LOD threshold 为 `1`。每条路径使用同一网格、变换、材质参数、
-四段动作和控制规则。平台等待 16 个就绪帧及至少 3 秒预热，再采集 2 秒；集合总时间预算为 45 秒。
+四段动作和控制规则。`--crowd` 在同一模拟进度比较两条路径：预热 64 帧，采集第 64–191 帧，
+共 128 帧。`SceneTestPlatform.MeasurementFrames` 接受可选的 `SceneFrameRange`；固定窗口
+按帧数结束，并要求窗口内素材已经就绪。三场景反馈继续等待 16 个就绪帧及至少 3 秒预热，
+再采集 2 秒，集合时间预算为 45 秒。
 
 ## 完成后的数据
 
 `ApplicationScene.FrameMeasured` 提供同一 `FrameIdentity` 的 CPU 时间、GPU 时间和
-`ClusterFrameMetrics`。平台报告保存完整帧和各 CPU 阶段的 min、mean、median、P95、max，
+`ClusterFrameMetrics`。`SimulationSeconds` 是实际累计 Game 步长；报告保存采样窗口的
+首末帧和源时钟范围。平台报告保存完整帧和各 CPU 阶段的 min、mean、median、P95、max，
 以及所有实际 GPU pass 的命令时间分布；已有 `TimeGroup` 将同类变形或光栅 pass 合并。
 完整 GPU 时间覆盖应用上传、pose、bounds、剔除、变形、光栅、着色、屏障和最终输出。
 跨队列命令阶段可以重叠，完整 GPU 跨度由校准后的最早和最晚边界给出。

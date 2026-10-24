@@ -15,6 +15,9 @@ public sealed record TestScene(string Name, string ContentDirectory, bool Animat
     public Func<string, ApplicationScene>? CreateApplication { get; init; }
 }
 
+/// <summary>A zero-based rendered-frame range shared by every scene in a measurement.</summary>
+public readonly record struct SceneFrameRange(int First, int Count);
+
 /// <summary>Shared scene selection and render settings for the interactive test application.</summary>
 public sealed class SceneTestPlatform
 {
@@ -64,6 +67,8 @@ public sealed class SceneTestPlatform
     private string? _graphicsDriver;
     public bool IsMeasuring { get; private set; }
     public bool ExitAfterMeasurements { get; init; }
+    /// <summary>Samples this fixed frame range; the default uses the platform's wall-clock warmup and sample.</summary>
+    public SceneFrameRange? MeasurementFrames { get; init; }
     public string? LastReport { get; private set; }
     public int GeometryMemoryMegabytes { get; private set; } = 256;
     public bool HudOverlayEnabled => Options.HudOverlay;
@@ -183,8 +188,10 @@ public sealed class SceneTestPlatform
         _wasStreaming = !ready;
         _readyFrames = ready ? _readyFrames + 1 : 0;
         double elapsed = Stopwatch.GetElapsedTime(_sceneStarted).TotalSeconds;
-        if (_readyFrames >= MinimumReadyFrames && _renderedFrames >= MinimumRenderedFrames &&
-            Stopwatch.GetElapsedTime(_renderingStarted).TotalSeconds >= WarmupSeconds)
+        bool inSample = MeasurementFrames is { } range
+            ? frame.Frame >= range.First && frame.Frame < range.First + range.Count
+            : Stopwatch.GetElapsedTime(_renderingStarted).TotalSeconds >= WarmupSeconds;
+        if (_readyFrames >= MinimumReadyFrames && _renderedFrames >= MinimumRenderedFrames && inSample)
         {
             if (_sampleStarted == 0) _sampleStarted = Stopwatch.GetTimestamp();
             _frames.Add(frame);
@@ -194,11 +201,13 @@ public sealed class SceneTestPlatform
             _sampleStarted = 0;
             _frames.Clear();
         }
-        bool sampled = _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= SampleSeconds;
-        bool expired = elapsed >= _sceneTimeLimit || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= MaximumTestSeconds;
+        bool sampled = MeasurementFrames is { } fixedFrames ? _frames.Count == fixedFrames.Count
+            : _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= SampleSeconds;
+        bool expired = MeasurementFrames is { } endingFrames ? frame.Frame >= endingFrames.First + endingFrames.Count - 1
+            : elapsed >= _sceneTimeLimit || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= MaximumTestSeconds;
         if (!sampled && !expired) return;
         double[] times = _frames.Select(f => f.ElapsedMs).Order().ToArray();
-        _results.Add(new(Current.Name, sampled ? "Measured" : "Not converged within time limit", times.Length,
+        _results.Add(new(Current.Name, sampled ? "Measured" : MeasurementFrames.HasValue ? "Frame window incomplete" : "Not converged within time limit", times.Length,
             times.Length == 0 ? null : times.Average(),
             times.Length == 0 ? null : times[times.Length / 2],
             times.Length == 0 ? null : times[(int)((times.Length - 1) * 0.95)],
@@ -237,7 +246,7 @@ public sealed class SceneTestPlatform
         if (_results.Count != 0 && _results[^1].Scene == Current.Name)
             _results[^1] = _results[^1] with { Costs = _frames.Count == 0 ? null : Summarize(), Workload = workload };
         if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count &&
-            Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < MaximumTestSeconds)
+            (MeasurementFrames.HasValue || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < MaximumTestSeconds))
         {
             SelectScene(SelectedScene + 1);
             return;
@@ -263,7 +272,14 @@ public sealed class SceneTestPlatform
             ProcessorCount = Environment.GetEnvironmentVariable("DOTNET_PROCESSOR_COUNT"),
             TieredCompilationEnvironment = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation"),
             ReadyToRun = Environment.GetEnvironmentVariable("DOTNET_ReadyToRun"),
-            Sampling = new { MinimumReadyFrames, MinimumRenderedFrames, WarmupSeconds, SampleSeconds, MaximumTestSeconds },
+            Sampling = new
+            {
+                Mode = MeasurementFrames.HasValue ? "Fixed frames" : "Wall clock",
+                MinimumReadyFrames, MinimumRenderedFrames, MeasurementFrames,
+                WarmupSeconds = MeasurementFrames.HasValue ? null : (double?)WarmupSeconds,
+                SampleSeconds = MeasurementFrames.HasValue ? null : (double?)SampleSeconds,
+                MaximumTestSeconds = MeasurementFrames.HasValue ? null : (double?)MaximumTestSeconds,
+            },
             TraceEnabled = _recordTrace || Options.TraceOutput is not null,
             Options.TraceDetail, Options.TraceAllocations,
             Options.TemporalAntialiasing, Options.VirtualShadows, Options.AsyncCompute, Options.ForceHardwareRaster,
@@ -380,6 +396,8 @@ public sealed class SceneTestPlatform
         return new
         {
             Frames = frames.Length,
+            FrameRange = new { First = frames[0].Frame, Last = frames[^1].Frame },
+            SimulationSeconds = new { First = frames[0].SimulationSeconds, Last = frames[^1].SimulationSeconds },
             CpuMs = Distribution(frames.Select(frame => frame.CpuMs)),
             GameMs = Distribution(frames.Select(frame => frame.GameMs)),
             AnimationMs = Distribution(frames.Select(frame => frame.AnimationMs)),

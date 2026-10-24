@@ -73,7 +73,7 @@ public sealed class CrowdScene(CrowdExample example) : IDisposable
         DeformCacheCapacityBytes = 256u * 1024 * 1024,
         LastGameUpdateSeconds = _controls.Seconds, RequestedStateCounts = _controls.Counts,
         Camera = new { Position = new[] { 0f, 30, -35 }, Target = new[] { 0f, .8f, 20 }, VerticalFieldOfView = .8f,
-            NearPlane = 10, FarPlane = 120 },
+            NearPlane = 40, FarPlane = 90 },
         Material = new { Surface = "StandardMaterial", Roughness = .5f, MetallicFactor = 0,
             BaseColorTint = new[] { 1f, 1, 1, 1 }, EmissiveFactor = new[] { 0f, 0, 0 } },
         DirectionalLight = new { Direction = new[] { .35f, -.85f, .4f }, Color = new[] { 1f, .96f, .9f }, Intensity = 3 },
