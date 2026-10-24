@@ -32,6 +32,9 @@ Rendering world 的网格组件保存 source joint 到区段实体及区段内�
 `Application.RunAsync(args, application)` 与 `SceneScript(application, ...)` 共用这些回调。
 应用的动画阶段独立于界面开关。
 
+`ApplicationScene.LodThreshold` 设置公开的像素误差阈值。
+`FrameRendered` 在该帧 GPU 完成后接收 `ClusterFrameMetrics`；应用提供这一回调时启用帧计数读回与同步完成。
+
 以下是接入示例，`skeleton` 和 `binding` 表示调用者已加载的资产，`instance` 的使用期覆盖应用运行：
 
 ```csharp
