@@ -43,7 +43,7 @@ $env:DOTNET_PROCESSOR_COUNT = '4'
 & $queue --cpu --session crowd dotnet build samples/DefaultGame/DefaultGame.csproj -c Release -p:PublishAot=false -p:RuntimeIdentifier= --disable-build-servers /m:1 /nodeReuse:false /p:UseSharedCompilation=false
 ```
 
-修改示例材质后，开发组合的 `sample-crowd-materials` 命令仅重建两条材质，继续使用现有角色网格和共同管线。
+修改示例材质后，开发组合的 `sample-crowd-materials` 命令更新两条材质及主项目已经构建的共同 Shader 资产，继续使用现有角色网格。
 
 `DefaultGame --crowd` 显示两个角色场景；普通启动的选择器同时包含三个已有场景和两个角色场景。
 `--regression` 选择 `1024 spheres`、`Sponza`、`Amazon Bistro`，供 `tools/Measure-Scenes.ps1` 使用。
@@ -64,8 +64,21 @@ $env:DOTNET_ReadyToRun = '0'
 四段动作和控制规则。`--crowd` 在同一模拟进度比较两条路径：预热 64 帧，采集第 64–191 帧，
 共 128 帧。`TestScene.MeasurementFrames` 接受可选的 `SimulationFrameWindow`；固定窗口
 按帧数结束，并要求窗口内素材已经就绪。三个既有场景在 `test-scenes.json` 中配置
-第 2048–3071 帧；平台也支持预热后按墙钟采集的场景。`MaximumMeasurementSeconds` 配置集合预算，
+第 128–255 帧；平台也支持预热后按墙钟采集的场景。`MaximumMeasurementSeconds` 配置集合预算，
 Crowd 使用固定帧窗口完成两条路径，普通三场景入口使用 45 秒预算。
+
+`tools/Measure-Scenes.ps1 -ApplicationPath <game exe> -ApplicationArguments <arguments>`
+沿相同选择器完成三个既有场景的反馈，`ApplicationArguments` 将分辨率、渲染开关与 backend
+交给原有应用参数解析。`test-scenes.json` 的 `ContentDirectory` 可直接选择已有导入目录。
+目录含 `scene-import.json` 时，主程序在启动时读取其来源与资产数量，通过既有
+`TestScene.DescribeWorkload` 保存到场景说明，并附上实际内容目录。
+
+已有导入场景可通过开发组合的 `reuse-scene <application root> <imported root> <output root>`
+建立当前运行入口。这个示例入口保留已有 Mesh、World、Texture 身份与字节，以来源 glTF
+材质参数和当前 `MaterialBlock` 写出材质，再使用主项目的共同 Shader 与管线。
+既有 SCV1 页由项目内 `scene_scv1_vertex.slang` 固定解码，配套材质的光栅、阴影和着色入口
+都声明 `someengine.vertex.standard.cluster.v1`。编码块原始地址的公共入口见
+[Opaque Vertex Data](../cluster/Opaque-Vertex-Data.md)。内容准备耗时与完整三场景反馈耗时分别记录。
 
 ## 完成后的数据
 

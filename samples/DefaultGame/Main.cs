@@ -1,5 +1,6 @@
 using SomeEngine.Resources;
 using SomeEngine.Runtime;
+using System.Text.Json.Nodes;
 #if SOMEENGINE_DEVELOPMENT
 using DefaultGame.Content;
 using SomeEngine.Assets;
@@ -36,6 +37,12 @@ public static class SampleApplication
         if (args is ["import-scene", var application, var source, var output])
         {
             await ImportedSceneBuild.BuildAsync(application, source, output,
+                Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")));
+            return 0;
+        }
+        if (args is ["reuse-scene", var applicationRoot, var importedRoot, var outputRoot])
+        {
+            await ImportedSceneBuild.ReuseAsync(applicationRoot, importedRoot, outputRoot,
                 Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")));
             return 0;
         }
@@ -103,9 +110,18 @@ public static class SampleApplication
             if (crowdOnly) scenes = characters.ToList();
             else scenes.AddRange(characters);
         }
-        var platform = new SceneTestPlatform(scenes.Select(scene => scene with
+        var platform = new SceneTestPlatform(scenes.Select(scene =>
         {
-            ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
+            string directory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory);
+            string import = Path.Combine(directory, "scene-import.json");
+            JsonNode? source = scene.DescribeWorkload is null && File.Exists(import)
+                ? JsonNode.Parse(File.ReadAllText(import)) : null;
+            if (source is not null) source["ContentDirectory"] = directory;
+            return scene with
+            {
+                ContentDirectory = directory,
+                DescribeWorkload = scene.DescribeWorkload ?? (source is null ? null : () => source),
+            };
         }).ToArray(), startupOptions)
         {
             ExitAfterMeasurements = measure,

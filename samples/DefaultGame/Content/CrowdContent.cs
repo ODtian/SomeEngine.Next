@@ -21,10 +21,19 @@ public static class CrowdContent
     public static async Task BuildMaterialsAsync(string projectRoot, string engineRoot)
     {
         string template = await File.ReadAllTextAsync(Path.Combine(projectRoot, "assets/Shaders/standard.slang"));
+        AssetManifest common = AssetManifest.Load(Path.Combine(projectRoot, "Library/AssetManifest"));
         foreach ((string directory, bool cached) in new[] { ("CrowdInline", false), ("CrowdCache", true) })
         {
             var project = new AssetProject(Path.Combine(projectRoot, directory), [],
                 shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
+            foreach (AssetEntry entry in common.Assets.Values.Where(entry => entry.AssetType == ShaderAsset.FileType
+                && entry.Path != "assets/Shaders/standard.shader.asset"))
+            {
+                string destination = Path.Combine(project.RootPath, entry.Path);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(Path.Combine(projectRoot, entry.Path), destination, overwrite: true);
+                project.RegisterAsset(entry);
+            }
             await WriteShaderAsync(project, template, cached);
         }
     }
