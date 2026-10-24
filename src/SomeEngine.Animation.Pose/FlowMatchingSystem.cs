@@ -50,7 +50,7 @@ public struct FlowMatchingSystem : ISystem<ImmediateSystemContext>, ISystem<Pose
         foreach (FlowMatchingBatch batch in groups.Batches)
             foreach (FlowMatchingState state in batch.States) state.Active = false;
         frame.NextLevel = int.MaxValue;
-        frame.World.ExecuteQuery(_flows, ref frame, static (QueryCursor rows, ref FlowFrame frame) =>
+        frame.World.ExecuteQuery(_flows, ref frame, static (scoped QueryCursor rows, ref FlowFrame frame) =>
         {
             foreach (QueryRow row in rows.Rows)
                 foreach (ref FlowMatchingInstance instance in row.Buffer<FlowMatchingInstance>().AsSpan())
@@ -63,7 +63,7 @@ public struct FlowMatchingSystem : ISystem<ImmediateSystemContext>, ISystem<Pose
         foreach (FlowMatchingBatch batch in groups.Batches)
             if (batch.HasSamples) _jobs.Add(JobSystem.Schedule(new GeneratePose(batch), batch.Accesses));
         foreach (JobHandle job in _jobs) job.Complete();
-        frame.World.ExecuteQuery(_flows, ref frame, static (QueryCursor rows, ref FlowFrame frame) =>
+        frame.World.ExecuteQuery(_flows, ref frame, static (scoped QueryCursor rows, ref FlowFrame frame) =>
         {
             World world = frame.World;
             foreach (QueryRow row in rows.Rows)

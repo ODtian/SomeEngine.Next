@@ -25,14 +25,14 @@ public struct EwbikSystem : ISystem<PoseNodeContext>
     {
         _jobs.Clear();
         var frame = new EwbikFrame { World = context.Frame.World, Level = context.Level, Jobs = _jobs };
-        frame.World.ExecuteQuery(_bodies, ref frame, static (QueryCursor rows, ref EwbikFrame frame) =>
+        frame.World.ExecuteQuery(_bodies, ref frame, static (scoped QueryCursor rows, ref EwbikFrame frame) =>
         {
             foreach (QueryRow row in rows.Rows)
                 foreach (ref EwbikInstance body in row.Buffer<EwbikInstance>().AsSpan())
                     if (body.Node.Level == frame.Level) Gather(frame.World, row.Entity, ref body, frame.Jobs);
         });
         foreach (JobHandle job in _jobs) job.Complete();
-        frame.World.ExecuteQuery(_bodies, ref frame, static (QueryCursor rows, ref EwbikFrame frame) =>
+        frame.World.ExecuteQuery(_bodies, ref frame, static (scoped QueryCursor rows, ref EwbikFrame frame) =>
         {
             World world = frame.World;
             foreach (QueryRow row in rows.Rows)
