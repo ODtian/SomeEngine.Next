@@ -46,7 +46,8 @@ public struct FootLockSystem : ISystem<ImmediateSystemContext>
                 AnimationLayers layers = context.World.Read<AnimationLayers>(instance.Target);
                 if (instance.Placement.Layer < layers.Count) weight *= layers.Items[instance.Placement.Layer].Weight;
             }
-            samples.Update(elapsed, target.CalculationTime, context.World.Read<WorldTransform>(instance.Actor).Qvvs.ToMatrix(), weight);
+            samples.Update(elapsed, target.CalculationTime, context.World.Read<WorldTransform>(instance.Actor).Qvvs.ToMatrix(), weight,
+                in instance.Source, in instance.Movement);
             context.World.ExecuteBufferWrite<GpuPoseGoal, FootLockSamples>(instance.Target, ref samples,
                 static (goals, ref samples) =>
                 {
