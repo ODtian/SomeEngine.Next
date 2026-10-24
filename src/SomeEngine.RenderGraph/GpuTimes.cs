@@ -15,10 +15,10 @@ internal sealed class FrameGpuTimes(RenderGraph graph) : IDisposable
     private Action<RenderGraphGpuTimes>? _receive;
     private ulong _identity;
 
-    internal void Begin(ulong identity, Action<RenderGraphGpuTimes> receive)
+    internal void Begin(ulong identity)
     {
         _identity = identity;
-        _receive = receive;
+        _receive = null;
         _passes.Clear();
         foreach (QueueTimeQueries queue in _queues.Values) queue.Count = 0;
     }
@@ -39,7 +39,7 @@ internal sealed class FrameGpuTimes(RenderGraph graph) : IDisposable
             if (queue.Count > 0) queue.Prepare();
     }
 
-    internal void Resolve(Action<QueueCompletion> submitted)
+    internal void Resolve(Action<QueueCompletion> submitted, Action<RenderGraphGpuTimes> receive)
     {
         foreach (QueueTimeQueries queue in _queues.Values)
         {
@@ -55,6 +55,7 @@ internal sealed class FrameGpuTimes(RenderGraph graph) : IDisposable
             // The same queue's FIFO orders every application timestamp before its resolve.
             submitted(graph.Backend.Submit(queue.Queue, new QueueSubmitDesc([], [], batch, [], [])));
         }
+        _receive = receive;
     }
 
     // Called by the frame slot after every accepted submission, including resolves, completes.
@@ -164,7 +165,7 @@ internal sealed partial class FrameExecutor
         _measureGpu = enabled;
         if (!enabled) return;
         _gpuTimes ??= new FrameGpuTimes(_frame.Graph);
-        _gpuTimes.Begin(_frame.Identity, _frame.Options.GpuTimes!);
+        _gpuTimes.Begin(_frame.Identity);
         EnsureCapacity(ref _passTimes, _passes.Count);
         foreach (int pass in _executionOrder.Nodes)
         {
@@ -189,7 +190,7 @@ internal sealed partial class FrameExecutor
     {
         if (!_measureGpu) return;
         // Spans stay in the caller; capture accepted resolves in the existing completion list.
-        _gpuTimes!.Resolve(completion => AddCompletion(_submittedCompletions, completion));
+        _gpuTimes!.Resolve(completion => AddCompletion(_submittedCompletions, completion), _frame.Options.GpuTimes!);
         foreach (QueueCompletion completion in _submittedCompletions)
         {
             int index = QueueSlot(completion.Queue);

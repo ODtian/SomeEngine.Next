@@ -309,7 +309,8 @@ internal static class RuntimeApplication
                 adapter.Id,
                 queues,
                 requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands,
-                optionalFeatures: options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders,
+                optionalFeatures: DeviceFeatures.CalibratedTimestamps |
+                    (options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders),
                 label: "SomeEngine Runtime Device"));
             Swapchain = Backend.CreateSwapchain(Device, new SwapchainDesc(
                 Surface,

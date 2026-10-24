@@ -9,7 +9,9 @@
 ## 图入口
 
 `RenderGraphFrameOptions.GpuTimes` 接收 `RenderGraphGpuTimes`，采集使用设备的
-`CalibratedTimestamps` 能力。执行器在完成调度后，
+`CalibratedTimestamps` 能力。调用者在设备创建请求中指定
+`DeviceFeatures.CalibratedTimestamps`；普通应用已将它列入可选特性。
+执行器在完成调度后，
 为实际执行的每个 pass 记录四个 timestamp：前置屏障前、命令前、命令后、后置屏障后。
 跨帧资源的队列释放也带有完整区间。记录覆盖持久 pass、当帧上传与其它即时 pass。
 
