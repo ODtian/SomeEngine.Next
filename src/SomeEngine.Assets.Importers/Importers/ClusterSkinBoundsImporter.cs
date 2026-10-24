@@ -39,6 +39,8 @@ public sealed class ClusterSkinBoundsImporter : IAssetImporter<GltfMesh, GltfMes
             }
             clusters.Add(new ClusterSkinBoxSet
             {
+                Group = cluster.Group, ParentGroup = cluster.ParentGroup, Level = cluster.Level,
+                Error = cluster.Error, PositionError = cluster.PositionStep,
                 Joints = bounds.OrderBy(pair => pair.Key).Select(pair => new ClusterSkinJointBox(pair.Key,
                     new() { X = pair.Value.Minimum.X, Y = pair.Value.Minimum.Y, Z = pair.Value.Minimum.Z },
                     new() { X = pair.Value.Maximum.X, Y = pair.Value.Maximum.Y, Z = pair.Value.Maximum.Z })).ToImmutableArray(),

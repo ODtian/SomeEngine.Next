@@ -46,6 +46,7 @@ public readonly struct GpuStateLeaf : IAnimationLeaf<GpuStateParameters>
         output.Clip = null;
         output.StateMachine = parameters.Machine;
         output.Blend = null;
+        output.Rig = null;
         output.Controls = instance.Controls;
         output.PlaybackTime = 0;
         output.Playing = false;
@@ -83,6 +84,7 @@ internal struct GpuStateSystem : ISystem<ImmediateSystemContext>
                 output.Clip = null;
                 output.StateMachine = parameters.Machine;
                 output.Blend = null;
+                output.Rig = null;
                 output.Controls = instance.Controls;
                 output.PlaybackTime = elapsed;
                 output.Playing = true;

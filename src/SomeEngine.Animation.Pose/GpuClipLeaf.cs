@@ -1,3 +1,4 @@
+using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -13,6 +14,8 @@ public struct GpuPoseTarget : IComponent
     public QuantizedClipData? Clip;
     public GpuPoseStateMachine? StateMachine;
     public GpuPoseBlend? Blend;
+    public GpuPoseRig? Rig;
+    public Vector3 ModelOffset;
     public float[]? Controls;
     public float PlaybackTime;
     public bool Playing;
@@ -56,6 +59,7 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
         output.Clip = definitions.Parameters[index].Clip;
         output.StateMachine = null;
         output.Blend = null;
+        output.Rig = null;
         output.SampleTime = 0;
         output.Starts = placement.Starts;
         world.Replace(target, output);
@@ -76,6 +80,7 @@ public static class GpuPoseAnimation
         AnimationSystems.Add(systems, new GpuClipSystem(), AnimationPhase.Composition);
         AnimationSystems.Add(systems, new GpuStateSystem(), AnimationPhase.Composition);
         AnimationSystems.Add(systems, new GpuBlendSystem(), AnimationPhase.Composition);
+        AnimationSystems.Add(systems, new GpuRigSystem(), AnimationPhase.Composition);
     }
 }
 
@@ -128,6 +133,7 @@ internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
                 output.Clip = parameters.Clip;
                 output.StateMachine = null;
                 output.Blend = null;
+                output.Rig = null;
                 output.SampleTime = parameters.Loop ? elapsed % parameters.Clip.Duration : elapsed;
                 output.Starts = time.Starts;
                 world.Replace(instance.Target, output);
