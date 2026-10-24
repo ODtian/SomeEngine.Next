@@ -154,8 +154,11 @@ internal sealed partial class FrameExecutor
 {
     private FrameGpuTimes? _gpuTimes;
     private FrameGpuTimes.PassTimeQueries[] _passTimes = [];
+    private PassTimeBinding[] _passTimeBindings = [];
     private readonly Dictionary<Queue, FrameGpuTimes.PassTimeQueries> _releaseTimes = [];
     private bool _measureGpu;
+
+    private readonly record struct PassTimeBinding(Queue Queue, QueryPool Pool, uint First);
 
     private void PrepareGpuTimes()
     {
@@ -167,6 +170,7 @@ internal sealed partial class FrameExecutor
         _gpuTimes ??= new FrameGpuTimes(_frame.Graph);
         _gpuTimes.Begin(_frame.Identity);
         EnsureCapacity(ref _passTimes, _passes.Count);
+        EnsureCapacity(ref _passTimeBindings, _passes.Count);
         foreach (int pass in _executionOrder.Nodes)
         {
             FramePass row = _passes[pass];
@@ -178,6 +182,14 @@ internal sealed partial class FrameExecutor
                 _releaseTimes.Add(release.SourceQueue,
                     _gpuTimes.Add(default, "Queue resource transfers", null, release.SourceQueue));
         _gpuTimes.Prepare();
+        foreach (int pass in _executionOrder.Nodes)
+        {
+            FrameGpuTimes.PassTimeQueries queries = _passTimes[pass];
+            var binding = new PassTimeBinding(queries.Queue.Queue, queries.Queue.Pool!, queries.First);
+            if (_passTimeBindings[pass] == binding) continue;
+            _passTimeBindings[pass] = binding;
+            InvalidateCommands(pass);
+        }
     }
 
     private void WriteGpuTime(CommandContext context, in FrameGpuTimes.PassTimeQueries queries, uint offset)
