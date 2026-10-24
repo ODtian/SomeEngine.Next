@@ -25,6 +25,17 @@ public sealed partial class SkinningFeature
                         section.SelectedBones[limb.Chain.Middle] = true;
                         section.SelectedBones[limb.Chain.Tip] = true;
                     }
+                    else if (operation is GpuStridePose stride)
+                    {
+                        section.SelectedBones[stride.Rig.PelvisBone] = true;
+                        foreach (GpuStrideLeg leg in stride.Rig.Legs)
+                        {
+                            section.SelectedBones[leg.Chain.Root] = true;
+                            section.SelectedBones[leg.Chain.Middle] = true;
+                            section.SelectedBones[leg.Chain.Tip] = true;
+                        }
+                        foreach (GpuStrideSpine bone in stride.Rig.Spine) section.SelectedBones[bone.Bone] = true;
+                    }
                     else foreach (GpuAimBone bone in ((GpuAimPose)operation).Chain.Bones) section.SelectedBones[bone.Bone] = true;
             }
         }
