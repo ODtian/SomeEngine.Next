@@ -28,7 +28,7 @@
 ## 图叶子与提取
 
 `GpuPoseAnimation.CreateTarget` 为一个 `SkeletonInstance` 创建 `GpuPoseTarget`。
-`GpuClipLeaf` 读取共同图的播放时间、开始次数和完成边界，支持播放速度及循环。
+`GpuClipLeaf` 读取共同图的播放时间、开始次数和完成边界，沿共同 Timeline 的速度推进，片段参数指定循环。
 `GpuPoseAnimation.AddSystems` 将目标输入更新和片段控制系统接入共同动画阶段。
 
 | 控制字段 | 含义 |

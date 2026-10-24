@@ -57,4 +57,6 @@ world.ExecuteBufferWrite<GpuStateInstance, float>(animation, ref speed,
 
 同一编译图可以播放到多个目标，各实例保留自己的控制值与 GPU 播放行。
 
-源码：[共享定义](../../../src/SomeEngine.Animation.Pose/GpuPoseStateMachine.cs)、[叶节点](../../../src/SomeEngine.Animation.Pose/GpuStateLeaf.cs)、[状态表](../../../src/SomeEngine.Render.Features/Skinning/GpuStateTables.cs)、[GPU 推进与采样](../../../assets/Shaders/gpu_pose.slang)、[提取与缓冲](../../../src/SomeEngine.Render.Features/Skinning/SkinningFeature.cs)、[结果读回](../../../src/SomeEngine.Render.Features/Skinning/GpuPoseReadback.cs)。
+源码：[共享定义](../../../src/SomeEngine.Animation.Pose/GpuPoseStateMachine.cs)、[叶节点](../../../src/SomeEngine.Animation.Pose/GpuStateLeaf.cs)、[状态表](../../../src/SomeEngine.Render.Features/Skinning/GpuStateTables.cs)、[GPU 推进与采样](../../../assets/Shaders/gpu_pose.slang)、[提取](../../../src/SomeEngine.Render.Features/Skinning/MeshSkin.cs)、[缓冲与执行顺序](../../../src/SomeEngine.Render.Features/Skinning/SkinningFeature.cs)、[结果读回](../../../src/SomeEngine.Render.Features/Skinning/GpuPoseReadback.cs)。
+
+[公共应用调用用例](../../../tests/SomeEngine.Runtime.Tests/GpuStateMachineRenderingTests.cs) 使用同一编译图和状态定义驱动两个角色，通过各自的控制值切换动作，读取片段时间、过渡权重和当前/上一份 G，并以 CPU 采样生成相同姿势的参考网格。用例中的两根骨骼、四分之一秒步长与两状态控制表是行为检查夹具。
