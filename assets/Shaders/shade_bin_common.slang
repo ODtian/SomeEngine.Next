@@ -10,7 +10,6 @@ struct ShadePixelWork
 {
     uint PixelIndex;
     uint Mask;
-    uint SurfaceDataIndex;
 };
 
 struct ShadeBinUniforms
@@ -20,9 +19,9 @@ struct ShadeBinUniforms
     uint ShadeBinCount;
     uint SlotCapacity;
     uint BinItemCapacity;
-    uint AdditionalReceiverLayerCount;
+    uint Padding0;
     uint ViewCount;
-    uint SurfaceDataStride;
+    uint Padding1;
 };
 
 uint FindShadeBin(

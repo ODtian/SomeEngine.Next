@@ -8,6 +8,8 @@ struct TextureDisplacement : IDomainEvaluate<StandardVertex>
     typealias TriangleData = Triangle;
     typealias Surface = SurfaceEval;
 
+    Triangle readLane(Triangle triangle, uint lane) { return ReadTriangleLane(triangle, lane); }
+
     Texture2D<float> Map;
     // Each texel stores the exact min/max source-map value for its footprint.
     // Mips form a conservative min/max hierarchy for domain-range queries.

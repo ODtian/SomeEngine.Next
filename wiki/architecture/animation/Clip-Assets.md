@@ -49,12 +49,16 @@ For model sampling of a derived skeleton, the selection supplies `parentPose`, s
 
 `ClipSampleBatch` binds a fixed sequence of these selections. Reusing a selection supports several times or characters using the same clip. Each call accepts one time per selection and writes the corresponding output sections consecutively. `OutputCount` gives the required element count; `GetOutputRange(sample)` returns that selection's `PoseRange` relative to the supplied span.
 
-| Entry | Output element | Required local bones |
-| --- | --- | --- |
-| `SampleLocal(times, destination)` | `BoneTransform` in selection order | Selected bones |
-| `SampleModel(times, destination)` | `Matrix4x4` in selection order | Selected bones and their ancestors |
+| Entry | Output element | Required local bones | Completion |
+| --- | --- | --- | --- |
+| `SampleLocal(times, destination)` | `BoneTransform` in selection order | Selected bones | Returns completed output |
+| `SampleModel(times, destination)` | `Matrix4x4` in selection order | Selected bones and their ancestors | Returns completed output |
+| `ScheduleLocal(times, destination, dependency)` | `BoneTransform` in selection order | Selected bones | Returns a `JobHandle` |
+| `ScheduleModel(times, destination, dependency)` | `Matrix4x4` in selection order | Selected bones and their ancestors | Returns a `JobHandle` |
 
 Binding groups selections by ready clip, which also fixes their concrete sampling function and data. It expands model-space ancestors once in parent order and allocates reusable time, local-pose and model-pose arrays. Each call fills these arrays, invokes the concrete sampler per clip group, and copies the selected results into the caller's span. Playback instances continue to hold their own current pose, version and time. Each concurrent caller retains its own batch workspace.
+
+The scheduled entries accept array-backed `ReadOnlyMemory<float>` and output `Memory<T>`, including slices. Binding divides each clip group into concrete sampling tiles, with `samplesPerJob` defaulting to 32. Each tile owns distinct time/local/model rows and output sections. Scheduling declares reads of the input memory and ready clips, a write of the batch workspace, writes of the output memory range, and reads of the selected parent sections. The caller can pass an input producer's dependency and complete the returned handle before reading or releasing these memories. Repeated scheduled calls on one workspace follow its declared write dependency; synchronous access uses the caller's completion boundary.
 
 The following is a public API usage example:
 
@@ -68,6 +72,14 @@ batch.SampleLocal(times, local);
 batch.SampleModel(times, model);
 PoseRange secondTime = batch.GetOutputRange(1);
 ReadOnlySpan<Matrix4x4> futureFeet = model.AsSpan(secondTime.Start, secondTime.Count);
+```
+
+This is the corresponding asynchronous usage example with the same ready definitions and output arrays:
+
+```csharp
+JobHandle localReady = batch.ScheduleLocal(times, local, inputReady);
+JobHandle modelReady = batch.ScheduleModel(times, model, localReady);
+modelReady.Complete();
 ```
 
 `ClipBatchSamplingTests` compares selected local and model results with complete public sampling across several clips and times, while reading each character's current pose through `SkeletonInstance`. The independent sampling measurement uses the same selections, times and output ranges for batch and individual calls:

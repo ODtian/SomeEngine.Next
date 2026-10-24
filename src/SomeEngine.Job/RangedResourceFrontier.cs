@@ -333,7 +333,7 @@ internal sealed class RangedResourceFrontier
         if (comparison != 0)
             return comparison;
 
-        comparison = left.Access.Mode.CompareTo(right.Access.Mode);
+        comparison = ((int)left.Access.Mode).CompareTo((int)right.Access.Mode);
         if (comparison != 0)
             return comparison;
 

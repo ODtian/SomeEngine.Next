@@ -26,11 +26,7 @@ public static partial class AnimationGraph
     public static AnimationLeafTime ReadTime(World world, Entity animation, in AnimationLeafPlacement placement)
     {
         Timeline timeline = world.Read<Timeline>(animation);
-        var phase = new LeafPhase
-        {
-            Stage = timeline.Stage, Time = timeline.Time, Delta = timeline.Delta,
-            Paused = timeline.Paused, Target = placement.Stage, Start = placement.Start,
-        };
+        LeafPhase phase = CreatePhase(in timeline, in placement);
         float weight = 1;
         uint starts = timeline.Starts;
         if (placement.Motion == 0)
@@ -46,16 +42,47 @@ public static partial class AnimationGraph
             world.ExecuteBufferRead<GraphMotion, (int Index, GraphMotion Value)>(animation, ref motion,
                 static (motions, ref motion) => motion.Value = motions[motion.Index]);
             GraphData[] graph = world.Read<GraphInstance>(animation).Data!;
-            GraphMotionData definition = graph[0].Motions![placement.Motion - 1];
-            phase.Stage = motion.Value.Stage;
-            phase.Time = motion.Value.Time;
-            phase.Target = placement.MotionStage;
-            phase.Select(definition.Stages.AsSpan(0, definition.StageCount));
+            SelectMotion(ref phase, in motion.Value, graph, in placement);
             weight = motion.Value.Weight;
             starts = motion.Value.Starts;
         }
         bool active = world.IsEnabled<Timeline>(animation) && phase.Active && weight > 0;
         return new(phase.Sample, weight, starts, active);
+    }
+
+    /// <summary>Reads the same phase clock directly from a row declared with WithTimeAccess.</summary>
+    public static AnimationLeafTime ReadTime(scoped in QueryRow row, in AnimationLeafPlacement placement)
+    {
+        Timeline timeline = row.Read<Timeline>();
+        LeafPhase phase = CreatePhase(in timeline, in placement);
+        float weight = 1;
+        uint starts = timeline.Starts;
+        if (placement.Motion == 0)
+            phase.Select(row.HasBuffer<TimelineStage>() ? row.ReadBuffer<TimelineStage>().AsSpan() : default);
+        else
+        {
+            GraphMotion motion = row.ReadBuffer<GraphMotion>()[placement.Motion - 1];
+            SelectMotion(ref phase, in motion, row.Read<GraphInstance>().Data!, in placement);
+            weight = motion.Weight;
+            starts = motion.Starts;
+        }
+        return new(phase.Sample, weight, starts, row.IsComponentEnabled<Timeline>() && phase.Active && weight > 0);
+    }
+
+    private static LeafPhase CreatePhase(in Timeline timeline, in AnimationLeafPlacement placement) => new()
+    {
+        Stage = timeline.Stage, Time = timeline.Time, Delta = timeline.Delta,
+        Paused = timeline.Paused, Target = placement.Stage, Start = placement.Start,
+    };
+
+    private static void SelectMotion(ref LeafPhase phase, in GraphMotion motion, GraphData[] graph,
+        in AnimationLeafPlacement placement)
+    {
+        GraphMotionData definition = graph[0].Motions![placement.Motion - 1];
+        phase.Stage = motion.Stage;
+        phase.Time = motion.Time;
+        phase.Target = placement.MotionStage;
+        phase.Select(definition.Stages.AsSpan(0, definition.StageCount));
     }
 
     private struct LeafPhase
@@ -95,6 +122,13 @@ public static partial class AnimationGraph
             world.ExecuteBufferWrite<GraphMotion, (int Index, bool Running)>(animation, ref result,
                 static (motions, ref result) => motions[result.Index].Running |= result.Running);
         }
+    }
+
+    /// <summary>Submits stage completion through the Timeline or nested motion borrowed by WithTimeAccess.</summary>
+    public static void Submit(scoped in QueryRow row, in AnimationLeafPlacement placement, bool running)
+    {
+        if (placement.Motion == 0) row.ReadWrite<Timeline>().Submit(running);
+        else row.Buffer<GraphMotion>()[placement.Motion - 1].Running |= running;
     }
 
     public static Entity GetBranch(World world, Entity animation, int id)

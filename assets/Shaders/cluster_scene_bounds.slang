@@ -28,6 +28,23 @@ groupshared float3 ChunkMin[64];
 groupshared float3 ChunkMax[64];
 groupshared uint ChunkFinite[64];
 
+void ClusterDeformRootWorldBounds(uint root, uint instance, RenderInstanceTransform transform, float expansion,
+    bool previous, out float3 low, out float3 high)
+{
+    low = 1e30.xxx;
+    high = -1e30.xxx;
+    for (uint child = 0u; child < 4u; child++)
+    {
+        ClusterHierarchySlice slice = LoadClusterNode(GlobalBVH, root, child);
+        if (!ClusterSliceEnabled(slice)) continue;
+        ApplyClusterNodeBounds(slice, root, child, instance, previous);
+        float3 childLow, childHigh;
+        ClusterNodeWorldBounds(slice, transform, expansion, childLow, childHigh);
+        low = min(low, childLow);
+        high = max(high, childHigh);
+    }
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
@@ -50,16 +67,12 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
                 LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD), instance);
             float expansion = max(0.0, LoadClusterBoundsExpansion(InstanceData,
                 LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD), instance));
-            ClusterBVHNode currentNode = LoadClusterNode(GlobalBVH, root);
-            ApplyClusterNodeBounds(currentNode, root, instance, false);
-            ClusterNodeWorldBounds(currentNode, current, expansion, worldMin, worldMax);
+            ClusterDeformRootWorldBounds(root, instance, current, expansion, false, worldMin, worldMax);
             if (Scene.HasPreviousBounds == 0u)
             {
                 RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
                     LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instance);
-                ClusterBVHNode previousNode = LoadClusterNode(GlobalBVH, root);
-                ApplyClusterNodeBounds(previousNode, root, instance, true);
-                ClusterNodeWorldBounds(previousNode, previous, expansion, previousMin, previousMax);
+                ClusterDeformRootWorldBounds(root, instance, previous, expansion, true, previousMin, previousMax);
             }
         }
         if (Scene.HasPreviousBounds != 0u)

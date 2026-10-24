@@ -24,6 +24,7 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId ShaderParameterBytes;
         internal int ParameterByteCount;
         internal ImmutableDictionary<int, ImmutableStack<int>> ParameterFreeOffsets = ImmutableDictionary<int, ImmutableStack<int>>.Empty;
+        internal GraphPassId[] Passes = [];
         internal GraphReadbackId PageFaultReadback;
         internal GraphReadbackId FrameMetricsReadback;
         internal GraphPassId PageUpload;
@@ -37,7 +38,6 @@ public sealed partial class ClusterPipelineSystem
         internal GraphRegionId TargetFirstReference;
         internal GraphRegionId TargetSecondReference;
         internal GraphRegionId PrimaryGeometry;
-        internal GraphRegionId EmptyReceivers;
         internal GraphRegionId HistoryInitialization;
         internal GraphRegionId SceneInitialization;
         internal GraphRegionId SceneBoundsRegion;
@@ -59,7 +59,7 @@ public sealed partial class ClusterPipelineSystem
         internal ImmutableDictionary<int, RasterPhase> RasterPhases = ImmutableDictionary<int, RasterPhase>.Empty;
         internal RasterBinning?[] RasterBinning = new RasterBinning?[RasterPhaseCount];
         internal GraphRegionMap<uint, ShadeGroup> ShadeGroups = null!;
-        internal GraphRegionMap<uint, ShadeGroup> ReceiverGroups = null!;
+        internal GraphRegionMap<uint, ShadeGroup> ShadowRequestGroups = null!;
         internal List<ClusterLayerDispatch> LayerDispatches = [];
         internal List<ClusterLayerDispatch> WinnerDispatches = [];
         internal GraphBufferSlice ShadeBinUniforms;
@@ -101,6 +101,11 @@ public sealed partial class ClusterPipelineSystem
         try
         {
             update(ref edit);
+            List<GraphPassId> passes = [];
+            foreach (GraphRegionId region in new[] { _regions.PrimaryGeometry, _regions.TargetGeometry,
+                _regions.Shading, _regions.Feedback, _shadowRequestRegion, _transparencyRequestRegion })
+                if (region != default) passes.AddRange(edit.GetPasses(region));
+            _editingGraphData.Passes = passes.ToArray();
             edit.Commit();
             AcceptMaterialTextures(_editingGraphData.MaterialTextures, _editingGraphData.MissingMaterialTexture);
             _graphData = _editingGraphData;

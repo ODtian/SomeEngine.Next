@@ -77,7 +77,7 @@ internal struct GpuStateSystem : ISystem<ImmediateSystemContext>
             foreach (QueryRow row in rows.Rows)
             foreach (ref GpuStateInstance instance in row.Buffer<GpuStateInstance>().AsSpan())
             {
-                AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in instance.Placement);
+                AnimationLeafTime time = AnimationGraph.ReadTime(in row, in instance.Placement);
                 if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; }
                 if (!time.Active || instance.Finished) continue;
                 GpuStateParameters parameters = instance.Definition.Parameters[instance.Index];
@@ -94,7 +94,7 @@ internal struct GpuStateSystem : ISystem<ImmediateSystemContext>
                 output.ExtractRootMotion = false;
                 world.Replace(instance.Target, output);
                 instance.Finished = elapsed >= parameters.Duration;
-                AnimationGraph.Submit(world, row.Entity, in instance.Placement, !instance.Finished);
+                AnimationGraph.Submit(in row, in instance.Placement, !instance.Finished);
             }
         });
     }

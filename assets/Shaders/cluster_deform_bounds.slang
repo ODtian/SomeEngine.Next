@@ -26,18 +26,18 @@ ClusterModelBounds ReadClusterModelBounds(uint index, bool previous)
     return value;
 }
 
-bool ApplyClusterNodeBounds(inout ClusterBVHNode node, uint nodeIndex, uint instance, bool previous)
+bool ApplyClusterNodeBounds(inout ClusterHierarchySlice node, uint nodeIndex, uint childIndex, uint instance, bool previous)
 {
     uint2 range = LoadClusterDeformBounds(instance);
     if (range.y == 0u) return false;
     uint root = LoadClusterBvhRoot(InstanceData,
         LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BVH_ROOT_METADATA_WORD), instance);
-    uint firstNode = root + 1u - range.y;
-    ClusterModelBounds value = ReadClusterModelBounds(range.x + nodeIndex - firstNode, previous);
-    node.BoundMin.xyz = value.minimum.xyz;
-    node.BoundMax.xyz = value.maximum.xyz;
-    node.LODSphere = value.lodSphere;
-    node.LODError = value.minimum.w;
+    ClusterModelBounds value = ReadClusterModelBounds(range.x + (nodeIndex - root) * 4u + childIndex, previous);
+    node.BoundsCenter = (value.minimum.xyz + value.maximum.xyz) * 0.5;
+    node.BoundsExtent = (value.maximum.xyz - value.minimum.xyz) * 0.5;
+    node.LODBounds = value.lodSphere;
+    node.MinLODError = asfloat((asuint(node.MinLODError) & 0x80000000u) | (asuint(value.minimum.w) & 0x7FFFFFFFu));
+    node.MaxParentLODError = value.maximum.w;
     return true;
 }
 
@@ -45,7 +45,7 @@ float ApplyDrawClusterBounds(inout PackedCluster cluster, uint clusterIndex, uin
 {
     uint2 range = LoadClusterDeformBounds(instance);
     if (range.y == 0u) return DecodeClusterLODError(cluster);
-    ClusterModelBounds value = ReadClusterModelBounds(range.x + range.y + clusterIndex, previous);
+    ClusterModelBounds value = ReadClusterModelBounds(range.x + range.y * 4u + clusterIndex, previous);
     cluster.BoundMin = value.minimum.xyz;
     cluster.BoundMax = value.maximum.xyz;
     cluster.LODCenter = value.lodSphere.xyz;

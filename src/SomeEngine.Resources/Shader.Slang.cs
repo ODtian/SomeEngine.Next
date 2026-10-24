@@ -78,6 +78,8 @@ public unsafe partial class Shader
             throw new ArgumentException("Creating a shader requires at least one Slang target.", nameof(targets));
 
         var slangCode = new SlangShaderData(global, session, linkedCode);
+        foreach (IModule sourceUnit in sourceUnits) SlangShaderData.RetainSession(session, sourceUnit);
+        foreach (IEntryPoint entry in entries) SlangShaderData.RetainSession(session, entry);
         bool unbound = linkedCode.GetSpecializationParamCount() != 0;
         ImmutableArray<bool> unboundEntries = entries.Select(entry =>
             unbound && entry.GetSpecializationParamCount() != 0).ToImmutableArray();
