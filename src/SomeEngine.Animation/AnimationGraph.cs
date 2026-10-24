@@ -54,6 +54,13 @@ public static partial class AnimationGraph
     public static AnimationLeafTime ReadTime(scoped in QueryRow row, in AnimationLeafPlacement placement)
     {
         Timeline timeline = row.Read<Timeline>();
+        return ReadTime(in row, in timeline, in placement);
+    }
+
+    /// <summary>Reads the same phase clock while borrowing the Timeline already selected by the query.</summary>
+    public static AnimationLeafTime ReadTime(scoped in QueryRow row, scoped in Timeline timeline,
+        in AnimationLeafPlacement placement)
+    {
         LeafPhase phase = CreatePhase(in timeline, in placement);
         float weight = 1;
         uint starts = timeline.Starts;
@@ -128,6 +135,14 @@ public static partial class AnimationGraph
     public static void Submit(scoped in QueryRow row, in AnimationLeafPlacement placement, bool running)
     {
         if (placement.Motion == 0) row.ReadWrite<Timeline>().Submit(running);
+        else row.Buffer<GraphMotion>()[placement.Motion - 1].Running |= running;
+    }
+
+    /// <summary>Submits completion using the Timeline already borrowed by the query or its nested motion.</summary>
+    public static void Submit(scoped in QueryRow row, scoped ref Timeline timeline,
+        in AnimationLeafPlacement placement, bool running)
+    {
+        if (placement.Motion == 0) timeline.Submit(running);
         else row.Buffer<GraphMotion>()[placement.Motion - 1].Running |= running;
     }
 

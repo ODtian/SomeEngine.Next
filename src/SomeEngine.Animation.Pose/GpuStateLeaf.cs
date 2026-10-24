@@ -78,26 +78,30 @@ internal struct GpuStateSystem : ISystem<ImmediateSystemContext>
 
     private static void UpdateTargets(ComponentWriteBatch<GpuPoseTarget> targets, ref QueryCursor rows)
     {
-        foreach (QueryRow row in rows.Rows)
-        foreach (ref GpuStateInstance instance in row.Buffer<GpuStateInstance>().AsSpan())
+        var states = rows.ReadWriteRows<Timeline, GpuStateInstance>();
+        while (states.MoveNext(out QueryRow row, out var component, out var instances))
         {
-            AnimationLeafTime time = AnimationGraph.ReadTime(in row, in instance.Placement);
-            if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; }
-            if (!time.Active || instance.Finished) continue;
-            GpuStateParameters parameters = instance.Definition.Parameters[instance.Index];
-            float elapsed = Math.Min(time.Time.Time, parameters.Duration);
-            ref GpuPoseTarget output = ref targets.Write(instance.Target);
-            output.Clip = null;
-            output.StateMachine = parameters.Machine;
-            output.Blend = null;
-            output.Rig = null;
-            output.Controls = instance.Controls;
-            output.PlaybackTime = elapsed;
-            output.Playing = true;
-            output.Starts = time.Starts;
-            output.ExtractRootMotion = false;
-            instance.Finished = elapsed >= parameters.Duration;
-            AnimationGraph.Submit(in row, in instance.Placement, !instance.Finished);
+            ref Timeline timeline = ref component.Value;
+            foreach (ref GpuStateInstance instance in instances.AsSpan())
+            {
+                AnimationLeafTime time = AnimationGraph.ReadTime(in row, in timeline, in instance.Placement);
+                if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; }
+                if (!time.Active || instance.Finished) continue;
+                GpuStateParameters parameters = instance.Definition.Parameters[instance.Index];
+                float elapsed = Math.Min(time.Time.Time, parameters.Duration);
+                ref GpuPoseTarget output = ref targets.Write(instance.Target);
+                output.Clip = null;
+                output.StateMachine = parameters.Machine;
+                output.Blend = null;
+                output.Rig = null;
+                output.Controls = instance.Controls;
+                output.PlaybackTime = elapsed;
+                output.Playing = true;
+                output.Starts = time.Starts;
+                output.ExtractRootMotion = false;
+                instance.Finished = elapsed >= parameters.Duration;
+                AnimationGraph.Submit(in row, ref timeline, in instance.Placement, !instance.Finished);
+            }
         }
     }
 
