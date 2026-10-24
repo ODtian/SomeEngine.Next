@@ -88,6 +88,7 @@ internal static class GpuRigPlayback
         output.Controls = instance.Controls;
         output.PlaybackTime = 0; output.Playing = false; output.Starts = placement.Starts;
         output.AnimationStarts = placement.Starts;
+        output.ExtractRootMotion = false;
         world.Replace(target, output);
     }
 
@@ -123,6 +124,7 @@ internal struct GpuRigSystem : ISystem<ImmediateSystemContext>
                     output.Blend = instance.Rig.Source; output.Rig = instance.Rig;
                     output.Controls = instance.Controls;
                     output.PlaybackTime = elapsed; output.Playing = true; output.Starts = time.Starts;
+                    output.ExtractRootMotion = false;
                     world.Replace(instance.Target, output);
                     instance.Finished = elapsed >= instance.Duration;
                     AnimationGraph.Submit(world, row.Entity, in instance.Placement, !instance.Finished);

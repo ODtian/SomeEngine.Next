@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Numerics;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -113,7 +114,7 @@ internal sealed class CpuBoneDemands(World world)
                     });
                 job = JobSystem.Schedule(new ComposeBones(work, time, sampleTime), work.Accesses);
             }
-            else job = JobSystem.Schedule(new SampleBones(work, time, sampleTime), work.Accesses);
+            else job = JobSystem.Schedule(new SampleBones(work, time, sampleTime, input.ExtractRootMotion, input.RootCorrection), work.Accesses);
             job.Complete();
             work.SourceVersion = sourceVersion; work.Starts = starts;
             work.ParentVersion = parentVersion; work.HasResult = true;
@@ -262,11 +263,22 @@ internal sealed class CpuBoneDemands(World world)
             Accesses = accesses.ToArray();
         }
     }
-    private readonly record struct SampleBones(Work Work, double Time, double SampleTime) : IJob
+    private readonly record struct SampleBones(Work Work, double Time, double SampleTime, bool ExtractRoot, BoneTransform Correction) : IJob
     {
         public void Execute()
         {
             Work.Clip!.SampleLocal(Work.Times, Work.Samples);
+            if (ExtractRoot)
+            {
+                Matrix4x4 correction = Correction.ToMatrix();
+                for (int bone = 0; bone < Work.Bones.Length; bone++)
+                    if (Work.Skeleton.Skeleton.Parents[Work.Bones[bone]] < 0)
+                    {
+                        ref BoneTransform local = ref Work.Samples[bone];
+                        local.Translation = Vector3.Transform(local.Translation, correction);
+                        local.Rotation = Quaternion.Concatenate(local.Rotation, Correction.Rotation);
+                    }
+            }
             Work.Skeleton.WriteBones(Work.Bones, Work.Samples, Time, SampleTime);
         }
     }

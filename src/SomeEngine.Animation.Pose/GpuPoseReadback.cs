@@ -22,6 +22,9 @@ public sealed record GpuPoseReadback(uint Starts, ulong InputNumber, double Calc
     public ulong Version { get; init; }
     public double SourceCalculationTime { get; init; }
     public ReadOnlyMemory<PoseCalculation> Calculations { get; init; }
+    public GpuPosePresentation Presentation { get; init; }
+    public ReadOnlyMemory<short> SampledBones { get; init; }
+    public ReadOnlyMemory<GpuPoseSampleTimes> SourceSamples { get; init; }
 }
 
 /// <summary>A selected own-bone range from the current input, delivered after its GPU copy completes.</summary>

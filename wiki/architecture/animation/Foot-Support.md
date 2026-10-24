@@ -31,6 +31,8 @@ feet.Sample(requests, targets);
 
 `FootStride` 保存世界坐标起点、预计落点和脚掌代理球半径。`SampleEnvelope` 在两端之间等距采样，每个位置沿设置的竖直方向执行一次向下球形扫掠。输出范围长度决定样本数，包含分数 0、1 两端，调用方提供至少两个样本并保持在工作区容量内。
 
+`SampleEnvelope(ReadOnlySpan<Vector3> path, float radius, Span<FootTerrainSample> samples)` 接受调用方已经采样的世界路径，按路径点逐项执行同一球扫掠。样本分数沿输入顺序均匀分布；调用方的时间采样因此可以表达动作与根运动形成的弯曲路径。[Future Foot Placement](Future-Foot-Placement.md) 沿选定动作轨迹消费这个入口。
+
 `FootTerrainSample` 保存跨步分数、命中状态、首次接触时的球心与完整支撑命中。中间的凸起以及球体覆盖的台阶边缘会参与实际三角形求交。样本数决定沿路径间距，球半径决定每个样本的脚掌覆盖范围。调用方可以用球心的竖直分量约束摆腿，同时用命中点、法线与版本保留地形信息。空处的样本保留该分数的原跨步位置。
 
 以下是一次跨步包络采样的调用示例，`departure` 和 `landing` 是同一条已选动作路径在世界中的离地与落地位置：
