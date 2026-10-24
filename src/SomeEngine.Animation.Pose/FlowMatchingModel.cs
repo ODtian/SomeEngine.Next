@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SomeEngine.Core.Diagnostics;
@@ -16,6 +17,26 @@ public readonly record struct FlowControlField(string Name, FlowControlKind Kind
 {
     [JsonIgnore] public int Offset { get; internal init; }
     [JsonIgnore] public int Width => Count * (Kind == FlowControlKind.Vector3 ? 3 : 6);
+
+    public void Encode(Vector3 value, Span<float> product, int element = 0)
+    {
+        int first = Offset + element * 3;
+        product[first] = value.X;
+        product[first + 1] = value.Y;
+        product[first + 2] = value.Z;
+    }
+
+    public void Encode(Quaternion rotation, Span<float> product, int element = 0)
+    {
+        Matrix4x4 axes = Matrix4x4.CreateFromQuaternion(rotation);
+        int first = Offset + element * 6;
+        product[first] = axes.M11;
+        product[first + 1] = axes.M21;
+        product[first + 2] = axes.M12;
+        product[first + 3] = axes.M22;
+        product[first + 4] = axes.M13;
+        product[first + 5] = axes.M23;
+    }
 }
 
 /// <summary>Ready immutable parameters for one conditional flow and its learned ELU pose decoder.</summary>

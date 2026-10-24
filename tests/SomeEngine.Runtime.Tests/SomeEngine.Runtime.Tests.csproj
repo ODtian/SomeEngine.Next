@@ -24,6 +24,7 @@
     <ProjectReference Include="../../samples/DefaultGame/DefaultGame.csproj" AdditionalProperties="SomeEngineDevelopment=true;PublishAot=false" />
     <ProjectReference Include="../../tools/SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Core\SomeEngine.Core.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Animation.Pose.Importers/SomeEngine.Animation.Pose.Importers.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" />
   </ItemGroup>
   <ItemGroup>
