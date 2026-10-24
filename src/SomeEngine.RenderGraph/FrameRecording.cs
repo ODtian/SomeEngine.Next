@@ -1590,7 +1590,6 @@ internal sealed partial class FrameExecutor
                 if (matched.Bindings is null)
                 {
                     matched.Bindings = _frame.Backend.CreatePersistentParameterBindings(_frame.Graph.Device, pipeline, bindings);
-                    InvalidateCommands(block.Pass);
                 }
                 block.Bindings = matched.Bindings;
                 block.BindingData.Add(matched);
