@@ -234,10 +234,7 @@ internal static unsafe class CommandExecutionTrace
     {
         if (D3D12Backend.CollectCommandData(ref target) is { } commands)
         {
-            commands.Write(NativeCommandType.EndQuery);
-            commands.Write((nint)@pQueryHeap);
-            commands.Write(@Type);
-            commands.Write(@Index);
+            commands.WriteEndQuery((nint)@pQueryHeap, @Type, @Index);
             return;
         }
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(global::SomeEngine.Graphics.Direct3D12.CommandExecutionTrace.NativeID3D12GraphicsCommandList10EndQuery);
