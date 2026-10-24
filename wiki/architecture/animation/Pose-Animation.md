@@ -25,6 +25,7 @@
 - 根、脚跟和脚尖轨迹与四类接触区段通过导入分析和动作标记取得，已选定路径提供下一接触与预测窗口，见 [Foot Motion](Foot-Motion.md)。
 - FABRIK 通过共同叶节点消费来源姿势，按实例目标进行定长链投影与关节圆锥限制，见 [FABRIK](FABRIK.md)。
 - PBIK 将骨盆、躯干和四肢放在同一全身约束求解中，按多末端目标、骨骼刚度、优先角度与关节限制生成姿势，见 [PBIK](PBIK.md)。
+- 链重定向按参考模型轴与归一化弧长传递旋转，结合根运动比例和 PBIK 末端校正生成普通片段，见 [Chain Retargeting](Retargeting.md)。
 - GPU 状态机共享紧凑状态与过渡表，各实例独立推进播放时间和交叉过渡，实际播放结果随 G 一起读回，见 [GPU State Machines](GPU-State-Machines.md)。
 - 选定 GPU 骨骼范围通过正常提取异步交付，保留实例、启动及输入身份；共同叶节点消费匹配反馈完成阶段，见 [GPU Pose Readback](GPU-Pose-Readback.md)。
 - GPU 视觉频率与骨骼 LOD 通过显式需求设置，按带时间的局部 TRS 呈现，关键 CPU 结果及来源事件/根运动继续更新，见 [GPU Pose Frequency](GPU-Pose-Frequency.md)。
@@ -34,7 +35,7 @@
 
 ## Non-goals
 - 不把每根骨骼表示为一条属性动画轨道。
-- 推迟：物理控制与需要物理查询的 IK、骨架间重定向、可编辑的图资产、基于姿势的游戏功能。
+- 推迟：物理控制与需要物理查询的 IK、可编辑的图资产、基于姿势的游戏功能。
 
 ## 共同执行规则
 
