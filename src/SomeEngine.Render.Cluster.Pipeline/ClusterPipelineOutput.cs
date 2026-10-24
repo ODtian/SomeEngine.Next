@@ -170,6 +170,7 @@ public sealed class ClusterGeometryCapabilities
     private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
     private BufferRangeSet _lastResidentPageReads = BufferRangeSet.Empty;
     private BufferRange[] _lastBvhRanges = [];
+    private BufferRangeSet _lastBvhReadRanges = BufferRangeSet.Empty;
     private BufferRangeSet _bvhReadRanges = BufferRangeSet.Empty;
 
     internal ClusterGeometryCapabilities(
@@ -265,8 +266,9 @@ public sealed class ClusterGeometryCapabilities
         if (!ReferenceEquals(bvhRanges, _lastBvhRanges))
         {
             _lastBvhRanges = bvhRanges;
-            _bvhReadRanges = bvhRanges.Length == 0 ? BufferRangeSet.Empty : new BufferRangeSet(bvhRanges);
+            _lastBvhReadRanges = bvhRanges.Length == 0 ? BufferRangeSet.Empty : new BufferRangeSet(bvhRanges);
         }
+        _bvhReadRanges = _lastBvhReadRanges;
     }
 
     internal void ClearFrame()
