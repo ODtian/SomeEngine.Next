@@ -40,6 +40,17 @@ public readonly ref partial struct QueryRow
     public bool Has<T>() where T : struct =>
         _match.Archetype.HasComponent(ComponentMetadata<T>.Id);
 
+    public bool HasBuffer<T>() where T : struct, IBufferElement =>
+        _match.Archetype.HasComponent(BufferComponents.Header<T>()) &&
+        _match.Archetype.HasComponent(BufferComponents.Inline<T>());
+
+    /// <summary>Reads the enable bit from this borrowed row and its declared component access.</summary>
+    public bool IsComponentEnabled<T>() where T : struct, IEnableableComponent
+    {
+        QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
+        return _chunk.IsEnabled(_match.Archetype.EnableMask(ComponentMetadata<T>.Id), _row);
+    }
+
     public T Read<T>() where T : struct
     {
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
