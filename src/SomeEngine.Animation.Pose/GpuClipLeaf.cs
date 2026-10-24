@@ -15,6 +15,7 @@ public struct GpuPoseTarget : IComponent
     public GpuPoseStateMachine? StateMachine;
     public GpuPoseBlend? Blend;
     public GpuPoseRig? Rig;
+    public GpuPoseMovement Movement;
     public Vector3 ModelOffset;
     public float[]? Controls;
     public float PlaybackTime;

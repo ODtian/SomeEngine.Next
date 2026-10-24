@@ -524,6 +524,8 @@ struct GpuPoseGoal
 };
 StructuredBuffer<GpuPoseGoal> GpuPoseGoals;
 StructuredBuffer<float4> GpuPoseOffsets;
+struct GpuPoseMovement { float4 velocity; float4 animationVelocity; float4 facingDirection; };
+StructuredBuffer<GpuPoseMovement> GpuPoseMovements;
 
 float4 DirectionRotation(float3 from, float3 to)
 {
@@ -583,6 +585,17 @@ void RotateModelDescendants(uint2 range, float3 pivot, float4 rotation)
     }
 }
 
+void TranslateModelDescendants(uint2 range, float3 offset)
+{
+    for (uint index = 0u; index < range.y; index++)
+    {
+        uint bone = GpuPoseClips.Load(range.x + index * 4u);
+        float4x4 model = GpuPoseModels[bone];
+        model[3].xyz += offset;
+        GpuPoseModels[bone] = model;
+    }
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void TranslatePose(uint3 thread : SV_DispatchThreadID)
@@ -592,14 +605,38 @@ void TranslatePose(uint3 thread : SV_DispatchThreadID)
     if (thread.x >= count) return;
     uint4 work = GpuPoseWork[thread.x];
     if ((GpuPoseControls[work.x].flags & 1u) == 0u) return;
-    uint2 range = GpuPoseClips.Load2(work.y);
-    float3 offset = GpuPoseOffsets[work.x].xyz;
-    for (uint index = 0u; index < range.y; index++)
+    TranslateModelDescendants(GpuPoseClips.Load2(work.y), GpuPoseOffsets[work.x].xyz);
+}
+
+void SolveTwoBoneGoal(uint definition, GpuPoseGoal goal)
+{
+    uint3 bones = GpuPoseClips.Load3(definition);
+    if (goal.positionWeight > 0.0)
     {
-        uint bone = GpuPoseClips.Load(range.x + index * 4u);
-        float4x4 model = GpuPoseModels[bone];
-        model[3].xyz += offset;
-        GpuPoseModels[bone] = model;
+        float3 a = GpuPoseModels[bones.x][3].xyz, b = GpuPoseModels[bones.y][3].xyz, c = GpuPoseModels[bones.z][3].xyz;
+        float upper = length(b - a), lower = length(c - b);
+        float3 target = lerp(c, goal.position, goal.positionWeight);
+        float3 direction = normalize(target - a);
+        float2 bend = asfloat(GpuPoseClips.Load2(definition + 16u));
+        float minimum = sqrt(max(upper * upper + lower * lower + 2.0 * upper * lower * bend.y, 0.0));
+        float maximum = sqrt(max(upper * upper + lower * lower + 2.0 * upper * lower * bend.x, 0.0));
+        float distance = clamp(length(target - a), minimum, maximum);
+        float along = (upper * upper - lower * lower + distance * distance) / (2.0 * distance);
+        float height = sqrt(max(upper * upper - along * along, 0.0));
+        float3 bendDirection = normalize(goal.bendDirection - direction * dot(goal.bendDirection, direction));
+        float3 middle = a + direction * along + bendDirection * height;
+        float3 tip = a + direction * distance;
+        RotateModelDescendants(GpuPoseClips.Load2(definition + 32u), a, DirectionRotation(b - a, middle - a));
+        b = GpuPoseModels[bones.y][3].xyz;
+        c = GpuPoseModels[bones.z][3].xyz;
+        RotateModelDescendants(GpuPoseClips.Load2(definition + 40u), b, DirectionRotation(c - b, tip - b));
+    }
+    if (goal.orientationWeight > 0.0)
+    {
+        float4 current = ModelRotation(GpuPoseModels[bones.z]);
+        float4 rotation = InterpolateRotation(current, goal.orientation, goal.orientationWeight);
+        float4 delta = MultiplyRotation(rotation, float4(-current.xyz, current.w));
+        RotateModelDescendants(GpuPoseClips.Load2(definition + 48u), GpuPoseModels[bones.z][3].xyz, delta);
     }
 }
 
@@ -612,34 +649,90 @@ void SolveTwoBone(uint3 thread : SV_DispatchThreadID)
     if (thread.x >= count) return;
     uint4 work = GpuPoseWork[thread.x];
     if ((GpuPoseControls[work.x].flags & 1u) == 0u) return;
-    uint3 bones = GpuPoseClips.Load3(work.y);
-    GpuPoseGoal goal = GpuPoseGoals[work.z];
-    if (goal.positionWeight > 0.0)
+    SolveTwoBoneGoal(work.y, GpuPoseGoals[work.z]);
+}
+
+GpuPoseGoal StrideFootGoal(uint2 leg, float3 pivot, float3 direction, float scale, float weight, float3 pelvisOffset)
+{
+    GpuPoseGoal goal = GpuPoseGoals[leg.y];
+    uint tip = GpuPoseClips.Load(leg.x + 8u);
+    float4x4 model = GpuPoseModels[tip];
+    float3 source = model[3].xyz - pelvisOffset;
+    float3 extended = source + direction * (dot(source - pivot, direction) * (scale - 1.0));
+    goal.position = lerp(source, lerp(extended, goal.position, goal.positionWeight), weight);
+    goal.orientation = InterpolateRotation(ModelRotation(model), goal.orientation, goal.orientationWeight * weight);
+    goal.positionWeight = 1.0;
+    goal.orientationWeight = 1.0;
+    return goal;
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void WarpStride(uint3 thread : SV_DispatchThreadID)
+{
+    uint count, stride;
+    GpuPoseWork.GetDimensions(count, stride);
+    if (thread.x >= count) return;
+    uint4 work = GpuPoseWork[thread.x];
+    if ((GpuPoseControls[work.x].flags & 1u) == 0u) return;
+    GpuPoseMovement movement = GpuPoseMovements[work.x];
+    float weight = movement.velocity.w;
+    if (weight == 0.0) return;
+    uint4 pelvis = GpuPoseClips.Load4(work.y);
+    uint4 rows = GpuPoseClips.Load4(work.y + 16u);
+    float4 upScale = asfloat(GpuPoseClips.Load4(work.y + 32u));
+    float4 limits = asfloat(GpuPoseClips.Load4(work.y + 48u));
+    float3 up = upScale.xyz;
+    float3 facingAxis = asfloat(GpuPoseClips.Load3(work.y + 64u));
+    uint facingBone = rows.z == 0u ? pelvis.x : GpuPoseClips.Load(rows.y + (rows.z - 1u) * 16u);
+    float3 sourceFacing = mul(float4(facingAxis, 0), GpuPoseModels[facingBone]).xyz;
+    sourceFacing = normalize(sourceFacing - up * dot(sourceFacing, up));
+    float3 sourceVelocity = movement.animationVelocity.xyz - up * dot(movement.animationVelocity.xyz, up);
+    float3 actualVelocity = movement.velocity.xyz - up * dot(movement.velocity.xyz, up);
+    float sourceSpeed = length(sourceVelocity), actualSpeed = length(actualVelocity);
+    float3 sourceDirection = sourceVelocity / sourceSpeed;
+    float3 actualDirection = actualSpeed > 0.0 ? actualVelocity / actualSpeed : sourceDirection;
+    float angle = atan2(dot(up, cross(sourceDirection, actualDirection)), dot(sourceDirection, actualDirection));
+    angle = clamp(angle, -limits.y, limits.y) * weight;
+    float4 rotation = float4(up * sin(angle * 0.5), cos(angle * 0.5));
+    float3 pivot = GpuPoseModels[pelvis.x][3].xyz;
+    RotateModelDescendants(pelvis.yz, pivot, rotation);
+    float3 direction = mul(float4(sourceDirection, 0), TrsMatrix(float3(0), rotation, float3(1))).xyz;
+    float scale = clamp(actualSpeed / sourceSpeed, upScale.w, limits.x);
+    float minimum = -limits.z, maximum = limits.z, preferred = 0.0;
+    for (uint foot = 0u; foot < pelvis.w; foot++)
     {
+        uint2 leg = GpuPoseClips.Load2(rows.x + foot * 16u);
+        uint3 bones = GpuPoseClips.Load3(leg.x);
         float3 a = GpuPoseModels[bones.x][3].xyz, b = GpuPoseModels[bones.y][3].xyz, c = GpuPoseModels[bones.z][3].xyz;
+        GpuPoseGoal goal = StrideFootGoal(leg, pivot, direction, scale, weight, float3(0));
         float upper = length(b - a), lower = length(c - b);
-        float3 target = lerp(c, goal.position, goal.positionWeight);
-        float3 direction = normalize(target - a);
-        float2 bend = asfloat(GpuPoseClips.Load2(work.y + 16u));
-        float minimum = sqrt(max(upper * upper + lower * lower + 2.0 * upper * lower * bend.y, 0.0));
-        float maximum = sqrt(max(upper * upper + lower * lower + 2.0 * upper * lower * bend.x, 0.0));
-        float distance = clamp(length(target - a), minimum, maximum);
-        float along = (upper * upper - lower * lower + distance * distance) / (2.0 * distance);
-        float height = sqrt(max(upper * upper - along * along, 0.0));
-        float3 bendDirection = normalize(goal.bendDirection - direction * dot(goal.bendDirection, direction));
-        float3 middle = a + direction * along + bendDirection * height;
-        float3 tip = a + direction * distance;
-        RotateModelDescendants(GpuPoseClips.Load2(work.y + 32u), a, DirectionRotation(b - a, middle - a));
-        b = GpuPoseModels[bones.y][3].xyz;
-        c = GpuPoseModels[bones.z][3].xyz;
-        RotateModelDescendants(GpuPoseClips.Load2(work.y + 40u), b, DirectionRotation(c - b, tip - b));
+        float2 bend = asfloat(GpuPoseClips.Load2(leg.x + 16u));
+        float squaredSum = upper * upper + lower * lower, twiceProduct = 2.0 * upper * lower;
+        float3 difference = a - goal.position;
+        float height = dot(difference, up);
+        float horizontalSquared = max(dot(difference, difference) - height * height, 0.0);
+        float nearHeight = sqrt(max(squaredSum + twiceProduct * bend.y - horizontalSquared, 0.0));
+        float farHeight = sqrt(max(squaredSum + twiceProduct * bend.x - horizontalSquared, 0.0));
+        minimum = max(minimum, -height + (height >= 0.0 ? nearHeight : -farHeight));
+        maximum = min(maximum, -height + (height >= 0.0 ? farHeight : -nearHeight));
+        preferred += dot(goal.position - c, up);
     }
-    if (goal.orientationWeight > 0.0)
+    float3 offset = up * clamp(preferred / float(pelvis.w), minimum, maximum);
+    TranslateModelDescendants(pelvis.yz, offset);
+    for (uint foot = 0u; foot < pelvis.w; foot++)
     {
-        float4 current = ModelRotation(GpuPoseModels[bones.z]);
-        float4 rotation = InterpolateRotation(current, goal.orientation, goal.orientationWeight);
-        float4 delta = MultiplyRotation(rotation, float4(-current.xyz, current.w));
-        RotateModelDescendants(GpuPoseClips.Load2(work.y + 48u), GpuPoseModels[bones.z][3].xyz, delta);
+        uint2 leg = GpuPoseClips.Load2(rows.x + foot * 16u);
+        SolveTwoBoneGoal(leg.x, StrideFootGoal(leg, pivot, direction, scale, weight, offset));
+    }
+    float3 facing = normalize(movement.facingDirection.xyz - up * dot(movement.facingDirection.xyz, up));
+    float facingAngle = atan2(dot(up, cross(sourceFacing, facing)), dot(sourceFacing, facing));
+    float correction = clamp(facingAngle, -limits.y, limits.y) * weight - angle;
+    for (uint joint = 0u; joint < rows.z; joint++)
+    {
+        uint4 spine = GpuPoseClips.Load4(rows.y + joint * 16u);
+        float turn = correction * asfloat(spine.w) * 0.5;
+        RotateModelDescendants(spine.yz, GpuPoseModels[spine.x][3].xyz, float4(up * sin(turn), cos(turn)));
     }
 }
 

@@ -79,8 +79,15 @@ public sealed class GpuPoseRig
     {
         TranslationBone = translationBone;
         var steps = new List<GpuPoseSource>();
-        while (output is GpuTwoBonePose || output is GpuAimPose)
+        while (output is GpuTwoBonePose || output is GpuAimPose || output is GpuStridePose)
         {
+            if (output is GpuStridePose stride)
+            {
+                steps.Add(stride);
+                foreach (GpuStrideLeg leg in stride.Rig.Legs) GoalCount = Math.Max(GoalCount, leg.Goal + 1);
+                output = stride.Source;
+                continue;
+            }
             steps.Add(output);
             int goal = output is GpuTwoBonePose limb ? limb.Goal : ((GpuAimPose)output).Goal;
             GoalCount = Math.Max(GoalCount, goal + 1);
