@@ -1,7 +1,12 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
+using SomeEngine.Animation.Pose.Importers;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -19,18 +24,31 @@ public sealed partial class SkinningRenderingTests
         await content.WriteMeshesAsync(EncodeFloatInfluences);
         string source = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
             "../../../../../samples/SomeEngine.Animation.FlowMatching/example.flow.json"));
-        FlowMatchingModel model = FlowMatchingModel.ReadJson(await File.ReadAllBytesAsync(source));
-        string saved = Path.Combine(content.Project.RootPath, "assets", "example.animation-model.asset");
-        using (var asset = new AnimationModelAsset(Guid.NewGuid()))
-        {
-            asset.SetBlock(new FlowMatchingBlock(default, model));
-            await asset.SaveAsync(saved);
-        }
-        using (AnimationModelAsset asset = await AnimationModelAsset.OpenAsync(saved))
-            model = (await asset.GetBlockAsync<FlowMatchingBlock>()).CreateModel();
         BoneTransform identity = new() { Rotation = Quaternion.Identity, Scale = Vector3.One };
         var skeleton = new Skeleton([-1, 0, 1], [identity, identity,
             new() { Translation = Vector3.UnitY, Rotation = Quaternion.Identity, Scale = Vector3.One }], [1, 2, 3]);
+        Guid skeletonId = Guid.NewGuid();
+        using (var asset = new SkeletonAsset(skeletonId))
+        {
+            asset.SetBlock(new SkeletonBlock(skeleton.Parents, skeleton.ReferencePose, skeleton.NameHashes));
+            content.Project.RegisterAsset(await asset.SaveAsync(Path.Combine(content.Project.RootPath, "assets", "example.skeleton.asset")));
+        }
+        string exportPath = Path.Combine(content.Project.RootPath, "assets", "example.flow.json");
+        File.Copy(source, exportPath);
+        var metadata = new SourceMeta { SourceGuid = SourceGuid.New(), UseDefaultImporters = false };
+        metadata.Importers.Add(new(FlowMatchingImporter.Id, JsonSerializer.SerializeToElement(
+            new FlowMatchingSettings(skeletonId), FlowMatchingSettingsJson.Default.FlowMatchingSettings)));
+        SourceMeta.Save(exportPath, metadata);
+        var importer = new FlowMatchingSourceImporter(FlowModelTestAssets.AddAssetCapabilities(new ServiceCollection()));
+        Guid modelId = Assert.Single(await content.Project.ImportAsync(exportPath, importer));
+        FlowMatchingModel model;
+        using (AnimationModelAsset asset = await AnimationModelAsset.OpenAsync(
+            Path.Combine(content.Project.RootPath, content.Project.Manifest.Assets[modelId].Path)))
+        {
+            FlowMatchingBlock block = await asset.GetBlockAsync<FlowMatchingBlock>();
+            Assert.Equal(skeletonId, block.Skeleton.Value);
+            model = block.CreateModel();
+        }
         var storage = new PoseStorage();
         using SkeletonInstance first = storage.CreateInstance(skeleton), second = storage.CreateInstance(skeleton);
         SkeletonInstance[] bodies = [first, second];
@@ -51,7 +69,7 @@ public sealed partial class SkinningRenderingTests
                 using (builder.Parallel())
                 {
                     builder.Leaf<FlowMatchingParameters, FlowMatchingLeaf>(Entity.Null,
-                        new(model, new(0), ControlParameter: 0, NoiseParameter: 6));
+                        new(model, new(0), NoiseParameter: 6));
                     builder.BlendPose(Entity.Null, new(new PoseBlend([new(new(0))]), new(1), new(StageEnd.Settled)));
                 }
                 using CompiledGraph graph = builder.Compile();
@@ -63,18 +81,25 @@ public sealed partial class SkinningRenderingTests
             },
             UpdateFrame = frame =>
             {
-                float[][] controls = [[.7f, .1f, 0, .9f, .2f, 0], [-.65f, -.2f, 0, -.8f, -.5f, 0]];
+                Vector3[][] controls = [[new(.7f, .1f, 0), new(.9f, .2f, 0)],
+                    [new(-.65f, -.2f, 0), new(-.8f, -.5f, 0)]];
                 float[][] noise = [[.2f, -.3f, .1f, .4f, -.2f, .3f], [-.1f, .4f, -.3f, .1f, .2f, -.4f],
                     [.3f, .1f, -.2f, -.1f, .4f, .2f]];
                 for (int actor = 0; actor < 2; actor++)
                 {
                     var parameters = new GraphParameters();
                     for (int value = 0; value < 6; value++)
-                    {
-                        parameters.Values[value] = controls[actor][value];
                         parameters.Values[6 + value] = noise[frame.Index][value];
-                    }
                     frame.World.Replace(animations[actor], parameters);
+                    Vector3[] control = controls[actor];
+                    frame.World.ExecuteBufferWrite<FlowMatchingInstance, Vector3[]>(animations[actor], ref control,
+                        static (instances, ref control) =>
+                        {
+                            ref FlowMatchingInstance instance = ref instances[0];
+                            ReadOnlySpan<FlowControlField> fields = instance.Definition.Parameters[instance.Index].Model.Controls;
+                            fields[0].Encode(control[0], instance.State.Controls);
+                            fields[1].Encode(control[1], instance.State.Controls);
+                        });
                 }
             },
         };
@@ -200,36 +225,23 @@ public sealed partial class SkinningRenderingTests
         }
         _output.WriteLine($"Flow NumPy parity maximum error: {error:G9}; tolerance: 0.0002");
         Assert.InRange(error, 0, .0002f);
-        using SkeletonInstance referenceFirst = storage.CreateInstance(skeleton), referenceSecond = storage.CreateInstance(skeleton);
-        SkeletonInstance[] references = [referenceFirst, referenceSecond];
-        SceneImage? expected = null;
-        var referenceApplication = new ApplicationScene(content.Project.RootPath)
+        await content.WriteReferenceMeshesAsync((previous, right) =>
         {
-            Initialize = frame =>
-            {
-                var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.CreateTranslation(0, -1, 0)], [1, 2]);
-                foreach (Entity mesh in frame.Scene.MeshEntities)
-                    frame.World.Add(mesh, new MeshSkin(frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0
-                        ? referenceSecond : referenceFirst, binding));
-            },
-            UpdateFrame = frame =>
-            {
-                for (int actor = 0; actor < 2; actor++)
-                {
-                    var transforms = new BoneTransform[3];
-                    for (int bone = 0; bone < 3; bone++)
-                    {
-                        Matrix4x4.Decompose(numpyFrames[frame.Index][actor][bone],
-                            out Vector3 scale, out Quaternion rotation, out Vector3 position);
-                        transforms[bone] = new() { Translation = position, Rotation = rotation, Scale = scale };
-                    }
-                    references[actor].Update(transforms, (frame.Index + 1) * .1);
-                }
-            },
-        };
+            Matrix4x4[] local = numpyFrames[previous ? 1 : 2][right ? 1 : 0];
+            Matrix4x4 hips = local[1] * local[0];
+            return (hips, Matrix4x4.CreateTranslation(0, -1, 0) * local[2] * hips);
+        });
+        await content.SetReferenceShaderAsync();
+        SceneImage? expected = null;
+        var referenceApplication = new ApplicationScene(content.Project.RootPath);
         await SceneImages.RunAsync("d3d12", new SceneScript(referenceApplication, 3,
             [new(2, edit => edit.CaptureImage(value => expected = value))]), "--fixed-step", "0.1", "--no-taa", "--no-vsm");
-        SceneImages.AssertEqualWithinPixel(Assert.IsType<SceneImage>(expected), Assert.IsType<SceneImage>(actual), tolerance: 2);
+        SceneImage reference = Assert.IsType<SceneImage>(expected);
+        int visible = 0;
+        foreach (byte value in reference.Pixels.Span) if (value > 32 && value < 255) visible++;
+        _output.WriteLine($"Flow independent reference visible channels: {visible}");
+        Assert.True(visible > 1000, $"Visible reference channels: {visible}");
+        SceneImages.AssertEqualWithinPixel(reference, Assert.IsType<SceneImage>(actual), tolerance: 2);
     }
 
     private sealed class FlowPoseReads(SkeletonInstance[] bodies, Entity[] animations) : ISystem<ImmediateSystemContext>
@@ -250,3 +262,6 @@ public sealed partial class SkinningRenderingTests
         }
     }
 }
+
+[AssetCapabilities]
+public static partial class FlowModelTestAssets;

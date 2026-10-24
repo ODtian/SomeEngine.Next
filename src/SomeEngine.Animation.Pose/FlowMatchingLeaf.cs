@@ -5,7 +5,7 @@ using SomeEngine.ECS.Entities;
 namespace SomeEngine.Animation.Pose;
 
 public readonly record struct FlowMatchingParameters(FlowMatchingModel Model, PoseResultId Output,
-    byte ControlParameter = 0, int NoiseParameter = -1, uint Seed = 1,
+    byte? ControlParameter = null, int NoiseParameter = -1, uint Seed = 1,
     RootMotionMode RootMotion = RootMotionMode.SourcePose, ReadOnlyMemory<float> InitialHistory = default);
 
 [BufferCapacity(1)]
