@@ -29,7 +29,8 @@ internal readonly record struct RenderBoneSectionData(Skeleton Skeleton, RenderB
     uint Starts, ulong InputNumber, double CalculationTime, float SampleTime,
     GpuPoseStateMachine? StateMachine, GpuPoseBlend? Blend, float[] Controls, float PlaybackTime, bool Playing,
     GpuPoseRig? Rig, GpuPoseGoal[] Goals, Vector3 ModelOffset,
-    ReadOnlyMemory<short> CpuBones, PoseCalculation[] Calculations) : IComponent
+    ReadOnlyMemory<short> CpuBones, PoseCalculation[] Calculations, GpuPoseIdentity Identity,
+    ReadOnlyMemory<GpuPoseReadbackRequest> Readbacks) : IComponent
 {
     internal bool IsGpu => Clip is not null || StateMachine is not null || Blend is not null;
 }
@@ -79,6 +80,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
             GpuPoseTarget target = world.Read<GpuPoseTarget>(entity);
             _gpuControls[target.Skeleton] = target;
             SourceSection section = Section(target.Skeleton);
+            section.Target = entity;
             if (target.Rig is GpuPoseRig rig)
             {
                 if (section.GoalCapture.Length != rig.GoalCount)
@@ -149,7 +151,8 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                 isGpu ? gpu.CalculationTime : model.Time,
                 isGpu ? gpu.SampleTime : (float)model.SampleTime,
                 gpu.StateMachine, gpu.Blend, section.ControlValues, gpu.PlaybackTime, gpu.Playing,
-                gpu.Rig, section.GoalValues, gpu.ModelOffset, source.CpuBones, section.CalculationValues);
+                gpu.Rig, section.GoalValues, gpu.ModelOffset, source.CpuBones, section.CalculationValues,
+                new(section.Target, source, gpu.Starts, gpu.InputNumber, gpu.AnimationStarts), gpu.Readbacks);
         }
         _removedMeshes.Clear();
         foreach (Entity source in _meshes.Keys) if (!_meshSources.Contains(source)) _removedMeshes.Add(source);
@@ -281,6 +284,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
     }
     private sealed class SourceSection(SkeletonInstance source)
     {
+        internal Entity Target;
         internal readonly SkeletonInstance Source = source;
         internal Entity Entity;
         internal SourceSection? Parent;

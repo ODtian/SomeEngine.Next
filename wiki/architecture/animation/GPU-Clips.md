@@ -82,9 +82,11 @@ G 范围、GPU 播放行及 `InputTime` 控制时钟。图消费者使用 `Skinn
 ## 读取 GPU 结果
 
 `SkinningFeature.RequestReadback(section, receive)` 请求下一次提交的当前及上一份自身区段 G，以及同次 GPU 播放行。
-`CompleteReadbacks()` 等待对应 copy 完成并交付 `GpuPoseReadback`；返回矩阵独立于 GPU 资源，样本时间和输入标记来自实际 GPU 结果。`Version` 与 `CalculationTime` 描述模型求值，`SourceCalculationTime` 描述来源输入时钟，逐骨骼 `Calculations` 保留各写入方的时间与版本。
+`CompleteReadbacks()` 查询对应 copy 完成点，就绪后交付 `GpuPoseReadback`；返回矩阵独立于 GPU 资源，样本时间和输入标记来自实际 GPU 结果。`Version` 与 `CalculationTime` 描述模型求值，`SourceCalculationTime` 描述来源输入时钟，逐骨骼 `Calculations` 保留各写入方的时间与版本。
 普通应用通过 `SceneEdit.ReadGpuPose(target, receive)` 使用这一入口，Runtime 在正常
 prepare 后解析提取映射，并在帧提交后交付结果。
+
+Game 侧通过 `GpuPoseAnimation.RequestReadback` 请求自身骨骼范围，使用保留身份的 Task 结果或共同叶节点反馈，见 [Asynchronous GPU Pose Readback](GPU-Pose-Readback.md)。
 
 共享状态机、逐实例控制值与交叉过渡通过 `GpuStateLeaf` 接入，实际状态、来源时间和过渡权重见 [GPU State Machines](GPU-State-Machines.md)。
 

@@ -157,6 +157,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                     data.StateMachine is null && data.Blend is null ? data.SampleTime : data.PlaybackTime, section.Index, section.FrameVersion);
             }
         });
+        RequestReadbacks();
     }
 
     private void ReadFrameInputs()
@@ -169,7 +170,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             RenderBoneSectionData data = section.Data;
             uint flags = (section.Evaluate ? 1u : 0u) | (!section.HasResult ? 2u : 0u) | (data.IsGpu ? 4u : 0u)
                 | (data.StateMachine is not null ? 8u : 0u) | (data.Playing ? 16u : 0u)
-                | (!ReferenceEquals(section.AcceptedInput.StateMachine, data.StateMachine)
+                | (section.AcceptedInput.AnimationStarts != data.Identity.AnimationStarts
+                    || !ReferenceEquals(section.AcceptedInput.StateMachine, data.StateMachine)
                     || !ReferenceEquals(section.AcceptedInput.Clip, data.Clip)
                     || !ReferenceEquals(section.AcceptedInput.Blend, data.Blend) ? 32u : 0u)
                 | (data.Blend is not null ? 64u : 0u) | (section.AdvanceSource ? 128u : 0u);
@@ -209,7 +211,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             if (section.EvaluationVisited) return;
             section.EvaluationVisited = true;
             RenderBoneSectionData data = section.Data;
-            section.FrameInput = new(data.InputNumber, data.Starts, data.Clip, data.StateMachine, data.Blend, data.Rig);
+            section.FrameInput = new(data.InputNumber, data.Starts, data.Identity.AnimationStarts, data.Clip, data.StateMachine, data.Blend, data.Rig);
             section.AdvanceSource = !section.HasResult || section.AcceptedInput != section.FrameInput;
             bool changed = section.AdvanceSource || section.AcceptedBinding != data.BindingVersion
                 || !section.AcceptedCpuBones.Equals(data.CpuBones)
@@ -574,7 +576,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
 
     public void Dispose()
     {
-        CompleteReadbacks();
+        CompleteReadbacks(wait: true);
         foreach (Readback readback in _readbacks) readback.Buffer?.Dispose();
         _readbacks.Clear();
         _advancePipeline.Dispose(); _loadPipeline.Dispose(); _samplePipeline.Dispose(); _storePipeline.Dispose();
@@ -592,7 +594,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private readonly record struct Control(uint ClipOffset, float SampleTime, uint Flags, uint Starts, ulong InputNumber,
         double CalculationTime, uint MachineOffset, uint InputOffset, float PlaybackTime, uint BlendStart);
     private readonly record struct BoneWork(uint Section, uint Bone, uint Parent, uint Output);
-    private readonly record struct Input(ulong Number, uint Starts, QuantizedClipData? Clip,
+    private readonly record struct Input(ulong Number, uint Starts, uint AnimationStarts, QuantizedClipData? Clip,
         GpuPoseStateMachine? StateMachine, GpuPoseBlend? Blend, GpuPoseRig? Rig);
     private readonly record struct CpuCopy(int Source, int Destination, int Count);
     private readonly record struct HistoryCopy(PoseRange Source, PoseRange Destination, int SourceIndex, int DestinationIndex,

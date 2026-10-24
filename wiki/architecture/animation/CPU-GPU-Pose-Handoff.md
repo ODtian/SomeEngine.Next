@@ -54,4 +54,6 @@ GPU 将来源输入推进与模型求值分开。输入编号推进状态机、B
 
 `RenderPoseSection.Version` 向 Rendering-world 消费者提供同一显示版本，姿势包围盒按该版本刷新。[GPU Clips](GPU-Clips.md) 的公开读回返回独立保留的矩阵与计算信息。
 
+选定自身范围、异步完成与双层启动身份的使用方法见 [GPU Pose Readback](GPU-Pose-Readback.md)。
+
 公共调用入口还见 [CriticalBoneBehaviorTests](../../../tests/SomeEngine.Animation.Pose.Tests/CriticalBoneBehaviorTests.cs) 和 [CriticalBoneRenderingTests](../../../tests/SomeEngine.Runtime.Tests/CriticalBoneRenderingTests.cs)。

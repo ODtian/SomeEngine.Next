@@ -52,6 +52,7 @@ public readonly struct GpuBlendLeaf : IAnimationLeaf<GpuBlendParameters>
         output.PlaybackTime = 0;
         output.Playing = false;
         output.Starts = placement.Starts;
+        output.AnimationStarts = placement.Starts;
         world.Replace(target, output);
     }
 

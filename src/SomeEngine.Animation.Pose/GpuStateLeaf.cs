@@ -51,6 +51,7 @@ public readonly struct GpuStateLeaf : IAnimationLeaf<GpuStateParameters>
         output.PlaybackTime = 0;
         output.Playing = false;
         output.Starts = placement.Starts;
+        output.AnimationStarts = placement.Starts;
         world.Replace(target, output);
     }
 

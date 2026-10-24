@@ -20,7 +20,7 @@
 
 ## 观察结果
 
-`SceneEdit.ReadGpuPose` 和 `SkinningFeature.RequestReadback` 将当前、上一帧 G 与对应 GPU 播放行一起复制并完成同步。
+`SceneEdit.ReadGpuPose` 和 `SkinningFeature.RequestReadback` 将当前、上一帧 G 与对应 GPU 播放行一起复制，在 GPU 完成后交付。[GPU Pose Readback](GPU-Pose-Readback.md) 提供 Game 侧选骨请求及保留执行身份的反馈。
 
 | 公开结果 | 含义 |
 | --- | --- |
