@@ -32,7 +32,23 @@ FlowMatchingModel model = (await asset.GetBlockAsync<FlowMatchingBlock>()).Creat
 
 实例从共享初始历史建立自己的 previous latent、控制、噪声、生成姿势、根平移和根旋转。重新开始时，叶的实际 `Starts` 重建这些状态；`InitialHistory` 参数可以提供调用方选择的初始历史。
 
-控制字段沿导出顺序连接。`FlowControlField.Offset`、`Width` 给出其编码范围，Vector3 按 XYZ 排列；Rotation6D 按两条矩阵轴的交错分量排列。固定数组依次展开元素。`GraphParameters` 从 `ControlParameter` 开始保存同一编码后的浮点值，使用公共参数数组的 16 项容量。
+控制字段沿导出顺序连接。`FlowControlField.Offset`、`Width` 给出其编码范围，Vector3 按 XYZ 排列；Rotation6D 按两条矩阵轴的交错分量排列。固定数组依次展开元素，`Encode(value, product, element)` 写入选定元素。
+
+每个实例的 `FlowMatchingState.Controls` 是完整 `ControlCount` 宽度的连续输入；它与求值器读取的是同一数组。调用方在 Composition 前沿 `ExecuteBufferWrite<FlowMatchingInstance>` 写入。默认使用这组实例输入；显式设置 `ControlParameter` 时，求值器改从 `GraphParameters` 的该位置复制整组控制。后者是适合公共参数数组 16 项容量的小参数便利入口。
+
+以下是例子的两个 Vector3 字段写入同一实例输入的用法；其它声明宽度和固定数组使用各自字段的 Offset、Width 和元素索引。
+
+```csharp
+var values = (Velocity: velocity, Target: target);
+world.ExecuteBufferWrite<FlowMatchingInstance, (Vector3 Velocity, Vector3 Target)>(animation, ref values,
+    static (instances, ref values) =>
+    {
+        ref FlowMatchingInstance instance = ref instances[0];
+        ReadOnlySpan<FlowControlField> fields = instance.Definition.Parameters[instance.Index].Model.Controls;
+        fields[0].Encode(values.Velocity, instance.State.Controls);
+        fields[1].Encode(values.Target, instance.State.Controls);
+    });
+```
 
 每次正 Delta 更新执行一次自回归模型步。调用方采用模型 `FrameTime` 对应的固定更新频率；根速度使用该次 Delta 积分。默认噪声由逐实例种子产生；指定 `NoiseParameter` 后，从图参数中的该范围读取调用方提供的标准噪声。这让相同历史、控制、噪声与步数形成可复现的求值输入。
 
@@ -81,3 +97,54 @@ Flow 叶持续提交运行状态，阶段和停止沿用共同时间线。零 De
 [train.py](../../../tools/FlowMatching/train.py) 独立生成样本并训练 flow 与 decoder；[learned export](../../../samples/SomeEngine.Animation.FlowMatching/example.flow.json) 是该例子的实际学习资产。脚本使用声明种子、网络宽度、优化器和迭代数；训练、数据生成及参考计算均经公共计算队列执行。
 
 [reference.py](../../../tools/FlowMatching/reference.py) 用 NumPy 独立读取该导出，执行相同输入的积分与姿势解码。公开应用例子 [FlowMatchingRenderingTests](../../../tests/SomeEngine.Runtime.Tests/FlowMatchingRenderingTests.cs) 通过共享图驱动两个角色，比较独立数值姿势和实例历史；普通 Skeleton 按同一组逐帧参考输入推进，使 Cluster 图像覆盖当前与前一帧 G。
+
+## 训练数据与导出操作
+
+`train.py` 的 `--data` 接受 NumPy NPZ，其中 `previous`、`following` 是原始 latent 的前后帧数组，`controls` 是按声明字段顺序编码的原始控制，`poses` 是后帧对应的完整姿势特征。四个数组均为 float32，形状分别是 `[N,D]`、`[N,D]`、`[N,C]`、`[N,K]`。程序动作例子在省略 `--data` 时由 `motion_example` 和 `pose_features` 确定性生成。
+
+配置的 `initialLatent` 提供原始初始历史，`parents` 给出 Skeleton 骨骼数；运行时绑定该顺序的 Skeleton。控制描述的总宽度为 C，`controlOffset`、`controlScale` 可显式指定，默认逐项为 0、1。flow 网络输入宽度为 `2*D+C+1`，输出宽度为 D；decoder 输入为 D，输出为本页姿势格式的 K。网络宽度、训练种子、线程数、batch、优化步数和 Euler 步数均由配置提供。
+
+下列命令是本仓库可复用训练例子的操作，在仓库根目录执行。该例子使用 Python 3.10、torch 2.3.1+cpu、NumPy 1.26.4 和四个 CPU 线程。
+
+```powershell
+$python = 'C:\Users\boqi\AppData\Local\Programs\Python\Python310\python.exe'
+$env:OMP_NUM_THREADS = '4'
+$env:MKL_NUM_THREADS = '4'
+$training = @('--cpu', '--session', 'flow-training-example', $python,
+    'tools/FlowMatching/train.py', '--config', 'tools/FlowMatching/example.json',
+    '--output', 'samples/SomeEngine.Animation.FlowMatching/example.flow.json')
+& 'F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1' @training
+```
+
+训练先生成或读取明确的数据，计算 latent/pose 归一化，训练 decoder 和条件 flow，再从实际 PyTorch 网络导出 row-major 参数。保存前，[export.py](../../../tools/FlowMatching/export.py) 用完整声明维度的固定输入，将内存中的训练网络与 JSON 往返后的独立 NumPy 求值比较，容差为 0.0002。已有学习资产可以复用同一入口：
+
+```powershell
+$comparison = @('--cpu', '--session', 'flow-training-example', $python,
+    'tools/FlowMatching/export.py', '--model',
+    'samples/SomeEngine.Animation.FlowMatching/example.flow.json')
+& 'F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1' @comparison
+```
+
+## 导入与工程模型资产
+
+[FlowMatchingSourceImporter](../../../src/SomeEngine.Animation.Pose.Importers/FlowMatchingSourceImporter.cs) 读取 `.flow.json` 为具体 `FlowMatchingModel`，按来源 `.meta` 的选择绑定 Block Importer，并通过 `GetAssetId("model")`、`AddAsset`、`GetAssetAsync` 完成实际模型资产。输出以 `.animation-model.asset` 替换来源的最后扩展名；例如 `example.flow.json` 对应 `example.flow.animation-model.asset`。工程沿既有 `AssetProject.ImportAsync` 调用模型资产自己的 `SaveAsync`，提交来源与目录。
+
+[FlowMatchingImporter](../../../src/SomeEngine.Animation.Pose.Importers/FlowMatchingImporter.cs) 只生产 `FlowMatchingBlock`，保存同一导出数据和 `FlowMatchingSettings.SkeletonAssetId`。项目引用动画 Importers 程序集，使用 `[AssetCapabilities]` 生成发现入口；来源集成通过能力描述选择生产者。
+
+以下是已保存 Skeleton 资产与模型导出的导入例子。
+
+```csharp
+var services = ProjectAssets.AddAssetCapabilities(new ServiceCollection());
+var importer = new FlowMatchingSourceImporter(services);
+var project = new AssetProject(projectRoot, [importer]);
+var metadata = new SourceMeta { SourceGuid = SourceGuid.New(), UseDefaultImporters = false };
+metadata.Importers.Add(new(FlowMatchingImporter.Id, JsonSerializer.SerializeToElement(
+    new FlowMatchingSettings(skeletonAssetId), FlowMatchingSettingsJson.Default.FlowMatchingSettings)));
+SourceMeta.Save(exportPath, metadata);
+Guid modelId = (await project.ImportAsync(exportPath, importer))[0];
+using AnimationModelAsset asset = await AnimationModelAsset.OpenAsync(
+    Path.Combine(projectRoot, project.Manifest.Assets[modelId].Path));
+FlowMatchingModel model = (await asset.GetBlockAsync<FlowMatchingBlock>()).CreateModel();
+```
+
+取得 ready 模型后，普通引用保持其参数有效。公开 App 使用这条导入路径重开模型资产，将实例控制组合送入同一 Flow → PoseBlend → Skeleton → Skinning → Cluster 流程。

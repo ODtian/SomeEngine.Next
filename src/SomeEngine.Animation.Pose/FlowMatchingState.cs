@@ -16,6 +16,8 @@ public sealed class FlowMatchingState
     private Quaternion _rootRotation;
     private uint _random;
     public ReadOnlySpan<float> History => Previous;
+    /// <summary>The complete declared control product, written before animation composition.</summary>
+    public Span<float> Controls => Control;
     public ReadOnlySpan<float> PoseFeatures => Decoded;
     public ReadOnlySpan<BoneTransform> LocalPose => Pose;
     public RootMotionDelta RootMotion => Motion;

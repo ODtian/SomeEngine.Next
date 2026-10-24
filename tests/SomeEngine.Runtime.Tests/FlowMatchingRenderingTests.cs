@@ -1,7 +1,12 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
+using SomeEngine.Animation.Pose.Importers;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -19,18 +24,31 @@ public sealed partial class SkinningRenderingTests
         await content.WriteMeshesAsync(EncodeFloatInfluences);
         string source = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
             "../../../../../samples/SomeEngine.Animation.FlowMatching/example.flow.json"));
-        FlowMatchingModel model = FlowMatchingModel.ReadJson(await File.ReadAllBytesAsync(source));
-        string saved = Path.Combine(content.Project.RootPath, "assets", "example.animation-model.asset");
-        using (var asset = new AnimationModelAsset(Guid.NewGuid()))
-        {
-            asset.SetBlock(new FlowMatchingBlock(default, model));
-            await asset.SaveAsync(saved);
-        }
-        using (AnimationModelAsset asset = await AnimationModelAsset.OpenAsync(saved))
-            model = (await asset.GetBlockAsync<FlowMatchingBlock>()).CreateModel();
         BoneTransform identity = new() { Rotation = Quaternion.Identity, Scale = Vector3.One };
         var skeleton = new Skeleton([-1, 0, 1], [identity, identity,
             new() { Translation = Vector3.UnitY, Rotation = Quaternion.Identity, Scale = Vector3.One }], [1, 2, 3]);
+        Guid skeletonId = Guid.NewGuid();
+        using (var asset = new SkeletonAsset(skeletonId))
+        {
+            asset.SetBlock(new SkeletonBlock(skeleton.Parents, skeleton.ReferencePose, skeleton.NameHashes));
+            content.Project.RegisterAsset(await asset.SaveAsync(Path.Combine(content.Project.RootPath, "assets", "example.skeleton.asset")));
+        }
+        string exportPath = Path.Combine(content.Project.RootPath, "assets", "example.flow.json");
+        File.Copy(source, exportPath);
+        var metadata = new SourceMeta { SourceGuid = SourceGuid.New(), UseDefaultImporters = false };
+        metadata.Importers.Add(new(FlowMatchingImporter.Id, JsonSerializer.SerializeToElement(
+            new FlowMatchingSettings(skeletonId), FlowMatchingSettingsJson.Default.FlowMatchingSettings)));
+        SourceMeta.Save(exportPath, metadata);
+        var importer = new FlowMatchingSourceImporter(FlowModelTestAssets.AddAssetCapabilities(new ServiceCollection()));
+        Guid modelId = Assert.Single(await content.Project.ImportAsync(exportPath, importer));
+        FlowMatchingModel model;
+        using (AnimationModelAsset asset = await AnimationModelAsset.OpenAsync(
+            Path.Combine(content.Project.RootPath, content.Project.Manifest.Assets[modelId].Path)))
+        {
+            FlowMatchingBlock block = await asset.GetBlockAsync<FlowMatchingBlock>();
+            Assert.Equal(skeletonId, block.Skeleton.Value);
+            model = block.CreateModel();
+        }
         var storage = new PoseStorage();
         using SkeletonInstance first = storage.CreateInstance(skeleton), second = storage.CreateInstance(skeleton);
         SkeletonInstance[] bodies = [first, second];
@@ -51,7 +69,7 @@ public sealed partial class SkinningRenderingTests
                 using (builder.Parallel())
                 {
                     builder.Leaf<FlowMatchingParameters, FlowMatchingLeaf>(Entity.Null,
-                        new(model, new(0), ControlParameter: 0, NoiseParameter: 6));
+                        new(model, new(0), NoiseParameter: 6));
                     builder.BlendPose(Entity.Null, new(new PoseBlend([new(new(0))]), new(1), new(StageEnd.Settled)));
                 }
                 using CompiledGraph graph = builder.Compile();
@@ -63,18 +81,25 @@ public sealed partial class SkinningRenderingTests
             },
             UpdateFrame = frame =>
             {
-                float[][] controls = [[.7f, .1f, 0, .9f, .2f, 0], [-.65f, -.2f, 0, -.8f, -.5f, 0]];
+                Vector3[][] controls = [[new(.7f, .1f, 0), new(.9f, .2f, 0)],
+                    [new(-.65f, -.2f, 0), new(-.8f, -.5f, 0)]];
                 float[][] noise = [[.2f, -.3f, .1f, .4f, -.2f, .3f], [-.1f, .4f, -.3f, .1f, .2f, -.4f],
                     [.3f, .1f, -.2f, -.1f, .4f, .2f]];
                 for (int actor = 0; actor < 2; actor++)
                 {
                     var parameters = new GraphParameters();
                     for (int value = 0; value < 6; value++)
-                    {
-                        parameters.Values[value] = controls[actor][value];
                         parameters.Values[6 + value] = noise[frame.Index][value];
-                    }
                     frame.World.Replace(animations[actor], parameters);
+                    Vector3[] control = controls[actor];
+                    frame.World.ExecuteBufferWrite<FlowMatchingInstance, Vector3[]>(animations[actor], ref control,
+                        static (instances, ref control) =>
+                        {
+                            ref FlowMatchingInstance instance = ref instances[0];
+                            ReadOnlySpan<FlowControlField> fields = instance.Definition.Parameters[instance.Index].Model.Controls;
+                            fields[0].Encode(control[0], instance.State.Controls);
+                            fields[1].Encode(control[1], instance.State.Controls);
+                        });
                 }
             },
         };
@@ -250,3 +275,6 @@ public sealed partial class SkinningRenderingTests
         }
     }
 }
+
+[AssetCapabilities]
+public static partial class FlowModelTestAssets;
