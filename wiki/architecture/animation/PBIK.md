@@ -48,4 +48,6 @@ PoseAnimation.AddSystems(systems,
 
 `RegisterNode` 建立输入输出依赖，`PbikSystem` 在对应级别提交具体 `SolveBody` Job。Job 读取共享定义与骨架，写入该实例的工作区；完成同步后，系统写回来源对应的局部姿势结果。活动节点每帧读取当前目标和来源姿势。
 
-源码：[共享定义](../../../src/SomeEngine.Animation.Pose/PbikRig.cs)、[全身约束投影](../../../src/SomeEngine.Animation.Pose/PbikSamples.cs)、[叶节点与实例](../../../src/SomeEngine.Animation.Pose/PbikLeaf.cs)、[具体求解系统](../../../src/SomeEngine.Animation.Pose/PbikSystem.cs)。
+[PbikSolver](../../../src/SomeEngine.Animation.Pose/PbikSolver.cs) 接收连续的局部姿势、目标、模型矩阵和工作区 Span。共同图实例继续由 `PbikSamples` 持有这些数组；[链重定向](Retargeting.md) 的采样调用借用数组并执行同一求解循环。
+
+源码：[共享定义](../../../src/SomeEngine.Animation.Pose/PbikRig.cs)、[全身约束投影](../../../src/SomeEngine.Animation.Pose/PbikSolver.cs)、[实例工作区](../../../src/SomeEngine.Animation.Pose/PbikSamples.cs)、[叶节点与实例](../../../src/SomeEngine.Animation.Pose/PbikLeaf.cs)、[具体求解系统](../../../src/SomeEngine.Animation.Pose/PbikSystem.cs)。
