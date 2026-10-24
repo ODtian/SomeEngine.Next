@@ -121,7 +121,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
         return result;
     }
 
-    private IEnumerable<Guid> GetShaderAssetIds()
+    public IEnumerable<Guid> GetShaderAssetIds()
     {
         ShaderRef?[] entries =
         [

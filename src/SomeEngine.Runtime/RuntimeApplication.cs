@@ -153,7 +153,7 @@ internal static class RuntimeApplication
             VirtualShadowMapShadersBlock shaders = await file.GetBlockAsync<VirtualShadowMapShadersBlock>()
                 .ConfigureAwait(false);
             Dictionary<AssetId<ShaderAsset>, Shader> references = await ShaderRef.LoadAsync(
-                shaders.References(), assets, content.ShaderValues, content.Slang, content.ShaderSettings).ConfigureAwait(false);
+                shaders.GetShaderAssetIds(), assets, content.ShaderValues, content.Slang, content.ShaderSettings).ConfigureAwait(false);
             SomeEngine.Resources.Texture? blueNoise = shaders.BlueNoise is { } texture
                 ? await TextureAsset.GetAsync(assets, texture, content.TextureValues).ConfigureAwait(false) : null;
             return shaders.Create(file.Name, references, blueNoise);
