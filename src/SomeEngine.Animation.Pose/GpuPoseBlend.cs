@@ -29,10 +29,10 @@ public sealed record GpuBlendLayer(GpuBlendNode Base, GpuBlendNode Source, BoneM
 public readonly record struct GpuBlendStep(GpuBlendNode Node, int Base = -1, int Source = -1);
 
 /// <summary>Dependency-ordered local-pose operations sharing a skeleton, clips and ready masks.</summary>
-public sealed class GpuPoseBlend
+public sealed class GpuPoseBlend : GpuPoseSource
 {
     private readonly GpuBlendStep[] _steps;
-    public Skeleton Skeleton { get; }
+    public override Skeleton Skeleton { get; }
     public ReadOnlySpan<GpuBlendStep> Steps => _steps;
     public int InputCount { get; }
 
