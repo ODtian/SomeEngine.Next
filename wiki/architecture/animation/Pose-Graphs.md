@@ -48,6 +48,8 @@ actorTransform = frame.RootMotion.Transform * actorTransform;
 
 [Motion Warping](Motion-Warping.md) 将来源根轨迹在指定窗口内对齐各角色的交互目标，通过相同 `PoseResult.RootMotion` 输出移动，并提供独立于播放历史的只读轨迹查询。
 
+[Inertialization](Inertialization.md) 保存动作切换时的可见姿势与速度差，通过共同结果和依赖节点组衰减到当前来源。
+
 ## 结果交接
 
 `PoseResultId` 表达图内的结果编号。`PoseAnimation.CreateTarget` 的 `resultCount` 分配连续的 `LocalPose` buffer 区段；`output` 选择骨架最终消费的编号。`PoseResult` buffer 保存各区段的采样时刻、累计相位、启动标记、当前贡献权重、运动增量和版本。片段贡献权重采用共同图权重乘目标上的动画层权重。
