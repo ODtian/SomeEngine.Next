@@ -28,13 +28,17 @@
 ## 图叶子与提取
 
 `GpuPoseAnimation.CreateTarget` 为一个 `SkeletonInstance` 创建 `GpuPoseTarget`。
-`GpuClipLeaf` 读取共同图的播放时间、开始次数和完成边界，支持播放速度及循环。
+`GpuClipLeaf` 读取共同图的播放时间、开始次数和完成边界，沿共同 Timeline 的速度推进，片段参数指定循环。
 `GpuPoseAnimation.AddSystems` 将目标输入更新和片段控制系统接入共同动画阶段。
 
 | 控制字段 | 含义 |
 | --- | --- |
 | `Clip` | 当前均匀量化片段 |
 | `SampleTime` | 当前源样本时间，已应用播放速度和循环 |
+| `StateMachine` | 共享 GPU 状态与过渡定义 |
+| `Controls` | 各实例的浮点控制值 |
+| `PlaybackTime` | 共同状态机叶节点的时间 |
+| `Playing` | 本次更新是否推进状态机播放 |
 | `CalculationTime` | Game 更新累积的计算时间 |
 | `Starts` | 共同时间轴的开始次数 |
 | `InputNumber` | 每次 Game 更新递增的目标输入编号 |
@@ -59,7 +63,7 @@ GPU 目标提取 ready 片段和控制；CPU 目标按模型姿势版本复制�
 `SkinningFeature` 汇总所有活动区段，为每段分配连续 G 范围。量化片段、层级工作表、
 joint 索引及逆绑定矩阵在装配改变时上传。每帧提交目标控制和发生变化的 CPU 区段。
 
-GPU 先读取已提交的 current/previous 历史，再装入 CPU 区段，随后按拓扑层插值局部 TRS
+GPU 先读取已提交的 current/previous 历史，再更新各区段的播放行并装入 CPU 区段，随后按拓扑层插值局部 TRS
 并传播 G。每个自身骨骼读取已绑定的父 G；继承父结果和自身结果处于同一模型空间。
 各角色在同一层合并调度。最终 G 通过 [Skinning](Skinning.md) 的四个资源绑定供用户材质消费。
 
@@ -68,15 +72,17 @@ GPU 先读取已提交的 current/previous 历史，再装入 CPU 区段，随�
 历史推进由 RG 中实际提交的写入确认，区段重排通过 GPU copy 保留已有历史。
 
 `RenderGpuPoseTarget.Section` 定位提取后的区段实体；该实体的 `RenderPoseSection` 给出
-G 范围及输入时间信息。图消费者使用 `SkinningFeature.CurrentBones`、`PreviousBones`
+G 范围、GPU 播放行及 `InputTime` 控制时钟。图消费者使用 `SkinningFeature.CurrentBones`、`PreviousBones`
 和 `CompletePass` 读取已完成的输出。
 
 ## 读取 GPU 结果
 
-`SkinningFeature.RequestReadback(section, receive)` 请求下一次提交的当前及上一份自身区段 G。
-`CompleteReadbacks()` 等待对应 copy 完成并交付 `GpuPoseReadback`；返回矩阵独立于 GPU 资源。
+`SkinningFeature.RequestReadback(section, receive)` 请求下一次提交的当前及上一份自身区段 G，以及同次 GPU 播放行。
+`CompleteReadbacks()` 等待对应 copy 完成并交付 `GpuPoseReadback`；返回矩阵独立于 GPU 资源，样本时间和输入标记来自实际 GPU 结果。
 普通应用通过 `SceneEdit.ReadGpuPose(target, receive)` 使用这一入口，Runtime 在正常
 prepare 后解析提取映射，并在帧提交后交付结果。
+
+共享状态机、逐实例控制值与交叉过渡通过 `GpuStateLeaf` 接入，实际状态、来源时间和过渡权重见 [GPU State Machines](GPU-State-Machines.md)。
 
 公共应用示例位于 [SkinningRenderingTests](../../../tests/SomeEngine.Runtime.Tests/SkinningRenderingTests.cs)。
 示例使用共享父实例、两个播放速度及每顶点两个影响；数值读取和可见几何都经过普通 App、
