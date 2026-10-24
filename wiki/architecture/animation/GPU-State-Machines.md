@@ -32,7 +32,7 @@
 | `Playback.Finished` | 目标有限片段已结束，且交叉过渡已完成 |
 | `Starts`、`InputNumber`、`CalculationTime` | 该 GPU 播放行实际消费的输入标记与计算时钟 |
 
-过渡完成后，来源状态和来源时间与目标一致，目标权重为 `1`。直接 GPU 片段及 CPU 姿势区段的状态编号为 `-1`。`RenderPoseSection.InputTime` 表示提取的控制时钟；实际片段时间由 GPU 结果提供。
+过渡完成后，来源状态和来源时间与目标一致，目标权重为 `1`。直接 GPU 片段、GPU 局部姿势组合及 CPU 姿势区段的状态编号为 `-1`。`RenderPoseSection.InputTime` 表示提取的控制时钟；实际片段时间由 GPU 结果提供。
 
 ## 共同图调用
 

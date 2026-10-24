@@ -51,6 +51,7 @@ public sealed partial class SkinningFeature
             }
             section.MachineOffset = offset;
         }
+        WriteBlendDefinitions(writer, clips);
     }
 
     private static uint WriteClip(BinaryWriter writer, Dictionary<QuantizedClipData, uint> clips, QuantizedClipData clip)

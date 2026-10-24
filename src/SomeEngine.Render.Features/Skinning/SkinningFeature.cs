@@ -21,11 +21,11 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly LinkedComputePipeline _advancePipeline, _loadPipeline, _samplePipeline, _storePipeline;
     private readonly GraphBufferInput _currentBones, _previousBones, _controlsInput, _sectionsInput, _workInput, _clipsInput;
-    private readonly GraphBufferInput _playbackInput, _valuesInput;
+    private readonly GraphBufferInput _playbackInput, _valuesInput, _blendStatesInput, _blendLocalsInput;
     private readonly GraphBufferInput _historyCurrentInput, _historyPreviousInput, _jointIndices, _inverseBind, _definitionUpload, _cpuUpload;
     private readonly GraphBufferId _definitions;
     private GraphBufferId _historyCurrent, _historyPrevious, _readyCurrent, _readyPrevious;
-    private GraphBufferId _playback, _readyPlayback;
+    private GraphBufferId _playback, _readyPlayback, _blendStates, _readyBlendStates;
     private readonly List<GraphBufferId> _retiredHistories = [];
     private readonly Dictionary<Entity, Section> _sections = [];
     private readonly Dictionary<Entity, RenderMeshSkin> _meshes = [];
@@ -44,6 +44,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private GraphPassId _uploadPass, _advancePass, _loadPass, _cpuPass, _storePass;
     private ulong _collection;
     private int _boneCount = 1;
+    private int _blendStateCount = 1, _blendLocalCount = 1;
     private bool _definitionsChanged = true, _membershipChanged = true, _uploadRequired, _migrationRequired;
 
     public GraphBufferInput CurrentBones => _currentBones;
@@ -64,6 +65,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _historyCurrentInput = edit.CreateBufferInput(PoseUsages);
         _historyPreviousInput = edit.CreateBufferInput(PoseUsages);
         _playbackInput = edit.CreateBufferInput(PoseUsages);
+        _blendStatesInput = edit.CreateBufferInput(PoseUsages);
+        _blendLocalsInput = edit.CreateBufferInput(BufferUsages.ShaderWrite);
         _valuesInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _controlsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _sectionsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
@@ -101,8 +104,10 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                     feature._membershipChanged = feature._definitionsChanged = true;
                 }
                 if (!ReferenceEquals(section.Data.Parents, data.Parents) || !ReferenceEquals(section.Data.Clip, data.Clip)
-                    || !ReferenceEquals(section.Data.StateMachine, data.StateMachine))
+                    || !ReferenceEquals(section.Data.StateMachine, data.StateMachine)
+                    || !ReferenceEquals(section.Data.Blend, data.Blend))
                     feature._definitionsChanged = true;
+                if (!ReferenceEquals(section.Data.Blend, data.Blend)) feature._membershipChanged = true;
                 section.Data = data;
                 section.Collection = feature._collection;
             }
@@ -137,7 +142,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 Section section = feature._sections[row.Entity];
                 RenderBoneSectionData data = section.Data;
                 row.Write<RenderPoseSection>() = new(section.Range, data.Starts, data.InputNumber, data.CalculationTime,
-                    data.StateMachine is null ? data.SampleTime : data.PlaybackTime, section.Index);
+                    data.StateMachine is null && data.Blend is null ? data.SampleTime : data.PlaybackTime, section.Index);
             }
         });
     }
@@ -148,19 +153,24 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         foreach (Section section in _sectionOrder)
         {
             RenderBoneSectionData data = section.Data;
-            Input input = new(data.InputNumber, data.Starts, data.BindingVersion, data.Clip, data.StateMachine);
+            Input input = new(data.InputNumber, data.Starts, data.BindingVersion, data.Clip, data.StateMachine, data.Blend);
             bool advance = !section.HasResult || section.AcceptedInput != input;
             uint flags = (advance ? 1u : 0u) | (!section.HasResult ? 2u : 0u) | (data.IsGpu ? 4u : 0u)
                 | (data.StateMachine is not null ? 8u : 0u) | (data.Playing ? 16u : 0u)
                 | (!ReferenceEquals(section.AcceptedInput.StateMachine, data.StateMachine)
-                    || !ReferenceEquals(section.AcceptedInput.Clip, data.Clip) ? 32u : 0u);
+                    || !ReferenceEquals(section.AcceptedInput.Clip, data.Clip)
+                    || !ReferenceEquals(section.AcceptedInput.Blend, data.Blend) ? 32u : 0u)
+                | (data.Blend is not null ? 64u : 0u);
             uint inputOffset = (uint)_controlValues.Count;
             _controlValues.AddRange(data.Controls);
-            _controls.Add(new(section.ClipOffset, data.SampleTime, flags, data.Starts, data.InputNumber, data.CalculationTime,
-                section.MachineOffset, inputOffset, data.PlaybackTime, 0));
+            _controls.Add(new(data.Blend is null ? section.ClipOffset : (uint)section.BlendLocalStart,
+                data.SampleTime, flags, data.Starts, data.InputNumber, data.CalculationTime,
+                data.Blend is null ? section.MachineOffset : section.BlendOffset, inputOffset, data.PlaybackTime,
+                (uint)section.BlendStart));
             section.FrameInput = input;
             if (!data.IsGpu && (!section.HasResult || section.CpuVersion != data.Version
-                || section.AcceptedInput.Clip is not null || section.AcceptedInput.StateMachine is not null))
+                || section.AcceptedInput.Clip is not null || section.AcceptedInput.StateMachine is not null
+                || section.AcceptedInput.Blend is not null))
             {
                 _cpuCopies.Add(new(_cpuValues.Count, section.Range.Start, section.Range.Count));
                 _cpuValues.AddRange(data.Current);
@@ -171,17 +181,24 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private void Rebuild(RenderWorld world)
     {
         _sectionOrder = [.. _sections.Values];
-        int boneCount = 0;
+        int boneCount = 0, blendStates = 0, blendLocals = 0;
         for (int index = 0; index < _sectionOrder.Length; index++)
         {
             Section section = _sectionOrder[index];
             section.Index = index;
             section.Range = new(boneCount, section.Data.Skeleton.BoneCount);
+            section.BlendStart = blendStates;
+            section.BlendLocalStart = blendLocals;
+            int steps = section.Data.Blend?.Steps.Length ?? 0;
+            blendStates += steps;
+            blendLocals += steps * section.Range.Count;
             section.Depths = new int[section.Range.Count];
             Array.Fill(section.Depths, -1);
             boneCount += section.Range.Count;
         }
         _boneCount = Math.Max(1, boneCount);
+        _blendStateCount = Math.Max(1, blendStates);
+        _blendLocalCount = Math.Max(1, blendLocals);
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes);
         WriteGpuDefinitions(writer);
@@ -247,18 +264,22 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         if (_membershipChanged)
         {
             if (_historyCurrent != default && _historyCurrent != _readyCurrent)
-            { edit.Remove(_historyCurrent); edit.Remove(_historyPrevious); edit.Remove(_playback); }
+            { edit.Remove(_historyCurrent); edit.Remove(_historyPrevious); edit.Remove(_playback); edit.Remove(_blendStates); }
             _historyCurrent = edit.CreatePersistentBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Current pose history"));
             _historyPrevious = edit.CreatePersistentBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Previous pose history"));
             _playback = edit.CreatePersistentBuffer(new BufferDesc((ulong)Math.Max(1, _sectionOrder.Length) * 64,
                 PoseUsages, Label: "GPU pose playback"));
+            _blendStates = edit.CreatePersistentBuffer(new BufferDesc((ulong)_blendStateCount * 32,
+                PoseUsages, Label: "GPU blend phases and selections"));
             foreach (Section section in _sectionOrder)
-                if (section.HasResult) migrations.Add(new(section.StoredRange, section.Range, section.StoredIndex, section.Index));
+                if (section.HasResult) migrations.Add(new(section.StoredRange, section.Range, section.StoredIndex, section.Index,
+                    section.StoredBlendStart, section.BlendStart,
+                    ReferenceEquals(section.StoredBlend, section.Data.Blend) ? section.StoredBlend?.Steps.Length ?? 0 : 0));
             _migrationRequired = true;
         }
         var upload = new DefinitionCopy(_definitionUpload, _definitions, _definitionBytes.Length,
-            _migrationRequired, _readyCurrent, _readyPrevious, _readyPlayback,
-            _historyCurrent, _historyPrevious, _playback, [.. migrations]);
+            _migrationRequired, _readyCurrent, _readyPrevious, _readyPlayback, _readyBlendStates,
+            _historyCurrent, _historyPrevious, _playback, _blendStates, [.. migrations]);
         _uploadPass = edit.AddCopyFramePass("Upload pose definitions", PassQueueSelection.AnyOfType(QueueType.Graphics), upload,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
         _posePasses.Add(_uploadPass);
@@ -313,6 +334,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             "GpuPoseControls" => Resource.Controls, "GpuPoseSections" => Resource.Sections,
             "GpuPoseWork" => Resource.Work, "GpuPoseClips" => Resource.Clips,
             "GpuPoseInputs" => Resource.Values, "GpuPosePlaybackStates" => Resource.Playback,
+            "GpuBlendStates" => Resource.BlendStates, "GpuBlendLocals" => Resource.BlendLocals,
             "GpuPoseModels" => Resource.Models, "GpuPosePrevious" => Resource.Previous,
             "GpuPoseHistoryCurrent" => Resource.HistoryCurrent, "GpuPoseHistoryPrevious" => Resource.HistoryPrevious, _ => null,
         });
@@ -325,6 +347,12 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 case Resource.Playback:
                     pass.Bind(edit.CreateBufferUav(_playbackInput, structureStride: 64), PipelineSync.ComputeShading,
                         kernel == Kernel.Advance ? GraphAccessMode.ReadWrite : GraphAccessMode.Read); break;
+                case Resource.BlendStates:
+                    pass.Bind(edit.CreateBufferUav(_blendStatesInput, structureStride: 32), PipelineSync.ComputeShading,
+                        kernel == Kernel.Advance ? GraphAccessMode.ReadWrite : GraphAccessMode.Read); break;
+                case Resource.BlendLocals:
+                    pass.Bind(edit.CreateBufferUav(_blendLocalsInput, structureStride: 48), PipelineSync.ComputeShading,
+                        GraphAccessMode.Write); break;
                 case Resource.Sections: pass.Bind(edit.CreateBufferSrv(_sectionsInput, structureStride: 4), PipelineSync.ComputeShading); break;
                 case Resource.Work:
                     pass.Bind(edit.CreateBufferSrv(_workInput, kernel == Kernel.Sample ? work : new BufferRange(0, 16), structureStride: 16), PipelineSync.ComputeShading); break;
@@ -360,6 +388,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         frame.SetBufferInput(_historyCurrentInput, new(_historyCurrent, BufferRange.Whole));
         frame.SetBufferInput(_historyPreviousInput, new(_historyPrevious, BufferRange.Whole));
         frame.SetBufferInput(_playbackInput, new(_playback, BufferRange.Whole));
+        frame.SetBufferInput(_blendStatesInput, new(_blendStates, BufferRange.Whole));
+        frame.SetBufferInput(_blendLocalsInput, new(frame.CreateBuffer(new BufferDesc((ulong)_blendLocalCount * 48,
+            BufferUsages.ShaderWrite, Label: "GPU blend local workspace")), BufferRange.Whole));
         frame.SetBufferInput(_valuesInput, frame.Upload<float>(CollectionsMarshal.AsSpan(_controlValues), BufferUsages.ShaderRead));
         frame.SetBufferInput(_controlsInput, frame.Upload<Control>(CollectionsMarshal.AsSpan(_controls), BufferUsages.ShaderRead));
         frame.SetBufferInput(_sectionsInput, new(_definitions, _sectionBytes));
@@ -386,10 +417,16 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             if (_migrationRequired)
             {
                 if (_readyCurrent != default)
-                { _retiredHistories.Add(_readyCurrent); _retiredHistories.Add(_readyPrevious); _retiredHistories.Add(_readyPlayback); }
+                { _retiredHistories.Add(_readyCurrent); _retiredHistories.Add(_readyPrevious); _retiredHistories.Add(_readyPlayback);
+                  _retiredHistories.Add(_readyBlendStates); }
                 _readyCurrent = _historyCurrent; _readyPrevious = _historyPrevious;
                 _readyPlayback = _playback;
-                foreach (Section section in _sectionOrder) { section.StoredRange = section.Range; section.StoredIndex = section.Index; }
+                _readyBlendStates = _blendStates;
+                foreach (Section section in _sectionOrder)
+                {
+                    section.StoredRange = section.Range; section.StoredIndex = section.Index;
+                    section.StoredBlendStart = section.BlendStart; section.StoredBlend = section.Data.Blend;
+                }
                 _migrationRequired = false;
             }
         }
@@ -401,6 +438,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 section.HasResult = true;
                 section.StoredRange = section.Range;
                 section.StoredIndex = section.Index;
+                section.StoredBlendStart = section.BlendStart;
+                section.StoredBlend = section.Data.Blend;
             }
         AcceptReadbacks(result);
     }
@@ -412,7 +451,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         edit.Remove(_uploadPass);
         _posePasses.Remove(_uploadPass);
         var upload = new DefinitionCopy(_definitionUpload, _definitions, _definitionBytes.Length,
-            false, default, default, default, _historyCurrent, _historyPrevious, _playback, []);
+            false, default, default, default, default, _historyCurrent, _historyPrevious, _playback, _blendStates, []);
         _uploadPass = edit.AddCopyFramePass("Upload pose definitions", PassQueueSelection.AnyOfType(QueueType.Graphics), upload,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
         _posePasses.Add(_uploadPass);
@@ -457,14 +496,16 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         writer.Write(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in matrix, 1)));
 
     private enum Kernel { Advance, Load, Sample, Store }
-    private enum Resource { Controls, Values, Playback, Sections, Work, Clips, Models, Previous, HistoryCurrent, HistoryPrevious }
+    private enum Resource { Controls, Values, Playback, BlendStates, BlendLocals, Sections, Work, Clips, Models, Previous, HistoryCurrent, HistoryPrevious }
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct Control(uint ClipOffset, float SampleTime, uint Flags, uint Starts, ulong InputNumber,
-        double CalculationTime, uint MachineOffset, uint InputOffset, float PlaybackTime, uint Padding);
+        double CalculationTime, uint MachineOffset, uint InputOffset, float PlaybackTime, uint BlendStart);
     private readonly record struct BoneWork(uint Section, uint Bone, uint Parent, uint Output);
-    private readonly record struct Input(ulong Number, uint Starts, ulong BindingVersion, QuantizedClipData? Clip, GpuPoseStateMachine? StateMachine);
+    private readonly record struct Input(ulong Number, uint Starts, ulong BindingVersion, QuantizedClipData? Clip,
+        GpuPoseStateMachine? StateMachine, GpuPoseBlend? Blend);
     private readonly record struct CpuCopy(int Source, int Destination, int Count);
-    private readonly record struct HistoryCopy(PoseRange Source, PoseRange Destination, int SourceIndex, int DestinationIndex);
+    private readonly record struct HistoryCopy(PoseRange Source, PoseRange Destination, int SourceIndex, int DestinationIndex,
+        int SourceBlendStart, int DestinationBlendStart, int BlendCount);
     private sealed class Section(Entity entity)
     {
         internal readonly Entity Entity = entity;
@@ -472,8 +513,10 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         internal ulong Collection, CpuVersion;
         internal PoseRange Range, StoredRange;
         internal int Index, StoredIndex;
+        internal int BlendStart, BlendLocalStart, StoredBlendStart;
+        internal GpuPoseBlend? StoredBlend;
         internal int[] Depths = [];
-        internal uint ClipOffset, MachineOffset;
+        internal uint ClipOffset, MachineOffset, BlendOffset;
         internal bool HasResult;
         internal Input AcceptedInput, FrameInput;
     }
@@ -496,8 +539,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     }
 
     private readonly record struct DefinitionCopy(GraphBufferInput Upload, GraphBufferId Definitions, int Bytes,
-        bool Migrate, GraphBufferId BeforeCurrent, GraphBufferId BeforePrevious, GraphBufferId BeforePlayback,
-        GraphBufferId Current, GraphBufferId Previous, GraphBufferId Playback, HistoryCopy[] Regions)
+        bool Migrate, GraphBufferId BeforeCurrent, GraphBufferId BeforePrevious, GraphBufferId BeforePlayback, GraphBufferId BeforeBlendStates,
+        GraphBufferId Current, GraphBufferId Previous, GraphBufferId Playback, GraphBufferId BlendStates, HistoryCopy[] Regions)
     {
         internal static void Declare(ref PassDefinition pass, ref DefinitionCopy data)
         {
@@ -507,10 +550,12 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             pass.Write(data.Current, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             pass.Write(data.Previous, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             pass.Write(data.Playback, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+            pass.Write(data.BlendStates, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             if (data.BeforeCurrent == default) return;
             pass.Read(data.BeforeCurrent, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
             pass.Read(data.BeforePrevious, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
             pass.Read(data.BeforePlayback, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+            pass.Read(data.BeforeBlendStates, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
         }
         internal static void Record(ref CopyPassCommandScope commands, in DefinitionCopy data)
         {
@@ -521,6 +566,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             commands.ClearBuffer(current, BufferRange.Whole, 0); commands.ClearBuffer(previous, BufferRange.Whole, 0);
             SomeEngine.Graphics.Buffer playback = commands.GetBuffer(data.Playback);
             commands.ClearBuffer(playback, BufferRange.Whole, 0);
+            SomeEngine.Graphics.Buffer blendStates = commands.GetBuffer(data.BlendStates);
+            commands.ClearBuffer(blendStates, BufferRange.Whole, 0);
             foreach (HistoryCopy region in data.Regions)
             {
                 commands.CopyBuffer(new(commands.GetBuffer(data.BeforeCurrent), (ulong)region.Source.Start * 64,
@@ -529,6 +576,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                     previous, (ulong)region.Destination.Start * 64, (ulong)region.Source.Count * 64));
                 commands.CopyBuffer(new(commands.GetBuffer(data.BeforePlayback), (ulong)region.SourceIndex * 64,
                     playback, (ulong)region.DestinationIndex * 64, 64));
+                if (region.BlendCount > 0)
+                    commands.CopyBuffer(new(commands.GetBuffer(data.BeforeBlendStates), (ulong)region.SourceBlendStart * 32,
+                        blendStates, (ulong)region.DestinationBlendStart * 32, (ulong)region.BlendCount * 32));
             }
         }
     }
