@@ -1254,7 +1254,7 @@ internal static class RuntimeApplication
                     gameTiming.ExtractionAllocatedBytes, frameIndex);
                 applicationFrame.SimulationSeconds = gameTiming.SimulationSeconds;
                 application?.FrameCompleted?.Invoke(applicationFrame);
-                measurements?.RecordCpu(graphFrameIdentity, frameIndex, gameTiming.SimulationSeconds,
+                measurements?.RecordCpu(graphFrameIdentity, frameIndex, gameTiming.SimulationSeconds, !synchronousGame,
                     cpuMs,
                     gameTiming.GameMs, gameTiming.Views.AnimationMs, gameTiming.ExtractionMs,
                     prepareMs, reconcileMs, executeMs);

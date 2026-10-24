@@ -24,6 +24,7 @@ public sealed partial class SceneTestPlatform
             Frames = frames.Length,
             FrameRange = new(frames[0].Frame, frames[^1].Frame),
             SimulationSeconds = new(frames[0].SimulationSeconds, frames[^1].SimulationSeconds),
+            AsynchronousGameUpdates = frames.All(frame => frame.AsynchronousGameUpdates),
             CpuMs = Distribution(frames.Select(frame => frame.CpuMs)),
             GameMs = Distribution(frames.Select(frame => frame.GameMs)),
             AnimationMs = Distribution(frames.Select(frame => frame.AnimationMs)),
@@ -67,6 +68,7 @@ public sealed partial class SceneTestPlatform
         public int Frames { get; init; }
         public SceneFrameIndices FrameRange { get; init; }
         public SceneClockRange SimulationSeconds { get; init; }
+        public bool AsynchronousGameUpdates { get; init; }
         public TimingDistribution CpuMs { get; init; }
         public TimingDistribution GameMs { get; init; }
         public TimingDistribution AnimationMs { get; init; }

@@ -21,6 +21,7 @@ public sealed partial class SkinningRenderingTests
         using var report = System.Text.Json.JsonDocument.Parse(File.ReadAllText(platform.LastReport!));
         Assert.True(report.RootElement.GetProperty("Complete").GetBoolean());
         var costs = report.RootElement.GetProperty("Scenes")[0].GetProperty("Costs");
+        Assert.True(costs.GetProperty("AsynchronousGameUpdates").GetBoolean());
         Assert.Equal(4, costs.GetProperty("Frames").GetInt32());
         Assert.Equal(32, costs.GetProperty("FrameRange").GetProperty("First").GetInt32());
         Assert.Equal(35, costs.GetProperty("FrameRange").GetProperty("Last").GetInt32());
