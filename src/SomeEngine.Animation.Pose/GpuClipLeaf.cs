@@ -159,25 +159,34 @@ internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
         World world = context.World;
         world.ExecuteQuery(_clips, ref world, static (QueryCursor rows, ref World world) =>
         {
-            foreach (QueryRow row in rows.Rows)
-            foreach (ref GpuClipInstance instance in row.Buffer<GpuClipInstance>().AsSpan())
+            foreach (QueryChunkView chunk in rows.Chunks)
             {
-                AnimationLeafTime time = AnimationGraph.ReadTime(in row, in instance.Placement);
-                if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; instance.Signals.Reset(); }
-                if (!time.Active || instance.Finished) continue;
-                GpuClipParameters parameters = instance.Definition.Parameters[instance.Index];
-                float elapsed = parameters.Loop ? time.Time.Time : Math.Min(time.Time.Time, parameters.Clip.Duration);
-                GpuPoseTarget output = world.Read<GpuPoseTarget>(instance.Target);
-                output.Clip = parameters.Clip;
-                output.StateMachine = null;
-                output.Blend = null;
-                output.Rig = null;
-                output.SampleTime = parameters.Loop ? elapsed % parameters.Clip.Duration : elapsed;
-                output.Starts = time.Starts;
-                instance.Signals.Update(world, row.Entity, in parameters, elapsed, ref output);
-                world.Replace(instance.Target, output);
-                instance.Finished = !parameters.Loop && elapsed >= parameters.Clip.Duration;
-                AnimationGraph.Submit(in row, in instance.Placement, !instance.Finished);
+                var timelines = chunk.ReadWriteColumn<Timeline>();
+                var clips = chunk.WriteBufferColumn<GpuClipInstance>();
+                var times = AnimationGraph.ReadTimeColumn(chunk);
+                foreach (int row in chunk.RowIndices)
+                {
+                    ref Timeline timeline = ref timelines[row];
+                    foreach (ref GpuClipInstance instance in clips[row].AsSpan())
+                    {
+                        AnimationLeafTime time = times.Read(row, in timeline, in instance.Placement);
+                        if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; instance.Signals.Reset(); }
+                        if (!time.Active || instance.Finished) continue;
+                        GpuClipParameters parameters = instance.Definition.Parameters[instance.Index];
+                        float elapsed = parameters.Loop ? time.Time.Time : Math.Min(time.Time.Time, parameters.Clip.Duration);
+                        GpuPoseTarget output = world.Read<GpuPoseTarget>(instance.Target);
+                        output.Clip = parameters.Clip;
+                        output.StateMachine = null;
+                        output.Blend = null;
+                        output.Rig = null;
+                        output.SampleTime = parameters.Loop ? elapsed % parameters.Clip.Duration : elapsed;
+                        output.Starts = time.Starts;
+                        instance.Signals.Update(world, chunk.GetEntity(row), in parameters, elapsed, ref output);
+                        world.Replace(instance.Target, output);
+                        instance.Finished = !parameters.Loop && elapsed >= parameters.Clip.Duration;
+                        times.Submit(row, ref timeline, in instance.Placement, !instance.Finished);
+                    }
+                }
             }
         });
     }
