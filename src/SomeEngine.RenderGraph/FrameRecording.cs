@@ -602,7 +602,6 @@ internal sealed partial class FrameExecutor
 
     private bool CanRepeatCommands(int pass)
     {
-        if (_measureGpu) return false;
         ref readonly FramePass row = ref CollectionsMarshal.AsSpan(_passes)[pass];
         return row.Options.RepeatCommands && row.PersistentCallbacks is not null;
     }

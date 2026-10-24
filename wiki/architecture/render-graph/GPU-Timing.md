@@ -32,8 +32,10 @@ Cluster 通过 `DeformationTimeGroup` 标记容量重置与区域分配，
 `DeformationEvaluationTimeGroup` 标记用户当前/上一顶点求值和缓存写入，
 `RasterTimeGroup` 标记软件与硬件光栅工作。
 
-采集期间 pass 逐帧录制，查询池与读回资源继续按帧槽复用。timestamp 命令、resolve
-提交与完成后结果分配是采集的固定开销；比较配置应保持相同采集方式。
+采集期间持久 pass 按已有资源、参数与屏障条件复用命令，并同时比较该 pass 实际的
+Queue、timestamp Pool 对象与查询起点。池增长或查询绑定改变时，受影响的录制批次重新记录。
+查询 reset 与四个 timestamp 随命令一起重放，查询池与读回资源继续按帧槽复用。
+timestamp 命令、resolve 提交与完成后结果分配是采集的固定开销；比较配置保持相同采集方式。
 
 ## 应用入口
 
