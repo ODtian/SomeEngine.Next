@@ -90,8 +90,7 @@ public static class CrowdContent
         var primitive = new VertexPrimitive(0, 0, example.Indices,
             Enumerable.Range(0, example.Positions.Length).Select(v => (uint)v).ToArray(), attributes, []);
         await using var context = new ImportContext(project.RootPath, "crowd-example", new SourceMeta { SourceGuid = SourceGuid.New() });
-        context.EnableImporter<GltfMesh, MeshAsset>(Guid.NewGuid(), [VertexStreamsBlock.BlockTypeId],
-            (_, _, asset, _) => { asset.SetBlock(new VertexStreamsBlock([primitive], [])); return ValueTask.CompletedTask; });
+        context.EnableImporter<GltfMesh, MeshAsset>(new CrowdStreams(primitive));
         var services = new ServiceCollection();
         SampleAssetCapabilities.AddAssetCapabilities(services);
         ServiceProvider provider = services.BuildServiceProvider();
@@ -116,6 +115,17 @@ public static class CrowdContent
         });
         mesh.SetBlock(new MeshMaterialsBlock { Materials = [new(project.Manifest.List(MaterialAsset.FileType).Single(value => value.Name == "Standard").AssetGuid)] });
         return mesh;
+    }
+
+    private sealed class CrowdStreams(VertexPrimitive primitive) : IAssetImporter<GltfMesh>
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public IReadOnlyList<Guid> ProducedBlocks { get; } = [VertexStreamsBlock.BlockTypeId];
+        public ValueTask ImportAsync(GltfMesh source, ImportContext context, ImportOutput output, CancellationToken cancellationToken = default)
+        {
+            output.SetBlock(new VertexStreamsBlock([primitive], []));
+            return ValueTask.CompletedTask;
+        }
     }
 
     private static byte[] Encode(ClusterVertexAttributes surface, ClusterVertexAttributes skin)
