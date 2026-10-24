@@ -59,6 +59,13 @@ public sealed partial class CollisionQueries<TComponent, TReader> : ICollisionQu
         return execution.Found;
     }
 
+    /// <summary>Writes the first sphere contact for every sweep in one World read scope.</summary>
+    public void SweepSphere(ReadOnlySpan<CollisionSphereSweep> sweeps, Span<CollisionHit> hits, Span<bool> found)
+    {
+        var execution = new SphereBatchExecution(Tree, _reader, sweeps, hits, found);
+        _world.ExecuteQuery(_query, ref execution);
+    }
+
     /// <summary>Reads the current transform and geometry of a support entity in this query.</summary>
     public bool TryGetSurface(Entity entity, out CollisionSurface surface)
     {
@@ -66,6 +73,15 @@ public sealed partial class CollisionQueries<TComponent, TReader> : ICollisionQu
         _world.ExecuteQuery(_query, ref execution);
         surface = execution.Surface;
         return execution.Found;
+    }
+
+    /// <summary>Reads only the current support transform and revision for surface-relative consumers.</summary>
+    public bool TryGetTransform(Entity entity, out Matrix4x4 transform, out ulong surfaceVersion)
+    {
+        bool found = TryGetSurface(entity, out CollisionSurface surface);
+        transform = surface.Transform;
+        surfaceVersion = surface.Version;
+        return found;
     }
 
     public void Dispose() => _world.ReleaseQuery(_query);
@@ -82,6 +98,25 @@ public sealed partial class CollisionQueries<TComponent, TReader> : ICollisionQu
             for (int index = 0; index < _rays.Length; index++)
             {
                 var cast = new CastExecution<RayCast>(tree, reader, new(_rays[index]));
+                cast.Execute(query);
+                _hits[index] = cast.Hit;
+                _found[index] = cast.Found;
+            }
+        }
+    }
+
+    private readonly ref struct SphereBatchExecution(CollisionTree tree, TReader reader,
+        ReadOnlySpan<CollisionSphereSweep> sweeps, Span<CollisionHit> hits, Span<bool> found) : IQueryExecution
+    {
+        private readonly ReadOnlySpan<CollisionSphereSweep> _sweeps = sweeps;
+        private readonly Span<CollisionHit> _hits = hits;
+        private readonly Span<bool> _found = found;
+
+        public void Execute(QueryCursor query)
+        {
+            for (int index = 0; index < _sweeps.Length; index++)
+            {
+                var cast = new CastExecution<SphereCast>(tree, reader, new(_sweeps[index]));
                 cast.Execute(query);
                 _hits[index] = cast.Hit;
                 _found[index] = cast.Found;

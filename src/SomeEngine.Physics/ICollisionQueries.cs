@@ -1,3 +1,4 @@
+using System.Numerics;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Physics;
@@ -6,5 +7,6 @@ namespace SomeEngine.Physics;
 public interface ICollisionQueries
 {
     void Raycast(ReadOnlySpan<CollisionRay> rays, Span<CollisionHit> hits, Span<bool> found);
-    bool TryGetSurface(Entity entity, out CollisionSurface surface);
+    void SweepSphere(ReadOnlySpan<CollisionSphereSweep> sweeps, Span<CollisionHit> hits, Span<bool> found);
+    bool TryGetTransform(Entity entity, out Matrix4x4 transform, out ulong surfaceVersion);
 }
