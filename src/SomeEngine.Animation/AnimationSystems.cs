@@ -6,7 +6,7 @@ using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation;
 
-public enum AnimationPhase : byte { Timeline, Graph, LayerWeights, LayerComposition, Properties, Composition, Completion }
+public enum AnimationPhase : byte { Timeline, Graph, LayerWeights, LayerComposition, Properties, Composition, Completion, CompositionInputs }
 
 public static class AnimationSystems
 {

@@ -116,6 +116,7 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         foreach (Algorithm algorithm in _algorithms)
             if (compositions.Add(algorithm.Composition))
                 algorithm.Compose(systems, TrackFields.Properties);
+        AddAdditionalSystems(systems, AnimationPhase.CompositionInputs);
         AddAdditionalSystems(systems, AnimationPhase.Composition);
         systems.Add(new GraphEndSystem());
         AddAdditionalSystems(systems, AnimationPhase.Completion);

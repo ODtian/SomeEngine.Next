@@ -198,7 +198,7 @@ void AdvancePoseStates(uint3 thread : SV_DispatchThreadID)
     GpuPoseControls.GetDimensions(count, stride);
     if (thread.x >= count) return;
     GpuPoseControl control = GpuPoseControls[thread.x];
-    if ((control.flags & 1u) == 0u) return;
+    if ((control.flags & 128u) == 0u) return;
     GpuPosePlayback playback = GpuPosePlaybackStates[thread.x];
     bool reset = (control.flags & 34u) != 0u || playback.starts != control.starts
         || control.playbackTime < playback.playbackTime;

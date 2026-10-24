@@ -42,7 +42,8 @@ public readonly struct PbikLeaf : IAnimationLeaf<PbikParameters>
         for (int effector = 0; effector < instance.Targets.Length; effector++)
             instance.Targets[effector] = new(skeleton.ModelPose.GetBone(
                 skeleton.Skeleton.InheritedBoneCount + parameters.Rig.Effectors[effector]).Transform.Translation);
-        instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement);
+        short[] bones = parameters.Rig.Bodies.Select(static body => (short)body.Bone).ToArray();
+        instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);
         world.ExecuteBufferWrite<PbikInstance, PbikInstance>(animation, ref instance,
             static (instances, ref instance) => instances.Add(instance));
     }

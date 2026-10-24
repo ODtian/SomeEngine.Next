@@ -56,7 +56,7 @@ AnimationSystems.Add(schedule, path);
 
 共同动画管线在首次创建时按阶段展开到一个 ECS 系统组：`TimelineSystem(time)`、`GraphSystem`、float 层权重求值与合成、字段求值与合成、`GraphEndSystem`、`TimelineEndSystem`。具体系统各自保留版本基线与查询。首次更新前追加的组合进入相应阶段，重复组合共用一个入口。调用方也可按自己的值类型与行为直接组合公开系统：
 
-用户系统可以通过 `AnimationSystems.Add(schedule, system, AnimationPhase.Properties)` 加入共同字段求值阶段；`Timeline`、`Graph`、`LayerWeights`、`LayerComposition`、`Composition`、`Completion` 也提供明确接入位置。阶段展开时采用低频系统装配，热更新沿 ECS 的 managed 函数指针系统入口执行。
+用户系统可以通过 `AnimationSystems.Add(schedule, system, AnimationPhase.Properties)` 加入共同字段求值阶段；`Timeline`、`Graph`、`LayerWeights`、`LayerComposition`、`CompositionInputs`、`Composition`、`Completion` 也提供明确接入位置。`CompositionInputs` 位于属性最终合成之后、具体 Composition 系统之前，用于将当前参数与时钟形成组合输入；GPU 姿势系统在该阶段读取当前 `GraphParameters`，后续 CPU 依赖节点与同步骨骼消费同次输入。阶段展开时采用低频系统装配，热更新沿 ECS 的 managed 函数指针系统入口执行。
 
 ```csharp
 var schedule = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));

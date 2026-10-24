@@ -7,11 +7,11 @@ public readonly struct ModelPose
 
     public Skeleton Skeleton => _instance.Skeleton;
     public ModelTransforms Transforms => new(_instance.BoneSources);
-    /// <summary>The own section's evaluation version.</summary>
+    /// <summary>The own section's latest matrix-write version.</summary>
     public ulong Version => _instance.Version;
-    /// <summary>The own section's calculation time.</summary>
+    /// <summary>The calculation time of the own section's latest matrix write.</summary>
     public double Time => _instance.Time;
-    /// <summary>The source time of the own local-pose input.</summary>
+    /// <summary>The local-source time accompanying the own section's latest write.</summary>
     public double SampleTime => _instance.SampleTime;
     public int SectionCount => _instance.Sections.Length;
 

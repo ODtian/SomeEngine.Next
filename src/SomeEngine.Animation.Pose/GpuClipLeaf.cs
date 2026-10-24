@@ -23,6 +23,7 @@ public struct GpuPoseTarget : IComponent
     public double CalculationTime;
     public uint Starts;
     public ulong InputNumber;
+    public CpuBoneDemand? CpuBones;
 }
 
 public readonly record struct GpuClipParameters(QuantizedClipData Clip, bool Loop = false);
@@ -69,18 +70,23 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
         world.ExecuteBufferWrite<GpuClipInstance>(animation, static instances => instances.Clear());
 }
 
-public static class GpuPoseAnimation
+public static partial class GpuPoseAnimation
 {
-    public static Entity CreateTarget(World world, SkeletonInstance skeleton) =>
-        world.CreateEntity(new GpuPoseTarget { Skeleton = skeleton });
+    public static Entity CreateTarget(World world, SkeletonInstance skeleton)
+    {
+        Entity target = world.CreateEntity(new GpuPoseTarget { Skeleton = skeleton });
+        CpuBoneDemands.For(world).Changed = true;
+        return target;
+    }
 
     public static void AddSystems(SystemGroup<ImmediateSystemContext> systems)
     {
-        AnimationSystems.Add(systems, new GpuPoseFrameSystem(), AnimationPhase.Composition);
-        AnimationSystems.Add(systems, new GpuClipSystem(), AnimationPhase.Composition);
-        AnimationSystems.Add(systems, new GpuStateSystem(), AnimationPhase.Composition);
-        AnimationSystems.Add(systems, new GpuBlendSystem(), AnimationPhase.Composition);
-        AnimationSystems.Add(systems, new GpuRigSystem(), AnimationPhase.Composition);
+        AnimationSystems.Add(systems, new GpuPoseFrameSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuClipSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuStateSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuBlendSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new GpuRigSystem(), AnimationPhase.CompositionInputs);
+        AnimationSystems.Add(systems, new CpuBoneSystem(), AnimationPhase.Completion);
     }
 }
 

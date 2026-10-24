@@ -18,7 +18,9 @@
 
 `BoneTransform.ToMatrix()` forms local matrices with `Scale * Rotation * Translation` under the `System.Numerics` row-vector convention. FK visits own bones in parent order: a model root G equals its local matrix; each child G equals its local matrix multiplied by the direct parent's G. An inherited parent reads its producing instance's G. All sections use the skeleton chain's common model space. SkinBinding supplies the mesh's inverse bind matrices separately.
 
-`ModelPose.Transforms` supports `Length`, indexed reads, `CopyTo(Span<Matrix4x4>)` and `ToArray()`. `GetBone(index)` returns a `BonePose` with the resolved producing `Instance`, its own `BoneIndex`, matrix, version, calculation `Time` and source `SampleTime`. `SectionCount` and `GetSection(index)` expose sections from base to derived. Each `ModelPoseSection` provides its producing `Instance`, composite `BoneStart`, storage `Range`, continuous `Transforms`, and that section's `Version`, `Time` and `SampleTime`. Instance identity distinguishes equal ranges belonging to separate storages.
+`ModelPose.Transforms` supports `Length`, indexed reads, `CopyTo(Span<Matrix4x4>)` and `ToArray()`. `GetBone(index)` returns a `BonePose` with the resolved producing `Instance`, its own `BoneIndex`, matrix and `Calculation`. `PoseCalculation` records that matrix's `Version`, calculation `Time` and local-source `SampleTime`; the same three properties are available directly on `BonePose`.
+
+`SectionCount` and `GetSection(index)` expose sections from base to derived. Each `ModelPoseSection` provides its producing `Instance`, composite `BoneStart`, storage `Range`, continuous `Transforms` and corresponding `Calculations`. Section `Version` identifies its latest write; `Time` and `SampleTime` describe that write's calculation and local source. Full updates write every entry together. Selected CPU writes update their entries while other stored matrices retain their own calculation records. Consumers of a particular bone read its `BonePose` or indexed section calculation. Instance identity distinguishes equal ranges belonging to separate storages.
 
 The following is a public API usage example:
 
