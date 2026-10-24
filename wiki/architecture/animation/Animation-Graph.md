@@ -75,6 +75,9 @@ AnimationSystems.Add(schedule, Spec.Spring<float, FloatOps>());
 
 `ReadTime(in QueryRow, in placement)` 和 `Submit(in QueryRow, in placement, running)` 直接消费上述声明下借用的查询行。`ReadTime` 使用当前 Timeline 的启用位、暂停状态和阶段；嵌套叶沿本行 `GraphMotion` 的时钟、权重和 Starts 读取对应阶段定义。查询行入口和 `ReadTime(World, entity, ...)` 共享 `LeafPhase.Select` 与 `GraphTimes.Project`。查询行提交在当前查询写版本下更新顶层 Timeline 或对应 GraphMotion 的 running；World 入口继续服务查询外的调用方。源码为 [AnimationGraph](../../../src/SomeEngine.Animation/AnimationGraph.cs)，行访问见 [QueryRow](../../../src/SomeEngine.ECS/Queries/QueryRow.cs)。
 
+已借用 Timeline 的系统使用 `ReadTime(in row, in timeline, in placement)` 与 `Submit(in row, ref timeline, in placement, running)`。
+同一行的具体叶共享该 Timeline 引用，阶段数学仍由上述 `LeafPhase` 持有；嵌套叶沿本行 GraphMotion 完成时间读取与 running 提交。
+
 属性叶的共享参数保存在定义数组，实际 `MotionInstance<T,TOps,TParameters,TState,TEvaluator>` 缓冲持有实例状态、值、时间与输出。`AnimationGraph.UpdateParameters(world, animation, channel, in spec)` 更新指定实例的公式参数，并调用 `TEvaluator.UpdateParameters` 保留算法历史；首次显式修改将该具体组合的参数复制到实例缓冲。固定时长和阶段类型保持编译值，时间或结构变更通过重编译并播放新定义提交。
 
 `PropertyAnimation.Retarget` 从本实例当前来源值重定目标并延续算法状态。图中固定叶在剩余编译区间到达新目标，后续区间按原时间开始。停止调用具体算法及公开叶的释放入口，图重用时清理旧目标关系并安装新目标。

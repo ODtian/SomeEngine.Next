@@ -25,6 +25,12 @@
 
 `QueryRow.Read<T>()` 返回组件值；`Write<T>()` 和 `ReadWrite<T>()` 返回组件引用。查询对象及回调边界从当前 `QueryCursor`、`QueryRow` 和 `QueryChunkView` API 读取。
 
+`QueryCursor.ReadWriteRows<TComponent,TBuffer>()` 沿同一成员行枚举，在 chunk 边界绑定声明为读写的组件列和 buffer 列。
+`MoveNext(out row,out component,out buffer)` 交付原查询行、`ComponentWriteReference<TComponent>` 与 `DynamicBuffer<TBuffer>`。
+取得组件写引用沿原 `WriteRef` 发布该访问行的当前执行版本，并保持关系、层级与索引维护；buffer 写入沿现有动态缓冲规则发布版本。
+组件引用、buffer 和枚举器的使用期为当前查询回调，成员与版本筛选由原查询持有。
+源码：[列绑定枚举](../../../src/SomeEngine.ECS/Queries/ComponentBufferRowEnumerator.cs)、[查询入口](../../../src/SomeEngine.ECS/Queries/QueryCursor.cs)。
+
 `ExecuteQuery` 的 managed 函数指针重载提供相同的无状态、`ref TState` 和显式系统基线形式，复用查询权限、当前版本和关系提交边界。一次查询回调分发一次，具体数据循环由回调保存类型。
 
 ## 组件类型写版本
