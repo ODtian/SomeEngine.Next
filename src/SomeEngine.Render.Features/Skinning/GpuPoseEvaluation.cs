@@ -25,6 +25,10 @@ public sealed partial class SkinningFeature
                         section.SelectedBones[limb.Chain.Middle] = true;
                         section.SelectedBones[limb.Chain.Tip] = true;
                     }
+                    else if (operation is GpuXpbdPose xpbd)
+                    {
+                        foreach (GpuXpbdBone bone in xpbd.Chain.Bones) section.SelectedBones[bone.Bone] = true;
+                    }
                     else if (operation is GpuStridePose stride)
                     {
                         section.SelectedBones[stride.Rig.PelvisBone] = true;
