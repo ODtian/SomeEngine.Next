@@ -21,7 +21,15 @@ Extraction 把 GameWorld 的渲染相关变化转换成下一次 RenderWorld 更
 回调返回的变化参与同一次 RenderPrepare 更新；默认实现返回 false。
 
 该回调与 chunk 收集共用 Game world 的一致读取窗口。
-`Apply` 与 `ApplyChanges` 使用收集值，RenderWorld 的常驻组件和缓冲在现有结构事务中更新。
+`Apply` 与 `ApplyChanges` 使用收集值。首次收集和结构变化在 RenderWorld 的现有结构事务中更新；
+已有实体的值更新通过 `CanApplyChangesDirect` 及已声明写入组件的 hook 条件选择直接写入路径。
+
+`SkinRenderExtractor` 在骨架 section、网格绑定及目标映射保持一致时，
+使用一次 `World.ExecuteComponentWrite<RenderBoneSectionData>` 交换各 section 的捕获数组并写入组件。
+CPU 姿势、计算记录、GPU 控制值和 IK 目标共用 `SourceSection.SwapCapture`；
+新增、移除和重新绑定沿 `Publish` 更新实体关系及绑定。
+实现入口为 `src/SomeEngine.Render.Features/Skinning/MeshSkin.cs`，
+直接写入的共同调度入口为 `src/SomeEngine.Render/Systems/RenderExtractionSchedule.cs`。
 
 ## Relations
 [[GameWorld-and-RenderWorld]] · [[Frame-CPU-Overlap]] · [[architecture/assets/Asset-Update-Boundary]]

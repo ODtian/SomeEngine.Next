@@ -242,7 +242,26 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    public void ApplyChanges(RenderExtractionContext context) => Publish(context, retain: false);
+    public unsafe void ApplyChanges(RenderExtractionContext context)
+    {
+        if (!_canApplyChangesDirect)
+        {
+            Publish(context, retain: false);
+            return;
+        }
+        SkinRenderExtractor extraction = this;
+        context.World.ExecuteComponentWrite<RenderBoneSectionData, SkinRenderExtractor>(ref extraction, &WriteSections);
+    }
+
+    private static void WriteSections(ComponentWriteBatch<RenderBoneSectionData> destination, ref SkinRenderExtractor extraction)
+    {
+        foreach (SourceSection section in extraction._sections.Values)
+        {
+            RenderBoneSectionData data = section.SwapCapture(section.Data);
+            destination.Write(section.Entity) = data;
+            section.Data = data;
+        }
+    }
 
     private void Publish(RenderExtractionContext context, bool retain)
     {
@@ -267,18 +286,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                 data = data with { Parents = parents };
                 section.Rebound = false;
             }
-            if (section.Copied)
-            {
-                (section.Current, section.Capture) = (section.Capture, section.Current);
-                (section.CalculationValues, section.CalculationCapture) = (section.CalculationCapture, section.CalculationValues);
-                section.CpuVersion = data.Version;
-            }
-            if (data.StateMachine is not null || data.Blend is not null)
-                (section.ControlValues, section.ControlCapture) = (section.ControlCapture, section.ControlValues);
-            if (data.Rig is not null) (section.GoalValues, section.GoalCapture) = (section.GoalCapture, section.GoalValues);
-            bool hasCpu = !data.IsGpu || data.CpuBones.Length != 0;
-            data = data with { Current = hasCpu ? section.Current : [], Calculations = hasCpu ? section.CalculationValues : [],
-                Controls = section.ControlValues, Goals = section.GoalValues };
+            data = section.SwapCapture(data);
             context.Upsert(section.Entity, data);
             section.Data = data;
         }
@@ -347,5 +355,21 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
         internal GpuPoseGoal[] GoalValues = [], GoalCapture = [];
         internal ulong BindingVersion, CpuVersion, Input;
         internal bool Rebound, Copied;
+
+        internal RenderBoneSectionData SwapCapture(RenderBoneSectionData data)
+        {
+            if (Copied)
+            {
+                (Current, Capture) = (Capture, Current);
+                (CalculationValues, CalculationCapture) = (CalculationCapture, CalculationValues);
+                CpuVersion = data.Version;
+            }
+            if (data.StateMachine is not null || data.Blend is not null)
+                (ControlValues, ControlCapture) = (ControlCapture, ControlValues);
+            if (data.Rig is not null) (GoalValues, GoalCapture) = (GoalCapture, GoalValues);
+            bool hasCpu = !data.IsGpu || data.CpuBones.Length != 0;
+            return data with { Current = hasCpu ? Current : [], Calculations = hasCpu ? CalculationValues : [],
+                Controls = ControlValues, Goals = GoalValues };
+        }
     }
 }
