@@ -137,6 +137,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private ulong _committedInstanceRevision;
     private ulong _committedCasterRevision;
     private ulong _frameCasterRevision;
+    private ulong _committedDeformRevision, _frameDeformRevision;
     private readonly List<uint> _streamingChangedInstances = [];
     private readonly List<uint> _rasterChangedInstances = [];
     private ulong _frameInstanceRevision;
@@ -871,6 +872,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _frameInstances.CollectChangedInstances(_committedInstanceRevision, _changedInstances);
         _forceStateReset |= !_geometry.CollectChangedCasters(_committedCasterRevision,
             _rasterChangedInstances, _streamingChangedInstances, out _frameCasterRevision);
+        _frameDeformRevision = _geometry.CollectDeformedCasters(_committedDeformRevision, _rasterChangedInstances);
         _changedInstances.AddRange(_rasterChangedInstances);
         _rasterChangedInstances.AddRange(_deformedInstances);
         _rasterChangedInstances.Sort();
@@ -1100,6 +1102,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _committedInstances = _frameInstances;
         _committedInstanceRevision = _frameInstanceRevision;
         _committedCasterRevision = _frameCasterRevision;
+        _committedDeformRevision = _frameDeformRevision;
         _deformedInstances.Clear();
         _invalidateAllCasters = false;
         _forceStateReset = false;

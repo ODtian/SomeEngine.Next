@@ -32,6 +32,8 @@ Extraction 把 GameWorld 的渲染相关变化转换成下一次 RenderWorld 更
 来源成员由首次收集和表结构变化维护；普通帧按组件列版本读取网格绑定和 GPU 目标值，
 骨架绑定版本与当前姿势继续在同一补充收集窗口中比较。
 CPU 姿势、计算记录、GPU 控制值和 IK 目标共用 `SourceSection.SwapCapture`；
+该方法在 section 自身的数据上交换数组，批量写入直接读取交换后的值。
+补充收集通过来源目标持有者的只读引用读取 GPU 输入。
 新增、移除和重新绑定沿 `Publish` 更新实体关系及绑定。
 实现入口为 `src/SomeEngine.Render.Features/Skinning/MeshSkin.cs`，
 直接写入的共同调度入口为 `src/SomeEngine.Render/Systems/RenderExtractionSchedule.cs`。

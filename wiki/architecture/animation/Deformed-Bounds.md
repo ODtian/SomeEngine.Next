@@ -40,9 +40,12 @@ world.Add(meshEntity, new MeshSkin(skeletonInstance, skinBinding));
 各网格继续在自己的 `MeshBounds.Inputs` 中比较前后输入。
 当前和上一姿势分别读取 `SkinningFeature` 提供的两份 G。实际提交后接受输入标记，重复输入保留结果。
 
-当前几何变化同时写入 `RenderDeformBounds` 的 ECS 版本，范围值保持原有对应关系。
-CPU 几何按模型姿势版本观察，GPU 几何按输入编号观察；逐帧历史更新继续推进边界输入版本。
-普通实例装配据此记录变化行，阴影 feature 复用既有变化行和当前／上一世界包围体使缓存页失效。
+`RenderDeformBounds` 在范围位置变化时发布；其 `First/NodeCount` 对应 GPU 输出位置。
+CPU 几何按模型姿势版本观察，GPU 几何按输入编号观察；逐帧历史更新推进边界内容版本。
+`SkinBoundsFeature` 在同一实例持有最近内容版本，`HasChangedSince` 提供相对调用方已接受版本的判断。
+场景 refit 观察来源的 `Revision`；阴影通过 `CollectDeformedCasters` 将内容变化映射为当前实例行，
+复用原有当前／上一世界包围体使缓存页失效，并在成功提交后接受来源版本。
+逐帧姿势更新沿边界内容版本传播，实例属性继续持有其范围位置。
 `ClusterInstanceSystem` 将整包 `RenderDeformBounds` 行版本都已变化的情况交给现有整包写入入口，
 局部变化继续按原有行版本选择对应范围。
 
@@ -59,10 +62,12 @@ Cluster 的读取只依赖共同包围体和节点对应关系。LBS 的权重�
 骨骼完成点先于关节变换预计算。`TransformSkinJoints` 为变化实例的每个绑定关节计算
 当前／上一 `InverseBind * G` 和线性伸长上界，保存在 `SkinBoundsFeature` 的持久缓冲中。
 `BuildGeometry` 为同一影响盒数组分配一个范围编号，剔除项与 LOD 项保存各自的范围编号。
-`TransformSkinRanges` 为变化实例的每个范围计算一次当前／上一盒子并集和伸长上界，
-四个相邻 lane 分担盒子循环并归并结果。每个范围的两份结果占 64 字节，由同一 feature 的缓冲持有。
-`TransformSkinBounds` 按原有节点及 draw cluster 顺序取得对应的剔除范围和 LOD 范围，
-用各输出项的几何误差乘 LOD 范围的伸长上界，写入原有 48 字节结果。
+共享定义同时记录每个范围用于哪些输出项的剔除盒及 LOD 球。
+`TransformSkinBounds` 为变化实例的每个范围计算一次当前／上一盒子并集和伸长上界，
+四个相邻 lane 分担盒子循环、归并结果，并分担这个范围的输出项。
+剔除范围写最小／最大 XYZ；LOD 范围写选择球和各输出项的误差乘伸长上界。
+两种用途写入原有 48 字节结果的独立字，不同范围各自保持一个写入者。
+同一范围同时提供剔除与 LOD 时，合并写入最小值与误差。
 内部 BVH 节点继续在局部空间合并影响盒，再进行逐范围的仿射变换。
 多个 cluster、BVH leaf 和剔除／LOD 项共同引用同一范围时，共享这次姿势求值。
 边界完成点先于场景边界、根节点筛选、层级遍历和叶级剔除。
