@@ -5,7 +5,7 @@ using SomeEngine.ECS.Relations;
 
 namespace SomeEngine.Physics;
 
-public static class Collision
+public static partial class Collision
 {
     public static RelationQuery<CollisionCandidates<CollisionBounds, CollisionBoundsReader>, (Entity, Entity)>
         Candidates(World world, QueryHandle bodies) =>
