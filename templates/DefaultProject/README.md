@@ -14,6 +14,14 @@ Space to confirm it. The count stays with the panel when the window is resized.
 F1 opens and closes the ImGui debug panel, where `Surface panel` controls the SomeUI example.
 The application takes its scene and rendering settings from that in-game panel.
 
+The scene selector also offers the procedural 1000-character crowd example in inline and cached forms.
+Build these assets with `Game.Build --crowd <project> <engine>`, then rebuild `Game.App` to copy them.
+`Game.App --crowd` selects the two crowd scenes; `--measure` measures the selected collection and exits.
+`--regression` selects the three scenes used by `tools/Measure-Scenes.ps1`.
+The fixture uses 96 bones, 19,632 LOD0 vertices, four positive weights, four shared 60 Hz actions and
+independent state/phase controls for each character. Source and measurement fields are described in
+[Crowd Example](../../wiki/architecture/animation/Crowd-Example.md).
+
 `Game.Build` compiles every project `.shader`, creates the default textures and materials from the declarations in `DefaultTextures.cs` and `DefaultMaterials.cs`, and imports the copied glTF model through the project's importer capabilities. The glTF importer produces the source scene and shared mesh assets. `DefaultContent` then builds the separate 1024-instance test world from that mesh and writes application settings pointing to the test world. `DefaultContentIds.cs` holds identities for code-defined assets; changing a display name keeps its identity. The glTF source has its own persisted import identities and settings after the first import.
 
 `StandardGltfSceneImporter` is the ordinary glTF scene importer for this project. It assembles the scene through the shared base class and directly builds this project's Standard and Unlit materials. A different scene importer can replace it when a scene needs different material or world content. The selected importer requests shared mesh assets; mesh materials and textures are reused by source identity. Saved worlds contain mesh references and node transforms, while each mesh asset holds ordered material references.

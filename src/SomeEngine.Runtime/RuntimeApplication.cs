@@ -51,10 +51,11 @@ internal static class RuntimeApplication
         {
             if (platform is not null) options = platform.Options;
             platform?.BeginScene();
+            ApplicationScene? selected = application ?? platform?.Current.CreateApplication?.Invoke(platform.Current.ContentDirectory);
             try
             {
-                frames += RunScene(options, useWarp, animateMaterial, platform, display, shaderResources, script, application);
-                platform?.EndScene();
+                frames += RunScene(options, useWarp, animateMaterial, platform, display, shaderResources, script, selected);
+                platform?.EndScene(workload: selected?.DescribeWorkload?.Invoke());
             }
             catch (Exception error)
             {
@@ -507,8 +508,12 @@ internal static class RuntimeApplication
         try { application?.Initialize?.Invoke(applicationFrame); }
         finally { sceneEdit.End(); }
         elementSystems.UpdateViews(0);
-        ApplicationFrameMeasurements? measurements = application?.FrameMeasured is { } receiveTiming
-            ? new(receiveTiming) : null;
+        ApplicationFrameMeasurements? measurements = application?.FrameMeasured is not null || platform?.IsMeasuring == true
+            ? new(timing =>
+            {
+                application?.FrameMeasured?.Invoke(timing);
+                platform?.RecordCompletedFrame(timing);
+            }) : null;
         bool measure = platform?.IsMeasuring == true || measurements is not null;
         GameUpdateTiming gameTiming = default;
         long gameStarted = 0, nextGameStarted = 0;
@@ -680,27 +685,33 @@ internal static class RuntimeApplication
 
         ClusterPipelineSystem CreatePipeline(
             in ClusterPipelineOutputDescription description,
-            bool metrics) => new(
-            backend,
-            device,
-            renderDevice,
-            cluster,
-            instanceSystem,
-            instanceLayout,
-            materialAssignments,
-            pipelineConfiguration,
-            renderGraph,
-            description,
-            streamingFeedback,
-            stageResources,
-            new ClusterPipelineOptions
-            {
-                EnableAsyncCompute = options.AsyncCompute,
-                ForceHardwareRaster = forceHardwareRaster,
-                UseInstanceGroups = options.UseInstanceGroups,
-                EnableFrameMetricsReadback = metrics || application?.FrameRendered is not null,
-                LodThreshold = application?.LodThreshold ?? 1,
-            }, skinBounds);
+            bool metrics)
+        {
+            var receiver = new ClusterPipelineSystem(
+                backend,
+                device,
+                renderDevice,
+                cluster,
+                instanceSystem,
+                instanceLayout,
+                materialAssignments,
+                pipelineConfiguration,
+                renderGraph,
+                description,
+                streamingFeedback,
+                stageResources,
+                new ClusterPipelineOptions
+                {
+                    EnableAsyncCompute = options.AsyncCompute,
+                    ForceHardwareRaster = forceHardwareRaster,
+                    UseInstanceGroups = options.UseInstanceGroups,
+                    EnableFrameMetricsReadback = metrics || application?.FrameRendered is not null || measurements is not null,
+                    LodThreshold = application?.LodThreshold ?? 1,
+                    MaxDeformCacheBytes = application?.DeformCacheBytes ?? 64u * 1024 * 1024,
+                }, skinBounds);
+            if (measurements is not null) receiver.FrameMeasured += measurements.ReceiveGeometry;
+            return receiver;
+        }
 
         void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
         {
@@ -1128,12 +1139,13 @@ internal static class RuntimeApplication
                         height,
                         device.Adapter.HardwareAccelerated);
 
+                double cpuMs = Stopwatch.GetElapsedTime(Math.Min(frameStarted, gameStarted)).TotalMilliseconds;
                 if (platform?.IsMeasuring == true && !platform.ReloadRequested)
-                    platform.RecordFrame(new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
+                    platform.RecordFrame(new(frameIndex, cpuMs,
                         prepareMs, reconcileMs, executeMs, gameTiming.Views, gameTiming.ExtractionMs,
                         gameTiming.ExtractionAllocatedBytes), cluster.CaptureDiagnostics());
                 measurements?.RecordCpu(graphFrameIdentity, frameIndex,
-                    Stopwatch.GetElapsedTime(Math.Min(frameStarted, gameStarted)).TotalMilliseconds,
+                    cpuMs,
                     gameTiming.Views.TotalMs, gameTiming.Views.AnimationMs, gameTiming.ExtractionMs,
                     prepareMs, reconcileMs, executeMs);
                 frameIndex++;
@@ -1250,6 +1262,7 @@ internal static class RuntimeApplication
                 RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
             outputVerifier?.Dispose();
             coordinator.WaitForTrackedSubmissions();
+            if (measurements is not null && frameIndex > 0) _ = pipeline.CaptureFrameMetrics();
             ui?.Dispose();
             presentation?.Dispose();
             temporal?.Dispose();

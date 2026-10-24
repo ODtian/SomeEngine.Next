@@ -25,6 +25,9 @@
 同一用户求值器在 inline/cache 间的选择。`ClusterDeformWrite` 的当前和上一求值分别
 携带对应的实例变换与历史标志，用户缓存编码保存这两份结果。
 公开应用的分阶段与整帧成本入口见 [GPU Timing](../render-graph/GPU-Timing.md)。
+`ApplicationScene.DeformCacheBytes` 将应用选择的容量传入 `MaxDeformCacheBytes`。
+[Crowd Example](../animation/Crowd-Example.md) 给出一个 48 字节的当前/上一位置与法线编码例子，
+并通过统一平台报告选中顶点项与实际区域分配量。
 
 ## Invariants
 - Cluster 不解释 cache payload 字段或压缩方式。

@@ -1,13 +1,19 @@
 using ImGuiNET;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using SomeEngine.Diagnostics;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Runtime;
 
-public sealed record TestScene(string Name, string ContentDirectory, bool Animate = false);
+public sealed record TestScene(string Name, string ContentDirectory, bool Animate = false)
+{
+    /// <summary>Creates the scene's game callbacks for each load.</summary>
+    [JsonIgnore]
+    public Func<string, ApplicationScene>? CreateApplication { get; init; }
+}
 
 /// <summary>Shared scene selection and render settings for the interactive test application.</summary>
 public sealed class SceneTestPlatform
@@ -17,14 +23,14 @@ public sealed class SceneTestPlatform
     private const double WarmupSeconds = 3;
     private const double SampleSeconds = 2;
     private const double MaximumTestSeconds = 45;
-    public SceneTestPlatform(IReadOnlyList<TestScene> scenes)
+    public SceneTestPlatform(IReadOnlyList<TestScene> scenes, RuntimeStartupOptions? options = null)
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
         Scenes = scenes.ToArray();
-        Options = RuntimeStartupOptions.Parse([]) with
+        Options = (options ?? RuntimeStartupOptions.Parse([]) with
         {
-            WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true, SurfacePanel = true, WorldNameplates = true,
-        };
+            WindowVSync = false, AsyncCompute = true, SurfacePanel = true, WorldNameplates = true,
+        }) with { DynamicScene = scenes[0].Animate };
     }
 
     public IReadOnlyList<TestScene> Scenes { get; }
@@ -34,6 +40,7 @@ public sealed class SceneTestPlatform
     internal TestScene Current => Scenes[SelectedScene];
     private readonly List<SceneTiming> _results = [];
     private readonly List<FrameTiming> _frames = [];
+    private readonly Dictionary<int, ApplicationFrameTiming> _completedFrames = [];
     private long _testStarted;
     private long _sceneStarted;
     private long _sampleStarted;
@@ -56,6 +63,7 @@ public sealed class SceneTestPlatform
     private string? _graphicsDevice;
     private string? _graphicsDriver;
     public bool IsMeasuring { get; private set; }
+    public bool ExitAfterMeasurements { get; init; }
     public string? LastReport { get; private set; }
     public int GeometryMemoryMegabytes { get; private set; } = 256;
     public bool HudOverlayEnabled => Options.HudOverlay;
@@ -134,6 +142,7 @@ public sealed class SceneTestPlatform
         _firstFrameMs = 0;
         _readyFrames = 0;
         _frames.Clear();
+        _completedFrames.Clear();
         if (_recordTrace)
             _trace = EngineTrace.Start(Path.Combine(_resultDirectory!, $"scene-{SelectedScene}.setrace"),
                 new SomeEngine.Diagnostics.TraceOptions
@@ -215,11 +224,18 @@ public sealed class SceneTestPlatform
         ReloadRequested = true;
     }
 
-    internal void EndScene(string? error = null)
+    internal void RecordCompletedFrame(ApplicationFrameTiming timing)
+    {
+        if (IsMeasuring) _completedFrames.Add(timing.Frame, timing);
+    }
+
+    internal void EndScene(string? error = null, object? workload = null)
     {
         _trace?.Dispose();
         _trace = null;
         if (!IsMeasuring || _sceneStarted == 0) return;
+        if (_results.Count != 0 && _results[^1].Scene == Current.Name)
+            _results[^1] = _results[^1] with { Costs = _frames.Count == 0 ? null : Summarize(), Workload = workload };
         if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count &&
             Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < MaximumTestSeconds)
         {
@@ -233,6 +249,7 @@ public sealed class SceneTestPlatform
             CapturedAtUtc = DateTimeOffset.UtcNow,
             GraphicsDevice = _graphicsDevice,
             GraphicsDriver = _graphicsDriver,
+            GraphicsBackend = Options.GraphicsBackend.ToString(),
             Processor = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
             Framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             OperatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
@@ -241,13 +258,18 @@ public sealed class SceneTestPlatform
             Error = error,
             ExpectedScenes = Scenes.Select(scene => scene.Name),
             ElapsedSeconds = Stopwatch.GetElapsedTime(_testStarted).TotalSeconds,
-            Timing = "Presented frame elapsed time; CPU game-world interface updates and extraction; current-thread allocations",
+            Timing = "Complete CPU critical path through Present; complete calibrated GPU application interval; pass command work; completed geometry counters",
+            Instrumentation = "Four timestamp queries per executed pass; measured commands recorded each frame; same-queue resolves after application work",
+            ProcessorCount = Environment.GetEnvironmentVariable("DOTNET_PROCESSOR_COUNT"),
+            TieredCompilationEnvironment = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation"),
+            ReadyToRun = Environment.GetEnvironmentVariable("DOTNET_ReadyToRun"),
             Sampling = new { MinimumReadyFrames, MinimumRenderedFrames, WarmupSeconds, SampleSeconds, MaximumTestSeconds },
-            TraceEnabled = _recordTrace,
+            TraceEnabled = _recordTrace || Options.TraceOutput is not null,
             Options.TraceDetail, Options.TraceAllocations,
             Options.TemporalAntialiasing, Options.VirtualShadows, Options.AsyncCompute, Options.ForceHardwareRaster,
             Options.UseInstanceGroups, Options.FixedFrameSeconds,
             Options.SynchronousFrames, Options.ScenePlayback, Options.DisableMeshShaders, Options.DeviceValidation,
+            Options.HideWindow, Options.HideDebugUi, Options.SkipSwapchainPresent,
             Options.SurfacePanel,
             Options.WorldNameplates,
             Options.HudOverlay,
@@ -260,6 +282,7 @@ public sealed class SceneTestPlatform
         }, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Performance report: {LastReport}");
         IsMeasuring = false;
+        ReloadRequested = !ExitAfterMeasurements;
         Options = _interactiveOptions!;
         SelectedScene = _interactiveScene;
         _interactiveOptions = null;
@@ -268,7 +291,7 @@ public sealed class SceneTestPlatform
     internal void Draw()
     {
         ImGui.SeparatorText("Test scenes");
-        ImGui.TextUnformatted("F2: spheres   F3: Sponza   F4: Amazon Bistro   F6: HUD");
+        ImGui.TextUnformatted(string.Join("   ", Scenes.Take(3).Select((scene, index) => $"F{index + 2}: {scene.Name}")) + "   F6: HUD");
         if (ImGui.BeginCombo("Scene", Current.Name))
         {
             for (int index = 0; index < Scenes.Count; index++)
@@ -350,7 +373,47 @@ public sealed class SceneTestPlatform
         }
     }
 
-    internal readonly record struct FrameTiming(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs,
+    private object Summarize()
+    {
+        ApplicationFrameTiming[] frames = _frames.Select(frame => _completedFrames[frame.Frame]).ToArray();
+        string[] stages = frames.SelectMany(frame => frame.Gpu.Passes).Select(pass => pass.Group ?? pass.Label).Distinct().Order().ToArray();
+        return new
+        {
+            Frames = frames.Length,
+            CpuMs = Distribution(frames.Select(frame => frame.CpuMs)),
+            GameMs = Distribution(frames.Select(frame => frame.GameMs)),
+            AnimationMs = Distribution(frames.Select(frame => frame.AnimationMs)),
+            ExtractionMs = Distribution(frames.Select(frame => frame.ExtractionMs)),
+            PrepareMs = Distribution(frames.Select(frame => frame.PrepareMs)),
+            ReconcileMs = Distribution(frames.Select(frame => frame.ReconcileMs)),
+            ExecuteMs = Distribution(frames.Select(frame => frame.ExecuteMs)),
+            GpuMs = Distribution(frames.Select(frame => frame.Gpu.ElapsedMs)),
+            GpuStagesMs = stages.ToDictionary(stage => stage, stage => Distribution(frames.Select(frame =>
+                frame.Gpu.Passes.Where(pass => (pass.Group ?? pass.Label) == stage).Sum(pass => pass.CommandsMs)))),
+            GpuPasses = Distribution(frames.Select(frame => (double)frame.Gpu.Passes.Count)),
+            TimestampQueries = Distribution(frames.Select(frame => frame.Gpu.Passes.Count * 4.0)),
+            Queues = frames.SelectMany(frame => frame.Gpu.Passes).Select(pass => $"{pass.QueueType}:{pass.QueueIndex}").Distinct().ToArray(),
+            SelectedVertexItems = Distribution(frames.Select(frame => (double)frame.Geometry.SelectedVertices)),
+            SelectedTriangleItems = Distribution(frames.Select(frame => (double)frame.Geometry.SelectedTriangles)),
+            PhaseOneSoftwareClusters = Distribution(frames.Select(frame => (double)frame.Geometry.PhaseOneSoftwareClusters)),
+            PhaseOneHardwareClusters = Distribution(frames.Select(frame => (double)frame.Geometry.PhaseOneHardwareClusters)),
+            PhaseTwoSoftwareClusters = Distribution(frames.Select(frame => (double)frame.Geometry.PhaseTwoSoftwareClusters)),
+            PhaseTwoHardwareClusters = Distribution(frames.Select(frame => (double)frame.Geometry.PhaseTwoHardwareClusters)),
+            CandidateClusters = Distribution(frames.Select(frame => (double)frame.Geometry.CandidateCount)),
+            ShadingWorkItems = Distribution(frames.Select(frame => (double)frame.Geometry.ShadingWorkItems)),
+            DeformCacheReservedBytes = Distribution(frames.Select(frame => (double)frame.Geometry.DeformCacheBytes)),
+        };
+    }
+
+    private static TimingDistribution Distribution(IEnumerable<double> values)
+    {
+        double[] ordered = values.Order().ToArray();
+        return new(ordered[0], ordered.Average(), (ordered[(ordered.Length - 1) / 2] + ordered[ordered.Length / 2]) / 2,
+            ordered[(int)Math.Ceiling(ordered.Length * .95) - 1], ordered[^1]);
+    }
+
+    private readonly record struct TimingDistribution(double Min, double Mean, double Median, double P95, double Max);
+    internal readonly record struct FrameTiming(int Frame, double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs,
         ViewTiming Views, double ExtractionMs, long ExtractionAllocatedBytes);
     private sealed record SceneTiming(string Scene, string Status, int Frames, double? MeanMs, double? MedianMs,
         double? P95Ms, double? PrepareMs, double? ReconcileMs, double? ExecuteMs,
@@ -360,6 +423,10 @@ public sealed class SceneTestPlatform
         double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults,
         long Rebuilds, double? RebuildsPerFrame, long Computations, double? ComputationsPerFrame,
         double? RebuildMs, double? TextMs, double? LayoutMs, double? ViewMs, double? ExtractionMs,
-        double? ViewAllocatedBytes, double? ExtractionAllocatedBytes, double? AnimationMs);
+        double? ViewAllocatedBytes, double? ExtractionAllocatedBytes, double? AnimationMs)
+    {
+        public object? Costs { get; init; }
+        public object? Workload { get; init; }
+    }
 }
 

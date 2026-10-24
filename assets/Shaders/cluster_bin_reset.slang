@@ -54,5 +54,7 @@ void ResetBins(uint3 threadId : SV_DispatchThreadID)
     {
         ReserveCounters[2] = 0u;
         ReserveCounters[3] = 0u;
+        ReserveCounters[4] = 0u;
+        ReserveCounters[5] = 0u;
     }
 }

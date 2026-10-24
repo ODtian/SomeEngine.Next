@@ -8,6 +8,7 @@ public sealed class ApplicationScene(string contentDirectory)
 {
     public string ContentDirectory { get; } = Path.GetFullPath(contentDirectory);
     public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
+    public uint DeformCacheBytes { get; init; } = 64u * 1024 * 1024;
     public float LodThreshold { get; init; } = 1;
     public Action<ApplicationFrame>? Initialize { get; init; }
     public Action<ApplicationFrame>? UpdateFrame { get; init; }
@@ -15,6 +16,8 @@ public sealed class ApplicationScene(string contentDirectory)
     public Action<ClusterFrameMetrics>? FrameRendered { get; init; }
     /// <summary>Receives complete CPU/GPU frame timing after GPU completion, preserving asynchronous frame scheduling.</summary>
     public Action<ApplicationFrameTiming>? FrameMeasured { get; init; }
+    /// <summary>Describes the application's workload when the scene measurement completes.</summary>
+    public Func<object>? DescribeWorkload { get; init; }
 }
 
 /// <summary>The game world and ordered systems available before the frame's extraction.</summary>

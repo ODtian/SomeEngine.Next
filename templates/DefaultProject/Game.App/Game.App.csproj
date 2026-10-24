@@ -11,6 +11,10 @@
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
     <Content Include="$(ProjectContentRoot)/assets/**/*.asset" Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(ProjectContentRoot)/Library/AssetManifest/**/*" Link="Library/AssetManifest/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(ProjectContentRoot)/CrowdInline/assets/**/*.asset" Link="CrowdInline/assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(ProjectContentRoot)/CrowdInline/Library/AssetManifest/**/*" Link="CrowdInline/Library/AssetManifest/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(ProjectContentRoot)/CrowdCache/assets/**/*.asset" Link="CrowdCache/assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(ProjectContentRoot)/CrowdCache/Library/AssetManifest/**/*" Link="CrowdCache/Library/AssetManifest/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(SomeEnginePath)/external/dxc/bin/x64/dxcompiler.dll;$(SomeEnginePath)/external/dxc/bin/x64/dxil.dll"
              Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
       <Link>%(Filename)%(Extension)</Link>

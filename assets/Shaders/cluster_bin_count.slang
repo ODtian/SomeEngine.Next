@@ -17,6 +17,8 @@ ByteAddressBuffer PageHeap;
 
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> BinnedClusterIndexBuffer;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+RWStructuredBuffer<uint> ReserveCounters;
 
 void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware)
 {
@@ -83,6 +85,16 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         triangleCount,
         packedMaterials,
         packedRanges);
+    if (Uniforms.CollectMetrics != 0u && Uniforms.PolicyTarget == 0u)
+    {
+        uint vertices = WaveActiveSum(vertexCount);
+        uint triangles = WaveActiveSum(triangleCount);
+        if (WaveIsFirstLane())
+        {
+            InterlockedAdd(ReserveCounters[4], vertices);
+            InterlockedAdd(ReserveCounters[5], triangles);
+        }
+    }
     uint slotOffset = LoadClusterMaterialSlotOffset(
         InstanceData,
         LoadRenderInstanceMetadata(

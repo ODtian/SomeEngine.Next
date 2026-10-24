@@ -23,6 +23,7 @@ public sealed partial class ClusterPipelineSystem
     internal const int ShadeBinCountReadbackOffset = 80;
     internal const int PhaseOneTessellationCountersReadbackOffset = 84;
     internal const int PhaseTwoTessellationCountersReadbackOffset = 116;
+    internal const int GeometryWorkReadbackOffset = 148;
     internal const int VisibilityProbeReadbackOffset = 512;
     internal const int VisibilityProbePixelCount = 64;
     internal const int VisibilityProbeRowPitch = VisibilityProbePixelCount * sizeof(uint);
@@ -279,7 +280,7 @@ public sealed partial class ClusterPipelineSystem
             checked((ulong)rasterBinCount * ClusterIndirectAbi.DispatchBytes),
             BufferUsages.Indirect,
             "Cluster software raster dispatches");
-        frame.RasterReserveCounters = frame.AddBuffer(ref graph, 4 * sizeof(uint), BufferUsages.CopySource, "Cluster raster reserve counters");
+        frame.RasterReserveCounters = frame.AddBuffer(ref graph, 6 * sizeof(uint), BufferUsages.CopySource, "Cluster raster reserve counters");
         frame.TessellationCounters = frame.AddBuffer(
             ref graph,
             8 * sizeof(uint),

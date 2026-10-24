@@ -1,5 +1,12 @@
 using Game.Build;
 
+if (args is ["--crowd", var crowdProject, var crowdEngine])
+{
+    await DefaultContent.BuildAsync(crowdProject, crowdEngine);
+    await CrowdContent.BuildAsync(Path.GetFullPath(crowdProject), Path.GetFullPath(crowdEngine));
+    return;
+}
+
 if (args is ["--import-scene", var application, var source, var output, var engineDirectory])
 {
     await ImportedSceneBuild.BuildAsync(application, source, output, engineDirectory);

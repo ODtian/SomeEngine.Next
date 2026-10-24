@@ -20,4 +20,13 @@ public readonly record struct ClusterFrameMetrics(
     uint CulledTessellationPatches,
     uint QualityLimitedTessellationPatches,
     uint SoftwareRasterDebugRecords,
-    uint VisibilityProbePixels);
+    uint VisibilityProbePixels)
+{
+    public ulong FrameIdentity { get; init; }
+    /// <summary>Vertex items in selected primary-view clusters, including duplicates across clusters and instances.</summary>
+    public uint SelectedVertices { get; init; }
+    /// <summary>Triangle items in selected primary-view clusters across both occlusion phases.</summary>
+    public uint SelectedTriangles { get; init; }
+    /// <summary>Bytes reserved by user deformation regions, including alignment, across this frame's views.</summary>
+    public uint DeformCacheBytes { get; init; }
+}

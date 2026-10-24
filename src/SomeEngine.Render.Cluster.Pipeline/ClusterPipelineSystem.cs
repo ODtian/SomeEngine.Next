@@ -125,6 +125,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly Buffer?[] _frameMetricReadbacks = new Buffer?[ReadbackGenerationCount];
     private byte[] _frameMetricReadbackBytes = [];
     private readonly ulong[] _frameMetricReadbackFrames = new ulong[ReadbackGenerationCount];
+    private readonly ulong[] _frameMetricReadbackIdentities = new ulong[ReadbackGenerationCount];
     private readonly bool[] _frameMetricReadbackPending = new bool[ReadbackGenerationCount];
     private readonly QueueCompletion[][] _readbackFences = [[], []];
     private readonly BufferBoundaryState[][] _pageFaultReadbackStates = [[], []];
@@ -136,6 +137,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private int _readbackWriteGeneration = -1;
     private int _preferredReadbackGeneration;
     private ClusterFrameMetrics? _latestFrameMetrics;
+    /// <summary>Receives a frame's geometry counters after its submitted GPU work completes.</summary>
+    public event Action<ClusterFrameMetrics>? FrameMeasured;
     private ClusterEpochId _pendingReadbackEpoch;
     private QueueCompletion? _pageFaultSubmission;
     private int _pendingInstanceGeneration = -1;
@@ -1188,6 +1191,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 result.TryGetPassCompletion(_frameMetricsReadbackPass, out _))
             {
                 _frameMetricReadbackFrames[generation] = checked(++_frameMetricsSubmittedFrame);
+                _frameMetricReadbackIdentities[generation] = result.FrameIdentity;
                 _frameMetricReadbackPending[generation] = true;
             }
             if (result.TryGetPassCompletion(_sceneBoundsPass, out _))
@@ -1275,6 +1279,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             }
             _frameMetricReadbacks[generation] = null;
             _frameMetricReadbackFrames[generation] = 0;
+            _frameMetricReadbackIdentities[generation] = 0;
             _frameMetricReadbackPending[generation] = false;
             _readbackFences[generation] = [];
             _readbackSequences[generation] = 0;
@@ -1677,11 +1682,19 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             SaturatingAdd(phaseOneCulled, phaseTwoCulled),
             SaturatingAdd(phaseOneQualityLimited, phaseTwoQualityLimited),
             ReadUInt32(bytes, SoftwareDebugReadbackOffset),
-            CountNonZeroVisibilityProbe(bytes));
+            CountNonZeroVisibilityProbe(bytes))
+        {
+            FrameIdentity = _frameMetricReadbackIdentities[generation],
+            SelectedVertices = ReadUInt32(bytes, GeometryWorkReadbackOffset),
+            SelectedTriangles = ReadUInt32(bytes, GeometryWorkReadbackOffset + sizeof(uint)),
+            DeformCacheBytes = ReadUInt32(bytes, GeometryWorkReadbackOffset + 2 * sizeof(uint)),
+        };
         if (_latestFrameMetrics is not { } latest || metrics.FrameIndex > latest.FrameIndex)
             _latestFrameMetrics = metrics;
         _frameMetricReadbackFrames[generation] = 0;
+        _frameMetricReadbackIdentities[generation] = 0;
         _frameMetricReadbackPending[generation] = false;
+        FrameMeasured?.Invoke(metrics);
     }
 
     private static uint ReadUInt32(ReadOnlySpan<byte> bytes, int offset) =>

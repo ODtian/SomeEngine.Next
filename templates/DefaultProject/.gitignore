@@ -3,3 +3,5 @@
 Library/
 assets/**/*.asset
 assets/Shaders/generated/
+CrowdInline/
+CrowdCache/

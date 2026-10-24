@@ -23,7 +23,7 @@ if ($projectRoot.StartsWith($templatePrefix, [StringComparison]::OrdinalIgnoreCa
 }
 $copies = @()
 foreach ($source in Get-ChildItem -LiteralPath $templateRoot -Recurse -File -Force) {
-    if ($source.FullName -match '[\\/](bin|obj|Library|\.git)[\\/]' -or
+    if ($source.FullName -match '[\\/](bin|obj|Library|CrowdInline|CrowdCache|\.git)[\\/]' -or
         $source.FullName -match '[\\/]assets[\\/]Shaders[\\/]generated[\\/]' -or
         $source.Name -match '\.asset$|\.import\.json$|\.(tmp|temp|bak)$|~$' -or
         $source.Name -eq 'EnginePath.props' -or $source.Name -eq 'NuGet.config') { continue }

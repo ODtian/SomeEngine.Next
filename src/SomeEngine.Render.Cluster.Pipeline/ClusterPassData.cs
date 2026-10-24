@@ -323,7 +323,7 @@ internal readonly record struct ClusterFrameMetricsSourceResetParameters(
     GraphBufferId PhaseTwoTessellationCounters)
 {
     private static readonly BufferRange RasterReserveRange =
-        new(0, 4 * sizeof(uint));
+        new(0, 6 * sizeof(uint));
     private static readonly BufferRange ScalarRange = new(0, sizeof(uint));
     private static readonly BufferRange TessellationRange = new(0, 8 * sizeof(uint));
 
@@ -552,6 +552,7 @@ internal struct ClusterFrameMetricsReadbackParameters
     internal GraphBufferId Phase2CandidateArgs;
     internal GraphBufferId Phase2DrawArgs;
     internal GraphBufferId RasterReserve;
+    internal GraphBufferId DeformAllocation;
     internal GraphBufferId ShadeCount;
     internal GraphBufferId ShadeReserve;
     internal GraphBufferId SoftwareDebug;
@@ -573,6 +574,10 @@ internal struct ClusterFrameMetricsReadbackParameters
         Copy(ref commands, parameters.RasterReserve, 2 * sizeof(uint),
             parameters.Destination, ClusterPipelineSystem.RasterReserveReadbackOffset,
             2 * sizeof(uint));
+        Copy(ref commands, parameters.RasterReserve, 4 * sizeof(uint),
+            parameters.Destination, ClusterPipelineSystem.GeometryWorkReadbackOffset, 2 * sizeof(uint));
+        Copy(ref commands, parameters.DeformAllocation, 0,
+            parameters.Destination, ClusterPipelineSystem.GeometryWorkReadbackOffset + 2 * sizeof(uint), sizeof(uint));
         Copy(ref commands, parameters.ShadeCount, 0,
             parameters.Destination, ClusterPipelineSystem.ShadeBinCountReadbackOffset,
             sizeof(uint));
