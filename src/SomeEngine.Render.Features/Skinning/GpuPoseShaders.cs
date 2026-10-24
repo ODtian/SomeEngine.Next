@@ -47,11 +47,13 @@ internal static class GpuPoseShaders
             SlangShaderData.RetainSession(session, twoBone);
             Require(module.FindEntryPointByName("SolveAim", out IEntryPoint aim), null);
             SlangShaderData.RetainSession(session, aim);
-            Require(session.CreateCompositeComponentType([module, advance, load, sample, store, translate, twoBone, aim], out IComponentType combined, out diagnostics), diagnostics);
+            Require(module.FindEntryPointByName("WarpStride", out IEntryPoint stride), null);
+            SlangShaderData.RetainSession(session, stride);
+            Require(session.CreateCompositeComponentType([module, advance, load, sample, store, translate, twoBone, aim, stride], out IComponentType combined, out diagnostics), diagnostics);
             SlangShaderData.RetainSession(session, combined);
             Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
             SlangShaderData.RetainSession(session, linked);
-            shader = Shader.CreateFromSlang("GPU poses", s_global, session, [module], [advance, load, sample, store, translate, twoBone, aim], linked, [output]);
+            shader = Shader.CreateFromSlang("GPU poses", s_global, session, [module], [advance, load, sample, store, translate, twoBone, aim, stride], linked, [output]);
             s_shaders.Add(target, shader);
             return shader;
         }

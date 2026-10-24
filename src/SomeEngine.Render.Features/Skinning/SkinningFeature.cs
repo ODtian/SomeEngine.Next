@@ -20,10 +20,10 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private readonly Device _device;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly LinkedComputePipeline _advancePipeline, _loadPipeline, _samplePipeline, _storePipeline;
-    private readonly LinkedComputePipeline _translatePipeline, _twoBonePipeline, _aimPipeline;
+    private readonly LinkedComputePipeline _translatePipeline, _twoBonePipeline, _aimPipeline, _stridePipeline;
     private readonly GraphBufferInput _currentBones, _previousBones, _controlsInput, _sectionsInput, _workInput, _clipsInput;
     private readonly GraphBufferInput _playbackInput, _valuesInput, _blendStatesInput, _blendLocalsInput;
-    private readonly GraphBufferInput _goalsInput, _offsetsInput, _rootsInput;
+    private readonly GraphBufferInput _goalsInput, _offsetsInput, _rootsInput, _movementsInput;
     private readonly GraphBufferInput _historyCurrentInput, _historyPreviousInput, _jointIndices, _inverseBind, _definitionUpload, _cpuUpload;
     private readonly GraphBufferId _definitions;
     private GraphBufferId _historyCurrent, _historyPrevious, _readyCurrent, _readyPrevious;
@@ -37,6 +37,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private readonly List<GpuPoseGoal> _goalValues = [];
     private readonly List<Vector4> _modelOffsets = [];
     private readonly List<RootCorrection> _rootCorrections = [];
+    private readonly List<StrideMovement> _movements = [];
     private readonly List<SolverDispatch> _solverDispatches = [];
     private readonly List<Matrix4x4> _cpuValues = [];
     private readonly List<CpuCopy> _cpuCopies = [];
@@ -68,6 +69,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _translatePipeline = LinkedComputePipeline.Create(backend, device, shader, "TranslatePose", "Translate model pose");
         _twoBonePipeline = LinkedComputePipeline.Create(backend, device, shader, "SolveTwoBone", "Solve two-bone pose");
         _aimPipeline = LinkedComputePipeline.Create(backend, device, shader, "SolveAim", "Solve aim pose");
+        _stridePipeline = LinkedComputePipeline.Create(backend, device, shader, "WarpStride", "Warp stride and body");
         using RenderGraphEdit edit = graph.BeginEdit();
         _currentBones = edit.CreateBufferInput(PoseUsages);
         _previousBones = edit.CreateBufferInput(PoseUsages);
@@ -79,6 +81,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _goalsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _offsetsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _rootsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
+        _movementsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _valuesInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _controlsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _sectionsInput = edit.CreateBufferInput(BufferUsages.ShaderRead);
@@ -167,7 +170,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     {
         PrepareEvaluations();
         _controls.Clear(); _controlValues.Clear(); _cpuValues.Clear(); _cpuCopies.Clear();
-        _goalValues.Clear(); _modelOffsets.Clear(); _rootCorrections.Clear();
+        _goalValues.Clear(); _modelOffsets.Clear(); _rootCorrections.Clear(); _movements.Clear();
         foreach (Section section in _sectionOrder)
         {
             RenderBoneSectionData data = section.Data;
@@ -184,6 +187,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             if (data.Rig is not null) _goalValues.AddRange(data.Goals);
             _modelOffsets.Add(new(data.ModelOffset, 0));
             _rootCorrections.Add(new(new(data.RootCorrection.Translation, data.ExtractRootMotion ? 1 : 0), data.RootCorrection.Rotation));
+            GpuPoseMovement movement = data.Movement;
+            _movements.Add(new(new(movement.Velocity, movement.Weight), new(movement.AnimationVelocity, 0), new(movement.FacingDirection, 0)));
             _controls.Add(new(data.Blend is null ? section.ClipOffset : (uint)section.BlendLocalStart,
                 data.SampleTime, flags, data.Starts, data.InputNumber, data.CalculationTime,
                 data.Blend is null ? section.MachineOffset : section.BlendOffset, inputOffset, data.PlaybackTime,
@@ -372,7 +377,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         {
             LinkedComputePipeline pipeline = solve.Kernel switch
             {
-                Kernel.Translate => _translatePipeline, Kernel.TwoBone => _twoBonePipeline, _ => _aimPipeline,
+                Kernel.Translate => _translatePipeline, Kernel.TwoBone => _twoBonePipeline,
+                Kernel.Stride => _stridePipeline, _ => _aimPipeline,
             };
             GraphPassId pass = AddKernel(edit, pipeline, solve.Kernel, solve.Work, solve.Count);
             edit.OrderAfter(pass, predecessor);
@@ -416,6 +422,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             "GpuBlendStates" => Resource.BlendStates, "GpuBlendLocals" => Resource.BlendLocals,
             "GpuPoseGoals" => Resource.Goals, "GpuPoseOffsets" => Resource.Offsets,
             "GpuPoseRoots" => Resource.Roots,
+            "GpuPoseMovements" => Resource.Movements,
             "GpuPoseModels" => Resource.Models, "GpuPosePrevious" => Resource.Previous,
             "GpuPoseHistoryCurrent" => Resource.HistoryCurrent, "GpuPoseHistoryPrevious" => Resource.HistoryPrevious, _ => null,
         });
@@ -428,6 +435,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 case Resource.Goals: pass.Bind(edit.CreateBufferSrv(_goalsInput, structureStride: 48), PipelineSync.ComputeShading); break;
                 case Resource.Offsets: pass.Bind(edit.CreateBufferSrv(_offsetsInput, structureStride: 16), PipelineSync.ComputeShading); break;
                 case Resource.Roots: pass.Bind(edit.CreateBufferSrv(_rootsInput, structureStride: 32), PipelineSync.ComputeShading); break;
+                case Resource.Movements: pass.Bind(edit.CreateBufferSrv(_movementsInput, structureStride: 48), PipelineSync.ComputeShading); break;
                 case Resource.Playback:
                     pass.Bind(edit.CreateBufferUav(_playbackInput, structureStride: 64), PipelineSync.ComputeShading,
                         kernel == Kernel.Advance ? GraphAccessMode.ReadWrite : GraphAccessMode.Read); break;
@@ -439,12 +447,12 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                         GraphAccessMode.Write); break;
                 case Resource.Sections: pass.Bind(edit.CreateBufferSrv(_sectionsInput, structureStride: 4), PipelineSync.ComputeShading); break;
                 case Resource.Work:
-                    pass.Bind(edit.CreateBufferSrv(_workInput, kernel is Kernel.Sample or Kernel.Translate or Kernel.TwoBone or Kernel.Aim
+                    pass.Bind(edit.CreateBufferSrv(_workInput, kernel is Kernel.Sample or Kernel.Translate or Kernel.TwoBone or Kernel.Aim or Kernel.Stride
                         ? work : new BufferRange(0, 16), structureStride: 16), PipelineSync.ComputeShading); break;
                 case Resource.Clips: pass.Bind(edit.CreateBufferSrv(_clipsInput), PipelineSync.ComputeShading); break;
                 case Resource.Models:
                     pass.Bind(edit.CreateBufferUav(_currentBones, structureStride: 64), PipelineSync.ComputeShading,
-                        kernel == Kernel.Load ? GraphAccessMode.Write : kernel is Kernel.Sample or Kernel.Translate or Kernel.TwoBone or Kernel.Aim
+                        kernel == Kernel.Load ? GraphAccessMode.Write : kernel is Kernel.Sample or Kernel.Translate or Kernel.TwoBone or Kernel.Aim or Kernel.Stride
                             ? GraphAccessMode.ReadWrite : GraphAccessMode.Read,
                         kernel == Kernel.Load ? WriteCoverage.Complete : WriteCoverage.Partial); break;
                 case Resource.Previous:
@@ -472,6 +480,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         if (_goalValues.Count == 0) _goalValues.Add(default);
         if (_modelOffsets.Count == 0) _modelOffsets.Add(default);
         if (_rootCorrections.Count == 0) _rootCorrections.Add(default);
+        if (_movements.Count == 0) _movements.Add(default);
         frame.SetBufferInput(_currentBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Current model bones")), BufferRange.Whole));
         frame.SetBufferInput(_previousBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Previous model bones")), BufferRange.Whole));
         frame.SetBufferInput(_historyCurrentInput, new(_historyCurrent, BufferRange.Whole));
@@ -484,6 +493,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         frame.SetBufferInput(_goalsInput, frame.Upload<GpuPoseGoal>(CollectionsMarshal.AsSpan(_goalValues), BufferUsages.ShaderRead));
         frame.SetBufferInput(_offsetsInput, frame.Upload<Vector4>(CollectionsMarshal.AsSpan(_modelOffsets), BufferUsages.ShaderRead));
         frame.SetBufferInput(_rootsInput, frame.Upload<RootCorrection>(CollectionsMarshal.AsSpan(_rootCorrections), BufferUsages.ShaderRead));
+        frame.SetBufferInput(_movementsInput, frame.Upload<StrideMovement>(CollectionsMarshal.AsSpan(_movements), BufferUsages.ShaderRead));
         frame.SetBufferInput(_controlsInput, frame.Upload<Control>(CollectionsMarshal.AsSpan(_controls), BufferUsages.ShaderRead));
         frame.SetBufferInput(_sectionsInput, new(_definitions, _sectionBytes));
         frame.SetBufferInput(_jointIndices, new(_definitions, _jointBytes));
@@ -608,7 +618,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         }
         _readbacks.Clear();
         _advancePipeline.Dispose(); _loadPipeline.Dispose(); _samplePipeline.Dispose(); _storePipeline.Dispose();
-        _translatePipeline.Dispose(); _twoBonePipeline.Dispose(); _aimPipeline.Dispose();
+        _translatePipeline.Dispose(); _twoBonePipeline.Dispose(); _aimPipeline.Dispose(); _stridePipeline.Dispose();
     }
 
     private static void Align(BinaryWriter writer, int alignment)
@@ -616,13 +626,14 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private static void WriteMatrix(BinaryWriter writer, Matrix4x4 matrix) =>
         writer.Write(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in matrix, 1)));
 
-    private enum Kernel { Advance, Load, Sample, Store, Translate, TwoBone, Aim }
-    private enum Resource { Controls, Values, Goals, Offsets, Roots, Playback, BlendStates, BlendLocals, Sections, Work, Clips, Models, Previous, HistoryCurrent, HistoryPrevious }
+    private enum Kernel { Advance, Load, Sample, Store, Translate, TwoBone, Aim, Stride }
+    private enum Resource { Controls, Values, Goals, Offsets, Roots, Movements, Playback, BlendStates, BlendLocals, Sections, Work, Clips, Models, Previous, HistoryCurrent, HistoryPrevious }
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct Control(uint ClipOffset, float SampleTime, uint Flags, uint Starts, ulong InputNumber,
         double CalculationTime, uint MachineOffset, uint InputOffset, float PlaybackTime, uint BlendStart,
         uint ReferenceOffset, float PresentationAmount, uint Padding0, uint Padding1);
     private readonly record struct RootCorrection(Vector4 Translation, Quaternion Rotation);
+    private readonly record struct StrideMovement(Vector4 Velocity, Vector4 AnimationVelocity, Vector4 FacingDirection);
     private readonly record struct BoneWork(uint Section, uint Bone, uint Parent, uint Output);
     private readonly record struct Input(ulong Number, uint Starts, uint AnimationStarts, QuantizedClipData? Clip,
         GpuPoseStateMachine? StateMachine, GpuPoseBlend? Blend, GpuPoseRig? Rig);
