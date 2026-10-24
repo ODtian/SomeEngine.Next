@@ -18,7 +18,7 @@ public struct ParameterArray
 
 public enum ParameterComparison : byte { Equal, NotEqual, Less, LessOrEqual, Greater, GreaterOrEqual }
 
-public readonly struct GraphCondition
+public readonly partial struct GraphCondition
 {
     public readonly byte Parameter;
     public readonly ParameterComparison Comparison;
@@ -48,7 +48,7 @@ public readonly struct GraphCondition
     }
 }
 
-public ref struct StateMachineScope
+public ref partial struct StateMachineScope
 {
     private readonly BuildData[] _data;
     private BuilderScope _scope;
@@ -69,14 +69,7 @@ public ref struct StateMachineScope
     }
 
     public void Transition(int from, int to, GraphCondition condition, float crossfade = 0)
-    {
-        DevelopmentCheck.Require(_data[0].Current == _scope.Id, "Declare a transition directly in its state machine.");
-        DevelopmentCheck.Require(float.IsFinite(crossfade) && crossfade >= 0, "Crossfade duration must be finite and nonnegative.");
-        GraphBuilding.Add(_data, new GraphNode
-        {
-            Kind = GraphNodeKind.Transition, StateId = from, NextState = to, Condition = condition, FadeDuration = crossfade,
-        });
-    }
+        => Transition(from, to, GraphCondition.Create<GraphCondition, ParameterConditionState, ParameterCondition>(in condition), crossfade);
 
     public void Dispose() => _scope.Dispose();
 }

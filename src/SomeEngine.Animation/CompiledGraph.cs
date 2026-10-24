@@ -15,6 +15,8 @@ public unsafe struct CompiledGraph : IDisposable
     private readonly int _version;
     internal CompiledGraph(GraphData[] data) => (_data, _version) = (data, data[0].Version);
 
+    public ReadOnlySpan<QueryDefinition> Inputs => _data![0].Inputs;
+
     public Entity Play(World world, Entity target = default)
     {
         DevelopmentCheck.Require(_data is not null && _data[0].Version == _version && _data[0].CompileReference == 1,
@@ -70,9 +72,11 @@ public unsafe struct CompiledGraph : IDisposable
         if (world.HasBuffer<GraphBranch>(animation))
             world.ExecuteBufferWrite<GraphBranch>(animation, static branches => branches.Clear());
         Timeline previous = world.Read<Timeline>(animation);
+        PropertyAnimation.Stop(world, animation);
         var timeline = new Timeline { Starts = previous.Starts + 1, Completions = previous.Completions };
         if (sharedTime != Entity.Null)
             timeline = world.Read<Timeline>(sharedTime);
+        world.Replace(animation, timeline);
         GraphPlayback.Start(world, animation, _data, part, sharedTime);
         if (!world.HasBuffer<TimelineStage>(animation))
             world.AddBuffer<TimelineStage>(animation);
@@ -90,6 +94,13 @@ public unsafe struct CompiledGraph : IDisposable
             if (track.Part != part)
                 continue;
             track.Node.Install(world, animation, in track, data.Values!, timeline.Starts, target);
+        }
+        var leaves = new HashSet<Type>();
+        for (int i = 0; i < data.TrackCount; i++)
+        {
+            GraphTrack track = data.Tracks![i];
+            if (track.Part == part && track.Node.Leaf is { } leaf && leaves.Add(leaf.Type))
+                leaf.Complete(world, animation);
         }
         world.Replace(animation, timeline);
         world.Enable<Timeline>(animation);
@@ -143,6 +154,8 @@ internal unsafe struct GraphNode
     public int Parent, FirstChild, LastChild, Next;
     public Entity Target;
     public Spec Spec;
+    public MotionBoundary Boundary;
+    public GraphLeafData? Leaf;
     public float DelayDuration, StaggerInterval, Coordinate, FadeDuration;
     public int Repetitions;
     public int ValueOffset;
@@ -152,7 +165,9 @@ internal unsafe struct GraphNode
     public int StateId, NextState;
     public byte Parameter;
     public bool Initial;
-    public GraphCondition Condition;
+    public GraphConditionData? ConditionData;
+    public int ConditionIndex;
+    public delegate* managed<World, Entity, in GraphNode, in GraphParameters, bool> Matches;
     public LayerChannel Field;
     public AnimationLayer LayerDefinition;
     public bool DefinesLayer;
@@ -167,6 +182,8 @@ internal struct GraphTrack
     public int Part, TimelinePart;
     public int Motion, Group;
     public ushort MotionStage;
+    public object? LeafBatch;
+    public int LeafIndex, Output, Order;
 }
 
 internal struct GraphData
@@ -178,8 +195,10 @@ internal struct GraphData
     public int NodeCount, TrackCount, PartCount;
     public GraphGroupData[]? Groups;
     public GraphMotionData[]? Motions;
+    public int[]? GroupMotions, TransitionNodes, BlendMotions, PartGroups;
     public int GroupCount, MotionCount, References, CompileReference, Version;
     public GraphParameters Parameters;
+    public QueryDefinition[]? Inputs;
     private static int _nextVersion;
     public static int NextVersion() => Interlocked.Increment(ref _nextVersion);
 
@@ -207,18 +226,21 @@ internal struct GraphGroupData
     public int Node, Part, ParentMotion, OutputGroup;
     public ushort Stage;
     public float Start;
+    public int MotionFirst, MotionCount, BlendFirst, BlendCount;
 }
 
 internal struct GraphMotionData
 {
     public int Group, Node, StageCount;
     public TimelineStage[]? Stages;
+    public int TransitionFirst, TransitionCount;
 }
 
 internal struct GraphPart
 {
     public int Id, TrackCount, StageCount, TimelinePart;
     public TimelineStage[]? Stages;
+    public int TrackFirst, GroupFirst, GroupCount;
 }
 
 internal static class GraphTracks
@@ -249,6 +271,7 @@ internal static class GraphTracks
             Stage = source.Stage, Start = source.Start, SampleTime = source.Start, StartId = starts,
             Endpoints = source.Node.Endpoints, CaptureStart = true,
             GraphMotion = source.Motion, GraphGroup = source.Group, MotionStage = source.MotionStage,
+            GraphOutput = source.Output,
             FromGraph = true,
         };
         var addition = (Track: track, Shared: false);

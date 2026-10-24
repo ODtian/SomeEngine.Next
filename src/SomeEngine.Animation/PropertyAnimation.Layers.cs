@@ -12,19 +12,21 @@ public static partial class PropertyAnimation
     {
         if (!world.HasBuffer<BaseValue<T>>(target))
             world.AddBuffer<BaseValue<T>>(target);
-        var basis = new BaseValue<T> { Channel = channel, Value = value };
-        world.ExecuteBufferWrite<BaseValue<T>, BaseValue<T>>(target, ref basis,
-            static (DynamicBuffer<BaseValue<T>> values, ref BaseValue<T> basis) =>
+        var basis = (Value: new BaseValue<T> { Channel = channel, Value = value }, Added: false);
+        world.ExecuteBufferWrite<BaseValue<T>, (BaseValue<T> Value, bool Added)>(target, ref basis,
+            static (DynamicBuffer<BaseValue<T>> values, ref (BaseValue<T> Value, bool Added) basis) =>
             {
                 for (int i = 0; i < values.Count; i++)
                 {
-                    if (values.Read(i).Channel != basis.Channel)
+                    if (values.Read(i).Channel != basis.Value.Channel)
                         continue;
-                    values[i] = basis;
+                    values[i] = basis.Value;
                     return;
                 }
-                values.Add(basis);
+                values.Add(basis.Value);
+                basis.Added = true;
             });
+        if (basis.Added) RefreshSources<T>(world, target);
     }
 
     internal static bool ReadBase<T>(World world, Entity target, Channel<T> channel, ref T value) where T : unmanaged
@@ -52,6 +54,12 @@ public static partial class PropertyAnimation
     internal static void WriteSingle<T, TOps>(World world, Entity target, Channel<T> channel, byte layerIndex, T value)
         where T : unmanaged where TOps : struct, IValueOps<T>
     {
+        if (TrySingleValue<T, TOps>(world, target, channel, layerIndex, ref value)) channel.Write(world, target, in value);
+    }
+
+    internal static bool TrySingleValue<T, TOps>(World world, Entity target, Channel<T> channel, byte layerIndex, ref T value)
+        where T : unmanaged where TOps : struct, IValueOps<T>
+    {
         if (channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target))
         {
             AnimationLayers layers = world.Read<AnimationLayers>(target);
@@ -65,9 +73,9 @@ public static partial class PropertyAnimation
             else if (hasBase)
                 value = basis;
             else
-                return;
+                return false;
         }
-        Unsafe.WriteUnaligned(ref world.WriteBytes(target, channel.Component, channel.Offset, Unsafe.SizeOf<T>()), value);
+        return true;
     }
 
     internal static bool Includes<T>(World world, Entity target, Channel<T> channel, LayerMask mask) where T : unmanaged
@@ -85,7 +93,7 @@ public static partial class PropertyAnimation
                 for (int i = mask.Start; i < mask.Start + mask.Count; i++)
                 {
                     LayerChannel field = channels[i];
-                    if (field.Component == selection.Channel.Component && field.Offset == selection.Channel.Offset)
+                    if (field.Component == selection.Channel.Component && field.Field == selection.Channel.Field)
                     {
                         selection.Found = true;
                         return;

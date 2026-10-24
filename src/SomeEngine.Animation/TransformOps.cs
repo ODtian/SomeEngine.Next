@@ -4,6 +4,7 @@ namespace SomeEngine.Animation;
 
 public readonly struct QuaternionOps : IValueOps<Quaternion>
 {
+    public static bool Equals(in Quaternion a, in Quaternion b) => a.Equals(b);
     public static Quaternion Lerp(in Quaternion a, in Quaternion b, float t) => Quaternion.Lerp(a, b, t);
     public static Quaternion Add(in Quaternion a, in Quaternion b) => a + b;
     public static Quaternion Subtract(in Quaternion a, in Quaternion b) => a - b;
@@ -13,6 +14,7 @@ public readonly struct QuaternionOps : IValueOps<Quaternion>
 
 public readonly struct Matrix3x2Ops : IValueOps<Matrix3x2>
 {
+    public static bool Equals(in Matrix3x2 a, in Matrix3x2 b) => a.Equals(b);
     public static Matrix3x2 Lerp(in Matrix3x2 a, in Matrix3x2 b, float t) => Matrix3x2.Lerp(a, b, t);
     public static Matrix3x2 Add(in Matrix3x2 a, in Matrix3x2 b) => a + b;
     public static Matrix3x2 Subtract(in Matrix3x2 a, in Matrix3x2 b) => a - b;

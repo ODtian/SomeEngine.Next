@@ -25,6 +25,8 @@
 
 `QueryRow.Read<T>()` 返回组件值；`Write<T>()` 和 `ReadWrite<T>()` 返回组件引用。查询对象及回调边界从当前 `QueryCursor`、`QueryRow` 和 `QueryChunkView` API 读取。
 
+`ExecuteQuery` 的 managed 函数指针重载提供相同的无状态、`ref TState` 和显式系统基线形式，复用查询权限、当前版本和关系提交边界。一次查询回调分发一次，具体数据循环由回调保存类型。
+
 ## 组件类型写版本
 
 公开 `World.ComponentWriteVersion<T>()` 提供组件类型写版本，用于整批依赖检查。计数语义、数据持有和事务行为由 [[architecture/someui/Dependencies|Dependencies]] 维护。
@@ -50,6 +52,8 @@ topology packet 将 Parent 修改写入暂存数据。后续 `ParentFinalizerJob
 直接 `Add`、`Replace`、bundle 值写入以及 `AddSparse`、`ReplaceSparse` 取得新 World 写版本。实体复制为一次复制取得新版本，表格与 sparse 目标行共同使用该版本。命令回放经这些值写入入口记录版本；成功提交使值与版本一起可见，失败回放保留原值与原版本。`World.CurrentTick` 记录已分配的写版本，一次批量回放可以随多次值写入推进。
 
 查询行和 chunk 的写引用、生成 Job 的表格与 sparse 写引用使用该次执行的共享版本。取得写引用即表示一次写访问；取得 sparse 写数组则为其中全部行记录该次版本。直接替换相等值仍记录写入。只读值、只读查询、只读 Job 和写版本查询保持原来的组件版本。
+
+`World.WriteField<TComponent, TValue, TAccess>` 为当前根取得新版本；query 的 `WriteField` 与 `WriteFields` 使用本次执行版本。访问引用对象内的叶值同样记录根组件变化；整列字段视图为全部暴露行记录版本。字段访问、状态 setter 与当前根的关系见 [[architecture/ECS/Component-Fields|Typed Component Fields]]。
 
 实体版本读取沿用组件读取的实体守卫。组件缺失通过统一的 `DevelopmentCheck` 报告；shipping 调用方省略开发检查及其参数求值。版本读取的调用前提是实体与该组件存在。
 

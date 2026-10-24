@@ -12,7 +12,7 @@ public partial struct TrackSystem<T, TOps>
         for (int i = 0; i < tracks.Count; i++)
         {
             Track<T> previous = tracks.Read(i);
-            if (previous.GraphMotion == 0 || previous.StartId != starts ||
+            if (previous.Typed || previous.GraphMotion == 0 || previous.StartId != starts ||
                 (previous.Channel.Component == ComponentId<AnimationLayers>.Value) != weightChannels)
                 continue;
             ref GraphMotion motion = ref motions[previous.GraphMotion - 1];
@@ -52,6 +52,8 @@ public partial struct TrackSystem<T, TOps>
             SampleValue(world, animation, target, tracks, i, ref track, track.MotionStage, time, starts, keyframes);
             motion.Running |= !track.Finished;
         }
+        if (world.HasBuffer<GraphFieldOutput<T>>(animation))
+            return;
         for (int i = 0; i < tracks.Count; i++)
         {
             Track<T> track = tracks.Read(i);

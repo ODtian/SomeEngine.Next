@@ -1,0 +1,1 @@
+Typed ECS fields: values, versions, references, buffers and managed functions passed.

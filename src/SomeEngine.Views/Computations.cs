@@ -66,6 +66,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
     internal bool Released => _released;
     internal Computation? Parent => _parent;
     internal AsyncComputation? Async;
+    internal bool HasCreatedChildren;
     internal Exception? Error => _error;
     internal List<Dependency> Reads { get; } = new();
     internal ObjectDependencyList ObjectReads { get; } = new(frame);
@@ -76,9 +77,9 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
         BuildQueue.For(World).CountComputation();
         RebuildDiagnostics.Record(this, frame);
         Frame = frame;
-        ComputationList calculations = World.ReadSparse<Computations>(Entity).List;
-        ComputationList? previous = Async is null ? calculations.TakeAsyncChildren(this) : null;
-        calculations.ReleaseChildren(this);
+        ComputationList? calculations = HasCreatedChildren ? World.ReadSparse<Computations>(Entity).List : null;
+        ComputationList? previous = Async is null ? calculations?.TakeAsyncChildren(this) : null;
+        calculations?.ReleaseChildren(this);
         Reads.Clear();
         ObjectReads.Clear(frame);
         using var scope = Scope.Enter(this, frame);

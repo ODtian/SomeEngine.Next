@@ -47,7 +47,7 @@ public unsafe struct Curve
             if (progress > right.Time)
                 continue;
             float t = (progress - left.Time) / (right.Time - left.Time);
-            float eased = global::SomeEngine.Animation.Easing.Evaluate(left.Easing, t);
+            float eased = left.Sample(t);
             return left.Value + (right.Value - left.Value) * eased;
         }
         return keys[^1].Value;

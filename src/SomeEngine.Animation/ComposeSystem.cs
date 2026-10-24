@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+using System.Buffers;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Queries;
@@ -13,22 +13,35 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
 {
     private readonly TrackFields _fields = fields;
     private QueryHandle _targets;
+    private QueryHandle _sources;
+    private FieldWrite<T>[] _writes = [];
 
-    public void OnCreate(ref ImmediateSystemContext context) =>
+    public void OnCreate(ref ImmediateSystemContext context)
+    {
+        _writes = ArrayPool<FieldWrite<T>>.Shared.Rent(64);
         _targets = context.World.Query(context.World.QueryDefinition()
             .WriteBuffer<Contribution<T>>().Optional<AnimationLayers>(QueryAccess.Read)
-            .OptionalBuffer<BaseValue<T>>(QueryAccess.Read));
+            .OptionalBuffer<BaseValue<T>>(QueryAccess.Read).OptionalBuffer<PropertySource<T>>(QueryAccess.Read));
+        _sources = context.World.Query(context.World.QueryDefinition().WriteBuffer<PropertySource<T>>()
+            .WriteBuffer<Contribution<T>>().Optional<AnimationLayers>(QueryAccess.Read)
+            .OptionalBuffer<LayerChannel>(QueryAccess.Read).OptionalBuffer<BaseValue<T>>(QueryAccess.Read));
+    }
 
-    public void OnUpdate(ref ImmediateSystemContext context)
+    public unsafe void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        var composition = (World: world, WeightChannels: _fields == TrackFields.LayerWeights);
-        world.ExecuteQuery(_targets, context.LastSystemVersion, ref composition,
-            static (QueryCursor rows, ref (World World, bool WeightChannels) composition) =>
+        var composition = (World: world, WeightChannels: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0);
+        world.ExecuteQuery(_targets, context.LastSystemVersion, ref composition, &ComposeDynamic);
+        world.ExecuteQuery(_sources, context.LastSystemVersion, ref composition, &ComposeFixed);
+        FieldWrites<T>.Flush(world, composition.Writes, ref composition.Count);
+        _writes = composition.Writes;
+
+        static void ComposeDynamic(QueryCursor rows, ref (World World, bool WeightChannels, FieldWrite<T>[] Writes, int Count) composition)
         {
             World world = composition.World;
             foreach (QueryChunkView chunk in rows.Chunks)
             {
+                if (chunk.HasBuffer<PropertySource<T>>()) continue;
                 bool hasBases = chunk.HasBuffer<BaseValue<T>>();
                 foreach (QueryRow row in chunk.Rows)
                 {
@@ -83,7 +96,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                         }
                         while (i < contributions.Length && contributions[i].Channel == channel);
                         if (hasBase || includesValue)
-                            Unsafe.WriteUnaligned(ref world.WriteBytes(row.Entity, channel.Component, channel.Offset, Unsafe.SizeOf<T>()), result);
+                            FieldWrites<T>.Add(ref composition.Writes, ref composition.Count, row.Entity, channel, in result);
                     }
                     // Retain the buffer's capacity for the next frame's contributions.
                     for (int i = buffer.Count - 1; i >= 0; i--)
@@ -94,7 +107,130 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                     }
                 }
             }
-        });
+        }
+    }
+
+    private static void ComposeFixed(QueryCursor rows, ref (World World, bool WeightChannels, FieldWrite<T>[] Writes, int Count) composition)
+    {
+        World world = composition.World;
+        foreach (QueryChunkView chunk in rows.Chunks)
+        {
+            bool hasBases = chunk.HasBuffer<BaseValue<T>>();
+            bool hasLayers = chunk.Has<AnimationLayers>();
+            bool hasMask = chunk.HasBuffer<LayerChannel>();
+            int rowIndex = 0;
+            foreach (QueryRow row in chunk.Rows)
+            {
+                bool basesChanged = hasBases && chunk.RowBufferChangedSinceLastSystemVersion<BaseValue<T>>(rowIndex);
+                bool layersChanged = hasLayers && chunk.RowChangedSinceLastSystemVersion<AnimationLayers>(rowIndex);
+                bool maskChanged = layersChanged || hasMask && chunk.RowBufferChangedSinceLastSystemVersion<LayerChannel>(rowIndex);
+                rowIndex++;
+                DynamicBuffer<PropertySource<T>> sourceBuffer = row.Buffer<PropertySource<T>>();
+                Span<PropertySource<T>> sources = sourceBuffer.AsSpan();
+                DynamicBuffer<Contribution<T>> dynamicBuffer = row.Buffer<Contribution<T>>();
+                Span<Contribution<T>> dynamic = dynamicBuffer.AsSpan();
+                Sort(dynamic);
+                ReadOnlySpan<BaseValue<T>> bases = hasBases ? row.ReadBuffer<BaseValue<T>>().AsSpan() : default;
+                AnimationLayers layers = hasLayers ? row.Read<AnimationLayers>() : default;
+                int fixedIndex = 0, dynamicIndex = 0;
+                while (fixedIndex < sources.Length || dynamicIndex < dynamic.Length)
+                {
+                    Channel<T> channel = dynamicIndex == dynamic.Length || fixedIndex < sources.Length &&
+                        CompareChannels(sources[fixedIndex].Channel, dynamic[dynamicIndex].Channel) <= 0
+                        ? sources[fixedIndex].Channel : dynamic[dynamicIndex].Channel;
+                    int fixedStart = fixedIndex, dynamicStart = dynamicIndex;
+                    while (fixedIndex < sources.Length && sources[fixedIndex].Channel == channel) fixedIndex++;
+                    while (dynamicIndex < dynamic.Length && dynamic[dynamicIndex].Channel == channel) dynamicIndex++;
+                    bool weightChannel = channel.Component == ComponentId<AnimationLayers>.Value;
+                    if (weightChannel != composition.WeightChannels) continue;
+                    bool dirty = basesChanged || layersChanged || maskChanged || dynamicStart != dynamicIndex;
+                    int baseIndex = fixedStart < fixedIndex ? sources[fixedStart].BaseIndex : -1;
+                    if (baseIndex < 0)
+                        for (int index = 0; index < bases.Length; index++)
+                            if (bases[index].Channel == channel) { baseIndex = index; break; }
+                    bool hasBase = baseIndex >= 0;
+                    T basis = hasBase ? bases[baseIndex].Value : default;
+                    bool hasValue = hasBase;
+                    for (int index = fixedStart; index < fixedIndex; index++)
+                    {
+                        dirty |= sources[index].Dirty || sources[index].HadDynamic;
+                        if (maskChanged) sources[index].Selected = PropertyAnimation.SourceSelected(world, row.Entity, channel, sources[index].Layer);
+                        if (!hasValue && sources[index].Active) { basis = sources[index].Value; hasValue = true; }
+                    }
+                    if (!hasValue && dynamicStart != dynamicIndex) { basis = dynamic[dynamicStart].Value; hasValue = true; }
+                    if (!dirty || !hasValue) continue;
+                    T result = basis;
+                    int fixedValue = fixedStart, dynamicValue = dynamicStart;
+                    bool contributed = false, included = false;
+                    Contribution<T> previous = default;
+                    while (fixedValue < fixedIndex || dynamicValue < dynamicIndex)
+                    {
+                        while (fixedValue < fixedIndex && !sources[fixedValue].Active) fixedValue++;
+                        if (fixedValue == fixedIndex && dynamicValue == dynamicIndex) break;
+                        Contribution<T> fixedContribution = fixedValue < fixedIndex ? new()
+                        {
+                            Channel = channel, Layer = sources[fixedValue].Layer, Value = sources[fixedValue].Value,
+                            Source = sources[fixedValue].Animation, Output = (uint)sources[fixedValue].Track,
+                        } : default;
+                        bool useFixed = dynamicValue == dynamicIndex || fixedValue < fixedIndex && Compare(fixedContribution, dynamic[dynamicValue]) <= 0;
+                        bool selected;
+                        TrackEndpoints endpoints = TrackEndpoints.Values;
+                        T reference = default;
+                        Contribution<T> contribution;
+                        if (useFixed)
+                        {
+                            contribution = fixedContribution;
+                            selected = sources[fixedValue].Selected;
+                            endpoints = sources[fixedValue].Endpoints;
+                            reference = sources[fixedValue++].Reference;
+                        }
+                        else
+                        {
+                            contribution = dynamic[dynamicValue++];
+                            selected = !hasLayers || weightChannel || PropertyAnimation.Includes(world, row.Entity, channel, layers.Items[contribution.Layer].Mask);
+                        }
+                        DevelopmentCheck.Require(!contributed || Compare(previous, contribution) != 0,
+                            "Sources in the same field and layer require distinct Source and Output identifiers.");
+                        previous = contribution;
+                        contributed = true;
+                        if (!selected) continue;
+                        included = true;
+                        AnimationLayer layer = hasLayers && !weightChannel ? layers.Items[contribution.Layer] : new() { Weight = 1 };
+                        T value = contribution.Value;
+                        if (endpoints != TrackEndpoints.Values && layer.Mode == LayerMode.Additive)
+                        {
+                            T displacement = TOps.Subtract(in value, in reference);
+                            value = TOps.Add(in basis, in displacement);
+                        }
+                        result = PropertyAnimation.Blend<T, TOps>(in result, in value, in basis, hasBase, in layer);
+                    }
+                    if (hasBase || included) FieldWrites<T>.Add(ref composition.Writes, ref composition.Count, row.Entity, channel, in result);
+                    for (int index = fixedStart; index < fixedIndex; index++)
+                    { sources[index].Dirty = false; sources[index].HadDynamic = index == fixedStart && dynamicStart != dynamicIndex; }
+                }
+                if (basesChanged)
+                {
+                    foreach (ref readonly BaseValue<T> basis in bases)
+                    {
+                        if ((basis.Channel.Component == ComponentId<AnimationLayers>.Value) != composition.WeightChannels) continue;
+                        bool hasSource = false;
+                        foreach (PropertySource<T> source in sources) if (source.Channel == basis.Channel) { hasSource = true; break; }
+                        if (!hasSource)
+                            foreach (Contribution<T> value in dynamic) if (value.Channel == basis.Channel) { hasSource = true; break; }
+                        if (!hasSource) FieldWrites<T>.Add(ref composition.Writes, ref composition.Count, row.Entity, basis.Channel, in basis.Value);
+                    }
+                }
+                for (int index = dynamicBuffer.Count - 1; index >= 0; index--)
+                    if ((dynamicBuffer.Read(index).Channel.Component == ComponentId<AnimationLayers>.Value) == composition.WeightChannels)
+                        dynamicBuffer.SwapRemoveAt(index);
+            }
+        }
+    }
+
+    private static int CompareChannels(Channel<T> first, Channel<T> second)
+    {
+        int order = first.Component.CompareTo(second.Component);
+        return order == 0 ? first.Field.CompareTo(second.Field) : order;
     }
 
     private static void Sort(Span<Contribution<T>> contributions)
@@ -116,7 +252,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
     {
         int order = first.Channel.Component.CompareTo(second.Channel.Component);
         if (order == 0)
-            order = first.Channel.Offset.CompareTo(second.Channel.Offset);
+            order = first.Channel.Field.CompareTo(second.Channel.Field);
         if (order == 0)
             order = first.Layer.CompareTo(second.Layer);
         if (order == 0)
@@ -126,5 +262,10 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
         return order != 0 ? order : first.Output.CompareTo(second.Output);
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_targets);
+    public void OnDestroy(ref ImmediateSystemContext context)
+    {
+        context.World.ReleaseQuery(_targets);
+        context.World.ReleaseQuery(_sources);
+        ArrayPool<FieldWrite<T>>.Shared.Return(_writes);
+    }
 }

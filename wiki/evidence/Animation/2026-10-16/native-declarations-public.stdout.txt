@@ -1,0 +1,4 @@
+nativeAot=True; executableBytes=9824256
+GRAPH_CONSUMERS_PASSED typed-sequence shared-definition instance-state custom-condition public-leaf
+ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graphs conditions
+VIEWS_DECLARED_SWITCHES samples=1000 bytes=96000

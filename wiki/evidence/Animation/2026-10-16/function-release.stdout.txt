@@ -1,0 +1,13 @@
+motion,count,path,median_ns_per_track,p95_ns_per_track,p99_ns_per_track,allocated_bytes_per_batch,instance_bytes,first_allocation_bytes,retained_array_bytes
+typed-square,1000,batch,5.500,5.600,17.100,0.000,40,40024,40000
+typed-square,1000,direct,3.100,3.200,26.800,0.000,40,40024,40000
+function-square,1000,batch,5.900,6.000,20.300,0.000,56,56024,56000
+function-square,1000,direct,3.800,3.800,19.000,0.000,56,56024,56000
+typed-square,10000,batch,5.060,6.620,7.670,0.000,40,400024,400000
+typed-square,10000,direct,3.440,4.680,7.380,0.000,40,400024,400000
+function-square,10000,batch,6.330,8.660,26.330,0.000,56,560024,560000
+function-square,10000,direct,4.340,5.720,5.820,0.000,56,560024,560000
+typed-square,100000,batch,5.353,6.011,6.196,0.000,40,4000024,4000000
+typed-square,100000,direct,3.581,4.031,4.787,0.000,40,4000024,4000000
+function-square,100000,batch,6.444,8.114,12.961,0.000,56,5600024,5600000
+function-square,100000,direct,4.621,5.245,5.851,0.000,56,5600024,5600000

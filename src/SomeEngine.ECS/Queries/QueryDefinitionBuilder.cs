@@ -20,6 +20,18 @@ public sealed class QueryDefinitionBuilder
     public QueryDefinitionBuilder Optional<T>(QueryAccess access = QueryAccess.None) where T : struct =>
         Add<T>(QueryTermKind.Optional, access, QueryTermFilter.None);
 
+    /// <summary>Imports data access while preserving this query's entity matching rules.</summary>
+    public QueryDefinitionBuilder WithAccess(QueryDefinition inputs)
+    {
+        foreach (QueryAccessEntry access in inputs.Accesses)
+        {
+            QueryableTypeInfo info = QueryableTypeInfo.ForComponentId(access.ComponentId);
+            info.Validate(QueryTermKind.Optional, access.Access, QueryTermFilter.None);
+            _terms.Add(new QueryTerm(access.ComponentId, QueryTermKind.Optional, access.Access));
+        }
+        return this;
+    }
+
     public QueryDefinitionBuilder Read<T>() where T : struct =>
         Add<T>(QueryTermKind.All, QueryAccess.Read, QueryTermFilter.None);
 

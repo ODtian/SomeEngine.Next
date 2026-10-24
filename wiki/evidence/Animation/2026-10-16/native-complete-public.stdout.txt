@@ -1,0 +1,8 @@
+nativeAot=True; executableBytes=9787392
+GRAPH_CONSUMERS_PASSED typed-sequence shared-definition instance-state custom-condition public-leaf
+ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graphs conditions
+VIEWS_DECLARED_SWITCHES samples=1000 bytes=0
+VIEWS_DECLARED_SWITCH_PHASE selection=0 samples=333 state=0 views=0 animation=0 declare=0 set=0 builds=333 calculations=333
+VIEWS_DECLARED_SWITCH_PHASE selection=1 samples=333 state=0 views=0 animation=0 declare=0 set=0 builds=333 calculations=333
+VIEWS_DECLARED_SWITCH_PHASE selection=2 samples=334 state=0 views=0 animation=0 declare=0 set=0 builds=334 calculations=334
+VIEWS_QUIET_FRAME bytes=0 builds=0 calculations=0

@@ -22,15 +22,16 @@ public struct TimelineSystem(Entity time = default) : ISystem<ImmediateSystemCon
             : context.World.Read<AnimationTime>(_time);
         DevelopmentCheck.Require(float.IsFinite(time.Delta) && time.Delta >= 0, "Animation frame time must be finite and nonnegative.");
         DevelopmentCheck.Require(float.IsFinite(time.GameScale) && time.GameScale >= 0, "Game time scale must be finite and nonnegative.");
-        context.World.ExecuteQuery(_timelines, context.LastSystemVersion, ref time,
-            static (QueryCursor rows, ref AnimationTime time) =>
+        AnimationDeltas deltas = time.Deltas;
+        context.World.ExecuteQuery(_timelines, context.LastSystemVersion, ref deltas,
+            static (QueryCursor rows, ref AnimationDeltas deltas) =>
             {
                 foreach (QueryRow row in rows.Rows)
                 {
                     ref Timeline timeline = ref row.ReadWrite<Timeline>();
                     timeline.Running = 0;
-                    if (!timeline.Paused)
-                        timeline.Time += time.For(timeline.Clock) * timeline.Speed;
+                    timeline.Delta = timeline.Paused ? 0 : deltas.For(timeline.Clock) * timeline.Speed;
+                    timeline.Time += timeline.Delta;
                 }
             });
     }

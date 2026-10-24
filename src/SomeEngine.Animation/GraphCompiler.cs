@@ -11,6 +11,9 @@ internal static class GraphCompiler
         AddPart(ref data[0], 0);
         Place(data, 0, new GraphPosition(), 0);
         SplitCapacity(ref data[0]);
+        CompileRanges(ref data[0]);
+        CompileLeaves(ref data[0]);
+        CompileConditions(ref data[0]);
     }
 
     private static GraphPosition Place(GraphData[] graph, int index, GraphPosition start, int part, int motion = 0, int group = 0)
@@ -68,16 +71,19 @@ internal static class GraphCompiler
             GraphArrays.Grow(ref data.Tracks, data.TrackCount + 1);
             data.Tracks![data.TrackCount++] = new GraphTrack
             {
+                Order = data.TrackCount - 1,
                 Node = node, Stage = motion == 0 ? start.Stage : data.Groups![data.Motions![motion - 1].Group].Stage,
                 Start = start.Time, Part = part, TimelinePart = part, Motion = motion, Group = group, MotionStage = start.Stage,
             };
             data.Parts![part].TrackCount++;
-            if (node.Spec.Curve.Kind == CurveKind.Spring)
+            MotionBoundary boundary = node.Leaf is not null ? node.Boundary :
+                new MotionBoundary(node.Spec.Curve.Kind == CurveKind.Spring ? StageEnd.Settled : StageEnd.Duration, node.Spec.Duration);
+            if (boundary.End != StageEnd.Duration)
             {
-                AddStage(graph, part, motion, start.Stage, StageEnd.Settled, start.Time);
+                AddStage(graph, part, motion, start.Stage, boundary.End, start.Time + boundary.Duration);
                 return new GraphPosition { Stage = (ushort)(start.Stage + 1) };
             }
-            start.Time += node.Spec.Duration;
+            start.Time += boundary.Duration;
             AddStage(graph, part, motion, start.Stage, StageEnd.Duration, start.Time);
             return start;
         }
@@ -193,7 +199,7 @@ internal static class GraphCompiler
 
     private static bool SameOutput(in GraphTrack first, in GraphTrack second) =>
         first.Node.Target == second.Node.Target && first.Node.Field.Component == second.Node.Field.Component &&
-        first.Node.Field.Offset == second.Node.Field.Offset && first.Node.Layer == second.Node.Layer && first.Group == second.Group;
+        first.Node.Field.Field == second.Node.Field.Field && first.Node.Layer == second.Node.Layer && first.Group == second.Group;
 
     private static bool ContainsOpenStage(GraphNode[] nodes, int node)
     {
@@ -201,12 +207,118 @@ internal static class GraphCompiler
         if (current.Kind == GraphNodeKind.Branch)
             return false;
         if (current.Kind is GraphNodeKind.StateMachine or GraphNodeKind.Blend1D or GraphNodeKind.Boundary ||
-            current.Kind == GraphNodeKind.Track && current.Spec.Curve.Kind == CurveKind.Spring)
+            current.Kind == GraphNodeKind.Track && (current.Leaf is not null ? current.Boundary.End != StageEnd.Duration : current.Spec.Curve.Kind == CurveKind.Spring))
             return true;
         for (int child = current.FirstChild; child != 0; child = nodes[child].Next)
             if (ContainsOpenStage(nodes, child))
                 return true;
         return false;
+    }
+
+    private static void CompileLeaves(ref GraphData data)
+    {
+        var batches = new HashSet<(Type Type, int Part)>();
+        var outputs = new Dictionary<(int Part, SomeEngine.ECS.Entities.Entity Target, ushort Component, uint Field, byte Layer, int Group), int>();
+        Span<GraphTrack> tracks = data.Tracks.AsSpan(0, data.TrackCount);
+        for (int index = 0; index < tracks.Length; index++)
+        {
+            ref GraphTrack track = ref tracks[index];
+            var output = (track.Part, track.Node.Target, track.Node.Field.Component, track.Node.Field.Field, track.Node.Layer, track.Group);
+            if (!outputs.TryGetValue(output, out int outputId))
+                outputs.Add(output, outputId = outputs.Count);
+            track.Output = outputId;
+            GraphLeafData? leaf = tracks[index].Node.Leaf;
+            if (leaf is not null && batches.Add((leaf.Type, tracks[index].Part)))
+                leaf.CreateBatch(tracks, tracks[index].Part);
+        }
+    }
+
+    private static void CompileRanges(ref GraphData data)
+    {
+        if (data.TrackCount > 1)
+            Array.Sort(data.Tracks!, 0, data.TrackCount, Comparer<GraphTrack>.Create(static (first, second) =>
+        {
+            int order = first.Part.CompareTo(second.Part);
+            return order == 0 ? first.Order.CompareTo(second.Order) : order;
+        }));
+        int nextTrack = 0;
+        for (int part = 0; part < data.PartCount; part++)
+        {
+            data.Parts![part].TrackFirst = nextTrack;
+            while (nextTrack < data.TrackCount && data.Tracks![nextTrack].Part == part)
+                nextTrack++;
+            data.Parts[part].TrackCount = nextTrack - data.Parts[part].TrackFirst;
+        }
+        var groups = new List<int>[data.PartCount];
+        var motions = new List<int>[data.GroupCount];
+        for (int part = 0; part < groups.Length; part++) groups[part] = new List<int>();
+        for (int group = 0; group < motions.Length; group++)
+        {
+            motions[group] = new List<int>();
+            groups[data.Groups![group].Part].Add(group);
+        }
+        for (int motion = 0; motion < data.MotionCount; motion++)
+            motions[data.Motions![motion].Group].Add(motion);
+        var groupMotions = new List<int>();
+        var blendMotions = new List<int>();
+        var transitions = new List<int>();
+        for (int groupIndex = 0; groupIndex < data.GroupCount; groupIndex++)
+        {
+            ref GraphGroupData group = ref data.Groups![groupIndex];
+            group.MotionFirst = groupMotions.Count;
+            group.MotionCount = motions[groupIndex].Count;
+            groupMotions.AddRange(motions[groupIndex]);
+            if (data.Nodes![group.Node].Kind == GraphNodeKind.Blend1D)
+            {
+                group.BlendFirst = blendMotions.Count;
+                int[] sorted = motions[groupIndex].ToArray();
+                GraphMotionData[] motionData = data.Motions!;
+                GraphNode[] nodes = data.Nodes;
+                Array.Sort(sorted, (first, second) => nodes[motionData[first].Node].Coordinate.CompareTo(nodes[motionData[second].Node].Coordinate));
+                blendMotions.AddRange(sorted);
+                group.BlendCount = sorted.Length;
+            }
+            GraphNode machine = data.Nodes[group.Node];
+            foreach (int motionIndex in motions[groupIndex])
+            {
+                ref GraphMotionData motion = ref data.Motions![motionIndex];
+                motion.TransitionFirst = transitions.Count;
+                int state = data.Nodes[motion.Node].StateId;
+                for (int child = machine.FirstChild; child != 0; child = data.Nodes[child].Next)
+                    if (data.Nodes[child].Kind == GraphNodeKind.Transition && data.Nodes[child].StateId == state)
+                        transitions.Add(child);
+                motion.TransitionCount = transitions.Count - motion.TransitionFirst;
+            }
+        }
+        var partGroups = new List<int>();
+        for (int part = 0; part < data.PartCount; part++)
+        {
+            data.Parts![part].GroupFirst = partGroups.Count;
+            data.Parts[part].GroupCount = groups[part].Count;
+            partGroups.AddRange(groups[part]);
+        }
+        data.GroupMotions = groupMotions.ToArray();
+        data.BlendMotions = blendMotions.ToArray();
+        data.TransitionNodes = transitions.ToArray();
+        data.PartGroups = partGroups.ToArray();
+    }
+
+    private static void CompileConditions(ref GraphData data)
+    {
+        var types = new Dictionary<Type, int>();
+        var inputs = new HashSet<SomeEngine.ECS.Queries.QueryDefinition>();
+        for (int index = 0; index < data.NodeCount; index++)
+        {
+            ref GraphNode node = ref data.Nodes![index];
+            if (node.ConditionData is not { } condition)
+                continue;
+            types.TryGetValue(condition.Type, out int count);
+            node.ConditionIndex = count;
+            types[condition.Type] = count + 1;
+            if (condition.Inputs != SomeEngine.ECS.Queries.QueryDefinition.Empty)
+                inputs.Add(condition.Inputs);
+        }
+        data.Inputs = inputs.ToArray();
     }
 
     [Conditional("DEBUG")]

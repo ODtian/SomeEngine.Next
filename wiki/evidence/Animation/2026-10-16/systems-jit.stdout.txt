@@ -1,0 +1,3401 @@
+; Assembly listing for method SomeEngine.ECS.Systems.SystemGroup`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateCore(bool,byref):this (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rbp based frame
+; fully interruptible
+; No PGO data
+; 10 inlinees with PGO data; 2 single block inlinees; 13 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       push     rbp
+       push     r15
+       push     r14
+       push     rdi
+       push     rsi
+       push     rbx
+       sub      rsp, 152
+       lea      rbp, [rsp+0xC0]
+       xor      eax, eax
+       mov      qword ptr [rbp-0x98], rax
+       vxorps   xmm4, xmm4, xmm4
+       vmovdqu  ymmword ptr [rbp-0x90], ymm4
+       vmovdqu  ymmword ptr [rbp-0x70], ymm4
+       vmovdqu  ymmword ptr [rbp-0x50], ymm4
+       mov      gword ptr [rbp+0x10], rcx
+       mov      r10, rcx
+       mov      r14d, edx
+       mov      rbx, r8
+ 
+G_M000_IG02:                ;; offset=0x0043
+       mov      rcx, r10
+       call     [SomeEngine.ECS.Systems.SystemGroup`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:ThrowIfLifecycleCallbackReentry():this]
+       mov      rcx, gword ptr [rbp+0x10]
+       call     [SomeEngine.ECS.Systems.SystemGroup`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:ThrowIfJobCallbackWouldWaitForLifecycleControl():this]
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rax, gword ptr [rcx+0x10]
+       mov      gword ptr [rbp-0xA0], rax
+       xor      eax, eax
+       mov      dword ptr [rbp-0x2C], eax
+ 
+G_M000_IG03:                ;; offset=0x006A
+       cmp      gword ptr [rbp-0xA0], 0
+       jne      SHORT G_M000_IG05
+ 
+G_M000_IG04:                ;; offset=0x0074
+       xor      rcx, rcx
+       call     [System.ArgumentNullException:Throw(System.String)]
+       int3     
+ 
+G_M000_IG05:                ;; offset=0x007D
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:TryEnter_FastPath(System.Object):bool
+       test     eax, eax
+       jne      SHORT G_M000_IG06
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Enter_Slowpath(System.Object)]
+ 
+G_M000_IG06:                ;; offset=0x009A
+       mov      dword ptr [rbp-0x2C], 1
+       mov      rcx, gword ptr [rbp+0x10]
+       call     [SomeEngine.ECS.Systems.SystemGroup`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:WaitForLifecycleControlUnderGate():this]
+       mov      rcx, gword ptr [rbp+0x10]
+       call     [SomeEngine.ECS.Systems.SystemGroup`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:ThrowIfDisposed():this]
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      dword ptr [rcx+0x2C], 1
+ 
+G_M000_IG07:                ;; offset=0x00C0
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:Exit_FastPath(System.Object):int
+       test     eax, eax
+       je       SHORT G_M000_IG08
+       mov      ecx, eax
+       mov      rdx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Exit_Slowpath(int,System.Object)]
+       nop      
+ 
+G_M000_IG08:                ;; offset=0x00E0
+       xor      r15d, r15d
+       jmp      G_M000_IG48
+ 
+G_M000_IG09:                ;; offset=0x00E8
+       mov      rax, gword ptr [rcx+0x10]
+       mov      gword ptr [rbp-0xA0], rax
+       xor      eax, eax
+       mov      dword ptr [rbp-0x2C], eax
+ 
+G_M000_IG10:                ;; offset=0x00F8
+       cmp      gword ptr [rbp-0xA0], 0
+       jne      SHORT G_M000_IG11
+       xor      rcx, rcx
+       call     [System.ArgumentNullException:Throw(System.String)]
+       int3     
+ 
+G_M000_IG11:                ;; offset=0x010B
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:TryEnter_FastPath(System.Object):bool
+       test     eax, eax
+       jne      SHORT G_M000_IG12
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Enter_Slowpath(System.Object)]
+ 
+G_M000_IG12:                ;; offset=0x0128
+       mov      dword ptr [rbp-0x2C], 1
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rax, gword ptr [rcx+0x20]
+       cmp      r15d, dword ptr [rax+0x10]
+       jb       SHORT G_M000_IG14
+       call     [System.ThrowHelper:ThrowArgumentOutOfRange_IndexMustBeLessException()]
+       int3     
+ 
+G_M000_IG13:                ;; offset=0x0144
+       call     CORINFO_HELP_RNGCHKFAIL
+       int3     
+ 
+G_M000_IG14:                ;; offset=0x014A
+       mov      rax, gword ptr [rax+0x08]
+       cmp      r15d, dword ptr [rax+0x08]
+       jae      SHORT G_M000_IG13
+       lea      rdx, [r15+2*r15]
+ 
+G_M000_IG15:                ;; offset=0x0158
+       vmovdqu  xmm0, xmmword ptr [rax+8*rdx+0x10]
+       vmovdqu  xmmword ptr [rbp-0x48], xmm0
+       mov      r8, qword ptr [rax+8*rdx+0x20]
+       mov      qword ptr [rbp-0x38], r8
+ 
+G_M000_IG16:                ;; offset=0x016C
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:Exit_FastPath(System.Object):int
+       test     eax, eax
+       je       SHORT G_M000_IG17
+       mov      ecx, eax
+       mov      rdx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Exit_Slowpath(int,System.Object)]
+ 
+G_M000_IG17:                ;; offset=0x018B
+       cmp      byte  ptr [rbp-0x33], 0
+       je       G_M000_IG47
+       mov      rcx, gword ptr [rbp-0x48]
+       test     rcx, rcx
+       jne      SHORT G_M000_IG18
+       mov      rcx, 0x7FF8D588AED0
+       call     CORINFO_HELP_NEWSFAST
+       mov      rbx, rax
+       mov      ecx, 0x31DF
+       mov      rdx, 0x7FF8D5B82108
+       call     [CORINFO_HELP_STRCNS]
+       mov      rdx, rax
+       mov      rcx, rbx
+       call     [System.InvalidOperationException:.ctor(System.String):this]
+       mov      rcx, rbx
+       call     CORINFO_HELP_THROW
+       int3     
+ 
+G_M000_IG18:                ;; offset=0x01DA
+       call     [SomeEngine.Job.JobSubmissionTracker:Enter(SomeEngine.Job.IJobSubmissionObserver):SomeEngine.Job.JobSubmissionScope]
+       mov      qword ptr [rbp-0x50], rax
+ 
+G_M000_IG19:                ;; offset=0x01E4
+       mov      rcx, gword ptr [rbp+0x10]
+       call     [SomeEngine.ECS.Systems.SystemGroup`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:EnterLifecycleCallback():this]
+       nop      
+ 
+G_M000_IG20:                ;; offset=0x01EF
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rcx, gword ptr [rcx+0x08]
+       lea      rdx, [rbp-0x48]
+       mov      r11, 0x7FF8D5670318
+       call     [r11]SomeEngine.ECS.Systems.ISystemDriver`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:AcquireSystemVersion(byref):uint:this
+       mov      dword ptr [rbp-0x38], eax
+       test     r14b, r14b
+       je       SHORT G_M000_IG23
+ 
+G_M000_IG21:                ;; offset=0x0210
+       vmovdqu  xmm0, xmmword ptr [rbx]
+       vmovdqu  xmmword ptr [rbp-0x68], xmm0
+       mov      rcx, qword ptr [rbx+0x10]
+       mov      qword ptr [rbp-0x58], rcx
+ 
+G_M000_IG22:                ;; offset=0x0221
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rcx, gword ptr [rcx+0x08]
+       lea      r8, [rbp-0x68]
+       lea      rdx, [rbp-0x48]
+       mov      r11, 0x7FF8D5670338
+       call     [r11]SomeEngine.ECS.Systems.ISystemDriver`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:CreateContext(byref,byref):this
+       jmp      SHORT G_M000_IG24
+ 
+G_M000_IG23:                ;; offset=0x0240
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rcx, gword ptr [rcx+0x08]
+       lea      r8, [rbp-0x48]
+       lea      rdx, [rbp-0x68]
+       mov      r11, 0x7FF8D5670320
+       call     [r11]SomeEngine.ECS.Systems.ISystemDriver`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:CreateContext(byref):SomeEngine.ECS.Systems.ImmediateSystemContext:this
+ 
+G_M000_IG24:                ;; offset=0x025D
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rcx, gword ptr [rcx+0x08]
+       lea      r8, [rbp-0x68]
+       lea      rdx, [rbp-0x48]
+       mov      r11, 0x7FF8D5670328
+       call     [r11]SomeEngine.ECS.Systems.ISystemDriver`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:BeforeUpdate(byref,byref):this
+       cmp      byte  ptr [rbp-0x34], 0
+       jne      G_M000_IG33
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rdx, gword ptr [rcx+0x18]
+       cmp      r15d, dword ptr [rdx+0x10]
+       jae      G_M000_IG34
+       mov      rdx, gword ptr [rdx+0x08]
+       cmp      r15d, dword ptr [rdx+0x08]
+       jae      G_M000_IG35
+       mov      rax, gword ptr [rdx+8*r15+0x10]
+       mov      rcx, rax
+       lea      rdx, [rbp-0x68]
+       mov      rax, qword ptr [rax]
+       mov      rax, qword ptr [rax+0x40]
+       call     [rax+0x28]SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:OnCreate(byref):this
+       mov      byte  ptr [rbp-0x34], 1
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rax, gword ptr [rcx+0x10]
+       mov      gword ptr [rbp-0xA0], rax
+       xor      eax, eax
+       mov      dword ptr [rbp-0x2C], eax
+ 
+G_M000_IG25:                ;; offset=0x02D2
+       cmp      gword ptr [rbp-0xA0], 0
+       jne      SHORT G_M000_IG26
+       xor      rcx, rcx
+       call     [System.ArgumentNullException:Throw(System.String)]
+       int3     
+ 
+G_M000_IG26:                ;; offset=0x02E5
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:TryEnter_FastPath(System.Object):bool
+       test     eax, eax
+       jne      SHORT G_M000_IG27
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Enter_Slowpath(System.Object)]
+ 
+G_M000_IG27:                ;; offset=0x0302
+       mov      dword ptr [rbp-0x2C], 1
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rdx, gword ptr [rcx+0x20]
+ 
+G_M000_IG28:                ;; offset=0x0311
+       vmovdqu  xmm0, xmmword ptr [rbp-0x48]
+       vmovdqu  xmmword ptr [rbp-0x80], xmm0
+       mov      rax, qword ptr [rbp-0x38]
+       mov      qword ptr [rbp-0x70], rax
+ 
+G_M000_IG29:                ;; offset=0x0323
+       cmp      r15d, dword ptr [rdx+0x10]
+       jb       SHORT G_M000_IG31
+       call     [System.ThrowHelper:ThrowArgumentOutOfRange_IndexMustBeLessException()]
+       int3     
+ 
+G_M000_IG30:                ;; offset=0x0330
+       call     CORINFO_HELP_RNGCHKFAIL
+       int3     
+ 
+G_M000_IG31:                ;; offset=0x0336
+       mov      rax, gword ptr [rdx+0x08]
+       cmp      r15d, dword ptr [rax+0x08]
+       jae      SHORT G_M000_IG30
+       lea      r8, [r15+2*r15]
+       lea      rdi, bword ptr [rax+8*r8+0x10]
+       lea      rsi, bword ptr [rbp-0x80]
+       call     CORINFO_HELP_ASSIGN_BYREF
+       movsq    
+       movsq    
+       inc      dword ptr [rdx+0x14]
+ 
+G_M000_IG32:                ;; offset=0x0359
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:Exit_FastPath(System.Object):int
+       test     eax, eax
+       je       SHORT G_M000_IG33
+       mov      ecx, eax
+       mov      rdx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Exit_Slowpath(int,System.Object)]
+ 
+G_M000_IG33:                ;; offset=0x0378
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rdx, gword ptr [rcx+0x18]
+       cmp      r15d, dword ptr [rdx+0x10]
+       jb       SHORT G_M000_IG36
+ 
+G_M000_IG34:                ;; offset=0x0386
+       call     [System.ThrowHelper:ThrowArgumentOutOfRange_IndexMustBeLessException()]
+       int3     
+ 
+G_M000_IG35:                ;; offset=0x038D
+       call     CORINFO_HELP_RNGCHKFAIL
+       int3     
+ 
+G_M000_IG36:                ;; offset=0x0393
+       mov      rdx, gword ptr [rdx+0x08]
+       cmp      r15d, dword ptr [rdx+0x08]
+       jae      SHORT G_M000_IG35
+       mov      rax, gword ptr [rdx+8*r15+0x10]
+       mov      r8, qword ptr [rax+0x08]
+       lea      rdx, [rbp-0x68]
+       mov      rcx, rax
+       call     r8
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rcx, gword ptr [rcx+0x08]
+       lea      r8, [rbp-0x68]
+       lea      rdx, [rbp-0x48]
+       mov      r11, 0x7FF8D5670330
+       call     [r11]SomeEngine.ECS.Systems.ISystemDriver`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:AfterUpdate(byref,byref):this
+       mov      ecx, dword ptr [rbp-0x38]
+       mov      dword ptr [rbp-0x3C], ecx
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rax, gword ptr [rcx+0x10]
+       mov      gword ptr [rbp-0xA0], rax
+       xor      eax, eax
+       mov      dword ptr [rbp-0x2C], eax
+ 
+G_M000_IG37:                ;; offset=0x03E7
+       cmp      gword ptr [rbp-0xA0], 0
+       jne      SHORT G_M000_IG38
+       xor      rcx, rcx
+       call     [System.ArgumentNullException:Throw(System.String)]
+       int3     
+ 
+G_M000_IG38:                ;; offset=0x03FA
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:TryEnter_FastPath(System.Object):bool
+       test     eax, eax
+       jne      SHORT G_M000_IG39
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Enter_Slowpath(System.Object)]
+ 
+G_M000_IG39:                ;; offset=0x0417
+       mov      dword ptr [rbp-0x2C], 1
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rdx, gword ptr [rcx+0x20]
+ 
+G_M000_IG40:                ;; offset=0x0426
+       vmovdqu  xmm0, xmmword ptr [rbp-0x48]
+       vmovdqu  xmmword ptr [rbp-0x98], xmm0
+       mov      rax, qword ptr [rbp-0x38]
+       mov      qword ptr [rbp-0x88], rax
+ 
+G_M000_IG41:                ;; offset=0x043E
+       cmp      r15d, dword ptr [rdx+0x10]
+       jb       SHORT G_M000_IG43
+       call     [System.ThrowHelper:ThrowArgumentOutOfRange_IndexMustBeLessException()]
+       int3     
+ 
+G_M000_IG42:                ;; offset=0x044B
+       call     CORINFO_HELP_RNGCHKFAIL
+       int3     
+ 
+G_M000_IG43:                ;; offset=0x0451
+       mov      rax, gword ptr [rdx+0x08]
+       cmp      r15d, dword ptr [rax+0x08]
+       jae      SHORT G_M000_IG42
+       lea      r8, [r15+2*r15]
+       lea      rdi, bword ptr [rax+8*r8+0x10]
+       lea      rsi, bword ptr [rbp-0x98]
+       call     CORINFO_HELP_ASSIGN_BYREF
+       movsq    
+       movsq    
+       inc      dword ptr [rdx+0x14]
+ 
+G_M000_IG44:                ;; offset=0x0477
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:Exit_FastPath(System.Object):int
+       test     eax, eax
+       je       SHORT G_M000_IG45
+       mov      ecx, eax
+       mov      rdx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Exit_Slowpath(int,System.Object)]
+       nop      
+ 
+G_M000_IG45:                ;; offset=0x0497
+       mov      rcx, gword ptr [rbp+0x10]
+       call     [SomeEngine.ECS.Systems.SystemGroup`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:ExitLifecycleCallback():this]
+       nop      
+ 
+G_M000_IG46:                ;; offset=0x04A2
+       cmp      dword ptr [rbp-0x50], 0
+       je       SHORT G_M000_IG47
+       mov      ecx, dword ptr [rbp-0x50]
+       mov      edx, dword ptr [rbp-0x4C]
+       call     [SomeEngine.Job.JobSubmissionTracker:Exit(int,int)]
+ 
+G_M000_IG47:                ;; offset=0x04B4
+       inc      r15d
+ 
+G_M000_IG48:                ;; offset=0x04B7
+       mov      rcx, gword ptr [rbp+0x10]
+       mov      rax, gword ptr [rcx+0x18]
+       cmp      r15d, dword ptr [rax+0x10]
+       jl       G_M000_IG09
+ 
+G_M000_IG49:                ;; offset=0x04C9
+       call     [SomeEngine.ECS.Systems.SystemGroup`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:CompleteLifecycleControl():this]
+       nop      
+ 
+G_M000_IG50:                ;; offset=0x04D0
+       add      rsp, 152
+       pop      rbx
+       pop      rsi
+       pop      rdi
+       pop      r14
+       pop      r15
+       pop      rbp
+       ret      
+ 
+G_M000_IG51:                ;; offset=0x04E0
+       sub      rsp, 40
+ 
+G_M000_IG52:                ;; offset=0x04E4
+       cmp      dword ptr [rbp-0x2C], 0
+       je       SHORT G_M000_IG54
+       cmp      gword ptr [rbp-0xA0], 0
+       jne      SHORT G_M000_IG53
+       xor      rcx, rcx
+       call     [System.ArgumentNullException:Throw(System.String)]
+       int3     
+ 
+G_M000_IG53:                ;; offset=0x04FD
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:Exit_FastPath(System.Object):int
+       test     eax, eax
+       je       SHORT G_M000_IG54
+       mov      ecx, eax
+       mov      rdx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Exit_Slowpath(int,System.Object)]
+ 
+G_M000_IG54:                ;; offset=0x051C
+       nop      
+ 
+G_M000_IG55:                ;; offset=0x051D
+       add      rsp, 40
+       ret      
+ 
+G_M000_IG56:                ;; offset=0x0522
+       sub      rsp, 40
+ 
+G_M000_IG57:                ;; offset=0x0526
+       cmp      dword ptr [rbp-0x2C], 0
+       je       SHORT G_M000_IG59
+       cmp      gword ptr [rbp-0xA0], 0
+       jne      SHORT G_M000_IG58
+       xor      rcx, rcx
+       call     [System.ArgumentNullException:Throw(System.String)]
+       int3     
+ 
+G_M000_IG58:                ;; offset=0x053F
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:Exit_FastPath(System.Object):int
+       test     eax, eax
+       je       SHORT G_M000_IG59
+       mov      ecx, eax
+       mov      rdx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Exit_Slowpath(int,System.Object)]
+ 
+G_M000_IG59:                ;; offset=0x055E
+       nop      
+ 
+G_M000_IG60:                ;; offset=0x055F
+       add      rsp, 40
+       ret      
+ 
+G_M000_IG61:                ;; offset=0x0564
+       sub      rsp, 40
+ 
+G_M000_IG62:                ;; offset=0x0568
+       cmp      dword ptr [rbp-0x2C], 0
+       je       SHORT G_M000_IG64
+       cmp      gword ptr [rbp-0xA0], 0
+       jne      SHORT G_M000_IG63
+       xor      rcx, rcx
+       call     [System.ArgumentNullException:Throw(System.String)]
+       int3     
+ 
+G_M000_IG63:                ;; offset=0x0581
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:Exit_FastPath(System.Object):int
+       test     eax, eax
+       je       SHORT G_M000_IG64
+       mov      ecx, eax
+       mov      rdx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Exit_Slowpath(int,System.Object)]
+ 
+G_M000_IG64:                ;; offset=0x05A0
+       nop      
+ 
+G_M000_IG65:                ;; offset=0x05A1
+       add      rsp, 40
+       ret      
+ 
+G_M000_IG66:                ;; offset=0x05A6
+       sub      rsp, 40
+ 
+G_M000_IG67:                ;; offset=0x05AA
+       cmp      dword ptr [rbp-0x2C], 0
+       je       SHORT G_M000_IG69
+       cmp      gword ptr [rbp-0xA0], 0
+       jne      SHORT G_M000_IG68
+       xor      rcx, rcx
+       call     [System.ArgumentNullException:Throw(System.String)]
+       int3     
+ 
+G_M000_IG68:                ;; offset=0x05C3
+       mov      rcx, gword ptr [rbp-0xA0]
+       call     System.Threading.Monitor:Exit_FastPath(System.Object):int
+       test     eax, eax
+       je       SHORT G_M000_IG69
+       mov      ecx, eax
+       mov      rdx, gword ptr [rbp-0xA0]
+       call     [System.Threading.Monitor:Exit_Slowpath(int,System.Object)]
+ 
+G_M000_IG69:                ;; offset=0x05E2
+       nop      
+ 
+G_M000_IG70:                ;; offset=0x05E3
+       add      rsp, 40
+       ret      
+ 
+G_M000_IG71:                ;; offset=0x05E8
+       sub      rsp, 40
+ 
+G_M000_IG72:                ;; offset=0x05EC
+       mov      rcx, gword ptr [rbp+0x10]
+       call     [SomeEngine.ECS.Systems.SystemGroup`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:ExitLifecycleCallback():this]
+       nop      
+ 
+G_M000_IG73:                ;; offset=0x05F7
+       add      rsp, 40
+       ret      
+ 
+G_M000_IG74:                ;; offset=0x05FC
+       sub      rsp, 40
+ 
+G_M000_IG75:                ;; offset=0x0600
+       cmp      dword ptr [rbp-0x50], 0
+       je       SHORT G_M000_IG76
+       mov      ecx, dword ptr [rbp-0x50]
+       mov      edx, dword ptr [rbp-0x4C]
+       call     [SomeEngine.Job.JobSubmissionTracker:Exit(int,int)]
+ 
+G_M000_IG76:                ;; offset=0x0612
+       nop      
+ 
+G_M000_IG77:                ;; offset=0x0613
+       add      rsp, 40
+       ret      
+ 
+G_M000_IG78:                ;; offset=0x0618
+       sub      rsp, 40
+ 
+G_M000_IG79:                ;; offset=0x061C
+       mov      rcx, gword ptr [rbp+0x10]
+       call     [SomeEngine.ECS.Systems.SystemGroup`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:CompleteLifecycleControl():this]
+       nop      
+ 
+G_M000_IG80:                ;; offset=0x0627
+       add      rsp, 40
+       ret      
+ 
+; Total bytes of code 1580
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[System.__Canon,SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       push     rdi
+       push     rsi
+       push     rbx
+       sub      rsp, 48
+       mov      qword ptr [rsp+0x28], rcx
+       mov      rbx, rdx
+       mov      rsi, r8
+ 
+G_M000_IG02:                ;; offset=0x0012
+       mov      rdx, qword ptr [rcx+0x30]
+       mov      rdx, qword ptr [rdx]
+       mov      rax, qword ptr [rdx+0x20]
+       test     rax, rax
+       je       SHORT G_M000_IG09
+ 
+G_M000_IG03:                ;; offset=0x0022
+       mov      rcx, rax
+ 
+G_M000_IG04:                ;; offset=0x0025
+       mov      rdi, rbx
+       test     rdi, rdi
+       je       SHORT G_M000_IG07
+ 
+G_M000_IG05:                ;; offset=0x002D
+       cmp      qword ptr [rdi], rcx
+       je       SHORT G_M000_IG07
+ 
+G_M000_IG06:                ;; offset=0x0032
+       mov      rdx, rbx
+       call     CORINFO_HELP_CHKCASTCLASS
+       mov      rdi, rax
+ 
+G_M000_IG07:                ;; offset=0x003D
+       mov      rcx, gword ptr [rdi+0x10]
+       mov      rdx, rsi
+       mov      r11, 0x7FF8D5670348
+       cmp      dword ptr [rcx], ecx
+ 
+G_M000_IG08:                ;; offset=0x0050
+       add      rsp, 48
+       pop      rbx
+       pop      rsi
+       pop      rdi
+       tail.jmp [r11]SomeEngine.ECS.Systems.ISystem`1[SomeEngine.ECS.Systems.ImmediateSystemContext]:OnUpdate(byref):this
+ 
+G_M000_IG09:                ;; offset=0x005A
+       mov      rdx, 0x7FF8D5B9DB18
+       call     CORINFO_HELP_RUNTIMEHANDLE_CLASS
+       mov      rcx, rax
+       jmp      SHORT G_M000_IG04
+ 
+; Total bytes of code 110
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TimelineSystem,SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D5D23A70
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TimelineSystem:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.Linear]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D5D23D50
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.Linear]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TimelineEndSystem,SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D5D24018
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TimelineEndSystem:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphSystem,SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D5E0CD20
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphSystem:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphOutputSystem`2[float,SomeEngine.Animation.FloatOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D5E0D8D0
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphOutputSystem`2[float,SomeEngine.Animation.FloatOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.ComposeSystem`2[float,SomeEngine.Animation.FloatOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D5E0DC90
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.ComposeSystem`2[float,SomeEngine.Animation.FloatOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphEndSystem,SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D5E0EB38
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphEndSystem:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Views.Tests.TypedAnimationChecks+NamedParameters,SomeEngine.Views.Tests.TypedAnimationChecks+NamedState,SomeEngine.Views.Tests.TypedAnimationChecks+NamedMotion],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D5FC7430
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Views.Tests.TypedAnimationChecks+NamedParameters,SomeEngine.Views.Tests.TypedAnimationChecks+NamedState,SomeEngine.Views.Tests.TypedAnimationChecks+NamedMotion]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TrackSystem`2[float,SomeEngine.Animation.FloatOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6154390
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TrackSystem`2[float,SomeEngine.Animation.FloatOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[float],SomeEngine.Animation.Spring`2[float,SomeEngine.Animation.FloatOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D61547A8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[float],SomeEngine.Animation.Spring`2[float,SomeEngine.Animation.FloatOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[float,SomeEngine.Animation.FloatOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6154BC0
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[float,SomeEngine.Animation.FloatOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[float,SomeEngine.Animation.FloatOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6154FD8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[float,SomeEngine.Animation.FloatOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.Consumers.SquareEasing]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615D330
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.Consumers.SquareEasing]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TrackSystem`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615D710
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TrackSystem`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TrackSystem`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615DAF0
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TrackSystem`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TrackSystem`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615DED0
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TrackSystem`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TrackSystem`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615E2C0
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TrackSystem`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TrackSystem`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615E6A0
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TrackSystem`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TrackSystem`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615EA80
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TrackSystem`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TrackSystem`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615EE60
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TrackSystem`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TrackSystem`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615F240
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TrackSystem`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops,SomeEngine.Animation.Linear]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615F5F0
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops,SomeEngine.Animation.Linear]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[System.Numerics.Vector2],SomeEngine.Animation.Spring`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615F9A0
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[System.Numerics.Vector2],SomeEngine.Animation.Spring`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D615FD50
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6170118
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops,SomeEngine.Animation.Linear]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D61704C8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops,SomeEngine.Animation.Linear]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[System.Numerics.Vector3],SomeEngine.Animation.Spring`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6170878
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[System.Numerics.Vector3],SomeEngine.Animation.Spring`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6170C28
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6170FD8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops,SomeEngine.Animation.Linear]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6171388
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops,SomeEngine.Animation.Linear]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[System.Numerics.Vector4],SomeEngine.Animation.Spring`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6171738
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[System.Numerics.Vector4],SomeEngine.Animation.Spring`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6171AE8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6171E98
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps,SomeEngine.Animation.Linear]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6172248
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps,SomeEngine.Animation.Linear]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[System.Numerics.Quaternion],SomeEngine.Animation.Spring`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D61725F8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[System.Numerics.Quaternion],SomeEngine.Animation.Spring`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D61729A8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6172D58
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps,SomeEngine.Animation.Linear]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6173108
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps,SomeEngine.Animation.Linear]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[SomeEngine.Core.Math.Color],SomeEngine.Animation.Spring`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D61734B8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[SomeEngine.Core.Math.Color],SomeEngine.Animation.Spring`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6173868
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6173C18
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps,SomeEngine.Animation.Linear]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6173FC8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps,SomeEngine.Animation.Linear]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[SomeEngine.Core.Math.Thickness],SomeEngine.Animation.Spring`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6174378
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[SomeEngine.Core.Math.Thickness],SomeEngine.Animation.Spring`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6174728
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6174AD8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps,SomeEngine.Animation.Linear]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6174E88
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps,SomeEngine.Animation.Linear]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[SomeEngine.Core.Math.Rect],SomeEngine.Animation.Spring`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6175238
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[SomeEngine.Core.Math.Rect],SomeEngine.Animation.Spring`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D61755E8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6175998
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops,SomeEngine.Animation.Linear]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6175D48
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops,SomeEngine.Animation.TweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.Tween`3[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops,SomeEngine.Animation.Linear]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[System.Numerics.Matrix3x2],SomeEngine.Animation.Spring`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D61760F8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops,SomeEngine.Animation.SpringParameters,SomeEngine.Animation.SpringState`1[System.Numerics.Matrix3x2],SomeEngine.Animation.Spring`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D61764A8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops,SomeEngine.Animation.KeyframeParameters,SomeEngine.Animation.KeyframeState,SomeEngine.Animation.Keyframes`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops]],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6176858
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops,SomeEngine.Animation.FunctionTweenParameters,SomeEngine.Animation.TweenState,SomeEngine.Animation.FunctionTween`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops]]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphOutputSystem`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6176C08
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphOutputSystem`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphOutputSystem`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6176FB8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphOutputSystem`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphOutputSystem`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6177368
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphOutputSystem`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphOutputSystem`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6177718
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphOutputSystem`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphOutputSystem`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6177AC8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphOutputSystem`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphOutputSystem`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6177E78
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphOutputSystem`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphOutputSystem`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6178228
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphOutputSystem`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.GraphOutputSystem`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D61785D8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.GraphOutputSystem`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.ComposeSystem`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6178988
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.ComposeSystem`2[System.Numerics.Vector2,SomeEngine.Animation.Vector2Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.ComposeSystem`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6178D38
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.ComposeSystem`2[System.Numerics.Vector3,SomeEngine.Animation.Vector3Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.ComposeSystem`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D61790E8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.ComposeSystem`2[System.Numerics.Vector4,SomeEngine.Animation.Vector4Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.ComposeSystem`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6179498
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.ComposeSystem`2[System.Numerics.Quaternion,SomeEngine.Animation.QuaternionOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.ComposeSystem`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6179848
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.ComposeSystem`2[SomeEngine.Core.Math.Color,SomeEngine.Animation.ColorOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.ComposeSystem`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6179BF8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.ComposeSystem`2[SomeEngine.Core.Math.Thickness,SomeEngine.Animation.ThicknessOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.ComposeSystem`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D6179FA8
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.ComposeSystem`2[SomeEngine.Core.Math.Rect,SomeEngine.Animation.RectOps]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.ComposeSystem`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D617A358
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.ComposeSystem`2[System.Numerics.Matrix3x2,SomeEngine.Animation.Matrix3x2Ops]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.Consumers.HistoryParameters,SomeEngine.Animation.Consumers.HistoryState,SomeEngine.Animation.Consumers.HistoryMotion],SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D66BB408
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.TypedTrackSystem`5[float,SomeEngine.Animation.FloatOps,SomeEngine.Animation.Consumers.HistoryParameters,SomeEngine.Animation.Consumers.HistoryState,SomeEngine.Animation.Consumers.HistoryMotion]:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+; Assembly listing for method SomeEngine.ECS.Systems.SystemFunctions`2[SomeEngine.Animation.Consumers.MarkerSystem,SomeEngine.ECS.Systems.ImmediateSystemContext]:UpdateSystem(SomeEngine.ECS.Systems.SystemNode`1[SomeEngine.ECS.Systems.ImmediateSystemContext],byref) (FullOpts)
+; Emitting BLENDED_CODE for generic X64 + VEX on Windows
+; FullOpts code
+; optimized code
+; rsp based frame
+; fully interruptible
+; No PGO data
+; 0 inlinees with PGO data; 1 single block inlinees; 0 inlinees without PGO data
+
+G_M000_IG01:                ;; offset=0x0000
+       sub      rsp, 40
+ 
+G_M000_IG02:                ;; offset=0x0004
+       mov      rax, rcx
+       test     rax, rax
+       je       SHORT G_M000_IG04
+ 
+G_M000_IG03:                ;; offset=0x000C
+       mov      r8, 0x7FF8D67151E0
+       cmp      qword ptr [rax], r8
+       jne      SHORT G_M000_IG06
+ 
+G_M000_IG04:                ;; offset=0x001B
+       mov      rcx, rax
+       cmp      byte  ptr [rcx], cl
+       add      rcx, 16
+ 
+G_M000_IG05:                ;; offset=0x0024
+       add      rsp, 40
+       tail.jmp [SomeEngine.Animation.Consumers.MarkerSystem:OnUpdate(byref):this]
+ 
+G_M000_IG06:                ;; offset=0x002E
+       mov      rdx, rcx
+       mov      rcx, r8
+       call     CORINFO_HELP_CHKCASTCLASS
+       int3     
+ 
+; Total bytes of code 58
+
+GRAPH_CONSUMERS_PASSED typed-sequence shared-definition instance-state custom-condition public-leaf
+ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graphs conditions

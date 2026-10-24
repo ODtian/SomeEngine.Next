@@ -57,7 +57,8 @@ public readonly record struct CanvasTarget(CanvasTargetKind Kind, Entity Entity)
 }
 
 /// <summary>Caller-written position relative to an Absolute parent's content origin.</summary>
-public struct AbsolutePosition : IComponent
+public struct AbsolutePosition : IComponent, IEquatable<AbsolutePosition>
 {
     public Vector2 Value;
+    public readonly bool Equals(AbsolutePosition other) => Value.Equals(other.Value);
 }

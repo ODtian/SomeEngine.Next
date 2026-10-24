@@ -1,0 +1,19 @@
+{
+  "RecordedAt": "2026-10-16T21:50:04.9967029+08:00",
+  "Cpu": {
+    "Name": "Intel(R) Xeon(R) CPU E5-2698B v3 @ 2.00GHz",
+    "NumberOfCores": 16,
+    "NumberOfLogicalProcessors": 32,
+    "MaxClockSpeed": 2001
+  },
+  "Os": {
+    "Caption": "Microsoft Windows 11 专业工作站版",
+    "Version": "10.0.26200",
+    "BuildNumber": "26200",
+    "OSArchitecture": "64 位"
+  },
+  "Framework": "net10.0",
+  "Configuration": "Release",
+  "DotnetTieredCompilation": "0",
+  "Queue": "F:\\SomeEngine.Next\\tools\\Invoke-Benchmark.ps1"
+}

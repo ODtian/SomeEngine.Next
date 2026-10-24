@@ -6,6 +6,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../tools/SomeEngine.Animation.Checks/ConsumerMotions.cs" Link="ConsumerMotions.cs" />
+    <Compile Include="../../tools/SomeEngine.Animation.Checks/GraphConsumers.cs" Link="GraphConsumers.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />

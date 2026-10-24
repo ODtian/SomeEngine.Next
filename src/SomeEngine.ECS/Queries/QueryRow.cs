@@ -5,7 +5,7 @@ using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Queries;
 
-public readonly ref struct QueryRow
+public readonly ref partial struct QueryRow
 {
     private readonly World _world;
     private readonly QueryArchetypeMatch _match;

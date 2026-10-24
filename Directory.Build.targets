@@ -1,5 +1,12 @@
 <Project>
   <ItemGroup>
+    <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.ECS'))" />
+    <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Animation'))" />
+    <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views'))" />
+    <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Elements'))" />
+    <ProjectReference Include="$(SomeEngineRepositoryRoot)src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
+                      Condition="'@(_FieldReference)' != '' and '$(MSBuildProjectName)' != 'SomeEngine.ECS'"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="PublishAot" />
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views'))" />
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views.Compose'))" />
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views.SwiftUI'))" />

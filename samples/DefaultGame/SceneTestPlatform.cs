@@ -233,7 +233,19 @@ public sealed class SceneTestPlatform
             residency.ResidentPages, residency.RegisteredPages, residency.QueuedPageLoads, residency.ActivePageLoads,
             residency.PageHeapUsedBytes, residency.PageHeapFreeBytes, residency.BackpressuredPages,
             _renderWidth, _renderHeight, Options.DynamicScene,
-            _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults));
+            _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults,
+            _frames.Sum(f => (long)f.Views.RebuildCount),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.RebuildCount),
+            _frames.Sum(f => (long)f.Views.ComputationCount),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.ComputationCount),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.RebuildMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.TextMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.LayoutMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.TotalMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.ExtractionMs),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.AllocatedBytes),
+            _frames.Count == 0 ? null : _frames.Average(f => f.ExtractionAllocatedBytes),
+            _frames.Count == 0 ? null : _frames.Average(f => f.Views.AnimationMs)));
         Application.Reload();
     }
 
@@ -369,6 +381,9 @@ public sealed class SceneTestPlatform
         uint ResidentPages, uint RegisteredPages, int QueuedLoads, int ActiveLoads,
         uint GeometryUsedBytes, uint GeometryFreeBytes, ulong BackpressuredPages,
         int RenderWidth, int RenderHeight, bool AnimateScene,
-        double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults);
+        double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults,
+        long Rebuilds, double? RebuildsPerFrame, long Computations, double? ComputationsPerFrame,
+        double? RebuildMs, double? TextMs, double? LayoutMs, double? ViewMs, double? ExtractionMs,
+        double? ViewAllocatedBytes, double? ExtractionAllocatedBytes, double? AnimationMs);
 }
 

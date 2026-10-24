@@ -51,7 +51,8 @@ public struct LayerChannel : IBufferElement
 {
     public ushort Component;
     public ushort Offset;
+    public uint Field;
 
     public static LayerChannel Of<T>(Channel<T> channel) where T : unmanaged =>
-        new() { Component = channel.Component, Offset = channel.Offset };
+        new() { Component = channel.Component, Offset = channel.Offset, Field = channel.Field };
 }

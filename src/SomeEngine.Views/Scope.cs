@@ -74,6 +74,8 @@ public static partial class Scope
         ScopeData current = Current;
         var computation = new Computation(current.World, current.Entity, current.Computation, run,
             current.Frame, evaluatesOnRead);
+        if (current.Computation is { } parent)
+            parent.HasCreatedChildren = true;
         RetainComputation(computation);
         return computation;
     }
@@ -168,7 +170,7 @@ public static partial class Scope
         ScopeData current = Current;
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"Scope.Write requires table or sparse component {typeof(T).Name}.");
-        var key = (entity, ComponentId<T>.Value);
+        var key = (entity, ComponentId<T>.Value, 0UL);
         var copies = current.ViewData.ComponentCopies ??= new();
         if (!copies.TryGetValue(key, out ComponentCopy? copy) || !copy.Written && !copy.CanReuse)
         {
@@ -316,10 +318,10 @@ public static partial class Scope
             T previousTarget = previous;
             AnimatedFields.RestoreBase(current.World, existing, ref previousTarget);
             T parameters = view;
-            if (AnimatedFields.PreservePresentation(current.World, existing, ref parameters))
+            if (AnimatedFields.PreservePresentation(current.World, existing, ref parameters, in previous))
             {
                 var copies = current.ViewData.ComponentCopies ??= new();
-                var component = (existing, ComponentId<T>.Value);
+                var component = (existing, ComponentId<T>.Value, 0UL);
                 if (!copies.TryGetValue(component, out ComponentCopy? copy) || !copy.Written && !copy.CanReuse)
                     copies[component] = copy = new ComponentCopy<T>(existing, view);
                 else
@@ -424,7 +426,9 @@ public static partial class Scope
         current.DependenciesEnabled = dependenciesEnabled;
         current.Queue = BuildQueue.For(world);
         current.BeginChildren(frame, parent?.World == world ? parent.Changes : null);
-        current.PreviousComputations = current.Changes.RememberComputations(world, entity);
+        current.PreviousComputations = current.OutermostBuild
+            ? current.Changes.RememberComputations(world, entity, ref current.PreviousComputationData)
+            : current.Changes.RememberComputations(world, entity);
 #if DEBUG
         current.ContentVersion++;
         current.BuildNumber = ++s_buildNumber;
@@ -590,7 +594,10 @@ public static partial class Scope
                 copies.Clear();
         }
         if (submitAnimations)
+        {
+            using var untracked = Untrack();
             data.Changes.CommitAnimations(data.World, data.FirstAnimation);
+        }
     }
 
     internal static void FinishChildren(ScopeData data)
@@ -733,14 +740,14 @@ public static partial class Scope
 
     internal sealed class ScopeData
     {
-        private List<(Entity Entity, ushort Component)>? _unusedCopies;
+        private List<(Entity Entity, ushort Component, ulong Field)>? _unusedCopies;
         internal World World = null!;
         internal Entity Entity;
         internal Entity Parent;
         internal ScopeData ViewData = null!;
         internal List<ScopeData>? ContentData;
         internal Computation? Computation;
-        internal Dictionary<(Entity Entity, ushort Component), ComponentCopy>? ComponentCopies;
+        internal Dictionary<(Entity Entity, ushort Component, ulong Field), ComponentCopy>? ComponentCopies;
         internal ulong Frame;
         internal HierarchyChildrenSnapshot<ElementTree> PreviousChildren;
         internal List<Entity> DeclaredChildren { get; } = new();
@@ -771,6 +778,8 @@ public static partial class Scope
         internal Dictionary<ulong, int>? RememberOccurrences;
         internal Dictionary<ulong, int>? AsyncOccurrences;
         internal ComputationList? PreviousComputations;
+        internal ChildChanges.ChildOrder? PreviousOrder;
+        internal ChildChanges.ChildComputations? PreviousComputationData;
         internal ulong? KeyPrefix;
         // Caller content inherits the call group; explicit Key scopes belong to their parent.
         internal ulong? GroupPrefix;
@@ -790,7 +799,10 @@ public static partial class Scope
             FirstRemoval = Changes.RemovedCount;
             FirstAnimation = Changes.AnimationCount;
             if (DeclaresChildren)
-                Changes.RememberOrder(Parent, PreviousChildren);
+            {
+                if (OutermostBuild) Changes.RememberOrder(Parent, PreviousChildren, ref PreviousOrder);
+                else Changes.RememberOrder(Parent, PreviousChildren);
+            }
         }
 
         internal void ReplaceChanges(ChildChanges changes, int firstData, int firstRemoval, int firstAnimation)

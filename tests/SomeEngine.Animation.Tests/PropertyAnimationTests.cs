@@ -493,7 +493,7 @@ public sealed class PropertyAnimationTests
         using var world = new World();
         Entity target = world.CreateEntity(new Visual());
         PropertyAnimation.Declare<float>(world, target);
-        world.AddBuffer<TimelineStage>(target);
+        if (!world.HasBuffer<TimelineStage>(target)) world.AddBuffer<TimelineStage>(target);
         world.ExecuteBufferWrite<TimelineStage>(target, static stages =>
         {
             stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
@@ -529,7 +529,7 @@ public sealed class PropertyAnimationTests
         using var world = new World();
         Entity target = world.CreateEntity(new Visual());
         PropertyAnimation.Declare<float>(world, target);
-        world.AddBuffer<TimelineStage>(target);
+        if (!world.HasBuffer<TimelineStage>(target)) world.AddBuffer<TimelineStage>(target);
         world.ExecuteBufferWrite<TimelineStage>(target, static stages =>
         {
             stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 1 });
@@ -586,7 +586,7 @@ public sealed class PropertyAnimationTests
         Entity second = world.CreateEntity(new Visual());
         Entity animation = PropertyAnimation.To(world, first, Opacity, 1f, Spec.Tween(1));
         PropertyAnimation.SetSpeed(world, animation, 2);
-        world.AddBuffer<TimelineStage>(animation);
+        if (!world.HasBuffer<TimelineStage>(animation)) world.AddBuffer<TimelineStage>(animation);
         world.ExecuteBufferWrite<TimelineStage>(animation, static stages =>
             stages.Add(new TimelineStage { End = StageEnd.External }));
         PropertyAnimation.Pause(world, animation);

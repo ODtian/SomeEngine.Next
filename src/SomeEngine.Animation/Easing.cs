@@ -17,6 +17,43 @@ public enum EasingType : byte
 
 public static class Easing
 {
+    /// <summary>Resolves an enum input once when the curve is bound.</summary>
+    public static unsafe delegate* managed<float, float> Resolve(EasingType easing) => easing switch
+    {
+        EasingType.Linear => &Linear.Sample,
+        EasingType.SineIn => &SineIn.Sample,
+        EasingType.SineOut => &SineOut.Sample,
+        EasingType.SineInOut => &SineInOut.Sample,
+        EasingType.QuadIn => &QuadIn.Sample,
+        EasingType.QuadOut => &QuadOut.Sample,
+        EasingType.QuadInOut => &QuadInOut.Sample,
+        EasingType.CubicIn => &CubicIn.Sample,
+        EasingType.CubicOut => &CubicOut.Sample,
+        EasingType.CubicInOut => &CubicInOut.Sample,
+        EasingType.QuartIn => &QuartIn.Sample,
+        EasingType.QuartOut => &QuartOut.Sample,
+        EasingType.QuartInOut => &QuartInOut.Sample,
+        EasingType.QuintIn => &QuintIn.Sample,
+        EasingType.QuintOut => &QuintOut.Sample,
+        EasingType.QuintInOut => &QuintInOut.Sample,
+        EasingType.ExpoIn => &ExpoIn.Sample,
+        EasingType.ExpoOut => &ExpoOut.Sample,
+        EasingType.ExpoInOut => &ExpoInOut.Sample,
+        EasingType.CircIn => &CircIn.Sample,
+        EasingType.CircOut => &CircOut.Sample,
+        EasingType.CircInOut => &CircInOut.Sample,
+        EasingType.BackIn => &BackIn.Sample,
+        EasingType.BackOut => &BackOut.Sample,
+        EasingType.BackInOut => &BackInOut.Sample,
+        EasingType.ElasticIn => &ElasticIn.Sample,
+        EasingType.ElasticOut => &ElasticOut.Sample,
+        EasingType.ElasticInOut => &ElasticInOut.Sample,
+        EasingType.BounceIn => &BounceIn.Sample,
+        EasingType.BounceOut => &global::SomeEngine.Animation.BounceOut.Sample,
+        EasingType.BounceInOut => &BounceInOut.Sample,
+        _ => &Linear.Sample,
+    };
+
     public static float Evaluate(EasingType easing, float t)
     {
         if (t <= 0) return 0;
