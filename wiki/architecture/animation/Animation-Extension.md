@@ -77,6 +77,9 @@ schedule.Add(new TimelineEndSystem());
 `tests/SomeEngine.Animation.Tests/PropertyAnimationTests.cs` 在测试工程中声明 `Meter` 和 `MeterOps`，经相同公开入口验证 tween、重定目标、衰减位移与弹簧。`AnimationLayersTests.cs` 继续验证自定义值类型的多来源合成与外部求值系统的贡献入口。
 
 ## Verification
+
+姿势扩展示例位于 [`tools/SomeEngine.Animation.Checks/PoseExample`](../../../tools/SomeEngine.Animation.Checks/PoseExample/README.md)。消费者自己的 `IAssetImporter`、`AnimationClipBlock`、`IClipSampler`、`IAnimationLeaf` 和 `IAnimationCondition` 通过生成的资产能力登记、共同图时钟与普通姿势结果连接。示例共享父骨架、播放实例与公开预测，再以 `MeshSkin` 进入公共 Application 的 Cluster 呈现；该目录保留 NativeAOT 发布和公共资源重建入口。
+
 `MotionTests` 从消费者程序集验证缓动、值运算、包含托管引用的参数与状态、生命周期、Spring 速度、共享关键帧、逐元素时间和专用批量。`tools/SomeEngine.Animation.Checks` 复用同一消费者源码，提供 Release / NativeAOT 行为与 `--benchmark` 规模成本入口。
 
 2026-10-16 的 Release 定向检查通过 27 项，覆盖 Motion、Timeline、ValueOps 与完整类型化图公开行为；行为规则检查为 0 项违规。队列 `01c002753d7a438b89c8ff24354c7e7e` 退出码 0，原始日志与结果保存在 [[evidence/Animation/2026-10-16/Typed-Execution|类型化执行证据]]。
