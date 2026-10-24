@@ -6,7 +6,7 @@
 #include "vsm_receiver_pixel.slang"
 #include "vsm_receiver_projection.slang"
 #include "render_lighting.slang"
-#include "material_interfaces.slang"
+#include "surface_receiver.slang"
 #ifdef VSM_DEPTH_PAGE_REQUESTS
 #include "cluster_view.slang"
 #endif
