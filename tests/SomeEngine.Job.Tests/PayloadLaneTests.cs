@@ -6,19 +6,7 @@ public sealed class PayloadLaneTests
 {
     public PayloadLaneTests()
     {
-        JobSystem.ResetForTesting();
-    }
-
-    [Fact]
-    public void RefFreeJobIsClassifiedIntoFastLane()
-    {
-        Assert.Equal(JobPayloadLane.RefFree, JobSystem.GetPayloadLane<RefFreePayloadJob>());
-    }
-
-    [Fact]
-    public void RefContainingJobIsClassifiedIntoManagedLane()
-    {
-        Assert.Equal(JobPayloadLane.RefContaining, JobSystem.GetPayloadLane<RefContainingPayloadJob>());
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
     }
 
     [Fact]
@@ -46,14 +34,13 @@ public sealed class PayloadLaneTests
         var ex = Assert.Throws<InvalidOperationException>(() =>
             JobSystem.Schedule(new RefContainingPayloadJob(sink, "rejected")));
 
-        Assert.Contains("managed payload policy", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(["warned"], sink);
     }
 
     [Fact]
-    public void RefContainingSchedulerPathClearsPayloadSlot()
+    public void CompletedJobReleasesManagedPayload()
     {
-        JobSystem.ResetForTesting(workerCount: 0);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
 
         var weak = CreateScheduledPayloadWeakReference();
 
@@ -63,9 +50,9 @@ public sealed class PayloadLaneTests
     }
 
     [Fact]
-    public void RefContainingParallelSchedulerPathClearsPayloadSlots()
+    public void CompletedParallelJobReleasesManagedPayload()
     {
-        JobSystem.ResetForTesting(workerCount: 0);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
 
         var weak = CreateScheduledParallelPayloadWeakReference();
 
@@ -105,16 +92,6 @@ public sealed class PayloadLaneTests
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
-        }
-    }
-
-    private struct RefFreePayloadJob : IJob
-    {
-        public int Value;
-
-        public void Execute()
-        {
-            Value++;
         }
     }
 

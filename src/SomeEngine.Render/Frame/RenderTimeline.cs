@@ -8,24 +8,29 @@ namespace SomeEngine.Render.Frame;
 /// </summary>
 internal sealed class RenderTimeline
 {
-    private readonly QueueCompletion[] _generationFences;
-    private readonly int[] _generationFenceCounts;
-    private readonly IGraphicsBackend _backend;
+    private readonly GenerationUse[] _generations;
+    private readonly RenderDevice _renderDevice;
+
+    private struct GenerationUse
+    {
+        internal QueueCompletion[] Fences;
+        internal ulong LastFrame;
+    }
 
     internal RenderTimeline(
         RenderFrameCoordinator owner,
-        IGraphicsBackend backend,
-        Device device,
+        RenderDevice renderDevice,
         int generationCount)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(generationCount);
         if (generationCount > sizeof(int) * 8)
             throw new ArgumentOutOfRangeException(nameof(generationCount));
         Owner = owner;
-        _backend = backend;
-        Device = device;
-        _generationFences = new QueueCompletion[checked(generationCount * 3)];
-        _generationFenceCounts = new int[generationCount];
+        _renderDevice = renderDevice;
+        Device = renderDevice.Device;
+        _generations = new GenerationUse[generationCount];
+        for (int generation = 0; generation < generationCount; generation++)
+            _generations[generation].Fences = [];
     }
 
     /// <summary>The graphics device owner to which this timeline is permanently bound.</summary>
@@ -33,7 +38,7 @@ internal sealed class RenderTimeline
 
     internal RenderFrameCoordinator Owner { get; }
 
-    internal int GenerationCount => _generationFenceCounts.Length;
+    internal int GenerationCount => _generations.Length;
 
     internal ulong LastSubmissionSequence { get; set; }
 
@@ -46,43 +51,44 @@ internal sealed class RenderTimeline
         ReadOnlySpan<QueueCompletion> fences)
     {
         ValidateGeneration(generation);
-        QueueCompletion[] merged = RenderQueueCompletions.Merge(
-            GetGenerationFences(generation),
-            fences);
-        Span<QueueCompletion> destination =
-            _generationFences.AsSpan(checked(generation * 3), 3);
-        destination.Clear();
-        merged.CopyTo(destination);
-        _generationFenceCounts[generation] = merged.Length;
+        ref GenerationUse use = ref _generations[generation];
+        use.Fences = RenderQueueCompletions.Merge(use.Fences, fences);
+        // The coordinator publishes this frame's sequence after registering its readers.
+        use.LastFrame = LastSubmissionSequence + 1;
+    }
+
+    internal int GetOldestSubmittedGeneration()
+    {
+        int oldest = 0;
+        for (int generation = 1; generation < _generations.Length; generation++)
+            if (_generations[generation].LastFrame < _generations[oldest].LastFrame)
+                oldest = generation;
+        return oldest;
     }
 
     internal bool IsGenerationAvailable(int generation)
     {
         ValidateGeneration(generation);
         ReadOnlySpan<QueueCompletion> fences = GetGenerationFences(generation);
-        return fences.IsEmpty || RenderQueueCompletions.WaitAll(_backend, fences, TimeSpan.Zero);
+        return fences.IsEmpty || _renderDevice.WaitAll(fences, TimeSpan.Zero);
     }
 
     internal bool WaitForGeneration(int generation, TimeSpan timeout)
     {
         ValidateGeneration(generation);
         ReadOnlySpan<QueueCompletion> fences = GetGenerationFences(generation);
-        return fences.IsEmpty || RenderQueueCompletions.WaitAll(_backend, fences, timeout);
+        return fences.IsEmpty || _renderDevice.WaitAll(fences, timeout);
     }
 
     internal QueueCompletion[] GetGenerationFences(int generation)
     {
         ValidateGeneration(generation);
-        return _generationFences
-            .AsSpan(
-                checked(generation * 3),
-                _generationFenceCounts[generation])
-            .ToArray();
+        return _generations[generation].Fences.ToArray();
     }
 
     private void ValidateGeneration(int generation)
     {
-        if ((uint)generation >= (uint)_generationFenceCounts.Length)
+        if ((uint)generation >= (uint)_generations.Length)
             throw new ArgumentOutOfRangeException(nameof(generation));
     }
 }

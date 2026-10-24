@@ -10,9 +10,9 @@ internal sealed unsafe partial class VulkanBackend
         MemoryBarrier2 native = new()
         {
             SType = StructureType.MemoryBarrier2,
-            SrcStageMask = ToNative(barrier.SyncBefore),
+            SrcStageMask = ToNative(barrier.SyncBefore, (VulkanDevice)command.Device),
             SrcAccessMask = ToNative(barrier.AccessBefore),
-            DstStageMask = ToNative(barrier.SyncAfter),
+            DstStageMask = ToNative(barrier.SyncAfter, (VulkanDevice)command.Device),
             DstAccessMask = ToNative(barrier.AccessAfter),
         };
         EmitBarriers(command.NativeRecording, new ReadOnlySpan<MemoryBarrier2>(&native, 1), [], []);
@@ -76,91 +76,13 @@ internal sealed unsafe partial class VulkanBackend
         EmitBarriers(command.NativeRecording, new ReadOnlySpan<MemoryBarrier2>(&native, 1), [], []);
     }
 
-    internal void Barrier(CommandContext context, in QueueRelease barrier)
-    {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
-        VulkanDevice device = (VulkanDevice)command.Device;
-        uint sourceFamily = device.GetQueue(command.QueueType, command.QueueIndex).FamilyIndex;
-        uint destinationFamily = device.GetFirstQueueFamily(barrier.DestinationQueueType);
-        NormalizeQueueFamilies(ref sourceFamily, ref destinationFamily);
-        if (barrier.Resource is RhiBuffer publicBuffer)
-        {
-            VulkanBuffer buffer = RequireBuffer(device, publicBuffer, nameof(barrier));
-            command.Capture(buffer);
-            BufferMemoryBarrier2 native = CreateBufferBarrier(
-                buffer,
-                barrier.Sync,
-                PipelineSync.None,
-                barrier.Access,
-                ResourceAccess.NoAccess,
-                sourceFamily,
-                destinationFamily);
-            EmitBarriers(command.NativeRecording, [], new ReadOnlySpan<BufferMemoryBarrier2>(&native, 1), []);
-            return;
-        }
-        VulkanTexture texture = RequireTexture(device, (RhiTexture)barrier.Resource, nameof(barrier));
-        TextureSubresourceRange range = barrier.TextureRange
-            ?? throw new ArgumentException("A Texture QueueRelease requires a subresource range.", nameof(barrier));
-        TextureLayout layout = barrier.Layout
-            ?? throw new ArgumentException("A Texture QueueRelease requires a layout.", nameof(barrier));
-        ValidateTextureRange(texture.Info, range);
-        command.Capture(texture);
-        ImageMemoryBarrier2 image = CreateImageBarrier(
-            texture,
-            range,
-            barrier.Sync,
-            PipelineSync.None,
-            barrier.Access,
-            ResourceAccess.NoAccess,
-            layout,
-            layout,
-            sourceFamily,
-            destinationFamily);
-        EmitBarriers(command.NativeRecording, [], [], new ReadOnlySpan<ImageMemoryBarrier2>(&image, 1));
-    }
+    internal void Barrier(CommandContext context, in QueueRelease barrier) =>
+        Barrier(context, new BarrierBatch([], [], [], [],
+            System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(in barrier, 1)));
 
-    internal void Barrier(CommandContext context, in QueueAcquire barrier)
-    {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
-        VulkanDevice device = (VulkanDevice)command.Device;
-        uint sourceFamily = device.GetFirstQueueFamily(barrier.SourceQueueType);
-        uint destinationFamily = device.GetQueue(command.QueueType, command.QueueIndex).FamilyIndex;
-        NormalizeQueueFamilies(ref sourceFamily, ref destinationFamily);
-        if (barrier.Resource is RhiBuffer publicBuffer)
-        {
-            VulkanBuffer buffer = RequireBuffer(device, publicBuffer, nameof(barrier));
-            command.Capture(buffer);
-            BufferMemoryBarrier2 native = CreateBufferBarrier(
-                buffer,
-                PipelineSync.None,
-                barrier.Sync,
-                ResourceAccess.NoAccess,
-                barrier.Access,
-                sourceFamily,
-                destinationFamily);
-            EmitBarriers(command.NativeRecording, [], new ReadOnlySpan<BufferMemoryBarrier2>(&native, 1), []);
-            return;
-        }
-        VulkanTexture texture = RequireTexture(device, (RhiTexture)barrier.Resource, nameof(barrier));
-        TextureSubresourceRange range = barrier.TextureRange
-            ?? throw new ArgumentException("A Texture QueueAcquire requires a subresource range.", nameof(barrier));
-        TextureLayout layout = barrier.Layout
-            ?? throw new ArgumentException("A Texture QueueAcquire requires a layout.", nameof(barrier));
-        ValidateTextureRange(texture.Info, range);
-        command.Capture(texture);
-        ImageMemoryBarrier2 image = CreateImageBarrier(
-            texture,
-            range,
-            PipelineSync.None,
-            barrier.Sync,
-            ResourceAccess.NoAccess,
-            barrier.Access,
-            layout,
-            layout,
-            sourceFamily,
-            destinationFamily);
-        EmitBarriers(command.NativeRecording, [], [], new ReadOnlySpan<ImageMemoryBarrier2>(&image, 1));
-    }
+    internal void Barrier(CommandContext context, in QueueAcquire barrier) =>
+        Barrier(context, new BarrierBatch([],
+            System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(in barrier, 1), [], [], []));
 
     internal void Barrier(CommandContext context, in BarrierBatch barriers)
     {
@@ -180,6 +102,21 @@ internal sealed unsafe partial class VulkanBackend
         int memoryCount = 0;
         int bufferCount = 0;
         int imageCount = 0;
+        // RHI queue transfers pass through General. Keep the ownership pair at
+        // General -> General on both queues; layout changes are separate dependencies.
+        foreach (ref readonly QueueRelease barrier in barriers.QueueReleases)
+        {
+            if (barrier.Resource is not RhiTexture publicTexture || barrier.Layout == TextureLayout.General) continue;
+            VulkanTexture texture = RequireTexture((VulkanDevice)command.Device, publicTexture, nameof(barriers));
+            command.Capture(texture);
+            ImageMemoryBarrier2 transition = CreateImageBarrier(texture, barrier.TextureRange!.Value,
+                barrier.Sync, PipelineSync.All, barrier.Access, ResourceAccess.NoAccess,
+                barrier.Layout!.Value, TextureLayout.General, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
+            transition.DstAccessMask = AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit;
+            images[imageCount++] = transition;
+        }
+        EmitBarriers(command.NativeRecording, [], [], images[..imageCount]);
+        imageCount = 0;
         foreach (ref readonly MemoryBarrier barrier in barriers.MemoryBarriers)
         {
             if (barrier.Phase == BarrierPhase.End)
@@ -187,9 +124,9 @@ internal sealed unsafe partial class VulkanBackend
             memories[memoryCount++] = new MemoryBarrier2
             {
                 SType = StructureType.MemoryBarrier2,
-                SrcStageMask = ToNative(barrier.SyncBefore),
+                SrcStageMask = ToNative(barrier.SyncBefore, (VulkanDevice)command.Device),
                 SrcAccessMask = ToNative(barrier.AccessBefore),
-                DstStageMask = ToNative(barrier.SyncAfter),
+                DstStageMask = ToNative(barrier.SyncAfter, (VulkanDevice)command.Device),
                 DstAccessMask = ToNative(barrier.AccessAfter),
             };
         }
@@ -206,6 +143,18 @@ internal sealed unsafe partial class VulkanBackend
             memories[..memoryCount],
             buffers[..bufferCount],
             images[..imageCount]);
+        imageCount = 0;
+        foreach (ref readonly QueueAcquire barrier in barriers.QueueAcquires)
+        {
+            if (barrier.Resource is not RhiTexture publicTexture || barrier.Layout == TextureLayout.General) continue;
+            VulkanTexture texture = RequireTexture((VulkanDevice)command.Device, publicTexture, nameof(barriers));
+            ImageMemoryBarrier2 transition = CreateImageBarrier(texture, barrier.TextureRange!.Value,
+                PipelineSync.All, barrier.Sync, ResourceAccess.NoAccess, barrier.Access,
+                TextureLayout.General, barrier.Layout!.Value, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
+            transition.SrcAccessMask = AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit;
+            images[imageCount++] = transition;
+        }
+        EmitBarriers(command.NativeRecording, [], [], images[..imageCount]);
     }
 
     private void AppendBufferBarrier(
@@ -281,14 +230,14 @@ internal sealed unsafe partial class VulkanBackend
         VulkanTexture texture = RequireTexture(device, (RhiTexture)barrier.Resource, nameof(barrier));
         TextureSubresourceRange range = barrier.TextureRange ?? throw new ArgumentException(
             "A Texture QueueAcquire requires a subresource range.", nameof(barrier));
-        TextureLayout layout = barrier.Layout ?? throw new ArgumentException(
-            "A Texture QueueAcquire requires a layout.", nameof(barrier));
         ValidateTextureRange(texture.Info, range);
         command.Capture(texture);
-        images[imageCount++] = CreateImageBarrier(
-            texture, range, PipelineSync.None, barrier.Sync,
-            ResourceAccess.NoAccess, barrier.Access, layout, layout,
+        ImageMemoryBarrier2 acquire = CreateImageBarrier(
+            texture, range, PipelineSync.None, PipelineSync.All,
+            ResourceAccess.NoAccess, ResourceAccess.NoAccess, TextureLayout.General, TextureLayout.General,
             sourceFamily, destinationFamily);
+        acquire.DstAccessMask = AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit;
+        images[imageCount++] = acquire;
     }
 
     private void AppendQueueRelease(
@@ -320,14 +269,14 @@ internal sealed unsafe partial class VulkanBackend
         VulkanTexture texture = RequireTexture(device, (RhiTexture)barrier.Resource, nameof(barrier));
         TextureSubresourceRange range = barrier.TextureRange ?? throw new ArgumentException(
             "A Texture QueueRelease requires a subresource range.", nameof(barrier));
-        TextureLayout layout = barrier.Layout ?? throw new ArgumentException(
-            "A Texture QueueRelease requires a layout.", nameof(barrier));
         ValidateTextureRange(texture.Info, range);
         command.Capture(texture);
-        images[imageCount++] = CreateImageBarrier(
-            texture, range, barrier.Sync, PipelineSync.None,
-            barrier.Access, ResourceAccess.NoAccess, layout, layout,
+        ImageMemoryBarrier2 release = CreateImageBarrier(
+            texture, range, PipelineSync.All, PipelineSync.None,
+            ResourceAccess.NoAccess, ResourceAccess.NoAccess, TextureLayout.General, TextureLayout.General,
             sourceFamily, destinationFamily);
+        release.SrcAccessMask = AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit;
+        images[imageCount++] = release;
     }
 
     private void CaptureAliasingResource(
@@ -356,9 +305,9 @@ internal sealed unsafe partial class VulkanBackend
         uint destinationFamily) => new()
     {
         SType = StructureType.BufferMemoryBarrier2,
-        SrcStageMask = ToNative(syncBefore),
+        SrcStageMask = ToNative(syncBefore, (VulkanDevice)buffer.Device),
         SrcAccessMask = ToNative(accessBefore),
-        DstStageMask = ToNative(syncAfter),
+        DstStageMask = ToNative(syncAfter, (VulkanDevice)buffer.Device),
         DstAccessMask = ToNative(accessAfter),
         SrcQueueFamilyIndex = sourceFamily,
         DstQueueFamilyIndex = destinationFamily,
@@ -380,9 +329,9 @@ internal sealed unsafe partial class VulkanBackend
         uint destinationFamily) => new()
     {
         SType = StructureType.ImageMemoryBarrier2,
-        SrcStageMask = ToNative(syncBefore),
+        SrcStageMask = ToNative(syncBefore, (VulkanDevice)texture.Device),
         SrcAccessMask = ToNative(accessBefore),
-        DstStageMask = ToNative(syncAfter),
+        DstStageMask = ToNative(syncAfter, (VulkanDevice)texture.Device),
         DstAccessMask = ToNative(accessAfter),
         OldLayout = ToNative(layoutBefore),
         NewLayout = ToNative(layoutAfter),
@@ -427,7 +376,7 @@ internal sealed unsafe partial class VulkanBackend
         destination = Vk.QueueFamilyIgnored;
     }
 
-    internal static PipelineStageFlags2 ToNative(PipelineSync sync)
+    private static PipelineStageFlags2 ToNative(PipelineSync sync, VulkanDevice device)
     {
         if (sync == PipelineSync.None)
             return PipelineStageFlags2.None;
@@ -446,8 +395,8 @@ internal sealed unsafe partial class VulkanBackend
         Add(PipelineSync.Resolve, PipelineStageFlags2.ResolveBit);
         Add(PipelineSync.ExecuteIndirect, PipelineStageFlags2.DrawIndirectBit);
         Add(PipelineSync.Predication, PipelineStageFlags2.ConditionalRenderingBitExt);
-        Add(PipelineSync.AllShading, PipelineStageFlags2.AllGraphicsBit | PipelineStageFlags2.ComputeShaderBit | PipelineStageFlags2.RayTracingShaderBitKhr);
-        Add(PipelineSync.NonPixelShading, PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.ComputeShaderBit | PipelineStageFlags2.RayTracingShaderBitKhr);
+        Add(PipelineSync.AllShading, device.NonPixelShadingStages | PipelineStageFlags2.FragmentShaderBit);
+        Add(PipelineSync.NonPixelShading, device.NonPixelShadingStages);
         Add(PipelineSync.Clear, PipelineStageFlags2.ClearBit);
         Add(PipelineSync.AccelerationStructureCopy, PipelineStageFlags2.AccelerationStructureCopyBitKhr);
         Add(PipelineSync.EmitAccelerationStructurePostBuildInfo, PipelineStageFlags2.AccelerationStructureBuildBitKhr);

@@ -123,6 +123,7 @@ internal sealed unsafe partial class D3D12Backend
                     _ => throw new ArgumentOutOfRangeException(nameof(key)),
                 },
             };
+            description.Flags |= NativeHeapFlags.CreateNotZeroed;
             ID3D12Heap* heap = null;
             NativeLease? lifetime = null;
             Guid iid = ID3D12Heap.Guid;
@@ -130,7 +131,7 @@ internal sealed unsafe partial class D3D12Backend
             {
                 ThrowIfFailed(
                     device,
-                    device.Native->CreateHeap(&description, &iid, (void**)&heap),
+                        DeviceResourceTrace.CreateHeap(device.Native, &description, &iid, (void**)&heap),
                     NativeOperationType.Ordinary,
                     $"ID3D12Device::CreateHeap(resource-pool size={size}, " +
                     $"memory={key.MemoryType}, class={key.Class})");
@@ -148,7 +149,7 @@ internal sealed unsafe partial class D3D12Backend
             {
                 lifetime?.Release();
                 if (heap is not null)
-                    _ = heap->Release();
+                    _ = ResourceTrace.Release(heap);
             }
         }
 
@@ -158,84 +159,104 @@ internal sealed unsafe partial class D3D12Backend
             ulong alignment,
             out D3D12MemoryAllocation? allocation)
         {
-            for (int index = 0; index < _freeRanges.Count; index++)
+            if (!TryTakeByteRange(_freeRanges, size, alignment, out ulong offset))
             {
-                FreeResourceRange range = _freeRanges[index];
-                ulong aligned = AlignResourceOffset(range.Offset, alignment);
-                if (aligned < range.Offset || aligned - range.Offset > range.Size)
-                    continue;
-                ulong prefix = aligned - range.Offset;
-                if (size > range.Size - prefix)
-                    continue;
-
-                ulong end = checked(aligned + size);
-                ulong suffix = range.End - end;
-                var candidate = new D3D12MemoryAllocation(owner, this, aligned, size);
-                _freeRanges.EnsureCapacity(checked(_freeRanges.Count + 1));
-                if (prefix != 0 && suffix != 0)
-                {
-                    _freeRanges[index] = new FreeResourceRange(range.Offset, prefix);
-                    _freeRanges.Insert(index + 1, new FreeResourceRange(end, suffix));
-                }
-                else if (prefix != 0)
-                {
-                    _freeRanges[index] = new FreeResourceRange(range.Offset, prefix);
-                }
-                else if (suffix != 0)
-                {
-                    _freeRanges[index] = new FreeResourceRange(end, suffix);
-                }
-                else
-                {
-                    _freeRanges.RemoveAt(index);
-                }
-
-                _activeAllocations = checked(_activeAllocations + 1);
-                AllocatedBytes = checked(AllocatedBytes + size);
-                allocation = candidate;
-                return true;
+                allocation = null;
+                return false;
             }
-
-            allocation = null;
-            return false;
+            try
+            {
+                allocation = new D3D12MemoryAllocation(owner, this, offset, size);
+            }
+            catch
+            {
+                ReturnByteRange(_freeRanges, offset, size);
+                throw;
+            }
+            _activeAllocations = checked(_activeAllocations + 1);
+            AllocatedBytes = checked(AllocatedBytes + size);
+            return true;
         }
 
         internal void Return(ulong offset, ulong size)
         {
-            int index = 0;
-            while (index < _freeRanges.Count && _freeRanges[index].Offset < offset)
-                index++;
-            _freeRanges.Insert(index, new FreeResourceRange(offset, size));
-            MergeAt(index);
+            ReturnByteRange(_freeRanges, offset, size);
             _activeAllocations--;
             AllocatedBytes -= size;
         }
 
-        private void MergeAt(int index)
-        {
-            if (index > 0 && _freeRanges[index - 1].End == _freeRanges[index].Offset)
-            {
-                FreeResourceRange previous = _freeRanges[index - 1];
-                FreeResourceRange current = _freeRanges[index];
-                _freeRanges[index - 1] = new FreeResourceRange(
-                    previous.Offset,
-                    checked(previous.Size + current.Size));
-                _freeRanges.RemoveAt(index);
-                index--;
-            }
-            if (index + 1 < _freeRanges.Count &&
-                _freeRanges[index].End == _freeRanges[index + 1].Offset)
-            {
-                FreeResourceRange current = _freeRanges[index];
-                FreeResourceRange next = _freeRanges[index + 1];
-                _freeRanges[index] = new FreeResourceRange(
-                    current.Offset,
-                    checked(current.Size + next.Size));
-                _freeRanges.RemoveAt(index + 1);
-            }
-        }
-
         public void Dispose() => _native.Release();
+    }
+
+    private static bool TryTakeByteRange(List<FreeResourceRange> ranges, ulong size, ulong alignment, out ulong offset)
+    {
+        for (int index = 0; index < ranges.Count; index++)
+        {
+            FreeResourceRange range = ranges[index];
+            ulong aligned = AlignResourceOffset(range.Offset, alignment);
+            if (aligned < range.Offset || aligned - range.Offset > range.Size) continue;
+            ulong prefix = aligned - range.Offset;
+            if (size > range.Size - prefix) continue;
+            ulong end = checked(aligned + size);
+            ulong suffix = range.End - end;
+            ranges.EnsureCapacity(checked(ranges.Count + 1));
+            if (prefix != 0 && suffix != 0)
+            {
+                ranges[index] = new(range.Offset, prefix);
+                ranges.Insert(index + 1, new(end, suffix));
+            }
+            else if (prefix != 0) ranges[index] = new(range.Offset, prefix);
+            else if (suffix != 0) ranges[index] = new(end, suffix);
+            else ranges.RemoveAt(index);
+            offset = aligned;
+            return true;
+        }
+        offset = 0;
+        return false;
+    }
+
+    private static void ReturnByteRange(List<FreeResourceRange> ranges, ulong offset, ulong size)
+    {
+        int index = 0;
+        while (index < ranges.Count && ranges[index].Offset < offset) index++;
+        ranges.Insert(index, new(offset, size));
+        if (index > 0 && ranges[index - 1].End == ranges[index].Offset)
+        {
+            FreeResourceRange previous = ranges[index - 1], current = ranges[index];
+            ranges[index - 1] = new(previous.Offset, checked(previous.Size + current.Size));
+            ranges.RemoveAt(index);
+            index--;
+        }
+        if (index + 1 < ranges.Count && ranges[index].End == ranges[index + 1].Offset)
+        {
+            FreeResourceRange current = ranges[index], next = ranges[index + 1];
+            ranges[index] = new(current.Offset, checked(current.Size + next.Size));
+            ranges.RemoveAt(index + 1);
+        }
+    }
+
+    private sealed class ParameterBytePage(D3D12OrdinaryDataChunk bytes)
+    {
+        private int _references = 1;
+        internal D3D12OrdinaryDataChunk Bytes { get; } = bytes;
+        internal List<FreeResourceRange> FreeRanges { get; } = [new(0, bytes.Capacity)];
+        internal bool HasParameters => Volatile.Read(ref _references) > 1;
+        internal void Retain() => Interlocked.Increment(ref _references);
+        internal void Release()
+        {
+            if (Interlocked.Decrement(ref _references) == 0) Bytes.Release();
+        }
+    }
+
+    private sealed class D3D12ParameterBytes(
+        D3D12ResourceAllocator allocator, ParameterBytePage page, ulong offset, ulong size)
+    {
+        private D3D12ResourceAllocator? _allocator = allocator;
+        internal ParameterBytePage Page { get; } = page;
+        internal ulong Offset { get; } = offset;
+        internal ulong Size { get; } = size;
+        internal ulong Address => checked(Page.Bytes.GpuAddress + Offset);
+        internal void Release() => Interlocked.Exchange(ref _allocator, null)?.ReturnParameterBytes(this);
     }
 
     private sealed class D3D12ResourceAllocator : IDisposable
@@ -245,11 +266,73 @@ internal sealed unsafe partial class D3D12Backend
         private readonly D3D12Device _device;
         private readonly object _gate = new();
         private readonly Dictionary<ResourcePoolKey, List<ResourceHeapBlock>> _blocks = [];
+        private readonly List<ParameterBytePage> _parameterBytes = [];
         private ulong _committedFallbackCount;
         private ulong _budgetPressureFallbackCount;
         private bool _disposed;
 
         internal D3D12ResourceAllocator(D3D12Device device) => _device = device;
+
+        internal D3D12ParameterBytes AllocateParameterBytes(ReadOnlySpan<byte> data)
+        {
+            ulong size = AlignResourceOffset((ulong)data.Length, 256);
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                foreach (ParameterBytePage page in _parameterBytes)
+                {
+                    if (TryTakeByteRange(page.FreeRanges, size, 256, out ulong offset))
+                        return WriteParameterBytes(page, offset, size, data);
+                }
+                _parameterBytes.EnsureCapacity(checked(_parameterBytes.Count + 1));
+                D3D12OrdinaryDataChunk bytes = D3D12OrdinaryDataChunk.Create(_device,
+                    _device.PrimaryNodeMask, Math.Max(1024UL * 1024, size), _device.EnabledNodeMask);
+                ParameterBytePage created;
+                try
+                {
+                    created = new(bytes);
+                }
+                catch
+                {
+                    bytes.Release();
+                    throw;
+                }
+                _parameterBytes.Add(created);
+                _ = TryTakeByteRange(created.FreeRanges, size, 256, out ulong firstOffset);
+                return WriteParameterBytes(created, firstOffset, size, data);
+            }
+        }
+
+        private D3D12ParameterBytes WriteParameterBytes(ParameterBytePage page, ulong offset, ulong size, ReadOnlySpan<byte> data)
+        {
+            D3D12ParameterBytes result;
+            try
+            {
+                result = new(this, page, offset, size);
+                page.Bytes.WriteBytes(offset, data);
+            }
+            catch
+            {
+                ReturnByteRange(page.FreeRanges, offset, size);
+                throw;
+            }
+            page.Retain();
+            return result;
+        }
+
+        internal void ReturnParameterBytes(D3D12ParameterBytes data)
+        {
+            lock (_gate)
+            {
+                if (!_disposed) ReturnByteRange(data.Page.FreeRanges, data.Offset, data.Size);
+                data.Page.Release();
+                if (!_disposed && _parameterBytes.Count > 1 && !data.Page.HasParameters)
+                {
+                    _parameterBytes.Remove(data.Page);
+                    data.Page.Release();
+                }
+            }
+        }
 
         internal D3D12MemoryAllocation? TryAllocate(
             MemoryType memoryType,
@@ -352,13 +435,13 @@ internal sealed unsafe partial class D3D12Backend
                 int heapCount = 0;
                 int allocationCount = 0;
                 foreach (List<ResourceHeapBlock> blocks in _blocks.Values)
-                foreach (ResourceHeapBlock block in blocks)
-                {
-                    heapBytes = checked(heapBytes + block.Size);
-                    allocatedBytes = checked(allocatedBytes + block.AllocatedBytes);
-                    heapCount++;
-                    allocationCount = checked(allocationCount + block.ActiveAllocations);
-                }
+                    foreach (ResourceHeapBlock block in blocks)
+                    {
+                        heapBytes = checked(heapBytes + block.Size);
+                        allocatedBytes = checked(allocatedBytes + block.AllocatedBytes);
+                        heapCount++;
+                        allocationCount = checked(allocationCount + block.ActiveAllocations);
+                    }
                 return new D3D12MemoryAllocatorInfo(
                     heapBytes,
                     allocatedBytes,
@@ -399,8 +482,8 @@ internal sealed unsafe partial class D3D12Backend
         {
             uint nodeIndex = checked((uint)BitOperations.TrailingZeroCount(creationNodeMask));
             QueryVideoMemoryInfo info = default;
-            int result = ((IDXGIAdapter3*)_device.NativeAdapter)->QueryVideoMemoryInfo(
-                nodeIndex,
+            int result = PresentationTrace.QueryVideoMemoryInfo(
+((IDXGIAdapter3*)_device.NativeAdapter), nodeIndex,
                 MemorySegmentGroup.Local,
                 &info);
             ThrowIfFailed(
@@ -427,9 +510,11 @@ internal sealed unsafe partial class D3D12Backend
                     return;
                 _disposed = true;
                 foreach (List<ResourceHeapBlock> blocks in _blocks.Values)
-                foreach (ResourceHeapBlock block in blocks)
-                    block.Dispose();
+                    foreach (ResourceHeapBlock block in blocks)
+                        block.Dispose();
                 _blocks.Clear();
+                foreach (ParameterBytePage page in _parameterBytes) page.Release();
+                _parameterBytes.Clear();
             }
         }
     }
@@ -476,7 +561,7 @@ internal sealed unsafe partial class D3D12Backend
         finally
         {
             if (resource is not null)
-                _ = resource->Release();
+                _ = ResourceTrace.Release(resource);
             allocation?.Release();
         }
     }

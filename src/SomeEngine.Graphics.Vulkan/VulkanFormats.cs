@@ -1,3 +1,5 @@
+using SlangShaderSharp;
+
 namespace SomeEngine.Graphics.Vulkan;
 
 internal static unsafe class VulkanFormats
@@ -42,7 +44,7 @@ internal static unsafe class VulkanFormats
         RhiFormat.R16G16Float or RhiFormat.R32UInt or RhiFormat.R32SInt or RhiFormat.R32Float or
         RhiFormat.D24UNormS8UInt or RhiFormat.D32Float => (1, 1, 4),
         RhiFormat.R16G16B16A16UNorm or RhiFormat.R16G16B16A16SNorm or RhiFormat.R16G16B16A16UInt or
-        RhiFormat.R16G16B16A16SInt or RhiFormat.R16G16B16A16Float or RhiFormat.R32G32UInt or
+        RhiFormat.R16G16B16A16SInt or RhiFormat.R16G16B16A16Float or RhiFormat.R64UInt or RhiFormat.R32G32UInt or
         RhiFormat.R32G32SInt or RhiFormat.R32G32Float or RhiFormat.D32FloatS8UInt => (1, 1, 8),
         RhiFormat.R32G32B32Float => (1, 1, 12),
         RhiFormat.R32G32B32A32UInt or RhiFormat.R32G32B32A32SInt or RhiFormat.R32G32B32A32Float => (1, 1, 16),
@@ -90,6 +92,7 @@ internal static unsafe class VulkanFormats
         RhiFormat.R32UInt => VkFormat.R32Uint,
         RhiFormat.R32SInt => VkFormat.R32Sint,
         RhiFormat.R32Float => VkFormat.R32Sfloat,
+        RhiFormat.R64UInt => VkFormat.R64Uint,
         RhiFormat.R32G32UInt => VkFormat.R32G32Uint,
         RhiFormat.R32G32SInt => VkFormat.R32G32Sint,
         RhiFormat.R32G32Float => VkFormat.R32G32Sfloat,
@@ -122,6 +125,7 @@ internal static unsafe class VulkanFormats
         Vk vk,
         VkPhysicalDevice physicalDevice,
         in PhysicalDeviceFeatures nativeFeatures,
+        in PhysicalDeviceVulkan12Features features12,
         VulkanExtendedFeatureSupport extendedFeatures)
     {
         PhysicalDeviceMaintenance4Properties maintenance4 = new()
@@ -166,8 +170,10 @@ internal static unsafe class VulkanFormats
             resourceDescriptorCapacity,
             samplerDescriptorCapacity,
             checked((uint)Math.Min(limits.MinUniformBufferOffsetAlignment, uint.MaxValue)),
+            checked((uint)Math.Max(1, Math.Max(limits.MinStorageBufferOffsetAlignment, limits.MinTexelBufferOffsetAlignment))),
             checked((uint)Math.Max(limits.OptimalBufferCopyRowPitchAlignment, 1)),
-            checked((uint)Math.Max(limits.OptimalBufferCopyOffsetAlignment, 1)));
+            checked((uint)Math.Max(limits.OptimalBufferCopyOffsetAlignment, 1)),
+            limits.MaxUniformBufferRange);
 
         RhiFormat[] formats = Enum.GetValues<RhiFormat>();
         FormatSupport[] support = new FormatSupport[formats.Length];
@@ -191,6 +197,16 @@ internal static unsafe class VulkanFormats
             dynamicStates |= DynamicStates.PrimitiveTopology;
         if (extendedFeatures.ExtendedDynamicState2)
             dynamicStates |= DynamicStates.StripCut;
+        FormatFeatures r64Features = support[(int)RhiFormat.R64UInt].Features;
+        const FormatFeatures requiredImageA64Features =
+            FormatFeatures.ShaderLoad |
+            FormatFeatures.Storage |
+            FormatFeatures.StorageStore |
+            FormatFeatures.StorageAtomic;
+        bool supportsImageInt64Atomics =
+            nativeFeatures.ShaderInt64 &&
+            extendedFeatures.ShaderImageInt64Atomics &&
+            (r64Features & requiredImageA64Features) == requiredImageA64Features;
         return new DeviceCapabilities(
             deviceLimits,
             supportsBundles: false,
@@ -201,7 +217,10 @@ internal static unsafe class VulkanFormats
             supportsDepthBounds: nativeFeatures.DepthBounds,
             dynamicStates,
             support,
-            ShaderTarget.Spirv);
+            SlangCompileTarget.Spirv,
+            supportsBufferInt64Atomics:
+                nativeFeatures.ShaderInt64 && features12.ShaderBufferInt64Atomics,
+            supportsImageInt64Atomics: supportsImageInt64Atomics);
     }
 
     private static uint MinPositive(params uint[] values)
@@ -302,7 +321,7 @@ internal static unsafe class VulkanFormats
     }
 
     private static bool IsTransformFeedbackFormat(RhiFormat format) => format is
-        RhiFormat.R32UInt or RhiFormat.R32SInt or RhiFormat.R32Float or
+        RhiFormat.R32UInt or RhiFormat.R32SInt or RhiFormat.R32Float or RhiFormat.R64UInt or
         RhiFormat.R32G32UInt or RhiFormat.R32G32SInt or RhiFormat.R32G32Float or
         RhiFormat.R32G32B32Float or
         RhiFormat.R32G32B32A32UInt or RhiFormat.R32G32B32A32SInt or

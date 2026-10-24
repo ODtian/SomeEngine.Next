@@ -5,7 +5,7 @@ namespace SomeEngine.RenderGraph.Diagnostics;
 
 public sealed class RenderGraphSnapshot
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     [JsonConstructor]
     public RenderGraphSnapshot(
@@ -17,7 +17,9 @@ public sealed class RenderGraphSnapshot
         ImmutableArray<Access> accesses,
         ImmutableArray<Dependency> dependencies,
         ImmutableArray<Barrier> barriers,
-        RenderGraphStatistics statistics)
+        RenderGraphStatistics statistics,
+        ImmutableArray<QueryPoolInfo> queryPools = default,
+        ImmutableArray<ShaderTableInfo> shaderTables = default)
     {
         Version = version;
         StructureVersion = structureVersion;
@@ -28,8 +30,12 @@ public sealed class RenderGraphSnapshot
         Dependencies = dependencies.IsDefault ? [] : dependencies;
         Barriers = barriers.IsDefault ? [] : barriers;
         Statistics = statistics;
+        QueryPools = queryPools.IsDefault ? [] : queryPools;
+        ShaderTables = shaderTables.IsDefault ? [] : shaderTables;
     }
 
+    public ImmutableArray<QueryPoolInfo> QueryPools { get; }
+    public ImmutableArray<ShaderTableInfo> ShaderTables { get; }
     public int Version { get; }
     public ulong StructureVersion { get; }
     public ImmutableArray<Pass> Passes { get; }
@@ -105,6 +111,13 @@ public sealed class RenderGraphSnapshot
                 source.LastScheduledUse));
         }
 
+        var queryPools = ImmutableArray.CreateBuilder<QueryPoolInfo>(diagnostics.QueryPools.Length);
+        foreach (ref readonly RenderGraphQueryPoolDiagnostic pool in diagnostics.QueryPools)
+            queryPools.Add(new(queryPools.Count, pool.Id.Value.Slot, pool.Id.Value.Generation,
+                pool.Label, pool.Count, pool.Type));
+        var shaderTables = ImmutableArray.CreateBuilder<ShaderTableInfo>(diagnostics.ShaderTables.Length);
+        foreach (ref readonly RenderGraphShaderTableDiagnostic table in diagnostics.ShaderTables)
+            shaderTables.Add(new(shaderTables.Count, table.Id.Value.Slot, table.Id.Value.Generation, table.Label));
         var accesses = ImmutableArray.CreateBuilder<Access>(diagnostics.Accesses.Length);
         foreach (ref readonly RenderGraphAccessDiagnostic source in diagnostics.Accesses)
         {
@@ -119,7 +132,7 @@ public sealed class RenderGraphSnapshot
                 source.BufferRange,
                 source.TextureRange,
                 source.TextureLayout,
-                source.ResultContents));
+                source.ResultContents, source.BufferContentScope, source.QueryRange));
         }
 
         var dependencies = ImmutableArray.CreateBuilder<Dependency>(diagnostics.Dependencies.Length);
@@ -149,7 +162,7 @@ public sealed class RenderGraphSnapshot
             accesses.MoveToImmutable(),
             dependencies.MoveToImmutable(),
             barriers.MoveToImmutable(),
-            diagnostics.Statistics);
+            diagnostics.Statistics, queryPools.MoveToImmutable(), shaderTables.MoveToImmutable());
 
         int ResolvePass(GraphPassId id)
         {
@@ -169,7 +182,7 @@ public sealed class RenderGraphSnapshot
         GraphPassKind Kind,
         bool Enabled,
         bool Live,
-        int DeclarationOrdinal,
+        long DeclarationOrdinal,
         int ScheduledOrdinal,
         QueueInfo? Queue);
 
@@ -201,6 +214,9 @@ public sealed class RenderGraphSnapshot
         int FirstScheduledUse,
         int LastScheduledUse);
 
+    public readonly record struct QueryPoolInfo(int Ordinal, int Slot, uint Generation, string? Label, uint Count, QueryType Type);
+    public readonly record struct ShaderTableInfo(int Ordinal, int Slot, uint Generation, string? Label);
+
     public readonly record struct Access(
         int Pass,
         GraphAccessTargetKind TargetKind,
@@ -212,7 +228,9 @@ public sealed class RenderGraphSnapshot
         BufferRange BufferRange,
         TextureSubresourceRange TextureRange,
         TextureLayout TextureLayout,
-        ResourceContentState? ResultContents);
+        ResourceContentState? ResultContents,
+        BufferContentScope BufferContentScope = BufferContentScope.FullRange,
+        QueryRange QueryRange = default);
 
     public readonly record struct Dependency(
         int Predecessor,

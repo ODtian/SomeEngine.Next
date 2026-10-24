@@ -28,12 +28,12 @@ internal sealed unsafe partial class D3D12Backend
 
         ID3D12InfoQueue* queue = null;
         Guid iid = ID3D12InfoQueue.Guid;
-        if (native->QueryInterface(&iid, (void**)&queue) < 0 || queue is null)
+        if (DeviceQueryTrace.QueryInterface(native, &iid, (void**)&queue) < 0 || queue is null)
             return null;
 
         try
         {
-            ulong count = queue->GetNumStoredMessagesAllowedByRetrievalFilter();
+            ulong count = DeviceDebugTrace.GetNumStoredMessagesAllowedByRetrievalFilter(queue);
             if (count == 0)
                 return null;
             ulong first = count > 16 ? count - 16 : 0;
@@ -48,7 +48,7 @@ internal sealed unsafe partial class D3D12Backend
         }
         finally
         {
-            _ = queue->Release();
+            _ = DeviceDebugTrace.Release(queue);
         }
     }
 
@@ -58,13 +58,13 @@ internal sealed unsafe partial class D3D12Backend
         StringBuilder destination)
     {
         nuint byteCount = 0;
-        if (queue->GetMessageA(index, null, &byteCount) < 0 || byteCount == 0)
+        if (DeviceDebugTrace.GetMessageA(queue, index, null, &byteCount) < 0 || byteCount == 0)
             return;
 
         void* storage = NativeMemory.Alloc(byteCount);
         try
         {
-            if (queue->GetMessageA(index, (Message*)storage, &byteCount) < 0)
+            if (DeviceDebugTrace.GetMessageA(queue, index, (Message*)storage, &byteCount) < 0)
                 return;
             Message* message = (Message*)storage;
             int descriptionLength = GetDescriptionLength(message);

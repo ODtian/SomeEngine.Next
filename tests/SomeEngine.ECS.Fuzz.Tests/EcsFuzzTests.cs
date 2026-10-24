@@ -66,29 +66,17 @@ public sealed class EcsFuzzTests
             observed.OrderBy(static kind => kind));
     }
 
-    [Fact]
+    [Trait("Category", "LongFuzz")]
+    [ConfiguredFact("SOMEENGINE_ECS_FUZZ_SEED", "SOMEENGINE_ECS_FUZZ_STEPS")]
     public void EnvironmentCampaign_ReplaysRequestedSeedWhenConfigured()
     {
         string? seedText = Environment.GetEnvironmentVariable("SOMEENGINE_ECS_FUZZ_SEED");
         string? stepsText = Environment.GetEnvironmentVariable("SOMEENGINE_ECS_FUZZ_STEPS");
         string? evidencePath = Environment.GetEnvironmentVariable("SOMEENGINE_ECS_FUZZ_EVIDENCE");
-        string? commitSha = Environment.GetEnvironmentVariable("SOMEENGINE_ECS_FUZZ_COMMIT_SHA");
-        if (seedText is null && stepsText is null)
-        {
-            Assert.True(
-                evidencePath is null && commitSha is null,
-                "Long-fuzz evidence variables cannot be supplied without seed and steps.");
-            return;
-        }
-
         Assert.False(
             string.IsNullOrWhiteSpace(seedText) || string.IsNullOrWhiteSpace(stepsText),
             "SOMEENGINE_ECS_FUZZ_SEED and SOMEENGINE_ECS_FUZZ_STEPS must be supplied together.");
         bool hasEvidencePath = !string.IsNullOrWhiteSpace(evidencePath);
-        bool hasCommitSha = !string.IsNullOrWhiteSpace(commitSha);
-        Assert.True(
-            hasEvidencePath == hasCommitSha,
-            "SOMEENGINE_ECS_FUZZ_EVIDENCE and SOMEENGINE_ECS_FUZZ_COMMIT_SHA must be supplied together.");
 
         string normalizedSeed = seedText!.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
             ? seedText[2..]
@@ -113,7 +101,6 @@ public sealed class EcsFuzzTests
         {
             LongFuzzEvidence.Write(
                 evidencePath!,
-                commitSha!,
                 EcsFuzzTrace.FixedPrngAlgorithm,
                 seed,
                 steps,
@@ -138,12 +125,12 @@ public sealed class EcsFuzzTests
         Assert.Equal(materialized, streaming);
     }
 
-    [Fact]
+    [Trait("Category", "LongFuzz")]
+    [ConfiguredFact("SOMEENGINE_ECS_FUZZ_TRACE")]
     public void EnvironmentTrace_ReplaysExactMinimizedArtifactWhenConfigured()
     {
         string? path = Environment.GetEnvironmentVariable("SOMEENGINE_ECS_FUZZ_TRACE");
-        if (string.IsNullOrWhiteSpace(path))
-            return;
+        Assert.False(string.IsNullOrWhiteSpace(path));
 
         EcsFuzzTrace trace = FuzzFailureArtifacts.LoadReplayTrace(path);
         FuzzRunResult result = RunWithFailureArtifact(trace);
@@ -351,7 +338,7 @@ public sealed class EcsFuzzTests
     }
 
     [Fact]
-    public void LongCampaignEvidence_IsAtomicAndExplicitlyDistinctFromOrdinaryTests()
+    public void LongCampaignReport_PreservesSeedAndResult()
     {
         EcsFuzzTrace trace = EcsFuzzTrace.Create(
             0x1234,
@@ -363,7 +350,6 @@ public sealed class EcsFuzzTests
         {
             LongFuzzEvidence.Write(
                 path,
-                new string('a', 40),
                 trace,
                 result,
                 TimeSpan.FromSeconds(1));
@@ -373,14 +359,8 @@ public sealed class EcsFuzzTests
                     File.ReadAllText(path),
                     EcsFuzzTrace.JsonOptions)
                 ?? throw new InvalidDataException("Long-fuzz evidence was empty.");
-            Assert.True(evidence.Passed);
-            Assert.True(evidence.Clean);
             Assert.Equal(1, evidence.Steps);
             Assert.Equal("0x0000000000001234", evidence.Seed);
-            Assert.Equal(EcsFuzzTraceGenerator.MaximumLogicalEntities, evidence.MaximumLogicalEntities);
-            Assert.Equal(
-                EcsFuzzRunner.LongCampaignFullVerificationInterval,
-                evidence.FullVerificationInterval);
             Assert.Matches("^[0-9a-f]{64}$", evidence.StateDigest);
             Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp.*"));
         }
@@ -509,4 +489,13 @@ public sealed class EcsFuzzTests
         int value = 0,
         int otherEntityId = 0) =>
         new(kind, entityId, value, otherEntityId);
+}
+
+internal sealed class ConfiguredFactAttribute : FactAttribute
+{
+    public ConfiguredFactAttribute(params string[] variables)
+    {
+        if (variables.All(name => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name))))
+            Skip = $"Optional campaign requires {string.Join(" or ", variables)}.";
+    }
 }

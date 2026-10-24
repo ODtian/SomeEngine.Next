@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Numerics;
 using SlangShaderSharp;
 
@@ -481,9 +482,12 @@ public readonly record struct StaticSamplerBinding(
 public readonly ref struct GraphicsPipelineDesc
 {
     public GraphicsPipelineDesc(
-        IComponentType program,
+        IComponentType slangCode,
+        ShaderReflection reflection,
         EntryPointReflection vertex,
+        ReadOnlySequence<byte> vertexCode,
         EntryPointReflection pixel,
+        ReadOnlySequence<byte> pixelCode,
         ReadOnlySpan<VertexBufferLayout> vertexBuffers,
         ReadOnlySpan<VertexAttribute> vertexAttributes,
         PrimitiveTopology topology,
@@ -495,11 +499,18 @@ public readonly ref struct GraphicsPipelineDesc
         in AttachmentFormatSignature attachments,
         DynamicStates dynamicStates = DynamicStates.None,
         string? label = null,
-        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
+        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default,
+        ISlangBlob? vertexCodeBlob = null,
+        ISlangBlob? pixelCodeBlob = null)
     {
-        Program = program;
+        SlangCode = slangCode;
+        Reflection = reflection;
         Vertex = vertex;
+        VertexCode = vertexCode;
+        VertexCodeBlob = vertexCodeBlob;
         Pixel = pixel;
+        PixelCode = pixelCode;
+        PixelCodeBlob = pixelCodeBlob;
         VertexBuffers = vertexBuffers;
         VertexAttributes = vertexAttributes;
         Topology = topology;
@@ -517,9 +528,12 @@ public readonly ref struct GraphicsPipelineDesc
     }
 
     public GraphicsPipelineDesc(
-        IComponentType program,
+        IComponentType slangCode,
+        ShaderReflection reflection,
         EntryPointReflection vertex,
+        ReadOnlySequence<byte> vertexCode,
         EntryPointReflection pixel,
+        ReadOnlySequence<byte> pixelCode,
         ReadOnlySpan<VertexBufferLayout> vertexBuffers,
         ReadOnlySpan<VertexAttribute> vertexAttributes,
         PrimitiveTopology topology,
@@ -532,11 +546,16 @@ public readonly ref struct GraphicsPipelineDesc
         in StreamOutputState streamOutput,
         DynamicStates dynamicStates = DynamicStates.None,
         string? label = null,
-        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
+        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default,
+        ISlangBlob? vertexCodeBlob = null,
+        ISlangBlob? pixelCodeBlob = null)
         : this(
-            program,
+            slangCode,
+            reflection,
             vertex,
+            vertexCode,
             pixel,
+            pixelCode,
             vertexBuffers,
             vertexAttributes,
             topology,
@@ -548,15 +567,22 @@ public readonly ref struct GraphicsPipelineDesc
             attachments,
             dynamicStates,
             label,
-            staticSamplers)
+            staticSamplers,
+            vertexCodeBlob,
+            pixelCodeBlob)
     {
         StreamOutput = streamOutput;
         HasStreamOutput = true;
     }
 
-    public IComponentType Program { get; }
+    public IComponentType SlangCode { get; }
+    public ShaderReflection Reflection { get; }
     public EntryPointReflection Vertex { get; }
+    public ReadOnlySequence<byte> VertexCode { get; }
+    public ISlangBlob? VertexCodeBlob { get; }
     public EntryPointReflection Pixel { get; }
+    public ReadOnlySequence<byte> PixelCode { get; }
+    public ISlangBlob? PixelCodeBlob { get; }
     public ReadOnlySpan<VertexBufferLayout> VertexBuffers { get; }
     public ReadOnlySpan<VertexAttribute> VertexAttributes { get; }
     public PrimitiveTopology Topology { get; }
@@ -583,21 +609,13 @@ public readonly ref struct GraphicsPipelineDesc
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct ComputePipelineDesc(
-    IComponentType Program,
+    IComponentType SlangCode,
+    ShaderReflection Reflection,
     EntryPointReflection Compute,
+    ReadOnlySequence<byte> Code,
     string? Label = null,
-    ReadOnlyMemory<StaticSamplerBinding> StaticSamplers = default)
-{
-    public void Deconstruct(
-        out IComponentType program,
-        out EntryPointReflection compute,
-        out string? label)
-    {
-        program = Program;
-        compute = Compute;
-        label = Label;
-    }
-}
+    ReadOnlyMemory<StaticSamplerBinding> StaticSamplers = default,
+    ISlangBlob? CodeBlob = null);
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
@@ -608,10 +626,14 @@ public readonly record struct ComputePipelineDesc(
 public readonly ref struct MeshPipelineDesc
 {
     public MeshPipelineDesc(
-        IComponentType program,
+        IComponentType slangCode,
+        ShaderReflection reflection,
         EntryPointReflection mesh,
+        ReadOnlySequence<byte> meshCode,
         EntryPointReflection amplification,
+        ReadOnlySequence<byte> amplificationCode,
         EntryPointReflection pixel,
+        ReadOnlySequence<byte> pixelCode,
         in RasterizerState rasterizer,
         in MultisampleState multisample,
         in DepthStencilState depthStencil,
@@ -619,12 +641,22 @@ public readonly ref struct MeshPipelineDesc
         in AttachmentFormatSignature attachments,
         DynamicStates dynamicStates = DynamicStates.None,
         string? label = null,
-        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
+        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default,
+        ISlangBlob? meshCodeBlob = null,
+        ISlangBlob? amplificationCodeBlob = null,
+        ISlangBlob? pixelCodeBlob = null)
     {
-        Program = program;
+        SlangCode = slangCode;
+        Reflection = reflection;
         Mesh = mesh;
+        MeshCode = meshCode;
+        MeshCodeBlob = meshCodeBlob;
         Amplification = amplification;
+        AmplificationCode = amplificationCode;
+        AmplificationCodeBlob = amplificationCodeBlob;
         Pixel = pixel;
+        PixelCode = pixelCode;
+        PixelCodeBlob = pixelCodeBlob;
         Rasterizer = rasterizer;
         Multisample = multisample;
         DepthStencil = depthStencil;
@@ -635,10 +667,17 @@ public readonly ref struct MeshPipelineDesc
         StaticSamplers = staticSamplers;
     }
 
-    public IComponentType Program { get; }
+    public IComponentType SlangCode { get; }
+    public ShaderReflection Reflection { get; }
     public EntryPointReflection Mesh { get; }
+    public ReadOnlySequence<byte> MeshCode { get; }
+    public ISlangBlob? MeshCodeBlob { get; }
     public EntryPointReflection Amplification { get; }
+    public ReadOnlySequence<byte> AmplificationCode { get; }
+    public ISlangBlob? AmplificationCodeBlob { get; }
     public EntryPointReflection Pixel { get; }
+    public ReadOnlySequence<byte> PixelCode { get; }
+    public ISlangBlob? PixelCodeBlob { get; }
     public RasterizerState Rasterizer { get; }
     public MultisampleState Multisample { get; }
     public DepthStencilState DepthStencil { get; }

@@ -1,24 +1,47 @@
 namespace SomeEngine.RenderGraph;
 
+internal enum GraphIdentityDomain : byte
+{
+    Unscoped = 0,
+    Buffer = 1,
+    Texture = 2,
+    PersistentBindings = 3,
+    QueryPool = 4,
+    ShaderTable = 5,
+    View = 6,
+    Pass = 7,
+    Access = 8,
+    ExtensionPoint = 9,
+}
+
 internal readonly struct GraphIdentity : IEquatable<GraphIdentity>
 {
-    internal GraphIdentity(ulong owner, int slot, uint generation)
+    internal GraphIdentity(
+        ulong owner,
+        int slot,
+        uint generation,
+        GraphIdentityDomain domain = GraphIdentityDomain.Unscoped)
     {
         Owner = owner;
         Slot = slot;
         Generation = generation;
+        Domain = domain;
     }
 
     internal ulong Owner { get; }
     internal int Slot { get; }
     internal uint Generation { get; }
+    internal GraphIdentityDomain Domain { get; }
     internal bool IsValid => Owner != 0 && Slot >= 0 && Generation != 0;
 
     public bool Equals(GraphIdentity other) =>
-        Owner == other.Owner && Slot == other.Slot && Generation == other.Generation;
+        Owner == other.Owner &&
+        Slot == other.Slot &&
+        Generation == other.Generation &&
+        Domain == other.Domain;
 
     public override bool Equals(object? value) => value is GraphIdentity other && Equals(other);
-    public override int GetHashCode() => HashCode.Combine(Owner, Slot, Generation);
+    public override int GetHashCode() => HashCode.Combine(Owner, Slot, Generation, Domain);
     public static bool operator ==(GraphIdentity left, GraphIdentity right) => left.Equals(right);
     public static bool operator !=(GraphIdentity left, GraphIdentity right) => !left.Equals(right);
 }
@@ -218,12 +241,45 @@ public readonly struct GraphTextureAccessId : IEquatable<GraphTextureAccessId>
 public readonly struct PassRenderingRegionId : IEquatable<PassRenderingRegionId>
 {
     private readonly GraphIdentity _value;
-    internal PassRenderingRegionId(in GraphIdentity value) => _value = value;
+    internal PassRenderingRegionId(in GraphIdentity value, in GraphIdentity pass) { _value = value; Pass = pass; }
+    internal GraphIdentity Pass { get; }
     internal GraphIdentity Value => _value;
-    public bool Equals(PassRenderingRegionId other) => _value.Equals(other._value);
+    public bool Equals(PassRenderingRegionId other) => _value.Equals(other._value) && Pass.Equals(other.Pass);
     public override bool Equals(object? value) => value is PassRenderingRegionId other && Equals(other);
-    public override int GetHashCode() => _value.GetHashCode();
+    public override int GetHashCode() => HashCode.Combine(_value, Pass);
     public static bool operator ==(PassRenderingRegionId left, PassRenderingRegionId right) => left.Equals(right);
     public static bool operator !=(PassRenderingRegionId left, PassRenderingRegionId right) => !left.Equals(right);
 }
 
+/// <summary>A buffer slice supplied each frame to an existing graph connection.</summary>
+public sealed class GraphBufferInput
+{
+    internal GraphBufferInput(ulong graph, BufferUsages usages)
+    {
+        Graph = graph;
+        Usages = usages;
+    }
+
+    internal ulong Graph { get; }
+    internal BufferUsages Usages { get; }
+}
+
+/// <summary>A texture supplied each frame to existing views and pass accesses.</summary>
+public sealed class GraphTextureInput
+{
+    internal GraphTextureInput(ulong graph) => Graph = graph;
+    internal ulong Graph { get; }
+}
+
+/// <summary>A shader resource position whose current imported resource is supplied by each frame.</summary>
+public sealed class GraphParameterInput
+{
+    internal GraphParameterInput(ulong graph, ResourceBindingType type)
+    {
+        Graph = graph;
+        Type = type;
+    }
+
+    internal ulong Graph { get; }
+    public ResourceBindingType Type { get; }
+}

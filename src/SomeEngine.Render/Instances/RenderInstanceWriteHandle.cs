@@ -9,21 +9,15 @@ namespace SomeEngine.Render.Instances;
 /// </summary>
 public sealed class RenderInstanceWriteHandle : IDisposable
 {
-    private RenderInstanceStorageSystem? _owner;
     private RenderInstanceWriteScope? _scope;
     private RenderInstanceBatchComposition? _composition;
-    private readonly bool _registerBatch;
 
     internal RenderInstanceWriteHandle(
-        RenderInstanceStorageSystem owner,
         RenderInstanceWriteScope scope,
-        RenderInstanceBatchComposition composition,
-        bool registerBatch)
+        RenderInstanceBatchComposition composition)
     {
-        _owner = owner;
         _scope = scope;
         _composition = composition;
-        _registerBatch = registerBatch;
     }
 
     public bool IsActive => Volatile.Read(ref _composition) is not null;
@@ -55,34 +49,7 @@ public sealed class RenderInstanceWriteHandle : IDisposable
         RenderInstanceBatchComposition composition = RequireComposition();
         RenderInstanceWriteScope scope = _scope
             ?? throw new ObjectDisposedException(nameof(RenderInstanceWriteHandle));
-        RenderInstanceStorageSystem owner = _owner
-            ?? throw new ObjectDisposedException(nameof(RenderInstanceWriteHandle));
-
         RenderInstanceBatch batch = composition.Publish();
-        if (_registerBatch)
-        {
-            try
-            {
-                owner.RegisterBatch(batch);
-            }
-            catch (Exception registrationFailure)
-            {
-                try
-                {
-                    scope.ReleaseBatch(batch);
-                }
-                catch (Exception rollbackFailure)
-                {
-                    Close(scope);
-                    throw new AggregateException(
-                        "Render-instance publication and rollback both failed.",
-                        registrationFailure,
-                        rollbackFailure);
-                }
-                Close(scope);
-                throw;
-            }
-        }
 
         Close(scope);
         return batch;
@@ -93,7 +60,6 @@ public sealed class RenderInstanceWriteHandle : IDisposable
         RenderInstanceBatchComposition? composition =
             Interlocked.Exchange(ref _composition, null);
         _scope = null;
-        _owner = null;
         composition?.Dispose();
     }
 
@@ -106,6 +72,5 @@ public sealed class RenderInstanceWriteHandle : IDisposable
         if (!ReferenceEquals(Interlocked.Exchange(ref _scope, null), scope))
             throw new InvalidOperationException("Render-instance write-scope ownership was lost.");
         _composition = null;
-        _owner = null;
     }
 }

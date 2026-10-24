@@ -1,3 +1,4 @@
+using System.Buffers;
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Vulkan;
@@ -7,13 +8,14 @@ internal sealed unsafe partial class VulkanBackend
     private Pipeline CreateMeshPipelineCore(
         RhiDevice device,
         in MeshPipelineDesc desc,
-        SomeEngine.Graphics.PipelineCache? cache)
+        SomeEngine.Graphics.PipelineCache? cache,
+        IComponentType? capturedSlangCode = null)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         if (!nativeDevice.TryGetCapability(out MeshShaders? capability) || capability is null)
             throw new NotSupportedException("The Device was not created with MeshShaders support.");
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        ShaderReflection reflection = GetProgramReflection(desc.Program);
+        ShaderReflection reflection = desc.Reflection;
         var entries = new List<EntryPointReflection> { desc.Mesh };
         if (desc.Amplification != EntryPointReflection.Null) entries.Add(desc.Amplification);
         if (desc.Pixel != EntryPointReflection.Null) entries.Add(desc.Pixel);
@@ -22,56 +24,64 @@ internal sealed unsafe partial class VulkanBackend
             reflection,
             entries.ToArray(),
             desc.StaticSamplers);
-        var shaders = new List<MeshShaderStage>
-        {
-            new(CompileSpirv(
-                desc.Program,
-                reflection,
-                layout,
-                desc.Mesh,
-                SlangStage.Mesh,
-                "mesh"), ShaderStageFlags.MeshBitExt, desc.Mesh),
-        };
-        if (desc.Amplification != EntryPointReflection.Null)
-        {
-            shaders.Insert(0, new MeshShaderStage(
-                CompileSpirv(
-                    desc.Program,
-                    reflection,
-                    layout,
-                    desc.Amplification,
-                    SlangStage.Amplification,
-                    "task"),
-                ShaderStageFlags.TaskBitExt,
-                desc.Amplification));
-        }
-        if (desc.Pixel != EntryPointReflection.Null)
-        {
-            shaders.Add(new MeshShaderStage(
-                CompileSpirv(
-                    desc.Program,
-                    reflection,
-                    layout,
-                    desc.Pixel,
-                    SlangStage.Fragment,
-                    "fragment"),
-                ShaderStageFlags.FragmentBit,
-                desc.Pixel));
-        }
-        layout.ActivateEntryBindings(
-            shaders.Select(static value => new VulkanSpirvEntryBindings(
-                value.Entry,
-                value.Shader.ActiveBindings)).ToArray());
         VkPipeline native = default;
         VulkanPipeline? pipeline = null;
+        IComponentType? retainedCode = null;
         try
         {
+            var shaders = new List<MeshShaderStage>
+            {
+                new(CompileSpirv(
+                    reflection,
+                    layout,
+                    desc.Mesh,
+                    desc.MeshCode,
+                    desc.MeshCodeBlob,
+                    SlangStage.Mesh,
+                    "mesh"), ShaderStageFlags.MeshBitExt, desc.Mesh),
+            };
+            if (desc.Amplification != EntryPointReflection.Null)
+            {
+                shaders.Insert(0, new MeshShaderStage(
+                    CompileSpirv(
+                        reflection,
+                        layout,
+                        desc.Amplification,
+                        desc.AmplificationCode,
+                        desc.AmplificationCodeBlob,
+                        SlangStage.Amplification,
+                        "task"),
+                    ShaderStageFlags.TaskBitExt,
+                    desc.Amplification));
+            }
+            if (desc.Pixel != EntryPointReflection.Null)
+            {
+                shaders.Add(new MeshShaderStage(
+                    CompileSpirv(
+                        reflection,
+                        layout,
+                        desc.Pixel,
+                        desc.PixelCode,
+                        desc.PixelCodeBlob,
+                        SlangStage.Fragment,
+                        "fragment"),
+                    ShaderStageFlags.FragmentBit,
+                    desc.Pixel));
+            }
             if (nativeCache is null)
                 native = CreateMeshPipelineNative(nativeDevice, layout, shaders, desc, default);
             else
                 lock (nativeCache.Gate)
                     native = CreateMeshPipelineNative(nativeDevice, layout, shaders, desc, nativeCache.Native);
-            pipeline = new VulkanPipeline(nativeDevice, native, layout, PipelineType.Mesh, desc.Label);
+            retainedCode = capturedSlangCode ?? desc.SlangCode;
+            pipeline = new VulkanPipeline(
+                nativeDevice,
+                native,
+                layout,
+                retainedCode,
+                PipelineType.Mesh,
+                desc.Label);
+            retainedCode = null;
             return RegisterChildOrDispose(nativeDevice, pipeline);
         }
         catch
@@ -91,21 +101,14 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        RetainedSlangProgram program = RetainedSlangProgram.Capture(desc.Program);
-        try
-        {
-            var snapshot = new MeshPipelineSnapshot(desc, program.Program);
-            return EnqueuePipelineCreation(
-                nativeDevice,
-                nativeCache,
-                program,
-                () => snapshot.Create(this, nativeDevice, nativeCache));
-        }
-        catch
-        {
-            program.Dispose();
-            throw;
-        }
+        IComponentType slangCode = desc.SlangCode;
+        var data = new MeshPipelineData(desc);
+        return EnqueuePipelineCreation(
+            nativeDevice,
+            nativeCache,
+            slangCode,
+            data,
+            () => data.Create(this, nativeDevice, nativeCache, slangCode));
     }
 
     private VkPipeline CreateMeshPipelineNative(
@@ -246,10 +249,13 @@ internal sealed unsafe partial class VulkanBackend
         ShaderStageFlags Stage,
         EntryPointReflection Entry);
 
-    private sealed class MeshPipelineSnapshot
+    private sealed class MeshPipelineData
     {
-        private readonly IComponentType _program;
+        private readonly IComponentType _slangCode;
+        private readonly ShaderReflection _reflection;
         private readonly EntryPointReflection _mesh;
+        private readonly ReadOnlySequence<byte>[] _code;
+        private readonly ISlangBlob?[] _codeBlobs;
         private readonly EntryPointReflection _task;
         private readonly EntryPointReflection _pixel;
         private readonly RasterizerState _rasterizer;
@@ -264,11 +270,10 @@ internal sealed unsafe partial class VulkanBackend
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
 
-        internal MeshPipelineSnapshot(
-            in MeshPipelineDesc desc,
-            IComponentType program)
+        internal MeshPipelineData(in MeshPipelineDesc desc)
         {
-            _program = program;
+            _slangCode = desc.SlangCode;
+            _reflection = desc.Reflection;
             _mesh = desc.Mesh;
             _task = desc.Amplification;
             _pixel = desc.Pixel;
@@ -283,20 +288,27 @@ internal sealed unsafe partial class VulkanBackend
             _dynamic = desc.DynamicStates;
             _label = desc.Label;
             _staticSamplers = desc.StaticSamplers.ToArray();
+            _code = [desc.MeshCode, desc.AmplificationCode, desc.PixelCode];
+            _codeBlobs = [desc.MeshCodeBlob, desc.AmplificationCodeBlob, desc.PixelCodeBlob];
         }
 
         internal Pipeline Create(
             VulkanBackend backend,
             VulkanDevice device,
-            SomeEngine.Graphics.PipelineCache? cache)
+            SomeEngine.Graphics.PipelineCache? cache,
+            IComponentType capturedSlangCode)
         {
             BlendState blend = new(_blend, _independentBlend, _logic);
             AttachmentFormatSignature attachments = new(_colors, _depth, _multisample.SampleCount);
             MeshPipelineDesc desc = new(
-                _program,
+                _slangCode,
+                _reflection,
                 _mesh,
+                _code[0],
                 _task,
+                _code[1],
                 _pixel,
+                _code[2],
                 _rasterizer,
                 _multisample,
                 _depthStencil,
@@ -304,8 +316,16 @@ internal sealed unsafe partial class VulkanBackend
                 attachments,
                 _dynamic,
                 _label,
-                _staticSamplers);
-            return backend.CreateMeshPipelineCore(device, desc, cache);
+                _staticSamplers,
+                _codeBlobs[0],
+                _codeBlobs[1],
+                _codeBlobs[2]);
+            return backend.CreateMeshPipelineCore(
+                device,
+                desc,
+                cache,
+                capturedSlangCode);
         }
+
     }
 }

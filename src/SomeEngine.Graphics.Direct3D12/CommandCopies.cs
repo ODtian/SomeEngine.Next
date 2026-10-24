@@ -7,6 +7,7 @@ internal sealed unsafe partial class D3D12Backend
 {
     public void CopyBuffer(CommandContext context, in BufferCopy copy)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12Buffer source = RequireBuffer(copy.Source);
         D3D12Buffer destination = RequireBuffer(copy.Destination);
@@ -15,16 +16,17 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareCaptures(2, sparseGenerations: 2);
         command.Capture(source);
         command.Capture(destination);
-        command.List->CopyBufferRegion(
-            destination.Native,
-            copy.DestinationOffset,
-            source.Native,
-            copy.SourceOffset,
-            copy.Size);
+        CommandTransferTrace.CopyBufferRegion(
+                command.List, destination.Native,
+                    copy.DestinationOffset,
+                    source.Native,
+                    copy.SourceOffset,
+                    copy.Size);
     }
 
     public void CopyBufferToTexture(CommandContext context, in BufferTextureCopy copy)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12Buffer source = RequireBuffer(copy.Buffer);
         D3D12TextureResource destination = RequireTexture(copy.Texture);
@@ -43,17 +45,18 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareSwapchainUses(1);
         command.Capture(source);
         command.Capture(destination);
-        command.List->CopyTextureRegion(
-            &textureLocation,
-            copy.X,
-            copy.Y,
-            copy.Z,
-            &bufferLocation,
-            &sourceBox);
+        CommandTransferTrace.CopyTextureRegion(
+                command.List, &textureLocation,
+                    copy.X,
+                    copy.Y,
+                    copy.Z,
+                    &bufferLocation,
+                    &sourceBox);
     }
 
     public void CopyTextureToBuffer(CommandContext context, in BufferTextureCopy copy)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12Buffer destination = RequireBuffer(copy.Buffer);
         D3D12TextureResource source = RequireTexture(copy.Texture);
@@ -78,17 +81,18 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareSwapchainUses(1);
         command.Capture(source);
         command.Capture(destination);
-        command.List->CopyTextureRegion(
-            &bufferLocation,
-            0,
-            0,
-            0,
-            &textureLocation,
-            &sourceBox);
+        CommandTransferTrace.CopyTextureRegion(
+                command.List, &bufferLocation,
+                    0,
+                    0,
+                    0,
+                    &textureLocation,
+                    &sourceBox);
     }
 
     public void CopyTexture(CommandContext context, in TextureCopy copy)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12TextureResource source = RequireTexture(copy.Source);
         D3D12TextureResource destination = RequireTexture(copy.Destination);
@@ -122,6 +126,21 @@ internal sealed unsafe partial class D3D12Backend
                 "Texture copies require matching sample counts and compatible format families.",
                 nameof(copy));
         }
+        bool entireSubresource = source.Info.SampleCount > 1 ||
+            copy.SourceAspect != TextureAspects.Color;
+        if (entireSubresource &&
+            (copy.SourceX != 0 || copy.SourceY != 0 || copy.SourceZ != 0 ||
+             copy.DestinationX != 0 || copy.DestinationY != 0 || copy.DestinationZ != 0 ||
+             copy.Width != Math.Max(1u, source.Info.Width >> (int)copy.SourceMipLevel) ||
+             copy.Height != Math.Max(1u, source.Info.Height >> (int)copy.SourceMipLevel) ||
+             copy.Depth != Math.Max(1u, source.Info.Depth >> (int)copy.SourceMipLevel) ||
+             copy.Width != Math.Max(1u, destination.Info.Width >> (int)copy.DestinationMipLevel) ||
+             copy.Height != Math.Max(1u, destination.Info.Height >> (int)copy.DestinationMipLevel) ||
+             copy.Depth != Math.Max(1u, destination.Info.Depth >> (int)copy.DestinationMipLevel)))
+        {
+            throw new ArgumentException(
+                "Multisampled and depth/stencil copies must cover both complete subresources.", nameof(copy));
+        }
         TextureCopyLocation sourceLocation = CreateTextureCopyLocation(
             source,
             copy.SourceMipLevel,
@@ -143,17 +162,18 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareSwapchainUses(2);
         command.Capture(source);
         command.Capture(destination);
-        command.List->CopyTextureRegion(
-            &destinationLocation,
-            copy.DestinationX,
-            copy.DestinationY,
-            copy.DestinationZ,
-            &sourceLocation,
-            &sourceBox);
+        CommandTransferTrace.CopyTextureRegion(
+                command.List, &destinationLocation,
+                    copy.DestinationX,
+                    copy.DestinationY,
+                    copy.DestinationZ,
+                    &sourceLocation,
+                    entireSubresource ? null : &sourceBox);
     }
 
     public void ResolveTexture(CommandContext context, in TextureResolve resolve)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12TextureResource source = RequireTexture(resolve.Source);
         D3D12TextureResource destination = RequireTexture(resolve.Destination);
@@ -191,16 +211,16 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareSwapchainUses(2);
         command.Capture(source);
         command.Capture(destination);
-        command.List->ResolveSubresourceRegion(
-            destination.Native,
-            destinationSubresource,
-            0,
-            0,
-            source.Native,
-            sourceSubresource,
-            null,
-            FormatMappings.ToDxgi(resolve.Format),
-            resolveMode);
+        CommandTransferTrace.ResolveSubresourceRegion(
+                command.List, destination.Native,
+                    destinationSubresource,
+                    0,
+                    0,
+                    source.Native,
+                    sourceSubresource,
+                    null,
+                    FormatMappings.ToDxgi(resolve.Format),
+                    resolveMode);
     }
 
     public void ClearBuffer(
@@ -209,6 +229,7 @@ internal sealed unsafe partial class D3D12Backend
         in BufferRange range,
         uint value = 0)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12Buffer destination = RequireBuffer(buffer);
         BufferRange resolved = range.Resolve(destination.Info.Size);
@@ -218,12 +239,12 @@ internal sealed unsafe partial class D3D12Backend
             command.ReserveTransientOrdinaryData(resolved.Size);
         command.Capture(destination);
         upload.CommitPattern(value, resolved.Size);
-        command.List->CopyBufferRegion(
-            destination.Native,
-            resolved.Offset,
-            upload.Resource,
-            upload.Offset,
-            resolved.Size);
+        CommandTransferTrace.CopyBufferRegion(
+                command.List, destination.Native,
+                    resolved.Offset,
+                    upload.Resource,
+                    upload.Offset,
+                    resolved.Size);
     }
 
     public void ClearTexture(
@@ -232,6 +253,7 @@ internal sealed unsafe partial class D3D12Backend
         in TextureSubresourceRange range,
         in System.Numerics.Vector4 color)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12TextureResource destination = RequireTexture(texture);
         if ((destination.Info.Usages & TextureUsages.ColorAttachment) == 0)
@@ -278,11 +300,11 @@ internal sealed unsafe partial class D3D12Backend
                     destination,
                     description,
                     descriptor);
-                command.List->ClearRenderTargetView(
-                    descriptor,
-                    values,
-                    0,
-                    null);
+                CommandExecutionTrace.ClearRenderTargetView(
+                                command.List, descriptor,
+                                    values,
+                                    0,
+                                    null);
                 continue;
             }
             uint layerEnd = destination.Info.Dimension == TextureDimension.Texture3D
@@ -302,11 +324,11 @@ internal sealed unsafe partial class D3D12Backend
                     destination,
                     description,
                     descriptor);
-                command.List->ClearRenderTargetView(
-                    descriptor,
-                    values,
-                    0,
-                    null);
+                CommandExecutionTrace.ClearRenderTargetView(
+                                command.List, descriptor,
+                                    values,
+                                    0,
+                                    null);
             }
         }
     }
@@ -318,6 +340,7 @@ internal sealed unsafe partial class D3D12Backend
         float depth = 1,
         byte stencil = 0)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12TextureResource destination = RequireTexture(texture);
         if ((destination.Info.Usages & TextureUsages.DepthStencilAttachment) == 0)
@@ -376,13 +399,13 @@ internal sealed unsafe partial class D3D12Backend
                     destination,
                     description,
                     descriptor);
-                command.List->ClearDepthStencilView(
-                    descriptor,
-                    flags,
-                    depth,
-                    stencil,
-                    0,
-                    null);
+                CommandExecutionTrace.ClearDepthStencilView(
+                                command.List, descriptor,
+                                    flags,
+                                    depth,
+                                    stencil,
+                                    0,
+                                    null);
             }
         }
     }
@@ -411,16 +434,15 @@ internal sealed unsafe partial class D3D12Backend
                 nameof(copy));
         }
 
-        NativeResourceDesc description = texture.Native->GetDesc();
-        uint subresource = NativeSubresource(
-            texture.Info,
-            copy.MipLevel,
-            copy.ArrayLayer,
-            copy.Aspect);
+        NativeResourceDesc description = ResourceTrace.GetDesc(texture.Native);
+        uint plane = FormatMappings.PlaneIndex(texture.Info.Format, copy.Aspect);
         PlacedSubresourceFootprint footprint = GetNativeCopyFootprint(
             device,
             description,
-            subresource,
+            plane,
+            copy.Width,
+            copy.Height,
+            copy.Depth,
             copy.BufferOffset,
             out _,
             out _,
@@ -641,6 +663,8 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed partial class D3D12CommandSlot
     {
+        private CpuDescriptorHandle _temporaryRtvStart;
+        private CpuDescriptorHandle _temporaryDsvStart;
         private ID3D12DescriptorHeap* _temporaryRtvHeap;
         private ID3D12DescriptorHeap* _temporaryDsvHeap;
         private uint _temporaryRtvCapacity;
@@ -675,14 +699,18 @@ internal sealed unsafe partial class D3D12Backend
                 Guid iid = ID3D12DescriptorHeap.Guid;
                 ThrowIfFailed(
                     _context.NativeDevice,
-                    _context.NativeDevice.Native->CreateDescriptorHeap(
-                        &description,
+                        DeviceResourceTrace.CreateDescriptorHeap(
+                    _context.NativeDevice.Native, &description,
                         &iid,
                         (void**)&replacement),
                     NativeOperationType.Ordinary,
                     "ID3D12Device::CreateDescriptorHeap(command attachment arena)");
                 ID3D12DescriptorHeap* previous = heap;
                 heap = replacement;
+                if (type == DescriptorHeapType.Rtv)
+                    _temporaryRtvStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(heap);
+                else
+                    _temporaryDsvStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(heap);
                 capacity = required;
                 if (previous is not null)
                     _transientObjects.Add((nint)previous);
@@ -690,9 +718,8 @@ internal sealed unsafe partial class D3D12Backend
 
             uint first = used;
             used = required;
-            CpuDescriptorHandle start = heap->GetCPUDescriptorHandleForHeapStart();
-            uint increment = _context.NativeDevice.Native
-                ->GetDescriptorHandleIncrementSize(type);
+            CpuDescriptorHandle start = type == DescriptorHeapType.Rtv ? _temporaryRtvStart : _temporaryDsvStart;
+            uint increment = _context.NativeDevice.DescriptorIncrement(type);
             return new D3D12CpuDescriptorRange(
                 new CpuDescriptorHandle(start.Ptr + checked((nuint)(first * increment))),
                 increment,
@@ -739,14 +766,18 @@ internal sealed unsafe partial class D3D12Backend
             Guid iid = ID3D12DescriptorHeap.Guid;
             ThrowIfFailed(
                 _context.NativeDevice,
-                _context.NativeDevice.Native->CreateDescriptorHeap(
-                    &description,
+                    DeviceResourceTrace.CreateDescriptorHeap(
+                _context.NativeDevice.Native, &description,
                     &iid,
                     (void**)&replacement),
                 NativeOperationType.Ordinary,
                 "ID3D12Device::CreateDescriptorHeap(command attachment arena)");
             ID3D12DescriptorHeap* previous = heap;
             heap = replacement;
+            if (type == DescriptorHeapType.Rtv)
+                _temporaryRtvStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(heap);
+            else
+                _temporaryDsvStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(heap);
             capacity = required;
             if (previous is not null)
                 _transientObjects.Add((nint)previous);
@@ -756,12 +787,14 @@ internal sealed unsafe partial class D3D12Backend
         {
             ID3D12DescriptorHeap* rtv = _temporaryRtvHeap;
             _temporaryRtvHeap = null;
+            _temporaryRtvStart = default;
             if (rtv is not null)
-                _ = rtv->Release();
+                _ = ResourceTrace.Release(rtv);
             ID3D12DescriptorHeap* dsv = _temporaryDsvHeap;
             _temporaryDsvHeap = null;
+            _temporaryDsvStart = default;
             if (dsv is not null)
-                _ = dsv->Release();
+                _ = ResourceTrace.Release(dsv);
             _temporaryRtvCapacity = 0;
             _temporaryDsvCapacity = 0;
             ResetTemporaryAttachmentDescriptors();

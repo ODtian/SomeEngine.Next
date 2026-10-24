@@ -1,9 +1,12 @@
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Numerics;
+using SlangShaderSharp;
 using SomeEngine.Assets;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Materials;
 using SomeEngine.Serialization;
@@ -20,214 +23,87 @@ namespace SomeEngine.Render.Tests;
 public sealed class AssetLoaderTests
 {
     [Fact]
-    public async Task RequestShaderRejectsMissingSerializedEntryPointReflection()
+    public async Task IndependentDiskOpensShareIoAndCreatedTexturesOutliveTheLoaderAndStorage()
     {
         using var directory = new TemporaryDirectory();
-        AssetGuid guid = AssetGuid.New();
-        string packPath = directory.File("invalid-shader.sepack");
-        await new AssetPackBuilder()
-            .AddAsset(
-                guid.Value,
-                AssetType<Shader>.Name,
-                CookShader(guid, includeReflection: false),
-                Shader.SchemaFingerprint)
-            .PublishAsync(packPath);
-
-        AssetPack pack = await AssetPack.OpenAsync(packPath);
-        var storage = new AssetPackStorage(new AssetPackOverlay([pack]));
+        Guid id = Guid.NewGuid();
+        string path = directory.File("textures.sepack");
+        await new AssetPackBuilder().AddAsset(id, TextureAsset.FileType, CookTexture(id, [1, 2, 3, 4], [5, 6]), TextureAsset.SchemaHash).PublishAsync(path);
+        await using var storage = new CountingStorage(new AssetPackStorage([await AssetPack.OpenAsync(path)]));
         await using var loader = new AssetLoader(storage);
-
-        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => loader.LoadAsync(new AssetId<Shader>(guid)).AsTask());
-        Assert.Contains("serialized entry-point reflection", error.Message);
+        TextureAsset[] files = await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => TextureAsset.OpenAsync(loader, new AssetId<TextureAsset>(id)).AsTask()));
+        Assert.Equal(32, files.Distinct(ReferenceEqualityComparer.Instance).Count());
+        Assert.Equal(1, storage.OpenCount);
+        await using Texture first = await files[0].GetBlock<TextureBlock>().CreateAsync(files[0].Name, firstMip: 0);
+        await using Texture second = await files[1].GetBlock<TextureBlock>().CreateAsync(files[1].Name);
+        foreach (TextureAsset file in files) await file.DisposeAsync();
+        await loader.DisposeAsync();
+        await storage.DisposeAsync();
+        Assert.True(first.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, bytes.ToArray());
+        await first.DisposeAsync();
+        Assert.True(second.TryGetTile(TextureTiles.ChunkKey(1, 2, 0, 0, 0, 0), out var other));
+        Assert.Equal(new byte[] { 5, 6 }, other.ToArray());
     }
 
     [Fact]
-    public async Task ConcurrentMaterialInstanceParentTypeMismatchFailsClosedWithoutDeadlock()
+    public async Task DomainCreationUsesLazyFilesAndMaterialReferencesCreateActualObjects()
     {
         using var directory = new TemporaryDirectory();
-        AssetGuid firstGuid = AssetGuid.New();
-        AssetGuid secondGuid = AssetGuid.New();
-        string packPath = directory.File("material-cycle.sepack");
+        Guid textureId = Guid.NewGuid(), shaderId = Guid.NewGuid(), meshId = Guid.NewGuid(), materialId = Guid.NewGuid();
+        string path = directory.File("all.sepack");
         await new AssetPackBuilder()
-            .AddAsset(
-                firstGuid.Value,
-                AssetType<MaterialInstance>.Name,
-                CookMaterialInstance(firstGuid, secondGuid),
-                MaterialInstance.SchemaFingerprint)
-            .AddAsset(
-                secondGuid.Value,
-                AssetType<MaterialInstance>.Name,
-                CookMaterialInstance(secondGuid, firstGuid),
-                MaterialInstance.SchemaFingerprint)
-            .PublishAsync(packPath);
-
-        AssetPack pack = await AssetPack.OpenAsync(packPath);
-        var storage = new AssetPackStorage(new AssetPackOverlay([pack]));
-        await using var loader = new AssetLoader(storage);
-        Task<MaterialInstance> first = loader.LoadAsync(
-            new AssetId<MaterialInstance>(firstGuid)).AsTask();
-        Task<MaterialInstance> second = loader.LoadAsync(
-            new AssetId<MaterialInstance>(secondGuid)).AsTask();
-
-        Exception firstError = await Assert.ThrowsAnyAsync<Exception>(async () =>
-            await first.WaitAsync(TimeSpan.FromSeconds(2)));
-        Exception secondError = await Assert.ThrowsAnyAsync<Exception>(async () =>
-            await second.WaitAsync(TimeSpan.FromSeconds(2)));
-        Assert.True(firstError is InvalidDataException or InvalidOperationException);
-        Assert.True(secondError is InvalidDataException or InvalidOperationException);
-    }
-
-    [Fact]
-    public async Task TextureIsSingleFlightAndOwnsItsOneStreamedDocument()
-    {
-        using var directory = new TemporaryDirectory();
-        AssetGuid guid = AssetGuid.New();
-        string packPath = directory.File("custom-kind.sepack");
-        await new AssetPackBuilder()
-            .AddAsset(
-                guid.Value,
-                AssetType<Texture>.Name,
-                CookTexture(guid, [1, 2, 3, 4], [5, 6]),
-                Texture.SchemaFingerprint)
-            .PublishAsync(packPath);
-
-        AssetPack pack = await AssetPack.OpenAsync(packPath);
-        var storage = new CountingStorage(
-            new AssetPackStorage(new AssetPackOverlay([pack])));
-        Texture texture;
-        await using (var loader = new AssetLoader(storage))
-        {
-            Task<Texture>[] requested = Enumerable.Range(0, 32)
-                .Select(_ => loader.LoadAsync(new AssetId<Texture>(guid)).AsTask())
-                .ToArray();
-            Texture[] loaded = await Task.WhenAll(requested);
-
-            Assert.All(loaded, value => Assert.Same(loaded[0], value));
-            Assert.Equal(1, storage.OpenCount);
-            texture = loaded[0];
-            Assert.True(texture.IsStreamed);
-
-            using ResidentChunkLease lease = await texture.AcquireMipTileAsync(
-                mipLevel: 1,
-                arrayLayer: 2,
-                face: 0,
-                depthSlice: 0,
-                tileX: 0,
-                tileY: 0);
-            Assert.Equal([5, 6], lease.Memory.ToArray());
-
-            await using var foreign = new AssetLoader(new EmptyStorage());
-            Assert.False(foreign.TryGetAssetId(texture, out _));
-        }
-
-        await Assert.ThrowsAsync<ObjectDisposedException>(
-            async () => await texture.AcquireMipTileAsync(1, 2, 0, 0, 0, 0));
-    }
-
-    [Fact]
-    public async Task AssetLoaderLoadsEveryRuntimeTypeAndKeepsTextureDocumentLazy()
-    {
-        AssetGuid guid = AssetGuid.Parse("6575cc07-f3bf-465c-b976-4a3301525511");
-        AssetGuid materialGuid = AssetGuid.Parse("7575cc07-f3bf-465c-b976-4a3301525511");
-        AssetGuid shaderGuid = AssetGuid.Parse("8575cc07-f3bf-465c-b976-4a3301525511");
-        AssetGuid meshGuid = AssetGuid.Parse("9575cc07-f3bf-465c-b976-4a3301525511");
-        byte[] mipZero = [1, 3, 3, 7];
-        byte[] mipOne = [9, 2];
-        byte[] textureData = CookTexture(guid, mipZero, mipOne);
-        using var packDirectory = new TemporaryDirectory();
-        string packPath = packDirectory.File("runtime-assets.sepack");
-        await new AssetPackBuilder()
-            .AddAsset(guid.Value, AssetType<Texture>.Name, textureData, Texture.SchemaFingerprint)
-            .AddAsset(
-                materialGuid.Value,
-                AssetType<Material>.Name,
-                CookMaterial(materialGuid, guid),
-                Material.SchemaFingerprint)
-            .AddAsset(
-                shaderGuid.Value,
-                AssetType<Shader>.Name,
-                CookShader(shaderGuid),
-                Shader.SchemaFingerprint)
-            .AddAsset(
-                meshGuid.Value,
-                AssetType<Mesh>.Name,
-                CookMesh(meshGuid),
-                Mesh.SchemaFingerprint)
-            .PublishAsync(packPath);
-
-        AssetPack pack = await AssetPack.OpenAsync(packPath);
-        var storage = new AssetPackStorage(new AssetPackOverlay([pack]));
-        var residency = new ResidencyBudgetLedger(new ResidencyBudgets
-        {
-            CompressedBytes = 1024 * 1024,
-            DecodedCpuBytes = 1024 * 1024,
-            UploadStagingBytes = 1024 * 1024,
-            GpuBytes = 1024 * 1024,
-        });
-
-        AssetLoaderOptions options = AssetLoaderOptions.Empty.With(
-            new TextureLoadOptions(1024 * 1024, residency));
-        await using (var loader = new AssetLoader(storage, options))
-        {
-            Texture[] loaded = await Task.WhenAll(
-                loader.LoadAsync(new AssetId<Texture>(guid)).AsTask(),
-                loader.LoadAsync(new AssetId<Texture>(guid)).AsTask());
-
-            Assert.Same(loaded[0], loaded[1]);
-            Texture texture = loaded[0];
-            Assert.True(texture.IsStreamed);
-            Assert.Same(residency, texture.Residency);
-            IList<TextureMipTile> mipTiles = Assert.IsAssignableFrom<IList<TextureMipTile>>(
-                texture.MipTiles);
-            Assert.Equal(2, mipTiles.Count);
-            Assert.All(mipTiles, static tile => Assert.Null(tile.Payload));
-
-            using ResidentChunkLease lease = await texture.AcquireMipTileAsync(
-                mipLevel: 1,
-                arrayLayer: 2,
-                face: 0,
-                depthSlice: 0,
-                tileX: 0,
-                tileY: 0);
-            Assert.Equal(mipOne, lease.Memory.ToArray());
-            Assert.Equal(mipOne.Length, residency.Used(ResidencyClass.DecodedCpu));
-            Assert.True(texture.StreamingMetrics!.Snapshot().Requests >= 1);
-
-            Shader shader = await loader.LoadAsync(new AssetId<Shader>(shaderGuid));
-            Assert.True(shader.TryVariant(
-                "test",
-                "main",
-                SomeEngine.Assets.Schema.ShaderStage.Compute,
-                out ShaderBytecode shaderVariant));
-            Assert.Equal([4, 2, 1], shaderVariant.Data!.Value.ToArray());
-
-            Mesh mesh = await loader.LoadAsync(new AssetId<Mesh>(meshGuid));
-            Assert.True(mesh.IsStreamed);
-
-            Material material = await loader.LoadAsync(new AssetId<Material>(materialGuid));
-            TextureBinding binding = Assert.Single(material.Textures!);
-            Assert.Equal(guid.ToFlatString(), binding.TextureGuid);
-            Assert.Contains(
-                Enumerable.Range(0, material.SlotCount),
-                slot => ReferenceEquals(texture, material.GetSlotValue(checked((uint)slot))));
-
-            await using var foreignLoader = new AssetLoader(new EmptyStorage());
-            Assert.False(foreignLoader.TryGetAssetId(texture, out _));
-        }
-
+            .AddAsset(textureId, TextureAsset.FileType, CookTexture(textureId, [1, 3, 3, 7], [9, 2]), TextureAsset.SchemaHash)
+            .AddAsset(shaderId, ShaderAsset.FileType, CookShader(shaderId), ShaderAsset.SchemaHash)
+            .AddAsset(meshId, MeshAsset.FileType, CookMesh(meshId), MeshAsset.SchemaHash)
+            .AddAsset(materialId, MaterialAsset.FileType, CookMaterial(materialId, textureId), MaterialAsset.SchemaHash)
+            .PublishAsync(path);
+        await using var storage = new AssetPackStorage([await AssetPack.OpenAsync(path)]);
+        var residency = new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 1024 * 1024 });
+        await using var loader = new AssetLoader(storage, new() { MaxDecodedBytes = 1024 * 1024 });
+        await using TextureAsset textureFile = await TextureAsset.OpenAsync(loader, new AssetId<TextureAsset>(textureId));
+        await using Texture texture = await textureFile.GetBlock<TextureBlock>().CreateAsync(textureFile.Name);
+        Assert.Empty(textureFile.GetBlock<TextureBlock>().Chunks.Keys);
+        await using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(loader, new AssetId<ShaderAsset>(shaderId));
+        Shader shader = await TestShaderLoading.CreateAsync(
+            shaderFile,
+            SlangCompileTarget.Spirv);
+        int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+        Assert.True(shader.TryGetSlangEntry(
+            targetIndex,
+            "VSMain",
+            out EntryPointReflection shaderEntry));
+        Assert.True(
+            shader.GetSlangEntryBlob(targetIndex, shaderEntry) is not null ||
+            !shader.GetSlangEntryBytes(targetIndex, shaderEntry).IsEmpty);
+        await using MeshAsset meshFile = await MeshAsset.OpenAsync(loader, new AssetId<MeshAsset>(meshId));
+        var mesh = await meshFile.GetBlock<ClusterMeshBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
+        Assert.True(mesh.TryGetPage(0, out _));
+        await meshFile.GetBlock<ClusterMeshBlock>().LoadPagesAsync(mesh, [0]);
+        await using MaterialAsset materialFile = await MaterialAsset.OpenAsync(loader, new AssetId<MaterialAsset>(materialId));
+        using Material material = await materialFile.CreateAsync(loader);
+        StandardMaterial standard = Assert.IsType<StandardMaterial>(material);
+        Assert.NotNull(standard.AlbedoMap);
+        Assert.NotSame(texture, standard.AlbedoMap);
+        await loader.DisposeAsync();
+        await meshFile.DisposeAsync();
+        await storage.DisposeAsync();
+        byte[] page = new byte[mesh.GetPageByteLength(0)];
+        mesh.ReadPage(0, page);
+        Assert.NotEmpty(page);
+        await texture.DisposeAsync();
+        material.Dispose();
+        textureFile.Dispose();
+        shaderFile.Dispose();
+        materialFile.Dispose();
         Assert.Equal(0, residency.Used(ResidencyClass.DecodedCpu));
-        Assert.Equal(0, residency.Used(ResidencyClass.Compressed));
     }
 
-    private static byte[] CookTexture(AssetGuid guid, byte[] mipZero, byte[] mipOne)
+    private static byte[] CookTexture(Guid guid, byte[] mipZero, byte[] mipOne)
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.texture.asset");
-        AssetWriter.Write(new Texture
-        {
-            AssetGuid = guid.ToFlatString(),
-            Name = "stored-texture",
+        using var pixels = new TextureBlock {
             Width = 2,
             Height = 2,
             Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
@@ -246,7 +122,31 @@ public sealed class AssetLoaderTests
                     Height = 2,
                     RowPitch = 2,
                     SlicePitch = 4,
-                    Payload = mipZero,
+                    ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = (ulong)mipZero.Length,
+                },
+                new TextureMipTile
+                {
+                    MipLevel = 1,
+                    ArrayLayer = 0,
+                    Face = 0,
+                    DepthSlice = 0,
+                    Width = 1,
+                    Height = 1,
+                    RowPitch = 1,
+                    SlicePitch = 1,
+                    ChunkKey = TextureTiles.ChunkKey(1, 0, 0), DecodedLength = 1,
+                },
+                new TextureMipTile
+                {
+                    MipLevel = 1,
+                    ArrayLayer = 1,
+                    Face = 0,
+                    DepthSlice = 0,
+                    Width = 1,
+                    Height = 1,
+                    RowPitch = 1,
+                    SlicePitch = 1,
+                    ChunkKey = TextureTiles.ChunkKey(1, 1, 0, 0, 0, 0), DecodedLength = 1,
                 },
                 new TextureMipTile
                 {
@@ -258,108 +158,90 @@ public sealed class AssetLoaderTests
                     Height = 1,
                     RowPitch = 1,
                     SlicePitch = 2,
-                    Payload = mipOne,
+                    ChunkKey = TextureTiles.ChunkKey(1, 2, 0, 0, 0, 0), DecodedLength = (ulong)mipOne.Length,
                 },
             ],
-        }, path);
+        };
+        pixels.SetBytes(pixels.MipTiles[0].ChunkKey, mipZero);
+        pixels.SetBytes(pixels.MipTiles[1].ChunkKey, new byte[] { 0 });
+        pixels.SetBytes(pixels.MipTiles[2].ChunkKey, new byte[] { 0 });
+        pixels.SetBytes(pixels.MipTiles[3].ChunkKey, mipOne);
+        using var asset = new TextureAsset(guid) { Name = "stored-texture" };
+        asset.SetBlock(pixels);
+        asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }
 
-    private static byte[] CookMaterial(AssetGuid guid, AssetGuid textureGuid)
+    private static byte[] CookMaterial(Guid guid, Guid textureGuid)
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.material.asset");
-        AssetWriter.Write(new Material
-        {
-            AssetGuid = guid.ToFlatString(),
+        using var material = new StandardMaterialAsset(guid) {
             Name = "stored-material",
-            Passes = [],
-            Textures =
-            [
-                new TextureBinding
-                {
-                    Name = "AlbedoMap",
-                    TextureGuid = textureGuid.ToFlatString(),
-                },
-            ],
-            Scalars = [],
-        }, path);
+        };
+        _ = new StandardMaterialParameters(material.GetBlock<MaterialBlock>()) { AlbedoMap = new(textureGuid) };
+        ((material)).SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }
 
-    private static byte[] CookShader(AssetGuid guid, bool includeReflection = true)
+    private static byte[] CookShader(Guid guid)
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.shader.asset");
-        AssetWriter.Write(new Shader
-        {
-            AssetGuid = guid.ToFlatString(),
-            Name = "stored-shader",
-            Variants =
-            [
-                new ShaderBytecode
-                {
-                    Backend = "test",
-                    EntryPoint = "main",
-                    Stage = SomeEngine.Assets.Schema.ShaderStage.Compute,
-                    Data = new byte[] { 4, 2, 1 },
-                },
-            ],
-            EntryPointReflections = includeReflection
-                ?
-                [
-                    new ShaderEntryPointReflection
-                    {
-                        Backend = "test",
-                        EntryPoint = "main",
-                        Stage = SomeEngine.Assets.Schema.ShaderStage.Compute,
-                    },
-                ]
-                : [],
-        }, path);
+        string sourcePath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Content",
+            "Shaders",
+            "hello_triangle.shader.asset");
+        using ShaderAsset source = ShaderAsset.OpenAsync(sourcePath).AsTask().GetAwaiter().GetResult();
+        using ShaderAsset asset = source.CreateCopy(guid);
+        asset.Name = "stored-shader";
+        asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }
 
-    private static byte[] CookMaterialInstance(AssetGuid guid, AssetGuid parentGuid)
-    {
-        using var directory = new TemporaryDirectory();
-        string path = directory.File("cycle.materialinstance.asset");
-        AssetWriter.Write(new MaterialInstance
-        {
-            AssetGuid = guid.ToFlatString(),
-            ParentGuid = parentGuid.ToFlatString(),
-            Overrides = [],
-            ScalarOverrides = [],
-        }, path);
-        return File.ReadAllBytes(path);
-    }
-
-    private static byte[] CookMesh(AssetGuid guid)
+    private static byte[] CookMesh(Guid guid)
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.mesh.asset");
-        int pageSize = checked(MeshPageHeader.Size + GPUCluster.SizeInBytes);
+        const string vertexEncoding = "someengine.vertex.standard.cluster.v1";
+        const int vertexBlobBytes = 1;
+        const int indexBytes = 3;
+        int pageSize = checked(MeshPageHeader.Size + PackedCluster.SizeInBytes
+            + vertexBlobBytes + indexBytes);
         byte[] payload = new byte[checked(pageSize + Marshal.SizeOf<ClusterBVHNode>())];
         var header = new MeshPageHeader
         {
             ClusterCount = 1,
+            TotalVertexCount = 1,
+            TotalTriangleCount = 1,
+            VertexBlobBytes = vertexBlobBytes,
             ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = checked((uint)pageSize),
-            AttributesOffset = checked((uint)pageSize),
-            IndicesOffset = checked((uint)pageSize),
-            VertexStride = 32,
-            QuantStep = 1f,
+            VertexBlobsOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes,
+            IndicesOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes + vertexBlobBytes,
+            ExtensionDataOffset = checked((uint)pageSize),
+            VertexEncodingHash = VertexEncodingCompatibility.Hash(vertexEncoding),
         };
         MemoryMarshal.Write(payload.AsSpan(0, MeshPageHeader.Size), in header);
-        AssetWriter.Write(new Mesh
+        var cluster = new PackedCluster
         {
-            AssetGuid = guid.ToFlatString(),
-            Name = "stored-mesh",
-            BvhOffset = checked((ulong)pageSize),
-            Payload = payload,
-            VertexStride = 32,
-            Regions = [],
-        }, path);
+            VertexBlobSize = vertexBlobBytes,
+            ExtensionOffset = uint.MaxValue,
+            LODRadius = 1,
+            BoundMax = Vector3.One,
+            PackedCounts = 1u | (1u << 8),
+            MaterialTableOffset = uint.MaxValue,
+        };
+        MemoryMarshal.Write(
+            payload.AsSpan(MeshPageHeader.Size, PackedCluster.SizeInBytes),
+            in cluster);
+        using var asset = new MeshAsset(guid) { Name = "stored-mesh" };
+        using var geometry = new MeshBlock();
+        using var clusters = new ClusterMeshBlock { VertexEncoding = vertexEncoding };
+        clusters.SetPayload(payload, (ulong)pageSize);
+        asset.SetBlock(geometry);
+        asset.SetBlock(clusters);
+        asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }
 
@@ -386,7 +268,7 @@ public sealed class AssetLoaderTests
 
     private sealed class EmptyStorage : IAssetStorage
     {
-        public bool TryFind(AssetGuid assetGuid, out AssetEntry entry)
+        public bool TryFind(Guid assetGuid, out AssetEntry entry)
         {
             entry = default;
             return false;
@@ -406,7 +288,7 @@ public sealed class AssetLoaderTests
         private int _openCount;
 
         public int OpenCount => Volatile.Read(ref _openCount);
-        public bool TryFind(AssetGuid assetGuid, out AssetEntry entry)
+        public bool TryFind(Guid assetGuid, out AssetEntry entry)
             => _inner.TryFind(assetGuid, out entry);
 
         public async ValueTask<IRangeSource> OpenAsync(

@@ -35,6 +35,5 @@ public struct SystemSlot
         _jobLifetime ?? throw new InvalidOperationException(
             "SystemSlot is not owned by a SystemGroup.");
 
-    internal readonly int TrackedJobRootCount => RequireJobLifetime().TrackedRootCount;
 }
 

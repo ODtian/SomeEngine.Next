@@ -6,15 +6,19 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Shared/HardwareRowsDiscoverer.cs" Link="HardwareRowsDiscoverer.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../tools/SomeEngine.Trace/SomeEngine.Trace.csproj" />
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="../../src/SomeEngine.RenderGraph.Diagnostics/SomeEngine.RenderGraph.Diagnostics.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Graphics.Vulkan/SomeEngine.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Graphics.Validation/SomeEngine.Graphics.Validation.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../assets/Shaders/hello_triangle.shader.asset"

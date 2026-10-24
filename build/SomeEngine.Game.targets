@@ -1,0 +1,44 @@
+<Project>
+  <PropertyGroup Condition="'$(SomeEngineDevelopment)' == 'true'">
+    <DefineConstants>$(DefineConstants);SOMEENGINE_DEVELOPMENT</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Runtime/SomeEngine.Runtime.csproj"
+                      GlobalPropertiesToRemove="PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Generators/SomeEngine.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false"
+                      GlobalPropertiesToRemove="PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+    <Content Include="$(SomeEngineProjectRoot)/assets/**/*.asset"
+             Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(SomeEngineProjectRoot)/Library/AssetManifest/**/*"
+             Link="Library/AssetManifest/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(SomeEnginePath)/external/dxc/bin/x64/dxcompiler.dll;$(SomeEnginePath)/external/dxc/bin/x64/dxil.dll"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup Condition="'$(SomeEngineDevelopment)' == 'true'">
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj"
+                      GlobalPropertiesToRemove="PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+  </ItemGroup>
+  <Target Name="GenerateGameProjectPaths" BeforeTargets="CoreCompile" Condition="'$(SomeEngineDevelopment)' == 'true'">
+    <PropertyGroup>
+      <_GameProjectPathsSource>$(IntermediateOutputPath)SomeEngine.ProjectPaths.g.cs</_GameProjectPathsSource>
+      <_GameRoot>$([System.String]::Copy('$(SomeEngineProjectRoot)').Replace('\', '/'))</_GameRoot>
+      <_EngineShaders>$([System.String]::Copy('$(SomeEnginePath)/assets/Shaders').Replace('\', '/'))</_EngineShaders>
+    </PropertyGroup>
+    <ItemGroup>
+      <_GameProjectPathsLine Include="namespace $(RootNamespace)%3B" />
+      <_GameProjectPathsLine Include="public static class ProjectPaths" />
+      <_GameProjectPathsLine Include="{" />
+      <_GameProjectPathsLine Include="    public const string Root = &quot;$(_GameRoot)&quot;%3B" />
+      <_GameProjectPathsLine Include="    public const string EngineShaders = &quot;$(_EngineShaders)&quot;%3B" />
+      <_GameProjectPathsLine Include="}" />
+      <Compile Include="$(_GameProjectPathsSource)" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_GameProjectPathsSource)" Lines="@(_GameProjectPathsLine)"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+</Project>

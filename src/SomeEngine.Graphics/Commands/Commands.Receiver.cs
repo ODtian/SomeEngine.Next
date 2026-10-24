@@ -8,6 +8,17 @@ public partial interface IGraphicsBackend
     CommandContext CreateCommandContext(Device device, in CommandContextDesc desc);
     void Begin(CommandContext context, in CommandRecordingDesc desc = default);
     RecordedCommands End(CommandContext context);
+    /// <summary>
+    /// Attempts to issue the last completed recording again without running its encoder.
+    /// The caller must keep command arguments unchanged. Buffer contents may change after
+    /// their preceding GPU use completes. A false result leaves the context ready for Begin.
+    /// Backends may decline; each successful call returns a new submission ticket.
+    /// </summary>
+    bool TryRepeatCommands(CommandContext context, out RecordedCommands commands)
+    {
+        commands = default;
+        return false;
+    }
     RecordedBundle EndBundle(CommandContext context);
     void Discard(CommandContext context);
 

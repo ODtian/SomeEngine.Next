@@ -1,8 +1,8 @@
 // Optional MaterialBindless shader contract. The renderer supplies materialBase;
-// generated material code supplies its material-local slot constants.
+// generated material code supplies compact offsets owned by this extension.
 StructuredBuffer<uint> MaterialBindlessValues;
 
-uint getMaterialDescriptor(uint materialBase, uint materialSlot)
+uint getMaterialDescriptor(uint materialBase, uint valueOffset)
 {
-    return MaterialBindlessValues[materialBase + materialSlot];
+    return MaterialBindlessValues[materialBase + valueOffset];
 }

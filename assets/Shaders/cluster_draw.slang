@@ -1,34 +1,11 @@
 #include "vertex_evaluate.slang"
 
-struct DrawUniforms
-{
-    float4x4 ViewProj;
-    float4x4 View;
-    uint DebugMode;
-    uint ScreenWidth;
-    uint ScreenHeight;
-};
-
-struct DrawDispatchUniforms
-{
-    uint DrawArgsByteOffset;
-    uint Pad0;
-    uint Pad1;
-    uint Pad2;
-};
-
-ConstantBuffer<DrawUniforms> Uniforms;
-ConstantBuffer<DrawDispatchUniforms> DispatchUniforms;
-
 ByteAddressBuffer PageHeap;
-StructuredBuffer<uint2> BinnedClusterIndexBuffer;
-StructuredBuffer<uint4> VisibleClusters;
-ByteAddressBuffer VisibleClusterMeta;
 
-ByteAddressBuffer DeformCache;
-StructuredBuffer<uint> CacheOffsets;
+#include "cluster_draw_core.slang"
+#include "cluster_policy_raster_output.slang"
 
-static const uint DRAW_CACHE_OFFSET_INVALID = 0xFFFFFFFDu;
+typedef OpaqueVisibilityEvaluate<StaticVertexEval.Vertex> DefaultVisibilityEvaluate;
 
 struct PSInput
 {
@@ -37,134 +14,8 @@ struct PSInput
     float2 UV : TEXCOORD0;
     float3 Color : COLOR0;
     nointerpolation uint ClusterID : CLUSTER_ID;
+    uint RenderTargetIndex : SV_RenderTargetArrayIndex;
 };
-
-struct PSVisBufferInput
-{
-    float4 Pos : SV_POSITION;
-    nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
-    nointerpolation uint TriangleID : TRIANGLE_ID;
-};
-
-uint GetBinnedClusterIndex(uint instanceID)
-{
-    DrawInstancedArgs args = LoadDrawInstancedArgs(VisibleClusterMeta, DispatchUniforms.DrawArgsByteOffset);
-    return args.StartInstance + instanceID;
-}
-
-uint LoadLocalVertexIndex(uint pageOffset, uint idxOffset, uint tStart, uint triIdx, uint corner)
-{
-    uint indexByteAddr = pageOffset + idxOffset + tStart + triIdx * 3u + corner;
-    uint alignedAddr = indexByteAddr & ~3u;
-    uint shift = (indexByteAddr & 3u) * 8u;
-    uint packedIndex = PageHeap.Load(alignedAddr);
-    return (packedIndex >> shift) & 0xFFu;
-}
-
-bool DecodeDrawVertex(
-    uint vertexID,
-    uint instanceID,
-    out uint visibleClusterIndex,
-    out uint clusterID,
-    out uint realInstanceID,
-    out uint lodLevel,
-    out uint triangleID,
-    out uint localVertIdx,
-    out uint pageOffset,
-    out uint posOffset,
-    out uint attrOffset,
-    out uint idxOffset,
-    out uint totalVertexCount,
-    out uint vStart,
-    out uint vertexCount,
-    out int3 intBase)
-{
-    uint binnedIndex = GetBinnedClusterIndex(instanceID);
-    uint2 binEntry = BinnedClusterIndexBuffer[binnedIndex];
-    visibleClusterIndex = binEntry.x;
-    uint packedRange = binEntry.y;
-
-    uint4 req = VisibleClusters[visibleClusterIndex];
-    pageOffset = req.x;
-    clusterID = req.y;
-    realInstanceID = req.z;
-    totalVertexCount = PageHeap.Load(pageOffset + 4u);
-
-    uint4 header1 = PageHeap.Load4(pageOffset + 16u);
-    posOffset = header1.y;
-    attrOffset = header1.z;
-    idxOffset = header1.w;
-
-    uint tStart;
-    uint packedCounts;
-    LoadClusterInfo(PageHeap, pageOffset, clusterID, intBase, vStart, tStart, packedCounts);
-    vertexCount = packedCounts & 0xFFu;
-    lodLevel = (packedCounts >> 16u) & 0xFFu;
-
-    uint rangeStart = (packedRange >> 16u) & 0xFFFFu;
-    uint rangeEnd = packedRange & 0xFFFFu;
-    uint batchTriCount = rangeEnd > rangeStart ? rangeEnd - rangeStart : 0u;
-
-    triangleID = rangeStart + vertexID / 3u;
-    uint corner = vertexID % 3u;
-    localVertIdx = 0u;
-
-    if (vertexID >= batchTriCount * 3u)
-        return false;
-
-    localVertIdx = LoadLocalVertexIndex(pageOffset, idxOffset, tStart, triangleID, corner);
-    return true;
-}
-
-VertexEvalContext MakeDrawVertexEvalContext(
-    uint pageOffset,
-    uint posOffset,
-    uint attrOffset,
-    uint idxOffset,
-    uint totalVertexCount,
-    uint vStart,
-    int3 intBase,
-    uint localVertIdx,
-    uint instanceID,
-    RenderInstanceTransform transform)
-{
-    VertexEvalContext ctx;
-    ctx.pageHeap = PageHeap;
-    ctx.pageOffset = pageOffset;
-    ctx.posOffset = posOffset;
-    ctx.attrOffset = attrOffset;
-    ctx.vertexStride = PageHeap.Load(pageOffset + 44u);
-    ctx.idxOffset = idxOffset;
-    ctx.vStart = vStart;
-    ctx.totalVertexCount = totalVertexCount;
-    ctx.localVertIdx = localVertIdx;
-    ctx.intBase = intBase;
-    ctx.instanceID = instanceID;
-    ctx.transform = transform;
-    ctx.IsPreviousFrame = 0u;
-    return ctx;
-}
-
-void LoadDrawDeformedVertex<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    bool useDeformCache,
-    uint visibleClusterIndex,
-    uint vertexCount,
-    VertexEvalContext ctx,
-    out TVE.DeformedVertex vertex)
-{
-    if (useDeformCache)
-    {
-        uint cacheBaseByte = CacheOffsets[visibleClusterIndex];
-        if (cacheBaseByte >= DRAW_CACHE_OFFSET_INVALID)
-            vertex = evaluator.evaluate(ctx);
-        else
-            vertex = evaluator.readCache(DeformCache, cacheBaseByte, vertexCount, ctx.localVertIdx);
-        return;
-    }
-
-    vertex = evaluator.evaluate(ctx);
-}
 
 void WriteInvalidPSInput(out PSInput output)
 {
@@ -173,8 +24,11 @@ void WriteInvalidPSInput(out PSInput output)
     output.UV = float2(0.0);
     output.Color = float3(0.0);
     output.ClusterID = 0u;
+    output.RenderTargetIndex = 0u;
 }
 
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
 [shader("vertex")]
 PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
 {
@@ -183,17 +37,13 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
     uint visibleClusterIndex;
     uint clusterID;
     uint realInstanceID;
+    uint viewIndex;
     uint lodLevel;
     uint triangleID;
     uint localVertIdx;
-    uint pageOffset;
-    uint posOffset;
-    uint attrOffset;
-    uint idxOffset;
-    uint totalVertexCount;
-    uint vStart;
+    uint vertexBlobAddress;
+    uint vertexBlobSize;
     uint vertexCount;
-    int3 intBase;
 
     if (!DecodeDrawVertex(
             vertexID,
@@ -201,17 +51,13 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
             visibleClusterIndex,
             clusterID,
             realInstanceID,
+            viewIndex,
             lodLevel,
             triangleID,
             localVertIdx,
-            pageOffset,
-            posOffset,
-            attrOffset,
-            idxOffset,
-            totalVertexCount,
-            vStart,
-            vertexCount,
-            intBase))
+            vertexBlobAddress,
+            vertexBlobSize,
+            vertexCount))
     {
         WriteInvalidPSInput(output);
         return output;
@@ -219,46 +65,69 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
 
     StaticVertexEval eval;
     VertexEvalContext ctx = MakeDrawVertexEvalContext(
-        pageOffset,
-        posOffset,
-        attrOffset,
-        idxOffset,
-        totalVertexCount,
-        vStart,
-        intBase,
+        vertexBlobAddress,
+        vertexBlobSize,
         localVertIdx,
         realInstanceID,
         GetCurrentInstanceTransform(realInstanceID));
-    StaticVertexEval.DeformedVertex vertex;
-    LoadDrawDeformedVertex(eval, false, visibleClusterIndex, vertexCount, ctx, vertex);
+    StaticVertexEval.Vertex vertex = EvaluateDrawVertex(eval, ctx);
 
-    output.Pos = mul(float4(eval.getPosition(vertex), 1.0), Uniforms.ViewProj);
+    ClusterViewUniforms view = LoadClusterView(
+        HardwareRasterViews,
+        HardwareRasterPolicyViews,
+        viewIndex);
+    output.Pos = mul(
+        float4(eval.getPosition(vertex), 1.0),
+        view.ViewProj);
     output.ClusterID = clusterID;
     output.Normal = vertex.worldNormal;
     output.UV = vertex.uv0;
+    output.RenderTargetIndex = view.TargetPolicy == 0u
+        ? view.TargetViewIndex
+        : 0u;
 
-    if (Uniforms.DebugMode == 2u)
-    {
-        float l = float(lodLevel) / 10.0;
-        output.Color = float3(l, 1.0 - l, 0.0);
-    }
-    else
-    {
-        output.Color = vertex.worldNormal * 0.5 + 0.5;
-    }
+    output.Color = vertex.worldNormal * 0.5 + 0.5;
 
     return output;
+}
+
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
+[shader("mesh")]
+[outputtopology("triangle")]
+[numthreads(32, 1, 1)]
+void MSVisBuffer(
+    uint3 groupId : SV_GroupID, uint lane : SV_GroupIndex,
+    out vertices ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertices[32],
+    out indices uint3 indices[32],
+    out primitives ClusterMeshPrimitive primitives[32])
+{
+    StaticVertexEval vertex;
+    DefaultVisibilityEvaluate visibility;
+    BuildVisBufferMesh<StaticVertexEval, DefaultVisibilityEvaluate>(
+        vertex, visibility, groupId, lane, vertices, indices, primitives);
+}
+
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
+[shader("mesh")]
+[outputtopology("triangle")]
+[numthreads(32, 1, 1)]
+void MSVisBufferMeshlet(
+    uint3 groupId : SV_GroupID, uint lane : SV_GroupIndex,
+    out vertices ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertices[64],
+    out indices uint3 indices[128],
+    out primitives ClusterMeshPrimitive primitives[128])
+{
+    StaticVertexEval vertex;
+    DefaultVisibilityEvaluate visibility;
+    BuildVisBufferMeshlet<StaticVertexEval, DefaultVisibilityEvaluate>(
+        vertex, visibility, groupId, lane, vertices, indices, primitives);
 }
 
 [shader("pixel")]
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    if (Uniforms.DebugMode == 1u)
-    {
-        uint h = PCGHash(input.ClusterID);
-        return float4(ColorFromHash(h), 1.0);
-    }
-
     return float4(input.Color, 1.0);
 }
 
@@ -268,93 +137,165 @@ float4 PSOverdraw(PSInput input) : SV_TARGET
     return float4(0.05, 0.05, 0.05, 1.0);
 }
 
-PSVisBufferInput BuildVisBufferVertex<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    bool useDeformCache,
-    uint vertexID,
-    uint instanceID)
+
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
+[shader("vertex")]
+ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> VSVisBuffer(
+    uint vertexID: SV_VertexID,
+    uint instanceID: SV_InstanceID)
 {
-    PSVisBufferInput output;
+    StaticVertexEval eval;
+    DefaultVisibilityEvaluate visibility;
+    return BuildVisBufferVertex<StaticVertexEval, DefaultVisibilityEvaluate>(
+        eval, visibility, vertexID, instanceID);
+}
 
-    uint visibleClusterIndex;
-    uint clusterID;
-    uint realInstanceID;
-    uint lodLevel;
-    uint triangleID;
-    uint localVertIdx;
-    uint pageOffset;
-    uint posOffset;
-    uint attrOffset;
-    uint idxOffset;
-    uint totalVertexCount;
-    uint vStart;
-    uint vertexCount;
-    int3 intBase;
-
-    output.VisibleClusterIndex = 0u;
-    output.TriangleID = 0u;
-
-    if (!DecodeDrawVertex(
-            vertexID,
-            instanceID,
-            visibleClusterIndex,
-            clusterID,
-            realInstanceID,
-            lodLevel,
-            triangleID,
-            localVertIdx,
-            pageOffset,
-            posOffset,
-            attrOffset,
-            idxOffset,
-            totalVertexCount,
-            vStart,
-            vertexCount,
-            intBase))
+[ForceInline]
+void EvaluatePSVisBufferImageAtomic64(
+    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+{
+    DefaultVisibilityEvaluate visibility;
+    VisibilityPixelResult pixelResult =
+        EvaluateHardwareRasterPixel<StaticVertexEval.Vertex, DefaultVisibilityEvaluate>(
+            visibility, input);
+    if (pixelResult.Visible == 0u)
+        discard;
+    ClusterViewUniforms view = LoadClusterView(
+        HardwareRasterViews,
+        HardwareRasterPolicyViews,
+        input.ViewIndex);
+    if (view.TargetPolicy != 0u)
     {
-        output.Pos = asfloat(uint4(0x7FC00000, 0x7FC00000, 0x7FC00000, 0x7FC00000));
-        return output;
+        if (!ClusterRasterTargetWindowContainsPixel(
+                input.VisibleClusterIndex,
+                view.TargetViewIndex,
+                int2(input.Pos.xy)))
+            discard;
+        WriteRasterTargetDepth(
+            int2(input.Pos.xy),
+            view.TargetViewIndex,
+            saturate(pixelResult.Depth));
+        discard;
     }
+    WriteVisibilityWinnerImage(
+        int2(input.Pos.xy),
+        view.TargetViewIndex,
+        saturate(pixelResult.Depth),
+        EncodeVisBuffer(input.VisibleClusterIndex, input.TriangleID));
+}
 
-    VertexEvalContext ctx = MakeDrawVertexEvalContext(
-        pageOffset,
-        posOffset,
-        attrOffset,
-        idxOffset,
-        totalVertexCount,
-        vStart,
-        intBase,
-        localVertIdx,
-        realInstanceID,
-        GetCurrentInstanceTransform(realInstanceID));
-    TVE.DeformedVertex vertex;
-    LoadDrawDeformedVertex(evaluator, useDeformCache, visibleClusterIndex, vertexCount, ctx, vertex);
+[ForceInline]
+void EvaluatePSVisBufferBufferAtomic64(
+    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+{
+    DefaultVisibilityEvaluate visibility;
+    VisibilityPixelResult pixelResult =
+        EvaluateHardwareRasterPixel<StaticVertexEval.Vertex, DefaultVisibilityEvaluate>(
+            visibility, input);
+    if (pixelResult.Visible == 0u)
+        discard;
+    ClusterViewUniforms view = LoadClusterView(
+        HardwareRasterViews,
+        HardwareRasterPolicyViews,
+        input.ViewIndex);
+    if (view.TargetPolicy != 0u)
+    {
+        if (!ClusterRasterTargetWindowContainsPixel(
+                input.VisibleClusterIndex,
+                view.TargetViewIndex,
+                int2(input.Pos.xy)))
+            discard;
+        WriteRasterTargetDepth(int2(input.Pos.xy), view.TargetViewIndex, saturate(pixelResult.Depth));
+        discard;
+    }
+    WriteVisibilityWinnerBuffer(
+        int2(input.Pos.xy),
+        view.TargetViewIndex,
+        HardwareRasterUniformData.ScreenWidth,
+        HardwareRasterUniformData.ScreenHeight,
+        saturate(pixelResult.Depth),
+        EncodeVisBuffer(input.VisibleClusterIndex, input.TriangleID));
+}
 
-    output.Pos = mul(float4(evaluator.getPosition(vertex), 1.0), Uniforms.ViewProj);
-    output.VisibleClusterIndex = visibleClusterIndex;
-    output.TriangleID = triangleID;
+[ForceInline]
+PSVisBufferOutput EvaluatePSVisBufferHardwareOnly(
+    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+{
+    DefaultVisibilityEvaluate visibility;
+    VisibilityPixelResult pixelResult =
+        EvaluateHardwareRasterPixel<StaticVertexEval.Vertex, DefaultVisibilityEvaluate>(
+            visibility, input);
+    if (pixelResult.Visible == 0u)
+        discard;
+    ClusterViewUniforms view = LoadClusterView(
+        HardwareRasterViews,
+        HardwareRasterPolicyViews,
+        input.ViewIndex);
+    if (view.TargetPolicy != 0u)
+    {
+        if (!ClusterRasterTargetWindowContainsPixel(
+                input.VisibleClusterIndex,
+                view.TargetViewIndex,
+                int2(input.Pos.xy)))
+            discard;
+        WriteRasterTargetDepth(
+            int2(input.Pos.xy),
+            view.TargetViewIndex,
+            saturate(pixelResult.Depth));
+        discard;
+    }
+    PSVisBufferOutput output;
+    output.Visibility = EncodeVisBuffer(input.VisibleClusterIndex, input.TriangleID);
+    output.Depth = saturate(pixelResult.Depth);
     return output;
 }
 
-[MaterialTarget("cluster.raster.vs")]
-[shader("vertex")]
-PSVisBufferInput VSVisBuffer(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
-{
-    StaticVertexEval eval;
-    return BuildVisBufferVertex(eval, false, vertexID, instanceID);
-}
-
-[MaterialTarget("cluster.raster.vs.cached")]
-[shader("vertex")]
-PSVisBufferInput VSVisBufferCached(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
-{
-    StaticVertexEval eval;
-    return BuildVisBufferVertex(eval, true, vertexID, instanceID);
-}
-
-[MaterialTarget("cluster.raster.ps")]
 [shader("pixel")]
-uint PSVisBuffer(PSVisBufferInput input) : SV_TARGET
+void PSMeshVisBufferImageAtomic64(
+    ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertex,
+    [[vk::perprimitive]] ClusterMeshPrimitive primitive)
 {
-    return EncodeVisBuffer(input.VisibleClusterIndex, input.TriangleID);
+    EvaluatePSVisBufferImageAtomic64(
+        MakeMeshPixelInput<DefaultVisibilityEvaluate.Varying>(vertex, primitive));
+}
+
+[shader("pixel")]
+void PSMeshVisBufferBufferAtomic64(
+    ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertex,
+    [[vk::perprimitive]] ClusterMeshPrimitive primitive)
+{
+    EvaluatePSVisBufferBufferAtomic64(
+        MakeMeshPixelInput<DefaultVisibilityEvaluate.Varying>(vertex, primitive));
+}
+
+[shader("pixel")]
+PSVisBufferOutput PSMeshVisBufferHardwareOnly(
+    ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertex,
+    [[vk::perprimitive]] ClusterMeshPrimitive primitive)
+{
+    return EvaluatePSVisBufferHardwareOnly(
+        MakeMeshPixelInput<DefaultVisibilityEvaluate.Varying>(vertex, primitive));
+}
+
+
+[shader("pixel")]
+void PSVisBufferImageAtomic64(
+    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+{
+    EvaluatePSVisBufferImageAtomic64(input);
+}
+
+[shader("pixel")]
+void PSVisBufferBufferAtomic64(
+    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+{
+    EvaluatePSVisBufferBufferAtomic64(input);
+}
+
+[shader("pixel")]
+PSVisBufferOutput PSVisBufferHardwareOnly(
+    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+{
+    return EvaluatePSVisBufferHardwareOnly(input);
 }

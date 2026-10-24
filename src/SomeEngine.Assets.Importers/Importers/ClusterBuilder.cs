@@ -8,17 +8,19 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SharpGLTF.Schema2;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using GltfMesh = SharpGLTF.Schema2.Mesh;
-using Mesh = SomeEngine.Assets.Schema.Mesh;
-using ValueType = SomeEngine.Assets.Data.ValueType;
+using MeshAsset = SomeEngine.Assets.Schema.MeshAsset;
+using ValueType = SomeEngine.Resources.Geometry.ValueType;
 
 namespace SomeEngine.Assets.Importers;
 
 public sealed class ClusterBuilderOptions
 {
     public bool GenerateMissingTangents { get; init; }
+    public IClusterVertexEncoder VertexEncoder { get; init; } = StandardClusterVertexEncoder.Instance;
 }
 
 public struct ClusterLodConfig
@@ -103,9 +105,10 @@ public static partial class ClusterBuilder
         public byte Mat2;
         public byte Range0End;
         public byte Range1End;
-
-        // VRB batch info (packed uint, see BuildVrb)
-        public uint VRBBatchInfo;
+        public uint VertReuseBatchWord0;
+        public uint VertReuseBatchWord1;
+        public uint VertReuseBatchWord2;
+        public uint VertReuseBatchWord3;
     }
 
     private struct ClusterLodBounds
@@ -113,18 +116,6 @@ public static partial class ClusterBuilder
         public Vector3 Center;
         public float Radius;
         public float Error;
-    }
-
-    private struct MeshPageInfo
-    {
-        public uint ClusterCount;
-        public uint TotalVertexCount;
-        public uint TotalTriangleCount;
-        public uint ClustersOffset;
-        public uint PositionsOffset;
-        public uint AttributesOffset;
-        public uint IndicesOffset;
-        public long FileOffset;
     }
 
     private struct ClusterInfo
@@ -135,6 +126,7 @@ public static partial class ClusterBuilder
         public float LODError;
         public uint PageIndex;
         public uint ClusterStart;
+        public int GroupId;
         public int ParentGroupId;
     }
 
@@ -231,10 +223,12 @@ public static partial class ClusterBuilder
     {
         uint currentPage = clusters[start].PageIndex;
         int currentParent = clusters[start].ParentGroupId;
+        int currentGroup = clusters[start].GroupId;
         int count = 0;
         while (start + count < clusters.Count
             && clusters[start + count].PageIndex == currentPage
             && clusters[start + count].ParentGroupId == currentParent
+            && clusters[start + count].GroupId == currentGroup
             && count < 128)
         {
             count++;
@@ -252,8 +246,8 @@ public static partial class ClusterBuilder
         ClusterInfo first = clusters[start];
         var node = new ClusterBVHNode
         {
-            BoundMin = new Vector4(bounds.Min, 0),
-            BoundMax = new Vector4(bounds.Max, 0),
+            BoundMin = new Vector4(bounds.Min, first.GroupId + 1),
+            BoundMax = new Vector4(bounds.Max, first.ParentGroupId + 1),
             LODSphere = first.LODSphere,
             LODError = first.LODError,
             ChildPointer = first.PageIndex,
@@ -367,17 +361,18 @@ public static partial class ClusterBuilder
 {
 
 
-    public static Mesh Process(string filePath, Func<string, AssetGuid>? materialGuidResolver = null)
+    public static MeshAsset Process(string filePath, Func<string, MeshMaterialSlot> materialResolver)
     {
+        ArgumentNullException.ThrowIfNull(materialResolver);
         var model = ModelRoot.Load(filePath);
         var mesh = model.LogicalMeshes[0];
         IReadOnlyList<MeshMaterialSlot> materialSlots = mesh.Primitives
-            .Select(primitive => new MeshMaterialSlot(materialGuidResolver?.Invoke(primitive.Material?.Name ?? string.Empty) ?? AssetGuid.Empty))
+            .Select(primitive => materialResolver(primitive.Material?.Name ?? string.Empty))
             .ToArray();
         return ProcessMesh(mesh, materialSlots, mesh.Name ?? "Unnamed");
     }
 
-    public static Mesh ProcessMesh(
+    public static MeshAsset ProcessMesh(
         GltfMesh mesh,
         IReadOnlyList<MeshMaterialSlot> materialSlots,
         string name,
@@ -399,14 +394,15 @@ public static partial class ClusterBuilder
             meshData.RawAttributes,
             meshData.Indices,
             meshData.MaterialSlots,
-            name);
+            name,
+            options?.VertexEncoder ?? StandardClusterVertexEncoder.Instance);
     }
 
     private static MeshProcessingData BuildMeshProcessingData(
         GltfMesh mesh,
         IReadOnlyList<MeshMaterialSlot> materialSlots)
     {
-        AttributeDefinition[] definitions = ReadAttributeDefinitions(mesh.Primitives[0]);
+        AttributeDefinition[] definitions = ReadAttributeDefinitions(mesh);
         MeshAssemblyState state = CreateMeshAssemblyState(definitions);
         uint vertexOffset = 0;
         for (int primitiveIndex = 0; primitiveIndex < mesh.Primitives.Count; primitiveIndex++)
@@ -439,20 +435,27 @@ public static partial class ClusterBuilder
         return state;
     }
 
-    private static AttributeDefinition[] ReadAttributeDefinitions(MeshPrimitive primitive)
+    private static AttributeDefinition[] ReadAttributeDefinitions(GltfMesh mesh)
     {
-        var definitions = new List<AttributeDefinition>();
-        foreach (string key in primitive.VertexAccessors.Keys)
+        var definitions = new Dictionary<string, AttributeDefinition>(StringComparer.Ordinal);
+        foreach (MeshPrimitive primitive in mesh.Primitives)
+        foreach ((string key, Accessor accessor) in primitive.VertexAccessors)
         {
             if (key == "POSITION")
             {
                 continue;
             }
 
-            definitions.Add(CreateAttributeDefinition(key, primitive.GetVertexAccessor(key)));
+            AttributeDefinition definition = CreateAttributeDefinition(key, accessor);
+            if (definitions.TryGetValue(key, out AttributeDefinition previous))
+            {
+                if (previous.Dimension != definition.Dimension)
+                    throw new NotSupportedException($"Mesh '{mesh.Name}' uses different dimensions for '{key}' across primitives.");
+            }
+            else definitions.Add(key, definition);
         }
 
-        return definitions.ToArray();
+        return definitions.Values.ToArray();
     }
 
     private static AttributeDefinition CreateAttributeDefinition(string key, Accessor accessor)
@@ -516,7 +519,7 @@ public static partial class ClusterBuilder
         state.MaterialSlots.Add(
             primitiveIndex < materialSlots.Count
                 ? materialSlots[primitiveIndex]
-                : new MeshMaterialSlot(AssetGuid.Empty));
+                : default);
         AddMaterialIndices(state.MaterialIndices, primitiveIndex, positions.Length);
         return vertexOffset + (uint)positions.Length;
     }
@@ -526,10 +529,13 @@ public static partial class ClusterBuilder
         MeshPrimitive primitive,
         uint vertexOffset)
     {
-        var source = primitive.GetIndexAccessor().AsIndicesArray();
-        for (int index = 0; index < source.Count; index++)
+        if (primitive.DrawPrimitiveType is not (PrimitiveType.TRIANGLES or PrimitiveType.TRIANGLE_STRIP or PrimitiveType.TRIANGLE_FAN))
+            throw new NotSupportedException($"Cluster geometry requires triangles, received {primitive.DrawPrimitiveType}.");
+        foreach (var (a, b, c) in primitive.GetTriangleIndices())
         {
-            indices.Add((uint)(source[index] + vertexOffset));
+            indices.Add(checked((uint)a + vertexOffset));
+            indices.Add(checked((uint)b + vertexOffset));
+            indices.Add(checked((uint)c + vertexOffset));
         }
     }
 
@@ -895,22 +901,21 @@ public static partial class ClusterBuilder
 {
 
 
-    public static Mesh ProcessRaw(
+    public static MeshAsset ProcessRaw(
         Vector3[] rawPos,
         List<RawAttribute> rawAttributes,
         uint[] rawIndices,
         IReadOnlyList<MeshMaterialSlot> materialSlots,
-        string name)
+        string name,
+        IClusterVertexEncoder? vertexEncoder = null)
     {
-        List<string> regionNames = materialSlots
-            .Select(static (slot, index) => $"region_{index}")
-            .ToList();
-        return ProcessRaw(
+        return ProcessRawCore(
             rawPos,
             rawAttributes,
             rawIndices,
-            regionNames,
-            name);
+            materialSlots,
+            name,
+            vertexEncoder ?? StandardClusterVertexEncoder.Instance);
     }
 
     private static void BuildClusterLod(
@@ -927,7 +932,13 @@ public static partial class ClusterBuilder
         try
         {
             GeneratePositionRemap(positions, remap.AsSpan(0, positions.Length));
-            Clusterize(config, indices, positions, materialIndicesArray, clusters, globalIndices);
+            Clusterize(
+                config,
+                indices,
+                positions,
+                materialIndicesArray,
+                clusters,
+                globalIndices);
             int nextGroupId = InitializeLeafClusters(positions, clusters, globalIndices);
             ReduceClusterLod(
                 config,
@@ -1183,7 +1194,13 @@ public static partial class ClusterBuilder
         List<int> nextPending)
     {
         int start = clusters.Count;
-        Clusterize(config, CollectionsMarshal.AsSpan(simplifiedIndices), positions, materialIndicesArray, clusters, globalIndices);
+        Clusterize(
+            config,
+            CollectionsMarshal.AsSpan(simplifiedIndices),
+            positions,
+            materialIndicesArray,
+            clusters,
+            globalIndices);
         for (int index = start; index < clusters.Count; index++)
         {
             clusters[index] = InitializeParentCluster(
@@ -1238,76 +1255,6 @@ public static partial class ClusterBuilder
 
 public static partial class ClusterBuilder
 {
-
-
-    public static Mesh ProcessRaw(
-        Vector3[] rawPos,
-        List<RawAttribute> rawAttributes,
-        uint[] rawIndices,
-        List<string> regionNames,
-        string name
-    )
-    {
-        return ProcessRawCore(rawPos, rawAttributes, rawIndices, regionNames, name);
-    }
-
-    private static void PackAttribute(List<byte> output, RawAttribute attr, int index)
-    {
-        int baseIdx = index * attr.Dimension;
-
-        for (int c = 0; c < attr.NumComponents; ++c)
-        {
-            float val = (c < attr.Dimension) ? attr.Data[baseIdx + c] : 0.0f;
-
-            switch (attr.TargetType)
-            {
-                case ValueType.Int8:
-                    if (attr.Normalized)
-                        output.Add((byte)(sbyte)Math.Clamp(val * 127.0f, -128, 127));
-                    else
-                        output.Add((byte)(sbyte)Math.Clamp(val, -128, 127));
-                    break;
-                case ValueType.UInt8:
-                    if (attr.Normalized)
-                        output.Add((byte)Math.Clamp(val * 255.0f, 0, 255));
-                    else
-                        output.Add((byte)Math.Clamp(val, 0, 255));
-                    break;
-                case ValueType.Int16:
-                    short s = attr.Normalized
-                        ? (short)Math.Clamp(val * 32767.0f, -32768, 32767)
-                        : (short)val;
-                    output.Add((byte)(s & 0xFF));
-                    output.Add((byte)((s >> 8) & 0xFF));
-                    break;
-                case ValueType.UInt16:
-                    ushort us = attr.Normalized
-                        ? (ushort)Math.Clamp(val * 65535.0f, 0, 65535)
-                        : (ushort)val;
-                    output.Add((byte)(us & 0xFF));
-                    output.Add((byte)((us >> 8) & 0xFF));
-                    break;
-                case ValueType.Float16:
-                    Half h = (Half)val;
-                    ushort hs = BitConverter.HalfToUInt16Bits(h);
-                    output.Add((byte)(hs & 0xFF));
-                    output.Add((byte)((hs >> 8) & 0xFF));
-                    break;
-                case ValueType.Float32:
-                    unsafe
-                    {
-                        uint u = *(uint*)&val;
-                        output.Add((byte)(u & 0xFF));
-                        output.Add((byte)((u >> 8) & 0xFF));
-                        output.Add((byte)((u >> 16) & 0xFF));
-                        output.Add((byte)((u >> 24) & 0xFF));
-                    }
-                    break;
-                // TODO: Other types
-            }
-        }
-    }
-
     private static unsafe nuint BuildRemap(
         Span<uint> destination,
         ReadOnlySpan<uint> indices,
@@ -1369,14 +1316,19 @@ public static partial class ClusterBuilder
         public byte mat;
     }
 
+    private readonly record struct VertReuseBatchData(
+        uint Word0,
+        uint Word1,
+        uint Word2,
+        uint Word3);
+
     private static void EmitSplitMeshlet(
         ReadOnlySpan<TempTri> tris,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices
     )
     {
-        // Build VRB batch info (linear scan, no reorder)
-        uint vrbBatchInfo = BuildVrb(tris);
+        VertReuseBatchData vertReuseBatches = BuildVertReuseBatchInfo(tris);
 
         int startIndex = globalIndices.Count;
         var uniqueMats = new List<byte>();
@@ -1417,7 +1369,10 @@ public static partial class ClusterBuilder
                 Mat2 = uniqueMats.Count > 2 ? uniqueMats[2] : (byte)0,
                 Range0End = (byte)range0End,
                 Range1End = (byte)range1End,
-                VRBBatchInfo = vrbBatchInfo,
+                VertReuseBatchWord0 = vertReuseBatches.Word0,
+                VertReuseBatchWord1 = vertReuseBatches.Word1,
+                VertReuseBatchWord2 = vertReuseBatches.Word2,
+                VertReuseBatchWord3 = vertReuseBatches.Word3,
             }
         );
     }
@@ -1428,127 +1383,116 @@ public static partial class ClusterBuilder
 
 
 
-    /// <summary>
-    /// Build VRB batch info by linearly scanning triangles and closing batches
-    /// when unique vertex count exceeds 32. Preserves meshopt ordering (no reorder).
-    /// Returns a packed uint encoding up to 5 batch tri-counts.
-    /// Triangles beyond the 5th batch are implicitly a "slow residual" at runtime.
-    /// </summary>
-    private static uint BuildVrb(ReadOnlySpan<TempTri> tris)
+    private static VertReuseBatchData BuildVertReuseBatchInfo(ReadOnlySpan<TempTri> triangles)
     {
-        const int MaxBatchesEncoded = 5;
-        Span<int> batchTriCounts = stackalloc int[MaxBatchesEncoded + 16];
-        var batchVerts = new HashSet<uint>();
-        int batchIndex = 0;
-        int currentBatchTriCount = 0;
-        byte currentMat = tris[0].mat;
+        Span<uint> words = stackalloc uint[4];
+        words.Clear();
+        int triangleBitOffset = 12;
+        int rangeIndex = 0;
+        int rangeStart = 0;
 
-        for (int index = 0; index < tris.Length; index++)
+        while (rangeStart < triangles.Length)
         {
-            ref readonly TempTri tri = ref tris[index];
-            CloseVrbBatchAtMaterialBoundary(
-                tri,
-                ref currentMat,
-                batchTriCounts,
-                ref batchIndex,
-                ref currentBatchTriCount,
-                batchVerts);
-            AddVrbTriangleToBatch(tri, batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
-            CloseFullVrbBatch(batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
+            byte material = triangles[rangeStart].mat;
+            int rangeEnd = rangeStart + 1;
+            while (rangeEnd < triangles.Length && triangles[rangeEnd].mat == material)
+                rangeEnd++;
+
+            if (rangeIndex >= 3)
+                throw new InvalidDataException("A cluster material chunk contains more than three ranges.");
+
+            List<byte> batchTriangleCounts = BuildVertReuseBatches(
+                triangles.Slice(rangeStart, rangeEnd - rangeStart));
+            if (batchTriangleCounts.Count == 0 || batchTriangleCounts.Count >= 16)
+                throw new InvalidDataException("A cluster material range has an invalid vertex-reuse batch count.");
+
+            WriteVertReuseBits(words, rangeIndex * 4, (uint)batchTriangleCounts.Count, 4);
+            foreach (byte triangleCount in batchTriangleCounts)
+            {
+                WriteVertReuseBits(words, triangleBitOffset, (uint)(triangleCount - 1), 5);
+                triangleBitOffset += 5;
+            }
+
+            rangeIndex++;
+            rangeStart = rangeEnd;
         }
 
-        CloseVrbBatch(batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
-        return PackVrbBatchCounts(batchTriCounts, batchIndex, MaxBatchesEncoded);
+        return new VertReuseBatchData(words[0], words[1], words[2], words[3]);
     }
 
-    private static void CloseVrbBatchAtMaterialBoundary(
-        TempTri tri,
-        ref byte currentMat,
-        Span<int> batchTriCounts,
-        ref int batchIndex,
-        ref int currentBatchTriCount,
-        HashSet<uint> batchVerts)
+    private static List<byte> BuildVertReuseBatches(ReadOnlySpan<TempTri> triangles)
     {
-        if (tri.mat != currentMat && currentBatchTriCount > 0)
-        {
-            CloseVrbBatch(batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
-            currentMat = tri.mat;
-        }
-    }
+        var batchTriangleCounts = new List<byte>();
+        var usedVertices = new HashSet<uint>();
+        int triangleCount = 0;
 
-    private static void AddVrbTriangleToBatch(
-        TempTri tri,
-        Span<int> batchTriCounts,
-        ref int batchIndex,
-        ref int currentBatchTriCount,
-        HashSet<uint> batchVerts)
-    {
-        if (VrbVertexCountAfterAdd(batchVerts, tri) > 32 && currentBatchTriCount > 0)
+        for (int index = 0; index < triangles.Length; index++)
         {
-            CloseVrbBatch(batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
+            ref readonly TempTri triangle = ref triangles[index];
+            int newVertexCount = VertReuseVertexCountAfterAdd(usedVertices, triangle);
+            if (newVertexCount > 32)
+            {
+                if (triangleCount == 0)
+                    throw new InvalidDataException("A triangle exceeds the 32-vertex reuse-batch limit.");
+                CloseVertReuseBatch(batchTriangleCounts, usedVertices, ref triangleCount);
+                index--;
+                continue;
+            }
+
+            AddVertReuseTriangleVertices(usedVertices, triangle);
+            triangleCount++;
+            if (triangleCount == 32)
+                CloseVertReuseBatch(batchTriangleCounts, usedVertices, ref triangleCount);
         }
 
-        AddVrbTriangleVertices(batchVerts, tri);
-        currentBatchTriCount++;
+        CloseVertReuseBatch(batchTriangleCounts, usedVertices, ref triangleCount);
+        return batchTriangleCounts;
     }
 
-    private static int VrbVertexCountAfterAdd(HashSet<uint> batchVerts, TempTri tri)
+    private static int VertReuseVertexCountAfterAdd(HashSet<uint> usedVertices, TempTri triangle)
     {
-        int count = batchVerts.Count;
-        if (!batchVerts.Contains(tri.v0)) count++;
-        if (!batchVerts.Contains(tri.v1)) count++;
-        if (!batchVerts.Contains(tri.v2)) count++;
+        int count = usedVertices.Count;
+        if (!usedVertices.Contains(triangle.v0)) count++;
+        if (!usedVertices.Contains(triangle.v1)) count++;
+        if (!usedVertices.Contains(triangle.v2)) count++;
         return count;
     }
 
-    private static void AddVrbTriangleVertices(HashSet<uint> batchVerts, TempTri tri)
+    private static void AddVertReuseTriangleVertices(HashSet<uint> usedVertices, TempTri triangle)
     {
-        batchVerts.Add(tri.v0);
-        batchVerts.Add(tri.v1);
-        batchVerts.Add(tri.v2);
+        usedVertices.Add(triangle.v0);
+        usedVertices.Add(triangle.v1);
+        usedVertices.Add(triangle.v2);
     }
 
-    private static void CloseFullVrbBatch(
-        Span<int> batchTriCounts,
-        ref int batchIndex,
-        ref int currentBatchTriCount,
-        HashSet<uint> batchVerts)
+    private static void CloseVertReuseBatch(
+        List<byte> batchTriangleCounts,
+        HashSet<uint> usedVertices,
+        ref int triangleCount)
     {
-        if (currentBatchTriCount == 32)
-        {
-            CloseVrbBatch(batchTriCounts, ref batchIndex, ref currentBatchTriCount, batchVerts);
-        }
-    }
-
-    private static void CloseVrbBatch(
-        Span<int> batchTriCounts,
-        ref int batchIndex,
-        ref int currentBatchTriCount,
-        HashSet<uint> batchVerts)
-    {
-        if (currentBatchTriCount <= 0)
-        {
+        if (triangleCount == 0)
             return;
-        }
 
-        batchTriCounts[batchIndex++] = currentBatchTriCount;
-        currentBatchTriCount = 0;
-        batchVerts.Clear();
+        batchTriangleCounts.Add(checked((byte)triangleCount));
+        triangleCount = 0;
+        usedVertices.Clear();
     }
 
-    private static uint PackVrbBatchCounts(
-        Span<int> batchTriCounts,
-        int batchIndex,
-        int maxBatchesEncoded)
+    private static void WriteVertReuseBits(Span<uint> words, int bitOffset, uint value, int bitCount)
     {
-        int encodedCount = Math.Min(batchIndex, maxBatchesEncoded);
-        uint packed = 0;
-        for (int index = 0; index < encodedCount; index++)
-        {
-            packed |= (uint)(batchTriCounts[index] - 1) << (index * 5);
-        }
+        if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 || bitOffset + bitCount > 128)
+            throw new InvalidDataException("Vertex-reuse batch metadata exceeds its inline encoding.");
 
-        return packed | ((uint)(encodedCount - 1) << 25);
+        uint mask = (1u << bitCount) - 1u;
+        if ((value & ~mask) != 0)
+            throw new InvalidDataException("Vertex-reuse batch metadata value exceeds its bit field.");
+
+        int wordIndex = bitOffset >> 5;
+        int wordBit = bitOffset & 31;
+        words[wordIndex] |= value << wordBit;
+        int lowBits = Math.Min(bitCount, 32 - wordBit);
+        if (lowBits < bitCount)
+            words[wordIndex + 1] |= value >> lowBits;
     }
 
 
@@ -1567,16 +1511,44 @@ public static partial class ClusterBuilder
             return;
         }
 
+        if (indices.Length % 3 != 0)
+            throw new InvalidDataException("Cluster triangle indices are not divisible by three.");
+
         MeshletScratch scratch = RentMeshletScratch(config, indices.Length);
         try
         {
             nuint meshletCount = BuildMeshlets(config, indices, positions, scratch);
-            EmitMeshlets(scratch, meshletCount, materialIndicesArray, clusters, globalIndices, config.OptimizeClusters);
+            EmitMeshlets(
+                scratch,
+                meshletCount,
+                materialIndicesArray,
+                clusters,
+                globalIndices,
+                config.OptimizeClusters);
         }
         finally
         {
             scratch.Return();
         }
+    }
+
+    private static byte ResolveTriangleMaterial(
+        uint vertex,
+        float[] materialIndices,
+        int materialCount)
+    {
+        if (vertex >= materialIndices.Length)
+            throw new InvalidDataException($"Vertex {vertex} has no material index.");
+        float encoded = materialIndices[vertex];
+        if (!float.IsFinite(encoded) ||
+            encoded < 0 ||
+            encoded >= materialCount ||
+            encoded != MathF.Truncate(encoded))
+        {
+            throw new InvalidDataException($"Vertex {vertex} has invalid material index {encoded}.");
+        }
+        int material = (int)encoded;
+        return checked((byte)material);
     }
 
     private static MeshletScratch RentMeshletScratch(ClusterLodConfig config, int indexCount)
@@ -1751,13 +1723,23 @@ public static partial class ClusterBuilder
         int chunkStart = 0;
         for (int index = 0; index < triangles.Length; index++)
         {
-            if (TryStartMaterialChunk(triangles, index, uniqueMaterials, ref chunkStart, clusters, globalIndices))
+            if (TryStartMaterialChunk(
+                    triangles,
+                    index,
+                    uniqueMaterials,
+                    ref chunkStart,
+                    clusters,
+                    globalIndices))
             {
                 continue;
             }
         }
 
-        EmitRemainingMaterialChunk(triangles, chunkStart, clusters, globalIndices);
+        EmitRemainingMaterialChunk(
+            triangles,
+            chunkStart,
+            clusters,
+            globalIndices);
     }
 
     private static bool TryStartMaterialChunk(
@@ -1775,7 +1757,10 @@ public static partial class ClusterBuilder
 
         if (uniqueMaterials.Count == 3)
         {
-            EmitSplitMeshlet(new ReadOnlySpan<TempTri>(triangles, chunkStart, index - chunkStart), clusters, globalIndices);
+            EmitSplitMeshlet(
+                new ReadOnlySpan<TempTri>(triangles, chunkStart, index - chunkStart),
+                clusters,
+                globalIndices);
             uniqueMaterials.Clear();
             chunkStart = index;
         }
@@ -1792,7 +1777,10 @@ public static partial class ClusterBuilder
     {
         if (chunkStart < triangles.Length)
         {
-            EmitSplitMeshlet(new ReadOnlySpan<TempTri>(triangles, chunkStart, triangles.Length - chunkStart), clusters, globalIndices);
+            EmitSplitMeshlet(
+                new ReadOnlySpan<TempTri>(triangles, chunkStart, triangles.Length - chunkStart),
+                clusters,
+                globalIndices);
         }
     }
 

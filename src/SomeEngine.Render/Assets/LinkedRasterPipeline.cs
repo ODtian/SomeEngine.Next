@@ -1,21 +1,23 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
+using SlangShaderSharp;
 using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
 
 namespace SomeEngine.Render.Assets;
 
-/// <summary>Owns one linked vertex/pixel program and its attachment-compatible RHI pipeline.</summary>
+/// <summary>Owns an attachment-compatible RHI pipeline created from direct Slang data.</summary>
 public sealed class LinkedRasterPipeline : IDisposable
 {
     private bool _disposed;
 
-    private LinkedRasterPipeline(LiveShaderProgram program, GraphicsPipeline pipeline)
+    private LinkedRasterPipeline(ShaderReflection reflection, GraphicsPipeline pipeline)
     {
-        Program = program;
+        Reflection = reflection;
         Pipeline = pipeline;
     }
 
-    public LiveShaderProgram Program { get; }
+    public ShaderReflection Reflection { get; }
     public GraphicsPipeline Pipeline { get; }
 
     public static LinkedRasterPipeline Create(
@@ -39,16 +41,23 @@ public sealed class LinkedRasterPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(shader);
         ArgumentException.ThrowIfNullOrWhiteSpace(vertexEntryPoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(pixelEntryPoint);
-        LiveShaderProgram? program = null;
         GraphicsPipeline? pipeline = null;
         try
         {
-            program = LiveShaderProgram.Link(
-                shader,
-                [
-                    new LiveShaderEntry(vertexEntryPoint, LiveShaderStage.Vertex),
-                    new LiveShaderEntry(pixelEntryPoint, LiveShaderStage.Pixel),
-                ]);
+            int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+            ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+            EntryPointReflection vertex = shader.RequireSlangEntry(
+                targetIndex,
+                vertexEntryPoint,
+                SlangStage.Vertex);
+            EntryPointReflection pixel = shader.RequireSlangEntry(
+                targetIndex,
+                pixelEntryPoint,
+                SlangStage.Fragment);
+            System.Buffers.ReadOnlySequence<byte> vertexCode =
+                shader.GetSlangEntryBytes(targetIndex, vertex);
+            System.Buffers.ReadOnlySequence<byte> pixelCode =
+                shader.GetSlangEntryBytes(targetIndex, pixel);
             var multisample = new MultisampleState(sampleCount, sampleMask, alphaToCoverage);
             var blend = new BlendState(
                 blendAttachments,
@@ -60,9 +69,12 @@ public sealed class LinkedRasterPipeline : IDisposable
             pipeline = backend.CreateGraphicsPipeline(
                 device,
                 new GraphicsPipelineDesc(
-                    program.Program,
-                    program.GetEntryPoint(0),
-                    program.GetEntryPoint(1),
+                    shader.SlangCode,
+                    reflection,
+                    vertex,
+                    vertexCode,
+                    pixel,
+                    pixelCode,
                     vertexBuffers: default,
                     vertexAttributes: default,
                     PrimitiveTopology.TriangleList,
@@ -73,14 +85,15 @@ public sealed class LinkedRasterPipeline : IDisposable
                     blend,
                     attachments,
                     DynamicStates.Viewport | DynamicStates.Scissor,
-                    label));
-            return new LinkedRasterPipeline(program, pipeline);
+                    label,
+                    vertexCodeBlob: shader.GetSlangEntryBlob(targetIndex, vertex),
+                    pixelCodeBlob: shader.GetSlangEntryBlob(targetIndex, pixel)));
+            return new LinkedRasterPipeline(reflection, pipeline);
         }
         catch (Exception primary)
         {
             List<Exception>? cleanupFailures = null;
             if (pipeline is not null) TryDispose(pipeline, ref cleanupFailures);
-            if (program is not null) TryDispose(program, ref cleanupFailures);
             if (cleanupFailures is not null)
             {
                 cleanupFailures.Insert(0, primary);
@@ -98,7 +111,6 @@ public sealed class LinkedRasterPipeline : IDisposable
             return;
         List<Exception>? failures = null;
         TryDispose(Pipeline, ref failures);
-        TryDispose(Program, ref failures);
         _disposed = true;
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);

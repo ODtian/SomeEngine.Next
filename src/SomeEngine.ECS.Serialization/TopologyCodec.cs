@@ -1,3 +1,4 @@
+using SomeEngine.Serialization;
 using SomeEngine.Serialization.IO;
 
 namespace SomeEngine.ECS.Serialization;
@@ -35,7 +36,8 @@ internal static class TopologyCodec
         SerializationRegistry registry,
         SerializationContract contract,
         long maximumRecords,
-        long maximumPayloadBytes)
+        long maximumPayloadBytes,
+        ISet<ExternalReferenceKey>? references = null)
     {
         ValidateWriteContract(registry, contract);
         var recordBudget = new TopologyCaptureBudget(maximumRecords);
@@ -52,7 +54,7 @@ internal static class TopologyCodec
                 runtime,
                 admitted,
                 recordBudget,
-                payloadBudget);
+                payloadBudget, references);
         }
     }
 
@@ -61,7 +63,7 @@ internal static class TopologyCodec
         TopologySerializationRuntime runtime,
         AdmittedWorldWrite admitted,
         TopologyCaptureBudget recordBudget,
-        TopologyWriteBudget budget)
+        TopologyWriteBudget budget, ISet<ExternalReferenceKey>? references)
     {
         writer.Flush();
         string stableName = runtime.TypeKey.StableName;
@@ -78,7 +80,7 @@ internal static class TopologyCodec
                    SerializationBinary.StrictUtf8,
                    leaveOpen: true))
         {
-            runtime.WriteAdmitted(payloadWriter, admitted, recordBudget);
+            runtime.WriteAdmitted(payloadWriter, admitted, recordBudget, references);
             payloadWriter.Flush();
         }
         budget.AddPayloadBytes(output.BytesWritten, stableName);
@@ -97,7 +99,8 @@ internal static class TopologyCodec
         ReadOnlySpan<TopologySerializationRuntime> expectedRuntimes = registry.TopologyRuntimes;
         if (count != expectedRuntimes.Length)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.InvalidData,
                 $"Serialized topology runtime count {count} does not exactly match " +
                 $"the registered runtime count {expectedRuntimes.Length}.");
         }
@@ -126,7 +129,8 @@ internal static class TopologyCodec
             using var payloadStream = new BoundedCountingReadStream(
                 reader.BaseStream,
                 budget.Limits.MaxPayloadBytes,
-                limitExceeded: static (_, _, _) => new InvalidDataException(
+                limitExceeded: static (_, _, _) => SerializationErrors.CreateDataException(
+                    SerializationError.LimitExceeded,
                     "Topology payload exceeds the configured byte limit."));
             using (var payloadReader = new BinaryReader(
                        payloadStream,

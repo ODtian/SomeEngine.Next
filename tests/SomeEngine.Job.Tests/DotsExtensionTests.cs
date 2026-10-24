@@ -2,38 +2,40 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class DotsExtensionTests
 {
+    private readonly DotsExtensionData _data = new();
+
     public DotsExtensionTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
-        DotsExtensionJobs.Reset();
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        _data.Reset();
     }
 
     [Fact]
     public void ExtensionScheduleExecutesSingleJob()
     {
-        new DotsExtensionJobs.IncrementJob(3).Schedule().Complete();
+        new DotsExtensionData.IncrementJob(_data, 3).Schedule().Complete();
 
-        Assert.Equal(3, DotsExtensionJobs.Counter);
+        Assert.Equal(3, _data.Counter);
     }
 
     [Fact]
     public void ExtensionSchedulePreservesDependencyBehavior()
     {
-        using var dependencyStarted = new ManualResetEventSlim();
-        using var dependencyGate = new ManualResetEventSlim();
-        using var dependentRan = new ManualResetEventSlim();
+        using var dependencyStarted = _data.Events.CreateSignal();
+        using var dependencyGate = _data.Events.CreateSignal();
+        using var dependentRan = _data.Events.CreateSignal();
 
         var dependency = JobSystem.Schedule(
-            new DotsExtensionJobs.BlockingJob(dependencyStarted, dependencyGate));
-        var dependent = new DotsExtensionJobs.SignalJob(dependentRan).Schedule(dependency);
+            new DotsExtensionData.BlockingJob(dependencyStarted, dependencyGate));
+        var dependent = new DotsExtensionData.SignalJob(dependentRan).Schedule(dependency);
 
         Assert.True(dependencyStarted.Wait(TimeSpan.FromSeconds(2)));
-        Assert.False(dependentRan.Wait(TimeSpan.FromMilliseconds(100)));
 
         dependencyGate.Set();
         dependent.Complete();
 
         Assert.True(dependentRan.IsSet);
+        _data.Events.AssertBefore(dependencyGate, dependentRan);
     }
 
     [Fact]
@@ -41,7 +43,7 @@ public sealed class DotsExtensionTests
     {
         var values = new int[11];
 
-        new DotsExtensionJobs.MarkIndexJob(values).ScheduleParallel(values.Length, 3).Complete();
+        new DotsExtensionData.MarkIndexJob(values).ScheduleParallel(values.Length, 3).Complete();
 
         Assert.All(values, value => Assert.Equal(1, value));
     }
@@ -49,19 +51,21 @@ public sealed class DotsExtensionTests
     [Fact]
     public void ExtensionScheduleFromParentKeepsChildScopeSemantics()
     {
-        DotsExtensionJobs.ParentValues = new int[7];
+        _data.ParentValues = new int[7];
 
-        new DotsExtensionJobs.ParentSchedulesExtensionChildren().Schedule().Complete();
+        new DotsExtensionData.ParentSchedulesExtensionChildren(_data).Schedule().Complete();
 
-        Assert.All(DotsExtensionJobs.ParentValues, value => Assert.Equal(1, value));
+        Assert.All(_data.ParentValues, value => Assert.Equal(1, value));
     }
 
-    private static class DotsExtensionJobs
+    private sealed class DotsExtensionData
     {
-        internal static int Counter;
-        internal static int[] ParentValues = [];
+        internal readonly ExecutionEvents Events = new();
 
-        internal static void Reset()
+        internal int Counter;
+        internal int[] ParentValues = [];
+
+        internal void Reset()
         {
             Counter = 0;
             ParentValues = [];
@@ -69,25 +73,28 @@ public sealed class DotsExtensionTests
 
         internal readonly struct IncrementJob : IJob
         {
+            private readonly DotsExtensionData _data;
+
             private readonly int _amount;
 
-            internal IncrementJob(int amount)
+            internal IncrementJob(DotsExtensionData data, int amount)
             {
+                _data = data;
                 _amount = amount;
             }
 
             public void Execute()
             {
-                Interlocked.Add(ref Counter, _amount);
+                Interlocked.Add(ref _data.Counter, _amount);
             }
         }
 
         internal readonly struct BlockingJob : IJob
         {
-            private readonly ManualResetEventSlim _started;
-            private readonly ManualResetEventSlim _gate;
+            private readonly JobSignal _started;
+            private readonly JobSignal _gate;
 
-            internal BlockingJob(ManualResetEventSlim started, ManualResetEventSlim gate)
+            internal BlockingJob(JobSignal started, JobSignal gate)
             {
                 _started = started;
                 _gate = gate;
@@ -102,9 +109,9 @@ public sealed class DotsExtensionTests
 
         internal readonly struct SignalJob : IJob
         {
-            private readonly ManualResetEventSlim _ran;
+            private readonly JobSignal _ran;
 
-            internal SignalJob(ManualResetEventSlim ran)
+            internal SignalJob(JobSignal ran)
             {
                 _ran = ran;
             }
@@ -132,9 +139,13 @@ public sealed class DotsExtensionTests
 
         internal struct ParentSchedulesExtensionChildren : IJob
         {
+            private readonly DotsExtensionData _data;
+
+            internal ParentSchedulesExtensionChildren(DotsExtensionData data) => _data = data;
+
             public void Execute()
             {
-                new MarkIndexJob(ParentValues).ScheduleParallel(ParentValues.Length, 2);
+                new MarkIndexJob(_data.ParentValues).ScheduleParallel(_data.ParentValues.Length, 2);
             }
         }
     }

@@ -1,0 +1,1 @@
+CHECK generated inherited properties: Roughness=0.75; Coating=0.75; SlotCount=1

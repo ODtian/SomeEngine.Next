@@ -108,7 +108,7 @@ internal sealed class BundleWriteRuntime
     [ThreadStatic]
     private static BundleWriteRuntime? s_pool;
 
-    private Owners.Bundles? _owner;
+    private Owners.Bundles _owner;
     private BundleWriteRuntime? _next;
     private BundleSpawnMap _plan = null!;
     private int[]? _sparseIds;
@@ -292,10 +292,10 @@ internal sealed class BundleWriteRuntime
         GuardCallbackWrite<T>();
         MarkWritten(descriptorIndex, typeof(T).Name);
         EnsureMaterialized();
-        if (_preparedBatch && _owner!.CanUsePreparedRawComponentWrites())
+        if (_preparedBatch && _owner.CanUsePreparedRawComponentWrites())
             _owner.WritePreparedComponent(in _materialized, in value);
         else
-            _owner!.WriteComponent(in _materialized, in value, _mode);
+            _owner.WriteComponent(in _materialized, in value, _mode);
     }
 
     internal void WriteSparse<T>(long token, in T value)
@@ -310,7 +310,7 @@ internal sealed class BundleWriteRuntime
         GuardCallbackWrite<T>();
         MarkWritten(_plan.ComponentIds.Length + sparseIndex, typeof(T).Name);
         EnsureMaterialized();
-        _owner!.WriteSparse(_materialized.Entity, in value, _mode);
+        _owner.WriteSparse(_materialized.Entity, in value, _mode);
     }
 
     internal void WriteBuffer<T>(long token, ReadOnlySpan<T> values)
@@ -328,7 +328,7 @@ internal sealed class BundleWriteRuntime
         MarkWritten(headerIndex, typeof(T).Name);
         MarkWritten(inlineIndex, typeof(T).Name);
         EnsureMaterialized();
-        _owner!.WriteBuffer(in _materialized, values, _mode);
+        _owner.WriteBuffer(in _materialized, values, _mode);
     }
 
     internal void WriteShared<T>(long token, in T value)
@@ -350,7 +350,7 @@ internal sealed class BundleWriteRuntime
 
         GuardCallbackWrite<T>();
         MarkWritten(descriptorIndex, typeof(T).Name);
-        int sharedIndex = _owner!.AddSharedIndex(componentId, in value);
+        int sharedIndex = _owner.AddSharedIndex(componentId, in value);
         _sharedAssignments![_sharedCount++] = new BundleSharedAssignment(componentId, sharedIndex);
     }
 
@@ -364,11 +364,11 @@ internal sealed class BundleWriteRuntime
 
     internal void Return()
     {
-        Owners.Bundles? owner = _owner;
-        if (_active && owner is not null)
+        Owners.Bundles owner = _owner;
+        if (_active)
             owner.DetachRuntime(this);
         _active = false;
-        _owner = null;
+        _owner = default;
         _plan = null!;
         _target = default;
         _token = 0;
@@ -424,7 +424,7 @@ internal sealed class BundleWriteRuntime
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void Validate(long token)
     {
-        if (!_active || token != _token || _owner is null)
+        if (!_active || token != _token)
             throw new InvalidOperationException("Bundle write view is outside its runtime callback lifetime.");
         int currentThreadId = Environment.CurrentManagedThreadId;
         if (_threadId != currentThreadId)
@@ -464,7 +464,7 @@ internal sealed class BundleWriteRuntime
             }
         }
 
-        _materialized = _owner!.Materialize(this);
+        _materialized = _owner.Materialize(this);
         _hasMaterialized = true;
     }
 

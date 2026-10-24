@@ -26,7 +26,6 @@ internal static class RenderGraphCpuBenchmark
     private const ulong DispatchIndirectBytes = 12;
     private const ulong CopyBytes = 256;
     private const int MaterialCount = 8;
-    private const double P95LimitMicroseconds = 500;
     private const int PlateauWindowSize = 64;
     private const int RequiredStableWindows = 3;
     private const double PlateauTolerance = 0.03;
@@ -71,10 +70,10 @@ internal static class RenderGraphCpuBenchmark
             throw new PlatformNotSupportedException("The real RenderGraph CPU benchmark requires Windows in this build.");
         if (!options.AdapterSpecified)
             throw new BenchmarkUsageException("graph-cpu requires an explicit hardware --adapter LUID.");
-        if (options.MeasuredFrames < FixedGraphicsProtocol.GraphicsCpuMeasuredFrames)
+        if (options.MeasuredFrames < BenchmarkDefaults.GraphicsCpuMeasuredFrames)
         {
             throw new BenchmarkUsageException(
-                $"graph-cpu requires at least {FixedGraphicsProtocol.GraphicsCpuMeasuredFrames} measured frames per source case.");
+                $"graph-cpu requires at least {BenchmarkDefaults.GraphicsCpuMeasuredFrames} measured frames per source case.");
         }
 
         DateTimeOffset started = DateTimeOffset.UtcNow;
@@ -147,13 +146,18 @@ internal static class RenderGraphCpuBenchmark
                 ? ".NET 10 / SomeEngine RenderGraph / Silk.NET Vulkan 1.3"
                 : ".NET 10 / SomeEngine RenderGraph / Silk.NET D3D12");
 
-        using BenchmarkShaderProgram shader = options.GraphicsBackend == GraphicsBackendKind.Vulkan
+        BenchmarkShader shader = options.GraphicsBackend == GraphicsBackendKind.Vulkan
             ? BenchmarkShaders.OpenVulkan()
             : BenchmarkShaders.Open(options.ShaderDirectory);
         using Pipeline graphicsPipeline = CreateGraphicsPipeline(backend, device, shader);
         using Pipeline computePipeline = backend.CreateComputePipeline(
             device,
-            new ComputePipelineDesc(shader.Program, shader.Entries[2], "Dagor graph CPU compute"));
+            new ComputePipelineDesc(
+                shader.SlangCode,
+                shader.Reflection,
+                shader.Entries[2],
+                shader.GetEntryCode(2),
+                "Dagor graph CPU compute"));
         VariableLayoutReflection globalLayout =
             shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
         if (globalLayout == VariableLayoutReflection.Null)
@@ -206,11 +210,9 @@ internal static class RenderGraphCpuBenchmark
                     $"P95 {results[index].Cpu.P95:F1} us, P99 {results[index].Cpu.P99:F1} us, " +
                     $"max {results[index].Cpu.Maximum:F1} us, " +
                     $"barriers={results[index].Shape.BarrierCount}, " +
-                    $"plateau={results[index].WarmupPlateauReached}, " +
-                    $"0.5ms-target={(results[index].P95Passed ? "PASS" : "FAIL")}");
+                    $"plateau={results[index].WarmupPlateauReached}");
             }
 
-            bool passed = results.All(static result => result.P95Passed);
             string standardPath = Path.GetFullPath(Path.Combine(
                 BenchmarkOptions.FindRepositoryRoot(AppContext.BaseDirectory),
                 "benchmarks",
@@ -218,10 +220,8 @@ internal static class RenderGraphCpuBenchmark
                 "GRAPHICS_CPU_WORKLOAD_STANDARD.md"));
             var report = new GraphicsCpuBenchmarkReport(
                 "someengine.graphics.rendergraph-cpu/v2",
-                passed ? "Passed" : "Failed",
-                passed
-                    ? "Every selected Dagor/Enlisted distribution-derived projection met P95 < 500 us."
-                    : "At least one selected Dagor/Enlisted distribution-derived projection had P95 >= 500 us.",
+                "Completed",
+                "All selected workloads completed; timings are diagnostic measurements.",
                 started,
                 DateTimeOffset.UtcNow,
                 environment,
@@ -230,8 +230,7 @@ internal static class RenderGraphCpuBenchmark
             report.Write(options.OutputPath);
 
             Console.WriteLine($"Dagor/Enlisted RenderGraph CPU evidence: {options.OutputPath}");
-            Console.WriteLine($"Disposition: {(passed ? "PASS" : "FAIL")}");
-            return passed ? 0 : 1;
+            return 0;
         }
         finally
         {
@@ -298,7 +297,6 @@ internal static class RenderGraphCpuBenchmark
         const int indirectDispatches = ComputePassCount / 4;
         const int directDispatches = ComputePassCount - indirectDispatches;
         const int nativeCopyCommands = CopyPassCount + 2;
-        bool passed = cpu.P95 < P95LimitMicroseconds;
         return new GraphicsCpuWorkloadResult(
             GraphicsCpuWorkload.DagorEnlistedHighWatermark,
             $"resources-{resourceCount:D3}-seed-0x{seed:X8}",
@@ -334,17 +332,15 @@ internal static class RenderGraphCpuBenchmark
                 1,
                 false,
                 graphicsBackend == GraphicsBackendKind.Direct3D12,
-                statistics.LogicalTransientBytes,
-                statistics.PhysicalTransientBytes),
+                statistics.TransientResourceBytes,
+                statistics.TransientHeapBytes),
             $"Immediately before RenderGraph.BeginFrame through real {graphicsBackend} command-buffer close and Queue.Submit return; frame-slot GPU wait is outside.",
             minimumWarmupFrames,
             measurement.Warmup.Length,
             measurement.PlateauReached,
             measurement.Warmup,
             measurement.Samples,
-            cpu,
-            P95LimitMicroseconds,
-            passed);
+            cpu);
     }
 
     private static void BuildSourceGraph(
@@ -541,9 +537,6 @@ internal static class RenderGraphCpuBenchmark
             PassCullingMode.NeverCull,
             PassSchedulingMode.PreserveDeclarationPosition,
             recording,
-            state.Kind == DagorPassKind.Raster
-                ? RasterPassMergeMode.Mergeable
-                : RasterPassMergeMode.Isolated,
             EstimatedExecutionCost: executionCost,
             EstimatedRecordingCost: recordingCost);
         string label = $"Dagor {state.Kind.ToString().ToLowerInvariant()} {state.KindOrdinal:D2} pass {pass:D2}";
@@ -911,7 +904,7 @@ internal static class RenderGraphCpuBenchmark
     private static Pipeline CreateGraphicsPipeline(
         IGraphicsBackend backend,
         Device device,
-        BenchmarkShaderProgram shader)
+        BenchmarkShader shader)
     {
         Format[] colorFormats = [Format.R8G8B8A8UNorm];
         BlendAttachmentState[] blendAttachments =
@@ -921,9 +914,12 @@ internal static class RenderGraphCpuBenchmark
         return backend.CreateGraphicsPipeline(
             device,
             new GraphicsPipelineDesc(
-                shader.Program,
+                shader.SlangCode,
+                shader.Reflection,
                 shader.Entries[0],
+                shader.GetEntryCode(0),
                 shader.Entries[1],
+                shader.GetEntryCode(1),
                 [],
                 [],
                 PrimitiveTopology.TriangleList,

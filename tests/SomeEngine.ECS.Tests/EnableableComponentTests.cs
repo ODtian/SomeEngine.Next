@@ -66,18 +66,26 @@ public class EnableableComponentTests
     }
 
     [Fact]
-    public void Archetype_WithEnableableColumn_IsCappedTo128EntitiesPerChunk()
+    public void EnabledQuerySelectsEnabledEntitiesAcrossLargePopulation()
     {
-        var world = new World();
-        world.CreateEntity(new VisibilityState { Value = 1 });
-
-        var archetype = Assert.Single(
-            world.AllArchetypes.ToArray(),
-            static candidate => candidate.HasComponent(ComponentMetadata<VisibilityState>.Id));
-
-        Assert.Equal(128, archetype.MaxChunkRows);
-        Assert.Equal(1, archetype.EnableableComponentIds.Length);
-        Assert.Equal(ComponentMetadata<VisibilityState>.Id, archetype.EnableableComponentIds[0]);
+        using var world = new World();
+        var expected = new List<Entity>();
+        for (int i = 0; i < 513; i++)
+        {
+            var entity = world.CreateEntity(new VisibilityState { Value = i });
+            if (i % 2 == 0)
+                world.Disable<VisibilityState>(entity);
+            else
+                expected.Add(entity);
+        }
+        var query = world.Query(world.QueryDefinition().Enabled<VisibilityState>());
+        var actual = new List<Entity>();
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                actual.Add(row.Entity);
+        });
+        Assert.Equal(expected.OrderBy(entity => entity.Index), actual.OrderBy(entity => entity.Index));
     }
 
     [Fact]
@@ -189,14 +197,4 @@ public class EnableableComponentTests
         Assert.Equal(100, world.Read<Health>(entity).Value);
     }
 
-    private static int FindRow(Chunk chunk, Entity entity)
-    {
-        for (int row = 0; row < chunk.Count; row++)
-        {
-            if (chunk.Entities[row] == entity)
-                return row;
-        }
-
-        throw new Xunit.Sdk.XunitException($"Entity {entity} was not found in the chunk.");
-    }
 }

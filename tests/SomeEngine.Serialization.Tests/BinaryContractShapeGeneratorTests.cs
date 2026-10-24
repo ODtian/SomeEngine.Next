@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using SomeEngine.Generators;
@@ -40,7 +39,7 @@ public sealed class BinaryContractShapeGeneratorTests
 
             public interface IUndeclaredPolymorphism { }
 
-            [BinaryContract]
+            [BinarySerializable]
             public unsafe partial class InvalidShapes
             {
                 public object ObjectValue = new();
@@ -56,12 +55,7 @@ public sealed class BinaryContractShapeGeneratorTests
         Diagnostic[] diagnostics = result.Diagnostics.Where(static item => item.Id == "SEBC003").ToArray();
 
         Assert.Equal(6, diagnostics.Length);
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("object requires runtime polymorphism", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("dynamic requires runtime polymorphism", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("delegates", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("Task", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("explicit closed [BinaryUnion]", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("process-local", StringComparison.Ordinal));
+        Assert.All(diagnostics, diagnostic => Assert.True(diagnostic.Location.IsInSource));
     }
 
     [Fact]
@@ -71,7 +65,7 @@ public sealed class BinaryContractShapeGeneratorTests
             using System.Collections.Generic;
             using SomeEngine.Serialization;
 
-            [BinaryContract]
+            [BinarySerializable]
             public partial class InvalidMap
             {
                 public Dictionary<double, int> Values { get; set; } = new();
@@ -80,8 +74,8 @@ public sealed class BinaryContractShapeGeneratorTests
 
         GeneratorRun result = RunGenerator(source);
         Diagnostic diagnostic = Assert.Single(result.Diagnostics, static item => item.Id == "SEBC003");
+        Assert.True(diagnostic.Location.IsInSource);
 
-        Assert.Contains("canonical total ordering", diagnostic.GetMessage(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -93,11 +87,11 @@ public sealed class BinaryContractShapeGeneratorTests
             [BinaryUnion(typeof(OpenCase))]
             public interface IMessage { }
 
-            [BinaryContract]
+            [BinarySerializable]
             [BinaryUnionCase(1)]
             public partial class OpenCase : IMessage { }
 
-            [BinaryContract]
+            [BinarySerializable]
             public partial class Envelope
             {
                 public IMessage Value { get; set; } = new OpenCase();
@@ -106,8 +100,8 @@ public sealed class BinaryContractShapeGeneratorTests
 
         GeneratorRun result = RunGenerator(source);
         Diagnostic diagnostic = Assert.Single(result.Diagnostics, static item => item.Id == "SEBC003");
+        Assert.True(diagnostic.Location.IsInSource);
 
-        Assert.Contains("sealed, concrete", diagnostic.GetMessage(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -116,13 +110,13 @@ public sealed class BinaryContractShapeGeneratorTests
         const string source = """
             using SomeEngine.Serialization;
 
-            [BinaryContract]
+            [BinarySerializable]
             public partial record class RecordClass
             {
                 public string Name { get; set; } = string.Empty;
             }
 
-            [BinaryContract]
+            [BinarySerializable]
             public partial record struct RecordStruct
             {
                 public int Value { get; set; }
@@ -132,12 +126,17 @@ public sealed class BinaryContractShapeGeneratorTests
         GeneratorRun result = RunGenerator(source);
 
         Assert.DoesNotContain(result.Diagnostics, static item => item.Severity == DiagnosticSeverity.Error);
-        Assert.Contains(result.Sources, static item => item.HintName.EndsWith("RecordClass.BinaryContract.g.cs", StringComparison.Ordinal));
-        Assert.Contains(result.Sources, static item => item.HintName.EndsWith("RecordStruct.BinaryContract.g.cs", StringComparison.Ordinal));
+        Assert.True((bool)Execute(result, """
+            byte[] bytes = new byte[256];
+            if (!BinarySerializer.TryWrite(bytes, new RecordClass { Name = "record" }, out int count)) return false;
+            if (BinarySerializer.Deserialize<RecordClass>(bytes.AsSpan(0, count)).Name != "record") return false;
+            if (!BinarySerializer.TryWrite(bytes, new RecordStruct { Value = 73 }, out count)) return false;
+            return BinarySerializer.Deserialize<RecordStruct>(bytes.AsSpan(0, count)).Value == 73;
+            """)!);
     }
 
     [Fact]
-    public void ConcreteContractInheritanceFailsInsteadOfSilentlyDroppingBaseMembers()
+    public void ConcreteContractInheritanceIncludesBaseMembers()
     {
         const string source = """
             using SomeEngine.Serialization;
@@ -147,7 +146,7 @@ public sealed class BinaryContractShapeGeneratorTests
                 public int BaseValue { get; set; }
             }
 
-            [BinaryContract]
+            [BinarySerializable]
             public partial class DerivedContract : ContractBase
             {
                 public int OwnValue { get; set; }
@@ -155,9 +154,14 @@ public sealed class BinaryContractShapeGeneratorTests
             """;
 
         GeneratorRun result = RunGenerator(source);
-        Diagnostic diagnostic = Assert.Single(result.Diagnostics, static item => item.Id == "SEBC001");
+        Assert.DoesNotContain(result.Diagnostics, static item => item.Severity == DiagnosticSeverity.Error);
+        Assert.True((bool)Execute(result, """
+            var output = new System.Buffers.ArrayBufferWriter<byte>();
+            BinarySerializer.Write(output, new DerivedContract { BaseValue = 17, OwnValue = 23 });
+            DerivedContract value = BinarySerializer.Deserialize<DerivedContract>(output.WrittenSpan);
+            return value.BaseValue == 17 && value.OwnValue == 23;
+            """)!);
 
-        Assert.Contains("inherited storage cannot be silently omitted", diagnostic.GetMessage(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -166,7 +170,7 @@ public sealed class BinaryContractShapeGeneratorTests
         const string source = """
             using SomeEngine.Serialization;
 
-            [BinaryContract]
+            [BinarySerializable]
             public partial class TypeMemberContract
             {
                 public int Type { get; set; }
@@ -177,13 +181,12 @@ public sealed class BinaryContractShapeGeneratorTests
 
         Assert.DoesNotContain(result.Diagnostics, static item => item.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(result.Diagnostics, static item => item.Id == "CS0108");
-        string generated = Assert.Single(
-            result.Sources,
-            static item => item.HintName.EndsWith("TypeMemberContract.BinaryContract.g.cs", StringComparison.Ordinal))
-            .SourceText
-            .ToString();
-        Assert.Contains("GetTypeValue()", generated, StringComparison.Ordinal);
-        Assert.DoesNotContain(" GetType()", generated, StringComparison.Ordinal);
+        Assert.Equal(17, (int)Execute(result, """
+            byte[] bytes = new byte[256];
+            if (!BinarySerializer.TryWrite(bytes, new TypeMemberContract { Type = 17 }, out int count)) throw new Exception();
+            var view = new TypeMemberContract.SpanView(bytes.AsSpan(0, count));
+            return view.GetTypeValue();
+            """)!);
     }
 
     private static ulong GenerateFingerprint(string memberType)
@@ -198,13 +201,13 @@ public sealed class BinaryContractShapeGeneratorTests
                 Second = 2,
             }
 
-            [BinaryContract]
+            [BinarySerializable]
             public sealed partial class Leaf
             {
                 public int Number { get; set; }
             }
 
-            [BinaryContract(LogicalName = "Tests.NullableFingerprint.Holder")]
+            [BinarySerializable(LogicalName = "Tests.NullableFingerprint.Holder")]
             public partial class Holder
             {
                 public {{memberType}} Value { get; set; } = default!;
@@ -212,23 +215,136 @@ public sealed class BinaryContractShapeGeneratorTests
             """;
         GeneratorRun result = RunGenerator(source);
         Assert.DoesNotContain(result.Diagnostics, static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = Assert.Single(
-            result.Sources,
-            static item => item.HintName.EndsWith("Holder.BinaryContract.g.cs", StringComparison.Ordinal))
-            .SourceText
-            .ToString();
-        Match match = Regex.Match(generated, @"SchemaFingerprint => 0x(?<value>[0-9A-F]{16})UL", RegexOptions.CultureInvariant);
-        Assert.True(match.Success, generated);
-        return Convert.ToUInt64(match.Groups["value"].Value, 16);
+        return (ulong)Execute(result, "return Holder.SchemaFingerprint;")!;
+    }
+
+    [Fact]
+    public void PartialFileReorganizationKeepsEncodingAndSchema()
+    {
+        const string first = """
+            using SomeEngine.Serialization;
+            [BinarySerializable(LogicalName = "Tests.PartialFields")]
+            public partial class Value
+            {
+                public int Z { get; set; }
+            }
+            """;
+        const string second = """
+            public partial class Value
+            {
+                public int A { get; set; }
+            }
+            """;
+        GeneratorRun original = RunGenerator([("a.cs", first), ("z.cs", second)]);
+        GeneratorRun moved = RunGenerator([("folder/z.cs", first), ("a.cs", second)]);
+        const string consume = """
+            var output = new System.Buffers.ArrayBufferWriter<byte>();
+            BinarySerializer.Write(output, new Value { A = 17, Z = 23 });
+            return new object[] { output.WrittenSpan.ToArray(), Value.SchemaFingerprint };
+            """;
+        object[] originalResult = (object[])Execute(original, consume)!;
+        object[] movedResult = (object[])Execute(moved, consume)!;
+        Assert.Equal((byte[])originalResult[0], (byte[])movedResult[0]);
+        Assert.Equal(originalResult[1], movedResult[1]);
+    }
+
+    [Fact]
+    public void ExplicitFieldOrderControlsBytesAndSchema()
+    {
+        const string source = """
+            using SomeEngine.Serialization;
+            [BinarySerializable(LogicalName = "Tests.ExplicitFields")]
+            [BinaryFields(nameof(Z), nameof(A))]
+            public partial class Value
+            {
+                public int A { get; set; }
+                public int Z { get; set; }
+            }
+            """;
+        const string consume = """
+            var output = new System.Buffers.ArrayBufferWriter<byte>();
+            BinarySerializer.Write(output, new Value { A = 17, Z = 23 });
+            var reader = new BinaryDataReader(output.WrittenSpan);
+            Value result = BinarySerializer.Deserialize<Value>(output.WrittenSpan);
+            return new object[] { reader.ReadInt32(), Value.SchemaFingerprint, result.A == 17 && result.Z == 23 };
+            """;
+        object[] first = (object[])Execute(RunGenerator(source), consume)!;
+        object[] reordered = (object[])Execute(RunGenerator(source.Replace("nameof(Z), nameof(A)", "nameof(A), nameof(Z)")), consume)!;
+        Assert.Equal(23, first[0]);
+        Assert.Equal(17, reordered[0]);
+        Assert.NotEqual(first[1], reordered[1]);
+        Assert.Equal(true, first[2]);
+        Assert.Equal(true, reordered[2]);
+    }
+
+    [Theory]
+    [InlineData("\"A\"", "missing")]
+    [InlineData("\"A\", \"A\", \"Z\"", "repeated")]
+    [InlineData("\"A\", \"Z\", \"Absent\"", "not serialized")]
+    [InlineData("null", "null")]
+    public void ExplicitFieldOrderReportsIncompleteOrAmbiguousDeclarations(string fields, string message)
+    {
+        string source = $$"""
+            using SomeEngine.Serialization;
+            [BinarySerializable]
+            [BinaryFields({{fields}})]
+            public partial class Value
+            {
+                public int A { get; set; }
+                public int Z { get; set; }
+            }
+            """;
+        GeneratorRun result = RunGenerator(source);
+        Diagnostic diagnostic = Assert.Single(result.Diagnostics, item => item.Id == "SEBC012");
+        Assert.True(diagnostic.Location.IsInSource);
+        Assert.Contains(message, diagnostic.GetMessage());
+    }
+
+    private static object? Execute(GeneratorRun result, string body)
+    {
+        Assert.DoesNotContain(result.Diagnostics, item => item.Severity == DiagnosticSeverity.Error);
+        string consumer = "using System; using SomeEngine.Serialization; public static class Consumer { public static object Execute() { " + body + " } }";
+        Compilation compilation = result.Compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(
+            consumer, new CSharpParseOptions(LanguageVersion.Preview)));
+        using var stream = new MemoryStream();
+        var emitted = compilation.Emit(stream);
+        Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+        var assembly = System.Reflection.Assembly.Load(stream.ToArray());
+        return assembly.GetType("Consumer")!.GetMethod("Execute")!.Invoke(null, null);
+    }
+
+    [Fact]
+    public void MovingAnEnumWithItsDeclaredBinaryNamePreservesBytesAndSchema()
+    {
+        const string original = """
+            using SomeEngine.Serialization;
+            namespace Before { public enum Mode : byte { None = 0, Enabled = 1 } }
+            [BinarySerializable]
+            public partial class Value { public Before.Mode Mode { get; set; } }
+            """;
+        string moved = original.Replace("namespace Before { public enum", "namespace After { [BinaryName(\"Before.Mode\")] public enum")
+            .Replace("Before.Mode Mode", "After.Mode Mode");
+        const string body = """
+            var bytes = new System.Buffers.ArrayBufferWriter<byte>();
+            BinarySerializer.Write(bytes, new Value());
+            return new object[] { Value.SchemaFingerprint, bytes.WrittenSpan.ToArray() };
+            """;
+        object[] first = (object[])Execute(RunGenerator(original), body)!;
+        object[] second = (object[])Execute(RunGenerator(moved), body)!;
+        Assert.Equal(first[0], second[0]);
+        Assert.Equal((byte[])first[1], (byte[])second[1]);
     }
 
     private static GeneratorRun RunGenerator(string source, bool allowUnsafe = false)
+        => RunGenerator([("ContractShapeInput.cs", source)], allowUnsafe);
+
+    private static GeneratorRun RunGenerator((string Path, string Source)[] sources, bool allowUnsafe = false)
     {
         var parseOptions = new CSharpParseOptions(LanguageVersion.Preview);
-        SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(source, parseOptions, path: "ContractShapeInput.cs");
+        SyntaxTree[] syntaxTrees = sources.Select(item => CSharpSyntaxTree.ParseText(item.Source, parseOptions, path: item.Path)).ToArray();
         var compilation = CSharpCompilation.Create(
-            assemblyName: "BinaryContractShapeGeneratorTests",
-            syntaxTrees: [syntaxTree],
+            assemblyName: "BinaryContractShapeGeneratorTests_" + Guid.NewGuid().ToString("N"),
+            syntaxTrees: syntaxTrees,
             references: GetReferences(),
             options: new CSharpCompilationOptions(
                 OutputKind.DynamicallyLinkedLibrary,
@@ -249,10 +365,7 @@ public sealed class BinaryContractShapeGeneratorTests
             .GroupBy(static diagnostic => diagnostic.ToString(), StringComparer.Ordinal)
             .Select(static group => group.First())
             .ToArray();
-        GeneratedSourceResult[] sources = runResult.Results
-            .SelectMany(static result => result.GeneratedSources)
-            .ToArray();
-        return new GeneratorRun(diagnostics, sources);
+        return new GeneratorRun(diagnostics, outputCompilation);
     }
 
     private static MetadataReference[] GetReferences()
@@ -261,11 +374,11 @@ public sealed class BinaryContractShapeGeneratorTests
             .Split(Path.PathSeparator)
             .Select(static path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(BinaryContractAttribute).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(BinarySerializableAttribute).Assembly.Location));
         return references.ToArray();
     }
 
     private sealed record GeneratorRun(
         Diagnostic[] Diagnostics,
-        GeneratedSourceResult[] Sources);
+        Compilation Compilation);
 }

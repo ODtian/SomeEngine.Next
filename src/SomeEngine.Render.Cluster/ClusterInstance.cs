@@ -73,7 +73,8 @@ public static class ClusterRenderFeature
 /// <summary>Mesh preparation state shared by every Cluster entity that references a handle.</summary>
 public sealed record ClusterMeshCacheDiagnostics(
     int RegisteredMeshes,
-    int PublishedMeshes);
+    int PublishedMeshes,
+    ulong ChangeRevision);
 
 /// <summary>Result of resolving the unique mesh handles visible in one RenderWorld scan.</summary>
 public readonly record struct ClusterMeshPrepareResult(

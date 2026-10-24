@@ -5,43 +5,30 @@ namespace SomeEngine.ECS.Owners;
 
 internal sealed class Entities
 {
-    private World _world = null!;
-    private Tables _tables = null!;
-    private RelationGraph _relationGraph = null!;
-    private Components _components = null!;
-    private Sparse _sparse = null!;
-    private Iteration _iteration = null!;
-    private Hierarchy _hierarchy = null!;
+    private readonly WorldStructureRoot _structure;
 
-    internal Entities(int capacity)
+    private World _world => _structure.World;
+    private Tables _tables => _structure.Tables;
+    private RelationGraph _relationGraph => _structure.RelationGraph;
+    private Components _components => _structure.Components;
+    private Sparse _sparse => _structure.Sparse;
+    private Iteration _iteration => _structure.Iteration;
+    private Hierarchy _hierarchy => _structure.Hierarchy;
+
+    internal Entities(WorldStructureRoot structure, int capacity)
     {
+        _structure = structure;
         Store = new EntityStore(capacity);
     }
 
-    internal Entities(EntityStore store)
+    internal Entities(WorldStructureRoot structure, EntityStore store)
     {
+        _structure = structure;
         Store = store ?? throw new ArgumentNullException(nameof(store));
     }
 
     internal EntityStore Store { get; }
 
-    internal void Bind(
-        World world,
-        Tables tables,
-        RelationGraph relationGraph,
-        Components components,
-        Sparse sparse,
-        Iteration iteration,
-        Hierarchy hierarchy)
-    {
-        _world = world;
-        _tables = tables;
-        _relationGraph = relationGraph;
-        _components = components;
-        _sparse = sparse;
-        _iteration = iteration;
-        _hierarchy = hierarchy;
-    }
 
     internal Entity Create()
     {

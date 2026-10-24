@@ -6,69 +6,47 @@ ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 ByteAddressBuffer InstanceData;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<RasterBinEntry> RasterBinMeta;
-ConstantBuffer<RasterDeformBinningUniforms> Uniforms;
-StructuredBuffer<uint4> VisibleClusters;
+ConstantBuffer<RasterBinningUniforms> Uniforms;
+StructuredBuffer<DrawRequest> VisibleClusters;
 ByteAddressBuffer DrawArgs;
 ByteAddressBuffer ClusterReadOffsetArgs;
-StructuredBuffer<uint> SlotBuffer;
+ByteAddressBuffer ClusterReadOffsetArgs1;
+ByteAddressBuffer ClusterReadOffsetArgs2;
+StructuredBuffer<uint> RasterSlots;
 ByteAddressBuffer PageHeap;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<DeformBinEntry> DeformBinMeta;
+
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> CacheOffsetsWrite;
+RWStructuredBuffer<uint> BinnedClusterIndexBuffer;
 
-static const uint CACHE_OFFSET_OVERFLOW = 0xFFFFFFFDu;
-
-void CountRasterBatches(
-    uint slotOffset,
-    uint vrbInfo,
-    uint triangleCount,
-    uint packedMaterials,
-    uint packedRanges,
-    bool isSoftware)
+void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware)
 {
-    if (triangleCount == 0u)
+    if (!IsBin(bin)) return;
+    uint capacity = RasterBinMeta[bin].BinCapacity;
+    if (capacity == 0u)
+    {
+        CountRaster(RasterBinMeta, bin, isSoftware);
         return;
-
-    VRBDecoded vrb = DecodeVRB(vrbInfo);
-    uint triangleStart = 0u;
-    for (uint batch = 0u; batch < vrb.batchCount && triangleStart < triangleCount; batch++)
-    {
-        uint triangleEnd = min(triangleStart + vrb.triCounts[batch], triangleCount);
-        uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
-        CountRaster(
-            RasterBinMeta,
-            RasterKey(SlotBuffer, Uniforms, slotOffset, material),
-            EmitsSw(isSoftware, batch, vrb.batchCount));
-        triangleStart = triangleEnd;
     }
-
-    while (triangleStart < triangleCount)
+    uint key = (bin << 1u) | (isSoftware ? 1u : 0u);
+    uint4 matching = WaveMatchingLanes(key);
+    uint lane = WaveGetLaneIndex();
+    uint leader = WaveMaskFirstLane(matching);
+    uint first = 0u;
+    if (lane == leader)
     {
-        uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
-        CountRaster(
-            RasterBinMeta,
-            RasterKey(SlotBuffer, Uniforms, slotOffset, material),
-            false);
-        triangleStart = min(
-            triangleStart + 32u,
-            MaterialEnd(packedRanges, triangleStart, triangleCount));
+        if (isSoftware)
+            InterlockedAdd(RasterBinMeta[bin].BinSWCount, WaveMaskBitCount(matching), first);
+        else
+            InterlockedAdd(RasterBinMeta[bin].BinHWCount, WaveMaskBitCount(matching), first);
     }
+    uint item = WaveReadLaneAt(first, leader) + WaveMaskPrefix(matching, lane);
+    // Keep both lists in append order. The hardware region starts after the
+    // maximum software work derived from this phase's visible-cluster count.
+    uint index = (isSoftware ? RasterBinMeta[bin].ClusterOffset : RasterBinMeta[bin].HardwareOffset) + item;
+    BinnedClusterIndexBuffer[index] = visibleIndex | (workIndex << 22u);
 }
 
-void CountDeformCluster(
-    uint slotOffset,
-    uint triangleCount,
-    uint packedMaterials,
-    uint packedRanges)
-{
-    if (triangleCount == 0u)
-        return;
-    uint material = LocalMaterial(packedMaterials, packedRanges, 0u);
-    CountDeform(
-        DeformBinMeta,
-        DeformKey(SlotBuffer, Uniforms, slotOffset, material));
-}
+#include "cluster_bin_batches.slang"
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -84,21 +62,24 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
     DecodeVisibleCluster(
         DrawArgs,
         ClusterReadOffsetArgs,
+        ClusterReadOffsetArgs1,
+        ClusterReadOffsetArgs2,
         Uniforms.MaxVisibleClusters,
         threadId.x,
         visibleIndex,
         isSoftware);
 
-    uint4 entry = VisibleClusters[visibleIndex];
-    CacheOffsetsWrite[visibleIndex] = CACHE_OFFSET_OVERFLOW;
-    uint vrbInfo;
+    DrawRequest entry = VisibleClusters[visibleIndex];
+    uint4 vertReuseBatchWords;
+    uint vertexCount;
     uint triangleCount;
     uint packedMaterials;
     uint packedRanges;
     ReadClusterBinData(
         PageHeap,
         entry,
-        vrbInfo,
+        vertReuseBatchWords,
+        vertexCount,
         triangleCount,
         packedMaterials,
         packedRanges);
@@ -107,13 +88,14 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         LoadRenderInstanceMetadata(
             InstanceProperties,
             CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
-        entry.z);
-    CountRasterBatches(
+        entry.InstanceID);
+    BuildRasterBatches(
+        visibleIndex,
         slotOffset,
-        vrbInfo,
+        vertReuseBatchWords,
+        vertexCount,
         triangleCount,
         packedMaterials,
         packedRanges,
         isSoftware);
-    CountDeformCluster(slotOffset, triangleCount, packedMaterials, packedRanges);
 }

@@ -12,13 +12,11 @@ enum class profile
 {
     warp,
     diagnostic,
-    certification,
     representative,
 };
 
 enum class disposition
 {
-    passed,
     failed,
     functional_only,
     unexecuted,

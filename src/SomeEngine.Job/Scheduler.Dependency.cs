@@ -3,16 +3,26 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
     private const int InlineDependencyCapacity = 16;
-    private const string UninitializedContinuationMessage = "Continuation is not initialized.";
-    internal JobHandle CombineDependencies(ReadOnlySpan<JobHandle> handles)
+
+    [System.Runtime.CompilerServices.InlineArray(InlineDependencyCapacity)]
+    private struct InlineDependencies
     {
+        private JobHandle _first;
+    }
+    private const string UninitializedContinuationMessage = "Continuation is not initialized.";
+    public JobHandle CombineDependencies(ReadOnlySpan<JobHandle> handles)
+    {
+        using Submission submissionScope = EnterSubmission();
         EnsureCurrentScopeBelongsToThisRuntime();
+        foreach (JobHandle handle in handles)
+            ValidateDependency(handle);
+        InlineDependencies inline = default;
         JobHandle[]? rentedHandles = null;
         Span<JobHandle> liveDependencies = handles.Length <= InlineDependencyCapacity
-            ? stackalloc JobHandle[handles.Length]
+            ? ((Span<JobHandle>)inline)[..handles.Length]
             : (rentedHandles = ArrayPool<JobHandle>.Shared.Rent(handles.Length)).AsSpan(0, handles.Length);
         int liveDependencyCount = 0;
 

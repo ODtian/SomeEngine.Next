@@ -1,3 +1,4 @@
+using SomeEngine.Serialization;
 using System.Runtime.InteropServices;
 using System.Text;
 using SomeEngine.ECS.Components;
@@ -75,7 +76,8 @@ public sealed partial class SerializationRegistry
     {
         if (!_topologyByStableId.TryGetValue(fileKey.StableId, out var runtime))
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.UnknownType,
                 $"Unknown serialized {kind} topology '{fileKey.StableName}' ({fileKey.StableId}).");
         }
         if (runtime.Kind != kind)
@@ -86,7 +88,8 @@ public sealed partial class SerializationRegistry
         if (fileKey.SchemaFingerprint == 0 ||
             runtime.TypeKey.SchemaFingerprint != fileKey.SchemaFingerprint)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Topology schema mismatch for '{fileKey.StableName}': " +
                 $"file=0x{fileKey.SchemaFingerprint:X16}, " +
                 $"local=0x{runtime.TypeKey.SchemaFingerprint:X16}.");
@@ -96,7 +99,8 @@ public sealed partial class SerializationRegistry
                 fileKey.StableName,
                 StringComparison.Ordinal))
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
                 $"Serialized topology key name '{fileKey.StableName}' does not exactly match " +
                 $"registered name '{runtime.TypeKey.StableName}'.");
         }
@@ -192,7 +196,7 @@ internal abstract class TopologySerializationRuntime
     internal abstract void WriteAdmitted(
         BinaryWriter writer,
         AdmittedWorldWrite admitted,
-        TopologyCaptureBudget budget);
+        TopologyCaptureBudget budget, ISet<ExternalReferenceKey>? references);
 
     internal abstract void ReadApply(
         BinaryReader reader,
@@ -228,12 +232,12 @@ internal sealed class HierarchyTopologySerializationRuntime<TDomain> : TopologyS
     internal override void WriteAdmitted(
         BinaryWriter writer,
         AdmittedWorldWrite admitted,
-        TopologyCaptureBudget budget)
+        TopologyCaptureBudget budget, ISet<ExternalReferenceKey>? references)
     {
         HierarchyTopologyWriteAccess<TDomain> access =
             admitted.OpenHierarchyTopology<TDomain>();
         budget.ReserveRecords(access.RecordCount, TypeKey.StableName);
-        var data = new DataWriter(writer);
+        var data = new DataWriter(writer, references);
         writer.Write(access.ParentCount);
         int writtenParents = 0;
         for (int slot = 0; slot < access.SlotCount; slot++)
@@ -336,7 +340,6 @@ internal sealed class RelationTopologySerializationRuntime<T> : TopologySerializ
                 "codec and cannot be written as DurableSave.");
         }
 
-
         if (contract == SerializationContract.DurableSave &&
             _payloadEntry.TypeKey.SchemaFingerprint == 0)
         {
@@ -344,7 +347,6 @@ internal sealed class RelationTopologySerializationRuntime<T> : TopologySerializ
                 $"Relation payload '{_payloadEntry.TypeKey.StableName}' does not declare an explicit 64-bit " +
                 "schema fingerprint and cannot be written as DurableSave.");
         }
-
 
         if (contract == SerializationContract.DurableSave &&
             _payloadEntry.SchemaSource != SerializationSchemaSource.Explicit)
@@ -363,7 +365,7 @@ internal sealed class RelationTopologySerializationRuntime<T> : TopologySerializ
     internal override void WriteAdmitted(
         BinaryWriter writer,
         AdmittedWorldWrite admitted,
-        TopologyCaptureBudget budget)
+        TopologyCaptureBudget budget, ISet<ExternalReferenceKey>? references)
     {
         RelationTopologyWriteAccess<T> access =
             admitted.OpenRelationTopology<T>(validate: false);
@@ -371,7 +373,7 @@ internal sealed class RelationTopologySerializationRuntime<T> : TopologySerializ
         writer.Write((byte)access.Schema.Direction);
         writer.Write((byte)access.Schema.Cardinality);
         writer.Write(access.Schema.AllowSelfEdge);
-        var data = new DataWriter(writer);
+        var data = new DataWriter(writer, references);
 
         writer.Write(access.EdgeCount);
         int writtenEdges = 0;

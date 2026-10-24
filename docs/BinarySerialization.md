@@ -4,13 +4,14 @@ This document is the durable engineering contract for SomeEngine's reflection-fr
 
 ## Design invariants
 
-- Every generated type is a `partial` C# type marked with `[BinaryContract]` and implements `IBinaryContract<T>` through compile-time generation. A deliberately handwritten contract may implement the same static interface directly.
+- Every generated type is a `partial` C# type marked with `[BinarySerializable]` and implements `IBinarySerializable<T>` through compile-time generation. A deliberately handwritten contract may implement the same static interface directly.
+- `[TextSerializable]` opts the same declaration into static JSON encoding through `ITextSerializable<T>`. Field identities and ordering are shared with the binary codec. See [readable asset sources](AssetSources.md) for the source envelope, payload references, and current integration coverage.
 - Runtime encoding and discovery use no reflection, assembly scanning, `Activator`, expression compilation, or runtime code generation.
 - Integer and floating-point primitives are canonical little-endian. GUIDs use RFC/network byte order. Booleans accept only `0` and `1`. Strings are strict UTF-8 with explicit nullable length framing.
 - `ExactSchema` is the only compatibility mode. Type id, fingerprint, compatibility marker, and epoch must all match the current reader before decoding. Unknown or older schemas fail closed; there is no runtime migration or legacy envelope path.
 - Untrusted lengths, counts, recursion, allocations, compression ratios, root sizes, catalogs, chunk counts, checkpoint bytes, and records are bounded before allocation or iteration.
 - Borrowed `Span` or `Memory` remains valid only through an explicit owner or lease. Disposing a document invalidates its document-level chunk leases and generated root views.
-- A payload has at most one live resident backing. A memory mapping counts as resident memory. A resident source may be borrowed directly, or a non-resident file/HTTP source may read into caller-owned final storage; the runtime must not retain both.
+- Each read has an explicit final destination. A memory mapping counts as resident CPU memory. File and HTTP ranges can write directly into caller-supplied storage. Independent asset accesses and domain objects may share immutable file bytes; CPU decoded bytes and GPU allocations have separate lifetimes and budgets.
 - Binary-document offsets are signed 64-bit nonnegative values and are checked before arithmetic. A materialized root, chunk, or contiguous native block remains bounded by the CLR `int` contiguous-memory limit.
 - Cross-domain binary mechanics live in `SomeEngine.Serialization`: `BinaryPrimitiveEncoding`,
   `BinaryTypeId` / `BinaryFieldKey`, the inline `Digest256` value, bounded counting streams, and
@@ -26,9 +27,13 @@ This document is the durable engineering contract for SomeEngine's reflection-fr
 
 The fingerprint includes logical names, member order, wire shapes, nullability, collection element shapes, union closure, and every nested contract fingerprint. Variable-length descriptor tokens are length-framed before the SHA-256 digest is truncated to 64 bits. The logical `TypeId` is the first 128 bits of SHA-256 over the logical type name.
 
-Supported generated shapes include primitives, enums, GUIDs, strict UTF-8 strings, byte memory, arrays, `List<T>`/`IList<T>`, canonical `Dictionary<TKey,TValue>`/`IDictionary<TKey,TValue>`, nullable values, mutable records, nested contracts, and explicitly closed unions. Dictionary keys are emitted in canonical wire order. Collection writers snapshot `Count` once, binding the encoded count and traversal bound to the same value.
+Supported generated shapes include primitives, enums, GUIDs, strict UTF-8 strings, byte memory, arrays, `List<T>`/`IList<T>`, `ImmutableList<T>`, `ImmutableArray<T>`, canonical `Dictionary<TKey,TValue>`/`IDictionary<TKey,TValue>`, nullable values, mutable records, nested contracts, and explicitly closed unions. Dictionary keys are emitted in canonical wire order. Collection writers snapshot `Count` once, binding the encoded count and traversal bound to the same value. An uninitialized immutable array is rejected; an empty array and a nullable array's absence remain distinct.
 
-Generation rejects non-partial or generic declarations, inaccessible construction or setters, concrete base-class inheritance, unsupported or open shapes, duplicate names or field keys, object cycles, invalid nested contracts, and colliding type IDs. It does not silently fall back to reflection.
+Nested values can come from another assembly when they provide the static serialization and view-validation interfaces. Generated types expose both; a parent schema includes the referenced codec's actual schema. This does not scan assemblies or regenerate the referenced type. The defining generator also emits `BinaryValue` for source shapes safe to copy or share without mutable reference contents. Asset declarations use this proof for external values, instead of inferring safety from incomplete private metadata. Generic encoding remains usable for mutable objects without this proof.
+
+Generation rejects non-partial or generic declarations, inaccessible construction or setters, unsupported or open shapes, duplicate names or field keys, object cycles, invalid nested contracts, and colliding type IDs. Inherited public data participates in the schema; setters must be accessible from the generated codec, including an accessible protected setter. It does not silently fall back to reflection.
+
+Default field order is ordinal logical-name order, independent of source paths and partial-file arrangement. `BinaryName` defines a field's encoded identity and can preserve an enum's identity when its C# namespace changes. An optional `BinaryFields` attribute declares the complete explicit order by C# member name; duplicate, missing and unknown names are diagnosed. Ordinary binary generation only processes explicit binary declarations and does not inject asset fields into the compilation.
 
 Each contract assembly receives an assembly-local catalog in a namespace derived from that
 assembly's name. Code in the same assembly can register every generated contract explicitly:
@@ -54,7 +59,7 @@ Every generated contract exposes a bounded validator, its exact current-schema r
 
 Generated views do not expose `Materialize`. Callers either keep the one borrowed view backing or explicitly enter the exact-schema object reader; there is no view-to-object compatibility shortcut that retains both representations.
 
-Creating and reading a primitive generated view allocates zero managed bytes after warm-up. Corruption, truncation, budget overflow, and use after disposal fail closed.
+Creating and reading a primitive generated view allocates zero managed bytes after warm-up. Fixed fields use generated offsets; variable layouts retain only their field offsets during initial validation. Repeated tail-field reads do not rescan a large preceding collection. Corruption, truncation, budget overflow, and use after disposal fail closed.
 
 ### Proven native layout
 
@@ -62,17 +67,21 @@ Creating and reading a primitive generated view allocates zero managed bytes aft
 
 ### Single-encoding behavior
 
-`BinaryContractSerializer.TryWrite<T>` invokes `T.Write` at most once into caller-owned final storage. An undersized destination may contain the prefix already produced by that single invocation; the serializer reports failure and never measures, retries, grows, or re-encodes the value. Document roots are encoded once directly into their final `FileStream` while length and SHA-256 are observed online. Binary-document and pack writers accept a final file stream rather than a general `Stream`, so a `MemoryStream` cannot become a second complete encoded backing. Directory descriptors retain hashes as inline `Digest256` values, are encoded once into a stack span, written directly into the reserved final directory, and fed to the directory and generation hashers from that same span. There is no per-entry encoded array, per-hash managed backing, or product API that constructs a complete encoded frame in a growable intermediate buffer.
+`BinarySerializer.TryWrite<T>` invokes `T.Write` at most once into caller-supplied storage. An undersized destination may contain the prefix already produced by that call; failure never triggers measurement or re-encoding. `Write<T>(IBufferWriter<byte>, T)` provides the same single-encoding behavior for extensible output. Span and `ReadOnlySequence<byte>` inputs share the existing reader and read limits; segmented primitives and strings do not require concatenating the input.
+
+Writable generated classes also implement `IBinaryObjectReader<T>`. `DeserializeInto` and `BinaryDocument.ReadRootInto` decode into an existing object and reuse its writable `List<T>` / `IList<T>` instances. This lets a caller choose paged storage without a temporary complete list or an ambient allocator in the codec. These operations can partially modify the target on failure; a caller requiring atomic installation supplies a new object or an isolated branch. Types with init-only properties keep their construction-based reader.
+
+Document and pack writers accept writable, seekable `Stream` destinations with length control. They encode roots directly while observing length and SHA-256, then backfill the existing header and directory. File publication separately performs the temporary-file flush and atomic replacement. Chunk input may be continuous memory or `ReadOnlySequence<byte>`; compression and hashes consume segments without joining them. Directory descriptors retain hashes as inline `Digest256` values and are encoded once into a stack span, written into the reserved directory, and fed to its hashers.
 
 Sequential legacy frames are not supported. `SequentialFrame`, generic migration registries, additive field framing, and compatibility readers are absent from the product API.
 
 ## Binary document wire
 
-`BinaryDocument<T>` uses the sole current magic `SEBDOC03` and format version 3, a fixed 128-byte header, a hashed type catalog, a small root record, a sorted 96-byte chunk directory, and aligned semantic chunks. The former `SEIDX001`/`SEIDX002` envelopes and every other envelope fail closed; there is no IndexedDocument reader or compatibility path.
+`BinaryDocument<T>` uses the current magic `SEBDOC04` and format version 4, a fixed 128-byte header, a hashed type catalog, a small root record, a sorted 96-byte chunk directory, and aligned semantic chunks. Type-catalog entry zero explicitly identifies the root; remaining entries are sorted by type ID. Matching a secondary entry's schema cannot substitute another root type. Earlier document versions fail closed; affected asset products must be regenerated.
 
 | Offset | Size | Field |
 | ---: | ---: | --- |
-| 0 | 8 | `SEBDOC03` magic |
+| 0 | 8 | `SEBDOC04` magic |
 | 8 | 2 | format version |
 | 10 | 2 | header size, always 128 |
 | 12 | 1 | compatibility |
@@ -104,82 +113,70 @@ Each directory entry records a semantic key, type fingerprint, stored and decode
 - `HttpRangeSource` requires a strong ETag and content length, sends `Range` and `If-Match`, requires exact `206`/`Content-Range` semantics, and rejects generation changes, excess bodies, and truncation.
 - `RetainsResidentBacking` is fail-closed by default and is propagated through nested document and pack sources. File and HTTP sources report false; memory and memory-mapped sources report true.
 
-`RangeLease`, `ChunkLease`, `ResidentChunkLease`, and document owners make memory lifetime explicit. A document must outlive its chunk and child-range consumers.
+`RangeLease`, `ChunkLease`, `ResidentChunkLease`, and document access objects make memory lifetime explicit. Document-level ranges require their document lifetime. A page-backed scheduler retains its document until queued work has actually stopped; explicitly retained page ranges and branches independently outlive the document and cache.
 
-Streamed meshes accept only non-resident file or remote range sources. Memory, memory-mapped, and unknown wrapper sources fail closed because publishing a page or BVH would otherwise retain a second physical backing. Page and BVH reads target final publication storage directly and authenticate that storage in place.
+Document decoding does not reject a source merely because it retains memory or a mapping. An explicit target may hold a necessary decoded representation, and sources that cannot guarantee immutable borrowed ranges use explicit target reads. Source storage and decoded storage remain separate accounting responsibilities.
+
+The existing mesh consumer's source restrictions are separately scheduled for migration in A25. They are not a general binary-document restriction.
 
 ## Packs, overlays, patches, and signatures
 
 `AssetPackBuilder` stores complete binary asset documents as uncompressed, 4096-aligned outer chunks so each inner document remains range-addressable. Inner semantic chunks may still be compressed. Admission validates the nested header, catalog, exact root identity/hash, directory ordering/ranges, declared total length, and schema fingerprint without decoding or hashing semantic payloads a second time. Semantic chunk hashes are checked lazily by the nested document when a chunk is acquired.
 
-`AssetPack` validates catalog identity, outer descriptors, requested contract identity, and the nested binary document. `AssetPackOverlay` resolves base, DLC, and hotfix packs in explicit highest-priority-first order.
+`AssetPack` validates catalog identity, outer descriptors, requested contract identity, and the nested binary document. `AssetPackStorage` resolves its ordered base, DLC, and hotfix packs in explicit highest-priority-first order. Open asset byte ranges retain independent access when the storage closes.
 
-`AssetPackPatchBuilder` compares complete binary-document SHA-256 values and emits only changed or newly added assets. Unchanged assets are absent. Publication writes a same-directory temporary file, flushes it, and atomically replaces the target.
+`AssetPackBuilder(basePack)` compares complete binary-document SHA-256 values and emits only changed or newly added assets. Unchanged assets are absent. Publication writes a same-directory temporary file, flushes it, and atomically replaces the target.
 
 Signed packs use RSA PKCS#1 v1.5 with SHA-256 over deterministic pack identity and authenticated content receipts. Signature metadata is hashed online rather than materialized as a second encoded buffer. `OpenVerifiedAsync` verifies header/catalog/root/directory identity without eagerly reading every semantic payload; modified payload bytes fail against their signed directory receipt on first acquire. Unsigned packs under a verification policy, wrong keys, modified metadata, modified nested bytes, and corrupt signatures fail closed.
 
-## Scheduler, coalescing, telemetry, and residency
+## Managed results and resource budgets
 
-`ChunkRequestScheduler` provides bounded admission, priority ordering and promotion, deadlines, per-waiter cancellation, concurrent-load limits, in-flight key deduplication, pinned leases, decoded LRU eviction, and telemetry. A waiter deadline never cancels the shared load or another waiter. Pinned and actively awaited entries cannot be evicted.
+`BinaryDocument.TryReadChunkAsync` reads or decompresses directly into caller-provided final memory. An uncompressed chunk can also expose a bounded range source for independently authenticated semantic ranges. File access keeps its source valid until actual I/O ends.
 
-`DocumentChunkBatchLoader` waits up to 1 ms for adjacent requests, merges stored ranges separated by at most 4 KiB, and caps one merged read at 4 MiB. Gap bytes are admitted to the stored/compressed budget. One corrupt member fails only that member; valid siblings from the same merged range can complete. Metrics include stored bytes read, decoded bytes, read amplification, deduplication, and time to first resident byte.
+The former per-file chunk scheduler and decoded page cache have been removed. Asset data reuse belongs to the existing block data definitions: weak references to completed arrays and one shared task while a read is active. Consumers hold ordinary managed references. See [asset sharing](../wiki/architecture/Assets/Asset-Sharing-and-Writes.md).
 
-`ResidencyBudgetLedger` independently accounts for:
-
-- stored/compressed bytes;
-- decoded CPU bytes;
-- upload-staging bytes;
-- GPU bytes.
-
-Reservations are atomic, overflow-checked, pre-admitted before expensive work, and released by idempotent ownership tokens. Undefined classes are rejected.
+`ResidencyBudgetLedger` remains available for operations and GPU resources with explicit completion boundaries. It does not turn ordinary escaped GC arrays into pinned, manually released storage or promise an exact bound on all reachable managed memory.
 
 ## Assets and offline importers
 
-The six built-in asset types use `ExactSchema` binary documents: `Texture`, `Mesh`, `Shader`, `Material`, `MaterialInstance`, and `ClusterShaders`. Each name denotes exactly one sealed concrete asset class in `SomeEngine.Assets.Schema`; the same class is the source-generated binary root, the value passed to authoring, and the instance published by `AssetLoader`. There is no `*AssetData`, `IAssetData`, runtime wrapper, compatibility alias, subclass substitute, or second Render/Cluster class with the same meaning. `MaterialInstance` is a distinct authored override asset, not a runtime wrapper around `Material`.
+Disk content and application objects have independent lifetimes. The directory identifies content, an asset selects editable content, and explicitly created business objects retain what they need for use. The loader does not maintain one unique business object per GUID.
 
-`[Asset(".suffix.asset")]` and `[BinaryContract(BinaryCompatibility.ExactSchema)]` on that one class are the complete declaration. `AssetGenerator` registers a closed `AssetType<T>` descriptor with direct `T` delegates for GUID, name, dependencies, writer, and loader; asset values are never converted to an interface or boxed. Asset schema properties are ordinary non-virtual members, so the retired generated-model dispatch surface is gone. `AssetType<T>.Name`, `PathSuffix`, and `SchemaFingerprint` expose the generated publication identity. External payload members use `[BinaryChunk(keyMember, decodedLengthMember)]`; source generation emits the concrete `BinaryChunkRef`, and generic `BinaryDocument<T>` owns chunk acquire/read/range-source mechanics. `Texture` and `Mesh` add only domain selection methods over that shared mechanism. Type-specific `GetDependencies`, `CreateWriter`, and `LoadAssetAsync` hooks are assembly-internal generator inputs, not alternate public I/O APIs; built-in roots expose no public `ReadAsync`, `OpenAsync`, or writer method.
+Asset identity and references are separate from strongly typed Block content. All asset families use independent asset declarations and explicit Block-to-object conversion; the former generator that mirrored business types into field roots and nested asset classes has been removed. Block encoding reuses the generic interfaces above. Current architecture and verification status are maintained in the [original Wiki](../wiki/architecture/Asset-Files.md); managed byte APIs are documented in [AssetPages.md](AssetPages.md).
 
-`SomeEngine.Assets` contains the concrete contracts, authoring boundary, public storage boundary, built-in storage, and sole residency service `AssetLoader`. Every `[Asset]` has a required suffix and exact binary contract; there is no non-loadable descriptor branch. A transient GPU resource, pipeline object, or other process-local value that has no stored contract is simply not an asset. The assembly contains no asset database, provider, kind object, format registry, format probe, or asset-type switch. The runtime graph has no dependency on SharpGLTF, Slang, MeshOptimizer, FlatSharp, or FlatBuffers. GLTF, Slang, and MeshOptimizer live in build-support `SomeEngine.Assets.Importers`; there are no product `.fbs` files.
+`AssetLoader.OpenFileAsync` resolves an `IAssetStorage` record, joins a bounded file read and returns independently closable binary-document access. Content versions can coexist. Closing the loader attempts all cleanup and does not dispose external storage or application objects.
 
-- `Texture` stores canonical descriptors for independent mip/tile chunks. Identity includes mip, array layer, cube face, depth slice, X, and Y. Descriptors validate dimensions, row/slice pitch, decoded length, key, and ordering. Each tile is 4096-aligned, independently hashed, lazy, and absent from the root payload.
-- `Mesh` authenticates every page descriptor—offset, length, cluster facts, quantization, and SHA-256—and the BVH length/SHA-256 in the root. Root open reads no page body. Registration reads the BVH directly into final global-BVH storage; a page fault reads directly into final page-heap storage, authenticates that storage in place, and validates its page/cluster layout before publication. Root and streaming source borrow the same digest backings.
-- `Shader` keeps backend, entry point, stage, reflection, and content identity in the root. Every bytecode variant is a separate Brotli-capable, independently hashed chunk.
-- `Material`, `MaterialInstance`, and `ClusterShaders` are small root-oriented assets. Loading validates every reference before dependency I/O and admits the referenced shader, texture, or parent material into the same loader table; the asset itself retains only its canonical typed schema fields and GUID references.
+Asset and Block saving use the existing document writer and file replacement. The binary layer copies unchanged chunks from their original source with bounded memory and preserves their stored representation, including unknown or unopened Blocks. Asset branch duplication copies editable field and collection structure and shares immutable values and unchanged data definitions. It does not serialize the asset to make a copy.
 
-`AssetProject` is the authoring boundary: it imports source files, creates assets, explicitly registers or opens already encoded assets, indexes, queries, and validates, but it never owns runtime residency. `CreateAsset<T>(path, asset)` delegates to `AssetWriter`, which obtains exactly one `BinaryDocumentWriter` from the generated `AssetType<T>` descriptor. Before the first output byte, that path verifies the exact TypeId/fingerprint/compatibility/epoch of `T`, validates the type-owned path and dependencies, and writes atomically once. Root-only assets use the generated default writer; chunked assets declare one assembly-internal static `CreateWriter(T)` hook consumed only through the generated descriptor. `RegisterAssetAsync<T>` and `OpenAsync<T>` never encode. `ImportAsync` selects source importers only and never probes `.asset` bytes for a format.
+`AssetProject` imports, creates, registers, indexes and diagnoses files. `AssetEntry` is the shared directory record. Source identity, settings and element identities live in `.meta`; derived inputs and output verification live in `.import.json`. Source, asset and dependency indexes are saved together in one `catalog.json`, without the three old index files. Explicit mesh streaming reads authenticated pages directly into final storage; already usable meshes do not query Asset on ordinary access. Textures acquire selected mip data asynchronously before use and feed existing device upload/completion handling. Shader backend selection and material parent/override data remain supported. Scene instances enter the existing Game world to Rendering world extraction path, not a loader-maintained object graph.
 
-`IAssetStorage` is deliberately small and public so third-party backends can implement it: `TryFind(guid)` returns an immutable publication-specific `AssetEntry`, and `OpenAsync(entry)` returns only an `IRangeSource`. A backend may publish a newer entry for explicit reload, but an already returned entry must continue to identify exactly one immutable publication. Storage supplies byte ranges; it cannot choose an asset type or decode a document. `AssetProject.OpenAsync<T>` is the one typed-open implementation: it validates `AssetType<T>.Name` and the exact fingerprint, opens the sole `BinaryDocument<T>`, and checks the root GUID. Runtime `AssetLoadContext.OpenAsync<T>` delegates to it. There is no second typed reader, fallback wire, or migration path.
+## Read failures
 
-`AssetLoader` is the only runtime asset service. `Load<T>(AssetId<T>)` returns the canonical strong `AssetHandle<T>` immediately, even while I/O is pending; `WaitAsync` observes that shared attempt, and `Read`/`TryRead` acquire a scoped `AssetRead<T>` over the one ready `T`. The lease is an admission and one reference to the same object, not a second runtime representation or payload backing. Its disposal clears the reference before releasing admission, so replacement cannot overlap a disposed lease. Stream/range source owners are internal and cannot be retained through the public asset API; any long-lived GPU consumer must keep the corresponding `AssetRead<T>` until its epoch or pipeline is destroyed. `ReloadAsync` keeps the same handle and stable `AssetId<T>`, blocks new reads, drains existing reads, disposes the old value and its document/range backing, and only then asks storage for the current entry and opens the replacement. A failed reload has no old-value fallback; the handle is `Failed` until the same operation is explicitly retried. `Revision` increments only after a successful publication.
+Callers use standard exception types and `SerializationErrors.GetError(exception)` to select
+recovery behavior. Data failures retain `InvalidDataException`; `BinarySchemaMismatchException`
+retains its type and its actual/expected schema data. Categories cover malformed data, an unsupported
+version, a schema mismatch, an unknown ECS type, a configured limit, an integrity mismatch, and a
+rejected save generation. An ordinary `InvalidDataException` reports `InvalidData`. I/O, cancellation,
+allocation and disposal failures retain their standard types and report `Unspecified`.
 
-The generated `AssetType<T>` descriptor validates the publication and invokes the type's generated/static load hook. Residency also uses a closed generic static slot per `T`; the load/read hot path has no `Type -> interface` table, interface asset dispatch, reflection lookup, boxing, central switch, or public registration API. One GUID admits one concrete `T`, concurrent load or reload callers join one operation, and every caller uses the same loader-affine handle state. The loader weakly indexes that state while strong handles—including handles copied into ECS components—keep it alive. The last strong handle retires the value; a per-GUID retirement barrier completes disposal before any successor I/O can start.
+`SerializationErrors.CreateDataException(category, diagnostic, cause)` lets a custom codec provide
+the same machine-readable category and retain its original cause. The category lives on the
+exception; changing diagnostic wording preserves recovery decisions.
 
-`AssetLoadContext` requires exactly one typed document and loads every dependency through `LoadDependencyAsync<T>(AssetId<T>)`. Every loader must return that document's `Root` object by reference; the context rejects a newly constructed replacement even when it has the same type and values. A streamed `Texture` or `Mesh` can transfer the document only to that root itself, and every return/throw mismatch releases all unpublished ownership. A fully materialized root leaves the document with the context, which closes it before publication. Published parents pin their dependency handle states without storing a second asset object; parent retirement and loader shutdown dispose the parent before releasing those pins. This order is explicit because GC finalizer ordering is not a dependency contract. Missing GUIDs, wrong asset types, old fingerprints, wrong root GUIDs, malformed dependencies, incomplete shader reflection, and cycles fail closed.
+ECS generation recovery carries the category while trying older valid files. When every file is
+rejected, the aggregate data failure reports the primary file's category when that file exists,
+otherwise the previous file's category. Truncated envelopes and authentication failures report
+`IntegrityMismatch`; the anti-rollback floor reports `GenerationRejected`. A valid envelope's decoder
+failure propagates directly, retaining its type, category and cause.
 
-### Adding an asset type
-
-Adding a seventh asset type does not modify `AssetProject`, storage, `AssetLoader`, or a central switch:
-
-1. Declare one concrete partial class, for example `[Asset(".terrain.asset")] [BinaryContract(BinaryCompatibility.ExactSchema)] public partial class Terrain`, with assembly-accessible string `AssetGuid` and optional `Name`.
-2. Put canonical fields on `Terrain`. Add `GetDependencies(string)` only when it references other assets. Root-only assets need no writer code; chunked assets add one static `CreateWriter(Terrain)` that borrows each payload into one writer.
-3. Add `LoadAssetAsync(AssetLoadContext, CancellationToken)` only for validation, dependency loading, or streaming ownership. It must return the same `Terrain` root; there is no `TerrainData` and no conversion step.
-4. Author with `project.CreateAsset(path, terrain)`. At runtime call `AssetHandle<Terrain> handle = loader.Load(new AssetId<Terrain>(guid))`, await `loader.WaitAsync(handle)`, and access the ready value only inside `using AssetRead<Terrain> read = loader.Read(handle)`.
-
-Executable extensibility tests define a downstream test-only `ProbeAsset`, prove generated closed metadata without an interface, one writer creation, exact publication, third-party range storage, single-flight residency, and cleanup on every transfer failure. `ClusterShaders` uses the same mechanism and loads all thirteen `Shader` dependencies without changing `AssetLoader`.
-
-### Concrete IO depth
-
-- Loose-asset write: generated type validation -> one `CreateWriter` -> `BinaryDocumentWriter` -> final temporary `FileStream` -> atomic replace. The root encoder runs once; each borrowed payload is streamed once and hashed online.
-- Common runtime read: `AssetLoader.Load<T>(AssetId<T>)` -> exact `AssetType<T>` admission -> one shared load -> `AssetLoadContext.OpenAsync<T>` -> `AssetProject.OpenAsync<T>` -> `IAssetStorage.OpenAsync` -> one `BinaryDocument<T>` -> the same `T`; `WaitAsync` observes readiness and `AssetRead<T>` bounds access. No parallel reader, IO service, database, provider, wrapper asset, or second asset object exists.
-- Runtime mesh read: `FileRangeSource` or pack child range -> `BinaryDocument<Mesh>` metadata -> its one internal `MeshPayloadSource` backing -> final Cluster BVH/page storage. Product Cluster preparation accepts `AssetLoader` plus ECS `AssetHandle<Mesh>`, transfers the scoped mesh read to the Cluster epoch, and borrows rather than retains a second source wrapper. Neither `MeshPayloadSource` nor a retain method is public. Reload therefore waits for epoch shutdown before the old mmap/document can be released and the new publication opened. There is no materialized-mesh adapter, mmap publication path, page DTO, resolver delegate, or Cluster-local serializer.
-- Runtime pipeline shader read: `ClusterRendererSystem` accepts one strong `AssetHandle<ClusterShaders>`. Its shader library resolves the asset's semantic operations through the canonical loader, owns each unique shader read for the renderer epoch, and releases GPU pipeline state before releasing those reads. Source paths and special-case shader entry points do not enter runtime startup.
-- Runtime texture read: file/pack range -> binary root -> shared chunk scheduler -> one final resident chunk owner. `Texture` reads name, dimensions, format, and mip descriptors directly from the same root; it retains no duplicate metadata fields or chunk-key set.
-- Runtime shader read: file/pack range -> binary root -> each selected bytecode chunk's final managed backing -> Render shader projection, which borrows the bytecode memory. SPIR-V semantic hashing skips debug-name ranges incrementally and does not build a normalized bytecode copy.
-- Pack lookup adds outer pack metadata and a bounded child range, but does not materialize the nested document. Patch comparison hashes candidates/base ranges; changed documents are still encoded only once because the nested bytes are copied verbatim, not re-encoded.
+ECS `SerializationRegistry.RegisterCodec` and `RegisterBufferCodec` accept caller-created codec
+values. Each registry retains its supplied codec, and copies the struct for each value read or written.
+Reference fields hold caller-selected data for the registry. The overloads accepting
+`SerializationTypeKey` provide the explicit identity required for durable saves; the overloads with
+just a codec use the existing build-derived identity.
 
 ## Current-schema policy
 
-`BinaryEnvelopeMetadata` exposes type, fingerprint, exact compatibility marker, epoch, and payload length without decoding the root. Inspection does not grant compatibility: every open still requires the exact compiled contract. Schema changes require producing new asset data offline; the runtime contains no recook, dump, conversion, additive, or migration path.
+`BinaryEnvelopeMetadata` exposes root type, schema, compatibility marker, epoch, generation and payload length without decoding business values. Non-generic `BinaryDocument.InspectAsync` works without an installed business type. Typed reads still require the expected compiled schema. Description, object and view opening share header/catalog checks and external package authentication. Schema changes require producing new asset data offline; there is no implicit migration reader.
 
 ## ECS canonical checkpoint envelope
 
@@ -212,6 +209,6 @@ dotnet publish tools\SomeEngine.ECS.AotSmoke\SomeEngine.ECS.AotSmoke.csproj -r w
 
 Acceptance requires zero-warning product builds plus the focused Serialization, Assets, pack, range-source, generated-code, and NativeAOT tests listed above. Previous-envelope inputs are retained only as fail-closed rejection tests; no compatibility fixture, converter, dump tool, or retired serializer throughput comparison is a product acceptance path.
 
-All three smoke projects default to `PublishAot=true`, publish native executables, and run successfully. The Assets restore graph and publish output are mechanically checked to exclude importer, SharpGLTF, Slang, MeshOptimizer, FlatSharp, and FlatBuffers files. The ECS publish contains one native executable plus symbols, no managed product DLLs, and executes the single canonical checkpoint envelope, proven packed canonical storage, preserved identity, hierarchy, and relation assertions.
+The Assets smoke publishes a native executable and exercises independent opens, usable Texture instances after file/Loader closure, explicit updates, downstream formats, generated Microsoft DI registration, typed importer settings, dependency deduplication, competing Block producers, multiple Blocks on one mesh, and persistence. It also replaces a catalog while a reader retains the preceding file, including a Unicode directory. This executes the static Windows file call rather than inferring AOT support from source inspection. Slang source compilation remains in the build tools; prebuilt shader bytecode is consumed by the native smoke. Serialization and ECS have separate native smoke entrypoints.
 
 The regression suites cover canonical/view/native behavior, corruption and truncation, read and residency budgets, compression bombs, rejection of previous/unknown envelopes and schemas, type identity, binary-document 8 GiB virtual offsets, range isolation, deterministic generations, signed packs, overlays and changed-only patches, strong-ETag HTTP, coalescing and corrupt-member isolation, 100-request deduplication, deadlines/cancellation/priority, four residency classes, mesh/texture integrity, exact final-storage ownership, ECS streaming rollback/fail-closed cases, fuzz cases, and telemetry.

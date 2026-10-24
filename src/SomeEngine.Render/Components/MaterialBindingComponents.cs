@@ -1,6 +1,5 @@
-using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.ECS.Components;
-using SomeEngine.Render.Materials;
 
 namespace SomeEngine.Render.Components;
 
@@ -8,7 +7,9 @@ namespace SomeEngine.Render.Components;
 public readonly record struct MeshMaterialBinding(Material Material) : IBufferElement;
 
 /// <summary>
-/// One ordered material snapshot on a render-world mesh entity. Keeping this distinct from the
-/// authoring element lets render systems evolve their ECS composition independently.
+/// One ordered reference to a shared material in the rendering world.
 /// </summary>
-public readonly record struct RenderMaterialBinding(Material Material) : IBufferElement;
+public readonly record struct RenderMaterialBinding(long MaterialId) : IBufferElement;
+
+/// <summary>One shared material reference registered for all meshes using its identifier.</summary>
+public readonly record struct RenderMaterialReference(Material Material) : SomeEngine.ECS.IComponent;

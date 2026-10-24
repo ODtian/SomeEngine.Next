@@ -1,13 +1,9 @@
 #include "cluster_structures.slang"
 #include "resource_effects.slang"
 
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer DrawArgs;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint> Phase2CandidateCount;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWByteAddressBuffer Phase2CandidateArgs;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer Phase2DrawArgs;
 
 [shader("compute")]
@@ -19,8 +15,6 @@ void ClearCull(uint3 threadId : SV_DispatchThreadID)
 
     StoreCullDrawArgs(DrawArgs, 0u, CullDrawArgs(96u, 0u, 0u));
     DrawArgs.Store(12u, 0u);
-    Phase2CandidateCount[0] = 0u;
-    StoreDispatchArgs(Phase2CandidateArgs, 0u, DispatchArgs(0u, 1u, 1u));
     StoreCullDrawArgs(Phase2DrawArgs, 0u, CullDrawArgs(96u, 0u, 0u));
     Phase2DrawArgs.Store(12u, 0u);
 }

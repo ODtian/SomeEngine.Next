@@ -2,7 +2,7 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
     private interface ICompletionStore
     {
@@ -56,6 +56,7 @@ internal sealed partial class Scheduler
 
     private interface IExecutionStore
     {
+        SomeEngine.Diagnostics.TraceContext GetTraceContext(JobHandle handle);
         bool CanExecute(JobHandle handle);
 
         bool CompleteItems(
@@ -108,6 +109,7 @@ internal sealed partial class Scheduler
 
     internal void Complete(JobHandle handle)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.Complete);
         if (handle.Index == 0)
         {
             return;
@@ -122,8 +124,10 @@ internal sealed partial class Scheduler
         {
             bool waited = false;
             SpinWait spinWait = new();
-            while (!_completion.IsCompleted(lease))
+            while (true)
             {
+                long wakeVersion = _workQueue.WakeVersion;
+                if (_completion.IsCompleted(lease)) break;
                 if (!waited)
                 {
                     _counters.Waited();
@@ -142,10 +146,7 @@ internal sealed partial class Scheduler
                     continue;
                 }
 
-                if (!_workQueue.TryExecuteOne(wait: true))
-                {
-                    Thread.Yield();
-                }
+                _workQueue.WaitAndExecuteOne(wakeVersion);
 
                 spinWait = new SpinWait();
             }

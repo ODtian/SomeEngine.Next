@@ -2,32 +2,133 @@ using System.Buffers.Binary;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using SomeEngine.Serialization.Containers;
+using SomeEngine.Serialization.Streaming;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Queries;
+using SomeEngine.Render;
+using SomeEngine.Render.Components;
+using SomeEngine.Resources;
 using static SomeEngine.Tests.TestProjectPaths;
 
 namespace SomeEngine.Tests.Assets;
 
 public class GltfSourceImporterTests
 {
+    [Fact]
+    public async Task RepeatedMeshNodesShareOneAssetAndKeepTheirParentInTheWorld()
+    {
+        string directory = CreateTempDir();
+        try
+        {
+            string source = WriteTestProject(directory, writeImporterSettings: false);
+            string json = File.ReadAllText(source)
+                .Replace("{ \"mesh\": 0 },", "{ \"mesh\": 0, \"children\": [2] },", StringComparison.Ordinal)
+                .Replace("{ \"mesh\": 1 }", "{ \"mesh\": 1 }, { \"mesh\": 0 }", StringComparison.Ordinal);
+            File.WriteAllText(source, json);
+            IReadOnlyList<ImportedAsset> imported = await ImportAsync(SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter(), directory, source);
+            Assert.Equal(2, imported.Count(value => value.SubAssetKey.StartsWith("mesh:")));
+            ImportedAsset scene = Assert.Single(imported, value => value.SubAssetKey.StartsWith("scene:"));
+            using WorldAsset asset = await WorldAsset.OpenAsync(scene.OutputPath);
+            Assert.Equal(2, asset.ExternalReferences.Length);
+            using World world = await asset.LoadAsync(SceneSerialization.CreateRegistry());
+            var entities = new List<Entity>();
+            QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<MeshSource>());
+            try
+            {
+                world.ExecuteQuery(query, ref entities, static (QueryCursor rows, ref List<Entity> values) =>
+                {
+                    foreach (var row in rows.Rows) values.Add(row.Entity);
+                });
+            }
+            finally { world.ReleaseQuery(query); }
+            Assert.Equal(3, entities.Count);
+            Guid sharedMesh = Assert.Single(imported, value => value.SubAssetKey == "mesh:index:0").AssetGuid;
+            Entity[] matching = entities.Where(entity => world.Read<MeshSource>(entity).Mesh.Value == sharedMesh).ToArray();
+            Assert.Equal(2, matching.Length);
+            Assert.Single(matching, entity => matching.Contains(Hierarchy.GetParent(world, entity)));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public async Task ImportCanBeRepeatedWithoutCallerMemoryStorage()
+    {
+        string directory = CreateTempDir();
+        try
+        {
+            string path = WriteTestProject(directory, writeImporterSettings: false);
+            var importer = SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter();
+            var assets = await ImportAsync(importer, directory, path);
+            Assert.Contains(assets, value => value.SubAssetKey.StartsWith("texture:"));
+            await ImportAsync(importer, directory, path);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public async Task GeometryImportPreservesUnboundRegionsAndSourceCorrespondence()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            string path = WriteTestProject(dir, writeImporterSettings: false);
+            var model = SharpGLTF.Schema2.ModelRoot.Load(path);
+            var source = model.LogicalMeshes[0];
+            source.Primitives[0].Material = null;
+            await using var context = new ImportContext();
+            context.ConfigureAssets<SharpGLTF.Schema2.Mesh, MeshAsset>(mesh => $"mesh/{mesh.LogicalIndex}",
+                (_, id) => new MeshAsset(id),
+                (_, id) => id + ".mesh.asset", static (asset, destination, token) => asset.SaveAsync(destination, token));
+            var geometry = new GltfMeshImporter();
+            var clusters = new ClusterGltfMeshImporter(StandardClusterVertexEncoder.Instance);
+            var settings = new GltfMeshSettings();
+            context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
+                new Guid("548d394b-5600-49e0-b04a-9c9d0d53b4b0"), [ClusterMeshBlock.BlockTypeId], clusters, settings));
+            context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
+                new Guid("334ba003-337f-4298-ae72-1a5ce4861591"), [MeshBlock.BlockTypeId], geometry, settings));
+            MeshAsset mesh = await context.GetAssetAsync<SharpGLTF.Schema2.Mesh, MeshAsset>(source);
+            Assert.Single(mesh.GetBlock<MeshBlock>().Regions);
+            Assert.True(mesh.ContainsBlock<ClusterMeshBlock>());
+            Assert.False(mesh.ContainsBlock<MeshMaterialsBlock>());
+            MeshRegionSource origin = Assert.Single(mesh.GetBlock<MeshBlock>().RegionSources);
+            Assert.Equal(source.LogicalIndex, origin.MeshIndex);
+            Assert.Equal(0, origin.PrimitiveIndex);
+            Assert.Equal(-1, origin.MaterialIndex);
+            string output = Path.Combine(dir, "unbound.mesh.asset");
+            await mesh.SaveAsync(output);
+            using MeshAsset reopened = await MeshAsset.OpenAsync(output);
+            Assert.Equal(origin, Assert.Single(reopened.GetBlock<MeshBlock>().RegionSources));
+            Assert.Empty(reopened.Describe().Dependencies);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
     private const string LitShaderGuid = "3ecf4b6f-4ca4-4ad0-88e2-37688ad9b010";
     private const string UnlitShaderGuid = "4774aa8d-36c4-40db-9821-d982e19f9f84";
 
     [Fact]
-    public async Task Import_UsesDefaultTemplates_WhenSourceMetaLacksImporterSettings()
+    public async Task ImportUsesEngineMaterialsAndProjectShaders()
     {
         string dir = CreateTempDir();
 
         try
         {
             string gltfPath = WriteTestProject(dir, writeImporterSettings: false);
-            var importer = new GltfSourceImporter();
-
-            IReadOnlyList<ImportedAsset> imported = await importer.ImportAsync(dir, gltfPath);
-
-            Assert.Contains(imported, asset => asset.SubAssetKey.StartsWith("material:", StringComparison.Ordinal));
+            AssetProject project = AssetProjects.Create(dir);
+            await project.ImportAsync(gltfPath);
+            AssetEntry entry = project.List(MaterialAsset.FileType).Single(asset => asset.Name == "MaskedLit");
+            string path = Path.Combine(dir, entry.Path);
+            await using MaterialAsset material = await MaterialAsset.OpenAsync(path);
+            Assert.IsType<StandardMaterialAsset>(material);
+            Assert.Equal(new AssetId<ShaderAsset>(Guid.Parse(LitShaderGuid)), material.GetBlock<MaterialBlock>().Shader);
         }
         finally
         {
@@ -36,19 +137,39 @@ public class GltfSourceImporterTests
     }
 
     [Fact]
-    public async Task Import_ProducesMaterialAndMeshSubAssets_WithStableKeys_AndMeshRegionsWithoutMaterialDependencies()
+    public async Task ImportingUnchangedSourceReusesAssetVersions()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            string source = WriteTestProject(dir, writeImporterSettings: false);
+            AssetProject project = AssetProjects.Create(dir);
+            await project.ImportAsync(source);
+            var versions = project.List().OrderBy(asset => asset.AssetGuid).Select(asset => (asset.AssetGuid, asset.Version)).ToArray();
+
+            await project.ImportAsync(source);
+
+            Assert.Equal(versions, project.List().OrderBy(asset => asset.AssetGuid).Select(asset => (asset.AssetGuid, asset.Version)));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public async Task ImportProducesUniqueAssetsWithPersistentKeysAndSharedMaterialDependencies()
     {
         string dir = CreateTempDir();
 
         try
         {
             string gltfPath = WriteTestProject(dir, writeImporterSettings: true);
-            var importer = new GltfSourceImporter();
+            var importer = SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter();
 
-            IReadOnlyList<ImportedAsset> first = await importer.ImportAsync(dir, gltfPath);
-            IReadOnlyList<ImportedAsset> second = await importer.ImportAsync(dir, gltfPath);
+            IReadOnlyList<ImportedAsset> first = await ImportAsync(importer, dir, gltfPath);
+            IReadOnlyList<ImportedAsset> second = await ImportAsync(importer, dir, gltfPath);
 
-            Assert.Equal(9, first.Count); // 5 textures + 2 materials + 2 meshes
+            Assert.Equal(8, first.Count); // 3 textures, 2 materials, 2 meshes, 1 scene
+            Assert.Equal(first.Count, first.Select(asset => asset.AssetGuid).Distinct().Count());
+            Assert.Equal(first.Count, first.Select(asset => asset.SubAssetKey).Distinct().Count());
             Assert.Equal(
                 first.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.SubAssetKey),
                 second.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.SubAssetKey));
@@ -56,59 +177,76 @@ public class GltfSourceImporterTests
                 first.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.AssetGuid),
                 second.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.AssetGuid));
 
-            ImportedAsset maskedMaterial = Assert.Single(first, asset => asset.SubAssetKey == "material:0:MaskedLit");
-            ImportedAsset transparentMaterial = Assert.Single(first, asset => asset.SubAssetKey == "material:1:TransparentUnlit");
-            ImportedAsset bodyMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:0:Body");
-            ImportedAsset eyesMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:1:Eyes");
+            ImportedAsset maskedMaterial = Assert.Single(first, asset => asset.SubAssetKey == "material:index:0");
+            ImportedAsset transparentMaterial = Assert.Single(first, asset => asset.SubAssetKey == "material:index:1");
+            ImportedAsset bodyMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:index:0");
+            ImportedAsset eyesMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:index:1");
+            ImportedAsset scene = Assert.Single(first, asset => asset.SubAssetKey == "scene:index:0");
+            Assert.Equal(new[] { bodyMesh.AssetGuid, eyesMesh.AssetGuid }.Order(), scene.Dependencies.Order());
+            using WorldAsset worldAsset = await WorldAsset.OpenAsync(scene.OutputPath);
+            Assert.True(worldAsset.ContentLength > 0);
 
-            Material maskedAsset =
-                await AssetProject.ReadAsync<Material>(maskedMaterial.OutputPath);
-            Material transparentAsset =
-                await AssetProject.ReadAsync<Material>(transparentMaterial.OutputPath);
-            Mesh bodyAsset = await Mesh.ReadAsync(bodyMesh.OutputPath);
-            Mesh eyesAsset = await Mesh.ReadAsync(eyesMesh.OutputPath);
-            AssetMeta? bodyMeshMeta = AssetMetaFiles.TryLoad(bodyMesh.OutputPath);
-
-            Assert.Equal(LitShaderGuid, maskedAsset.Passes![0].Shader?.AssetGuid);
-            Assert.Contains(maskedAsset.Passes[0].Tags!, tag => tag.Name == "masked");
-            Assert.Contains(maskedAsset.Passes[0].Tags!, tag => tag.Name == "two_sided");
-            Assert.DoesNotContain(maskedAsset.Passes[0].Tags!, tag => tag.Name == "opaque");
-            Assert.Contains(maskedAsset.Passes[0].Components!, component =>
-                component.TypeName == "OverlayShade"
-                && component.Json == "{\"Layer\":5}");
-            Assert.Contains(maskedAsset.Textures!, binding => binding.Name == "AlbedoMap");
-            Assert.Contains(maskedAsset.Textures!, binding => binding.Name == "NormalMap");
-            Assert.Contains(maskedAsset.Textures!, binding => binding.Name == "ARMMap");
-            Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "BaseColorTint");
-            Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "MetallicFactor");
-            Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "Roughness");
-            Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "AlphaCutoff");
-            Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "EmissiveFactor");
-
-            Assert.Equal(UnlitShaderGuid, transparentAsset.Passes![0].Shader?.AssetGuid);
-            Assert.Contains(transparentAsset.Passes[0].Tags!, tag => tag.Name == "translucent");
-            Assert.DoesNotContain(transparentAsset.Passes[0].Tags!, tag => tag.Name == "opaque");
-
-            Assert.NotNull(bodyAsset.Regions);
-            Assert.Single(bodyAsset.Regions);
-            Assert.Equal("region_0", bodyAsset.Regions[0].Name);
-            Assert.NotNull(bodyMeshMeta);
-            Assert.Equal(GltfSourceImporter.ImporterVersion, bodyMeshMeta!.ImporterVersion);
-
-            Assert.NotNull(eyesAsset.Regions);
-            Assert.Single(eyesAsset.Regions);
-            Assert.Equal("region_0", eyesAsset.Regions[0].Name);
-
-            // Verify texture sub-assets are produced and texture bindings use GUIDs
-            var textureKeys = first.Where(asset => asset.SubAssetKey.StartsWith("texture:")).ToArray();
-            Assert.Equal(5, textureKeys.Length);
-
-            // Verify masked material texture bindings contain parseable GUIDs (not file paths)
-            foreach (TextureBinding binding in maskedAsset.Textures!)
+            using StandardMaterialAsset maskedAsset = await StandardMaterialAsset.OpenAsync(maskedMaterial.OutputPath);
+            using UnlitMaterialAsset transparentAsset = await UnlitMaterialAsset.OpenAsync(transparentMaterial.OutputPath);
+            var maskedParameters = new StandardMaterialParameters(await maskedAsset.GetBlockAsync<MaterialBlock>());
+            var transparentParameters = new UnlitMaterialParameters(await transparentAsset.GetBlockAsync<MaterialBlock>());
+            using MeshAsset bodyAsset = await MeshAsset.OpenAsync(bodyMesh.OutputPath);
+            using MeshAsset eyesAsset = await MeshAsset.OpenAsync(eyesMesh.OutputPath);
+            SourceMeta sourceMeta = SourceMeta.Load(gltfPath);
+            Assert.Equal(new[]
             {
-                Assert.True(AssetGuid.TryParse(binding.TextureGuid, out AssetGuid parsedGuid), $"TextureBinding '{binding.Name}' should contain a valid GUID, got: '{binding.TextureGuid}'");
-                Assert.False(parsedGuid.IsEmpty, $"TextureBinding '{binding.Name}' GUID should not be empty");
-            }
+                "assets/Materials/Templates/PbrTemplate.material.asset",
+                "assets/Materials/Templates/UnlitTemplate.material.asset",
+            }, sourceMeta.Build.ReportedInputs.Select(value => value.RelativePath.Replace('\\', '/')).Order(StringComparer.Ordinal));
+            SourceOutput? bodyMeshMeta = sourceMeta.FindOutput(bodyMesh.OutputPath);
+            Assert.Equal("MaskedLit", maskedAsset.Name);
+            Assert.Equal("TransparentUnlit", transparentAsset.Name);
+            Assert.Equal("Body", bodyAsset.Name);
+            Assert.Equal("Eyes", eyesAsset.Name);
+
+            Assert.Equal(
+                new System.Numerics.Vector4(0.5f, 0.25f, 1.0f, 1.0f),
+                maskedParameters.BaseColorTint);
+            Assert.Equal(0.75f, maskedParameters.MetallicFactor);
+            Assert.Equal(0.35f, maskedParameters.Roughness);
+            Assert.Equal(
+                new System.Numerics.Vector3(0.2f, 0.4f, 0.6f),
+                maskedParameters.EmissiveFactor);
+            Assert.False((maskedParameters.AlbedoMap.Value == Guid.Empty));
+            Assert.False((maskedParameters.NormalMap.Value == Guid.Empty));
+            Assert.False((maskedParameters.ARMMap.Value == Guid.Empty));
+
+            Assert.Equal(
+                new System.Numerics.Vector4(1.0f, 1.0f, 1.0f, 0.5f),
+                transparentParameters.BaseColorTint);
+            Assert.False((transparentParameters.AlbedoMap.Value == Guid.Empty));
+            Assert.Equal(maskedParameters.AlbedoMap, transparentParameters.AlbedoMap);
+
+            Assert.NotNull(bodyAsset.GetBlock<MeshBlock>().Regions);
+            Assert.Single(bodyAsset.GetBlock<MeshBlock>().Regions);
+            Assert.Equal("region_0", bodyAsset.GetBlock<MeshBlock>().Regions[0].Name);
+            Assert.Equal([new AssetId<MaterialAsset>(maskedMaterial.AssetGuid)], bodyAsset.GetBlock<MeshMaterialsBlock>().Materials);
+            Assert.Equal([maskedMaterial.AssetGuid], bodyMesh.Dependencies);
+            Assert.NotNull(bodyMeshMeta);
+            Assert.Equal(GltfSourceImporter.ImporterVersion, sourceMeta.ImporterVersion);
+
+            Assert.NotNull(eyesAsset.GetBlock<MeshBlock>().Regions);
+            Assert.Single(eyesAsset.GetBlock<MeshBlock>().Regions);
+            Assert.Equal("region_0", eyesAsset.GetBlock<MeshBlock>().Regions[0].Name);
+            Assert.Equal([new AssetId<MaterialAsset>(transparentMaterial.AssetGuid)], eyesAsset.GetBlock<MeshMaterialsBlock>().Materials);
+            Assert.Equal([transparentMaterial.AssetGuid], eyesMesh.Dependencies);
+
+            // Both materials share the same texture asset; dependencies do not produce it twice.
+            var textureKeys = first.Where(asset => asset.SubAssetKey.StartsWith("texture:")).ToArray();
+            Assert.Equal(3, textureKeys.Length);
+            Assert.All(
+                new[]
+                {
+                    maskedParameters.AlbedoMap.Value,
+                    maskedParameters.NormalMap.Value,
+                    maskedParameters.ARMMap.Value,
+                },
+                static guid => Assert.NotEqual(Guid.Empty, guid));
         }
         finally
         {
@@ -116,53 +254,48 @@ public class GltfSourceImporterTests
         }
     }
 
-    [Fact]
-    public void GetFingerprint_TracksExternalGltfBuffersAndImages()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InputsTrackExternalBuffersAndImagesInTextAndBinaryGltf(bool binaryContainer)
     {
         string dir = CreateTempDir();
 
         try
         {
             string gltfPath = WriteTestProject(dir, writeImporterSettings: true);
-            SourceMeta sourceMeta = SourceMetaFiles.Load(gltfPath);
-            var importer = new GltfSourceImporter();
+            if (binaryContainer)
+            {
+                string binaryPath = Path.ChangeExtension(gltfPath, ".glb");
+                WriteJsonGlb(gltfPath, binaryPath);
+                SourceMeta.Save(binaryPath, SourceMeta.Load(gltfPath));
+                gltfPath = binaryPath;
+            }
+            Assert.Equal(2, SharpGLTF.Schema2.ModelRoot.Load(gltfPath).LogicalMeshes.Count);
+            SourceMeta sourceMeta = SourceMeta.Load(gltfPath);
+            var importer = SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter();
 
-            AssetImportFingerprint? firstFingerprint = importer.GetFingerprint(
-                dir,
-                gltfPath,
-                sourceMeta
-            );
-            Assert.NotNull(firstFingerprint);
-            AssetImportFingerprint first = firstFingerprint!;
+            ImportInputs? first = await importer.GetInputsAsync(dir, gltfPath, sourceMeta, null, default);
+            Assert.NotNull(first);
 
             string bufferPath = Path.Combine(dir, "assets", "Models", "character.bin");
             byte[] bufferBytes = File.ReadAllBytes(bufferPath);
             bufferBytes[0] ^= 0x1;
             File.WriteAllBytes(bufferPath, bufferBytes);
 
-            AssetImportFingerprint? bufferFingerprint = importer.GetFingerprint(
-                dir,
-                gltfPath,
-                sourceMeta
-            );
-            Assert.NotNull(bufferFingerprint);
-            AssetImportFingerprint afterBufferChange = bufferFingerprint!;
+            ImportInputs? afterBufferChange = await importer.GetInputsAsync(dir, gltfPath, sourceMeta, null, default);
+            Assert.NotNull(afterBufferChange);
 
             string imagePath = Path.Combine(dir, "assets", "Models", "textures", "albedo.png");
             byte[] imageBytes = File.ReadAllBytes(imagePath);
             imageBytes[^1] ^= 0x1;
             File.WriteAllBytes(imagePath, imageBytes);
 
-            AssetImportFingerprint? imageFingerprint = importer.GetFingerprint(
-                dir,
-                gltfPath,
-                sourceMeta
-            );
-            Assert.NotNull(imageFingerprint);
-            AssetImportFingerprint afterImageChange = imageFingerprint!;
+            ImportInputs? afterImageChange = await importer.GetInputsAsync(dir, gltfPath, sourceMeta, null, default);
+            Assert.NotNull(afterImageChange);
 
-            Assert.NotEqual(first.ContentFingerprint, afterBufferChange.ContentFingerprint);
-            Assert.NotEqual(afterBufferChange.ContentFingerprint, afterImageChange.ContentFingerprint);
+            Assert.NotEqual(first.InputHash, afterBufferChange.InputHash);
+            Assert.NotEqual(afterBufferChange.InputHash, afterImageChange.InputHash);
         }
         finally
         {
@@ -170,14 +303,66 @@ public class GltfSourceImporterTests
         }
     }
 
+    private static void WriteJsonGlb(string source, string destination)
+    {
+        byte[] json = Encoding.UTF8.GetBytes(File.ReadAllText(source));
+        int length = (json.Length + 3) & ~3;
+        byte[] container = new byte[20 + length];
+        BinaryPrimitives.WriteUInt32LittleEndian(container, 0x46546C67);
+        BinaryPrimitives.WriteUInt32LittleEndian(container.AsSpan(4), 2);
+        BinaryPrimitives.WriteUInt32LittleEndian(container.AsSpan(8), checked((uint)container.Length));
+        BinaryPrimitives.WriteUInt32LittleEndian(container.AsSpan(12), checked((uint)length));
+        BinaryPrimitives.WriteUInt32LittleEndian(container.AsSpan(16), 0x4E4F534A);
+        container.AsSpan(20).Fill(0x20);
+        json.CopyTo(container.AsSpan(20));
+        File.WriteAllBytes(destination, container);
+    }
+
+    [Fact]
+    public async Task RenamingAnOrdinalElementPreservesItsAssetIdAndReferences()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            string path = WriteTestProject(dir, writeImporterSettings: false);
+            var importer = SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter();
+            IReadOnlyList<ImportedAsset> original = await ImportAsync(importer, dir, path);
+            ImportedAsset first = Assert.Single(original, asset => asset.SubAssetKey == "mesh:index:0");
+            string source = await File.ReadAllTextAsync(path);
+            await File.WriteAllTextAsync(path, source.Replace("\"Body\"", "\"RenamedBody\"", StringComparison.Ordinal));
+            IReadOnlyList<ImportedAsset> changed = await ImportAsync(importer, dir, path);
+            ImportedAsset renamed = Assert.Single(changed, asset => asset.SubAssetKey == "mesh:index:0");
+            Assert.Equal(first.AssetGuid, renamed.AssetGuid);
+            Assert.Equal(first.Dependencies, renamed.Dependencies);
+            using MeshAsset mesh = await MeshAsset.OpenAsync(renamed.OutputPath);
+            Assert.Equal("RenamedBody", mesh.Name);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    private static async Task<IReadOnlyList<ImportedAsset>> ImportAsync(GltfSourceImporter importer, string directory, string source)
+    {
+        var project = new AssetProject(directory, [importer]);
+        IReadOnlyList<Guid> ids = await project.ImportAsync(source);
+        return ids.Select(id =>
+        {
+            AssetEntry entry = project.Manifest.Assets[id];
+            return ImportedAsset.Create(entry, entry.SubAssetKey, Path.Combine(directory, entry.Path));
+        }).ToArray();
+    }
+
     private static string WriteTestProject(string dir, bool writeImporterSettings)
     {
         string templateDir = Path.Combine(dir, "assets", "Materials", "Templates");
         Directory.CreateDirectory(templateDir);
-        WriteTemplate(Path.Combine(templateDir, "PbrTemplate.material.asset"), "LitTemplate", LitShaderGuid);
-        WriteTemplate(Path.Combine(templateDir, "UnlitTemplate.material.asset"), "UnlitTemplate", UnlitShaderGuid);
-        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultLitMaterialTemplate), "DefaultPBR", LitShaderGuid);
-        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultUnlitMaterialTemplate), "TestUnlit_1", UnlitShaderGuid);
+        WriteTemplate(Path.Combine(templateDir, "PbrTemplate.material.asset"), "LitTemplate", unlit: false);
+        WriteTemplate(Path.Combine(templateDir, "UnlitTemplate.material.asset"), "UnlitTemplate", unlit: true);
+        string shaderDirectory = Path.Combine(dir, "assets", "Shaders");
+        Directory.CreateDirectory(shaderDirectory);
+        using (var lit = new ShaderAsset(Guid.Parse(LitShaderGuid)))
+            lit.SaveSourceAsync(Path.Combine(shaderDirectory, "standard.shader")).AsTask().GetAwaiter().GetResult();
+        using (var unlit = new ShaderAsset(Guid.Parse(UnlitShaderGuid)))
+            unlit.SaveSourceAsync(Path.Combine(shaderDirectory, "unlit.shader")).AsTask().GetAwaiter().GetResult();
 
         string modelDir = Path.Combine(dir, "assets", "Models");
         string textureDir = Path.Combine(modelDir, "textures");
@@ -199,58 +384,43 @@ public class GltfSourceImporterTests
                 """
                 {
                   "lit_material_template": "assets/Materials/Templates/PbrTemplate.material.asset",
-                  "unlit_material_template": "assets/Materials/Templates/UnlitTemplate.material.asset"
+                  "unlit_material_template": "assets/Materials/Templates/UnlitTemplate.material.asset",
+                  "require_persistent_element_ids": false
                 }
                 """).RootElement.Clone();
 
-            SourceMetaFiles.Save(gltfPath, new SourceMeta
+            SourceMeta.Save(gltfPath, new SourceMeta
             {
                 SourceGuid = SourceGuid.New(),
-                Importer = "GltfSourceImporter",
-                ImporterSettings = settings,
+                Importers = [new(SomeEngine.Assets.Importers.GltfSourceImporter.SourceImporterId, settings)],
             });
         }
+        else SourceMeta.Save(gltfPath, new SourceMeta
+        {
+            SourceGuid = SourceGuid.New(),
+            Importers = [new(GltfSourceImporter.SourceImporterId,
+                JsonSerializer.SerializeToElement(new GltfImporterSettings { RequirePersistentElementIds = false },
+                    GltfSettingsJson.Default.GltfImporterSettings))],
+        });
 
         return gltfPath;
     }
 
-    private static void WriteTemplate(string path, string name, string shaderGuid)
+    private static void WriteTemplate(string path, string name, bool unlit)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        AssetWriter.Write(new Material
-        {
-            AssetGuid = AssetGuid.New().ToFlatString(),
-            Name = name,
-            Passes =
-            [
-                new PassEntry
-                {
-                    Shader = new ShaderRef
-                    {
-                        AssetGuid = shaderGuid,
-                        EntryPoint = "main",
-                        Stage = ShaderStage.Compute,
-                    },
-                    Tags =
-                    [
-                        new TagEntry { Name = "opaque" },
-                    ],
-                    Components =
-                    [
-                        new ComponentEntry
-                        {
-                            TypeName = "OverlayShade",
-                            Json = "{\"Layer\":5}",
-                        },
-                    ],
-                },
-            ],
-            Textures = [],
-            Scalars = [],
-        }, path);
+        using MaterialAsset material = unlit
+            ? new UnlitMaterialAsset(Guid.NewGuid()) {
+                Name = name,
+            }
+            : new StandardMaterialAsset(Guid.NewGuid()) {
+                Name = name,
+            };
+        material.GetBlock<MaterialBlock>().Shader = new(Guid.Parse(unlit ? UnlitShaderGuid : LitShaderGuid));
+        ((material)).SaveAsync(path).AsTask().GetAwaiter().GetResult();
     }
 
-    private static byte[] BuildTriangleBuffer()
+private static byte[] BuildTriangleBuffer()
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);

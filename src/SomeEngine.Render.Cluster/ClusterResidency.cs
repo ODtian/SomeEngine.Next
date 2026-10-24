@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Frame;
 
@@ -9,7 +10,7 @@ namespace SomeEngine.Render.Cluster;
 /// <summary>Physical bounds and shutdown policy for Cluster geometry residency.</summary>
 public sealed record ClusterResidencyOptions
 {
-    public uint PageHeapCapacityBytes { get; init; } = 64u * 1024 * 1024;
+    public uint PageHeapCapacityBytes { get; init; } = 256u * 1024 * 1024;
 
     public ulong BvhCapacityBytes { get; init; } = 64ul * 1024 * 1024;
 
@@ -20,21 +21,7 @@ public sealed record ClusterResidencyOptions
     internal void Validate()
     {
         ArgumentOutOfRangeException.ThrowIfZero(PageHeapCapacityBytes);
-        if (PageHeapCapacityBytes > int.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(PageHeapCapacityBytes),
-                "A managed Cluster page-heap mapping cannot exceed Int32.MaxValue bytes.");
-        }
-
         ArgumentOutOfRangeException.ThrowIfZero(BvhCapacityBytes);
-        if (BvhCapacityBytes > int.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(BvhCapacityBytes),
-                "A managed Cluster BVH mapping cannot exceed Int32.MaxValue bytes.");
-        }
-
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(PageFaultCapacity);
         if (DisposeTimeout <= TimeSpan.Zero || DisposeTimeout == Timeout.InfiniteTimeSpan)
         {
@@ -48,20 +35,27 @@ public sealed record ClusterResidencyOptions
 internal readonly record struct ClusterResidencyBinding(
     Buffer PageHeap,
     Buffer Bvh,
-    int PageFaultCapacity);
+    int PageFaultCapacity,
+    BufferRange[] ResidentPageRanges,
+    BufferRange BvhRange,
+    ClusterResidencyPublication? Publication);
+
+internal sealed record ClusterResidencyPublication(
+    ulong Sequence,
+    ClusterMeshPublication Meshes);
 
 internal readonly record struct ClusterResidencyProviderSnapshot(
     ClusterMeshesSnapshot Meshes,
     PageStreamSnapshot Streaming);
 
 /// <summary>
-/// Owns Cluster page-heap and BVH storage plus CPU residency machinery. It performs no frame or
-/// completion coordination; callers must prove the resources are quiescent before publication.
+/// Owns device-local Cluster page-heap and BVH resources plus their CPU staging machinery.
 /// </summary>
 internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 {
     private readonly Buffer _pageHeapBuffer;
     private readonly Buffer _bvhBuffer;
+    private readonly IGraphicsBackend _backend;
     private readonly ClusterMeshes _meshes;
     private readonly PageStream _stream;
     private readonly PageFaults _faults;
@@ -74,6 +68,10 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     private bool _bvhBufferDestroyed;
     private bool _pageHeapBufferDestroyed;
     private int _lifecycleState;
+    private ulong _publicationSequence;
+    private ClusterResidencyPublication? _activePublication;
+
+    internal int HierarchyLevels => _meshes.HierarchyLevels;
 
     internal ClusterResidency(
         IGraphicsBackend backend,
@@ -95,8 +93,8 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 
         Buffer? pageHeapBuffer = null;
         Buffer? bvhBuffer = null;
-        MappedClusterPageStorage? pageStorage = null;
-        MappedClusterBvhStorage? bvhStorage = null;
+        SparseClusterPageStorage? pageStorage = null;
+        SparseClusterBvhStorage? bvhStorage = null;
         ClusterMeshes? meshes = null;
         PageStream? stream = null;
         try
@@ -105,25 +103,19 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
                 device,
                 new BufferDesc(
                     selected.PageHeapCapacityBytes,
-                    BufferUsages.ShaderRead | BufferUsages.CopySource,
+                    BufferUsages.ShaderRead | BufferUsages.CopyDestination,
                     "Cluster page heap"),
-                MemoryType.Upload);
-            pageStorage = new MappedClusterPageStorage(
-                backend,
-                pageHeapBuffer,
-                checked((int)selected.PageHeapCapacityBytes));
+                MemoryType.DeviceLocal);
+            pageStorage = new SparseClusterPageStorage(selected.PageHeapCapacityBytes);
 
             bvhBuffer = backend.CreateBuffer(
                 device,
                 new BufferDesc(
                     selected.BvhCapacityBytes,
-                    BufferUsages.ShaderRead | BufferUsages.CopySource,
+                    BufferUsages.ShaderRead | BufferUsages.CopyDestination,
                     "Cluster BVH"),
-                MemoryType.Upload);
-            bvhStorage = new MappedClusterBvhStorage(
-                backend,
-                bvhBuffer,
-                checked((int)selected.BvhCapacityBytes));
+                MemoryType.DeviceLocal);
+            bvhStorage = new SparseClusterBvhStorage(selected.BvhCapacityBytes);
 
             meshes = new ClusterMeshes(
                 selected.PageHeapCapacityBytes,
@@ -136,6 +128,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 
             _pageHeapBuffer = pageHeapBuffer;
             _bvhBuffer = bvhBuffer;
+            _backend = backend;
             _meshes = meshes;
             _stream = stream;
             _faults = new PageFaults(meshes.EpochId, selected.PageFaultCapacity);
@@ -187,23 +180,47 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 
     internal bool IsRegistrationOwner => _meshes.IsRegistrationOwner;
 
+    internal int PageFaultCapacity => _pageFaultCapacity;
+
     internal ClusterResidencyBinding GetBinding()
     {
         ThrowIfNotActive();
         return new ClusterResidencyBinding(
             _pageHeapBuffer,
             _bvhBuffer,
-            _pageFaultCapacity);
+            _pageFaultCapacity,
+            _activePublication?.Meshes.ResidentPageRanges ?? _meshes.CaptureResidentPageRanges(),
+            _meshes.CaptureBvhRange(),
+            _activePublication);
     }
 
     internal bool IsDisposed => Volatile.Read(ref _lifecycleState) == 2;
 
     internal ValueTask<ClusterMeshRegistrationResult> RegisterMeshAsync(
         Mesh mesh,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        SomeEngine.Assets.Pipeline.MeshPayloadSource? pageSource = null)
     {
         ThrowIfNotActive();
-        return _meshes.RegisterMeshAsync(mesh, cancellationToken);
+        return _meshes.RegisterMeshAsync(mesh, cancellationToken, pageSource);
+    }
+
+    internal async ValueTask LoadOpeningPagesAsync(
+        IReadOnlyCollection<uint> lowestDetailPageIds,
+        CancellationToken cancellationToken = default)
+    {
+        await Parallel.ForEachAsync(
+            lowestDetailPageIds,
+            new ParallelOptions { MaxDegreeOfParallelism = 32, CancellationToken = cancellationToken },
+            async (pageId, token) =>
+            {
+                PageLoadResult result = await _meshes.LoadPageIntoStagingAsync(pageId, token).ConfigureAwait(false);
+                if (result is not (PageLoadResult.Staged or PageLoadResult.AlreadyTracked))
+                    throw new InvalidOperationException(
+                        $"Lowest-detail Cluster page {pageId} could not be loaded before mesh publication ({result}).");
+            }).ConfigureAwait(false);
+        // Coarse pages establish complete opening coverage. GPU visibility and
+        // LOD selection request the required detail and its reduction groups.
     }
 
     internal bool IsMeshRegistered(Mesh mesh)
@@ -216,23 +233,56 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     internal void PumpStreaming()
     {
         ThrowIfNotActive();
+        _meshes.RetireCompleted(_backend);
         _stream.Update();
     }
 
-    /// <summary>
-    /// Publishes pending roots, pages, and retirements under the residency timeline's linear
-    /// prepare capability.
-    /// </summary>
-    internal bool PublishPending()
+    /// <summary>Freezes one publication for the next RenderGraph frame without waiting on the GPU.</summary>
+    internal bool PreparePublication()
     {
         ThrowIfNotActive();
-        return _meshes.PublishPending();
+        _meshes.RetireCompleted(_backend);
+        if (_activePublication is not null)
+            return true;
+        ClusterMeshPublication? meshes = _meshes.PreparePublication();
+        if (meshes is null)
+            return false;
+        _publicationSequence = checked(_publicationSequence + 1);
+        _activePublication = new ClusterResidencyPublication(_publicationSequence, meshes);
+        return true;
+    }
+
+    internal void CommitPublication(
+        ClusterResidencyPublication publication,
+        QueueCompletion[][] retirementCompletions)
+    {
+        ThrowIfNotActive();
+        ArgumentNullException.ThrowIfNull(publication);
+        if (!ReferenceEquals(publication, _activePublication))
+            throw new InvalidOperationException("The submitted Cluster residency publication is stale.");
+        _meshes.CommitPublication(publication.Meshes, retirementCompletions);
+        _activePublication = null;
+        _meshes.RetireCompleted(_backend);
+    }
+
+    internal void RetainPublication(ClusterResidencyPublication publication)
+    {
+        ThrowIfNotActive();
+        ArgumentNullException.ThrowIfNull(publication);
+        if (!ReferenceEquals(publication, _activePublication))
+            throw new InvalidOperationException("The discarded Cluster residency publication is stale.");
     }
 
     internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
         ThrowIfNotActive();
-        return _meshes.TryGetPublishedRoot(mesh, out root);
+        if (_meshes.TryGetPublishedRoot(mesh, out root))
+            return true;
+        if (_activePublication is { } publication &&
+            publication.Meshes.Bvh.RootMeshes.Any(candidate => ReferenceEquals(candidate, mesh)))
+            return _meshes.TryGetRegisteredRoot(mesh, out root);
+        root = 0;
+        return false;
     }
 
     internal int PublishedMeshCount
@@ -319,7 +369,8 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             cleanupFailure);
         meshCache = new ClusterMeshCacheDiagnostics(
             meshes.RegisteredMeshCount,
-            meshes.PublishedMeshCount);
+            meshes.PublishedMeshCount,
+            meshes.ManagerStateRevision);
     }
 
     internal ClusterResidencyProviderSnapshot CaptureSnapshot()
@@ -473,7 +524,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         catch (TimeoutException error)
         {
             throw new TimeoutException(
-                $"Cluster mesh registration did not release final BVH storage within {timeout}.",
+                $"Cluster mesh registration did not release BVH staging storage within {timeout}.",
                 error);
         }
 

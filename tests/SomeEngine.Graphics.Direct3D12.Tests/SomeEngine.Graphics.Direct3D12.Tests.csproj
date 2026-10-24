@@ -5,16 +5,18 @@
     <IsTestProject>true</IsTestProject>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <SlangStandardModuleSourceRoot>$(MSBuildThisFileDirectory)Fixtures\$(SlangTestFixtureDirectory)</SlangStandardModuleSourceRoot>
-    <VSTestTestCaseFilter Condition="'$(VSTestTestCaseFilter)' == ''">(Isolation!=ProcessDestructive)&amp;(Isolation!=PresentationProcess)&amp;(Isolation!=DeviceLossProcess)</VSTestTestCaseFilter>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Shared/HardwareRowsDiscoverer.cs" Link="HardwareRowsDiscoverer.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../tools/SomeEngine.Trace/SomeEngine.Trace.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Validation/SomeEngine.Graphics.Validation.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12.Validation/SomeEngine.Graphics.Direct3D12.Validation.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Assets/SomeEngine.Assets.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
@@ -30,14 +32,6 @@
     </Content>
     <Content Include="../../external/dxc/bin/x64/dxil.dll">
       <Link>dxil.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="../../external/SlangShaderSharp/runtimes/win-x64/native/slang-compiler.dll">
-      <Link>slang-compiler.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="../../external/SlangShaderSharp/runtimes/win-x64/native/slang-glslang.dll">
-      <Link>slang-glslang.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="$(SlangStandardModuleSourceRoot)/experimental/workgraph.slang">

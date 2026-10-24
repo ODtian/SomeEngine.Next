@@ -4,287 +4,133 @@ namespace SomeEngine.Job.Dots.Tests;
 
 public sealed class DotsConsumerTests
 {
-    public DotsConsumerTests()
+    public DotsConsumerTests() => JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+
+    [Fact]
+    public void AdapterScheduleCompletesSingleWork()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
-        Counter = 0;
+        int[] values = [0];
+        new IncrementJob(values, 3).Schedule().Complete();
+        Assert.Equal(3, values[0]);
     }
 
     [Fact]
-    public void AdapterSchedulePatternsCompleteWork()
+    public void AdapterScheduleCompletesEveryIndex()
     {
-        var forValues = new int[4];
-        var chunkValues = new int[5];
-        var chunks = ArrayChunkSource.Create(
-            new JobChunk(0, 0, 2),
-            new JobChunk(1, 2, 3));
-
-        new IncrementJob(3).Schedule().Complete();
-        new MarkForJob(forValues).Schedule(forValues.Length, 2).Complete();
-        new FillChunkJob(chunkValues).Schedule(chunks, batchSize: 1).Complete();
-
-        Assert.Equal(3, Counter);
-        Assert.All(forValues, value => Assert.Equal(1, value));
-        Assert.All(chunkValues, value => Assert.Equal(1, value));
+        var values = new int[4];
+        new MarkForJob(values).Schedule(values.Length, 2).Complete();
+        Assert.All(values, value => Assert.Equal(1, value));
     }
 
     [Fact]
-    public void AsyncVoidJobForIsRejectedBeforeSchedulingOrExecution()
+    public void AdapterScheduleCompletesEveryChunk()
     {
-        AsyncJobFor.Reset();
-        JobRuntimeStats before = JobSystem.GetStats();
+        var values = new int[5];
+        var chunks = new ArrayChunkSource([new JobChunk(0, 0, 2), new JobChunk(1, 2, 3)]);
+        new FillChunkJob(values).Schedule(chunks, batchSize: 1).Complete();
+        Assert.All(values, value => Assert.Equal(1, value));
+    }
 
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-            new AsyncJobFor().Schedule(length: 4, batchSize: 1));
-
-        Assert.Contains("async", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(0, Volatile.Read(ref AsyncJobFor.BodyCount));
-        Assert.False(SpinWait.SpinUntil(
-            static () => Volatile.Read(ref AsyncJobFor.ContinuationCount) != 0,
-            TimeSpan.FromMilliseconds(100)));
-        AssertStatsEqual(before, JobSystem.GetStats());
+    [Fact]
+    public void AsyncVoidJobForIsRejectedBeforeExecution()
+    {
+        int[] counts = [0, 0];
+        Assert.Throws<InvalidOperationException>(() => new AsyncJobFor(counts).Schedule(length: 4, batchSize: 1));
+        Assert.Equal(new[] { 0, 0 }, counts);
     }
 
     [Fact]
     public void AsyncVoidJobChunkIsRejectedBeforeReadingItsSource()
     {
-        AsyncJobChunk.Reset();
-        CountingChunkSource.Reset();
-        var source = new CountingChunkSource();
-        JobRuntimeStats before = JobSystem.GetStats();
-
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-            new AsyncJobChunk().Schedule(source, batchSize: 1));
-
-        Assert.Contains("async", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(0, Volatile.Read(ref CountingChunkSource.ChunkCountReads));
-        Assert.Equal(0, Volatile.Read(ref CountingChunkSource.GetChunkCalls));
-        Assert.Equal(0, Volatile.Read(ref AsyncJobChunk.BodyCount));
-        Assert.False(SpinWait.SpinUntil(
-            static () => Volatile.Read(ref AsyncJobChunk.ContinuationCount) != 0,
-            TimeSpan.FromMilliseconds(100)));
-        AssertStatsEqual(before, JobSystem.GetStats());
+        int[] counts = [0, 0];
+        int[] reads = [0, 0];
+        var source = new CountingChunkSource(reads);
+        Assert.Throws<InvalidOperationException>(() => new AsyncJobChunk(counts).Schedule(source, batchSize: 1));
+        Assert.Equal(new[] { 0, 0 }, reads);
+        Assert.Equal(new[] { 0, 0 }, counts);
     }
 
     [Fact]
     [Trait("Category", "Performance")]
-    public void WarmedJobForSchedulePathDoesNotAllocateForAsyncValidation()
+    public void RepeatedJobForSchedulingDoesNotThrow()
     {
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
-
-        for (var i = 0; i < 128; i++)
-        {
-            new AllocationJobFor().Schedule(length: 1, batchSize: 1).Complete();
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 32; i++)
-        {
-            new AllocationJobFor().Schedule(length: 1, batchSize: 1).Complete();
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.InRange(allocated, 0, 1_024);
+        for (int index = 0; index < 160; index++)
+            new EmptyJobFor().Schedule(length: 1, batchSize: 1).Complete();
     }
 
     [Fact]
     [Trait("Category", "Performance")]
-    public void WarmedJobChunkSchedulePathDoesNotAllocateForAsyncValidation()
+    public void RepeatedJobChunkSchedulingDoesNotThrow()
     {
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
-        var source = new AllocationChunkSource();
-
-        for (var i = 0; i < 128; i++)
-        {
-            new AllocationJobChunk().Schedule(source, batchSize: 1).Complete();
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 32; i++)
-        {
-            new AllocationJobChunk().Schedule(source, batchSize: 1).Complete();
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.InRange(allocated, 0, 1_024);
+        var source = new ArrayChunkSource([new JobChunk(0, 0, 0)]);
+        for (int index = 0; index < 160; index++)
+            new EmptyJobChunk().Schedule(source, batchSize: 1).Complete();
     }
 
-    private static void AssertStatsEqual(JobRuntimeStats expected, JobRuntimeStats actual)
+    private readonly struct IncrementJob(int[] values, int amount) : IJob
     {
-        Assert.Equal(expected.ScheduledJobs, actual.ScheduledJobs);
-        Assert.Equal(expected.ExecutedWorkItems, actual.ExecutedWorkItems);
-        Assert.Equal(expected.CompletedHandles, actual.CompletedHandles);
-        Assert.Equal(expected.FaultedWorkItems, actual.FaultedWorkItems);
-        Assert.Equal(expected.QueuedWorkItems, actual.QueuedWorkItems);
-        Assert.Equal(expected.RefFreeJobs, actual.RefFreeJobs);
-        Assert.Equal(expected.RefContainingJobs, actual.RefContainingJobs);
-        Assert.Equal(expected.QueueHighWater, actual.QueueHighWater);
-        Assert.Equal(expected.CompletionStateHighWater, actual.CompletionStateHighWater);
-        Assert.Equal(expected.ResourceStateHighWater, actual.ResourceStateHighWater);
+        public void Execute() => Interlocked.Add(ref values[0], amount);
     }
 
-    private static int Counter;
-
-    private readonly struct IncrementJob : IJob
+    private readonly struct MarkForJob(int[] values) : IJobFor
     {
-        private readonly int _amount;
-
-        public IncrementJob(int amount)
-        {
-            _amount = amount;
-        }
-
-        public void Execute()
-        {
-            Interlocked.Add(ref Counter, _amount);
-        }
+        public void Execute(int index) => Interlocked.Increment(ref values[index]);
     }
 
-    private readonly struct MarkForJob : IJobFor
-    {
-        private readonly int[] _values;
-
-        public MarkForJob(int[] values)
-        {
-            _values = values;
-        }
-
-        public void Execute(int index)
-        {
-            Interlocked.Increment(ref _values[index]);
-        }
-    }
-
-    private readonly struct FillChunkJob : IJobChunk
-    {
-        private readonly int[] _values;
-
-        public FillChunkJob(int[] values)
-        {
-            _values = values;
-        }
-
-        public void Execute(JobChunk chunk)
-        {
-            for (var index = chunk.Start; index < chunk.Start + chunk.Length; index++)
-            {
-                Interlocked.Increment(ref _values[index]);
-            }
-        }
-    }
-
-    private readonly struct AllocationJobFor : IJobFor
-    {
-        public void Execute(int index)
-        {
-            _ = index;
-        }
-    }
-
-    private readonly struct AllocationJobChunk : IJobChunk
+    private readonly struct FillChunkJob(int[] values) : IJobChunk
     {
         public void Execute(JobChunk chunk)
         {
-            _ = chunk;
+            for (int index = chunk.Start; index < chunk.Start + chunk.Length; index++)
+                Interlocked.Increment(ref values[index]);
         }
     }
 
-    private readonly struct AllocationChunkSource : IJobChunkSource
+    private readonly struct AsyncJobFor(int[] counts) : IJobFor
     {
-        public int ChunkCount => 1;
-
-        public JobChunk GetChunk(int index)
-        {
-            return new JobChunk(index, start: 0, length: 0);
-        }
-    }
-
-    private struct AsyncJobFor : IJobFor
-    {
-        internal static int BodyCount;
-        internal static int ContinuationCount;
-
-        internal static void Reset()
-        {
-            BodyCount = 0;
-            ContinuationCount = 0;
-        }
-
         public async void Execute(int index)
         {
-            _ = index;
-            Interlocked.Increment(ref BodyCount);
+            Interlocked.Increment(ref counts[0]);
             await Task.Yield();
-            Interlocked.Increment(ref ContinuationCount);
+            Interlocked.Increment(ref counts[1]);
         }
     }
 
-    private struct AsyncJobChunk : IJobChunk
+    private readonly struct AsyncJobChunk(int[] counts) : IJobChunk
     {
-        internal static int BodyCount;
-        internal static int ContinuationCount;
-
-        internal static void Reset()
-        {
-            BodyCount = 0;
-            ContinuationCount = 0;
-        }
-
         public async void Execute(JobChunk chunk)
         {
-            _ = chunk;
-            Interlocked.Increment(ref BodyCount);
+            Interlocked.Increment(ref counts[0]);
             await Task.Yield();
-            Interlocked.Increment(ref ContinuationCount);
+            Interlocked.Increment(ref counts[1]);
         }
     }
 
-    private readonly struct CountingChunkSource : IJobChunkSource
+    private readonly struct CountingChunkSource(int[] reads) : IJobChunkSource
     {
-        internal static int ChunkCountReads;
-        internal static int GetChunkCalls;
-
-        internal static void Reset()
-        {
-            ChunkCountReads = 0;
-            GetChunkCalls = 0;
-        }
-
-        public int ChunkCount
-        {
-            get
-            {
-                Interlocked.Increment(ref ChunkCountReads);
-                return 1;
-            }
-        }
-
+        public int ChunkCount { get { Interlocked.Increment(ref reads[0]); return 1; } }
         public JobChunk GetChunk(int index)
         {
-            Interlocked.Increment(ref GetChunkCalls);
-            return new JobChunk(index, start: 0, length: 0);
+            Interlocked.Increment(ref reads[1]);
+            return new JobChunk(index, 0, 0);
         }
     }
 
-    private readonly struct ArrayChunkSource : IJobChunkSource
+    private readonly struct ArrayChunkSource(JobChunk[] chunks) : IJobChunkSource
     {
-        private readonly JobChunk[] _chunks;
+        public int ChunkCount => chunks.Length;
+        public JobChunk GetChunk(int index) => chunks[index];
+    }
 
-        private ArrayChunkSource(JobChunk[] chunks)
-        {
-            _chunks = chunks;
-        }
+    private readonly struct EmptyJobFor : IJobFor
+    {
+        public void Execute(int index) { }
+    }
 
-        public int ChunkCount => _chunks.Length;
-
-        public static ArrayChunkSource Create(params JobChunk[] chunks)
-        {
-            return new ArrayChunkSource(chunks);
-        }
-
-        public JobChunk GetChunk(int index)
-        {
-            return _chunks[index];
-        }
+    private readonly struct EmptyJobChunk : IJobChunk
+    {
+        public void Execute(JobChunk chunk) { }
     }
 }

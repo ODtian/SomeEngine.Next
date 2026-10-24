@@ -446,7 +446,7 @@ public sealed partial class ValidationLayer
         }
         RayTracingPipelineValidationState validation = ValidateRayTracingPipeline(desc);
         PipelineBindingValidationState pipelineBindings = ReflectPipelineBindings(
-            desc.Program,
+            desc.Reflection,
             ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty);
         pipelineBindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
@@ -505,7 +505,7 @@ public sealed partial class ValidationLayer
         }
         RayTracingPipelineValidationState validation = ValidateRayTracingPipeline(desc);
         PipelineBindingValidationState bindings = ReflectPipelineBindings(
-            desc.Program,
+            desc.Reflection,
             ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty);
         bindings.AddStaticSamplers(desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
@@ -943,7 +943,7 @@ public sealed partial class ValidationLayer
         if (desc.NodeMask == 0)
             Reject("WorkGraphs", "A Work Graph Pipeline requires a non-zero node mask.");
         PipelineBindingValidationState pipelineBindings = ReflectPipelineBindings(
-            desc.Program,
+            desc.Reflection,
             ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty,
             useConservativeWorkGraphEntries: true);
         pipelineBindings.AddStaticSamplers(desc.StaticSamplers);
@@ -1003,7 +1003,7 @@ public sealed partial class ValidationLayer
         if (desc.NodeMask == 0)
             Reject("WorkGraphs", "A Work Graph Pipeline requires a non-zero node mask.");
         PipelineBindingValidationState bindings = ReflectPipelineBindings(
-            desc.Program,
+            desc.Reflection,
             ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty,
             useConservativeWorkGraphEntries: true);
         bindings.AddStaticSamplers(desc.StaticSamplers);
@@ -1638,7 +1638,9 @@ public sealed partial class ValidationLayer
     private RayTracingPipelineValidationState ValidateRayTracingPipeline(
         in RayTracingPipelineDesc desc)
     {
-        ArgumentNullException.ThrowIfNull(desc.Program);
+        ArgumentNullException.ThrowIfNull(desc.SlangCode);
+        if (desc.Reflection == ShaderReflection.Null)
+            Reject("RayTracing", "A ray-tracing Pipeline requires Slang reflection.");
         if (desc.RayGeneration.IsEmpty)
             Reject("RayTracing", "A ray-tracing Pipeline requires a ray-generation export.");
         const RayTracingPipelineOptions supportedOptions =
@@ -1649,6 +1651,7 @@ public sealed partial class ValidationLayer
 
         var result = new RayTracingPipelineValidationState();
         var names = new HashSet<string>(StringComparer.Ordinal);
+        var shaders = new Dictionary<string, SlangShaderSharp.EntryPointReflection>(StringComparer.Ordinal);
         AddEntries(
             desc.RayGeneration,
             SlangShaderSharp.SlangStage.RayGeneration,
@@ -1725,12 +1728,13 @@ public sealed partial class ValidationLayer
             if (entry == SlangShaderSharp.EntryPointReflection.Null ||
                 entry.Stage != expectedStage ||
                 string.IsNullOrWhiteSpace(entry.Name) ||
-                !names.Add(entry.Name))
+                (shaders.TryGetValue(entry.Name, out var existing) ? existing != entry : !names.Add(entry.Name)))
             {
                 Reject(
                     "RayTracing",
                     $"A ray-tracing export is not a unique {expectedStage} Slang entry point.");
             }
+            shaders[entry.Name] = entry;
         }
     }
 

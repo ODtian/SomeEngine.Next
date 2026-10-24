@@ -49,6 +49,8 @@ internal sealed partial class EntityStore
         _freeListHead = source._freeListHead;
         _aliveCount = source._aliveCount;
         _count = source._count;
+        _tableChanges = source._tableChanges;
+        _tableChangeVersion = source._tableChangeVersion;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -118,6 +120,7 @@ internal sealed partial class EntityStore
         }
 
         int index = id.Index;
+        RecordTableChange(id);
         ref PersistentEntityRecord record = ref MutableRecord(index);
         int nextGeneration = record.Generation + 1;
         _aliveCount--;

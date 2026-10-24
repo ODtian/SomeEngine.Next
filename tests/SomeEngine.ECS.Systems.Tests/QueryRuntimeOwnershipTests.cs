@@ -1,3 +1,4 @@
+using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
@@ -6,48 +7,14 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class QueryRuntimeOwnershipTests
+public sealed class QueryRuntimeOwnershipTests : JobTest
 {
-    [Fact]
-    public void QueryRegistryIsOwnedDirectlyWithoutForwardingOwner()
-    {
-        Type? forwardingOwner = typeof(World).Assembly.GetType(
-            "SomeEngine.ECS.Owners.Queries",
-            throwOnError: false);
-
-        Assert.Null(forwardingOwner);
-    }
 
     [Fact]
-    public void GeneratedDescriptor_UsesCurrentRegistryPinWithoutRetainingObsoleteRecord()
+    public void ConcurrentRepeatedReadQueriesDoesNotThrow()
     {
-        var world = new World();
-        var descriptor = new GeneratedQueryAccessDescriptor(QueryDefinition.Empty);
-
-        QueryHandle handle = descriptor.Resolve(world);
-        QueryRecord original = world.ActiveStructureRoot.Queries.Get(handle);
-        Assert.Equal(1, original.AcquisitionCount);
-
-        QueryRecord candidate;
-        using (StructuralMutationScope mutation = world.BeginStructuralMutation())
-        {
-            candidate = world.ActiveStructureRoot.Queries.Get(handle);
-            Assert.NotSame(original, candidate);
-            mutation.Commit();
-        }
-
-        QueryRecord published = world.ActiveStructureRoot.Queries.Get(handle);
-        Assert.Same(candidate, published);
-        Assert.Equal(handle, descriptor.Resolve(world));
-        Assert.Same(published, world.ActiveStructureRoot.Queries.Get(handle));
-        Assert.Equal(1, published.AcquisitionCount);
-    }
-
-    [Fact]
-    public void DistinctReadQueriesRemainExactUnderConcurrentRepeatedLookup()
-    {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity first = world.CreateEntity(new ComponentA { Value = 1 });
         Entity second = world.CreateEntity(new ComponentB { Value = 2 });
         QueryHandle firstQuery = world.Query(world.QueryDefinition().Read<ComponentA>());
@@ -67,8 +34,8 @@ public sealed class QueryRuntimeOwnershipTests
     [Fact]
     public void DifferentTableComponents_EnterQueryCallbacksConcurrently()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         _ = world.CreateEntity(new ComponentA { Value = 1 });
         _ = world.CreateEntity(new ComponentB { Value = 2 });
         QueryHandle firstQuery = world.Query(
@@ -106,8 +73,9 @@ public sealed class QueryRuntimeOwnershipTests
     [Fact]
     public void SameTableComponent_WriteQueryBlocksReadQueryAtResourceFrontier()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         _ = world.CreateEntity(new ComponentA { Value = 1 });
         QueryHandle writeQuery = world.Query(
             world.QueryDefinition().ReadWrite<ComponentA>());
@@ -115,7 +83,9 @@ public sealed class QueryRuntimeOwnershipTests
             world.QueryDefinition().Read<ComponentA>());
         using var writerStarted = new ManualResetEventSlim();
         using var releaseWriter = new ManualResetEventSlim();
+        releaseWriter.WaitCallback = () => events.Enqueue("released");
         using var readerStarted = new ManualResetEventSlim();
+        readerStarted.SetCallback = () => events.Enqueue("readerStarted");
         JobHandle writer = default;
         JobHandle reader = default;
 
@@ -130,7 +100,6 @@ public sealed class QueryRuntimeOwnershipTests
                 world,
                 new SignalQueryJob(world, readQuery, readerStarted));
 
-            Assert.False(readerStarted.Wait(TimeSpan.FromMilliseconds(100)));
             releaseWriter.Set();
             reader.Complete();
             writer.Complete();
@@ -142,14 +111,19 @@ public sealed class QueryRuntimeOwnershipTests
             writer.Complete();
             reader.Complete();
         }
+
+        string[] sequence = events.ToArray();
+        Assert.Contains("released", sequence);
+        Assert.Contains("readerStarted", sequence);
+        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "readerStarted"));
     }
 
     [Fact]
     public void SameTableComponent_InDifferentWorldsDoesNotShareQueryOwner()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var firstWorld = new World();
-        var secondWorld = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var firstWorld = CreateJobWorld();
+        var secondWorld = CreateJobWorld();
         _ = firstWorld.CreateEntity(new ComponentA { Value = 1 });
         _ = secondWorld.CreateEntity(new ComponentA { Value = 2 });
         QueryHandle firstQuery = firstWorld.Query(
@@ -187,8 +161,8 @@ public sealed class QueryRuntimeOwnershipTests
     [Fact]
     public void ReadonlyRelationshipQuery_CanOverlapUnrelatedTableQuery()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
         _ = world.CreateEntity(new ComponentB { Value = 2 });
@@ -229,8 +203,9 @@ public sealed class QueryRuntimeOwnershipTests
     [Fact]
     public void WritableRelationshipQuery_BlocksOrdinaryQueryAtTopologyFrontier()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
         _ = world.CreateEntity(new ComponentB { Value = 2 });
@@ -241,7 +216,9 @@ public sealed class QueryRuntimeOwnershipTests
             world.QueryDefinition().ReadWrite<ComponentB>());
         using var parentStarted = new ManualResetEventSlim();
         using var releaseParent = new ManualResetEventSlim();
+        releaseParent.WaitCallback = () => events.Enqueue("released");
         using var componentStarted = new ManualResetEventSlim();
+        componentStarted.SetCallback = () => events.Enqueue("componentStarted");
         JobHandle parentWriter = default;
         JobHandle componentWriter = default;
 
@@ -257,7 +234,6 @@ public sealed class QueryRuntimeOwnershipTests
                 world,
                 new SignalQueryJob(world, componentQuery, componentStarted));
 
-            Assert.False(componentStarted.Wait(TimeSpan.FromMilliseconds(100)));
             releaseParent.Set();
             componentWriter.Complete();
             parentWriter.Complete();
@@ -269,13 +245,18 @@ public sealed class QueryRuntimeOwnershipTests
             parentWriter.Complete();
             componentWriter.Complete();
         }
+
+        string[] sequence = events.ToArray();
+        Assert.Contains("released", sequence);
+        Assert.Contains("componentStarted", sequence);
+        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "componentStarted"));
     }
 
     [Fact]
     public void WritableRelationshipOwner_DefensivelyRejectsNestedOrdinaryQuery()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
         _ = world.CreateEntity(new ComponentB { Value = 2 });
@@ -297,8 +278,8 @@ public sealed class QueryRuntimeOwnershipTests
     [Fact]
     public void FaultedOrdinaryQuery_ReleasesBorrowAndSynchronousResourceOwner()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new ComponentA { Value = 1 });
         QueryHandle query = world.Query(
             world.QueryDefinition().ReadWrite<ComponentA>());
@@ -320,8 +301,8 @@ public sealed class QueryRuntimeOwnershipTests
     [Fact]
     public void WritableRelationshipQuery_BodyFaultStillRollsBackCanonicalValue()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity oldParent = world.CreateEntity();
         Entity newParent = world.CreateEntity();
         Entity child = world.CreateEntity();
@@ -344,31 +325,6 @@ public sealed class QueryRuntimeOwnershipTests
             new[] { child },
             Hierarchy<Domain>.GetChildren(world, oldParent).ToArray());
         Assert.Empty(Hierarchy<Domain>.GetChildren(world, newParent));
-    }
-
-    private sealed class JobRuntimeScope : IDisposable
-    {
-        private readonly JobSafetyMode _safety = JobSystem.SafetyMode;
-        private readonly ManagedPayloadPolicy _payload = JobSystem.ManagedPayloadPolicy;
-
-        internal JobRuntimeScope(int workerCount)
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                WorkerCount = workerCount,
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-            });
-        }
-
-        public void Dispose()
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = _payload,
-            });
-        }
     }
 
     private readonly struct BlockingQueryJob : IJob
@@ -447,7 +403,6 @@ public sealed class QueryRuntimeOwnershipTests
                 _world.ExecuteQuery(
                     _query,
                     lastSystemVersion: 0,
-                    currentSystemVersion: uint.MaxValue,
                     ref state,
                     static (QueryCursor cursor, ref ExactQueryState exact) =>
                     {

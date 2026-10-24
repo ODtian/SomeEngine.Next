@@ -1,213 +1,123 @@
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices.Marshalling;
-using SlangShaderSharp;
 using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Graphics;
+using SomeEngine.Resources;
+using SlangShaderSharp;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
-public sealed class SlangComLifetimeTests
+public sealed class SlangComLifetimeTests : IDisposable
 {
-    [Fact]
-    public void ImporterMetadataUsesGeneratedComInterfaceAndUniqueOwnership()
-    {
-        Assert.NotNull(typeof(IMetadata).GetCustomAttribute<GeneratedComInterfaceAttribute>());
-        AssertMetadataInterface(
-            Parameter(typeof(IComponentType), nameof(IComponentType.GetTargetMetadata), 1));
-        AssertMetadataInterface(
-            Parameter(typeof(IComponentType), nameof(IComponentType.GetEntryPointMetadata), 2));
-    }
-
-    [Fact]
-    public void SlangBindingsMatchNativeOwnedAndBorrowedComResults()
-    {
-        AssertMarshaller(
-            Method(typeof(IComponentType), nameof(IComponentType.GetSession)).ReturnParameter,
-            "NoFreeComInterfaceMarshaller`1");
-        AssertMarshaller(
-            Method(typeof(ISession), nameof(ISession.GetGlobalSession)).ReturnParameter,
-            "NoFreeComInterfaceMarshaller`1");
-
-        MethodInfo createSession = Method(typeof(IGlobalSession), nameof(IGlobalSession.CreateSession));
-        AssertUniqueMarshaller(createSession.GetParameters()[1]);
-        MethodInfo loadModule = Method(typeof(ISession), nameof(ISession.LoadModuleFromSource));
-        AssertUniqueMarshaller(loadModule.ReturnParameter);
-        AssertUniqueMarshaller(loadModule.GetParameters()[3]);
-        MethodInfo compose = Method(
-            typeof(ISession),
-            nameof(ISession.CreateCompositeComponentType));
-        AssertUniqueMarshaller(compose.GetParameters()[2]);
-        AssertUniqueMarshaller(compose.GetParameters()[3]);
-        MethodInfo link = Method(typeof(IComponentType), nameof(IComponentType.Link));
-        AssertUniqueMarshaller(link.GetParameters()[0]);
-        AssertUniqueMarshaller(link.GetParameters()[1]);
-
-        Assert.Equal(
-            typeof(IGlobalSession),
-            Method(typeof(FunctionReflection), nameof(FunctionReflection.FindAttributeByName))
-                .GetParameters()[0].ParameterType);
-        Assert.Equal(
-            typeof(IGlobalSession),
-            Method(typeof(VariableReflection), nameof(VariableReflection.FindAttributeByName))
-                .GetParameters()[0].ParameterType);
-        Assert.Equal(16u, (uint)SlangStage.Node);
-
-        MethodInfo resultOverload = Assert.Single(
-            typeof(AttributeReflection).GetMethods(),
-            static method =>
-                method.Name == nameof(AttributeReflection.GetArgumentValueInt) &&
-                method.ReturnType == typeof(SlangResult));
-        Assert.Equal(typeof(int).MakeByRefType(), resultOverload.GetParameters()[1].ParameterType);
-    }
-
-    [Fact]
-    public void TrackedBlobIsInvalidAfterLifetimeDispose()
-    {
-        ISlangBlob blob = Slang.CreateBlob([0x5A]);
-        using (var lifetime = new SlangImportLifetime())
-            lifetime.Track(blob);
-
-        Assert.Throws<ObjectDisposedException>(() => blob.GetBufferSize());
-    }
-
-    [Fact]
-    public void TrackedSessionIsInvalidAfterLifetimeDispose()
-    {
-        IGlobalSession global = SlangShaderImporter.GlobalSession;
-        Assert.True(global.CreateSession(new SessionDesc(), out ISession session).Succeeded);
-        using (var lifetime = new SlangImportLifetime())
-            lifetime.Track(session);
-
-        Assert.Throws<ObjectDisposedException>(() => session.GetGlobalSession());
-    }
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), "SomeEngine-SlangLifetime-" + Guid.NewGuid().ToString("N"));
+    private const string ValidSource = "[shader(\"compute\")][numthreads(1,1,1)] void Compute() {}";
+    public SlangComLifetimeTests() => Directory.CreateDirectory(_directory);
+    public void Dispose() => Directory.Delete(_directory, recursive: true);
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ImportPath_ReleasesTrackedSessionBeforeReturningOrThrowing(bool invalidSource)
+    [InlineData(SlangCompileTarget.Dxil)]
+    [InlineData(SlangCompileTarget.Spirv)]
+    public async Task CreatedShaderKeepsCompiledCodeAfterDefinitionsAndCompilerObjectsClose(
+        SlangCompileTarget target)
     {
-        string directory = Path.Combine(
-            Path.GetTempPath(),
-            "SomeEngine-SlangLifetime-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
-        string sourcePath = Path.Combine(directory, "lifetime.slang");
-        File.WriteAllText(
-            sourcePath,
-            invalidSource
-                ? "[shader(\"compute\")] void CSMain( {"
-                : """
-                  [shader("compute")]
-                  [numthreads(1, 1, 1)]
-                  void CSMain()
-                  {
-                  }
-                  """);
-
-        ISession? sessionProbe = null;
-        IMetadata? metadataProbe = null;
-        var trackedWrappers = new List<WeakReference>();
-        try
+        string path = Path.Combine(_directory, "selected.slang");
+        File.WriteAllText(path, ValidSource);
+        Shader shader;
+        using (var definition = ShaderTestCompilation.Define(path))
         {
-            Action<object> observe = value =>
-            {
-                trackedWrappers.Add(new WeakReference(value));
-                if (value is ISession session)
-                    sessionProbe = session;
-                if (value is IMetadata metadata)
-                    metadataProbe = metadata;
-            };
-
-            if (invalidSource)
-            {
-                Exception failure = Assert.ThrowsAny<Exception>(() =>
-                    SlangShaderImporter.ImportTransientForLifetimeTest(sourcePath, observe));
-                Assert.Contains("Failed", failure.Message, StringComparison.OrdinalIgnoreCase);
-            }
-            else
-            {
-                _ = SlangShaderImporter.ImportTransientForLifetimeTest(sourcePath, observe);
-            }
-
-            Assert.NotEmpty(trackedWrappers);
-            AssertDisposedAndDrop(ref sessionProbe);
-            if (invalidSource)
-                Assert.Null(metadataProbe);
-            else
-                AssertDisposedAndDrop(ref metadataProbe);
-            CollectFinalizers();
-            Assert.All(trackedWrappers, reference => Assert.False(reference.IsAlive));
+            using var result = ShaderTestCompilation.Compile(definition, path);
+            shader = await ShaderTestCompilation.CreateAsync(result);
         }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        File.Delete(path);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        int targetIndex = shader.RequireSlangTarget(target);
+        Assert.True(shader.TryGetSlangEntry(
+            targetIndex,
+            "Compute",
+            SlangStage.Compute,
+            out EntryPointReflection entry));
+        Assert.True(
+            shader.GetSlangEntryBlob(targetIndex, entry) is not null ||
+            !shader.GetSlangEntryBytes(targetIndex, entry).IsEmpty);
+        Assert.Empty(Directory.EnumerateFiles(_directory));
     }
 
-    private static void CollectFinalizers()
+    [Fact]
+    public async Task RepeatedFailuresDoNotPoisonFollowingCompilations()
     {
-        for (int i = 0; i < 3; i++)
+        string path = Path.Combine(_directory, "changing.slang");
+        using var definition = ShaderTestCompilation.Define(path);
+        for (int attempt = 0; attempt < 6; attempt++)
         {
+            File.WriteAllText(path, "[shader(\"compute\")] void Compute( {");
+            Assert.Throws<InvalidDataException>(() => ShaderTestCompilation.Compile(definition, path));
+            File.WriteAllText(path, ValidSource);
+            using var result = ShaderTestCompilation.Compile(definition, path);
+            Shader shader = await ShaderTestCompilation.CreateAsync(result);
             GC.Collect();
             GC.WaitForPendingFinalizers();
-            GC.Collect();
+            Assert.Equal(definition.Id, result.Id);
+            int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+            Assert.True(shader.TryGetSlangEntry(
+                targetIndex,
+                "Compute",
+                SlangStage.Compute,
+                out EntryPointReflection entry));
+            Assert.True(
+                shader.GetSlangEntryBlob(targetIndex, entry) is not null ||
+                !shader.GetSlangEntryBytes(targetIndex, entry).IsEmpty);
         }
+        Assert.Empty(Directory.EnumerateFiles(_directory, "*.meta"));
+        Assert.Empty(Directory.EnumerateFiles(_directory, "*.asset"));
+    }
+
+    [Fact]
+    public async Task CancellationLeavesTheDefinitionAvailableForAnotherCompilation()
+    {
+        string path = Path.Combine(_directory, "cancel.slang");
+        File.WriteAllText(path, ValidSource);
+        using var definition = ShaderTestCompilation.Define(path);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        Assert.ThrowsAny<OperationCanceledException>(() => SlangShaderImporter.CompileDefinition(definition,
+            Path.Combine(_directory, "selected.shader"), cancellation.Token));
+        using var result = ShaderTestCompilation.Compile(definition, path);
+        Assert.Equal(definition.Id, result.Id);
+        Assert.False((await result.GetBlock<ShaderBlock>().ReadBytesAsync(ShaderBlock.TargetCodeKey(ShaderTestCompilation.CreateSessionDescription(), 0))).IsEmpty);
+    }
+
+    [Fact]
+    public async Task UnreferencedShaderIsCollectedAndTheCompilerRemainsUsable()
+    {
+        string path = Path.Combine(_directory, "collected.slang");
+        File.WriteAllText(path, ValidSource);
+        WeakReference shader = CreateUnreferencedShader(path);
+
+        for (int attempt = 0; attempt < 8 && shader.IsAlive; attempt++)
+        {
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+            GC.WaitForPendingFinalizers();
+        }
+
+        Assert.False(shader.IsAlive);
+        using ShaderAsset definition = ShaderTestCompilation.Define(path);
+        using ShaderAsset result = ShaderTestCompilation.Compile(definition, path);
+        Shader replacement = await ShaderTestCompilation.CreateAsync(result);
+        int targetIndex = replacement.RequireSlangTarget(SlangCompileTarget.Spirv);
+        Assert.True(replacement.TryGetSlangEntry(
+            targetIndex,
+            "Compute",
+            SlangStage.Compute,
+            out _));
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void AssertDisposedAndDrop(ref ISession? sessionProbe)
+    private static WeakReference CreateUnreferencedShader(string path)
     {
-        ISession released = sessionProbe ??
-            throw new InvalidOperationException("The importer did not expose its tracked session.");
-        Assert.Throws<ObjectDisposedException>(() => released.GetGlobalSession());
-        sessionProbe = null;
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void AssertDisposedAndDrop(ref IMetadata? metadataProbe)
-    {
-        IMetadata released = metadataProbe ??
-            throw new InvalidOperationException("The importer did not track compiled metadata.");
-        Assert.Throws<ObjectDisposedException>(() =>
-            released.IsParameterLocationUsed(
-                SlangParameterCategory.DescriptorTableSlot,
-                0,
-                0,
-                out _));
-        metadataProbe = null;
-    }
-
-    private static MethodInfo Method(Type type, string name) =>
-        Assert.Single(type.GetMethods(), method => method.Name == name);
-
-    private static ParameterInfo Parameter(Type type, string methodName, int index) =>
-        Method(type, methodName).GetParameters()[index];
-
-    private static void AssertMetadataInterface(ParameterInfo parameter)
-    {
-        Assert.Equal(typeof(IMetadata).MakeByRefType(), parameter.ParameterType);
-        Assert.Equal(
-            NullabilityState.NotNull,
-            new NullabilityInfoContext().Create(parameter).WriteState);
-        MarshalUsingAttribute attribute = Assert.Single(
-            parameter.GetCustomAttributes(typeof(MarshalUsingAttribute), inherit: false)
-                .Cast<MarshalUsingAttribute>());
-        Type nativeType = Assert.IsAssignableFrom<Type>(attribute.NativeType);
-        Assert.True(nativeType.IsGenericType);
-        Assert.Equal(
-            typeof(UniqueComInterfaceMarshaller<>),
-            nativeType.GetGenericTypeDefinition());
-    }
-
-    private static void AssertUniqueMarshaller(ParameterInfo parameter) =>
-        AssertMarshaller(parameter, nameof(UniqueComInterfaceMarshaller<object>).Split('`')[0] + "`1");
-
-    private static void AssertMarshaller(ParameterInfo parameter, string genericTypeName)
-    {
-        MarshalUsingAttribute attribute = Assert.Single(
-            parameter.GetCustomAttributes(typeof(MarshalUsingAttribute), inherit: false)
-                .Cast<MarshalUsingAttribute>());
-        Type nativeType = Assert.IsAssignableFrom<Type>(attribute.NativeType);
-        Assert.True(nativeType.IsGenericType);
-        Assert.Equal(genericTypeName, nativeType.GetGenericTypeDefinition().Name);
+        using ShaderAsset definition = ShaderTestCompilation.Define(path);
+        using ShaderAsset result = ShaderTestCompilation.Compile(definition, path);
+        Shader shader = ShaderTestCompilation.CreateAsync(result).AsTask().GetAwaiter().GetResult();
+        return new WeakReference(shader);
     }
 }

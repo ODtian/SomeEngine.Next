@@ -14,37 +14,27 @@ RWStructuredBuffer<uint> ScatterCounts;
 RWStructuredBuffer<uint> ReserveCounters;
 
 static const uint BLOCK_SIZE = 128u;
-groupshared uint Prefix[BLOCK_SIZE];
-groupshared uint BlockBase;
 
 [shader("compute")]
 [numthreads(BLOCK_SIZE, 1, 1)]
-void ReserveShadeBins(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
+void ReserveShadeBins(uint3 threadId : SV_DispatchThreadID)
 {
     uint bin = threadId.x;
-    uint count = bin < Uniforms.MaterialCount ? BinCounts[bin] : 0u;
-    Prefix[groupIndex] = count;
-    GroupMemoryBarrierWithGroupSync();
-
-    for (uint offset = 1u; offset < BLOCK_SIZE; offset <<= 1u)
-    {
-        uint addend = groupIndex >= offset ? Prefix[groupIndex - offset] : 0u;
-        GroupMemoryBarrierWithGroupSync();
-        Prefix[groupIndex] += addend;
-        GroupMemoryBarrierWithGroupSync();
-    }
-
-    if (groupIndex == 0u)
-        InterlockedAdd(ReserveCounters[0], Prefix[BLOCK_SIZE - 1u], BlockBase);
-    GroupMemoryBarrierWithGroupSync();
-
-    ReserveShade(
-        BinOffsets,
-        ScatterCounts,
-        IndirectArgs,
-        bin,
-        Uniforms.MaterialCount,
-        BlockBase,
-        Prefix[groupIndex],
-        count);
+    if (bin >= Uniforms.ShadeBinCount) return;
+    uint tiles = BinCounts[bin * 2u];
+    uint quads = BinCounts[bin * 2u + 1u];
+    uint count = tiles + quads;
+    // Each bin stores its own offsets, so waves can allocate in any order.
+    uint waveCount = WaveActiveSum(count);
+    uint first = 0u;
+    if (WaveIsFirstLane() && waveCount != 0u)
+        InterlockedAdd(ReserveCounters[0], waveCount, first);
+    uint offset = WaveReadLaneFirst(first) + WavePrefixSum(count);
+    BinOffsets[bin * 2u] = Uniforms.BinItemCapacity != 0u
+        ? bin * Uniforms.BinItemCapacity : offset;
+    BinOffsets[bin * 2u + 1u] = Uniforms.BinItemCapacity != 0u
+        ? (bin + 1u) * Uniforms.BinItemCapacity - quads : offset + tiles;
+    ScatterCounts[bin * 2u] = 0u;
+    ScatterCounts[bin * 2u + 1u] = 0u;
+    WriteDispatch(IndirectArgs, bin, tiles + (quads + 15u) / 16u);
 }

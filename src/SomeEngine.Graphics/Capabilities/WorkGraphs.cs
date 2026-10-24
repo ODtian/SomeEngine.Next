@@ -1,3 +1,4 @@
+using System.Buffers;
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics;
@@ -180,18 +181,27 @@ internal static class WorkGraphValidation
 public readonly ref struct WorkGraphPipelineDesc
 {
     public WorkGraphPipelineDesc(
-        IComponentType program,
+        IComponentType slangCode,
+        ShaderReflection reflection,
+        ReadOnlySequence<byte> code,
         uint nodeMask = 1,
         string? label = null,
-        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
+        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default,
+        ISlangBlob? codeBlob = null)
     {
-        Program = program;
+        SlangCode = slangCode;
+        Reflection = reflection;
+        Code = code;
+        CodeBlob = codeBlob;
         NodeMask = nodeMask;
         Label = label;
         StaticSamplers = staticSamplers;
     }
 
-    public IComponentType Program { get; }
+    public IComponentType SlangCode { get; }
+    public ShaderReflection Reflection { get; }
+    public ReadOnlySequence<byte> Code { get; }
+    public ISlangBlob? CodeBlob { get; }
     public uint NodeMask { get; }
     public string? Label { get; }
     public ReadOnlySpan<StaticSamplerBinding> StaticSamplers { get; }

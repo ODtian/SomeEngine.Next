@@ -3,7 +3,8 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
-using SomeEngine.Assets.Schema;
+using SlangShaderSharp;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Materials;
 
@@ -22,7 +23,6 @@ public sealed class ScalarLayout
         uint payloadByteSize,
         uint layoutHash)
     {
-        Array.Sort(fields, static (left, right) => left.Offset.CompareTo(right.Offset));
         Name = name;
         _fields = fields;
 
@@ -69,7 +69,7 @@ public sealed class ScalarLayout
                 continue;
             }
 
-            uint fieldEnd = field.Offset + field.Size;
+            ulong fieldEnd = (ulong)field.Offset + field.Size;
             if (field.Size == 0 || fieldEnd > payloadByteSize)
             {
                 continue;
@@ -78,6 +78,12 @@ public sealed class ScalarLayout
             materialFields.Add(field);
         }
 
+        materialFields.Sort(static (left, right) =>
+        {
+            int offset = left.Offset.CompareTo(right.Offset);
+            return offset != 0 ? offset : string.CompareOrdinal(left.Name, right.Name);
+        });
+
         return new ScalarLayout(
             name,
             [.. materialFields],
@@ -85,26 +91,73 @@ public sealed class ScalarLayout
             ComputeHash(name, materialFields, payloadByteSize));
     }
 
-    internal static ScalarLayout FromData(ShaderMaterialScalarLayout layout)
+    internal static ScalarLayout FromSlang(
+        string name,
+        TypeLayoutReflection typeLayout)
     {
-        string name = layout.Name ?? string.Empty;
         if (string.IsNullOrWhiteSpace(name))
-            throw new InvalidDataException("A cooked material scalar layout must have a name.");
+            throw new ArgumentException("A material scalar type requires a name.", nameof(name));
+        if (typeLayout == TypeLayoutReflection.Null)
+            throw new ArgumentException("The Slang type layout is null.", nameof(typeLayout));
 
-        IReadOnlyList<ScalarFieldLayout> fields = BorrowedReadOnlyList.Project(
-            layout.Fields,
-            static field => new ScalarFieldLayout(
-                field.Name ?? string.Empty,
-                field.Offset,
-                field.Size,
-                field.RowCount,
-                field.ColumnCount,
-                field.ScalarType));
-        return new ScalarLayout(
-            name,
-            fields,
-            layout.Size,
-            ComputeHash(name, fields, layout.Size));
+        nuint reflectedPayloadSize = typeLayout.GetSize(SlangParameterCategory.Uniform);
+        if (reflectedPayloadSize == Slang.UnknownSize ||
+            reflectedPayloadSize == Slang.UnboundedSize ||
+            reflectedPayloadSize > uint.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"Material scalar type '{name}' has an unresolved size.");
+        }
+        uint payloadSize = checked((uint)reflectedPayloadSize);
+        uint baseOffset = uint.MaxValue;
+        uint maximumFieldEnd = 0;
+        var fields = new List<ScalarFieldLayout>(checked((int)typeLayout.FieldCount));
+        for (uint fieldIndex = 0; fieldIndex < typeLayout.FieldCount; fieldIndex++)
+        {
+            VariableLayoutReflection field = typeLayout.GetFieldByIndex(fieldIndex);
+            if (field == VariableLayoutReflection.Null || string.IsNullOrWhiteSpace(field.Name))
+                continue;
+            TypeLayoutReflection fieldType = field.TypeLayout;
+            nuint reflectedOffset = field.GetOffset(SlangParameterCategory.Uniform);
+            nuint reflectedSize = fieldType.GetSize(SlangParameterCategory.Uniform);
+            if (reflectedSize == 0)
+                reflectedSize = fieldType.GetStride(SlangParameterCategory.Uniform);
+            if (reflectedOffset == Slang.UnknownSize ||
+                reflectedOffset == Slang.UnboundedSize ||
+                reflectedSize == Slang.UnknownSize ||
+                reflectedSize == Slang.UnboundedSize ||
+                reflectedOffset > uint.MaxValue || reflectedSize > uint.MaxValue)
+            {
+                throw new InvalidDataException(
+                    $"Material scalar field '{name}.{field.Name}' has an unresolved layout.");
+            }
+            uint offset = checked((uint)reflectedOffset);
+            uint size = checked((uint)reflectedSize);
+            baseOffset = Math.Min(baseOffset, offset);
+            maximumFieldEnd = Math.Max(maximumFieldEnd, checked(offset + size));
+            fields.Add(new ScalarFieldLayout(
+                field.Name,
+                offset,
+                size,
+                fieldType.RowCount,
+                fieldType.ColumnCount,
+                checked((byte)fieldType.ScalarType)));
+        }
+
+        if (payloadSize == 0)
+            payloadSize = maximumFieldEnd;
+        if (baseOffset != uint.MaxValue && baseOffset > 0)
+        {
+            for (int index = 0; index < fields.Count; index++)
+            {
+                ScalarFieldLayout field = fields[index];
+                fields[index] = field with { Offset = checked(field.Offset - baseOffset) };
+            }
+            if (payloadSize >= maximumFieldEnd)
+                payloadSize -= baseOffset;
+            payloadSize = Math.Max(payloadSize, maximumFieldEnd - baseOffset);
+        }
+        return FromFields(name, fields, payloadSize);
     }
 
     internal bool HasSameContract(ScalarLayout other)
@@ -148,7 +201,19 @@ public sealed class ScalarLayout
     internal void Write(string name, int value, Span<byte> payload)
     {
         if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
-            WriteIntegerField(fieldBytes, field, unchecked((uint)value));
+            WriteIntegerField(fieldBytes, field, value);
+    }
+
+    internal void Write(string name, bool value, Span<byte> payload)
+    {
+        if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
+            WriteIntegerField(fieldBytes, field, value ? 1 : 0);
+    }
+
+    internal void Write(string name, Vector2 value, Span<byte> payload)
+    {
+        if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
+            WriteFloatField(fieldBytes, field.ComponentCount, new Vector4(value, 0, 0));
     }
 
     internal void Write(string name, Vector3 value, Span<byte> payload)
@@ -162,6 +227,78 @@ public sealed class ScalarLayout
         if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
             WriteFloatField(fieldBytes, field.ComponentCount, value);
     }
+
+    internal ScalarMaterialLayout Resolve(Material material)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
+        var bindings = new List<ScalarMaterialBinding>(_fields.Count);
+        for (int fieldIndex = 0; fieldIndex < _fields.Count; fieldIndex++)
+        {
+            ScalarFieldLayout field = _fields[fieldIndex];
+            uint? materialSlot = null;
+            for (uint slot = 0; slot < definitions.Count; slot++)
+            {
+                if (!string.Equals(
+                        definitions[checked((int)slot)].Name,
+                        field.Name,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                materialSlot = slot;
+                break;
+            }
+            if (materialSlot is { } resolved)
+                bindings.Add(new ScalarMaterialBinding(resolved, field, definitions[checked((int)resolved)].ValueType));
+        }
+        return new ScalarMaterialLayout(this, [.. bindings]);
+    }
+
+    private byte[] Encode(Material material, ReadOnlySpan<ScalarMaterialBinding> bindings)
+    {
+        var result = new byte[ByteSize];
+        WriteHeader(result);
+        Span<byte> payload = result.AsSpan(HeaderByteSize, checked((int)PayloadByteSize));
+        foreach (ref readonly ScalarMaterialBinding binding in bindings)
+        {
+            ScalarFieldLayout field = binding.Field;
+            Span<byte> fieldBytes = payload.Slice((int)field.Offset, (int)field.Size);
+            Type type = binding.PropertyType;
+            if (type == typeof(float) || type == typeof(Vector2) ||
+                type == typeof(Vector3) || type == typeof(Vector4))
+                WriteFloatField(fieldBytes, field.ComponentCount, material.GetFloatComponents(binding.MaterialSlot));
+            else if (type == typeof(int) || type == typeof(uint) || type == typeof(bool))
+                WriteIntegerField(fieldBytes, field, unchecked((int)material.GetInteger(binding.MaterialSlot)));
+            else
+                throw new InvalidDataException(
+                    $"Material slot {binding.MaterialSlot} cannot be encoded as scalar data.");
+        }
+        return result;
+    }
+
+    internal sealed class ScalarMaterialLayout
+    {
+        private readonly ScalarLayout _layout;
+        private readonly ScalarMaterialBinding[] _bindings;
+
+        internal ScalarMaterialLayout(ScalarLayout layout, ScalarMaterialBinding[] bindings)
+        {
+            _layout = layout;
+            _bindings = bindings;
+        }
+
+        internal int ByteSize => _layout.ByteSize;
+        internal uint LayoutHash => _layout.LayoutHash;
+        internal uint PayloadByteSize => _layout.PayloadByteSize;
+
+        internal byte[] Encode(Material material) => _layout.Encode(material, _bindings);
+    }
+
+    internal readonly record struct ScalarMaterialBinding(
+        uint MaterialSlot,
+        ScalarFieldLayout Field,
+        Type PropertyType);
 
     private bool TryField(
         string name,
@@ -184,7 +321,7 @@ public sealed class ScalarLayout
         return false;
     }
 
-    private static void WriteIntegerField(Span<byte> fieldBytes, ScalarFieldLayout field, uint raw)
+    private static void WriteIntegerField(Span<byte> fieldBytes, ScalarFieldLayout field, int raw)
     {
         switch (field.ScalarType)
         {
@@ -192,7 +329,7 @@ public sealed class ScalarLayout
             case ScalarInt32:
             case ScalarUInt32:
                 if (fieldBytes.Length >= sizeof(uint))
-                    BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, raw);
+                    BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, unchecked((uint)raw));
                 break;
             case ScalarFloat32:
                 WriteFloatField(fieldBytes, field.ComponentCount, new Vector4(raw, 0, 0, 0));

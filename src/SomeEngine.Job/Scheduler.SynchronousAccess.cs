@@ -1,6 +1,6 @@
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
     private const string NestedSynchronousAccessMessage =
         "A running Job cannot acquire a nested synchronous Resource Owner. Declare the resource on the " +
@@ -9,6 +9,7 @@ internal sealed partial class Scheduler
     internal SynchronousResourceOwner AcquireSynchronousAccess(
         ReadOnlySpan<JobResourceAccess> accesses)
     {
+        using Submission submissionScope = EnterSubmission();
         EnsureCurrentScopeBelongsToThisRuntime();
         if (s_currentScope.Index != 0)
             throw new InvalidOperationException(NestedSynchronousAccessMessage);
@@ -62,8 +63,10 @@ internal sealed partial class Scheduler
     {
         bool waited = false;
         SpinWait spinWait = new();
-        while (!_execution.CanExecute(handle))
+        while (true)
         {
+            long wakeVersion = _workQueue.WakeVersion;
+            if (_execution.CanExecute(handle)) break;
             if (_completion.IsCompleted(handle))
             {
                 // Complete rethrows the dependency fault and marks it observed.
@@ -90,8 +93,7 @@ internal sealed partial class Scheduler
                 continue;
             }
 
-            if (!_workQueue.TryExecuteOne(wait: true))
-                Thread.Yield();
+            _workQueue.WaitAndExecuteOne(wakeVersion);
 
             spinWait = new SpinWait();
         }

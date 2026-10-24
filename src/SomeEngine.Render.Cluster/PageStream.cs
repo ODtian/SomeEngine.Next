@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Serialization.Streaming;
 
 namespace SomeEngine.Render.Cluster;
@@ -11,24 +11,25 @@ namespace SomeEngine.Render.Cluster;
 /// </summary>
 internal sealed class PageStream : IDisposable, IAsyncDisposable
 {
-    internal const int DefaultMaxInFlightLoads = 64;
-    internal const long DefaultMaxRetainedBytes = 16L * 1024 * 1024;
+    internal const int DefaultMaxInFlightLoads = 1024;
+    internal const long DefaultMaxRetainedBytes = 64L * 1024 * 1024;
     internal const int DefaultMaxPendingFaultWords = 16 * 1024;
     internal const int DefaultMaxQueuedPages = 16 * 1024;
+    private const int ConcurrentPageReads = 8;
 
-    private readonly record struct LoadOperation(uint Size, Task Completion);
-    private readonly record struct CompletedDirectPage(
+    private readonly record struct CompletedStagedPage(
         uint PageID,
         PageLoadResult Result,
         Exception? Error);
 
     private readonly uint[] _faultInbox;
     private readonly HashSet<uint> _pendingLeafNodeIndices = new();
+    private readonly HashSet<uint> _requestedPages = [];
     private readonly Queue<uint> _queuedPages = new();
     private readonly HashSet<uint> _queuedPageSet = new();
-    private readonly Dictionary<uint, LoadOperation> _loadingPages = new();
+    private readonly Dictionary<uint, uint> _loadingPages = new();
     private readonly HashSet<uint> _permanentlyFailedPages = new();
-    private readonly Queue<CompletedDirectPage> _completedDirectPages = new();
+    private readonly Queue<CompletedStagedPage> _completedStagedPages = new();
     private readonly object _coordinatorGate = new();
     private readonly object _completionGate = new();
     private readonly object _faultGate = new();
@@ -115,7 +116,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         _queuedPages.EnsureCapacity(maxQueuedPages);
         _queuedPageSet.EnsureCapacity(maxQueuedPages);
         _loadingPages.EnsureCapacity(maxInFlightLoads);
-        _completedDirectPages.EnsureCapacity(maxInFlightLoads);
+        _completedStagedPages.EnsureCapacity(maxInFlightLoads);
         PublishSnapshot(PageStreamLifecycle.Active);
         try
         {
@@ -171,7 +172,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             DrainFaultInbox();
             DrainCompleted(out uint stagedPages, out uint failedPages);
             QueueRequestedPages();
-            failedPages = checked(failedPages + StartQueuedPageLoads());
+            StartQueuedPageLoads();
             _stagedPageCount = stagedPages;
             _failedPageCount = failedPages;
             _totalLoadFailureCount = SaturatingAdd(_totalLoadFailureCount, failedPages);
@@ -222,10 +223,17 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             if (resolution.Kind == PageFaultResolutionKind.Unknown)
                 continue;
             _knownFaultLeafCount++;
-            QueuePageIfNeeded(resolution.PageId, resolution);
+            _requestedPages.Add(resolution.PageId);
         }
-
+        // Include siblings outside the frustum, which cannot fault themselves.
+        // Expand the complete feedback batch once. Sibling pages often share
+        // the same group and ancestors; repeated per-page expansion multiplies
+        // CPU work without producing any additional demand.
+        _resources.CollectPageDependencies(_requestedPages);
+        foreach (uint page in _requestedPages)
+            QueuePageIfNeeded(page, _resources.ResolvePage(page));
         _pendingLeafNodeIndices.Clear();
+        _requestedPages.Clear();
     }
 
     private void QueuePageIfNeeded(uint pageID, in PageFaultResolution resolution)
@@ -256,9 +264,9 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         _totalBackpressuredPageCount = SaturatingAdd(_totalBackpressuredPageCount, 1);
     }
 
-    private uint StartQueuedPageLoads()
+    private void StartQueuedPageLoads()
     {
-        uint failedPages = 0;
+        List<uint>? pageReads = null;
         int queuedCount = _queuedPages.Count;
         for (int i = 0; i < queuedCount; i++)
         {
@@ -283,51 +291,46 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                 continue;
             }
 
-            StartDirectPageLoad(pageID, size);
+            _loadingBytes = checked(_loadingBytes + size);
+            _loadingPages.Add(pageID, size);
+            (pageReads ??= []).Add(pageID);
         }
-
-        return failedPages;
+        if (pageReads is null) return;
+        CancellationToken cancellationToken = _shutdown.Token;
+        // The coordinator holds request state; workers load through the
+        // existing mesh staging storage and report through the completion inbox.
+        // Cancellation is handled by every page so shutdown also receives a
+        // completion for pages that have not reached a worker yet.
+        _ = Parallel.ForEachAsync(pageReads,
+            new ParallelOptions { MaxDegreeOfParallelism = ConcurrentPageReads },
+            async (pageID, _) => await CompleteStagedLoadAsync(pageID, cancellationToken).ConfigureAwait(false));
     }
 
-    private void StartDirectPageLoad(uint pageID, uint size)
+    private async Task CompleteStagedLoadAsync(uint pageID, CancellationToken cancellationToken)
     {
-        _loadingBytes = checked(_loadingBytes + size);
-        _loadingPages[pageID] = new LoadOperation(size, Task.CompletedTask);
+        CompletedStagedPage completed;
         try
         {
-            Task completion = CompleteDirectLoadAsync(pageID, _shutdown.Token);
-            _loadingPages[pageID] = new LoadOperation(size, completion);
-        }
-        catch (Exception ex)
-        {
-            PublishDirectCompleted(new CompletedDirectPage(pageID, default, ex));
-        }
-    }
-
-    private async Task CompleteDirectLoadAsync(uint pageID, CancellationToken cancellationToken)
-    {
-        CompletedDirectPage completed;
-        try
-        {
+            cancellationToken.ThrowIfCancellationRequested();
             PageLoadResult result = await _resources
-                .LoadPageIntoFinalOwnerAsync(pageID, cancellationToken)
+                .LoadPageIntoStagingAsync(pageID, cancellationToken)
                 .ConfigureAwait(false);
-            completed = new CompletedDirectPage(pageID, result, null);
+            completed = new CompletedStagedPage(pageID, result, null);
         }
         catch (Exception ex)
         {
-            completed = new CompletedDirectPage(pageID, default, ex);
+            completed = new CompletedStagedPage(pageID, default, ex);
         }
-        PublishDirectCompleted(completed);
+        PublishStagedCompleted(completed);
     }
 
-    private void PublishDirectCompleted(CompletedDirectPage completed)
+    private void PublishStagedCompleted(CompletedStagedPage completed)
     {
         lock (_completionGate)
         {
             if (Volatile.Read(ref _lifecycleState) == 0)
             {
-                _completedDirectPages.Enqueue(completed);
+                _completedStagedPages.Enqueue(completed);
                 return;
             }
         }
@@ -343,37 +346,37 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
     {
         stagedPages = 0;
         failedPages = 0;
-        while (TryTakeDirectCompleted(out CompletedDirectPage direct))
+        while (TryTakeStagedCompleted(out CompletedStagedPage completed))
         {
-            if (_loadingPages.Remove(direct.PageID, out LoadOperation operation))
-                _loadingBytes = checked(_loadingBytes - operation.Size);
+            if (_loadingPages.Remove(completed.PageID, out uint size))
+                _loadingBytes = checked(_loadingBytes - size);
 
-            if (direct.Error is not null)
+            if (completed.Error is not null)
             {
                 PageStreamFailureCode code;
                 string message;
-                if (direct.Error is ClusterPageSourceException sourceError)
+                if (completed.Error is ClusterPageSourceException sourceError)
                 {
                     code = PageStreamFailureCode.SourceReadFailed;
                     message = sourceError.InnerException?.Message ?? sourceError.Message;
                 }
-                else if (direct.Error is InvalidDataException)
+                else if (completed.Error is InvalidDataException)
                 {
                     code = PageStreamFailureCode.InvalidPayload;
-                    message = direct.Error.Message;
+                    message = completed.Error.Message;
                 }
                 else
                 {
-                    ExceptionDispatchInfo.Capture(direct.Error).Throw();
+                    ExceptionDispatchInfo.Capture(completed.Error).Throw();
                     throw new UnreachableException();
                 }
 
-                RecordFailure(direct.PageID, code, message);
+                RecordFailure(completed.PageID, code, message);
                 failedPages++;
                 continue;
             }
 
-            switch (direct.Result)
+            switch (completed.Result)
             {
                 case PageLoadResult.Staged:
                     stagedPages++;
@@ -381,36 +384,36 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                 case PageLoadResult.AlreadyTracked:
                     break;
                 case PageLoadResult.Deferred:
-                    if (_queuedPageSet.Count < _maxQueuedPages && _queuedPageSet.Add(direct.PageID))
-                        _queuedPages.Enqueue(direct.PageID);
+                    if (_queuedPageSet.Count < _maxQueuedPages && _queuedPageSet.Add(completed.PageID))
+                        _queuedPages.Enqueue(completed.PageID);
                     else
                         RecordQueueBackpressure();
                     break;
                 case PageLoadResult.UnknownPage:
                     RecordFailure(
-                        direct.PageID,
+                        completed.PageID,
                         PageStreamFailureCode.UnknownPage,
-                        $"Cluster page {direct.PageID} is no longer registered.");
+                        $"Cluster page {completed.PageID} is no longer registered.");
                     failedPages++;
                     break;
                 case PageLoadResult.NoCapacity:
                     RecordFailure(
-                        direct.PageID,
+                        completed.PageID,
                         PageStreamFailureCode.PermanentCapacityFailure,
-                        $"Cluster page {direct.PageID} could not reserve final page-heap storage.");
+                        $"Cluster page {completed.PageID} could not reserve GPU page-heap capacity.");
                     failedPages++;
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(direct.Result));
+                    throw new ArgumentOutOfRangeException(nameof(completed.Result));
             }
         }
 
     }
 
-    private bool TryTakeDirectCompleted(out CompletedDirectPage completed)
+    private bool TryTakeStagedCompleted(out CompletedStagedPage completed)
     {
         lock (_completionGate)
-            return _completedDirectPages.TryDequeue(out completed);
+            return _completedStagedPages.TryDequeue(out completed);
     }
 
     private static ulong SaturatingAdd(ulong left, ulong right)
@@ -427,7 +430,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             pageId,
             code,
             message);
-        _permanentlyFailedPages.Add(pageId);
+        if (code != PageStreamFailureCode.SourceReadFailed)
+            _permanentlyFailedPages.Add(pageId);
     }
 
     private void PublishSnapshot(PageStreamLifecycle lifecycle)
@@ -497,7 +501,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                     if (Volatile.Read(ref _lifecycleState) != 0)
                         return;
 
-                    int completedCount = _completedDirectPages.Count;
+                    int completedCount = _completedStagedPages.Count;
                     if (completedCount > _loadingPages.Count)
                     {
                         throw new InvalidOperationException(
@@ -529,9 +533,10 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                     _pendingStoredFaults = 0;
                     _pendingDroppedFaults = 0;
                     _pendingLeafNodeIndices.Clear();
+                    _requestedPages.Clear();
                     _queuedPages.Clear();
                     _queuedPageSet.Clear();
-                    _completedDirectPages.Clear();
+                    _completedStagedPages.Clear();
                     _loadingPages.Clear();
                     _loadingBytes = 0;
                     _permanentlyFailedPages.Clear();

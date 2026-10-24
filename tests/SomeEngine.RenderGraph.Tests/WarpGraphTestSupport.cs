@@ -1,5 +1,6 @@
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Graphics.Validation;
 using Xunit.Sdk;
 
 namespace SomeEngine.RenderGraph.Tests;
@@ -26,11 +27,13 @@ internal sealed class WarpGraphTestSupport : IDisposable
     internal Queue ComputeQueue { get; }
     internal Queue CopyQueue { get; }
 
-    internal static WarpGraphTestSupport Create()
+    internal static WarpGraphTestSupport Create(bool enableValidation = false,
+        DeviceFeatures requiredFeatures = DeviceFeatures.None)
     {
         if (!OperatingSystem.IsWindows())
             throw SkipException.ForSkip("D3D12 WARP requires Windows.");
-        IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        IGraphicsBackend native = D3D12GraphicsBackend.Create();
+        IGraphicsBackend backend = enableValidation ? new ValidationLayer(native) : native;
         try
         {
             AdapterEnumerationOptions options = new(
@@ -56,6 +59,7 @@ internal sealed class WarpGraphTestSupport : IDisposable
             Device device = backend.CreateDevice(new DeviceDesc(
                 warp.Id,
                 queues,
+                requiredFeatures: requiredFeatures,
                 label: "RenderGraph WARP test"));
             return new WarpGraphTestSupport(
                 backend,
@@ -75,15 +79,9 @@ internal sealed class WarpGraphTestSupport : IDisposable
     {
         foreach (ref readonly QueueCompletion completion in completions)
         {
-            try
-            {
-                if (Backend.WaitCpu(completion, TimeSpan.FromSeconds(10)) != WaitStatus.Completed)
-                    throw new TimeoutException("A WARP Queue did not complete within ten seconds.");
-            }
-            catch (NullReferenceException)
-            {
-                // default QueueCompletion marks an unused Queue slot.
-            }
+            if (completion == default) continue;
+            if (Backend.WaitCpu(completion, TimeSpan.FromSeconds(10)) != WaitStatus.Completed)
+                throw new TimeoutException("A WARP Queue did not complete within ten seconds.");
         }
     }
 

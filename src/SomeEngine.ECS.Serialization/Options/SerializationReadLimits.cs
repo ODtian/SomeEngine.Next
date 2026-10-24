@@ -1,3 +1,4 @@
+using SomeEngine.Serialization;
 namespace SomeEngine.ECS.Serialization;
 
 /// <summary>
@@ -60,7 +61,9 @@ internal sealed class SerializationReadBudget
         if (value < 0)
             throw new InvalidDataException($"Negative {description} count.");
         if (value > maximum)
-            throw new InvalidDataException($"{description} count {value} exceeds the configured limit {maximum}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"{description} count {value} exceeds the configured limit {maximum}.");
         return value;
     }
 
@@ -159,11 +162,14 @@ internal sealed class SerializationReadBudget
         }
         catch (OverflowException exception)
         {
-            throw new InvalidDataException($"{description} allocation budget overflowed.", exception);
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"{description} allocation budget overflowed.", exception);
         }
         if (_allocatedBytes > Limits.MaxTotalAllocationBytes)
         {
-            throw new InvalidDataException(
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
                 $"Total allocation estimate {_allocatedBytes} exceeds the configured limit {Limits.MaxTotalAllocationBytes} while reserving {description}.");
         }
     }
@@ -190,10 +196,14 @@ internal sealed class SerializationReadBudget
         }
         catch (OverflowException exception)
         {
-            throw new InvalidDataException($"{description} budget overflowed.", exception);
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"{description} budget overflowed.", exception);
         }
 
         if (total > maximum)
-            throw new InvalidDataException($"{description} count {total} exceeds the configured limit {maximum}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"{description} count {total} exceeds the configured limit {maximum}.");
     }
 }

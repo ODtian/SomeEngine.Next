@@ -1,578 +1,114 @@
-using SomeEngine.Assets;
 using SomeEngine.Serialization;
-using SomeEngine.Serialization.Containers;
-using SomeEngine.Serialization.IO;
-using System.Runtime.CompilerServices;
-using System.Reflection;
-using static SomeEngine.Tests.TestProjectPaths;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
-namespace SomeEngine.Tests.Assets;
+namespace SomeEngine.Assets.Tests.Assets;
 
+[Collection("Asset samples")]
 public sealed class AssetTypeExtensibilityTests
 {
     [Fact]
-    public void GeneratedDescriptorIsClosedOverTheSingleAssetType()
+    public async Task DownstreamFormatCreatesIndependentDomainObjects()
     {
-        AssetAttribute attribute = Assert.Single(
-            typeof(ProbeAsset).GetCustomAttributes<AssetAttribute>());
-        AssetTypeDescriptor<ProbeAsset> descriptor = AssetType<ProbeAsset>.Descriptor;
-
-        Assert.Equal(".probe.asset", attribute.PathSuffix);
-        Assert.Equal(typeof(ProbeAsset).FullName, descriptor.AssetType);
-        Assert.Equal(ProbeAsset.TypeId, descriptor.WireType.TypeId);
-        Assert.Equal(ProbeAsset.SchemaFingerprint, descriptor.SchemaFingerprint);
-        Assert.Equal(typeof(ProbeAsset), descriptor.GetAssetGuid.Method.GetParameters()[0].ParameterType);
-        Assert.False(typeof(AssetAttribute).IsGenericTypeDefinition);
-        ConstructorInfo assetConstructor = Assert.Single(typeof(AssetAttribute).GetConstructors());
-        ParameterInfo suffixParameter = Assert.Single(assetConstructor.GetParameters());
-        Assert.Equal(typeof(string), suffixParameter.ParameterType);
-        Assert.False(suffixParameter.IsOptional);
-        Assert.DoesNotContain(
-            typeof(ProbeAsset).GetInterfaces(),
-            static type => type.Name.StartsWith("IAsset", StringComparison.Ordinal));
+        using var directory = new AssetTestDirectory();
+        Guid id = Guid.NewGuid();
+        var project = new AssetProject(directory.Path, []);
+        using ReadingSampleAsset written = new ReadingSampleAsset(id) { Name = "third-party" };
+        using var content = new ReadingSampleBlock { Number = 42 };
+        written.SetBlock(content);
+        project.RegisterAsset(await written.SaveAsync(directory.File("new.reading.asset")));
+        await using var loader = new AssetLoader(project.CreateStorage());
+        await using ReadingSampleAsset file = await ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id));
+        ReadingSampleBlock opened = await file.GetBlockAsync<ReadingSampleBlock>();
+        using ReadingSample first = opened.Create(file.Name);
+        using ReadingSample second = opened.Create(file.Name);
+        Assert.NotSame(first, second);
+        Assert.Equal(42, first.Number);
+        first.Dispose();
+        Assert.False(second.IsDisposed);
+        await loader.DisposeAsync();
+        Assert.False(second.IsDisposed);
     }
 
     [Fact]
-    public async Task NewAssetTypeNeedsNoCentralRegistrationAndEncodesOnce()
+    public async Task ExistingFileRebuildsTheIndexThroughItsGeneratedFormat()
     {
-        string directory = CreateTempDir();
-        try
-        {
-            var project = new AssetProject(directory, []);
-            ProbeAsset.ResetEncodingCount();
-            var asset = new ProbeAsset
-            {
-                Name = "No central registration",
-                Value = 42,
-            };
-            AssetGuid guid = project.CreateAsset("assets/probes/value.probe.asset", asset);
-
-            Assert.False(guid.IsEmpty);
-            Assert.Equal(guid.ToFlatString(), asset.AssetGuid);
-            Assert.Equal(1, ProbeAsset.EncodingCount);
-            Assert.True(project.Manifest.TryGetAsset(guid, out AssetManifestRecord record));
-            Assert.Equal(typeof(ProbeAsset).FullName, record.AssetType);
-            Assert.Equal(ProbeAsset.SchemaFingerprint, record.SchemaFingerprint);
-
-            var state = new ProbeLoadState();
-            AssetLoaderOptions options = AssetLoaderOptions.Empty.With(state);
-            await using var loader = new AssetLoader(project.CreateStorage(), options);
-            ProbeAsset[] loadedAssets = await Task.WhenAll(
-                loader.LoadAsync(new AssetId<ProbeAsset>(guid)).AsTask(),
-                loader.LoadAsync(new AssetId<ProbeAsset>(guid)).AsTask());
-            ProbeAsset loaded = loadedAssets[0];
-
-            Assert.Same(loaded, loadedAssets[1]);
-            Assert.Equal(guid.ToFlatString(), loaded.AssetGuid);
-            Assert.Equal(42, loaded.Value);
-            Assert.Equal(1, state.LoadCount);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        using var directory = new AssetTestDirectory();
+        Guid id = Guid.NewGuid();
+        string path = directory.WriteSample(id, 7);
+        var project = new AssetProject(directory.Path, []);
+        using var opened = await ReadingSampleAsset.OpenAsync(path);
+        Assert.Equal(id, project.RegisterAsset(opened.Describe()));
+        Assert.Equal(id, project.Resolve(path));
+        Assert.Single(project.Manifest.Assets);
+        Assert.Empty(Directory.GetFiles(directory.Path, "*.asset.meta"));
     }
 
     [Fact]
-    public async Task ExistingFileRequiresExplicitTypedPublicationAndNoFormatProbe()
+    public async Task ThirdPartyStorageProvidesBytesWithoutDecodingOrOwningObjects()
     {
-        string directory = CreateTempDir();
-        try
-        {
-            AssetGuid guid = AssetGuid.New();
-            const string relativePath = "assets/probes/external.probe.asset";
-            string fullPath = Path.Combine(
-                directory,
-                relativePath.Replace('/', Path.DirectorySeparatorChar));
-            var asset = new ProbeAsset
-            {
-                AssetGuid = guid.ToFlatString(),
-                Name = "Explicit publication",
-                Value = 7,
-            };
-            AssetWriter.Write(asset, fullPath);
-
-            AssetProject project = AssetAuthoring.CreateProject(directory);
-            await Assert.ThrowsAsync<NotSupportedException>(
-                async () => await project.ImportAsync(relativePath));
-            Assert.Null(project.Resolve(relativePath));
-            Assert.Empty(project.Manifest.Assets);
-
-            AssetGuid registered = await project.RegisterAssetAsync<ProbeAsset>(relativePath);
-            Assert.Equal(guid, registered);
-            Assert.Equal(guid, project.Resolve(relativePath));
-
-            IAssetStorage storage = project.CreateStorage();
-            Assert.True(storage.TryFind(guid, out AssetEntry entry));
-            Assert.Equal(typeof(ProbeAsset).FullName, entry.AssetType);
-            Assert.Equal(ProbeAsset.SchemaFingerprint, entry.SchemaFingerprint);
-            await using BinaryDocument<ProbeAsset> document =
-                await AssetProject.OpenAsync<ProbeAsset>(storage, entry);
-            Assert.Equal(7, document.Root.Value);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        using var directory = new AssetTestDirectory();
+        Guid id = Guid.NewGuid();
+        var storage = new ReadingStorage();
+        storage.Publish(id, directory.WriteSample(id, 13));
+        await using var loader = new AssetLoader(storage);
+        await using ReadingSampleAsset file = await ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id));
+        using ReadingSample value = (await file.GetBlockAsync<ReadingSampleBlock>()).Create(file.Name);
+        await loader.DisposeAsync();
+        Assert.Equal(13, value.Number);
+        Assert.False(value.IsDisposed);
+        Assert.Equal(0, storage.StorageClosed);
+        Assert.Equal(0, storage.RangesClosed);
+        await file.DisposeAsync();
+        Assert.Equal(1, storage.RangesClosed);
     }
 
     [Fact]
-    public async Task ThirdPartyStorageSuppliesRangesWithoutOwningDecoding()
+    public async Task DependenciesAreEnumeratedWithoutBeingInstantiated()
     {
-        string directory = CreateTempDir();
-        try
-        {
-            AssetGuid guid = AssetGuid.New();
-            string path = Path.Combine(directory, "external.probe.asset");
-            AssetWriter.Write(new ProbeAsset
-            {
-                AssetGuid = guid.ToFlatString(),
-                Name = "Third-party storage",
-                Value = 73,
-            }, path);
-
-            IAssetStorage storage = new ThirdPartyStorage(
-                new AssetEntry(
-                    guid,
-                    typeof(ProbeAsset).FullName!,
-                    ProbeAsset.SchemaFingerprint,
-                    Guid.NewGuid()),
-                path);
-            Assert.True(storage.TryFind(guid, out AssetEntry entry));
-
-            await using (BinaryDocument<ProbeAsset> document =
-                await AssetProject.OpenAsync<ProbeAsset>(storage, entry))
-            {
-                Assert.Equal(73, document.Root.Value);
-            }
-
-            await using var loader = new AssetLoader(storage);
-            ProbeAsset loaded = await loader.LoadAsync(new AssetId<ProbeAsset>(guid));
-            Assert.Equal(73, loaded.Value);
-            Assert.Equal(guid.ToFlatString(), loaded.AssetGuid);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        using var directory = new AssetTestDirectory();
+        Guid dependency = Guid.NewGuid();
+        using ReadingSampleAsset written = new ReadingSampleAsset();
+        using var content = new ReadingSampleBlock { Dependency = new(dependency) };
+        written.SetBlock(content);
+        var project = new AssetProject(directory.Path, []);
+        Guid id = project.RegisterAsset(await written.SaveAsync(directory.File("parent.reading.asset")));
+        await using var loader = new AssetLoader(project.CreateStorage());
+        await using ReadingSampleAsset file = await ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id));
+        Assert.Equal([dependency], file.Describe().Dependencies);
+        Assert.Equal([id], project.Manifest.GetReferencers(dependency));
+        Assert.Equal("sample", (await file.GetBlockAsync<ReadingSampleBlock>()).Create(file.Name).Name);
     }
 
     [Fact]
-    public async Task ThirdPartyStorageCanPublishANewVersionForTheSameStrongHandle()
+    public async Task WrongTypeAndSchemaAreRejectedBeforeOpeningBytes()
     {
-        string directory = CreateTempDir();
-        try
-        {
-            AssetGuid guid = AssetGuid.New();
-            string firstPath = Path.Combine(directory, "first.probe.asset");
-            string secondPath = Path.Combine(directory, "second.probe.asset");
-            AssetWriter.Write(new ProbeAsset
-            {
-                AssetGuid = guid.ToFlatString(),
-                Name = "first publication",
-                Value = 11,
-            }, firstPath);
-            AssetWriter.Write(new ProbeAsset
-            {
-                AssetGuid = guid.ToFlatString(),
-                Name = "second publication",
-                Value = 29,
-            }, secondPath);
-
-            var storage = new MutableThirdPartyStorage();
-            storage.Publish(Entry(guid), firstPath);
-            var state = new ProbeLoadState();
-            await using var loader = new AssetLoader(
-                storage,
-                AssetLoaderOptions.Empty.With(state));
-            ProbeAsset loaded = await loader.LoadAsync(new AssetId<ProbeAsset>(guid));
-            Assert.Equal(11, loaded.Value);
-
-            storage.Publish(Entry(guid), secondPath);
-            ProbeAsset reloaded = await loader.ReloadAsync(loaded);
-
-            Assert.Same(loaded, reloaded);
-            Assert.Equal<ulong>(2, loader.GetRevision(loaded));
-            Assert.Equal(2, state.LoadCount);
-            Assert.Equal(29, loaded.Value);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-
-        static AssetEntry Entry(AssetGuid guid) => new(
-            guid,
-            typeof(ProbeAsset).FullName!,
-            ProbeAsset.SchemaFingerprint,
-            Guid.NewGuid());
+        using var directory = new AssetTestDirectory();
+        Guid id = Guid.NewGuid();
+        var storage = new ReadingStorage();
+        string path = directory.WriteSample(id, 1);
+        storage.Publish(id, path, type: TextureAsset.FileType);
+        await using var loader = new AssetLoader(storage);
+        await Assert.ThrowsAsync<InvalidDataException>(() => ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id)).AsTask());
+        Assert.Equal(0, storage.Opens);
+        storage.Publish(id, path, schema: ReadingSampleAsset.SchemaHash ^ 1UL);
+        await Assert.ThrowsAsync<InvalidDataException>(() => ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id)).AsTask());
+        Assert.Equal(0, storage.Opens);
     }
 
     [Fact]
-    public async Task LoaderRetainsAndDisposesEveryCanonicalDependency()
+    public async Task CorruptContentReleasesItsRangeAndCanBeReopenedAfterRepair()
     {
-        string directory = CreateTempDir();
-        try
-        {
-            var project = new AssetProject(directory, []);
-            AssetGuid childGuid = project.CreateAsset(
-                "assets/probes/child.childprobe.asset",
-                new ChildProbe { Name = "child" });
-            AssetGuid parentGuid = project.CreateAsset(
-                "assets/probes/parent.parentprobe.asset",
-                new ParentProbe
-                {
-                    Name = "parent",
-                    ChildGuid = childGuid.ToFlatString(),
-                });
-            DependencyRetirementOrder.Reset();
-            var loader = new AssetLoader(project.CreateStorage());
-            ParentProbe parent = await loader.LoadAsync(new AssetId<ParentProbe>(parentGuid));
-            Assert.True(loader.TryGetAssetId(parent, out AssetId<ParentProbe> foundParent));
-            Assert.Equal(parentGuid, foundParent.Value);
-
-            await loader.DisposeAsync();
-
-            Assert.Equal(1, DependencyRetirementOrder.ParentDisposals);
-            Assert.Equal(1, DependencyRetirementOrder.ChildDisposals);
-            Assert.True(DependencyRetirementOrder.Parent > 0);
-            Assert.True(DependencyRetirementOrder.Child > 0);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task TypedOpenRejectsNonCurrentFingerprintBeforeOpeningBytes()
-    {
-        string directory = CreateTempDir();
-        try
-        {
-            AssetGuid guid = AssetGuid.New();
-            const string relativePath = "assets/probes/wrong-fingerprint.probe.asset";
-            string fullPath = Path.Combine(
-                directory,
-                relativePath.Replace('/', Path.DirectorySeparatorChar));
-            var asset = new ProbeAsset
-            {
-                AssetGuid = guid.ToFlatString(),
-                Name = "Wrong fingerprint",
-                Value = 11,
-            };
-            AssetWriter.Write(asset, fullPath);
-
-            ulong wrongFingerprint = ProbeAsset.SchemaFingerprint ^ 1UL;
-            var manifest = new AssetManifest();
-            manifest.AddAsset(
-                guid,
-                "Wrong fingerprint",
-                relativePath,
-                typeof(ProbeAsset).FullName!,
-                wrongFingerprint);
-
-            IAssetStorage storage = new LooseAssetStorage(directory, manifest);
-            Assert.True(storage.TryFind(guid, out AssetEntry entry));
-            await Assert.ThrowsAsync<BinarySchemaMismatchException>(
-                async () => await AssetProject.OpenAsync<ProbeAsset>(storage, entry));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Theory]
-    [InlineData(TrackingLoadMode.ReturnDifferentRoot, 2)]
-    [InlineData(TrackingLoadMode.ReturnWithoutOpen, 1)]
-    [InlineData(TrackingLoadMode.ThrowAfterTransfer, 1)]
-    public async Task TransferredDocumentFailuresReleaseEveryUnpublishedOwner(
-        TrackingLoadMode mode,
-        int expectedDisposals)
-    {
-        string directory = CreateTempDir();
-        try
-        {
-            var project = new AssetProject(directory, []);
-            AssetGuid guid = project.CreateAsset(
-                "assets/probes/transfer.tracking.asset",
-                new TrackingAsset { Name = "transfer", Value = 19 });
-
-            TrackingAsset.Reset();
-            AssetLoaderOptions options = AssetLoaderOptions.Empty.With(new TrackingLoadOptions(mode));
-            await using (var loader = new AssetLoader(project.CreateStorage(), options))
-            {
-                Exception error = await Assert.ThrowsAnyAsync<Exception>(
-                    () => loader.LoadAsync(new AssetId<TrackingAsset>(guid)).AsTask());
-                if (mode == TrackingLoadMode.ReturnDifferentRoot)
-                    Assert.Contains("document root itself", error.Message);
-                else if (mode == TrackingLoadMode.ReturnWithoutOpen)
-                    Assert.Contains("open exactly one typed asset document", error.Message);
-                else
-                    Assert.IsType<InvalidDataException>(error);
-            }
-
-            Assert.Equal(expectedDisposals, TrackingAsset.DisposeCount);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    internal sealed class ProbeLoadState
-    {
-        internal int LoadCount;
-    }
-
-    private sealed class ThirdPartyStorage(AssetEntry entry, string path) : IAssetStorage
-    {
-        public bool TryFind(AssetGuid assetGuid, out AssetEntry result)
-        {
-            if (assetGuid == entry.AssetGuid)
-            {
-                result = entry;
-                return true;
-            }
-
-            result = default;
-            return false;
-        }
-
-        public ValueTask<IRangeSource> OpenAsync(
-            AssetEntry requested,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (requested != entry)
-                throw new InvalidDataException("The entry does not belong to this storage publication.");
-            return ValueTask.FromResult<IRangeSource>(FileRangeSource.Open(path));
-        }
-    }
-
-    private sealed class MutableThirdPartyStorage : IAssetStorage
-    {
-        private readonly object _gate = new();
-        private AssetEntry _entry;
-        private string? _path;
-
-        internal void Publish(AssetEntry entry, string path)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(path);
-            lock (_gate)
-            {
-                _entry = entry;
-                _path = path;
-            }
-        }
-
-        public bool TryFind(AssetGuid assetGuid, out AssetEntry result)
-        {
-            lock (_gate)
-            {
-                if (_path is not null && assetGuid == _entry.AssetGuid)
-                {
-                    result = _entry;
-                    return true;
-                }
-            }
-
-            result = default;
-            return false;
-        }
-
-        public ValueTask<IRangeSource> OpenAsync(
-            AssetEntry requested,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            lock (_gate)
-            {
-                if (_path is null || requested != _entry)
-                {
-                    throw new InvalidDataException(
-                        "The entry is no longer the current third-party storage publication.");
-                }
-                return ValueTask.FromResult<IRangeSource>(FileRangeSource.Open(_path));
-            }
-        }
-    }
-
-    public enum TrackingLoadMode
-    {
-        ReturnDifferentRoot,
-        ReturnWithoutOpen,
-        ThrowAfterTransfer,
-    }
-
-    internal readonly record struct TrackingLoadOptions(TrackingLoadMode Mode);
-
-}
-
-[Asset(".probe.asset")]
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ProbeAsset
-{
-    private static int s_encodingCount;
-
-    public string? AssetGuid { get; set; }
-    public string? Name { get; set; }
-    public int Value { get; set; }
-
-    internal static int EncodingCount => Volatile.Read(ref s_encodingCount);
-    internal static void ResetEncodingCount() => Volatile.Write(ref s_encodingCount, 0);
-
-    internal static BinaryDocumentWriter CreateWriter(ProbeAsset asset)
-    {
-        Interlocked.Increment(ref s_encodingCount);
-        return BinaryDocumentWriter.Create(asset);
-    }
-
-    internal static async ValueTask<ProbeAsset> LoadAssetAsync(
-        AssetLoadContext context,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        BinaryDocument<ProbeAsset> document = await context
-            .OpenAsync<ProbeAsset>()
-            .ConfigureAwait(false);
-        AssetTypeExtensibilityTests.ProbeLoadState state = context.GetOptions(
-            new AssetTypeExtensibilityTests.ProbeLoadState());
-        Interlocked.Increment(ref state.LoadCount);
-        return document.Root;
-    }
-
-    internal static ValueTask ApplyReloadAsync(
-        ProbeAsset current,
-        ProbeAsset replacement,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        current.AssetGuid = replacement.AssetGuid;
-        current.Name = replacement.Name;
-        current.Value = replacement.Value;
-        return ValueTask.CompletedTask;
-    }
-}
-
-[Asset(".tracking.asset")]
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class TrackingAsset : IAsyncDisposable
-{
-    private static int s_disposeCount;
-    private BinaryDocument<TrackingAsset>? _document;
-
-    public string? AssetGuid { get; set; }
-    public string? Name { get; set; }
-    public int Value { get; set; }
-
-    internal static int DisposeCount => Volatile.Read(ref s_disposeCount);
-    internal static void Reset() => Volatile.Write(ref s_disposeCount, 0);
-
-    internal static async ValueTask<TrackingAsset> LoadAssetAsync(
-        AssetLoadContext context,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        AssetTypeExtensibilityTests.TrackingLoadOptions options = context.GetOptions(
-            new AssetTypeExtensibilityTests.TrackingLoadOptions(
-                AssetTypeExtensibilityTests.TrackingLoadMode.ReturnDifferentRoot));
-        if (options.Mode == AssetTypeExtensibilityTests.TrackingLoadMode.ReturnWithoutOpen)
-        {
-            return new TrackingAsset
-            {
-                AssetGuid = context.AssetGuid.ToFlatString(),
-                Name = "unopened",
-                Value = 0,
-            };
-        }
-
-        BinaryDocument<TrackingAsset> document = await context
-            .OpenAsync<TrackingAsset>()
-            .ConfigureAwait(false);
-        TrackingAsset owner = document.Root;
-        owner._document = document;
-        _ = context.Transfer(document, owner);
-        if (options.Mode == AssetTypeExtensibilityTests.TrackingLoadMode.ThrowAfterTransfer)
-            throw new InvalidDataException("failure after ownership transfer");
-        return new TrackingAsset
-        {
-            AssetGuid = owner.AssetGuid,
-            Name = owner.Name,
-            Value = owner.Value,
-        };
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        Interlocked.Increment(ref s_disposeCount);
-        BinaryDocument<TrackingAsset>? document = Interlocked.Exchange(ref _document, null);
-        if (document is not null)
-            await document.DisposeAsync();
-    }
-}
-
-[Asset(".childprobe.asset")]
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ChildProbe : IDisposable
-{
-    public string? AssetGuid { get; set; }
-    public string? Name { get; set; }
-
-    public void Dispose()
-    {
-        if (Interlocked.Increment(ref DependencyRetirementOrder.ChildDisposals) == 1)
-            DependencyRetirementOrder.Child = DependencyRetirementOrder.Next();
-    }
-}
-
-[Asset(".parentprobe.asset")]
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ParentProbe : IDisposable
-{
-    public string? AssetGuid { get; set; }
-    public string? Name { get; set; }
-    public string? ChildGuid { get; set; }
-
-    internal static async ValueTask<ParentProbe> LoadAssetAsync(
-        AssetLoadContext context,
-        CancellationToken cancellationToken)
-    {
-        BinaryDocument<ParentProbe> document = await context
-            .OpenAsync<ParentProbe>()
-            .ConfigureAwait(false);
-        ParentProbe root = document.Root;
-        SomeEngine.Assets.AssetGuid child = SomeEngine.Assets.AssetGuid.Parse(
-            root.ChildGuid ?? throw new InvalidDataException("Parent child GUID is missing."));
-        _ = await context.LoadDependencyAsync(new AssetId<ChildProbe>(child)).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        return root;
-    }
-
-    public void Dispose()
-    {
-        if (Interlocked.Increment(ref DependencyRetirementOrder.ParentDisposals) == 1)
-            DependencyRetirementOrder.Parent = DependencyRetirementOrder.Next();
-    }
-}
-
-internal static class DependencyRetirementOrder
-{
-    private static int s_sequence;
-    internal static int Parent;
-    internal static int Child;
-    internal static int ParentDisposals;
-    internal static int ChildDisposals;
-
-    internal static int Next() => Interlocked.Increment(ref s_sequence);
-
-    internal static void Reset()
-    {
-        Volatile.Write(ref s_sequence, 0);
-        Volatile.Write(ref Parent, 0);
-        Volatile.Write(ref Child, 0);
-        Volatile.Write(ref ParentDisposals, 0);
-        Volatile.Write(ref ChildDisposals, 0);
+        using var directory = new AssetTestDirectory();
+        Guid id = Guid.NewGuid();
+        string path = directory.WriteSample(id, 11);
+        var storage = new ReadingStorage();
+        storage.Publish(id, path, corrupt: true);
+        await using var loader = new AssetLoader(storage);
+        await Assert.ThrowsAnyAsync<InvalidDataException>(() => ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id)).AsTask());
+        Assert.Equal(1, storage.RangesClosed);
+        storage.Publish(id, path);
+        await using ReadingSampleAsset file = await ReadingSampleAsset.OpenAsync(loader, new AssetId<ReadingSampleAsset>(id));
+        Assert.Equal(11, (await file.GetBlockAsync<ReadingSampleBlock>()).Create(file.Name).Number);
     }
 }

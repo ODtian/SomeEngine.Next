@@ -13,6 +13,9 @@ public static class RenderGraphSnapshotValidation
         ValidateOrdinals(snapshot.Buffers.Select(static row => row.Ordinal), "Buffer", errors);
         ValidateOrdinals(snapshot.Textures.Select(static row => row.Ordinal), "Texture", errors);
 
+        ValidateOrdinals(snapshot.QueryPools.Select(static row => row.Ordinal), "QueryPool", errors);
+        ValidateOrdinals(snapshot.ShaderTables.Select(static row => row.Ordinal), "ShaderTable", errors);
+
         var scheduled = new HashSet<int>();
         foreach (RenderGraphSnapshot.Pass pass in snapshot.Passes)
         {
@@ -39,6 +42,8 @@ public static class RenderGraphSnapshotValidation
             {
                 GraphAccessTargetKind.Buffer => snapshot.Buffers.Length,
                 GraphAccessTargetKind.Texture => snapshot.Textures.Length,
+                GraphAccessTargetKind.QueryPool => snapshot.QueryPools.Length,
+                GraphAccessTargetKind.RayTracingShaderTable => snapshot.ShaderTables.Length,
                 _ => 0,
             };
             if ((uint)access.TargetOrdinal >= (uint)resourceCount)

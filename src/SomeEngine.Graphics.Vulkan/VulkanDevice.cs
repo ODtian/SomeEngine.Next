@@ -131,6 +131,19 @@ internal sealed unsafe partial class VulkanBackend
             MaxVertexOutputComponents = nativeProperties.Limits.MaxVertexOutputComponents;
             SupportsBufferDeviceAddress = bufferDeviceAddress;
             _extendedFeatures = extendedFeatures;
+            NonPixelShadingStages = PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.ComputeShaderBit;
+            if (nativeFeatures.GeometryShader)
+                NonPixelShadingStages |= PipelineStageFlags2.GeometryShaderBit;
+            if (nativeFeatures.TessellationShader)
+                NonPixelShadingStages |= PipelineStageFlags2.TessellationControlShaderBit | PipelineStageFlags2.TessellationEvaluationShaderBit;
+            if ((enabledFeatures & DeviceFeatures.RayTracing) != 0)
+                NonPixelShadingStages |= PipelineStageFlags2.RayTracingShaderBitKhr;
+            if ((enabledFeatures & DeviceFeatures.MeshShaders) != 0)
+            {
+                if (extendedFeatures.MeshShader) NonPixelShadingStages |= PipelineStageFlags2.MeshShaderBitExt;
+                if (extendedFeatures.TaskShader) NonPixelShadingStages |= PipelineStageFlags2.TaskShaderBitExt;
+            }
+
             _descriptorAllocator = new VulkanDescriptorAllocator(this);
             _bindlessPublisher = new VulkanBindlessPublisher(this);
             if ((enabledFeatures & DeviceFeatures.Presentation) != 0 &&
@@ -145,6 +158,7 @@ internal sealed unsafe partial class VulkanBackend
             _pipelineWorker = new VulkanPipelineWorker();
         }
 
+        internal PipelineStageFlags2 NonPixelShadingStages { get; }
         internal VulkanBackend Backend => _backend;
         internal VkPhysicalDevice PhysicalDevice => _physicalDevice;
         internal VkDevice Native => _native;
@@ -261,6 +275,7 @@ internal sealed unsafe partial class VulkanBackend
                     vk,
                     adapter.PhysicalDevice,
                     availableFeatures.Features,
+                    available12,
                     extendedFeatures);
                 device = new VulkanDevice(
                     backend,
@@ -413,8 +428,7 @@ internal sealed unsafe partial class VulkanBackend
             }
 
             Result idleResult = _backend.Api.DeviceWaitIdle(native);
-            bool deviceLost = Status == DeviceStatus.Lost ||
-                idleResult == Result.ErrorDeviceLost;
+            bool deviceLost = idleResult == Result.ErrorDeviceLost;
             if (idleResult == Result.ErrorDeviceLost && Status == DeviceStatus.Active)
                 _ = PublishDeviceLoss(idleResult, "vkDeviceWaitIdle");
             else if (!deviceLost && idleResult != Result.Success)
@@ -427,6 +441,7 @@ internal sealed unsafe partial class VulkanBackend
                 {
                     RecordReleaseFailure(exception);
                 }
+                return;
             }
 
             if (!deviceLost && idleResult == Result.Success)
@@ -856,6 +871,8 @@ internal sealed unsafe partial class VulkanBackend
             }
             if (features.NullDescriptor)
                 extensions.Add(VulkanExtendedFeatureSupport.Robustness2ExtensionName);
+            if (features.ShaderImageInt64Atomics)
+                extensions.Add(VulkanExtendedFeatureSupport.ShaderImageAtomicInt64ExtensionName);
             if (features.ExtendedDynamicState) extensions.Add(ExtendedDynamicStateExtension);
             if (features.ExtendedDynamicState2) extensions.Add(ExtendedDynamicState2Extension);
             if ((enabledFeatures & DeviceFeatures.MeshShaders) != 0) extensions.Add(MeshShaderExtension);
@@ -888,9 +905,8 @@ internal sealed unsafe partial class VulkanBackend
             out PhysicalDeviceExtendedDynamicState2FeaturesEXT dynamic2,
             out PhysicalDeviceMeshShaderFeaturesEXT mesh,
             out PhysicalDeviceFragmentShadingRateFeaturesKHR shadingRate,
-            out PhysicalDeviceAccelerationStructureFeaturesKHR acceleration,
-            out PhysicalDeviceRayTracingPipelineFeaturesKHR rayTracing,
-            out PhysicalDeviceRayQueryFeaturesKHR rayQuery)
+            out PhysicalDeviceAccelerationStructureFeaturesKHR acceleration, out PhysicalDeviceRayTracingPipelineFeaturesKHR rayTracing,
+            out PhysicalDeviceRayQueryFeaturesKHR rayQuery, out PhysicalDeviceShaderImageAtomicInt64FeaturesEXT imageInt64)
         {
             conditional = new PhysicalDeviceConditionalRenderingFeaturesEXT
             {
@@ -973,6 +989,7 @@ internal sealed unsafe partial class VulkanBackend
                 SType = StructureType.PhysicalDeviceRayQueryFeaturesKhr,
                 RayQuery = (enabledDeviceFeatures & DeviceFeatures.RayTracing) != 0 && available.RayQuery,
             };
+            imageInt64 = new PhysicalDeviceShaderImageAtomicInt64FeaturesEXT { SType = StructureType.PhysicalDeviceShaderImageAtomicInt64FeaturesExt, ShaderImageInt64Atomics = available.ShaderImageInt64Atomics };
             void* chain = features13.PNext;
             Prepend(ref chain, ref conditional, available.ConditionalRendering);
             Prepend(ref chain, ref transform, available.TransformFeedback);
@@ -998,17 +1015,18 @@ internal sealed unsafe partial class VulkanBackend
             Prepend(ref chain, ref acceleration, (enabledDeviceFeatures & DeviceFeatures.RayTracing) != 0);
             Prepend(ref chain, ref rayTracing, (enabledDeviceFeatures & DeviceFeatures.RayTracing) != 0);
             Prepend(ref chain, ref rayQuery, (enabledDeviceFeatures & DeviceFeatures.RayTracing) != 0 && available.RayQuery);
+            Prepend(ref chain, ref imageInt64, available.ShaderImageInt64Atomics);
             features13.PNext = chain;
+        }
 
-            static void Prepend<T>(ref void* chain, ref T value, bool include)
-                where T : unmanaged
-            {
-                if (!include)
-                    return;
-                void** next = (void**)((byte*)Unsafe.AsPointer(ref value) + nint.Size);
-                *next = chain;
-                chain = Unsafe.AsPointer(ref value);
-            }
+        private static void Prepend<T>(ref void* chain, ref T value, bool include)
+            where T : unmanaged
+        {
+            if (!include)
+                return;
+            void** next = (void**)((byte*)Unsafe.AsPointer(ref value) + nint.Size);
+            *next = chain;
+            chain = Unsafe.AsPointer(ref value);
         }
 
         private static VkDevice CreateNativeDevice(
@@ -1038,6 +1056,7 @@ internal sealed unsafe partial class VulkanBackend
                     Synchronization2 = available13.Synchronization2,
                     DynamicRendering = available13.DynamicRendering,
                     Maintenance4 = available13.Maintenance4,
+                    SubgroupSizeControl = available13.SubgroupSizeControl,
                     PipelineCreationCacheControl = available13.PipelineCreationCacheControl,
                 };
                 enabledFeatures.PNext = &enabled12;
@@ -1058,7 +1077,8 @@ internal sealed unsafe partial class VulkanBackend
                     out PhysicalDeviceFragmentShadingRateFeaturesKHR shadingRate,
                     out PhysicalDeviceAccelerationStructureFeaturesKHR acceleration,
                     out PhysicalDeviceRayTracingPipelineFeaturesKHR rayTracing,
-                    out PhysicalDeviceRayQueryFeaturesKHR rayQuery);
+                    out PhysicalDeviceRayQueryFeaturesKHR rayQuery,
+                    out PhysicalDeviceShaderImageAtomicInt64FeaturesEXT imageInt64);
                 fixed (DeviceQueueCreateInfo* queuePointer = queues)
                 {
                     DeviceCreateInfo createInfo = new()
@@ -1111,6 +1131,7 @@ internal sealed unsafe partial class VulkanBackend
             BufferDeviceAddress = available.BufferDeviceAddress,
             ScalarBlockLayout = available.ScalarBlockLayout,
             HostQueryReset = available.HostQueryReset,
+            ShaderBufferInt64Atomics = available.ShaderBufferInt64Atomics,
         };
 
         private static void QueryFeatures(

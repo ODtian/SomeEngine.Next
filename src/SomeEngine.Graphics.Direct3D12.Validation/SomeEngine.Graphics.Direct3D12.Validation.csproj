@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <Description>Optional Direct3D12 native-access adapter for graphics validation.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
+    <ProjectReference Include="../SomeEngine.Graphics.Validation/SomeEngine.Graphics.Validation.csproj" />
+  </ItemGroup>
+</Project>

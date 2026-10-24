@@ -245,6 +245,27 @@ public sealed partial class ValidationLayer
             {
                 return $"Resource binding {ordinal} for Slang field '{fieldName}' must be {expected}; the supplied binding is {actual.Type}.";
             }
+            if (actual.IsNull)
+            {
+                if (expected == ResourceBindingType.Sampler)
+                    return $"Sampler binding {ordinal} for Slang field '{fieldName}' cannot be null.";
+            }
+            else
+            {
+                bool valid = expected switch
+                {
+                    ResourceBindingType.ConstantBuffer => actual.Value is Buffer or BufferCbv,
+                    ResourceBindingType.BufferSrv => actual.Value is BufferSrv,
+                    ResourceBindingType.BufferUav => actual.Value is BufferUav,
+                    ResourceBindingType.TextureSrv => actual.Value is TextureSrv,
+                    ResourceBindingType.TextureUav => actual.Value is TextureUav,
+                    ResourceBindingType.Sampler => actual.Value is Sampler,
+                    ResourceBindingType.AccelerationStructure => actual.Value is AccelerationStructureSrv,
+                    _ => false,
+                };
+                if (!valid)
+                    return $"Resource binding {ordinal} for Slang field '{fieldName}' does not contain a {expected} resource.";
+            }
             ordinal++;
         }
         return null;

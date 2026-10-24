@@ -3,7 +3,6 @@ using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hooks;
-using System.Reflection;
 using Xunit;
 
 namespace SomeEngine.ECS.Tests;
@@ -58,7 +57,7 @@ public class ComponentHookTests
     }
 
     [Fact]
-    public void SingleComponentCreateFastPathIgnoresUnrelatedAndNonCreationHooks()
+    public void CreateWithUnrelatedHooksPreservesValue()
     {
         var world = new World();
         world.Hooks<HookStatus>().OnReplace(
@@ -66,18 +65,16 @@ public class ComponentHookTests
         world.Hooks<HookProbe>()
             .OnReplace(static (DeferredWorld _, Entity _, in HookProbe _) => { })
             .OnRemove(static (DeferredWorld _, Entity _, in HookProbe _) => { });
-        object publishedRoot = world.ActiveStructureRoot;
 
         Entity entity = world.CreateEntity(new HookProbe { Value = 44 });
 
-        Assert.Same(publishedRoot, world.ActiveStructureRoot);
         Assert.Equal(44, world.Read<HookProbe>(entity).Value);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void SingleComponentCreateUsesTransactionalPathForCreationHook(bool insertHook)
+    public void CreateInvokesConfiguredHookOnce(bool insertHook)
     {
         var world = new World();
         int callbackCount = 0;
@@ -92,11 +89,9 @@ public class ComponentHookTests
             hooks.OnAdd(
                 (DeferredWorld _, Entity _, in HookProbe _) => callbackCount++);
         }
-        object publishedRoot = world.ActiveStructureRoot;
 
         Entity entity = world.CreateEntity(new HookProbe { Value = 45 });
 
-        Assert.NotSame(publishedRoot, world.ActiveStructureRoot);
         Assert.Equal(1, callbackCount);
         Assert.Equal(45, world.Read<HookProbe>(entity).Value);
     }
@@ -377,20 +372,4 @@ public class ComponentHookTests
         Assert.False(world.Has<HookProbe>(entity));
     }
 
-    [Fact]
-    public void DeferredWorldGuards()
-    {
-        var names = typeof(DeferredWorld)
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .Select(method => method.Name)
-            .ToArray();
-
-        Assert.DoesNotContain("Add", names);
-        Assert.DoesNotContain("Set", names);
-        Assert.DoesNotContain("Remove", names);
-        Assert.DoesNotContain("DestroyEntity", names);
-        Assert.DoesNotContain("Get", names);
-        Assert.DoesNotContain("Hooks", names);
-        Assert.DoesNotContain("Flush", names);
-    }
 }

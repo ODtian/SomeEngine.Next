@@ -1,53 +1,32 @@
-# RHI Architecture Index
+# RHI Architecture
 
-This vault describes the current SomeEngine RHI contract. It records the public model, ownership,
-concurrency, capability and evidence rules that are implemented by the current source tree. Concrete
-C# declarations and native API facts remain authoritative when this text and code disagree.
+本页是 RHI 领域导航。每条规则只在对应原子页面定义；backend、性能证据和历史记录不反向定义 core contract。
 
-## Mental model
+## Core
+- [[architecture/RHI/Core-Contract|Core]]
+- [[architecture/RHI/Queue-and-Commands|Queue and Commands]]
+- [[architecture/RHI/Descriptors-and-Bindings|Descriptors and Bindings]]
+- [[architecture/RHI/Lifetime-Concurrency-and-Diagnostics|Lifetime and Concurrency]]
+- [[architecture/RHI/Presentation|Presentation]]
+- [[architecture/RHI/Pipeline-Cache|Pipeline Cache]]
+- [[architecture/RHI/Advanced-Capabilities|Advanced Capabilities]]
 
-A normal caller needs only these concepts:
+## Backends
+- [[architecture/RHI/D3D12-Backend|Direct3D 12]]
+- [[architecture/RHI/Vulkan-Backend|Vulkan]]
 
-```text
-Adapter -> Device -> Queue
-Resource -> View
-Pipeline -> Parameter bindings
-CommandContext -> RecordedCommands
-Submit -> QueueCompletion
-Surface -> Swapchain -> Acquire/Present
-```
+## Implementation and checking
+- [[architecture/RHI/Implementation|Implementation Map]]
+- [[architecture/RHI/Validation-and-Evidence|Validation and Evidence]]
+- [[architecture/validation/Validation|Engine-wide Validation]]
 
-The product entry point is `IGraphicsBackend`. `DeviceFeatures` is used only while requesting Device
-creation. After creation, `TryGetCapability<TCapability>` and `Device.Capabilities` are the facts a
-caller may rely on.
+## Shader boundary
+- [[architecture/shader/Slang-Authority|Slang Authority]]
+- [[architecture/shader/Shader-Build|Shader Build]]
+- [[architecture/shader/Shader-Block-Residency-Refactor|Shader Block and Residency]]
 
-## Contract pages
-
-- [[Core-Contract]] — public boundary, shader authority, error and allocation rules.
-- [[Lifetime-Concurrency-and-Diagnostics]] — Dispose, parent teardown, physical retention and Device Lost.
-- [[Descriptors-and-Bindings]] — fixed descriptor tables, parameter data and static samplers.
-- [[Queue-and-Commands]] — recording, barriers, submission, completion and queries.
-- [[Pipeline-Cache]] — deterministic cache envelope and asynchronous Pipeline creation.
-- [[Presentation]] — swapchain configuration, image sequence and expected statuses.
-- [[Advanced-Capabilities]] — sparse, residency, DXR, mesh, VRS, Work Graphs and external interop.
-- [[D3D12-Backend]] — exact Direct3D 12 lowering, allocator, DRED and native access.
-- [[Vulkan-Backend]] — Vulkan 1.3 lowering, SPIR-V binding ABI and native feature mapping.
-- [[Validation-and-Evidence]] — optional validation, behavior tests and performance protocol.
-- [[Implementation]] — module boundaries and implementation invariants.
-- [[Performance-Evidence-2026-08-20]] — current three-receiver, Silk.NET-bound NativeAOT / C++ CPU-frame evidence.
-- [[Performance-Evidence-2026-08-18]] — superseded historical C# / C++ / Concrete RHI matrix; it is not current closure evidence.
-- [[Performance-Evidence-2026-08-17]] — earlier WARP, adapter and receiver evidence; its Direct/C++ comparison is superseded.
-
-## Authority and scope
-
-Slang/S# is the only shader authority. D3D12 and Validation independently consume the same live S#
-reflection and component code. Backend-private native placement may exist, but it is not a second
-shader model and is never a Validation authority.
-
-The RHI does not expose a public generic receiver family, caller-selectable retirement policy,
-descriptor address-space object, descriptor-version object, normalized shader contract, or public
-transaction framework. Backend-internal generations, leases, work lists and preparation storage are
-implementation details used to preserve native ownership and failure atomicity.
-
-Render Graph is a consumer of this contract. It may automate scheduling and lifetime decisions, but
-it must express the resulting barriers, Queue waits and submissions through the same RHI operations.
+## Evidence and history
+- [[evidence/RHI/Performance-Evidence-2026-08-17]]
+- [[evidence/RHI/Performance-Evidence-2026-08-18]]
+- [[evidence/RHI/Performance-Evidence-2026-08-20]]
+- [[history/RHI/Refactor-Checkpoint-2026-08-09]]

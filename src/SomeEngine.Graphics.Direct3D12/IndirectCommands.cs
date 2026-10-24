@@ -12,6 +12,7 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in IndirectCommandLayoutDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         IndirectCommands capability = nativeDevice
             .RequireCapability<IndirectCommands>(nameof(CreateIndirectCommandLayout));
@@ -69,7 +70,7 @@ internal sealed unsafe partial class D3D12Backend
         catch
         {
             if (result is null)
-                _ = signature->Release();
+                _ = ResourceTrace.Release(signature);
             else
                 result.Dispose();
             throw;
@@ -197,7 +198,8 @@ internal sealed unsafe partial class D3D12Backend
     private static void ValidateIndirectVertexBufferArgument(
         in SomeEngine.Graphics.IndirectArgumentDesc argument)
     {
-        if (argument.Parameters != VariableLayoutReflection.Null || argument.ByteOffset != 0 ||
+        if (argument.Parameters is not null &&
+            argument.Parameters != VariableLayoutReflection.Null || argument.ByteOffset != 0 ||
             argument.ValueCount != 0)
         {
             throw new ArgumentException(
@@ -220,7 +222,9 @@ internal sealed unsafe partial class D3D12Backend
                 "desc");
         }
         IndirectRootDestination destination = pipeline.RootSignature.ResolveIndirectRoot(
-            argument.Parameters,
+            argument.Parameters ?? throw new ArgumentException(
+                "Indirect constants require a Slang parameter-object layout.",
+                "desc"),
             argument.Type,
             argument.ByteOffset,
             argument.ValueCount);
@@ -245,7 +249,9 @@ internal sealed unsafe partial class D3D12Backend
                 "desc");
         }
         IndirectRootDestination destination = pipeline.RootSignature.ResolveIndirectRoot(
-            argument.Parameters,
+            argument.Parameters ?? throw new ArgumentException(
+                "An indirect constant-buffer argument requires a Slang parameter-object layout.",
+                "desc"),
             argument.Type,
             argument.ByteOffset,
             argument.ValueCount);
@@ -307,8 +313,8 @@ internal sealed unsafe partial class D3D12Backend
             Guid iid = ID3D12CommandSignature.Guid;
             ThrowIfFailed(
                 nativeDevice,
-                nativeDevice.Native->CreateCommandSignature(
-                    &nativeDescription,
+                    DevicePipelineTrace.CreateCommandSignature(
+                nativeDevice.Native, &nativeDescription,
                     requiresRootSignature ? pipeline!.RootSignature.Native : null,
                     &iid,
                     (void**)&signature),
@@ -325,6 +331,7 @@ internal sealed unsafe partial class D3D12Backend
         uint maximumCommandCount,
         BufferRegion? count = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         IndirectCommands capability = command.NativeDevice
             .RequireCapability<IndirectCommands>(nameof(ExecuteIndirect));
@@ -375,34 +382,34 @@ internal sealed unsafe partial class D3D12Backend
         command.Capture(argumentBuffer);
         command.Capture(nativeLayout, nativeLayout.NativeLifetime);
         ID3D12Resource* nativeCountBuffer = countBuffer is null ? null : countBuffer.Native;
-        command.List->ExecuteIndirect(
-            nativeLayout.Native,
-            maximumCommandCount,
-            argumentBuffer.Native,
-            argumentRange.Offset,
-            nativeCountBuffer,
-            countOffset);
+        CommandExecutionTrace.ExecuteIndirect(
+                command.List, nativeLayout.Native,
+                    maximumCommandCount,
+                    argumentBuffer.Native,
+                    argumentRange.Offset,
+                    nativeCountBuffer,
+                    countOffset);
         command.InvalidateIndirectState(nativeLayout);
     }
 
     private static NativeIndirectArgumentType ToNativeIndirectArgumentType(
         SomeEngine.Graphics.IndirectArgumentType value) => value switch
-    {
-        SomeEngine.Graphics.IndirectArgumentType.Draw => NativeIndirectArgumentType.Draw,
-        SomeEngine.Graphics.IndirectArgumentType.DrawIndexed => NativeIndirectArgumentType.DrawIndexed,
-        SomeEngine.Graphics.IndirectArgumentType.Dispatch => NativeIndirectArgumentType.Dispatch,
-        SomeEngine.Graphics.IndirectArgumentType.DispatchMesh => NativeIndirectArgumentType.DispatchMesh,
-        SomeEngine.Graphics.IndirectArgumentType.DispatchRays => NativeIndirectArgumentType.DispatchRays,
-        SomeEngine.Graphics.IndirectArgumentType.VertexBuffer => NativeIndirectArgumentType.VertexBufferView,
-        SomeEngine.Graphics.IndirectArgumentType.IndexBuffer => NativeIndirectArgumentType.IndexBufferView,
-        SomeEngine.Graphics.IndirectArgumentType.Constants => NativeIndirectArgumentType.Constant,
-        SomeEngine.Graphics.IndirectArgumentType.ConstantBuffer => NativeIndirectArgumentType.ConstantBufferView,
-        SomeEngine.Graphics.IndirectArgumentType.ShaderResource => NativeIndirectArgumentType.ShaderResourceView,
-        SomeEngine.Graphics.IndirectArgumentType.UnorderedAccess => NativeIndirectArgumentType.UnorderedAccessView,
-        SomeEngine.Graphics.IndirectArgumentType.WorkGraph =>
-            throw new NotSupportedException("Indirect Work Graph dispatch is unavailable."),
-        _ => throw new ArgumentOutOfRangeException(nameof(value)),
-    };
+        {
+            SomeEngine.Graphics.IndirectArgumentType.Draw => NativeIndirectArgumentType.Draw,
+            SomeEngine.Graphics.IndirectArgumentType.DrawIndexed => NativeIndirectArgumentType.DrawIndexed,
+            SomeEngine.Graphics.IndirectArgumentType.Dispatch => NativeIndirectArgumentType.Dispatch,
+            SomeEngine.Graphics.IndirectArgumentType.DispatchMesh => NativeIndirectArgumentType.DispatchMesh,
+            SomeEngine.Graphics.IndirectArgumentType.DispatchRays => NativeIndirectArgumentType.DispatchRays,
+            SomeEngine.Graphics.IndirectArgumentType.VertexBuffer => NativeIndirectArgumentType.VertexBufferView,
+            SomeEngine.Graphics.IndirectArgumentType.IndexBuffer => NativeIndirectArgumentType.IndexBufferView,
+            SomeEngine.Graphics.IndirectArgumentType.Constants => NativeIndirectArgumentType.Constant,
+            SomeEngine.Graphics.IndirectArgumentType.ConstantBuffer => NativeIndirectArgumentType.ConstantBufferView,
+            SomeEngine.Graphics.IndirectArgumentType.ShaderResource => NativeIndirectArgumentType.ShaderResourceView,
+            SomeEngine.Graphics.IndirectArgumentType.UnorderedAccess => NativeIndirectArgumentType.UnorderedAccessView,
+            SomeEngine.Graphics.IndirectArgumentType.WorkGraph =>
+                throw new NotSupportedException("Indirect Work Graph dispatch is unavailable."),
+            _ => throw new ArgumentOutOfRangeException(nameof(value)),
+        };
 
     private static bool IsAction(SomeEngine.Graphics.IndirectArgumentType value) =>
         value is SomeEngine.Graphics.IndirectArgumentType.Draw or
@@ -427,7 +434,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly D3D12Device _device;
         private readonly NativeLease _native;
-        private RetainedSlangProgram? _program;
+        private IComponentType? _slangCode;
 
         internal D3D12IndirectCommandLayout(
             D3D12Device device,
@@ -442,25 +449,24 @@ internal sealed unsafe partial class D3D12Backend
         {
             _device = device;
             NativeLease? pipelineState = null;
-            RetainedSlangProgram? program = null;
+            IComponentType? slangCode = null;
             try
             {
                 if (nativePipeline is not null)
                 {
                     pipelineState = nativePipeline.NativeLifetime;
-                    program = nativePipeline.RetainProgramReference();
+                    slangCode = nativePipeline.GetSlangCodeReference();
                     RequiredRoot = nativePipeline.RootSignature;
                 }
                 _native = new NativeLease(
                     (Silk.NET.Core.Native.IUnknown*)native,
                     ownsReference: true,
                     dependency: pipelineState);
-                _program = program;
-                program = null;
+                _slangCode = slangCode;
+                slangCode = null;
             }
             catch
             {
-                program?.Dispose();
                 throw;
             }
             Effects = effects;
@@ -477,7 +483,7 @@ internal sealed unsafe partial class D3D12Backend
         internal override void Release(bool fromParent)
         {
             _native.Release();
-            Interlocked.Exchange(ref _program, null)?.Dispose();
+            _ = Interlocked.Exchange(ref _slangCode, null);
             _device.UnregisterChild(this);
         }
     }

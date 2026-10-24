@@ -14,26 +14,26 @@ public sealed class CanonicalWireValidationTests
         const ulong fingerprint = 0x1122334455667788;
         var registeredKey = new SerializationTypeKey(stableId, "canonical-position", fingerprint);
         var wireKey = new SerializationTypeKey(stableId, "altered-position", fingerprint);
+        var calls = new CodecCalls();
         var registry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(registeredKey);
+            .RegisterCodec<SerPosition, SerPositionFullCodec>(registeredKey, new SerPositionFullCodec(calls));
         byte[] envelope = CreateComponentEnvelope(wireKey);
 
-        SerPositionFullCodec.ResetReadCount();
         using var input = new MemoryStream(envelope, writable: false);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerPosition>(input, registry));
 
-        Assert.Contains("does not exactly match", error.Message, StringComparison.Ordinal);
-        Assert.Equal(0, SerPositionFullCodec.ReadCount);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(error));
+        Assert.Equal(0, calls.Reads);
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
+    [InlineData(EntityIdentityMode.Preserve, false)]
+    [InlineData(EntityIdentityMode.Preserve, true)]
+    [InlineData(EntityIdentityMode.Remap, false)]
+    [InlineData(EntityIdentityMode.Remap, true)]
     public void ManifestReaders_RejectDuplicateOrNonCanonicalKeys(
-        bool manifestCountOnly,
+        EntityIdentityMode identityMode,
         bool duplicate)
     {
         var first = new SerializationTypeKey(
@@ -48,21 +48,14 @@ public sealed class CanonicalWireValidationTests
             ? [first, first]
             : [second, first];
         using MemoryStream input = CreateHeader(SnapshotPayloadKind.World, manifest);
-        using var reader = new BinaryReader(input, SerializationBinary.StrictUtf8, leaveOpen: true);
-        var budget = new SerializationReadBudget(new SerializationReadLimits());
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
         {
-            if (manifestCountOnly)
-                _ = PayloadFormat.ReadHeaderManifestCount(reader, budget);
-            else
-                _ = PayloadFormat.ReadHeader(reader, budget);
+            using World loaded = WorldSerializer.ReadWorld(input, new SerializationRegistry(),
+                new WorldLoadOptions(IdentityMode: identityMode));
         });
 
-        Assert.Contains(
-            duplicate ? "Duplicate" : "canonical order",
-            error.Message,
-            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Theory]
@@ -113,14 +106,14 @@ public sealed class CanonicalWireValidationTests
                 new WorldLoadOptions(IdentityMode: identityMode));
         });
 
-        Assert.Contains("duplicate or not canonical", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     private static byte[] CreateComponentEnvelope(SerializationTypeKey key)
     {
         using MemoryStream stream = CreateHeader(SnapshotPayloadKind.Component, [key]);
         stream.Position = stream.Length;
-        using var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, SaveBytes.Utf8, leaveOpen: true);
         writer.Write(0);
         writer.Write(1f);
         writer.Write(2f);
@@ -134,15 +127,15 @@ public sealed class CanonicalWireValidationTests
         IReadOnlyList<SerializationTypeKey> manifest)
     {
         var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
-        writer.Write(PayloadFormat.Magic);
-        writer.Write(PayloadFormat.Version);
+        using var writer = new BinaryWriter(stream, SaveBytes.Utf8, leaveOpen: true);
+        writer.Write(0x53434553u);
+        writer.Write((ushort)4);
         writer.Write((byte)SerializationContract.DurableSave);
         writer.Write((byte)kind);
         writer.Write(stackalloc byte[16]);
         writer.Write(manifest.Count);
         for (int i = 0; i < manifest.Count; i++)
-            PayloadFormat.WriteTypeKey(writer, manifest[i]);
+            SaveBytes.WriteTypeKey(writer, manifest[i]);
         writer.Flush();
         stream.Position = 0;
         return stream;
@@ -151,10 +144,8 @@ public sealed class CanonicalWireValidationTests
     private static (int First, int Second) FindTagManifestIndexOffsets(byte[] bytes)
     {
         using var stream = new MemoryStream(bytes, writable: false);
-        using var reader = new BinaryReader(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
-        var budget = new SerializationReadBudget(new SerializationReadLimits());
-        var (_, manifest, _) = PayloadFormat.ReadHeader(reader, budget);
-        Assert.Equal(2, manifest.Length);
+        using var reader = new BinaryReader(stream, SaveBytes.Utf8, leaveOpen: true);
+        SaveBytes.SkipHeader(reader);
         _ = reader.ReadUInt32();
         int slotCount = reader.ReadInt32();
         for (int i = 0; i < slotCount; i++)
@@ -164,8 +155,8 @@ public sealed class CanonicalWireValidationTests
             _ = reader.ReadByte();
         }
         Assert.Equal(1, reader.ReadInt32());
-        var data = new DataReader(reader, budget);
-        _ = data.ReadEntity();
+        _ = reader.ReadInt32();
+        _ = reader.ReadInt32();
         Assert.Equal(2, reader.ReadInt32());
         int first = checked((int)stream.Position);
         Assert.Equal(0, reader.ReadInt32());

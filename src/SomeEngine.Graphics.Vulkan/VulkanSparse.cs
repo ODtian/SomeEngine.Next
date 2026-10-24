@@ -65,7 +65,8 @@ internal sealed unsafe partial class VulkanBackend
                 nativeDevice,
                 native,
                 desc,
-                out uint memoryTypeBits);
+                out uint memoryTypeBits,
+                out SparseImageMemoryRequirements imageRequirements);
             texture = new VulkanTexture(
                 nativeDevice,
                 native,
@@ -76,7 +77,7 @@ internal sealed unsafe partial class VulkanBackend
                 0,
                 ownsImage: true)
             {
-                SparseState = new VulkanSparseState(info, memoryTypeBits),
+                SparseState = new VulkanSparseState(info, memoryTypeBits, imageRequirements),
             };
             return RegisterChildOrDispose(nativeDevice, texture);
         }
@@ -125,14 +126,18 @@ internal sealed unsafe partial class VulkanBackend
         var retained = new HashSet<IVulkanRetained>();
         foreach (ref readonly SparseMappingDesc mapping in mappings)
         {
-            PrepareSparseMapping(
-                device,
-                mapping,
-                buffers,
-                images,
-                opaqueImages,
-                prepared,
-                retained);
+            VulkanSparseState state = RequireSparseState(mapping.Resource, device, nameof(mappings));
+            SparseTileCoordinate[] tiles = ExpandTiles(mapping.Resource, state, mapping.ResourceTiles);
+            for (int index = 0; index < tiles.Length; index++)
+            {
+                SparseMappingDesc tile = mapping with
+                {
+                    ResourceTiles = new SparseTileRegion(tiles[index], 1, 1, 1, 1, Boxed: false),
+                    HeapTileOffset = mapping.Type == SparseMappingType.Reused
+                        ? mapping.HeapTileOffset : checked(mapping.HeapTileOffset + (uint)index),
+                };
+                PrepareSparseMapping(device, tile, buffers, images, opaqueImages, prepared, retained);
+            }
         }
         return ExecuteSparseBind(
             nativeQueue,
@@ -155,20 +160,16 @@ internal sealed unsafe partial class VulkanBackend
         foreach (ref readonly SparseMappingCopyDesc copy in copies)
         {
             VulkanSparseState source = RequireSparseState(copy.Source, device, nameof(copies));
-            _ = RequireSparseState(copy.Destination, device, nameof(copies));
-            uint count = copy.Region.TileCount;
-            for (uint index = 0; index < count; index++)
+            VulkanSparseState destinationState = RequireSparseState(copy.Destination, device, nameof(copies));
+            SparseTileCoordinate[] sourceTiles = ExpandTiles(copy.Source, source,
+                copy.Region with { Start = copy.SourceStart });
+            SparseTileCoordinate[] destinationTiles = ExpandTiles(copy.Destination, destinationState,
+                copy.Region with { Start = copy.DestinationStart });
+            for (int index = 0; index < sourceTiles.Length; index++)
             {
-                SparseTileKey sourceKey = new(
-                    copy.SourceStart.Subresource,
-                    checked(copy.SourceStart.X + index),
-                    copy.SourceStart.Y,
-                    copy.SourceStart.Z);
-                SparseTileCoordinate destination = copy.DestinationStart with
-                {
-                    X = checked(copy.DestinationStart.X + index),
-                };
-                SparseTileRegion region = new(destination, 0, 0, 0, 1, Boxed: false);
+                SparseTileCoordinate sourceTile = sourceTiles[index];
+                SparseTileKey sourceKey = new(sourceTile.Subresource, sourceTile.X, sourceTile.Y, sourceTile.Z);
+                SparseTileRegion region = new(destinationTiles[index], 1, 1, 1, 1, Boxed: false);
                 if (source.TryGet(sourceKey, out SparseTileBinding binding))
                 {
                     mappings.Add(new SparseMappingDesc(
@@ -190,6 +191,74 @@ internal sealed unsafe partial class VulkanBackend
             }
         }
         return UpdateSparseMappingsCore(queue, CollectionsMarshal.AsSpan(mappings));
+    }
+
+    private static SparseTileCoordinate[] ExpandTiles(
+        Resource resource, VulkanSparseState state, in SparseTileRegion region)
+    {
+        uint count = region.Boxed
+            ? checked(region.Width * region.Height * region.Depth) : region.TileCount;
+        if (count == 0) throw new ArgumentOutOfRangeException(nameof(region));
+        var result = new SparseTileCoordinate[checked((int)count)];
+        if (resource is VulkanBuffer)
+        {
+            if (region.Boxed || region.Start.Subresource != 0 || region.Start.Y != 0 || region.Start.Z != 0 ||
+                (ulong)region.Start.X + count > state.Info.TotalTileCount)
+                throw new ArgumentOutOfRangeException(nameof(region));
+            for (uint index = 0; index < count; index++)
+                result[index] = region.Start with { X = checked(region.Start.X + index) };
+            return result;
+        }
+        VulkanTexture texture = (VulkanTexture)resource;
+        uint mipCount = texture.Info.MipLevelCount;
+        uint mip = region.Start.Subresource % mipCount;
+        uint layer = region.Start.Subresource / mipCount;
+        if (layer >= texture.Info.ArrayLayerCount) throw new ArgumentOutOfRangeException(nameof(region));
+        if (mip >= state.Info.PackedMips.StandardMipLevelCount)
+        {
+            if (region.Boxed || region.Start.Y != 0 || region.Start.Z != 0 ||
+                (ulong)region.Start.X + count > state.Info.PackedMips.PackedMipTileCount)
+                throw new ArgumentOutOfRangeException(nameof(region));
+            bool sharedTail = (state.ImageRequirements.FormatProperties.Flags &
+                SparseImageFormatFlags.SingleMiptailBit) != 0;
+            uint subresource = (sharedTail ? 0 : layer) * mipCount + state.Info.PackedMips.StandardMipLevelCount;
+            for (uint index = 0; index < count; index++)
+                result[index] = new SparseTileCoordinate(subresource, checked(region.Start.X + index), 0, 0);
+            return result;
+        }
+        SparseTileShape shape = state.Info.TileShape;
+        uint width = checked((uint)DivideRoundUp(MipExtent(texture.Info.Width, mip), shape.Width));
+        uint height = checked((uint)DivideRoundUp(MipExtent(texture.Info.Height, mip), shape.Height));
+        uint depth = checked((uint)DivideRoundUp(MipExtent(texture.Info.Depth, mip), shape.Depth));
+        if (region.Start.X >= width || region.Start.Y >= height || region.Start.Z >= depth)
+            throw new ArgumentOutOfRangeException(nameof(region));
+        ulong start = region.Start.X + (ulong)width * (region.Start.Y + (ulong)height * region.Start.Z);
+        if (region.Boxed)
+        {
+            if (region.Width > width - region.Start.X || region.Height > height - region.Start.Y ||
+                region.Depth > depth - region.Start.Z) throw new ArgumentOutOfRangeException(nameof(region));
+        }
+        else if (start + count > (ulong)width * height * depth)
+            throw new ArgumentOutOfRangeException(nameof(region));
+        for (uint index = 0; index < count; index++)
+        {
+            uint x, y, z;
+            if (region.Boxed)
+            {
+                x = region.Start.X + index % region.Width;
+                y = region.Start.Y + index / region.Width % region.Height;
+                z = region.Start.Z + index / region.Width / region.Height;
+            }
+            else
+            {
+                ulong address = start + index;
+                x = (uint)(address % width);
+                y = (uint)(address / width % height);
+                z = (uint)(address / width / height);
+            }
+            result[index] = new SparseTileCoordinate(region.Start.Subresource, x, y, z);
+        }
+        return result;
     }
 
     private void PrepareSparseMapping(
@@ -233,8 +302,7 @@ internal sealed unsafe partial class VulkanBackend
         }
         else if (mapping.Resource is VulkanTexture texture)
         {
-            if (mapping.ResourceTiles.Boxed &&
-                mapping.ResourceTiles.Start.Subresource % texture.Info.MipLevelCount <
+            if (mapping.ResourceTiles.Start.Subresource % texture.Info.MipLevelCount <
                     state.Info.PackedMips.StandardMipLevelCount)
             {
                 images.Add(new SparseImageBindRecord(
@@ -271,14 +339,23 @@ internal sealed unsafe partial class VulkanBackend
         SparseImageMemoryBindInfo[] imageInfos = new SparseImageMemoryBindInfo[imageRecords.Count];
         SparseMemoryBind[] opaqueBinds = opaqueRecords.Select(static value => value.Bind).ToArray();
         SparseImageOpaqueMemoryBindInfo[] opaqueInfos = new SparseImageOpaqueMemoryBindInfo[opaqueRecords.Count];
-        IVulkanRetained[] retained = retainedSet.ToArray();
         List<VulkanSparseChangeSet> changes = BuildSparseChanges(mappings);
-        VulkanQueueWork work = queue.TakeWork();
+        VulkanQueueWork? work = null;
         bool committed = false;
         try
         {
-            work.EnsureCapacity(0, 0, 0, retained.Length, 0, 0);
-            RetainSparseWork(work, retained);
+            work = queue.TakeWork();
+            work.EnsureCapacity(0, 0, 0, checked(retainedSet.Count + changes.Count), 0, 0);
+            foreach (IVulkanRetained value in retainedSet)
+            {
+                value.RetainNative();
+                work.RetainedTimelines[work.TimelineCount++] = value;
+            }
+            foreach (VulkanSparseChangeSet change in changes)
+            {
+                VulkanSparseBindings bindings = change.State.CaptureBindings();
+                work.RetainedTimelines[work.TimelineCount++] = bindings;
+            }
 
             lock (queue.Gate)
             {
@@ -384,30 +461,8 @@ internal sealed unsafe partial class VulkanBackend
 
     private Result QueueBindSparseNative(VulkanQueue queue, BindSparseInfo* bind)
     {
-#if SOMEENGINE_TESTING
-        FaultHooks.Before(VulkanCallPoint.QueueBindSparse);
-        if (FaultHooks.TryOverride(VulkanCallPoint.QueueBindSparse, out Result injectedResult))
-        {
-            FaultHooks.After(VulkanCallPoint.QueueBindSparse);
-            return injectedResult;
-        }
-#endif
         Result result = Api.QueueBindSparse(queue.Native, 1, bind, default);
-#if SOMEENGINE_TESTING
-        FaultHooks.After(VulkanCallPoint.QueueBindSparse);
-#endif
         return result;
-    }
-
-    private static void RetainSparseWork(
-        VulkanQueueWork work,
-        ReadOnlySpan<IVulkanRetained> retained)
-    {
-        foreach (IVulkanRetained value in retained)
-        {
-            value.RetainNative();
-            work.RetainedTimelines[work.TimelineCount++] = value;
-        }
     }
 
     private static List<VulkanSparseChangeSet> BuildSparseChanges(
@@ -454,8 +509,15 @@ internal sealed unsafe partial class VulkanBackend
         VulkanHeap? heap)
     {
         ulong tileCount = Math.Max(mapping.ResourceTiles.TileCount, 1);
+        ulong resourceOffset = checked((ulong)mapping.ResourceTiles.Start.X * state.Info.Alignment);
+        if (mapping.Resource is VulkanTexture texture)
+        {
+            uint layer = mapping.ResourceTiles.Start.Subresource / texture.Info.MipLevelCount;
+            resourceOffset = checked(resourceOffset + state.ImageRequirements.ImageMipTailOffset +
+                layer * state.ImageRequirements.ImageMipTailStride);
+        }
         return new SparseMemoryBind(
-            checked((ulong)mapping.ResourceTiles.Start.X * state.Info.Alignment),
+            resourceOffset,
             checked(tileCount * state.Info.Alignment),
             heap?.Memory.Native ?? default,
             heap is null ? 0 : checked(mapping.HeapTileOffset * state.Info.Alignment),
@@ -496,7 +558,8 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDevice device,
         VkImage image,
         in TextureDesc desc,
-        out uint memoryTypeBits)
+        out uint memoryTypeBits,
+        out SparseImageMemoryRequirements imageRequirements)
     {
         uint count = 0;
         device.Backend.Api.GetImageSparseMemoryRequirements(device.Native, image, &count, null);
@@ -509,6 +572,7 @@ internal sealed unsafe partial class VulkanBackend
         device.Backend.Api.GetImageMemoryRequirements(device.Native, image, &memory);
         memoryTypeBits = memory.MemoryTypeBits;
         SparseImageMemoryRequirements selected = sparse[0];
+        imageRequirements = selected;
         ulong tileCount = DivideRoundUp(memory.Size, memory.Alignment);
         uint packedCount = checked((uint)DivideRoundUp(
             selected.ImageMipTailSize,
@@ -574,15 +638,17 @@ internal sealed unsafe partial class VulkanBackend
 
     private sealed class VulkanSparseState(
         SparseResourceInfo info,
-        uint memoryTypeBits)
+        uint memoryTypeBits,
+        SparseImageMemoryRequirements imageRequirements = default)
     {
         private static long s_nextId;
         private readonly object _gate = new();
-        private Dictionary<SparseTileKey, SparseTileBinding> _bindings = [];
+        private VulkanSparseBindings _bindings = new([]);
 
         internal long Id { get; } = Interlocked.Increment(ref s_nextId);
         internal SparseResourceInfo Info { get; } = info;
         internal uint MemoryTypeBits { get; } = memoryTypeBits;
+        internal SparseImageMemoryRequirements ImageRequirements { get; } = imageRequirements;
 
         internal void Enter() => Monitor.Enter(_gate);
         internal void Exit() => Monitor.Exit(_gate);
@@ -590,17 +656,26 @@ internal sealed unsafe partial class VulkanBackend
         internal bool TryGet(in SparseTileKey key, out SparseTileBinding binding)
         {
             lock (_gate)
-                return _bindings.TryGetValue(key, out binding);
+                return _bindings.Values.TryGetValue(key, out binding);
         }
 
-        internal Dictionary<SparseTileKey, SparseTileBinding> BuildReplacement(
+        internal VulkanSparseBindings CaptureBindings()
+        {
+            lock (_gate)
+            {
+                _bindings.RetainNative();
+                return _bindings;
+            }
+        }
+
+        internal VulkanSparseBindings BuildReplacement(
             List<PreparedSparseMapping> mappings)
         {
             var replacement = new Dictionary<SparseTileKey, SparseTileBinding>(
-                _bindings.Count + mappings.Count);
+                _bindings.Values.Count + mappings.Count);
             try
             {
-                foreach ((SparseTileKey key, SparseTileBinding binding) in _bindings)
+                foreach ((SparseTileKey key, SparseTileBinding binding) in _bindings.Values)
                 {
                     binding.Heap.RetainNative();
                     replacement.Add(key, binding);
@@ -630,7 +705,7 @@ internal sealed unsafe partial class VulkanBackend
                         replacement.Add(key, new SparseTileBinding(prepared.Heap, heapOffset));
                     }
                 }
-                return replacement;
+                return new VulkanSparseBindings(replacement);
             }
             catch
             {
@@ -639,10 +714,10 @@ internal sealed unsafe partial class VulkanBackend
             }
         }
 
-        internal Dictionary<SparseTileKey, SparseTileBinding> ReplaceBindingsNoThrow(
-            Dictionary<SparseTileKey, SparseTileBinding> replacement)
+        internal VulkanSparseBindings ReplaceBindingsNoThrow(
+            VulkanSparseBindings replacement)
         {
-            Dictionary<SparseTileKey, SparseTileBinding> previous = _bindings;
+            VulkanSparseBindings previous = _bindings;
             _bindings = replacement;
             return previous;
         }
@@ -669,17 +744,32 @@ internal sealed unsafe partial class VulkanBackend
         {
             lock (_gate)
             {
-                ReleaseBindingsNoThrow(_bindings);
+                _bindings.ReleaseNative();
             }
         }
     }
 
+    private sealed class VulkanSparseBindings : IVulkanRetained
+    {
+        private readonly VulkanLifetime _lifetime;
+
+        internal VulkanSparseBindings(Dictionary<SparseTileKey, SparseTileBinding> values)
+        {
+            Values = values;
+            _lifetime = new(() => VulkanSparseState.ReleaseBindingsNoThrow(Values));
+        }
+
+        internal Dictionary<SparseTileKey, SparseTileBinding> Values { get; }
+        public void RetainNative() => _lifetime.Retain();
+        public void ReleaseNative() => _lifetime.Release();
+    }
+
     private sealed class VulkanSparseChangeSet(
         VulkanSparseState state,
-        Dictionary<SparseTileKey, SparseTileBinding> replacement)
+        VulkanSparseBindings replacement)
     {
-        private Dictionary<SparseTileKey, SparseTileBinding>? _replacement = replacement;
-        private Dictionary<SparseTileKey, SparseTileBinding>? _previous;
+        private VulkanSparseBindings? _replacement = replacement;
+        private VulkanSparseBindings? _previous;
 
         internal VulkanSparseState State { get; } = state;
 
@@ -691,13 +781,13 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void ReleaseReplacementNoThrow()
         {
-            VulkanSparseState.ReleaseBindingsNoThrow(_replacement);
+            _replacement?.ReleaseNative();
             _replacement = null;
         }
 
         internal void ReleasePreviousNoThrow()
         {
-            VulkanSparseState.ReleaseBindingsNoThrow(_previous);
+            _previous?.ReleaseNative();
             _previous = null;
         }
     }

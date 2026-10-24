@@ -4,16 +4,23 @@ using Xunit;
 
 public sealed class VulkanPresentationTests
 {
-    [Fact]
-    public void Presentation_is_not_published_without_the_approved_wsi_contract()
+    [WindowsFact]
+    public void RequestingPresentationIsRejected()
     {
-        if (!OperatingSystem.IsWindows())
-            return;
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         Assert.Throws<NotSupportedException>(() => backend.CreateDevice(new DeviceDesc(
             default,
             queues,
             requiredFeatures: DeviceFeatures.Presentation)));
+    }
+}
+
+internal sealed class WindowsFactAttribute : FactAttribute
+{
+    public WindowsFactAttribute()
+    {
+        if (!OperatingSystem.IsWindows())
+            Skip = "This WSI feature request is tested on Windows.";
     }
 }

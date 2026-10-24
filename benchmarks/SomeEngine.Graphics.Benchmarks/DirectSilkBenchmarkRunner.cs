@@ -17,11 +17,9 @@ namespace SomeEngine.Graphics.Benchmarks;
 internal static unsafe partial class DirectSilkBenchmarkRunner
 {
     private const ulong TextureByteSize =
-        FixedGraphicsProtocol.RenderWidth * FixedGraphicsProtocol.RenderHeight * 4UL;
+        BenchmarkDefaults.RenderWidth * BenchmarkDefaults.RenderHeight * 4UL;
     private const ulong ConstantBufferAlignment = 256;
 
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static bool NormalizedFloatEquals(float left, float right) => left.Equals(right);
 
     internal static ProcessRun Run(in WorkerConfiguration configuration)
     {
@@ -48,16 +46,6 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
                 fastCalls
                     ? ".NET 10 / Silk.NET 2.23.0 compile-time direct D3D12"
                     : ".NET 10 / Silk.NET 2.23.0 default direct D3D12");
-            if (configuration.Profile == BenchmarkProfile.VendorCertification &&
-                (environment.ValidationEnabled || environment.DredEnabled || environment.CaptureToolLoaded))
-            {
-                return new ProcessRun(
-                    variant,
-                    RunDisposition.Unexecuted,
-                    "Validation, DRED, or a capture tool is enabled.",
-                    environment,
-                    []);
-            }
 
             WorkerConfiguration selectedConfiguration = configuration;
             WorkloadRun[] workloads = configuration.Workloads.ToArray().Select(workload => workload switch
@@ -78,9 +66,7 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
                         fastCalls),
                 _ => throw new ArgumentOutOfRangeException(nameof(workload)),
             }).ToArray();
-            RunDisposition disposition = configuration.Profile == BenchmarkProfile.VendorCertification
-                ? RunDisposition.Passed
-                : RunDisposition.FunctionalOnly;
+            RunDisposition disposition = RunDisposition.FunctionalOnly;
             return new ProcessRun(
                 variant,
                 disposition,
@@ -89,16 +75,14 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
                     BenchmarkProfile.WarpFunctional =>
                         "All reduced-count direct Silk D3D12 workloads executed on WARP; not performance evidence.",
                     BenchmarkProfile.FastDiagnostic => fastCalls
-                        ? "The three draw-only compile-time Silk.NET direct D3D12 diagnostics executed; never vendor-certification evidence."
-                        : "The three draw-only default Silk D3D12 diagnostics executed; never vendor-certification evidence.",
+                        ? "The three draw-only compile-time Silk.NET direct D3D12 diagnostics executed; timings are diagnostic."
+                        : "The three draw-only default Silk D3D12 diagnostics executed; timings are diagnostic.",
                     BenchmarkProfile.DeveloperProbe => fastCalls
-                        ? "Selected compile-time Silk.NET direct D3D12 developer probe workloads executed; exploratory only and never certification evidence."
-                        : "Selected default Silk D3D12 developer probe workloads executed; exploratory only and never certification evidence.",
+                        ? "Selected compile-time Silk.NET direct D3D12 developer probe workloads executed; timings are diagnostic."
+                        : "Selected default Silk D3D12 developer probe workloads executed; timings are diagnostic.",
                     BenchmarkProfile.RepresentativeCpuFrame => fastCalls
                         ? "Compile-time Silk.NET direct D3D12 representative CPU frame workloads executed without Queue submission."
                         : "Default Silk D3D12 representative CPU frame workloads executed without Queue submission.",
-                    BenchmarkProfile.VendorCertification =>
-                        "All fixed direct Silk D3D12 workloads executed.",
                     _ => throw new ArgumentOutOfRangeException(nameof(configuration)),
                 },
                 environment,
@@ -137,9 +121,7 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
             ulong completion = context.Copy.SignalOnly();
             long stopped = Stopwatch.GetTimestamp();
             long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-            long events = AllocationEventCounter.AttributeIntervalEvents(
-                bytes,
-                allocations.Count - beforeEvents);
+            long events = allocations.Count - beforeEvents;
             context.Copy.WaitCpu(completion);
             long ticks = stopped - started;
             samples[frame] = new FrameSample(
@@ -320,15 +302,15 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         NativeViewport viewport = new(
             0,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight,
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight,
             0,
             1);
         Box2D<int> scissor = new(
             0,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight);
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight);
         float* clear = stackalloc float[4];
         clear[0] = 0.0625f;
         clear[1] = 0.125f;
@@ -384,9 +366,7 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         ulong completion = context.Graphics.Execute();
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-        long events = AllocationEventCounter.AttributeIntervalEvents(
-            bytes,
-            allocations.Count - beforeEvents);
+        long events = allocations.Count - beforeEvents;
         context.Graphics.WaitCpu(completion);
         (ulong gpuStart, ulong gpuEnd) = ReadTimestampPair(queryReadback);
         initialized = true;
@@ -649,9 +629,7 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         ulong completion = context.Compute.Execute();
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-        long events = AllocationEventCounter.AttributeIntervalEvents(
-            bytes,
-            allocations.Count - beforeEvents);
+        long events = allocations.Count - beforeEvents;
         context.Compute.WaitCpu(completion);
         (ulong gpuStart, ulong gpuEnd) = ReadTimestampPair(queryReadback);
         long ticks = stopped - started;
@@ -882,15 +860,15 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         NativeViewport viewport = new(
             0,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight,
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight,
             0,
             1);
         Box2D<int> scissor = new(
             0,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight);
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight);
         float* clear = stackalloc float[4];
         clear[0] = 0.0625f;
         clear[1] = 0.125f;
@@ -940,9 +918,7 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         swapchain.Present();
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
-        long events = AllocationEventCounter.AttributeIntervalEvents(
-            bytes,
-            allocations.Count - beforeEvents);
+        long events = allocations.Count - beforeEvents;
         context.Graphics.WaitCpu(graphicsCompletion);
         ulong copyTick = ReadTimestamp(copyTimestamp);
         ulong graphicsTick = ReadTimestamp(graphicsTimestamp);
@@ -977,8 +953,8 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
                     0,
                     new SubresourceFootprint(
                         NativeFormat.FormatR8G8B8A8Unorm,
-                        FixedGraphicsProtocol.RenderWidth,
-                        FixedGraphicsProtocol.RenderHeight,
+                        BenchmarkDefaults.RenderWidth,
+                        BenchmarkDefaults.RenderHeight,
                         1,
                         256)));
             TextureCopyLocation source = new(
@@ -1134,12 +1110,8 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private static bool ViewportEquals(in NativeViewport left, in NativeViewport right) =>
-            NormalizedFloatEquals(left.TopLeftX, right.TopLeftX) &&
-            NormalizedFloatEquals(left.TopLeftY, right.TopLeftY) &&
-            NormalizedFloatEquals(left.Width, right.Width) &&
-            NormalizedFloatEquals(left.Height, right.Height) &&
-            NormalizedFloatEquals(left.MinDepth, right.MinDepth) &&
-            NormalizedFloatEquals(left.MaxDepth, right.MaxDepth);
+            new SomeEngine.Graphics.Viewport(left.TopLeftX, left.TopLeftY, left.Width, left.Height, left.MinDepth, left.MaxDepth)
+                .Equals(new SomeEngine.Graphics.Viewport(right.TopLeftX, right.TopLeftY, right.Width, right.Height, right.MinDepth, right.MaxDepth));
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private static bool ScissorBitsEqual(in Box2D<int> left, in Box2D<int> right)
@@ -1168,8 +1140,8 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         internal NativeSwapchain(DirectSilkContext context, nint window)
         {
             SwapChainDesc1 description = new(
-                FixedGraphicsProtocol.RenderWidth,
-                FixedGraphicsProtocol.RenderHeight,
+                BenchmarkDefaults.RenderWidth,
+                BenchmarkDefaults.RenderHeight,
                 NativeFormat.FormatR8G8B8A8Unorm,
                 stereo: false,
                 new SampleDesc(1, 0),

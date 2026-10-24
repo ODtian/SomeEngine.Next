@@ -1,3 +1,5 @@
+using System.Runtime.Intrinsics.X86;
+
 namespace SomeEngine.Graphics;
 
 /// <remarks>
@@ -153,22 +155,30 @@ internal abstract class MappingLease
 /// <para><b>After Dispose:</b> Bytes, Range, Flush, and Invalidate are invalid; a previously copied Span is contractually invalid even though the runtime cannot revoke it.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-006">RHI-LIFE-006</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
-public unsafe ref struct MappedBuffer
+public unsafe struct MappedBuffer : IDisposable
 {
     private readonly MappingLease? _lease;
-    private readonly Span<byte> _bytes;
+    private readonly Memory<byte> _memory;
+    private readonly nint _pointer;
+    private readonly int _length;
     private readonly ulong _sequence;
 
-    internal MappedBuffer(MappingLease lease, Span<byte> bytes, ulong sequence)
+    internal MappedBuffer(MappingLease lease, Memory<byte> bytes, ulong sequence)
     {
         _lease = lease;
-        _bytes = bytes;
+        _memory = bytes;
+        _pointer = 0;
+        _length = bytes.Length;
         _sequence = sequence;
     }
 
     internal MappedBuffer(MappingLease lease, nint pointer, int length, ulong sequence)
-        : this(lease, new Span<byte>((void*)pointer, length), sequence)
     {
+        _lease = lease;
+        _memory = default;
+        _pointer = pointer;
+        _length = length;
+        _sequence = sequence;
     }
 
     public BufferRange Range
@@ -186,7 +196,54 @@ public unsafe ref struct MappedBuffer
         {
             MappingLease lease = RequireLease();
             lease.EnsureActive(_sequence);
-            return _bytes;
+            return _pointer == 0 ? _memory.Span : new Span<byte>((void*)_pointer, _length);
+        }
+    }
+
+    /// <summary>
+    /// Reads into the full destination from an offset relative to this mapping. Upload memory
+    /// uses streaming loads when supported; ordinary memory and overlapping copies use span copy.
+    /// This does not wait for GPU work or invalidate non-coherent mappings.
+    /// </summary>
+    public void Read(Span<byte> destination, int offset = 0)
+    {
+        ReadOnlySpan<byte> source = Bytes.Slice(offset, destination.Length);
+        if (_pointer == 0 || _lease!.Buffer.Info.MemoryType != MemoryType.Upload ||
+            !Sse41.IsSupported || source.Length < 16 || source.Overlaps(destination))
+        {
+            source.CopyTo(destination);
+            return;
+        }
+
+        fixed (byte* input = source)
+        fixed (byte* output = destination)
+        {
+            // Streaming reads of write-combined memory need ordering with earlier writes.
+            Sse2.MemoryFence();
+            int position = 0;
+            int alignment = (int)((nuint)input & 15);
+            if (alignment != 0)
+            {
+                Sse2.Store(output, Sse2.LoadVector128(input));
+                position = 16 - alignment;
+            }
+            for (; position <= source.Length - 64; position += 64)
+            {
+                // Read the vectors before stores can disturb the streaming read buffer.
+                var first = Sse41.LoadAlignedVector128NonTemporal(input + position);
+                var second = Sse41.LoadAlignedVector128NonTemporal(input + position + 16);
+                var third = Sse41.LoadAlignedVector128NonTemporal(input + position + 32);
+                var fourth = Sse41.LoadAlignedVector128NonTemporal(input + position + 48);
+                Sse2.Store(output + position, first);
+                Sse2.Store(output + position + 16, second);
+                Sse2.Store(output + position + 32, third);
+                Sse2.Store(output + position + 48, fourth);
+            }
+            for (; position <= source.Length - 16; position += 16)
+                Sse2.Store(output + position, Sse41.LoadAlignedVector128NonTemporal(input + position));
+            if (position != source.Length)
+                Sse2.Store(output + source.Length - 16, Sse2.LoadVector128(input + source.Length - 16));
+            Sse2.MemoryFence();
         }
     }
 

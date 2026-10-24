@@ -56,8 +56,8 @@ internal readonly record struct GraphicsCpuWorkloadShape(
     int FrameSlotCount,
     bool SplitBarriersEnabled,
     bool QueueSpecificCommonLayouts,
-    ulong LogicalTransientBytes,
-    ulong PhysicalTransientBytes);
+    ulong TransientResourceBytes,
+    ulong TransientHeapBytes);
 
 internal readonly record struct GraphicsCpuFrameSample(
     int FrameIndex,
@@ -77,9 +77,7 @@ internal sealed record GraphicsCpuWorkloadResult(
     bool WarmupPlateauReached,
     GraphicsCpuFrameSample[] WarmupSamples,
     GraphicsCpuFrameSample[] Samples,
-    MetricDistribution Cpu,
-    double P95LimitMicroseconds,
-    bool P95Passed);
+    MetricDistribution Cpu);
 
 internal sealed record GraphicsCpuBenchmarkReport(
     string Schema,
@@ -137,7 +135,7 @@ internal readonly record struct RuntimeEnvironment(
     bool CaptureToolLoaded,
     BuildIdentity Build);
 
-internal readonly record struct CalibrationRecord(
+public readonly record struct CalibrationRecord(
     QueueType Queue,
     int FrameIndex,
     long CpuCounter,
@@ -145,7 +143,7 @@ internal readonly record struct CalibrationRecord(
     ulong QueueCounter,
     ulong QueueFrequency);
 
-internal readonly record struct FrameSample(
+public readonly record struct FrameSample(
     int FrameIndex,
     long CpuStopwatchTicks,
     double CpuMicroseconds,
@@ -154,16 +152,31 @@ internal readonly record struct FrameSample(
     long EtwAllocationEvents,
     ulong CompletionValue,
     long? PostCloseCleanupStopwatchTicks = null,
-    double? PostCloseCleanupMicroseconds = null);
+    double? PostCloseCleanupMicroseconds = null)
+{
+    // Attribute delayed allocation ticks when this frame recorded managed allocation.
+    public long EtwAllocationEvents { get; init; } =
+        AllocationEventsForFrame(ManagedAllocatedBytes, EtwAllocationEvents);
 
-internal readonly record struct BarrierEvidence(
+    private static long AllocationEventsForFrame(long allocatedBytes, long observedEvents)
+    {
+        if (allocatedBytes < 0)
+            throw new ArgumentOutOfRangeException(nameof(ManagedAllocatedBytes));
+        if (observedEvents < 0)
+            throw new ArgumentOutOfRangeException(nameof(EtwAllocationEvents));
+
+        return allocatedBytes == 0 ? 0 : observedEvents;
+    }
+}
+
+public readonly record struct BarrierEvidence(
     int PublicOrdinal,
     string PublicKind,
     int NativeOrdinal,
     int NativeExpansionCount,
     string? ExpansionReason);
 
-internal readonly record struct CommandWorkloadEvidence(
+public readonly record struct CommandWorkloadEvidence(
     int ObjectPacketCount,
     int LogicalDrawRequests,
     int LogicalMaterialBindingRequests,
@@ -175,7 +188,7 @@ internal readonly record struct CommandWorkloadEvidence(
     int WorkerCount,
     string DrawCallShape);
 
-internal sealed record WorkloadRun(
+public sealed record WorkloadRun(
     GraphicsWorkload Workload,
     RunDisposition Disposition,
     string Reason,
@@ -200,7 +213,7 @@ internal sealed record ProcessRun(
     RuntimeEnvironment Environment,
     WorkloadRun[] Workloads);
 
-internal sealed record WorkloadGateEvidence(
+public sealed record WorkloadMeasurements(
     GraphicsWorkload Workload,
     RunDisposition Disposition,
     string Reason,
@@ -209,10 +222,6 @@ internal sealed record WorkloadGateEvidence(
     int DrawCount,
     int BarrierCount,
     int SampleCount,
-    int? FirstAllocationFrame,
-    long FirstManagedAllocatedBytes,
-    long FirstEtwAllocationEvents,
-    bool MissingGpuSample,
     double[] CpuSamples,
     double[] GpuSamples,
     string OutputSha256,
@@ -220,12 +229,9 @@ internal sealed record WorkloadGateEvidence(
     BarrierEvidence[] Barriers,
     double[] PostCloseCleanupSamples)
 {
-    internal static WorkloadGateEvidence Create(WorkloadRun run)
+    public static WorkloadMeasurements Create(WorkloadRun run)
     {
-        int allocationIndex = Array.FindIndex(run.Samples, static sample =>
-            sample.ManagedAllocatedBytes != 0 || sample.EtwAllocationEvents != 0);
-        FrameSample allocation = allocationIndex >= 0 ? run.Samples[allocationIndex] : default;
-        return new WorkloadGateEvidence(
+        return new WorkloadMeasurements(
             run.Workload,
             run.Disposition,
             run.Reason,
@@ -234,11 +240,6 @@ internal sealed record WorkloadGateEvidence(
             run.DrawCount,
             run.BarrierCount,
             run.Samples.Length,
-            allocationIndex >= 0 ? allocation.FrameIndex : null,
-            allocation.ManagedAllocatedBytes,
-            allocation.EtwAllocationEvents,
-            run.Workload != GraphicsWorkload.EmptySubmit &&
-                run.Samples.Any(static sample => sample.GpuMicroseconds is null),
             run.Samples.Select(static sample => sample.CpuMicroseconds).ToArray(),
             run.Samples
                 .Where(static sample => sample.GpuMicroseconds.HasValue)
@@ -254,38 +255,22 @@ internal sealed record WorkloadGateEvidence(
     }
 }
 
-internal sealed record ProcessGateEvidence(
+internal sealed record ProcessMeasurements(
     ReceiverVariant Variant,
     RunDisposition Disposition,
     string Reason,
     RuntimeEnvironment Environment,
     int Position,
-    WorkloadGateEvidence[] Workloads)
+    WorkloadMeasurements[] Workloads)
 {
-    internal static ProcessGateEvidence Create(ProcessRun run, int? position = null) => new(
+    internal static ProcessMeasurements Create(ProcessRun run, int position) => new(
         run.Variant,
         run.Disposition,
         run.Reason,
         run.Environment,
-        position ?? ResolvePosition(run),
-        run.Workloads.Select(WorkloadGateEvidence.Create).ToArray());
+        position,
+        run.Workloads.Select(WorkloadMeasurements.Create).ToArray());
 
-    private static int ResolvePosition(ProcessRun run)
-    {
-        if ((uint)run.Environment.ProcessIndex >=
-            (uint)FixedGraphicsProtocol.InterleavedRounds.Length)
-        {
-            return -1;
-        }
-        ReadOnlySpan<ReceiverVariant> round =
-            FixedGraphicsProtocol.GetInterleavedRound(run.Environment.ProcessIndex);
-        for (int position = 0; position < round.Length; position++)
-        {
-            if (round[position] == run.Variant)
-                return position;
-        }
-        return -1;
-    }
 }
 
 internal readonly record struct RawProcessEvidence(
@@ -295,7 +280,7 @@ internal readonly record struct RawProcessEvidence(
     int ProcessIndex,
     int Position);
 
-internal readonly record struct GateIssue(
+internal readonly record struct MeasurementIssue(
     string Code,
     string Message,
     ReceiverVariant? Variant = null,
@@ -309,22 +294,8 @@ internal readonly record struct ComparisonResult(
     double CandidateMicroseconds,
     double BaselineMicroseconds,
     double DeltaMicroseconds,
-    double? DeltaPercent,
-    double AbsoluteLimitMicroseconds,
-    double? RelativeLimitPercent,
-    bool Passed);
+    double? DeltaPercent);
 
-internal sealed record DiagnosticBiasResult(
-    GraphicsWorkload Workload,
-    string Metric,
-    double GeometricMeanMicroseconds,
-    double[] PositionEffectsPercent,
-    double PositionSpreadPercent,
-    double[] RoundEffectsPercent,
-    double RoundSpreadPercent,
-    double[] VariantEffectsPercent,
-    double VariantSpreadPercent,
-    double ResidualRmsPercent);
 
 internal sealed record PairedBlockDiagnostic(
     int ProcessIndex,
@@ -338,12 +309,11 @@ internal sealed record PairedBlockDiagnostic(
     double BaselineP95OverP50,
     double CandidateP95OverP50);
 
-internal sealed record GateResult(
+internal sealed record MeasurementSummary(
     RunDisposition Disposition,
     string Reason,
-    GateIssue[] Issues,
-    ComparisonResult[] Comparisons,
-    DiagnosticBiasResult[] Diagnostics)
+    MeasurementIssue[] Issues,
+    ComparisonResult[] Comparisons)
 {
     public PairedBlockDiagnostic[] PairedDiagnostics { get; init; } = [];
 }
@@ -357,7 +327,7 @@ internal sealed record GraphicsBenchmarkReport(
     DateTimeOffset CompletedUtc,
     ProtocolSnapshot Protocol,
     RawProcessEvidence[] RawEvidence,
-    GateResult Gate)
+    MeasurementSummary Summary)
 {
     internal void Write(string path)
     {

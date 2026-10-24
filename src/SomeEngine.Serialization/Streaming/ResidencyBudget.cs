@@ -27,10 +27,21 @@ public sealed record ResidencyBudgets
 
 public sealed class ResidencyBudgetLedger
 {
+    private readonly object _budgetGate = new();
     private readonly long[] _budgets;
     private readonly long[] _used = new long[4];
 
-    internal event Action? AvailabilityReleased;
+    internal event Action? AvailabilityChanged;
+    internal event Action<ResidencyClass, long>? ReclaimRequested;
+
+    // Requests are made outside consumer locks. Each cache decides which of its own
+    // contents can be released; the ledger remains the only budget accounting source.
+    public void RequestReclaim(ResidencyClass residencyClass, long requiredBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(requiredBytes);
+        if (Available(residencyClass) < requiredBytes)
+            ReclaimRequested?.Invoke(residencyClass, requiredBytes);
+    }
 
     public ResidencyBudgetLedger(ResidencyBudgets? budgets = null)
     {
@@ -82,18 +93,17 @@ public sealed class ResidencyBudgetLedger
         var preparedFirst = new ResidencyReservation(firstClass, firstBytes);
         var preparedSecond = new ResidencyReservation(secondClass, secondBytes);
 
-        if (!TryAdd(firstIndex, firstBytes))
+        lock (_budgetGate)
         {
-            first = null;
-            second = null;
-            return false;
-        }
-        if (!TryAdd(secondIndex, secondBytes))
-        {
-            RollBack(firstIndex, firstBytes);
-            first = null;
-            second = null;
-            return false;
+            if (firstBytes > _budgets[firstIndex] - Interlocked.Read(ref _used[firstIndex])
+                || secondBytes > _budgets[secondIndex] - Interlocked.Read(ref _used[secondIndex]))
+            {
+                first = null;
+                second = null;
+                return false;
+            }
+            Interlocked.Add(ref _used[firstIndex], firstBytes);
+            Interlocked.Add(ref _used[secondIndex], secondBytes);
         }
 
         preparedFirst.Activate(this);
@@ -105,32 +115,14 @@ public sealed class ResidencyBudgetLedger
 
     private bool TryAdd(int index, long bytes)
     {
-        while (true)
+        lock (_budgetGate)
         {
             long current = Interlocked.Read(ref _used[index]);
-            long next;
-            try
-            {
-                next = checked(current + bytes);
-            }
-            catch (OverflowException)
-            {
+            if (bytes > _budgets[index] - current)
                 return false;
-            }
-
-            if (next > _budgets[index])
-                return false;
-
-            if (Interlocked.CompareExchange(ref _used[index], next, current) == current)
-                return true;
+            Interlocked.Add(ref _used[index], bytes);
+            return true;
         }
-    }
-
-    private void RollBack(int index, long bytes)
-    {
-        long remaining = Interlocked.Add(ref _used[index], -bytes);
-        if (remaining < 0)
-            throw new InvalidOperationException("Residency accounting became negative during reservation rollback.");
     }
 
     public ResidencyReservation Reserve(ResidencyClass residencyClass, long bytes)
@@ -148,12 +140,12 @@ public sealed class ResidencyBudgetLedger
         if (remaining < 0)
             throw new InvalidOperationException($"{residencyClass} residency accounting became negative.");
         if (bytes != 0)
-            NotifyAvailabilityReleased();
+            NotifyAvailabilityChanged();
     }
 
-    private void NotifyAvailabilityReleased()
+    internal void NotifyAvailabilityChanged()
     {
-        Action? observers = AvailabilityReleased;
+        Action? observers = AvailabilityChanged;
         if (observers is null)
             return;
 
@@ -195,9 +187,10 @@ public sealed class ResidencyBudgetLedger
 
 public sealed class ResidencyReservation : IDisposable
 {
+    private readonly object _gate = new();
     private ResidencyBudgetLedger? _ledger;
     private readonly ResidencyClass _residencyClass;
-    private readonly long _bytes;
+    private long _bytes;
 
     internal ResidencyReservation(
         ResidencyClass residencyClass,
@@ -208,7 +201,21 @@ public sealed class ResidencyReservation : IDisposable
     }
 
     public ResidencyClass ResidencyClass => _residencyClass;
-    public long Bytes => _bytes;
+    public long Bytes => Interlocked.Read(ref _bytes);
+
+    // Moves already charged capacity to a final buffer without a release/reserve window.
+    internal ResidencyReservation Take(long bytes)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_ledger is null, this);
+            if (bytes < 0 || bytes > _bytes) throw new ArgumentOutOfRangeException(nameof(bytes));
+            var part = new ResidencyReservation(_residencyClass, bytes);
+            part.Activate(_ledger);
+            Interlocked.Add(ref _bytes, -bytes);
+            return part;
+        }
+    }
 
     internal void Activate(ResidencyBudgetLedger ledger)
     {
@@ -218,5 +225,15 @@ public sealed class ResidencyReservation : IDisposable
     }
 
     public void Dispose()
-        => Interlocked.Exchange(ref _ledger, null)?.Release(_residencyClass, _bytes);
+    {
+        ResidencyBudgetLedger? ledger;
+        long bytes;
+        lock (_gate)
+        {
+            ledger = _ledger;
+            _ledger = null;
+            bytes = _bytes;
+        }
+        ledger?.Release(_residencyClass, bytes);
+    }
 }

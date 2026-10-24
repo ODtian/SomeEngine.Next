@@ -9,6 +9,7 @@ internal sealed class QueryState
 {
     private readonly List<QueryArchetypeMatch> _matches = new();
     private readonly List<Archetype> _archetypes = new();
+    private readonly Dictionary<long, QueryArchetypeMatch> _matchesByTable = [];
     private Dictionary<(int WriteComponentId, int ReadComponentId), ReadWriteMatch[]>? _pairMatches;
     private ReadWriteMatch[]? _lastPairMatches;
     private int _lastWriteComponent;
@@ -52,6 +53,7 @@ internal sealed class QueryState
             QueryArchetypeMatch match = _matches[i].CloneFor(tableMap.Remap(_matches[i].Archetype));
             clone._matches.Add(match);
             clone._archetypes.Add(match.Archetype);
+            clone._matchesByTable.Add(match.Archetype.PersistentIdentity, match);
         }
 
         return clone;
@@ -64,6 +66,7 @@ internal sealed class QueryState
 
         _matches.Add(match);
         _archetypes.Add(archetype);
+        _matchesByTable.Add(archetype.PersistentIdentity, match);
         _pairMatches?.Clear();
         _lastPairMatches = null;
         return true;
@@ -146,17 +149,8 @@ internal sealed class QueryState
 
     internal bool TryGetMatch(Archetype archetype, out QueryArchetypeMatch match)
     {
-        for (int i = 0; i < _matches.Count; i++)
-        {
-            if (ReferenceEquals(_matches[i].Archetype, archetype))
-            {
-                match = _matches[i];
-                return true;
-            }
-        }
-
-        match = null!;
-        return false;
+        return _matchesByTable.TryGetValue(archetype.PersistentIdentity, out match!) &&
+            ReferenceEquals(match.Archetype, archetype);
     }
 
     private static bool TryCreateMatch(

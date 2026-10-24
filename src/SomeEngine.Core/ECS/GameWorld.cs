@@ -8,6 +8,8 @@ namespace SomeEngine.Core.ECS;
 
 public sealed class GameWorld : IDisposable
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("ecs", "GameWorld.Update");
+    private static readonly SomeEngine.Diagnostics.TraceSite SystemsUpdateTrace = new("ecs", "GameWorld.Systems.Update");
     private const int LifetimeOpen = 0;
     private const int LifetimeClosing = 1;
     private const int LifetimeClosed = 2;
@@ -15,27 +17,51 @@ public sealed class GameWorld : IDisposable
     private readonly object _lifetimeGate = new();
     private int _lifetimeState;
     private int _lifetimeOwnerThreadId;
+    private int _updatingThread;
+    private readonly SystemGroup<ImmediateSystemContext> _transforms;
 
     public World World { get; }
     public SystemGroup<ImmediateSystemContext> Systems { get; }
-    public GameWorld()
+    public GameWorld(WorldExecution? execution = null)
     {
-        World = new World();
+        World = new World(execution: execution);
         Systems = new SystemGroup<ImmediateSystemContext>(
             new ImmediateSystemDriver(World));
-        Systems.Add(new TransformSystem());
+        _transforms = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(World));
+        _transforms.Add(new TransformSystem());
     }
 
     public void Update(double deltaTime)
     {
-        ObjectDisposedException.ThrowIf(
-            Volatile.Read(ref _lifetimeState) != LifetimeOpen,
-            this);
-        using var scope = Profiler.BeginScope("GameWorld.Update");
-
-        using (Profiler.BeginScope("GameWorld.Systems.Update"))
+        if (!double.IsFinite(deltaTime) || deltaTime < 0)
+            throw new ArgumentOutOfRangeException(nameof(deltaTime));
+        int thread = Environment.CurrentManagedThreadId;
+        lock (_lifetimeGate)
         {
-            Systems.Update();
+            ObjectDisposedException.ThrowIf(_lifetimeState != LifetimeOpen, this);
+            if (_updatingThread != 0)
+                throw new InvalidOperationException("GameWorld is already updating.");
+            _updatingThread = thread;
+        }
+        using var scope = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
+        try
+        {
+            var context = new ImmediateSystemContext(World, 0, 0, deltaTime);
+            using (SomeEngine.Diagnostics.EngineTrace.Begin(SystemsUpdateTrace))
+                Systems.Update(ref context);
+            Systems.Complete();
+            World.Flush();
+            using (Profiler.BeginScope("GameWorld.Transforms.Update"))
+                _transforms.Update(ref context);
+            _transforms.Complete();
+        }
+        finally
+        {
+            lock (_lifetimeGate)
+            {
+                _updatingThread = 0;
+                Monitor.PulseAll(_lifetimeGate);
+            }
         }
     }
 
@@ -47,10 +73,13 @@ public sealed class GameWorld : IDisposable
                 "GameWorld cannot be disposed from a running Job callback.");
         }
         Systems.ValidateDisposePreconditions(World);
+        _transforms.ValidateDisposePreconditions(World);
 
         int threadId = Environment.CurrentManagedThreadId;
         lock (_lifetimeGate)
         {
+            if (_updatingThread == threadId)
+                throw new InvalidOperationException("GameWorld cannot be disposed from its update callback.");
             if (_lifetimeState == LifetimeClosed)
                 return;
             if (_lifetimeState == LifetimeClosing)
@@ -64,6 +93,8 @@ public sealed class GameWorld : IDisposable
 
             _lifetimeState = LifetimeClosing;
             _lifetimeOwnerThreadId = threadId;
+            while (_updatingThread != 0)
+                Monitor.Wait(_lifetimeGate);
         }
 
         var exceptions = new List<Exception>();
@@ -72,6 +103,19 @@ public sealed class GameWorld : IDisposable
             try
             {
                 Systems.Dispose();
+            }
+            catch (AggregateException exception)
+            {
+                exceptions.AddRange(exception.Flatten().InnerExceptions);
+            }
+            catch (Exception exception)
+            {
+                exceptions.Add(exception);
+            }
+
+            try
+            {
+                _transforms.Dispose();
             }
             catch (AggregateException exception)
             {

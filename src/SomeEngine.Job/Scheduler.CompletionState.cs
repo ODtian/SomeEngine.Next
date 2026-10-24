@@ -3,9 +3,9 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
-    private sealed class CompletionState
+    private sealed class CompletionState(CompletionStore completion)
     {
         internal readonly Lock Sync = new();
         internal int Version;
@@ -16,20 +16,22 @@ internal sealed partial class Scheduler
         internal int PendingChildren;
         internal int ActiveCompleters;
         internal ScopeToken Parent;
-        internal ExceptionDispatchInfo? Fault;
+        internal HashSet<IJobSubmissionObserver>? Users;
+        private JobFailure? _failure;
+        internal ExceptionDispatchInfo? Fault => Volatile.Read(ref _failure)?.DispatchInfo;
+        internal bool FailureReported => Volatile.Read(ref _failure)?.Reported == true;
+        internal void ReportFailure() => Volatile.Read(ref _failure)?.Report();
+        internal SomeEngine.Diagnostics.TraceContext TraceContext;
         internal bool FaultObserved;
         internal bool QueuedForFaultReuse;
         internal List<DependencyContinuation> Continuations { get; } = [];
-        internal List<DependencyContinuation> ContinuationDispatchBuffer { get; } = [];
         internal List<ExternalCompletionContinuation>? ExternalContinuations { get; set; }
-        internal List<ExternalCompletionContinuation>? ExternalContinuationDispatchBuffer { get; set; }
         internal bool ScheduleDependenciesSealed;
         internal bool WorkDependenciesReleased;
         internal bool WorkDependencyReleaseInProgress;
         internal bool CompletionDispatchInProgress;
         internal bool MayExecuteConcurrently;
         internal List<DependencyContinuation> WorkContinuations { get; } = [];
-        internal List<DependencyContinuation> WorkContinuationDispatchBuffer { get; } = [];
         internal ResourceAccessRegistration ResourceAccesses { get; set; } = ResourceAccessRegistration.Empty;
         internal List<ScopeOwnedResource> ScopeOwnedResources { get; } = [];
         internal List<ScopeOwnedResource> ScopeOwnedResourceDispatchBuffer { get; } = [];
@@ -37,11 +39,12 @@ internal sealed partial class Scheduler
         internal void RecordFirstFault(ExceptionDispatchInfo fault)
         {
             ArgumentNullException.ThrowIfNull(fault);
-            Interlocked.CompareExchange(ref Fault, fault, null);
+            Interlocked.CompareExchange(ref _failure, completion.Failure(fault), null);
         }
 
         internal void Reset(int pendingWork, int pendingDependencies, bool scheduleDependenciesSealed)
         {
+            TraceContext = SomeEngine.Diagnostics.EngineTrace.Context;
             Version++;
             InUse = true;
             Completed = false;
@@ -50,20 +53,18 @@ internal sealed partial class Scheduler
             PendingChildren = 0;
             ActiveCompleters = 0;
             Parent = default;
-            Fault = null;
+            Users?.Clear();
+            _failure = null;
             FaultObserved = false;
             QueuedForFaultReuse = false;
             ClearIfNotEmpty(Continuations);
-            ClearIfNotEmpty(ContinuationDispatchBuffer);
             ClearIfNotEmpty(ExternalContinuations);
-            ClearIfNotEmpty(ExternalContinuationDispatchBuffer);
             ScheduleDependenciesSealed = scheduleDependenciesSealed;
             WorkDependenciesReleased = pendingWork == 0;
             WorkDependencyReleaseInProgress = false;
             CompletionDispatchInProgress = false;
             MayExecuteConcurrently = pendingWork > 1;
             ClearIfNotEmpty(WorkContinuations);
-            ClearIfNotEmpty(WorkContinuationDispatchBuffer);
             ResourceAccesses = ResourceAccessRegistration.Empty;
             ClearIfNotEmpty(ScopeOwnedResources);
             ClearIfNotEmpty(ScopeOwnedResourceDispatchBuffer);
@@ -71,6 +72,7 @@ internal sealed partial class Scheduler
 
         internal void Release()
         {
+            TraceContext = default;
             InUse = false;
             Completed = true;
             PendingWork = 0;
@@ -78,20 +80,18 @@ internal sealed partial class Scheduler
             PendingChildren = 0;
             ActiveCompleters = 0;
             Parent = default;
-            Fault = null;
+            Users?.Clear();
+            _failure = null;
             FaultObserved = false;
             QueuedForFaultReuse = false;
             ClearIfNotEmpty(Continuations);
-            ClearIfNotEmpty(ContinuationDispatchBuffer);
             ClearIfNotEmpty(ExternalContinuations);
-            ClearIfNotEmpty(ExternalContinuationDispatchBuffer);
             ScheduleDependenciesSealed = true;
             WorkDependenciesReleased = true;
             WorkDependencyReleaseInProgress = false;
             CompletionDispatchInProgress = false;
             MayExecuteConcurrently = false;
             ClearIfNotEmpty(WorkContinuations);
-            ClearIfNotEmpty(WorkContinuationDispatchBuffer);
             ResourceAccesses = ResourceAccessRegistration.Empty;
             ClearIfNotEmpty(ScopeOwnedResources);
             ClearIfNotEmpty(ScopeOwnedResourceDispatchBuffer);

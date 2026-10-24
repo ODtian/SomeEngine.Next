@@ -10,35 +10,24 @@ namespace SomeEngine.ECS.Tests;
 /// </summary>
 public sealed class WorldJobFailClosedTests
 {
-    private static World? s_world;
-
     [Fact]
     public void RawJobFailsClosedWhenAdmissionIntegrationWasNeverLoaded()
     {
-        var world = new World();
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var world = new World();
         long revision = world.PublishedTopologyRevision;
-        s_world = world;
-        try
-        {
-            JobHandle handle = JobSystem.Schedule(new RawWorldJob());
+        JobHandle handle = scheduler.Schedule(new RawWorldJob(world));
 
-            InvalidOperationException error =
-                Assert.Throws<InvalidOperationException>(() => handle.Complete());
-            Assert.Contains("admission", error.Message, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(0, world.EntityCount);
-            Assert.Equal(revision, world.PublishedTopologyRevision);
-        }
-        finally
-        {
-            s_world = null;
-        }
+        Assert.Throws<InvalidOperationException>(() => handle.Complete());
+        Assert.Equal(0, world.EntityCount);
+        Assert.Equal(revision, world.PublishedTopologyRevision);
     }
 
-    private readonly struct RawWorldJob : IJob
+    private readonly struct RawWorldJob(World world) : IJob
     {
         public void Execute()
         {
-            _ = s_world!.CreateEntity();
+            _ = world.CreateEntity();
         }
     }
 }

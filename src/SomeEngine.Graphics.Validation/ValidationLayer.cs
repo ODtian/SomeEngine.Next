@@ -40,8 +40,6 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     private readonly Dictionary<QuerySlot, QueryValidationState> _queryStates = new();
     private readonly Dictionary<Queue, ulong> _completedQueueValues =
         new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<Queue, NativeQueueLockValidationState> _nativeQueueLockStates =
-        new(ReferenceEqualityComparer.Instance);
     private readonly IValidationMessageSink? _sink;
     private readonly bool _reportLiveObjectsOnDispose;
     private DisposeGate _disposeGate;
@@ -73,7 +71,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         _rayTracingTables = new IdentityRegistry<RayTracingShaderTable, RayTracingTableValidationState>(_gate);
         _contexts = new IdentityRegistry<CommandContext, ContextValidationState>(_gate);
 
-        if (backend is INativeValidationControl validationControl)
+        if (!options.NativeValidationDisabled && backend is INativeValidationControl validationControl)
             validationControl.EnableNativeValidation();
     }
 
@@ -114,6 +112,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
                 _devices.Add(result, 0);
                 deviceAdded = true;
                 _deviceStates.Add(result, deviceState);
+                result.Disposed += ForgetDeviceQueues;
                 stateAdded = true;
                 return result;
             }
@@ -325,6 +324,18 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         return required;
     }
 
+    private void ForgetDeviceQueues(GraphicsObject value)
+    {
+        var device = (Device)value;
+        lock (_gate)
+        {
+            _queueSubmissionGates.RemoveWhere(queue => ReferenceEquals(queue.Device, device));
+            _submitWorkspaces.RemoveWhere(queue => ReferenceEquals(queue.Device, device));
+            foreach (Queue queue in _completedQueueValues.Keys.Where(queue => ReferenceEquals(queue.Device, device)).ToArray())
+                _completedQueueValues.Remove(queue);
+        }
+    }
+
     private sealed class IdentityRegistry<TKey, TValue>
         where TKey : class
     {
@@ -335,89 +346,68 @@ public sealed partial class ValidationLayer : IGraphicsBackend
 
         internal void EnsureAdditionalCapacity(int additionalCount = 1)
         {
-            if (additionalCount < 0)
-                throw new ArgumentOutOfRangeException(nameof(additionalCount));
-            lock (_gate)
-            {
-                PruneDisposed();
-                _entries.EnsureCapacity(checked(_entries.Count + additionalCount));
-            }
+            if (additionalCount < 0) throw new ArgumentOutOfRangeException(nameof(additionalCount));
+            lock (_gate) _entries.EnsureCapacity(checked(_entries.Count + additionalCount));
         }
 
         internal void Add(TKey key, TValue value)
         {
             lock (_gate)
+            {
                 _entries.Add(key, value);
+                if (key is GraphicsObject graphicsObject)
+                {
+                    graphicsObject.Disposed += RemoveDisposed;
+                    // Disposal may have finished before its validation registration arrived.
+                    if (graphicsObject.IsDisposed) Remove(key);
+                }
+            }
         }
 
         internal bool TryGetValue(TKey key, [MaybeNullWhen(false)] out TValue value)
         {
-            lock (_gate)
-                return _entries.TryGetValue(key, out value);
+            lock (_gate) return _entries.TryGetValue(key, out value);
         }
 
         internal TValue GetValue(TKey key, Func<TKey, TValue> factory)
         {
             lock (_gate)
             {
-                PruneDisposed();
-                if (_entries.TryGetValue(key, out TValue? value))
-                    return value;
+                if (_entries.TryGetValue(key, out TValue? value)) return value;
                 _entries.EnsureCapacity(checked(_entries.Count + 1));
                 value = factory(key);
-                _entries.Add(key, value);
+                Add(key, value);
                 return value;
             }
         }
 
         internal bool Contains(TKey key)
         {
-            lock (_gate)
-                return _entries.ContainsKey(key);
+            lock (_gate) return _entries.ContainsKey(key);
         }
 
         internal bool Remove(TKey key)
         {
             lock (_gate)
-                return _entries.Remove(key);
+            {
+                if (!_entries.Remove(key)) return false;
+                if (key is GraphicsObject graphicsObject) graphicsObject.Disposed -= RemoveDisposed;
+                return true;
+            }
+        }
+
+        internal void RemoveWhere(Func<TKey, bool> predicate)
+        {
+            lock (_gate)
+                foreach (TKey key in _entries.Keys.Where(predicate).ToArray()) Remove(key);
         }
 
         internal int Count(Func<TKey, bool> predicate)
         {
-            lock (_gate)
-            {
-                int count = 0;
-                foreach (TKey key in _entries.Keys)
-                    if (predicate(key))
-                        count++;
-                return count;
-            }
+            lock (_gate) return _entries.Keys.Count(predicate);
         }
 
-        private void PruneDisposed()
-        {
-            while (true)
-            {
-                TKey? disposed = null;
-                foreach (TKey key in _entries.Keys)
-                {
-                    if (key is GraphicsObject graphicsObject && graphicsObject.IsDisposed)
-                    {
-                        disposed = key;
-                        break;
-                    }
-                }
-                if (disposed is null)
-                    return;
-                _entries.Remove(disposed);
-            }
-        }
-    }
-
-    private sealed class NativeQueueLockValidationState
-    {
-        internal int OwnerThreadId;
-        internal ValidationQueueLockLease? Lease;
+        private void RemoveDisposed(GraphicsObject value) => Remove((TKey)(object)value);
     }
 
     private void Report(
@@ -531,8 +521,9 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         internal bool WorkGraphBound;
         internal int EventDepth;
         internal RecordingValidationPayload Payload = new();
-        internal readonly Stack<RecordingValidationPayload> AvailablePayloads = [];
-        internal readonly Stack<RecordedValidationState> AvailableRecordings = [];
+        private readonly object _recyclingGate = new();
+        private readonly Stack<RecordingValidationPayload> AvailablePayloads = [];
+        private readonly Stack<RecordedValidationState> AvailableRecordings = [];
         internal List<QueryValidationEvent> QueryEvents => Payload.QueryEvents;
         internal Dictionary<QuerySlot, QueryLocalPhase> QueryPhases => Payload.QueryPhases;
         internal List<ResourceValidationEvent> ResourceEvents => Payload.ResourceEvents;
@@ -541,42 +532,63 @@ public sealed partial class ValidationLayer : IGraphicsBackend
 
         internal RecordingValidationPayload TransferPayload()
         {
-            AvailablePayloads.EnsureCapacity(checked(AvailablePayloads.Count + 1));
-            RecordingValidationPayload transferred = Payload;
-            Payload = AvailablePayloads.Count == 0
-                ? new RecordingValidationPayload()
-                : AvailablePayloads.Pop();
-            return transferred;
+            lock (_recyclingGate)
+            {
+                AvailablePayloads.EnsureCapacity(checked(AvailablePayloads.Count + 1));
+                RecordingValidationPayload transferred = Payload;
+                Payload = AvailablePayloads.Count == 0
+                    ? new RecordingValidationPayload()
+                    : AvailablePayloads.Pop();
+                return transferred;
+            }
         }
 
         internal void RestorePayload(RecordingValidationPayload transferred)
         {
-            RecordingValidationPayload replacement = Payload;
-            Payload = transferred;
-            AvailablePayloads.Push(replacement);
+            lock (_recyclingGate)
+            {
+                RecordingValidationPayload replacement = Payload;
+                Payload = transferred;
+                AvailablePayloads.Push(replacement);
+            }
         }
 
         internal void RecyclePayload(RecordingValidationPayload payload)
         {
-            payload.Clear();
-            AvailablePayloads.Push(payload);
+            lock (_recyclingGate)
+            {
+                payload.Clear();
+                AvailablePayloads.Push(payload);
+            }
         }
 
         internal RecordedValidationState RentRecording(RecordingValidationPayload payload)
         {
-            AvailableRecordings.EnsureCapacity(checked(AvailableRecordings.Count + 1));
-            RecordedValidationState recording = AvailableRecordings.Count == 0
-                ? new RecordedValidationState()
-                : AvailableRecordings.Pop();
-            recording.Initialize(this, payload);
-            return recording;
+            lock (_recyclingGate)
+            {
+                AvailableRecordings.EnsureCapacity(checked(AvailableRecordings.Count + 1));
+                RecordedValidationState recording = AvailableRecordings.Count == 0
+                    ? new RecordedValidationState()
+                    : AvailableRecordings.Pop();
+                recording.Initialize(this, payload);
+                return recording;
+            }
+        }
+
+        internal void ReturnRecording(RecordedValidationState recording)
+        {
+            lock (_recyclingGate)
+                AvailableRecordings.Push(recording);
         }
 
         internal void RecycleRecording(RecordedValidationState recording)
         {
-            RecordingValidationPayload payload = recording.ReleasePayload();
-            RecyclePayload(payload);
-            AvailableRecordings.Push(recording);
+            lock (_recyclingGate)
+            {
+                RecordingValidationPayload payload = recording.ReleasePayload();
+                RecyclePayload(payload);
+                AvailableRecordings.Push(recording);
+            }
         }
     }
 
@@ -680,6 +692,12 @@ public sealed partial class ValidationLayer : IGraphicsBackend
             Sequence = commands.Sequence;
         }
 
+        internal RecordedCommandsKey(RecordedCommandsLease commands, ulong sequence)
+        {
+            Lease = commands;
+            Sequence = sequence;
+        }
+
         internal RecordedCommandsLease Lease { get; }
         internal ulong Sequence { get; }
 
@@ -715,6 +733,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
 
     private enum QueryValidationEventType : byte
     {
+        Reset,
         Begin,
         End,
         Write,
@@ -724,6 +743,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     private enum QueryValidationPhase : byte
     {
         Idle,
+        Reset,
         Active,
         Ready,
         Resolved,
@@ -732,6 +752,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     private enum QueryLocalPhase : byte
     {
         Unknown,
+        Reset,
         Active,
         Ready,
         Resolved,

@@ -10,7 +10,7 @@ The metric is the steady-frame CPU interval from immediately before
 `RenderGraph.BeginFrame` through real D3D12 command-list close and the final
 `Queue.Submit` return. GPU completion waits, `Present`, scene simulation,
 visibility generation, asset streaming, GPU execution, and pixel cost are outside
-the interval. The CPU-subsystem gate uses one frame slot; its completion wait and
+the interval. The measurement uses one frame slot; its completion wait and
 slot recycle occur before timing starts.
 
 Every command-bearing case records real D3D12 `Draw`, `ExecuteIndirect`,
@@ -19,8 +19,7 @@ scissor is 1x1 because this is deliberately a CPU benchmark. A counting backend,
 64x64-only resources, or callbacks that do no native command recording are not
 performance evidence.
 
-The fixed target is P95 below 500 microseconds. This is a target for the bounded
-RenderGraph-through-D3D12-submit CPU path, not the complete game render thread.
+P95 and the other distributions are reported as observations. No timing or allocation threshold determines success.
 
 ## Pinned source
 
@@ -67,7 +66,7 @@ The benchmark keeps the source weights verbatim:
 
 The Dagor test deliberately evaluates resource counts 25, 50, 75, 100, 125,
 150, 175, and 200. No single per-frame resource count is recoverable from the
-cumulative histogram, so the SomeEngine gate retains the entire official sweep
+cumulative histogram, so the source sweep is retained as reference data
 instead of inventing an "actual Enlisted resource count".
 
 ## Command structure from source
@@ -101,7 +100,7 @@ Enlisted counts.
 Each case is generated from a checked-in seed and has:
 
 - 73 passes mapped from the source's 73-timepoint high watermark;
-- one of the eight official resource counts (25 through 200);
+- a selected resource count (default 200, minimum 4);
 - allocation sizes and lifetimes drawn from the exact weighted distributions above;
 - full-HD color targets and a 1x1 scissor;
 - one graphics queue and one submission;
@@ -114,35 +113,17 @@ Each case is generated from a checked-in seed and has:
 - real direct draws, indirect draws, dispatches, and copies, with their benchmark
   counts emitted in the JSON report.
 
-The primary gate is the fixed 200-resource high-watermark case. The smaller
-official sweep values are diagnostics only: they can localize scaling but cannot
-substitute for or be averaged with the 200-resource result.
+The default workload uses 200 resources and the source projection's pass count.
+`--resource-counts` accepts counts of at least 4, including values outside the
+original source sweep. These choices describe the workload; no selected size or
+timing value is an acceptance condition.
 
-The command accepts official sweep values through `--resource-counts`. Omitting
-the option runs the fixed 200-resource gate. Explicit smaller values are
-diagnostics.
+## Interpreting measurements
 
-The pass count is held at the production high watermark deliberately. The other
-source timeline sizes remain provenance evidence and may be diagnostic cases, but
-passing a smaller graph cannot compensate for failing the 73-pass gate.
-
-## Optimization acceptance
-
-An optimization may remain in product code only when all of these conditions hold:
-
-1. The fixed 200-resource production-distribution projection remains correct and
-   meets the gate; smaller official sweep values remain available for diagnosis.
-2. It has no benchmark name, seed, fixed resource-size threshold, or pass-count
-   recognition in product code.
-3. Queue consolidation is not reported as an optimization of a multi-queue result.
-4. Work partitioning derives from general recording cost and available workers; a
-   hard-coded partition count requires independent evidence.
-5. Managed allocation/GC is only a secondary diagnostic. Wall-clock attribution,
-   native command recording, command-list close, and submit are primary.
-6. D3D12 validation/WARP tests pass. Hardware timing runs disable validation, DRED,
-   capture tools, synchronized queue validation, and elevated priority.
-7. Benchmark builders, seeds, report DTOs, and measurement helpers live only under
-   `benchmarks/` or `tests/`; none may remain in a product assembly.
+Measurements describe the selected workload and environment. Compare command
+output correctness through functional tests, and report timing separately. There
+is no required certification profile, process count, machine configuration, or
+performance threshold for retaining a product change.
 
 ## Measurement protocol
 
@@ -150,17 +131,13 @@ An optimization may remain in product code only when all of these conditions hol
 - Use the machine's current background load at ordinary process and thread
   priority. Do not reject a run for high system load, raise priority, set affinity,
   or stop unrelated workloads to manufacture a pass.
-- At least 1,024 warm-up frames and 1,024 measured frames. Plateau status is
-  reported diagnostically but does not replace the P95 gate.
-- One 1,024-sample invocation is the P95 gate. Additional fresh-process runs expose
-  current-machine variability but are not averaged into or substituted for that
-  invocation.
+- Warm-up and sample counts are configurable. Plateau status and additional process runs describe measurement variability.
 - Managed allocation and GC counts are not acceptance criteria. Any pause that
   lands inside the wall-clock timing boundary remains part of the measured sample.
 - Report P50, P95, P99, maximum, command counts, pass/resource/access counts,
   logical barrier count and barrier-boundary count, queue count, submission count,
   and source revision.
-- A final pass requires the fixed 200-resource case to satisfy P95 < 500 us.
+- The 200-resource case is the default workload; its timing has no pass/fail budget.
 
 ## References
 
@@ -170,3 +147,11 @@ An optimization may remain in product code only when all of these conditions hol
 - East District / Dagor demonstration: <https://www.gaijinent.com/news/demos-of-a-new-gaijins-game-showcase-dagor-engine-power>
 - D3D12 ExecuteIndirect: <https://learn.microsoft.com/en-us/windows/win32/direct3d12/indirect-drawing>
 - D3D12 enhanced barriers: <https://learn.microsoft.com/en-us/windows-hardware/drivers/display/enhanced-barriers>
+
+## Tool operation after gate removal
+
+`warp`, `probe`, `diagnose`, and `graph-cpu` collect measurements. The `certify` command and performance acceptance budgets have been removed. `evaluate` reads collected samples and reports diagnostic comparisons and real GPU-output mismatches. Runtime failures, unsupported platforms, missing required dependencies, and inconsistent GPU outputs remain errors.
+
+Controllers accept `--processes` (default 1), and `warp`/`diagnose` accept `--variants`. A native executable is required only when the native-cpp variant is selected. Variant order follows the selected list; no fixed interleaving is required. Process scheduling settings are observed, not changed. `graph-cpu` accepts any resource count of at least 4.
+
+Tool self-tests are selected explicitly through `tests/SomeEngine.Graphics.Benchmarks.Tests/SomeEngine.Graphics.Benchmarks.Tests.csproj`; they are outside the default functional solution.

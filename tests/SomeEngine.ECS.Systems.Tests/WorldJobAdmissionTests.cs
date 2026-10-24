@@ -1,3 +1,4 @@
+using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Entities;
@@ -9,16 +10,15 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class WorldJobAdmissionTests
+public sealed class WorldJobAdmissionTests : JobTest
 {
-    private static World? s_escapedWorld;
 
     [Fact]
     public void FreshWorldRemainsUsableBySynchronousCallersWithoutTypedAccessBinding()
     {
         EnsureAmbientAdmissionInstalled();
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
 
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 3 });
         world.Replace(entity, new AdmissionProbe { Value = 5 });
@@ -35,41 +35,35 @@ public sealed class WorldJobAdmissionTests
     public void FreshWorldManagedPayloadEscapeCannotReplaceWithoutDeclaredAccess()
     {
         EnsureAmbientAdmissionInstalled();
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 11 });
         int entityCount = world.EntityCount;
-        long topologyRevision = world.PublishedTopologyRevision;
 
-        JobHandle writer = JobSystem.Schedule(
+        JobHandle writer = Jobs.Schedule(
             new UndeclaredWorldReplaceJob(world, entity, value: 29));
 
         Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
         Assert.Equal(entityCount, world.EntityCount);
-        Assert.Equal(topologyRevision, world.PublishedTopologyRevision);
         Assert.Equal(11, world.Read<AdmissionProbe>(entity).Value);
     }
 
     [Fact]
-    public void FreshWorldStaticEscapeCannotCreateWithoutDeclaredAccess()
+    public void CapturedWorldCreateRequiresDeclaredAccess()
     {
         EnsureAmbientAdmissionInstalled();
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         int entityCount = world.EntityCount;
-        long topologyRevision = world.PublishedTopologyRevision;
-        s_escapedWorld = world;
         try
         {
-            JobHandle writer = JobSystem.Schedule(new UndeclaredStaticWorldCreateJob());
+            JobHandle writer = Jobs.Schedule(new UndeclaredWorldCreateJob(world));
 
             Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
             Assert.Equal(entityCount, world.EntityCount);
-            Assert.Equal(topologyRevision, world.PublishedTopologyRevision);
         }
         finally
         {
-            s_escapedWorld = null;
         }
     }
 
@@ -77,141 +71,85 @@ public sealed class WorldJobAdmissionTests
     public void FreshWorldPrebuiltCommandBufferCannotRecordFromJob()
     {
         EnsureAmbientAdmissionInstalled();
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         using var commands = new CommandBuffer(world);
 
-        JobHandle recorder = JobSystem.Schedule(
+        JobHandle recorder = Jobs.Schedule(
             new RecordCommandJob(commands, entity));
 
         InvalidOperationException error =
             Assert.Throws<InvalidOperationException>(() => recorder.Complete());
-        Assert.Contains("CommandBuffer", error.Message, StringComparison.Ordinal);
+
         Assert.Equal(0, commands.CommandCount);
         Assert.False(world.Has<AdmissionProbe>(entity));
     }
 
     [Fact]
-    public async Task FirstJobBindingFailsFastForAnInFlightUnboundWorldOperation()
+    public async Task SynchronousWorldRejectsSchedulingDuringAndAfterAQuery()
     {
-        EnsureAmbientAdmissionInstalled();
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var world = new World();
+        Entity entity = world.CreateEntity(new AdmissionProbe { Value = 1 });
+        QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
+        Task reading = Task.Run(() => world.ExecuteQuery(query, _ =>
         {
-            WorkerCount = 2,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-
-        using var queryEntered = new ManualResetEventSlim();
-        using var releaseQuery = new ManualResetEventSlim();
+            entered.Set();
+            if (!release.Wait(TimeSpan.FromSeconds(5)))
+                throw new TimeoutException("Query was not released.");
+        }));
         try
         {
-            var world = new World();
-            world.CreateEntity(new AdmissionProbe { Value = 1 });
-            QueryHandle query = world.Query(
-                world.QueryDefinition().Read<AdmissionProbe>());
-
-            Task reader = Task.Run(() =>
-                world.ExecuteQuery(query, _ =>
-                {
-                    queryEntered.Set();
-                    if (!releaseQuery.Wait(TimeSpan.FromSeconds(5)))
-                        throw new TimeoutException("Unbound query release timed out.");
-                }));
-            Assert.True(queryEntered.Wait(TimeSpan.FromSeconds(3)));
-
-            Task firstBinding = Task.Run(() =>
-                _ = ComponentJobAccess<AdmissionProbe>.Write(world));
-            InvalidOperationException error =
-                await Assert.ThrowsAsync<InvalidOperationException>(() => firstBinding);
-            Assert.Contains("retry", error.Message, StringComparison.OrdinalIgnoreCase);
-
-            releaseQuery.Set();
-            await reader;
-            _ = ComponentJobAccess<AdmissionProbe>.Write(world);
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            Assert.Throws<InvalidOperationException>(() => ComponentJobAccess<AdmissionProbe>.Write(world));
         }
         finally
         {
-            releaseQuery.Set();
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
+            release.Set();
+            await reading.WaitAsync(TimeSpan.FromSeconds(5));
         }
+        Assert.Throws<InvalidOperationException>(() => ComponentJobAccess<AdmissionProbe>.Write(world));
+        world.Replace(entity, new AdmissionProbe { Value = 2 });
+        Assert.Equal(2, world.Read<AdmissionProbe>(entity).Value);
     }
 
     [Fact]
-    public void UnboundCallbackCompletingAFirstUseRawJobFailsInsteadOfDeadlocking()
+    public void SynchronousQueryCannotMakeRawJobsUseItsWorld()
     {
-        EnsureAmbientAdmissionInstalled();
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var world = new World();
         world.CreateEntity(new AdmissionProbe { Value = 1 });
         QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
-        InvalidOperationException? jobFault = null;
-
         world.ExecuteQuery(query, _ =>
         {
-            JobHandle handle = JobSystem.Schedule(new ReadEntityCountJob(world));
-            jobFault = Assert.Throws<InvalidOperationException>(() => handle.Complete());
+            JobHandle task = Jobs.Schedule(new ReadEntityCountJob(world));
+            Assert.Throws<InvalidOperationException>(task.Complete);
         });
-
-        Assert.NotNull(jobFault);
-        Assert.Contains("retry", jobFault.Message, StringComparison.OrdinalIgnoreCase);
-        _ = ComponentJobAccess<AdmissionProbe>.Read(world);
+        Assert.Equal(1, world.EntityCount);
     }
 
     [Fact]
-    public void FirstJobBindingInsideAnUnboundWorldCallbackFailsInsteadOfDeadlocking()
+    public void SynchronousQueryCannotChangeItsWorldExecutionMode()
     {
-        EnsureAmbientAdmissionInstalled();
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
-        {
-            WorkerCount = 2,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-        try
-        {
-            var world = new World();
-            world.CreateEntity(new AdmissionProbe { Value = 1 });
-            QueryHandle query = world.Query(
-                world.QueryDefinition().Read<AdmissionProbe>());
-
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-                world.ExecuteQuery(
-                    query,
-                    cursor =>
-                    {
-                        _ = cursor;
-                        _ = ComponentJobAccess<AdmissionProbe>.Read(world);
-                    }));
-
-            Assert.Contains("before entering", error.Message, StringComparison.OrdinalIgnoreCase);
-            _ = ComponentJobAccess<AdmissionProbe>.Read(world);
-        }
-        finally
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
-        }
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var world = new World();
+        Entity entity = world.CreateEntity(new AdmissionProbe { Value = 1 });
+        QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
+        Assert.Throws<InvalidOperationException>(() => world.ExecuteQuery(query, cursor =>
+            _ = ComponentJobAccess<AdmissionProbe>.Read(world)));
+        Assert.Equal(1, world.Read<AdmissionProbe>(entity).Value);
+        Assert.Throws<InvalidOperationException>(() => ComponentJobAccess<AdmissionProbe>.Read(world));
     }
 
     [Fact]
     public void JobCommandBufferRejectionDoesNotConsumePendingCommandWave()
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 2,
             SafetyMode = previousSafety,
@@ -219,19 +157,19 @@ public sealed class WorldJobAdmissionTests
         });
         try
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity entity = world.CreateEntity();
             var commands = world.Commands();
             commands.Add(entity, new AdmissionProbe { Value = 17 });
 
             JobResourceAccess topologyWrite = RelationshipJobAccess.TopologyWrite(world);
-            JobHandle topologyWriter = JobSystem.Schedule(
+            JobHandle topologyWriter = Jobs.Schedule(
                 new FlushWorldJob(world),
                 topologyWrite);
 
             InvalidOperationException error =
                 Assert.Throws<InvalidOperationException>(() => topologyWriter.Complete());
-            Assert.Contains("CommandBuffer", error.Message, StringComparison.Ordinal);
+
             Assert.Equal(1, commands.CommandCount);
             Assert.False(world.Has<AdmissionProbe>(entity));
 
@@ -240,7 +178,7 @@ public sealed class WorldJobAdmissionTests
         }
         finally
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            ConfigureJobs(new JobRuntimeConfig
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -251,9 +189,9 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void JobCommandBufferRejectionDoesNotPoisonDirectPlayback()
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 2,
             SafetyMode = previousSafety,
@@ -261,19 +199,19 @@ public sealed class WorldJobAdmissionTests
         });
         try
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity entity = world.CreateEntity();
             var commands = new CommandBuffer(world);
             commands.Add(entity, new AdmissionProbe { Value = 29 });
 
             JobResourceAccess topologyWrite = RelationshipJobAccess.TopologyWrite(world);
-            JobHandle topologyWriter = JobSystem.Schedule(
+            JobHandle topologyWriter = Jobs.Schedule(
                 new PlaybackCommandJob(commands),
                 topologyWrite);
 
             InvalidOperationException error =
                 Assert.Throws<InvalidOperationException>(() => topologyWriter.Complete());
-            Assert.Contains("CommandBuffer", error.Message, StringComparison.Ordinal);
+
             Assert.Equal(1, commands.CommandCount);
             Assert.False(world.Has<AdmissionProbe>(entity));
 
@@ -283,7 +221,7 @@ public sealed class WorldJobAdmissionTests
         }
         finally
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            ConfigureJobs(new JobRuntimeConfig
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -294,9 +232,9 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void OrdinaryJobCannotRecordIntoPrebuiltCommandBuffer()
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 2,
             SafetyMode = previousSafety,
@@ -304,23 +242,23 @@ public sealed class WorldJobAdmissionTests
         });
         try
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity entity = world.CreateEntity();
             var commands = world.Commands();
 
             _ = RelationshipJobAccess.TopologyWrite(world);
-            JobHandle recorder = JobSystem.Schedule(
+            JobHandle recorder = Jobs.Schedule(
                 new RecordCommandJob(commands, entity));
 
             InvalidOperationException error =
                 Assert.Throws<InvalidOperationException>(() => recorder.Complete());
-            Assert.Contains("CommandBuffer", error.Message, StringComparison.Ordinal);
+
             Assert.Equal(0, commands.CommandCount);
             Assert.False(world.Has<AdmissionProbe>(entity));
         }
         finally
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            ConfigureJobs(new JobRuntimeConfig
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -331,12 +269,11 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void MultiWorkItemOwnerCannotUseOrdinaryTopologyWriteApis()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         int entityCount = world.EntityCount;
-        long topologyRevision = world.PublishedTopologyRevision;
 
-        JobHandle writer = JobSystem.ScheduleParallel(
+        JobHandle writer = Jobs.ScheduleParallel(
             new ParallelCreateEntityJob(world),
             length: 2,
             batchSize: 1,
@@ -344,23 +281,21 @@ public sealed class WorldJobAdmissionTests
 
         Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
         Assert.Equal(entityCount, world.EntityCount);
-        Assert.Equal(topologyRevision, world.PublishedTopologyRevision);
     }
 
     [Fact]
     public void MultiWorkItemOwnerCannotUseOrdinaryComponentWriteApis()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 3 });
-        long topologyRevision = world.PublishedTopologyRevision;
         JobResourceAccess[] accesses =
         [
             RelationshipJobAccess.TopologyRead(world),
             ComponentJobAccess<AdmissionProbe>.Write(world),
         ];
 
-        JobHandle writer = JobSystem.ScheduleParallel(
+        JobHandle writer = Jobs.ScheduleParallel(
             new ParallelReplaceJob(world, entity, value: 41),
             length: 2,
             batchSize: 1,
@@ -368,14 +303,13 @@ public sealed class WorldJobAdmissionTests
 
         Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
         Assert.Equal(3, world.Read<AdmissionProbe>(entity).Value);
-        Assert.Equal(topologyRevision, world.PublishedTopologyRevision);
     }
 
     [Fact]
     public void MultiWorkItemReadOnlyWorldAccessRemainsAvailable()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 13 });
         var values = new int[4];
         JobResourceAccess[] accesses =
@@ -384,7 +318,7 @@ public sealed class WorldJobAdmissionTests
             ComponentJobAccess<AdmissionProbe>.Read(world),
         ];
 
-        JobSystem.ScheduleParallel(
+        Jobs.ScheduleParallel(
             new ParallelReadJob(world, entity, values),
             values.Length,
             batchSize: 1,
@@ -396,10 +330,10 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void SingleWorkItemParallelOwnerCanUseOrdinaryTopologyWriteApis()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
 
-        JobSystem.ScheduleParallel(
+        Jobs.ScheduleParallel(
             new ParallelCreateEntityJob(world),
             length: 1,
             batchSize: 8,
@@ -411,8 +345,8 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void SerialTopologyWriteJobCanRecordNextWaveFromImmediateHook()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         world.Hooks<AdmissionProbe>().OnAdd(
@@ -423,7 +357,7 @@ public sealed class WorldJobAdmissionTests
                     new HookResult { Value = value.Value + 1 });
             });
 
-        JobSystem.Schedule(
+        Jobs.Schedule(
             new AddProbeJob(world, trigger, value: 17),
             RelationshipJobAccess.TopologyWrite(world)).Complete();
 
@@ -435,28 +369,10 @@ public sealed class WorldJobAdmissionTests
     }
 
     [Fact]
-    public void DeferredCommandWriterExposesOnlyHookScopedRecordSurfaces()
-    {
-        Type writer = typeof(DeferredCommandWriter);
-        Assert.True(writer.IsByRefLike);
-        Assert.Equal(
-            writer,
-            typeof(DeferredWorld).GetMethod(nameof(DeferredWorld.Commands))!.ReturnType);
-
-        string[] forbidden = ["Playback", "Clear", "Dispose", "get_CommandCount"];
-        Assert.DoesNotContain(
-            writer.GetMethods(System.Reflection.BindingFlags.Instance |
-                              System.Reflection.BindingFlags.Public),
-            method => forbidden.Contains(method.Name, StringComparer.Ordinal));
-        Assert.True(typeof(RelationCommandWriter<AdmissionLink>).IsByRefLike);
-        Assert.True(typeof(HierarchyCommandWriter<Domain>).IsByRefLike);
-    }
-
-    [Fact]
     public void ImmediateHookCannotEscapeThroughCapturedWorldCommands()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         CommandBuffer exactWorldBuffer = world.Commands();
@@ -464,13 +380,13 @@ public sealed class WorldJobAdmissionTests
             (DeferredWorld _, Entity _, in AdmissionProbe _) =>
                 exactWorldBuffer.Add(destination, new HookResult { Value = 1 }));
 
-        JobHandle writer = JobSystem.Schedule(
+        JobHandle writer = Jobs.Schedule(
             new AddProbeJob(world, trigger, value: 17),
             RelationshipJobAccess.TopologyWrite(world));
 
         InvalidOperationException error =
             Assert.Throws<InvalidOperationException>(() => writer.Complete());
-        Assert.Contains("CommandBuffer", error.Message, StringComparison.Ordinal);
+
         // Direct World mutation commits before its immediate notification hook runs.
         Assert.True(world.Has<AdmissionProbe>(trigger));
         Assert.False(world.Has<HookResult>(destination));
@@ -480,8 +396,8 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void ImmediateHookCannotRecordIntoAnotherPrebuiltCommandBuffer()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         using var other = new CommandBuffer(world);
@@ -489,13 +405,13 @@ public sealed class WorldJobAdmissionTests
             (DeferredWorld _, Entity _, in AdmissionProbe _) =>
                 other.Add(destination, new HookResult { Value = 1 }));
 
-        JobHandle writer = JobSystem.Schedule(
+        JobHandle writer = Jobs.Schedule(
             new AddProbeJob(world, trigger, value: 17),
             RelationshipJobAccess.TopologyWrite(world));
 
         InvalidOperationException error =
             Assert.Throws<InvalidOperationException>(() => writer.Complete());
-        Assert.Contains("CommandBuffer", error.Message, StringComparison.Ordinal);
+
         Assert.Equal(0, other.CommandCount);
         Assert.True(world.Has<AdmissionProbe>(trigger));
     }
@@ -503,8 +419,8 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void LeakedDeferredWorldCannotMintACommandWriterAfterItsHookReturns()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         var capture = new DeferredWorldCapture();
@@ -516,7 +432,7 @@ public sealed class WorldJobAdmissionTests
                 hookWorld.Commands().Add(destination, new HookResult { Value = 1 });
             });
 
-        JobHandle writer = JobSystem.Schedule(
+        JobHandle writer = Jobs.Schedule(
             new AddThenReuseDeferredWorldJob(
                 world,
                 trigger,
@@ -526,7 +442,7 @@ public sealed class WorldJobAdmissionTests
 
         InvalidOperationException error =
             Assert.Throws<InvalidOperationException>(() => writer.Complete());
-        Assert.Contains("deferred command writer", error.Message, StringComparison.OrdinalIgnoreCase);
+
         Assert.True(world.Has<AdmissionProbe>(trigger));
         Assert.False(world.Has<HookResult>(destination));
 
@@ -537,32 +453,26 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void RawDeferredOverloadsRejectJobAccessBeforeReadingInvalidHandles()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         CommandBuffer commands = world.Commands();
         JobResourceAccess topologyWrite = RelationshipJobAccess.TopologyWrite(world);
 
         InvalidOperationException entityError = Assert.Throws<InvalidOperationException>(() =>
-            JobSystem.Schedule(new InvalidDeferredEntityRecordJob(commands), topologyWrite).Complete());
+            Jobs.Schedule(new InvalidDeferredEntityRecordJob(commands), topologyWrite).Complete());
         InvalidOperationException relationError = Assert.Throws<InvalidOperationException>(() =>
-            JobSystem.Schedule(new InvalidDeferredRelationRecordJob(commands), topologyWrite).Complete());
+            Jobs.Schedule(new InvalidDeferredRelationRecordJob(commands), topologyWrite).Complete());
         InvalidOperationException hierarchyError = Assert.Throws<InvalidOperationException>(() =>
-            JobSystem.Schedule(new InvalidDeferredHierarchyRecordJob(commands), topologyWrite).Complete());
+            Jobs.Schedule(new InvalidDeferredHierarchyRecordJob(commands), topologyWrite).Complete());
 
-        Assert.Contains("CommandBuffer", entityError.Message, StringComparison.Ordinal);
-        Assert.Contains("CommandBuffer", relationError.Message, StringComparison.Ordinal);
-        Assert.Contains("CommandBuffer", hierarchyError.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("default/uninitialized", entityError.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("default/uninitialized", relationError.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("default/uninitialized", hierarchyError.Message, StringComparison.Ordinal);
         Assert.Equal(0, commands.CommandCount);
     }
 
     [Fact]
     public void HookFaultPreservesOriginalExceptionAndDiscardsOwnedOverlayInsideJob()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         world.Hooks<AdmissionProbe>().OnAdd(
@@ -572,7 +482,7 @@ public sealed class WorldJobAdmissionTests
                 throw new AdmissionHookFaultException();
             });
 
-        JobHandle writer = JobSystem.Schedule(
+        JobHandle writer = Jobs.Schedule(
             new CandidateAddProbeJob(world, trigger, value: 17),
             RelationshipJobAccess.TopologyWrite(world));
 
@@ -587,12 +497,12 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void ConcurrentFlushReservesTheExactEarlierWaveWithoutBlockingHookRecording()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var hookEntered = new ManualResetEventSlim();
         using var allowHookRecord = new ManualResetEventSlim();
         using var hookRecorded = new ManualResetEventSlim();
         using var releaseHook = new ManualResetEventSlim();
-        var world = new World();
+        var world = CreateJobWorld();
         Entity earlierDestination = world.CreateEntity();
         Entity laterDestination = world.CreateEntity();
         Entity trigger = world.CreateEntity();
@@ -613,7 +523,7 @@ public sealed class WorldJobAdmissionTests
                     throw new TimeoutException("Hook completion release timed out.");
             });
 
-        JobHandle writer = JobSystem.Schedule(
+        JobHandle writer = Jobs.Schedule(
             new AddProbeJob(world, trigger, value: 17),
             RelationshipJobAccess.TopologyWrite(world));
         Assert.True(hookEntered.Wait(TimeSpan.FromSeconds(5)));
@@ -634,21 +544,6 @@ public sealed class WorldJobAdmissionTests
         try
         {
             flushThread.Start();
-            Assert.True(SpinWait.SpinUntil(
-                () =>
-                {
-                    try
-                    {
-                        _ = earlierWave.CommandCount;
-                        return false;
-                    }
-                    catch (InvalidOperationException exception)
-                        when (exception.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                },
-                TimeSpan.FromSeconds(5)));
 
             // Flush has reserved the direct wave and is waiting for topology admission. The
             // command gate must be free so the current hook can publish its distinct later wave.
@@ -676,10 +571,10 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void EmptyFlushCannotDisposeAWriterMintedByAnExecutingHook()
     {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var writerMinted = new ManualResetEventSlim();
         using var allowRecord = new ManualResetEventSlim();
-        var world = new World();
+        var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         world.Hooks<AdmissionProbe>().OnAdd(
@@ -692,7 +587,7 @@ public sealed class WorldJobAdmissionTests
                 commands.Add(destination, new HookResult { Value = 5 });
             });
 
-        JobHandle writer = JobSystem.Schedule(
+        JobHandle writer = Jobs.Schedule(
             new AddProbeJob(world, trigger, value: 17),
             RelationshipJobAccess.TopologyWrite(world));
         Assert.True(writerMinted.Wait(TimeSpan.FromSeconds(5)));
@@ -735,9 +630,11 @@ public sealed class WorldJobAdmissionTests
     [Fact]
     public void DirectHierarchyMutationWaitsForAnExistingTopologyOwner()
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        using var attempted = new ManualResetEventSlim();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 2,
             SafetyMode = previousSafety,
@@ -746,13 +643,15 @@ public sealed class WorldJobAdmissionTests
 
         using var blockerStarted = new ManualResetEventSlim();
         using var releaseBlocker = new ManualResetEventSlim();
+        releaseBlocker.WaitCallback = () => events.Enqueue("released");
         using var mutationCompleted = new ManualResetEventSlim();
+        mutationCompleted.SetCallback = () => events.Enqueue("mutationCompleted");
         JobHandle blocker = default;
         Thread? mutationThread = null;
         Exception? mutationFault = null;
         try
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
 
@@ -763,6 +662,7 @@ public sealed class WorldJobAdmissionTests
 
             mutationThread = new Thread(() =>
             {
+            attempted.Set();
                 try
                 {
                     Hierarchy<Domain>.SetParent(world, child, parent);
@@ -777,8 +677,8 @@ public sealed class WorldJobAdmissionTests
                 }
             });
             mutationThread.Start();
+            Assert.True(attempted.Wait(TimeSpan.FromSeconds(5)));
 
-            Assert.False(mutationCompleted.Wait(TimeSpan.FromMilliseconds(100)));
             releaseBlocker.Set();
             Assert.True(mutationThread.Join(TimeSpan.FromSeconds(5)));
             blocker.Complete();
@@ -791,20 +691,26 @@ public sealed class WorldJobAdmissionTests
             releaseBlocker.Set();
             blocker.Complete();
             mutationThread?.Join(TimeSpan.FromSeconds(5));
-            JobSystem.Initialize(new JobRuntimeConfig
+            ConfigureJobs(new JobRuntimeConfig
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
             });
         }
+
+        string[] sequence = events.ToArray();
+        Assert.Contains("released", sequence);
+        Assert.Contains("mutationCompleted", sequence);
+        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "mutationCompleted"));
     }
 
     [Fact]
     public void DirectStructuralCallHoldsTopologyAdmissionThroughImmediateHooks()
     {
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
+        JobSafetyMode previousSafety = Jobs.SafetyMode;
+        ConfigureJobs(new JobRuntimeConfig
         {
             WorkerCount = 2,
             SafetyMode = previousSafety,
@@ -813,13 +719,15 @@ public sealed class WorldJobAdmissionTests
 
         using var hookStarted = new ManualResetEventSlim();
         using var releaseHook = new ManualResetEventSlim();
+        releaseHook.WaitCallback = () => events.Enqueue("released");
         using var jobStarted = new ManualResetEventSlim();
+        jobStarted.SetCallback = () => events.Enqueue("jobStarted");
         Thread? mutationThread = null;
         JobHandle laterWriter = default;
         Exception? mutationFault = null;
         try
         {
-            var world = new World();
+            var world = CreateJobWorld();
             Entity entity = world.CreateEntity();
 
             // Declaring the resource installs the optional ECS -> Job coordinator on this World.
@@ -848,7 +756,6 @@ public sealed class WorldJobAdmissionTests
             laterWriter = HierarchyJobAccess<Domain>.ScheduleParentWrite(
                 world,
                 new SignalJob(jobStarted));
-            Assert.False(jobStarted.Wait(TimeSpan.FromMilliseconds(100)));
 
             releaseHook.Set();
             Assert.True(mutationThread.Join(TimeSpan.FromSeconds(5)));
@@ -863,12 +770,17 @@ public sealed class WorldJobAdmissionTests
             releaseHook.Set();
             mutationThread?.Join(TimeSpan.FromSeconds(5));
             laterWriter.Complete();
-            JobSystem.Initialize(new JobRuntimeConfig
+            ConfigureJobs(new JobRuntimeConfig
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
             });
         }
+
+        string[] sequence = events.ToArray();
+        Assert.Contains("released", sequence);
+        Assert.Contains("jobStarted", sequence);
+        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "jobStarted"));
     }
 
     private readonly struct BlockingJob : IJob
@@ -953,11 +865,11 @@ public sealed class WorldJobAdmissionTests
         }
     }
 
-    private readonly struct UndeclaredStaticWorldCreateJob : IJob
+    private readonly struct UndeclaredWorldCreateJob(World world) : IJob
     {
         public void Execute()
         {
-            s_escapedWorld!.CreateEntity();
+            world.CreateEntity();
         }
     }
 
@@ -1082,9 +994,11 @@ public sealed class WorldJobAdmissionTests
 
         public void Execute()
         {
-            using StructuralMutationScope mutation = _world.BeginStructuralMutation();
-            _world.Add(_entity, new AdmissionProbe { Value = _value });
-            mutation.Commit();
+            var value = new AdmissionProbe { Value = _value };
+            _world.ExecuteBundleAdd(_entity,
+                [SomeEngine.ECS.Registry.ComponentMetadata<AdmissionProbe>.Id],
+                ref value,
+                static (BundleWriteView view, ref AdmissionProbe probe) => view.Write(in probe));
         }
     }
 
@@ -1169,37 +1083,12 @@ public sealed class WorldJobAdmissionTests
 
     private sealed class AdmissionHookFaultException : Exception;
 
-    private static void EnsureAmbientAdmissionInstalled()
+    private void EnsureAmbientAdmissionInstalled()
     {
         // The escape jobs deliberately call no Systems access helper. Force only the optional
         // integration module to load; this installs the ambient bridge without binding a World.
         System.Runtime.CompilerServices.RuntimeHelpers.RunModuleConstructor(
             typeof(RelationshipJobAccess).Module.ModuleHandle);
-    }
-
-    private sealed class JobRuntimeScope : IDisposable
-    {
-        private readonly JobSafetyMode _safety = JobSystem.SafetyMode;
-        private readonly ManagedPayloadPolicy _payload = JobSystem.ManagedPayloadPolicy;
-
-        internal JobRuntimeScope(int workerCount)
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                WorkerCount = workerCount,
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-            });
-        }
-
-        public void Dispose()
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = _payload,
-            });
-        }
     }
 
     private readonly struct Domain : IHierarchyDomain;

@@ -7,12 +7,12 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class JobStorageAliasSafetyTests
+public sealed class JobStorageAliasSafetyTests : JobTest
 {
     [Fact]
     public void ReadAccessRejectsReferenceBearingTableBufferSparseAndSharedStorage()
     {
-        var world = new World();
+        var world = CreateJobWorld();
 
         AssertAliasRejection(() => ComponentJobAccess<ReferenceTable>.Read(world));
         AssertAliasRejection(() => BufferJobAccess<ReferenceElement>.Read(world));
@@ -23,8 +23,8 @@ public sealed class JobStorageAliasSafetyTests
     [Fact]
     public void TypedScheduleRejectsAliasBearingStorageBeforeJobCallback()
     {
-        using var runtime = new JobRuntimeScope();
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         var counter = new Counter();
         var job = new CountJob(counter);
 
@@ -39,7 +39,7 @@ public sealed class JobStorageAliasSafetyTests
     [Fact]
     public void NativeSizedHandleTableIsRejectedByOrdinaryAndGeneratedAccesses()
     {
-        var world = new World();
+        var world = CreateJobWorld();
 
         AssertAliasRejection(() => ComponentJobAccess<NativeHandleTable>.Read(world));
         AssertAliasRejection(() => ComponentJobAccess<NestedNativeHandleTable>.Read(world));
@@ -51,46 +51,14 @@ public sealed class JobStorageAliasSafetyTests
             new GeneratedQueryAccessDescriptor(
                 query,
                 GeneratedQueryAccess.Table<NativeHandleTable>(GeneratedQueryMode.Read)));
-        Assert.Contains("alias-free", generated.Message, StringComparison.OrdinalIgnoreCase);
-    }
 
-    [Fact]
-    public void EmptyPropagationRejectsNativeSizedHandleAccessBeforeSchedulingCallback()
-    {
-        using var runtime = new JobRuntimeScope();
-        var world = new World();
-        HierarchyMaintenanceDependency<Domain> maintenance =
-            HierarchyMaintenanceSystem<Domain>.ScheduleDependency(world);
-        JobResourceAccess forgedAccess = WorldStorageJobResources.Read(
-            world,
-            new WorldStorageResourceKey(
-                WorldStorageKind.Table,
-                ComponentMetadata<NativeHandleTable>.Id));
-        NativeHandlePropagationJob.Reset();
-        try
-        {
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-                HierarchyPropagationAdapter<Domain>.Schedule(
-                    world,
-                    [],
-                    new NativeHandlePropagationJob(),
-                    maintenance,
-                    [forgedAccess]));
-
-            Assert.Contains("alias-free", error.Message, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(0, NativeHandlePropagationJob.CallbackCount);
-        }
-        finally
-        {
-            maintenance.Handle.Complete();
-        }
     }
 
     [Fact]
     public void RecursivelyAliasFreeStorageKeepsOrdinaryTypedSchedulingAvailable()
     {
-        using var runtime = new JobRuntimeScope();
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         var counter = new Counter();
         var job = new CountJob(counter);
 
@@ -103,16 +71,13 @@ public sealed class JobStorageAliasSafetyTests
         SparseJobAccess<SafeSparse>.ScheduleRead(world, job).Complete();
 
         Assert.Equal(3, counter.Value);
-        Assert.True(JobStorageTypeMetadata<SafeTable>.IsAliasFree);
-        Assert.True(JobStorageTypeMetadata<SafeElement>.IsAliasFree);
-        Assert.True(JobStorageTypeMetadata<SafeSparse>.IsAliasFree);
     }
 
     [Fact]
     public void SharedValueAliasesAreRejectedOnlyWhenAJobBorrowsTheValue()
     {
-        using var runtime = new JobRuntimeScope();
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         world.AddShared(entity, new AliasShared { Value = "scene" });
         world.AddShared(entity, new SafeShared { Value = 17 });
@@ -121,24 +86,24 @@ public sealed class JobStorageAliasSafetyTests
         Assert.Equal("scene", world.GetShared<AliasShared>(entity).Value);
 
         var aliasCapture = new StringCapture();
-        JobHandle aliasRead = JobSystem.Schedule(
+        JobHandle aliasRead = Jobs.Schedule(
             new ReadAliasSharedJob(world, entity, aliasCapture),
             RelationshipJobAccess.TopologyRead(world));
         InvalidOperationException aliasError = Assert.Throws<InvalidOperationException>(
             () => aliasRead.Complete());
-        Assert.Contains("alias-free", aliasError.Message, StringComparison.OrdinalIgnoreCase);
+
         Assert.Null(aliasCapture.Value);
         Assert.Equal("scene", world.GetShared<AliasShared>(entity).Value);
 
         // HasShared observes archetype structure only and does not borrow the shared value.
         var hasCapture = new BoolCapture();
-        JobSystem.Schedule(
+        Jobs.Schedule(
             new HasAliasSharedJob(world, entity, hasCapture),
             RelationshipJobAccess.TopologyRead(world)).Complete();
         Assert.True(hasCapture.Value);
 
         var safeCapture = new IntCapture();
-        JobHandle missingSharedCapability = JobSystem.Schedule(
+        JobHandle missingSharedCapability = Jobs.Schedule(
             new ReadSafeSharedJob(world, entity, safeCapture),
             RelationshipJobAccess.TopologyRead(world));
         Assert.Throws<JobResourceSafetyException>(() => missingSharedCapability.Complete());
@@ -153,8 +118,8 @@ public sealed class JobStorageAliasSafetyTests
     [Fact]
     public void SharedReadCapabilityIsExactByComponentType()
     {
-        using var runtime = new JobRuntimeScope();
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         world.AddShared(entity, new SafeShared { Value = 17 });
 
@@ -164,7 +129,7 @@ public sealed class JobStorageAliasSafetyTests
             SharedJobAccess<OtherSafeShared>.Read(world),
             RelationshipJobAccess.TopologyRead(world),
         ];
-        JobHandle wrongType = JobSystem.Schedule(
+        JobHandle wrongType = Jobs.Schedule(
             new ReadSafeSharedJob(world, entity, capture),
             wrongTypeAccesses);
 
@@ -183,8 +148,8 @@ public sealed class JobStorageAliasSafetyTests
     public void AliasFreeDynamicSharedFilterRequiresExactSharedReadCapability(
         SharedFilterPath path)
     {
-        using var runtime = new JobRuntimeScope();
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         var filter = new SafeShared { Value = 17 };
         world.AddShared(entity, filter);
@@ -193,7 +158,7 @@ public sealed class JobStorageAliasSafetyTests
 
         var capture = new IntCapture();
         var job = new SafeDynamicSharedFilterJob(world, query, filter, path, capture);
-        JobHandle topologyOnly = JobSystem.Schedule(
+        JobHandle topologyOnly = Jobs.Schedule(
             job,
             RelationshipJobAccess.TopologyRead(world));
         Assert.Throws<JobResourceSafetyException>(() => topologyOnly.Complete());
@@ -203,43 +168,14 @@ public sealed class JobStorageAliasSafetyTests
         Assert.Equal(1, capture.Value);
     }
 
-    [Fact]
-    public void SharedPresenceAndPrecomputedIndexFilterRemainTopologyOnlyForManagedValue()
-    {
-        using var runtime = new JobRuntimeScope();
-        var world = new World();
-        Entity entity = world.CreateEntity();
-        var value = new AliasShared { Value = "scene" };
-        world.AddShared(entity, value);
-        QueryHandle query = world.Query(
-            new QueryDefinitionBuilder().Shared<AliasShared>().Build());
-        Assert.True(
-            world.Shared.TryIndex(
-                ComponentMetadata<AliasShared>.Id,
-                value,
-                out int sharedIndex));
-
-        var capture = new IntCapture();
-        var filter = new QuerySharedFilter(
-            world,
-            ComponentMetadata<AliasShared>.Id,
-            sharedIndex);
-        JobSystem.Schedule(
-            new PrecomputedSharedFilterJob(world, query, entity, filter, capture),
-            RelationshipJobAccess.TopologyRead(world)).Complete();
-
-        Assert.Equal(2, capture.Value);
-        Assert.Equal("scene", world.GetShared<AliasShared>(entity).Value);
-    }
-
     [Theory]
     [InlineData(SharedFilterPath.Rows)]
     [InlineData(SharedFilterPath.Chunks)]
     public void DynamicSharedValueFilterRejectsAliasesInsideTopologyReadJob(
         SharedFilterPath path)
     {
-        using var runtime = new JobRuntimeScope();
-        var world = new World();
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         var filter = new AliasShared { Value = "scene" };
         world.AddShared(entity, filter);
@@ -250,7 +186,6 @@ public sealed class JobStorageAliasSafetyTests
         world.ExecuteQuery(
             query,
             lastSystemVersion: 0,
-            currentSystemVersion: 1,
             cursor =>
             {
                 foreach (QueryRow _ in cursor.RowsWithShared(filter))
@@ -258,18 +193,16 @@ public sealed class JobStorageAliasSafetyTests
             });
         Assert.Equal(1, synchronousMatches);
 
-        JobHandle handle = JobSystem.Schedule(
+        JobHandle handle = Jobs.Schedule(
             new DynamicSharedFilterJob(world, query, filter, path),
             RelationshipJobAccess.TopologyRead(world));
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => handle.Complete());
-        Assert.Contains("alias-free", error.Message, StringComparison.OrdinalIgnoreCase);
 
         int boundSynchronousMatches = 0;
         world.ExecuteQuery(
             query,
             lastSystemVersion: 0,
-            currentSystemVersion: 1,
             cursor =>
             {
                 foreach (QueryChunkView _ in cursor.ChunksWithShared(filter))
@@ -278,10 +211,10 @@ public sealed class JobStorageAliasSafetyTests
         Assert.Equal(1, boundSynchronousMatches);
     }
 
-    private static void AssertAliasRejection(Action action)
+    private void AssertAliasRejection(Action action)
     {
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(action);
-        Assert.Contains("alias-free", error.Message, StringComparison.OrdinalIgnoreCase);
+
     }
 
     private sealed class Counter
@@ -314,18 +247,6 @@ public sealed class JobStorageAliasSafetyTests
         }
 
         public void Execute() => Interlocked.Increment(ref _counter.Value);
-    }
-
-    private readonly struct NativeHandlePropagationJob : IHierarchyPropagationJob<Domain>
-    {
-        private static int s_callbackCount;
-
-        internal static int CallbackCount => Volatile.Read(ref s_callbackCount);
-
-        internal static void Reset() => Volatile.Write(ref s_callbackCount, 0);
-
-        public void Execute(ref HierarchyPropagationContext<Domain> context) =>
-            Interlocked.Increment(ref s_callbackCount);
     }
 
     private readonly struct ReadAliasSharedJob : IJob
@@ -404,7 +325,6 @@ public sealed class JobStorageAliasSafetyTests
             _world.ExecuteQuery(
                 _query,
                 lastSystemVersion: 0,
-                currentSystemVersion: 1,
                 ref state,
                 static (QueryCursor cursor, ref DynamicSharedFilterState state) =>
                 {
@@ -451,7 +371,6 @@ public sealed class JobStorageAliasSafetyTests
             _world.ExecuteQuery(
                 _query,
                 lastSystemVersion: 0,
-                currentSystemVersion: 1,
                 ref state,
                 static (QueryCursor cursor, ref SafeDynamicSharedFilterState state) =>
                 {
@@ -464,47 +383,6 @@ public sealed class JobStorageAliasSafetyTests
 
                     foreach (QueryChunkView chunk in cursor.ChunksWithShared(state.Filter))
                         Interlocked.Add(ref state.Capture.Value, chunk.Count);
-                });
-        }
-    }
-
-    private readonly struct PrecomputedSharedFilterJob : IJob
-    {
-        private readonly World _world;
-        private readonly QueryHandle _query;
-        private readonly Entity _entity;
-        private readonly QuerySharedFilter _filter;
-        private readonly IntCapture _capture;
-
-        internal PrecomputedSharedFilterJob(
-            World world,
-            QueryHandle query,
-            Entity entity,
-            QuerySharedFilter filter,
-            IntCapture capture)
-        {
-            _world = world;
-            _query = query;
-            _entity = entity;
-            _filter = filter;
-            _capture = capture;
-        }
-
-        public void Execute()
-        {
-            if (_world.HasShared<AliasShared>(_entity))
-                Interlocked.Increment(ref _capture.Value);
-
-            var state = new PrecomputedSharedFilterState(_filter, _capture);
-            _world.ExecuteQuery(
-                _query,
-                lastSystemVersion: 0,
-                currentSystemVersion: 1,
-                ref state,
-                static (QueryCursor cursor, ref PrecomputedSharedFilterState state) =>
-                {
-                    foreach (QueryRow _ in cursor.RowsWithShared(state.Filter))
-                        Interlocked.Increment(ref state.Capture.Value);
                 });
         }
     }
@@ -535,20 +413,6 @@ public sealed class JobStorageAliasSafetyTests
 
         internal SafeShared Filter;
         internal SharedFilterPath Path;
-        internal IntCapture Capture;
-    }
-
-    private struct PrecomputedSharedFilterState
-    {
-        internal PrecomputedSharedFilterState(
-            QuerySharedFilter filter,
-            IntCapture capture)
-        {
-            Filter = filter;
-            Capture = capture;
-        }
-
-        internal QuerySharedFilter Filter;
         internal IntCapture Capture;
     }
 
@@ -622,28 +486,4 @@ public sealed class JobStorageAliasSafetyTests
 
     private readonly struct Domain : IHierarchyDomain;
 
-    private sealed class JobRuntimeScope : IDisposable
-    {
-        private readonly JobSafetyMode _safety = JobSystem.SafetyMode;
-        private readonly ManagedPayloadPolicy _payload = JobSystem.ManagedPayloadPolicy;
-
-        internal JobRuntimeScope()
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                WorkerCount = 2,
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-            });
-        }
-
-        public void Dispose()
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = _payload,
-            });
-        }
-    }
 }

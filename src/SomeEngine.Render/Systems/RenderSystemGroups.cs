@@ -13,19 +13,22 @@ namespace SomeEngine.Render.Systems;
 /// </summary>
 public readonly struct RenderPrepareSystemContext
 {
-    private readonly RenderInstanceStorageSystem _instances;
+    private readonly RenderInstanceStorageSystem? _instances;
     private readonly RenderInstanceWriteScope? _write;
+    private readonly RenderPrepareScope? _scope;
 
     internal RenderPrepareSystemContext(
         RenderWorld world,
-        RenderInstanceStorageSystem instances,
+        RenderInstanceStorageSystem? instances,
         RenderInstanceWriteScope? write,
+        RenderPrepareScope? scope,
         uint lastSystemVersion,
         uint currentSystemVersion)
     {
         World = world;
         _instances = instances;
         _write = write;
+        _scope = scope;
         LastSystemVersion = lastSystemVersion;
         CurrentSystemVersion = currentSystemVersion;
     }
@@ -36,7 +39,8 @@ public readonly struct RenderPrepareSystemContext
 
     public uint CurrentSystemVersion { get; }
 
-    public RenderInstancePropertyLayout InstanceLayout => _instances.Layout;
+    public RenderInstancePropertyLayout InstanceLayout => RequireInstances().Layout;
+    public bool HasInstanceStorage => _instances is not null;
 
     /// <summary>
     /// Allocates one exact logical batch and returns only its write capability. Classification,
@@ -45,7 +49,7 @@ public readonly struct RenderPrepareSystemContext
     public RenderInstanceWriteHandle AllocateBatch(
         RenderInstancePropertyLayout exactLayout,
         int instanceCount) =>
-        _instances.AllocateBatch(
+        RequireInstances().AllocateBatch(
             RequireScope(),
             RequireWriteScope(),
             exactLayout,
@@ -54,26 +58,32 @@ public readonly struct RenderPrepareSystemContext
     /// <summary>
     /// Opens declared properties of a live batch for an in-place rewrite. The caller must use the
     /// full exact layout whenever entity membership or row order changed.
+    /// Replaced properties must receive a complete binding and every instance value before Publish returns.
     /// </summary>
     public RenderInstanceWriteHandle RewriteBatch(
         RenderInstanceBatch batch,
-        RenderInstancePropertyLayout properties) =>
-        _instances.RewriteBatch(
+        RenderInstancePropertyLayout properties,
+        RenderInstancePropertyLayout? replacedProperties = null) =>
+        RequireInstances().RewriteBatch(
             RequireScope(),
             RequireWriteScope(),
             batch,
-            properties);
+            properties,
+            replacedProperties);
 
     public void Retire(RenderInstanceBatch batch) =>
-        _instances.Retire(RequireScope(), RequireWriteScope(), batch);
+        RequireInstances().Retire(RequireScope(), RequireWriteScope(), batch);
 
     // Pipeline assemblies receive this only through explicit friend access. The public system
     // capability remains high-level instance composition; resource owners use the boundary to
     // acquire only their own timelines.
     internal RenderPrepareScope ActiveScope => RequireScope();
 
+    private RenderInstanceStorageSystem RequireInstances() => _instances ??
+        throw new InvalidOperationException("No instance storage was installed for these prepare systems.");
+
     private RenderPrepareScope RequireScope() =>
-        _write?.PrepareScope ?? throw new InvalidOperationException(
+        _scope ?? throw new InvalidOperationException(
             "Render preparation is not active during this lifecycle callback.");
 
     private RenderInstanceWriteScope RequireWriteScope() =>
@@ -87,7 +97,7 @@ public readonly struct RenderPrepareSystemContext
 /// </summary>
 public ref struct RenderFrameSystemContext
 {
-    private readonly RenderInstanceStorageSystem _instances;
+    private readonly RenderInstanceStorageSystem? _instances;
     private readonly RenderFrame? _frame;
     private RenderGraphFrame _graph;
     private bool _hasGraph;
@@ -96,7 +106,7 @@ public ref struct RenderFrameSystemContext
 
     internal RenderFrameSystemContext(
         RenderWorld world,
-        RenderInstanceStorageSystem instances,
+        RenderInstanceStorageSystem? instances,
         RenderFrame? frame,
         uint lastSystemVersion,
         uint currentSystemVersion)
@@ -112,7 +122,7 @@ public ref struct RenderFrameSystemContext
 
     internal RenderFrameSystemContext(
         RenderWorld world,
-        RenderInstanceStorageSystem instances,
+        RenderInstanceStorageSystem? instances,
         RenderFrame frame,
         RenderGraphFrame graph)
     {
@@ -131,7 +141,10 @@ public ref struct RenderFrameSystemContext
 
     public readonly uint CurrentSystemVersion => _currentSystemVersion;
 
-    public readonly RenderInstancePropertyLayout InstanceLayout => _instances.Layout;
+    public readonly RenderInstancePropertyLayout InstanceLayout => RequireInstances().Layout;
+    public readonly bool HasInstanceStorage => _instances is not null;
+    private readonly RenderInstanceStorageSystem RequireInstances() => _instances ??
+        throw new InvalidOperationException("No instance storage was installed for these frame systems.");
 
     /// <summary>
     /// The one linear graph recording shared by every frame system in registration order.
@@ -151,7 +164,7 @@ public ref struct RenderFrameSystemContext
     }
 
     public readonly RenderInstanceStorageView OpenInstances() =>
-        _instances.OpenRead(
+        RequireInstances().OpenRead(
             _frame ?? throw new InvalidOperationException(
                 "A render frame is not active during this lifecycle callback."));
 
@@ -173,22 +186,34 @@ public ref struct RenderFrameSystemContext
 /// </summary>
 public sealed class RenderPrepareSystems : IDisposable
 {
+    private readonly RenderExtractionSystems _extraction;
     private readonly RenderPrepareDriver _driver;
     private readonly SystemGroup<RenderPrepareSystemContext> _systems;
     private bool _shutdown;
 
+    public RenderPrepareSystems(RenderWorld world, RenderExtractionSystems extraction)
+        : this(world, null, extraction) { }
+
     public RenderPrepareSystems(
         RenderWorld world,
-        RenderInstanceStorageSystem instances)
+        RenderInstanceStorageSystem? instances,
+        RenderExtractionSystems extraction)
     {
         ArgumentNullException.ThrowIfNull(world);
-        ArgumentNullException.ThrowIfNull(instances);
-        if (!ReferenceEquals(world, instances.World))
+        ArgumentNullException.ThrowIfNull(extraction);
+        if (instances is not null && !ReferenceEquals(world, instances.World))
         {
             throw new ArgumentException(
                 "Prepare systems and instance storage must use the same RenderWorld.",
                 nameof(instances));
         }
+        if (!ReferenceEquals(world, extraction.World))
+        {
+            throw new ArgumentException(
+                "Prepare systems and extraction must use the same RenderWorld.",
+                nameof(extraction));
+        }
+        _extraction = extraction;
         _driver = new RenderPrepareDriver(world, instances);
         _systems = new SystemGroup<RenderPrepareSystemContext>(_driver);
     }
@@ -202,6 +227,26 @@ public sealed class RenderPrepareSystems : IDisposable
     public void Enable(int index) => _systems.Enable(index);
 
     public void Disable(int index) => _systems.Disable(index);
+
+    /// <summary>
+    /// Applies the detached extraction candidate without running pipeline preparation. This is
+    /// useful when a pipeline must discover newly published RenderWorld assets asynchronously
+    /// before the remaining systems update in the same prepare scope.
+    /// </summary>
+    public bool ApplyExtraction(RenderPrepareScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        ObjectDisposedException.ThrowIf(_shutdown, this);
+        _driver.Enter(scope, writeInstances: false);
+        try
+        {
+            return _extraction.ApplyPendingCandidate();
+        }
+        finally
+        {
+            _driver.Exit(scope);
+        }
+    }
 
     /// <summary>
     /// Removes a system while its destruction callback still has the exclusive prepare
@@ -229,6 +274,7 @@ public sealed class RenderPrepareSystems : IDisposable
         _driver.Enter(scope);
         try
         {
+            _extraction.ApplyPendingCandidate();
             _systems.Update();
         }
         finally
@@ -266,9 +312,10 @@ public sealed class RenderPrepareSystems : IDisposable
 
     private sealed class RenderPrepareDriver(
         RenderWorld world,
-        RenderInstanceStorageSystem instances) : ISystemDriver<RenderPrepareSystemContext>
+        RenderInstanceStorageSystem? instances) : ISystemDriver<RenderPrepareSystemContext>
     {
         private RenderInstanceWriteScope? _write;
+        private RenderPrepareScope? _scope;
 
         public uint AcquireSystemVersion(ref SystemSlot slot) => world.AcquireSystemVersion();
 
@@ -276,37 +323,42 @@ public sealed class RenderPrepareSystems : IDisposable
             world,
             instances,
             _write,
+            _scope,
             slot.LastSystemVersion,
             slot.CurrentSystemVersion);
 
-        internal void Enter(RenderPrepareScope scope)
+        internal void Enter(RenderPrepareScope scope, bool writeInstances = true)
         {
-            if (Volatile.Read(ref _write) is not null)
+            if (Interlocked.CompareExchange(ref _scope, scope, null) is not null)
                 throw new InvalidOperationException("Render prepare systems are already updating.");
-
-            RenderInstanceWriteScope write = instances.OpenWrite(scope);
+            bool entered = false;
             try
             {
-                if (Interlocked.CompareExchange(ref _write, write, null) is not null)
-                {
-                    throw new InvalidOperationException(
-                        "Render prepare systems are already updating.");
-                }
+                scope.EnterOperation();
+                entered = true;
+                // Applying extracted components does not write GPU instance data. Keep that
+                // phase independent of writable buffer availability and buffer rotation.
+                _write = writeInstances ? instances?.OpenWrite(scope) : null;
             }
             catch
             {
-                _ = Interlocked.CompareExchange(ref _write, null, write);
-                write.Dispose();
+                if (entered) scope.ExitOperation();
+                _scope = null;
                 throw;
             }
         }
 
         internal void Exit(RenderPrepareScope scope)
         {
-            RenderInstanceWriteScope? write = Interlocked.Exchange(ref _write, null);
-            if (write is null || !ReferenceEquals(write.PrepareScope, scope))
+            if (!ReferenceEquals(_scope, scope))
                 throw new InvalidOperationException("Render prepare-system ownership was lost.");
-            write.Dispose();
+            try { _write?.Dispose(); }
+            finally
+            {
+                _write = null;
+                scope.ExitOperation();
+                _scope = null;
+            }
         }
     }
 }
@@ -319,11 +371,10 @@ public sealed class RenderFrameSystems : IDisposable
 
     public RenderFrameSystems(
         RenderWorld world,
-        RenderInstanceStorageSystem instances)
+        RenderInstanceStorageSystem? instances = null)
     {
         ArgumentNullException.ThrowIfNull(world);
-        ArgumentNullException.ThrowIfNull(instances);
-        if (!ReferenceEquals(world, instances.World))
+        if (instances is not null && !ReferenceEquals(world, instances.World))
         {
             throw new ArgumentException(
                 "Frame systems and instance storage must use the same RenderWorld.",
@@ -342,6 +393,9 @@ public sealed class RenderFrameSystems : IDisposable
     public void Enable(int index) => _systems.Enable(index);
 
     public void Disable(int index) => _systems.Disable(index);
+
+    /// <summary>Creates enabled frame systems before retained graph installation.</summary>
+    public void Initialize() => _systems.Initialize();
 
     public void Update(RenderFrame frame, RenderGraphFrame graph)
     {
@@ -362,7 +416,7 @@ public sealed class RenderFrameSystems : IDisposable
 
     private sealed class RenderFrameDriver(
         RenderWorld world,
-        RenderInstanceStorageSystem instances) : ISystemDriver<RenderFrameSystemContext>
+        RenderInstanceStorageSystem? instances) : ISystemDriver<RenderFrameSystemContext>
     {
         private RenderFrame? _frame;
 
@@ -389,6 +443,7 @@ public sealed class RenderFrameSystems : IDisposable
 
         internal void Enter(RenderFrame frame)
         {
+            if (frame.IsClosed) throw new ObjectDisposedException(nameof(RenderFrame));
             if (Interlocked.CompareExchange(ref _frame, frame, null) is not null)
                 throw new InvalidOperationException("Render frame systems are already updating.");
         }

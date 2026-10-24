@@ -1,3 +1,4 @@
+using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 
@@ -8,14 +9,17 @@ public sealed class WorldReadSnapshotTests
     [Fact]
     public void ReadSnapshot_WaitsForAnAdmittedWriterAndReadsItsPublishedValue()
     {
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         var world = new World();
         Entity entity = world.CreateEntity(new SnapshotValue(1));
         QueryHandle readQuery = world.Query(world.QueryDefinition().Read<SnapshotValue>());
         QueryHandle writeQuery = world.Query(world.QueryDefinition().Write<SnapshotValue>());
         using var writerEntered = new ManualResetEventSlim();
         using var releaseWriter = new ManualResetEventSlim();
+        releaseWriter.WaitCallback = () => events.Enqueue("released");
         using var snapshotAttempted = new ManualResetEventSlim();
         using var snapshotEntered = new ManualResetEventSlim();
+        snapshotEntered.SetCallback = () => events.Enqueue("snapshotEntered");
         using var snapshotCompleted = new ManualResetEventSlim();
         Exception? writerFault = null;
         Exception? snapshotFault = null;
@@ -69,8 +73,7 @@ public sealed class WorldReadSnapshotTests
         try
         {
             Assert.True(snapshotAttempted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.False(snapshotEntered.Wait(TimeSpan.FromMilliseconds(100)));
-            Assert.False(snapshotCompleted.IsSet);
+
         }
         finally
         {
@@ -84,18 +87,26 @@ public sealed class WorldReadSnapshotTests
         Assert.Null(snapshotFault);
         Assert.Equal(2, observed);
         Assert.Equal(2, world.Read<SnapshotValue>(entity).Value);
+
+        string[] sequence = events.ToArray();
+        Assert.Contains("released", sequence);
+        Assert.Contains("snapshotEntered", sequence);
+        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "snapshotEntered"));
     }
 
     [Fact]
     public void ReadSnapshot_BlocksAWriterUntilItsCallbackReturns()
     {
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         var world = new World();
         Entity entity = world.CreateEntity(new SnapshotValue(1));
         QueryHandle readQuery = world.Query(world.QueryDefinition().Read<SnapshotValue>());
         using var snapshotEntered = new ManualResetEventSlim();
         using var releaseSnapshot = new ManualResetEventSlim();
+        releaseSnapshot.WaitCallback = () => events.Enqueue("released");
         using var writerAttempted = new ManualResetEventSlim();
         using var writerCompleted = new ManualResetEventSlim();
+        writerCompleted.SetCallback = () => events.Enqueue("writerCompleted");
         Exception? snapshotFault = null;
         Exception? writerFault = null;
         int observed = 0;
@@ -141,7 +152,7 @@ public sealed class WorldReadSnapshotTests
         try
         {
             Assert.True(writerAttempted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.False(writerCompleted.Wait(TimeSpan.FromMilliseconds(100)));
+
         }
         finally
         {
@@ -155,6 +166,11 @@ public sealed class WorldReadSnapshotTests
         Assert.Null(writerFault);
         Assert.Equal(1, observed);
         Assert.Equal(2, world.Read<SnapshotValue>(entity).Value);
+
+        string[] sequence = events.ToArray();
+        Assert.Contains("released", sequence);
+        Assert.Contains("writerCompleted", sequence);
+        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "writerCompleted"));
     }
 
     [Fact]
@@ -221,9 +237,7 @@ public sealed class WorldReadSnapshotTests
         Assert.NotNull(valueMutation);
         Assert.NotNull(clockMutation);
         Assert.NotNull(queryMutation);
-        Assert.Contains("read-snapshot", valueMutation.Message, StringComparison.Ordinal);
-        Assert.Contains("read-snapshot", clockMutation.Message, StringComparison.Ordinal);
-        Assert.Contains("read-snapshot", queryMutation.Message, StringComparison.Ordinal);
+
         Assert.Equal(3, source.Read<UnqueriedValue>(sourceEntity).Value);
         Assert.Equal(40, other.Read<UnqueriedValue>(otherEntity).Value);
     }

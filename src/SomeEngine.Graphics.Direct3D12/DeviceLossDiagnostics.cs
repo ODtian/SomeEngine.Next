@@ -118,22 +118,22 @@ internal sealed unsafe partial class D3D12Backend
         if (value is null || string.IsNullOrWhiteSpace(label))
             return;
         fixed (char* name = label)
-            _ = ((ID3D12Object*)value)->SetName(name);
+            _ = ResourceTrace.SetName(((ID3D12Object*)value), name);
     }
 
     private static D3D12DeviceLossReport? CaptureDredReport(D3D12Device device)
     {
         ID3D12DeviceRemovedExtendedData1* dred = null;
         Guid iid = ID3D12DeviceRemovedExtendedData1.Guid;
-        int result = device.Native->QueryInterface(&iid, (void**)&dred);
+        int result = DeviceQueryTrace.QueryInterface(device.Native, &iid, (void**)&dred);
         if (result < 0 || dred is null)
             return null;
         try
         {
             DredAutoBreadcrumbsOutput1 breadcrumbs = default;
             DredPageFaultOutput1 pageFault = default;
-            int breadcrumbResult = dred->GetAutoBreadcrumbsOutput1(&breadcrumbs);
-            int pageFaultResult = dred->GetPageFaultAllocationOutput1(&pageFault);
+            int breadcrumbResult = DeviceDebugTrace.GetAutoBreadcrumbsOutput1(dred, &breadcrumbs);
+            int pageFaultResult = DeviceDebugTrace.GetPageFaultAllocationOutput1(dred, &pageFault);
             return BuildDredReport(
                 breadcrumbs,
                 breadcrumbResult,
@@ -142,7 +142,7 @@ internal sealed unsafe partial class D3D12Backend
         }
         finally
         {
-            _ = dred->Release();
+            _ = DeviceDebugTrace.Release(dred);
         }
     }
 

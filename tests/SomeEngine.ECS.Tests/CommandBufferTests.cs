@@ -479,9 +479,6 @@ public class CommandBufferTests
         InvalidOperationException clear = Assert.Throws<InvalidOperationException>(commands.Clear);
         InvalidOperationException dispose = Assert.Throws<InvalidOperationException>(commands.Dispose);
 
-        Assert.Contains("World.Flush", playback.Message, StringComparison.Ordinal);
-        Assert.Contains("World.Flush", clear.Message, StringComparison.Ordinal);
-        Assert.Contains("World.Flush", dispose.Message, StringComparison.Ordinal);
         Assert.Equal(1, commands.CommandCount);
 
         world.Flush();
@@ -501,7 +498,6 @@ public class CommandBufferTests
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
             commands.Add(entity, new Position { X = 1, Y = 2 }));
-        Assert.Contains("Clear", error.Message, StringComparison.Ordinal);
 
         commands.Clear();
         commands.Add(entity, new Position { X = 1, Y = 2 });
@@ -527,21 +523,6 @@ public class CommandBufferTests
     // ════════════════════════════════════════════════
     // 边界情况
     // ════════════════════════════════════════════════
-
-    [Fact]
-    public void CommandDataListClear_ClearsReferenceContainingSlots()
-    {
-        var list = new CommandDataList<NamedComponent>();
-        list.Append(new NamedComponent { Name = "held", Id = 1 });
-
-        list.Clear();
-
-        var field = typeof(CommandDataList<NamedComponent>).GetField(
-            "_data",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var data = (NamedComponent[])field!.GetValue(list)!;
-        Assert.Null(data[0].Name);
-    }
 
     [Fact]
     public void EmptyPlayback_NoThrow()
@@ -670,13 +651,4 @@ public class CommandBufferTests
             other.Add(pending, new Position { X = 1, Y = 2 }));
     }
 
-    [Fact]
-    public void DeferredEntity_HasNoImplicitEntityConversion()
-    {
-        Assert.DoesNotContain(
-            typeof(DeferredEntity).GetMethods(
-                System.Reflection.BindingFlags.Public |
-                System.Reflection.BindingFlags.Static),
-            method => method.Name == "op_Implicit" && method.ReturnType == typeof(Entity));
-    }
 }

@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <SomeEngineApplicationProject>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)DefaultGame.csproj'))</SomeEngineApplicationProject>
+    <SomeEnginePath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../..'))</SomeEnginePath>
+  </PropertyGroup>
+  <Import Project="$(SomeEnginePath)/Directory.Build.props" />
+  <Import Project="$(SomeEnginePath)/build/SomeEngine.Game.props" Condition="'$(MSBuildProjectFullPath)' == '$(SomeEngineApplicationProject)'" />
+</Project>

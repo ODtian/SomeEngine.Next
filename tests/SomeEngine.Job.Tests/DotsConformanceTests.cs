@@ -4,71 +4,51 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class DotsConformanceTests
 {
+    private readonly ConformanceData _data = new();
+
     public DotsConformanceTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
-        ConformanceJobs.Reset();
-    }
-
-    [Fact]
-    public void AdapterPublicSurfaceIsExplicit()
-    {
-        var publicTypes = typeof(IJobFor).Assembly
-            .GetExportedTypes()
-            .Select(type => type.FullName!)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Equal(
-            [
-                "SomeEngine.Job.IJobChunk",
-                "SomeEngine.Job.IJobChunkSource",
-                "SomeEngine.Job.IJobFor",
-                "SomeEngine.Job.JobChunk",
-                "SomeEngine.Job.JobChunkExtensions",
-                "SomeEngine.Job.JobForExtensions",
-                "SomeEngine.Job.JobScheduleExtensions"
-            ],
-            publicTypes);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        _data.Reset();
     }
 
     [Fact]
     public void AdapterScheduleCompletePatternMatchesCoreBehavior()
     {
-        new ConformanceJobs.IncrementJob(5).Schedule().Complete();
+        new ConformanceData.IncrementJob(_data, 5).Schedule().Complete();
 
-        Assert.Equal(5, ConformanceJobs.Counter);
+        Assert.Equal(5, _data.Counter);
     }
 
     [Fact]
     public void AdapterDependencyChainRunsInOrder()
     {
-        using var firstStarted = new ManualResetEventSlim();
-        using var firstGate = new ManualResetEventSlim();
-        using var secondRan = new ManualResetEventSlim();
+        using var firstStarted = _data.Events.CreateSignal();
+        using var firstGate = _data.Events.CreateSignal();
+        using var secondRan = _data.Events.CreateSignal();
         var order = new List<int>();
 
-        var first = new ConformanceJobs.BlockingRecordJob(order, 1, firstStarted, firstGate).Schedule();
-        var second = new ConformanceJobs.SignalRecordJob(order, 2, secondRan).Schedule(first);
+        var first = new ConformanceData.BlockingRecordJob(order, 1, firstStarted, firstGate).Schedule();
+        var second = new ConformanceData.SignalRecordJob(order, 2, secondRan).Schedule(first);
 
         Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(2)));
-        Assert.False(secondRan.Wait(TimeSpan.FromMilliseconds(100)));
 
         firstGate.Set();
         second.Complete();
 
         Assert.Equal([1, 2], order);
+        _data.Events.AssertBefore(firstGate, secondRan);
     }
 
     [Fact]
     public void AdapterHandlesComposeWithCombineDependencies()
     {
-        var first = new ConformanceJobs.IncrementJob(1).Schedule();
-        var second = new ConformanceJobs.IncrementJob(10).Schedule();
+        var first = new ConformanceData.IncrementJob(_data, 1).Schedule();
+        var second = new ConformanceData.IncrementJob(_data, 10).Schedule();
 
         JobSystem.CombineDependencies([first, second]).Complete();
 
-        Assert.Equal(11, ConformanceJobs.Counter);
+        Assert.Equal(11, _data.Counter);
     }
 
     [Fact]
@@ -77,10 +57,10 @@ public sealed class DotsConformanceTests
         var parallelValues = new int[6];
         var forValues = new int[7];
 
-        new ConformanceJobs.MarkParallelJob(parallelValues)
+        new ConformanceData.MarkParallelJob(parallelValues)
             .ScheduleParallel(parallelValues.Length, 2)
             .Complete();
-        new ConformanceJobs.MarkForJob(forValues)
+        new ConformanceData.MarkForJob(forValues)
             .Schedule(forValues.Length, 3)
             .Complete();
 
@@ -91,39 +71,39 @@ public sealed class DotsConformanceTests
     [Fact]
     public void AdapterChildJobTreeKeepsParentScopeSemantics()
     {
-        ConformanceJobs.ChildValues = new int[8];
-        ConformanceJobs.ChildChunks = ConformanceJobs.ArrayChunkSource.Create(
+        _data.ChildValues = new int[8];
+        _data.ChildChunks = ConformanceData.ArrayChunkSource.Create(
             new JobChunk(0, 0, 2),
             new JobChunk(1, 2, 3),
             new JobChunk(2, 5, 3));
 
-        new ConformanceJobs.ParentSchedulesAdapterTree().Schedule().Complete();
+        new ConformanceData.ParentSchedulesAdapterTree(_data).Schedule().Complete();
 
-        Assert.Equal(1, ConformanceJobs.Counter);
-        Assert.All(ConformanceJobs.ChildValues, value => Assert.Equal(2, value));
+        Assert.Equal(1, _data.Counter);
+        Assert.All(_data.ChildValues, value => Assert.Equal(2, value));
     }
 
     [Fact]
-    public void AdapterManagedPayloadsUseRefContainingLane()
+    public void AdapterManagedPayloadsExecute()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
         var log = new List<string>();
 
-        new ConformanceJobs.ManagedJob(log, "single").Schedule().Complete();
-        new ConformanceJobs.ManagedForJob(log, "for").Schedule(2, 1).Complete();
+        new ConformanceData.ManagedJob(log, "single").Schedule().Complete();
+        new ConformanceData.ManagedForJob(log, "for").Schedule(2, 1).Complete();
 
-        var stats = JobSystem.GetStats();
-        Assert.Equal(2, stats.RefContainingJobs);
         Assert.Equal(["single", "for-0", "for-1"], log);
     }
 
-    private static class ConformanceJobs
+    private sealed class ConformanceData
     {
-        internal static int Counter;
-        internal static int[] ChildValues = [];
-        internal static ArrayChunkSource ChildChunks;
+        internal readonly ExecutionEvents Events = new();
 
-        internal static void Reset()
+        internal int Counter;
+        internal int[] ChildValues = [];
+        internal ArrayChunkSource ChildChunks;
+
+        internal void Reset()
         {
             Counter = 0;
             ChildValues = [];
@@ -132,16 +112,19 @@ public sealed class DotsConformanceTests
 
         internal readonly struct IncrementJob : IJob
         {
+            private readonly ConformanceData _data;
+
             private readonly int _amount;
 
-            internal IncrementJob(int amount)
+            internal IncrementJob(ConformanceData data, int amount)
             {
+                _data = data;
                 _amount = amount;
             }
 
             public void Execute()
             {
-                Interlocked.Add(ref Counter, _amount);
+                Interlocked.Add(ref _data.Counter, _amount);
             }
         }
 
@@ -149,14 +132,14 @@ public sealed class DotsConformanceTests
         {
             private readonly List<int> _order;
             private readonly int _value;
-            private readonly ManualResetEventSlim _started;
-            private readonly ManualResetEventSlim _gate;
+            private readonly JobSignal _started;
+            private readonly JobSignal _gate;
 
             internal BlockingRecordJob(
                 List<int> order,
                 int value,
-                ManualResetEventSlim started,
-                ManualResetEventSlim gate)
+                JobSignal started,
+                JobSignal gate)
             {
                 _order = order;
                 _value = value;
@@ -180,9 +163,9 @@ public sealed class DotsConformanceTests
         {
             private readonly List<int> _order;
             private readonly int _value;
-            private readonly ManualResetEventSlim _ran;
+            private readonly JobSignal _ran;
 
-            internal SignalRecordJob(List<int> order, int value, ManualResetEventSlim ran)
+            internal SignalRecordJob(List<int> order, int value, JobSignal ran)
             {
                 _order = order;
                 _value = value;
@@ -232,11 +215,15 @@ public sealed class DotsConformanceTests
 
         internal struct ParentSchedulesAdapterTree : IJob
         {
+            private readonly ConformanceData _data;
+
+            internal ParentSchedulesAdapterTree(ConformanceData data) => _data = data;
+
             public void Execute()
             {
-                new IncrementJob(1).Schedule();
-                new MarkForJob(ChildValues).Schedule(ChildValues.Length, 2);
-                new FillChunkJob(ChildValues).Schedule(ChildChunks, batchSize: 2);
+                new IncrementJob(_data, 1).Schedule();
+                new MarkForJob(_data.ChildValues).Schedule(_data.ChildValues.Length, 2);
+                new FillChunkJob(_data.ChildValues).Schedule(_data.ChildChunks, batchSize: 2);
             }
         }
 

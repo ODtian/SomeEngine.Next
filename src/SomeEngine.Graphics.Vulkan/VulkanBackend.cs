@@ -71,9 +71,6 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     internal ExtDebugUtils? DebugUtilsApi => _debugUtilsApi;
     internal ReadOnlySpan<AdapterRecord> Adapters => _adapters;
     internal Exception? ReleaseFailure => Volatile.Read(ref _releaseFailure);
-#if SOMEENGINE_TESTING
-    internal VulkanFaultHooks FaultHooks { get; } = new();
-#endif
 
     internal bool TryEnumerateAdapters(
         in AdapterEnumerationOptions options,

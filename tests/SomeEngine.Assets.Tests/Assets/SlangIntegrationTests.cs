@@ -1,481 +1,211 @@
-using System.IO;
-using System.Linq;
-using SomeEngine.Assets;
+using System.Buffers;
+using System.Security.Cryptography;
+using SlangShaderSharp;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
+
 namespace SomeEngine.Assets.Tests.Assets;
 
-public class SlangIntegrationTests
+public sealed class SlangIntegrationTests
 {
     [Fact]
-    public void TestSlangCompilation()
+    public async Task CompilationReturnsDirectEntriesForEveryTarget()
     {
-        string source = @"
-            [shader(""vertex"")]
-            float4 vertexMain(float4 pos : POSITION) : SV_Position
+        const string source = """
+            [shader("vertex")]
+            float4 vertexMain(float4 position : POSITION) : SV_Position
             {
-                return pos;
+                return position;
             }
 
-            [shader(""pixel"")]
-            float4 pixelMain() : SV_Target
+            [shader("fragment")]
+            float4 pixelMain() : SV_Target0
             {
-                return float4(1.0, 0.0, 0.0, 1.0);
+                return float4(1, 0, 0, 1);
             }
-        ";
+            """;
+        using var files = new AssetTestDirectory();
+        string sourcePath = files.File("compiled.slang");
+        File.WriteAllText(sourcePath, source);
 
-        string tempFile = Path.GetTempFileName();
-        string slangFile = Path.ChangeExtension(tempFile, ".slang");
-        // Ensure unique name to avoid module conflicts if run multiple times in same session?
-        // But we create new session each time (except global session).
-        // Slang module names must be unique within a session? Yes.
-        // But Import creates a new session every time.
+        using ShaderAsset asset = ShaderTestCompilation.Compile(sourcePath);
+        Shader shader = await ShaderTestCompilation.CreateAsync(asset);
 
-        File.WriteAllText(slangFile, source);
-        // Clean up tempFile if it still exists (GetTempFileName creates it)
-        if (File.Exists(tempFile)) File.Delete(tempFile);
-
-        try
+        Assert.Equal(2, shader.SlangTargetCount);
+        Assert.Equal(2, shader.SlangEntryCount);
+        foreach (SlangCompileTarget target in new[]
+                 {
+                     SlangCompileTarget.Dxil,
+                     SlangCompileTarget.Spirv,
+                 })
         {
-            var asset = SlangShaderImporter.Import(slangFile);
-
-            Assert.NotNull(asset);
-            Assert.Equal(Path.GetFileNameWithoutExtension(slangFile), asset.Name);
-
-            // DXIL depends on local DXC availability; SPIR-V must always compile.
-            Assert.True(asset.Variants!.Count >= 2);
-
-            var vsSpirv = asset.Variants.FirstOrDefault(v => v.EntryPoint == "vertexMain" && v.Backend == "spirv");
-            Assert.NotNull(vsSpirv);
-            Assert.Equal(ShaderStage.Vertex, vsSpirv.Stage);
-            Assert.True(vsSpirv.Data.HasValue && vsSpirv.Data.Value.Length > 0);
-
-            var psSpirv = asset.Variants.FirstOrDefault(v => v.EntryPoint == "pixelMain" && v.Backend == "spirv");
-            Assert.NotNull(psSpirv);
-            Assert.Equal(ShaderStage.Pixel, psSpirv.Stage);
-            Assert.True(psSpirv.Data.HasValue && psSpirv.Data.Value.Length > 0);
-        }
-        finally
-        {
-            if (File.Exists(slangFile)) File.Delete(slangFile);
-        }
-    }
-    [Fact]
-    public void TestSlangReflection()
-    {
-        string source = @"
-            struct Params {
-                float4 color;
-            };
-
-            [[vk::binding(0, 0)]]
-            ConstantBuffer<Params> gParams;
-
-            [[vk::binding(1, 0)]]
-            Texture2D gTexture;
-
-            [shader(""pixel"")]
-            float4 main() : SV_Target
-            {
-                return gTexture.Load(int3(0, 0, 0)) * gParams.color;
-            }
-        ";
-
-        string tempFile = Path.Combine(Path.GetTempPath(), "test_reflection.slang");
-        File.WriteAllText(tempFile, source);
-
-        try
-        {
-            var asset = SlangShaderImporter.Import(tempFile);
-
-            var reflection = asset.Reflections?.FirstOrDefault()?.Reflection;
-            Assert.NotNull(reflection);
-            Assert.NotNull(reflection!.Resources);
-
-            // Check gParams
-            var gParams = reflection.Resources!.FirstOrDefault(r => r.Name == "gParams");
-            Assert.NotNull(gParams);
-            Assert.True((gParams.Stages & 0x02) != 0, "Should be visible in Pixel stage (0x02)");
-
-            // Check gTexture
-            var gTexture = reflection.Resources.FirstOrDefault(r => r.Name == "gTexture");
-            Assert.NotNull(gTexture);
-            Assert.True((gTexture!.Stages & 0x02) != 0, "Should be visible in Pixel stage (0x02)");
-
-            // Print all resources for manual verification
-            Console.WriteLine($"--- Layout for {asset.Name} ---");
-            foreach (var r in reflection.Resources)
-            {
-                Console.WriteLine($"  Name: {r.Name}, Stages: 0x{r.Stages:X}");
-            }
-        }
-        finally
-        {
-            if (File.Exists(tempFile)) File.Delete(tempFile);
+            int targetIndex = shader.RequireSlangTarget(target);
+            EntryPointReflection vertex = shader.RequireSlangEntry(
+                targetIndex,
+                "vertexMain",
+                SlangStage.Vertex);
+            EntryPointReflection pixel = shader.RequireSlangEntry(
+                targetIndex,
+                "pixelMain",
+                SlangStage.Fragment);
+            Assert.Equal(SlangStage.Vertex, vertex.Stage);
+            Assert.Equal(SlangStage.Fragment, pixel.Stage);
+            Assert.NotEmpty(GetCode(shader, targetIndex, vertex));
+            Assert.NotEmpty(GetCode(shader, targetIndex, pixel));
         }
     }
 
     [Fact]
-    public void TestSlangImport_GeneratesStableAssetGuidAndMeta()
+    public async Task DirectReflectionExposesGlobalShaderFields()
     {
-        string source = @"
-            [shader(""compute"")]
-            [numthreads(1,1,1)]
-            void main() {}
-        ";
+        const string source = """
+            struct Parameters { float4 Color; }
+            ConstantBuffer<Parameters> ParametersData;
+            Texture2D TextureData;
 
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string slangFile = Path.Combine(dir, "stable_guid.slang");
-        File.WriteAllText(slangFile, source);
-
-        try
-        {
-            var asset1 = SlangShaderImporter.Import(slangFile);
-            var asset2 = SlangShaderImporter.Import(slangFile);
-
-            Assert.True(AssetGuid.TryParse(asset1.AssetGuid, out var guid1));
-            Assert.True(AssetGuid.TryParse(asset2.AssetGuid, out var guid2));
-            Assert.Equal(guid2, guid1);
-            Assert.True(File.Exists(SourceMetaFiles.GetMetaPath(slangFile)));
-            string assetPath = Path.ChangeExtension(Path.GetFullPath(slangFile), ".shader.asset");
-            Assert.True(File.Exists(AssetMetaFiles.GetMetaPath(assetPath)));
-            Assert.NotNull(asset1.ImportTrace);
-            Assert.False(string.IsNullOrEmpty(asset1.ImportTrace!.SourceGuid));
-        }
-        finally
-        {
-            if (Directory.Exists(dir))
+            [shader("fragment")]
+            float4 pixelMain() : SV_Target0
             {
-                Directory.Delete(dir, true);
+                return TextureData.Load(int3(0, 0, 0)) * ParametersData.Color;
             }
-        }
+            """;
+        using var files = new AssetTestDirectory();
+        string sourcePath = files.File("reflection.slang");
+        File.WriteAllText(sourcePath, source);
+
+        using ShaderAsset asset = ShaderTestCompilation.Compile(sourcePath);
+        Shader shader = await ShaderTestCompilation.CreateAsync(asset);
+        int targetIndex = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+        ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
+        VariableLayoutReflection globals = reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        Assert.NotEqual(VariableLayoutReflection.Null, globals);
+        TypeLayoutReflection fields = globals.TypeLayout;
+        if (fields.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
+            fields = fields.ElementTypeLayout;
+
+        string[] names = Enumerable.Range(0, checked((int)fields.FieldCount))
+            .Select(index => fields.GetFieldByIndex(checked((uint)index)).Name)
+            .ToArray();
+        Assert.Contains("ParametersData", names);
+        Assert.Contains("TextureData", names);
     }
 
     [Fact]
-    public void TestSlangImport_TracksIncludeDependencies_AndKeepsAssetGuidStable()
+    public async Task DefinitionRetainsIdentityAndSerializedSource()
     {
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
+        const string source = """
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void computeMain() {}
+            """;
+        using var files = new AssetTestDirectory();
+        string sourcePath = files.File("identity.slang");
+        string definitionPath = files.File("identity.shader");
+        File.WriteAllText(sourcePath, source);
 
-        string includeFile = Path.Combine(dir, "common_inc.slang");
-        string sourceFile = Path.Combine(dir, "with_include.slang");
+        using ShaderAsset definition = ShaderTestCompilation.Define(sourcePath);
+        await definition.SaveSourceAsync(definitionPath);
+        using ShaderAsset first = SlangShaderImporter.CompileDefinition(
+            definition,
+            definitionPath);
+        using ShaderAsset reopened = await ShaderAsset.OpenSourceAsync(definitionPath);
+        using ShaderAsset second = SlangShaderImporter.CompileDefinition(
+            reopened,
+            definitionPath);
+        Shader firstShader = await ShaderTestCompilation.CreateAsync(first);
+        Shader secondShader = await ShaderTestCompilation.CreateAsync(second);
 
-        File.WriteAllText(includeFile, "float4 GetColor() { return float4(1, 0, 0, 1); }");
-        File.WriteAllText(sourceFile, "#include \"common_inc.slang\"\n[shader(\"pixel\")] float4 main() : SV_Target { return GetColor(); }");
-
-        try
-        {
-            var asset1 = SlangShaderImporter.Import(sourceFile);
-            Assert.True(AssetGuid.TryParse(asset1.AssetGuid, out var guid1));
-            Assert.NotNull(asset1.ImportTrace);
-            Assert.NotNull(asset1.ImportTrace!.Dependencies);
-            IList<DependencyEntry> dependencies1 = asset1.ImportTrace.Dependencies!;
-            Assert.True(dependencies1.Count >= 2);
-            Assert.Contains(dependencies1, d => d.Path == "common_inc.slang" || d.Path!.EndsWith("/common_inc.slang"));
-
-            string fingerprint1 = asset1.ImportTrace.ContentFingerprint!;
-
-            File.WriteAllText(includeFile, "float4 GetColor() { return float4(0, 1, 0, 1); }");
-
-            var asset2 = SlangShaderImporter.Import(sourceFile);
-            Assert.True(AssetGuid.TryParse(asset2.AssetGuid, out var guid2));
-            Assert.Equal(guid1, guid2);
-            Assert.NotNull(asset2.ImportTrace);
-            Assert.NotEqual(fingerprint1, asset2.ImportTrace!.ContentFingerprint);
-            Assert.NotNull(asset2.ImportTrace.Dependencies);
-            IList<DependencyEntry> dependencies2 = asset2.ImportTrace.Dependencies!;
-            Assert.Contains(dependencies2, d => d.Path == "common_inc.slang" || d.Path!.EndsWith("/common_inc.slang"));
-        }
-        finally
-        {
-            if (Directory.Exists(dir))
-            {
-                Directory.Delete(dir, true);
-            }
-        }
+        Assert.Equal(definition.Id, first.Id);
+        Assert.Equal(first.Id, second.Id);
+        Assert.NotNull(first.GetBlock<ShaderBlock>().ImportTrace);
+        Assert.False((await first.GetBlock<ShaderSourceBlock>().ReadBytesAsync(ShaderSourceBlock.SerializedSourceKey(0))).IsEmpty);
+        Assert.Equal(
+            EntryHash(firstShader, SlangCompileTarget.Spirv, "computeMain", SlangStage.Compute),
+            EntryHash(secondShader, SlangCompileTarget.Spirv, "computeMain", SlangStage.Compute));
     }
 
     [Fact]
-    public void ContentHash_IdenticalLogicInDifferentFiles_ProducesSameHash()
+    public void IncludeChangesUpdateTheImportFingerprint()
     {
-        // 两个不同文件，相同的 compute shader 逻辑 → content hash 应该一致
-        string source = @"
-            RWStructuredBuffer<float> outputBuffer;
+        using var files = new AssetTestDirectory();
+        string includePath = files.File("common.slang");
+        string sourcePath = files.File("include.slang");
+        File.WriteAllText(includePath, "float4 Color() { return float4(1, 0, 0, 1); }");
+        File.WriteAllText(
+            sourcePath,
+            "#include \"common.slang\"\n[shader(\"fragment\")] float4 pixelMain() : SV_Target0 { return Color(); }");
+        using ShaderAsset definition = ShaderTestCompilation.Define(sourcePath);
+        using ShaderAsset first = ShaderTestCompilation.Compile(definition, sourcePath);
+        string firstHash = first.GetBlock<ShaderBlock>().ImportTrace!.ContentFingerprint!;
 
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
-            }
-        ";
+        File.WriteAllText(includePath, "float4 Color() { return float4(0, 1, 0, 1); }");
+        using ShaderAsset second = ShaderTestCompilation.Compile(definition, sourcePath);
+        ImportTrace trace = second.GetBlock<ShaderBlock>().ImportTrace!;
 
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string fileA = Path.Combine(dir, "shader_a.slang");
-        string fileB = Path.Combine(dir, "shader_b.slang");
-        File.WriteAllText(fileA, source);
-        File.WriteAllText(fileB, source);
-
-        try
-        {
-            var assetA = SlangShaderImporter.Import(fileA);
-            var assetB = SlangShaderImporter.Import(fileB);
-
-            Assert.NotNull(assetA.Variants);
-            Assert.NotNull(assetB.Variants);
-
-            // 验证每个 backend 的 content hash 都一致
-            var hashesA = assetA.Variants!
-                .Where(v => v.EntryPoint == "CSMain")
-                .ToDictionary(v => v.Backend!, v => v.ContentHash);
-            var hashesB = assetB.Variants!
-                .Where(v => v.EntryPoint == "CSMain")
-                .ToDictionary(v => v.Backend!, v => v.ContentHash);
-
-            Assert.True(hashesA.Count > 0, "Should have at least one CSMain variant");
-
-            foreach (var kvp in hashesA)
-            {
-                Assert.True(hashesB.ContainsKey(kvp.Key), $"Backend {kvp.Key} missing from shader_b");
-                Assert.Equal(kvp.Value, hashesB[kvp.Key]);
-                Assert.NotNull(kvp.Value);
-                Assert.NotEmpty(kvp.Value!);
-
-                Console.WriteLine($"  {kvp.Key}: {kvp.Value}");
-            }
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
+        Assert.NotEqual(firstHash, trace.ContentFingerprint);
+        Assert.Contains(
+            trace.Dependencies!,
+            dependency => dependency.Path!.EndsWith("common.slang", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void ContentHash_DifferentLogic_ProducesDifferentHash()
+    public async Task DifferentShaderBehaviorProducesDifferentEntryCode()
     {
-        string sourceA = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
+        const string firstSource = """
+            RWStructuredBuffer<float> Values;
+            [shader("compute")]
+            [numthreads(64, 1, 1)]
+            void computeMain(uint3 id : SV_DispatchThreadID)
             {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
+                Values[id.x] = float(id.x) * 2.0;
             }
-        ";
-
-        string sourceB = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
+            """;
+        const string secondSource = """
+            RWStructuredBuffer<float> Values;
+            [shader("compute")]
+            [numthreads(64, 1, 1)]
+            void computeMain(uint3 id : SV_DispatchThreadID)
             {
-                outputBuffer[tid.x] = float(tid.x) * 3.0 + 1.0;
+                Values[id.x] = float(id.x) * 3.0 + 1.0;
             }
-        ";
+            """;
+        using var files = new AssetTestDirectory();
+        Shader first = await Compile(files.File("first.slang"), firstSource);
+        Shader second = await Compile(files.File("second.slang"), secondSource);
 
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string fileA = Path.Combine(dir, "shader_same.slang");
-        string fileB = Path.Combine(dir, "shader_diff.slang");
-        File.WriteAllText(fileA, sourceA);
-        File.WriteAllText(fileB, sourceB);
-
-        try
-        {
-            var assetA = SlangShaderImporter.Import(fileA);
-            var assetB = SlangShaderImporter.Import(fileB);
-
-            var spirvA = assetA.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == "spirv");
-            var spirvB = assetB.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == "spirv");
-
-            Assert.NotNull(spirvA);
-            Assert.NotNull(spirvB);
-            Assert.NotEqual(spirvB!.ContentHash, spirvA!.ContentHash);
-
-            Console.WriteLine($"  A: {spirvA.ContentHash}");
-            Console.WriteLine($"  B: {spirvB.ContentHash}");
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
+        Assert.NotEqual(
+            EntryHash(first, SlangCompileTarget.Spirv, "computeMain", SlangStage.Compute),
+            EntryHash(second, SlangCompileTarget.Spirv, "computeMain", SlangStage.Compute));
     }
 
-    [Fact]
-    public void ContentHash_DifferentLocalVarNames_SameLogic_SameHash()
+    private static async ValueTask<Shader> Compile(string sourcePath, string source)
     {
-        // 局部变量名不同但逻辑相同 → 编译后应产生相同字节码
-        string sourceA = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                float value = float(tid.x) * 2.0;
-                outputBuffer[tid.x] = value;
-            }
-        ";
-
-        string sourceB = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                float result = float(tid.x) * 2.0;
-                outputBuffer[tid.x] = result;
-            }
-        ";
-
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string fileA = Path.Combine(dir, "varname_a.slang");
-        string fileB = Path.Combine(dir, "varname_b.slang");
-        File.WriteAllText(fileA, sourceA);
-        File.WriteAllText(fileB, sourceB);
-
-        try
-        {
-            var assetA = SlangShaderImporter.Import(fileA);
-            var assetB = SlangShaderImporter.Import(fileB);
-
-            foreach (var backend in new[] { "spirv", "dxil" })
-            {
-                var varA = assetA.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                var varB = assetB.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                if (varA == null || varB == null) continue;
-
-                Console.WriteLine($"  [{backend}] A: {varA.ContentHash}");
-                Console.WriteLine($"  [{backend}] B: {varB.ContentHash}");
-                Assert.Equal(varB.ContentHash, varA.ContentHash);
-            }
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
+        File.WriteAllText(sourcePath, source);
+        using ShaderAsset asset = ShaderTestCompilation.Compile(sourcePath);
+        return await ShaderTestCompilation.CreateAsync(asset);
     }
 
-    [Fact]
-    public void ContentHash_UnusedExtraBuffer_SameHash()
+    private static string EntryHash(
+        Shader shader,
+        SlangCompileTarget target,
+        string entryName,
+        SlangStage stage)
     {
-        // 一个文件多了一个未使用的 buffer 声明 → DCE 应剥离 → hash 相同
-        string sourceA = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
-            }
-        ";
-
-        string sourceB = @"
-            RWStructuredBuffer<float> outputBuffer;
-            RWStructuredBuffer<float> unusedBuffer;  // 额外声明，但未使用
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
-            }
-        ";
-
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string fileA = Path.Combine(dir, "no_extra.slang");
-        string fileB = Path.Combine(dir, "with_extra.slang");
-        File.WriteAllText(fileA, sourceA);
-        File.WriteAllText(fileB, sourceB);
-
-        try
-        {
-            var assetA = SlangShaderImporter.Import(fileA);
-            var assetB = SlangShaderImporter.Import(fileB);
-
-            foreach (var backend in new[] { "spirv", "dxil" })
-            {
-                var varA = assetA.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                var varB = assetB.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                if (varA == null || varB == null) continue;
-
-                Console.WriteLine($"  [{backend}] A: {varA.ContentHash}");
-                Console.WriteLine($"  [{backend}] B: {varB.ContentHash}");
-                Assert.Equal(varB.ContentHash, varA.ContentHash);
-            }
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
+        int targetIndex = shader.RequireSlangTarget(target);
+        EntryPointReflection entry = shader.RequireSlangEntry(targetIndex, entryName, stage);
+        return Convert.ToHexString(SHA256.HashData(GetCode(shader, targetIndex, entry)));
     }
 
-    [Fact]
-    public void ContentHash_DifferentUnusedBufferLayout_SameHash()
+    private static byte[] GetCode(
+        Shader shader,
+        int targetIndex,
+        EntryPointReflection entry)
     {
-        // 两个文件都有一个未使用的 buffer，但布局不同 → DCE 剥离后 hash 应相同
-        string sourceA = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            struct ExtraA { float x; float y; };
-            RWStructuredBuffer<ExtraA> unusedBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
-            }
-        ";
-
-        string sourceB = @"
-            RWStructuredBuffer<float> outputBuffer;
-
-            struct ExtraB { int a; int b; int c; };
-            RWStructuredBuffer<ExtraB> unusedBuffer;
-
-            [shader(""compute"")]
-            [numthreads(64,1,1)]
-            void CSMain(uint3 tid : SV_DispatchThreadID)
-            {
-                outputBuffer[tid.x] = float(tid.x) * 2.0;
-            }
-        ";
-
-        string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(dir);
-        string fileA = Path.Combine(dir, "layout_a.slang");
-        string fileB = Path.Combine(dir, "layout_b.slang");
-        File.WriteAllText(fileA, sourceA);
-        File.WriteAllText(fileB, sourceB);
-
-        try
-        {
-            var assetA = SlangShaderImporter.Import(fileA);
-            var assetB = SlangShaderImporter.Import(fileB);
-
-            foreach (var backend in new[] { "spirv", "dxil" })
-            {
-                var varA = assetA.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                var varB = assetB.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                if (varA == null || varB == null) continue;
-
-                Console.WriteLine($"  [{backend}] A: {varA.ContentHash}");
-                Console.WriteLine($"  [{backend}] B: {varB.ContentHash}");
-                Assert.Equal(varB.ContentHash, varA.ContentHash);
-            }
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
+        ISlangBlob? blob = shader.GetSlangEntryBlob(targetIndex, entry);
+        return blob is null
+            ? shader.GetSlangEntryBytes(targetIndex, entry).ToArray()
+            : blob.Buffer.ToArray();
     }
 }

@@ -1,120 +1,106 @@
 #ifndef CLUSTER_STRUCTURES_SLANG
 #define CLUSTER_STRUCTURES_SLANG
 
-static const uint GPU_CLUSTER_STRIDE_BYTES = 88;
+static const uint PACKED_CLUSTER_STRIDE_BYTES = 96;
 static const uint SLOT_INVALID = 0xFFFFu;
 static const uint BIN_INVALID = 0xFFFFFFFFu;
 
-struct GPUPageHeader
+struct PackedCluster
 {
-    uint ClusterCount;        //  0
-    uint TotalVertexCount;    //  4
-    uint TotalTriangleCount;  //  8
-    float QuantOriginX;       // 12
-    uint ClustersOffset;      // 16
-    uint PositionsOffset;     // 20
-    uint AttributesOffset;    // 24
-    uint IndicesOffset;       // 28
-    float QuantOriginY;       // 32
-    float QuantOriginZ;       // 36
-    float QuantStep;          // 40
-    uint VertexStride;        // 44
+    uint VertexBlobOffset;              //  0 — relative to the page header's VertexBlobsOffset
+    uint VertexBlobSize;                //  4
+    uint ExtensionOffset;               //  8 — page-relative, 0xFFFFFFFF when absent
+    uint ExtensionSize;                 // 12
+    float3 LODCenter;                   // 16
+    float LODRadius;                    // 28
+    float3 BoundMin;                    // 32 — conservative object-space AABB min
+    float3 BoundMax;                    // 44 — conservative object-space AABB max
+    uint PackedLodErrorTriangleStart;   // 56 — LODErrorHalf:16 | TriangleStart:16
+    uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
+    uint PackedGroup;                   // 64 — GroupId(i16):16 | Reserved:16
+    uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
+    uint PackedRanges;                  // 72 — [range0End:8][range1End:8][Reserved:16]
+    uint MaterialTableOffset;           // 76 — must be 0xFFFFFFFF
+    uint VertReuseBatchWord0;           // 80
+    uint VertReuseBatchWord1;           // 84
+    uint VertReuseBatchWord2;           // 88
+    uint VertReuseBatchWord3;           // 92
 };
 
-struct GPUCluster
+float3 GetClusterCenter(PackedCluster c)
 {
-    int3 IntBase;               //  0 (12 bytes)
-    uint PackedCenterXY;        // 12 — CenterOffsetX:16 | CenterOffsetY:16
-    float3 LODCenter;           // 16 (12 bytes)
-    float LODRadius;            // 28
-    uint PackedCenterZRadius;   // 32 — CenterOffsetZ:16 | RadiusQuant:16
-    uint PackedLodErrVStart;    // 36 — LODErrorHalf:16 | VertexStart:16
-    uint PackedTStartGroup;     // 40 — TriangleStart:16 | GroupId(i16):16
-    uint PackedCounts;          // 44 — [VertexCount:8][TriangleCount:8][LODLevel:8][Pad:8]
-    //  Total: 48 bytes
-    
-    uint PackedMaterials;       // 48 — [mat0:8][mat1:8][mat2:8][SlowPathFlag:8] (0xFF = slow path)
-    uint PackedRanges;          // 52 — [range0End:8][range1End:8][Pad:16]
-    uint MaterialTableOffset;   // 56 — slow path external table byte offset (0xFFFFFFFF = fast path)
-    uint VRBBatchInfo;          // 60 — VRB batch encoding (fast: ≤5 batches packed)
-    float3 BoundMin;            // 64 — object-space cluster AABB min
-    float3 BoundMax;            // 76 — object-space cluster AABB max
-    //  Total: 88 bytes
-};
-
-// Decode helpers
-float3 DecodeClusterCenter(GPUCluster c, float3 quantOrigin, float quantStep)
-{
-    uint centerOffX = c.PackedCenterXY & 0xFFFF;
-    uint centerOffY = (c.PackedCenterXY >> 16) & 0xFFFF;
-    uint centerOffZ = c.PackedCenterZRadius & 0xFFFF;
-    int3 centerInt = c.IntBase + int3(int(centerOffX), int(centerOffY), int(centerOffZ));
-    return float3(centerInt) * quantStep + quantOrigin;
+    return (c.BoundMin + c.BoundMax) * 0.5;
 }
 
-float DecodeClusterRadius(GPUCluster c, float quantStep)
+float GetClusterRadius(PackedCluster c)
 {
-    uint radiusQuant = (c.PackedCenterZRadius >> 16) & 0xFFFF;
-    return float(radiusQuant) * quantStep;
+    return length(c.BoundMax - c.BoundMin) * 0.5;
 }
 
-float DecodeClusterLODError(GPUCluster c)
+float DecodeClusterLODError(PackedCluster c)
 {
-    uint lodErrBits = c.PackedLodErrVStart & 0xFFFF;
+    uint lodErrBits = c.PackedLodErrorTriangleStart & 0xFFFF;
     return f16tof32(lodErrBits);
 }
 
-uint DecodeVertexStart(GPUCluster c)
+uint DecodeTriangleStart(PackedCluster c)
 {
-    return (c.PackedLodErrVStart >> 16) & 0xFFFF;
+    return c.PackedLodErrorTriangleStart >> 16;
 }
 
-uint DecodeTriangleStart(GPUCluster c)
-{
-    return c.PackedTStartGroup & 0xFFFF;
-}
-
-int DecodeGroupId(GPUCluster c)
+int DecodeGroupId(PackedCluster c)
 {
     // Sign-extend from 16-bit
-    int raw = int(c.PackedTStartGroup >> 16);
+    int raw = int(c.PackedGroup & 0xFFFFu);
     return (raw << 16) >> 16;
 }
 
-// ─── VRB Batch Decode ───
-
-struct VRBBatch
+uint4 VertReuseBatchWords(PackedCluster cluster)
 {
-    uint start; // first triangle index in this batch
-    uint count; // number of triangles
-};
-
-uint DecodeVRBBatchCount(GPUCluster c)
-{
-    return ((c.VRBBatchInfo >> 25) & 0x7) + 1;
+    return uint4(
+        cluster.VertReuseBatchWord0,
+        cluster.VertReuseBatchWord1,
+        cluster.VertReuseBatchWord2,
+        cluster.VertReuseBatchWord3);
 }
 
-VRBBatch DecodeVRBBatch(GPUCluster c, uint batchIdx)
+uint ReadVertReuseBits(uint4 words, uint bitOffset, uint bitCount)
 {
-    VRBBatch batch;
-    batch.start = 0;
-    for (uint i = 0; i < batchIdx; i++)
-        batch.start += ((c.VRBBatchInfo >> (i * 5)) & 0x1F) + 1;
-    batch.count = ((c.VRBBatchInfo >> (batchIdx * 5)) & 0x1F) + 1;
-    return batch;
+    uint wordIndex = bitOffset >> 5u;
+    uint wordBit = bitOffset & 31u;
+    uint lowBits = min(bitCount, 32u - wordBit);
+    uint value = words[wordIndex] >> wordBit;
+    if (lowBits < bitCount)
+        value |= words[wordIndex + 1u] << lowBits;
+    return value & ((1u << bitCount) - 1u);
 }
 
-// Total triangles covered by encoded VRB batches (fast path portion)
-uint DecodeVRBTotalFastTris(GPUCluster c)
+uint VertReuseBatchCount(uint4 words, uint materialRangeIndex)
 {
-    uint batchCount = DecodeVRBBatchCount(c);
-    uint total = 0;
-    for (uint i = 0; i < batchCount; i++)
-        total += ((c.VRBBatchInfo >> (i * 5)) & 0x1F) + 1;
-    return total;
+    return ReadVertReuseBits(words, materialRangeIndex * 4u, 4u);
 }
 
-uint DecodeTriangleCount(GPUCluster c)
+uint VertReuseBatchTriangleCount(uint4 words, uint flatBatchIndex)
+{
+    return ReadVertReuseBits(words, 12u + flatBatchIndex * 5u, 5u) + 1u;
+}
+
+uint MaterialRangeCount(uint packedRanges, uint triangleCount)
+{
+    uint range0End = packedRanges & 0xFFu;
+    uint range1End = (packedRanges >> 8u) & 0xFFu;
+    return range0End == triangleCount ? 1u : (range1End == triangleCount ? 2u : 3u);
+}
+
+uint MaterialRangeEnd(uint packedRanges, uint triangleCount, uint rangeIndex)
+{
+    if (rangeIndex == 0u)
+        return min(packedRanges & 0xFFu, triangleCount);
+    if (rangeIndex == 1u)
+        return min((packedRanges >> 8u) & 0xFFu, triangleCount);
+    return triangleCount;
+}
+uint DecodeTriangleCount(PackedCluster c)
 {
     return (c.PackedCounts >> 8) & 0xFF;
 }
@@ -130,17 +116,12 @@ struct ClusterBVHNode
     uint NodeType; // 0=Internal, 1=Leaf
 };
 
-// ─── SlotBuffer SOA access ───
-// GPU buffer is StructuredBuffer<uint>, SOA layout:
-//   field0: [slot0,slot1,...] | field1: [slot0,slot1,...] | ...
-// CPU slot address: slot offset + local material index.
-// Each pair of ushort slots packs into one uint.
-// slotCapacity is always even.
-uint GetSlotField(
-    StructuredBuffer<uint> slotBuffer,
+// Each stage owns an independent dense material-slot mapping. The Cluster instance ABI stores
+// only the assignment-sequence offset; stage compatibility never enters the instance record.
+uint GetStageSlot(
+    StructuredBuffer<uint> stageSlots,
     uint slotOffset,
     uint localMaterialIndex,
-    uint fieldIndex,
     uint slotCapacity)
 {
     // SLOT_INVALID is the fixed instance-property sentinel while RenderWorld material-slot
@@ -150,12 +131,7 @@ uint GetSlotField(
     if (localMaterialIndex >= slotCapacity - slotOffset)
         return SLOT_INVALID;
 
-    uint slotIndex = slotOffset + localMaterialIndex;
-
-    uint fieldBaseUint = fieldIndex * (slotCapacity / 2);
-    uint wordIdx = fieldBaseUint + (slotIndex / 2);
-    uint packed = slotBuffer[wordIdx];
-    return (slotIndex % 2 == 0) ? (packed & 0xFFFF) : (packed >> 16);
+    return stageSlots[slotOffset + localMaterialIndex];
 }
 
 uint LocalMaterial(uint packedMaterials, uint packedRanges, uint triStart)
@@ -298,17 +274,141 @@ struct RasterBinEntry
     uint SWCursor;
     uint HWCursor;
     uint SWOffset;     // Exclusive prefix sum of SW clusters only across bins
-    uint Pad;
+    uint HardwareOffset;
 };
 
-// Deform Bin metadata (16B = 4xuint). Deform cache dispatch is keyed by VertexEval,
-// not RasterBin, so keep this layout independent of RasterBinEntry.
-struct DeformBinEntry
+// 12-byte geometry work item. Cluster ids are bounded to 12 bits by the packed-page ABI;
+// the remaining 20 bits carry the renderer-global view index without a fourth word.
+struct DrawRequest
 {
-    uint ClusterOffset;
-    uint BinCount;
-    uint Cursor;
-    uint Pad;
+    uint PageOffset;
+    uint InstanceID;
+    uint ClusterAndView;
+};
+
+DrawRequest MakeDrawRequest(
+    uint pageOffset,
+    uint clusterID,
+    uint instanceID,
+    uint viewIndex)
+{
+    DrawRequest request;
+    request.PageOffset = pageOffset;
+    request.InstanceID = instanceID;
+    request.ClusterAndView = (clusterID & 0xFFFu) | (viewIndex << 12u);
+    return request;
+}
+
+uint DrawRequestClusterID(DrawRequest request)
+{
+    return request.ClusterAndView & 0xFFFu;
+}
+
+uint DrawRequestViewIndex(DrawRequest request)
+{
+    return request.ClusterAndView >> 12u;
+}
+
+// Candidate-only data survives deferred culling. Visible raster work keeps
+// the compact DrawRequest and has already made its LOD decision.
+struct ClusterCandidate
+{
+    DrawRequest Request;
+    uint KeepCoarseGeometry;
+};
+
+ClusterCandidate MakeClusterCandidate(DrawRequest request, uint keepCoarseGeometry)
+{
+    ClusterCandidate result;
+    result.Request = request;
+    result.KeepCoarseGeometry = keepCoarseGeometry;
+    return result;
+}
+
+// One node carries up to 32 views through the hierarchy. Geometry and instance
+// data are fetched once; projection, LOD and occlusion remain specific to each view.
+struct ClusterTraversalNode
+{
+    uint NodeIndex;
+    uint InstanceID;
+    uint ViewIndex;
+    uint ViewMask;
+};
+
+ClusterTraversalNode MakeClusterTraversalNode(
+    uint nodeIndex, uint instanceID, uint viewIndex, uint viewMask)
+{
+    ClusterTraversalNode result;
+    result.NodeIndex = nodeIndex;
+    result.InstanceID = instanceID;
+    result.ViewIndex = viewIndex;
+    result.ViewMask = viewMask;
+    return result;
+}
+
+uint ClusterTraversalViewIndex(ClusterTraversalNode node)
+{
+    return node.ViewIndex;
+}
+
+// The phase-two buffer is a compact tagged union shared by hierarchy and leaf work. A
+// hierarchy item reserves the top bit of the first word; resident page offsets and BVH node
+// indices are both constrained below 2 GiB by the cooked Cluster address ABI.
+static const uint CLUSTER_DEFERRED_NODE_BIT = 0x80000000u;
+static const uint CLUSTER_DEFERRED_INDEX_MASK = 0x7FFFFFFFu;
+
+DrawRequest MakeDeferredTraversalNode(ClusterTraversalNode node)
+{
+    DrawRequest result;
+    result.PageOffset = CLUSTER_DEFERRED_NODE_BIT |
+        (node.NodeIndex & CLUSTER_DEFERRED_INDEX_MASK);
+    result.InstanceID = node.InstanceID;
+    result.ClusterAndView = node.ViewIndex;
+    return result;
+}
+
+bool IsDeferredTraversalNode(DrawRequest work)
+{
+    return (work.PageOffset & CLUSTER_DEFERRED_NODE_BIT) != 0u;
+}
+
+ClusterTraversalNode DecodeDeferredTraversalNode(DrawRequest work)
+{
+    ClusterTraversalNode result;
+    result.NodeIndex = work.PageOffset & CLUSTER_DEFERRED_INDEX_MASK;
+    result.InstanceID = work.InstanceID;
+    result.ViewIndex = work.ClusterAndView;
+    result.ViewMask = 1u;
+    return result;
+}
+
+struct ClusterMeshVertex
+{
+    float4 Pos : SV_POSITION;
+};
+
+struct ClusterRasterVertexData<TVarying>
+{
+    float4 Pos : SV_POSITION;
+    TVarying Varying;
+};
+
+struct ClusterRasterPixelInput<TVarying>
+{
+    float4 Pos : SV_POSITION;
+    TVarying Varying;
+    nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
+    nointerpolation uint TriangleID : TRIANGLE_ID;
+    nointerpolation uint ViewIndex : VIEW_INDEX;
+    uint RenderTargetIndex : SV_RenderTargetArrayIndex;
+};
+
+struct ClusterMeshPrimitive
+{
+    nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
+    nointerpolation uint TriangleID : TRIANGLE_ID;
+    nointerpolation uint ViewIndex : VIEW_INDEX;
+    uint RenderTargetIndex : SV_RenderTargetArrayIndex;
 };
 
 #endif

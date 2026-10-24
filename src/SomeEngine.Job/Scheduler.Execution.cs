@@ -3,7 +3,7 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
     internal WorkItemExecutionResult ExecuteStreamItem<TItem>(ref TItem item)
         where TItem : struct, IWorkStreamItem<TItem>
@@ -18,6 +18,11 @@ internal sealed partial class Scheduler
                 completedWorkItems: abandonedWorkItems);
         }
 
+        Scheduler? previousScheduler = s_executing;
+        s_executing = this;
+        using var association = SomeEngine.Diagnostics.EngineTrace.IsEnabled
+            ? SomeEngine.Diagnostics.EngineTrace.Associate(_execution.GetTraceContext(handle)) : default;
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.Execute);
         ScopeToken previousScope = s_currentScope;
         ScopeToken nextScope = ScopeToken.FromHandle(handle);
         JobExecutionContext.Enter();
@@ -42,6 +47,7 @@ internal sealed partial class Scheduler
             try
             {
                 s_currentScope = previousScope;
+                s_executing = previousScheduler;
             }
             finally
             {
@@ -94,8 +100,6 @@ internal sealed partial class Scheduler
         {
             continuation.Invoke(callbacks.Fault);
         }
-
-        callbacks.Continuations.Clear();
     }
 
     private void TryCompleteState(JobHandle handle)
@@ -127,8 +131,8 @@ internal sealed partial class Scheduler
 
     private void DispatchCompletedState(
         JobHandle handle,
-        List<DependencyContinuation>? continuations,
-        List<ExternalCompletionContinuation>? externalContinuations,
+        DependencyContinuation[]? continuations,
+        ExternalCompletionContinuation[]? externalContinuations,
         CompletionLease externalContinuationLease,
         ScopeToken parent,
         ExceptionDispatchInfo? fault)
@@ -139,8 +143,6 @@ internal sealed partial class Scheduler
             {
                 continuation.Invoke(fault);
             }
-
-            continuations.Clear();
         }
 
         if (parent.Index != 0)
@@ -166,7 +168,6 @@ internal sealed partial class Scheduler
             }
             finally
             {
-                externalContinuations.Clear();
                 _completion.EndWait(externalContinuationLease);
             }
         }

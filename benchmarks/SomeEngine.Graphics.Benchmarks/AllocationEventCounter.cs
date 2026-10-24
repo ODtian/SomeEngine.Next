@@ -10,22 +10,6 @@ internal sealed class AllocationEventCounter : EventListener
 
     internal long Count => Interlocked.Read(ref _count);
 
-    internal static long AttributeIntervalEvents(
-        long managedAllocatedBytes,
-        long observedEvents)
-    {
-        if (managedAllocatedBytes < 0)
-            throw new ArgumentOutOfRangeException(nameof(managedAllocatedBytes));
-        if (observedEvents < 0)
-            throw new ArgumentOutOfRangeException(nameof(observedEvents));
-
-        // Runtime allocation ticks may be delivered after the allocation that
-        // produced them. The exact per-thread byte counter proves whether the
-        // recording thread allocated inside this interval; a tick with a zero
-        // byte delta belongs to work outside the measured interval.
-        return managedAllocatedBytes == 0 ? 0 : observedEvents;
-    }
-
     protected override void OnEventSourceCreated(EventSource eventSource)
     {
         if (string.Equals(eventSource.Name, "Microsoft-Windows-DotNETRuntime", StringComparison.Ordinal))

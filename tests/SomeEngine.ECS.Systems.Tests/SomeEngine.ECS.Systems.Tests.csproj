@@ -17,9 +17,9 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="../Shared/TestSignal.cs" Link="TestSignal.cs" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\PublicApiContract\PublicApiSurface.cs" Link="PublicApiSurface.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.ECS\SomeEngine.ECS.csproj" />

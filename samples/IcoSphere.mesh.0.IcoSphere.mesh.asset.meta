@@ -2,20 +2,20 @@
   "asset_guid": "7c2bd842-d3a3-5616-a385-b8f2918c3daf",
   "source_guid": "1e00a232-7680-4051-97b7-16efe4178761",
   "sub_asset_key": "mesh:0:IcoSphere",
-  "content_fingerprint": "866df159f57d85a30e6960209ecd360f254e54eb2b2ed4421893f4a7c7f14689",
+  "content_fingerprint": "e117532eb9e7bfde6276c986f85ad4c9d16cc1b5b348bbee56d9c128b37e62f5",
   "dependencies": [
     {
-      "path": "assets/Materials/DefaultPBR.material.asset",
-      "hash": "4553ff3b664aeb2a5b4ad325335c5126e4cb08db6f5d425d1d25569ad4e80474"
+      "path": "assets/Materials/Standard.material.asset",
+      "hash": "255bda59da767c9dd81d747438f6c45dc37b2ca7647495090e9528144b323b82"
     },
     {
       "path": "assets/Materials/TestUnlit_1.material.asset",
-      "hash": "7d29e8660141ffaaf59851e5968cd7caf06d2190f1a77dbbb34540eea7769cb4"
+      "hash": "a6ee2acfff489bafaa369a31bdc39fcb2eaae3dc2c2e4746b04d3fc60860c623"
     },
     {
       "path": "samples/IcoSphere.glb",
       "hash": "40523d69e4e2c6fc1316114008b3de26100108a3a5ed2a5601ff1b9ff6c89a83"
     }
   ],
-  "importer_version": 3
+  "importer_version": 4
 }

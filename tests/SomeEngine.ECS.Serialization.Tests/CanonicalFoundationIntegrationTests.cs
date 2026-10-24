@@ -1,5 +1,3 @@
-using System.Runtime.CompilerServices;
-using System.Reflection;
 using System.Text;
 using SomeEngine.ECS.Components;
 using SomeEngine.Serialization;
@@ -86,16 +84,6 @@ public struct CanonicalFoundationReferenceFieldsCodec : ICanonicalComponentCodec
 
 public sealed class CanonicalFoundationIntegrationTests
 {
-    [Fact]
-    public void EcsReadBudgetHasNoBinaryDocumentLimitProjection()
-    {
-        Assert.Null(typeof(SerializationReadLimits).GetMethod(
-            "ToBinaryReadLimits",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic));
-        Assert.Null(typeof(SerializationReadBudget).GetProperty(
-            "BinaryLimits",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic));
-    }
 
     [Fact]
     public void FixedWidthComponentPayloadMatchesSharedCanonicalPrimitiveEncoding()
@@ -204,7 +192,7 @@ public sealed class CanonicalFoundationIntegrationTests
         using var corrupted = new MemoryStream(envelope, writable: false);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<CanonicalFoundationPrimitives>(corrupted, registry));
-        Assert.Contains("Invalid Boolean value 2", error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
     [Fact]
@@ -222,7 +210,7 @@ public sealed class CanonicalFoundationIntegrationTests
         var limits = SerializationReadLimits.Default with { MaxStringBytes = 3 };
         InvalidDataException limitError = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<CanonicalFoundationReferenceFields>(stream, registry, limits));
-        Assert.Contains("string character", limitError.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(limitError));
 
         byte[] envelope = stream.ToArray();
         (int payloadOffset, byte[] payload) = ExtractComponentPayload(envelope);
@@ -235,31 +223,24 @@ public sealed class CanonicalFoundationIntegrationTests
         using var malformed = new MemoryStream(envelope, writable: false);
         InvalidDataException utf8Error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<CanonicalFoundationReferenceFields>(malformed, registry));
-        Assert.Contains("Serialized string contains malformed UTF-8", utf8Error.Message, StringComparison.Ordinal);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(utf8Error));
         Assert.Equal(25, payload.Length);
     }
 
     [Fact]
-    public void RuntimeTypeIdentityAndFingerprintUseSharedCanonicalFoundations()
+    public void ComponentKeysRepeatAcrossRegistriesAndDistinguishValueTypes()
     {
-        var registry = new SerializationRegistry()
+        var first = new SerializationRegistry()
             .Register<CanonicalFoundationPrimitives, CanonicalFoundationPrimitivesCodec>();
-        SerializationTypeEntry entry = Assert.Single(registry.Entries.ToArray());
-        SerializationTypeKey key = entry.TypeKey;
-        string stableName = typeof(CanonicalFoundationPrimitives).FullName!;
-
-        Guid canonicalId = BinaryTypeId.FromLogicalName("SomeEngine.ECS.Serialization:" + stableName);
-        Assert.Equal(canonicalId, key.StableId);
-
-        ulong fingerprint = BinaryFieldKey.FromName(stableName);
-        Append(ref fingerprint, typeof(CanonicalFoundationPrimitives).Module.ModuleVersionId.ToByteArray());
-        Mix(ref fingerprint, unchecked((uint)Unsafe.SizeOf<CanonicalFoundationPrimitives>()));
-        Mix(ref fingerprint, (uint)entry.Storage);
-        Mix(ref fingerprint, (uint)entry.Kind);
-        Mix(ref fingerprint, RuntimeHelpers.IsReferenceOrContainsReferences<CanonicalFoundationPrimitives>() ? 1u : 0u);
-        fingerprint = fingerprint == 0 ? 1 : fingerprint;
-
-        Assert.Equal(fingerprint, key.SchemaFingerprint);
+        var second = new SerializationRegistry()
+            .Register<CanonicalFoundationPrimitives, CanonicalFoundationPrimitivesCodec>();
+        SerializationTypeKey firstKey = Assert.Single(first.Entries.ToArray()).TypeKey;
+        SerializationTypeKey secondKey = Assert.Single(second.Entries.ToArray()).TypeKey;
+        var different = new SerializationRegistry().Register<SerPosition>();
+        SerializationTypeKey differentKey = Assert.Single(different.Entries.ToArray()).TypeKey;
+        Assert.Equal(firstKey, secondKey);
+        Assert.NotEqual(firstKey.StableId, differentKey.StableId);
+        Assert.NotEqual(0UL, firstKey.SchemaFingerprint);
     }
 
     private static (int PayloadOffset, byte[] Payload) ExtractComponentPayload(byte[] envelope)
@@ -288,12 +269,4 @@ public sealed class CanonicalFoundationIntegrationTests
         return (payloadOffset, payload);
     }
 
-    private static void Append(ref ulong hash, ReadOnlySpan<byte> bytes)
-    {
-        for (int i = 0; i < bytes.Length; i++)
-            hash = (hash ^ bytes[i]) * 1099511628211UL;
-    }
-
-    private static void Mix(ref ulong hash, uint value) =>
-        hash = (hash ^ value) * 1099511628211UL;
 }

@@ -41,7 +41,9 @@ internal sealed class BinaryReadBudget
     {
         _depth = checked(_depth + 1);
         if (_depth > Limits.MaxObjectDepth)
-            throw new InvalidDataException($"Binary object depth exceeds configured limit {Limits.MaxObjectDepth}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"Binary object depth exceeds configured limit {Limits.MaxObjectDepth}.");
     }
 
     internal void ExitObject()
@@ -60,7 +62,9 @@ internal sealed class BinaryReadBudget
         if (value < 0)
             throw new InvalidDataException($"Negative {description} count.");
         if (value > Limits.MaxCollectionCount)
-            throw new InvalidDataException($"{description} count {value} exceeds {Limits.MaxCollectionCount}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"{description} count {value} exceeds {Limits.MaxCollectionCount}.");
 
         if (elementAllocationBytes < 0)
             throw new ArgumentOutOfRangeException(nameof(elementAllocationBytes));
@@ -77,7 +81,9 @@ internal sealed class BinaryReadBudget
         if (value < 0)
             throw new InvalidDataException("Negative UTF-16 string code-unit count.");
         if (value > Limits.MaxStringBytes)
-            throw new InvalidDataException($"UTF-16 string code-unit count {value} exceeds {Limits.MaxStringBytes}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"UTF-16 string code-unit count {value} exceeds {Limits.MaxStringBytes}.");
         ReserveAllocation(checked(24L + (long)value * sizeof(char)), "UTF-16 string");
         return value;
     }
@@ -85,7 +91,9 @@ internal sealed class BinaryReadBudget
     internal void StringBytes(int value)
     {
         if (value > Limits.MaxStringBytes)
-            throw new InvalidDataException($"UTF-8 string length {value} exceeds {Limits.MaxStringBytes}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"UTF-8 string length {value} exceeds {Limits.MaxStringBytes}.");
         Consume(ref _stringBytes, value, Limits.MaxTotalStringBytes, "UTF-8 string bytes");
     }
 
@@ -94,7 +102,9 @@ internal sealed class BinaryReadBudget
         if (value < 0)
             throw new InvalidDataException("Negative byte payload length.");
         if (value > Limits.MaxBytePayloadBytes)
-            throw new InvalidDataException($"Byte payload length {value} exceeds {Limits.MaxBytePayloadBytes}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"Byte payload length {value} exceeds {Limits.MaxBytePayloadBytes}.");
         Consume(ref _decodedBytes, value, Limits.MaxTotalDecodedBytes, "decoded bytes");
         if (allocate)
             ReserveAllocation(checked(24L + value), "byte payload");
@@ -116,15 +126,19 @@ internal sealed class BinaryReadBudget
         }
         catch (OverflowException exception)
         {
-            throw new InvalidDataException($"{description} budget overflowed.", exception);
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"{description} budget overflowed.", exception);
         }
 
         if (total > maximum)
-            throw new InvalidDataException($"Total {description} {total} exceeds configured limit {maximum}.");
+            throw SerializationErrors.CreateDataException(
+                SerializationError.LimitExceeded,
+                $"Total {description} {total} exceeds configured limit {maximum}.");
     }
 }
 
-/// <summary>Bounds-checked little-endian reader over an immutable Span.</summary>
+/// <summary>Bounds-checked little-endian reader over immutable continuous or segmented input.</summary>
 public ref struct BinaryDataReader
 {
     private static readonly Encoding StrictUtf8 = new UTF8Encoding(
@@ -133,6 +147,9 @@ public ref struct BinaryDataReader
 
     private readonly ReadOnlySpan<byte> _source;
     private readonly BinaryReadBudget _budget;
+    private SequenceReader<byte> _sequence;
+    private readonly bool _segmented;
+    private readonly int _length;
     private int _position;
 
     public BinaryDataReader(ReadOnlySpan<byte> source, BinaryReadLimits? limits = null)
@@ -144,16 +161,37 @@ public ref struct BinaryDataReader
     {
         _source = source;
         _budget = budget;
+        _sequence = default;
+        _segmented = false;
+        _length = source.Length;
         _position = 0;
     }
 
-    public int Position => _position;
-    public int Remaining => _source.Length - _position;
-    public bool End => _position == _source.Length;
+    public BinaryDataReader(ReadOnlySequence<byte> source, BinaryReadLimits? limits = null)
+        : this(source, new BinaryReadBudget(limits))
+    {
+    }
+
+    private BinaryDataReader(ReadOnlySequence<byte> source, BinaryReadBudget budget)
+    {
+        // A single encoded value retains the existing Int32 addressing limit, independently
+        // of document offsets and the total size of a source containing many values.
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(source.Length, int.MaxValue);
+        _budget = budget;
+        _length = (int)source.Length;
+        _segmented = !source.IsSingleSegment;
+        _source = source.IsSingleSegment ? source.FirstSpan : default;
+        _sequence = _segmented ? new SequenceReader<byte>(source) : default;
+        _position = 0;
+    }
+
+    public int Position => _segmented ? (int)_sequence.Consumed : _position;
+    public int Remaining => _length - Position;
+    public bool End => Remaining == 0;
 
     public bool ReadBoolean()
     {
-        int position = _position;
+        int position = Position;
         try
         {
             return BinaryPrimitiveEncoding.ReadBoolean(ReadBytes(sizeof(byte)));
@@ -166,17 +204,42 @@ public ref struct BinaryDataReader
 
     public byte ReadByte() => BinaryPrimitiveEncoding.ReadByte(ReadBytes(sizeof(byte)));
     public sbyte ReadSByte() => BinaryPrimitiveEncoding.ReadSByte(ReadBytes(sizeof(sbyte)));
-    public short ReadInt16() => BinaryPrimitiveEncoding.ReadInt16(ReadBytes(sizeof(short)));
-    public ushort ReadUInt16() => BinaryPrimitiveEncoding.ReadUInt16(ReadBytes(sizeof(ushort)));
-    public int ReadInt32() => BinaryPrimitiveEncoding.ReadInt32(ReadBytes(sizeof(int)));
-    public uint ReadUInt32() => BinaryPrimitiveEncoding.ReadUInt32(ReadBytes(sizeof(uint)));
-    public long ReadInt64() => BinaryPrimitiveEncoding.ReadInt64(ReadBytes(sizeof(long)));
-    public ulong ReadUInt64() => BinaryPrimitiveEncoding.ReadUInt64(ReadBytes(sizeof(ulong)));
-    public float ReadSingle() => BinaryPrimitiveEncoding.ReadSingle(ReadBytes(sizeof(float)));
-    public double ReadDouble() => BinaryPrimitiveEncoding.ReadDouble(ReadBytes(sizeof(double)));
-    public char ReadChar() => BinaryPrimitiveEncoding.ReadChar(ReadBytes(sizeof(char)));
+    public short ReadInt16()
+    {
+        if (!_segmented) return BinaryPrimitiveEncoding.ReadInt16(ReadBytes(sizeof(short)));
+        RequireBytes(sizeof(short));
+        _sequence.TryReadLittleEndian(out short value);
+        return value;
+    }
+    public ushort ReadUInt16() => unchecked((ushort)ReadInt16());
+    public int ReadInt32()
+    {
+        if (!_segmented) return BinaryPrimitiveEncoding.ReadInt32(ReadBytes(sizeof(int)));
+        RequireBytes(sizeof(int));
+        _sequence.TryReadLittleEndian(out int value);
+        return value;
+    }
+    public uint ReadUInt32() => unchecked((uint)ReadInt32());
+    public long ReadInt64()
+    {
+        if (!_segmented) return BinaryPrimitiveEncoding.ReadInt64(ReadBytes(sizeof(long)));
+        RequireBytes(sizeof(long));
+        _sequence.TryReadLittleEndian(out long value);
+        return value;
+    }
+    public ulong ReadUInt64() => unchecked((ulong)ReadInt64());
+    public float ReadSingle() => BitConverter.Int32BitsToSingle(ReadInt32());
+    public double ReadDouble() => BitConverter.Int64BitsToDouble(ReadInt64());
+    public char ReadChar() => (char)ReadUInt16();
 
-    public Guid ReadGuid() => BinaryPrimitiveEncoding.ReadGuid(ReadBytes(16));
+    public Guid ReadGuid()
+    {
+        if (!_segmented || _sequence.UnreadSpan.Length >= 16)
+            return BinaryPrimitiveEncoding.ReadGuid(ReadBytes(16));
+        Span<byte> bytes = stackalloc byte[16];
+        ReadInto(bytes);
+        return BinaryPrimitiveEncoding.ReadGuid(bytes);
+    }
 
     public unsafe string? ReadString()
     {
@@ -190,14 +253,22 @@ public ref struct BinaryDataReader
         string value = new('\0', codeUnitCount);
         int bytesUsed = 0;
         int charsUsed = 0;
+        SequenceReader<byte> input = _sequence;
+        Span<byte> utf8 = stackalloc byte[4];
         fixed (char* destination = value)
         {
             while (charsUsed < codeUnitCount)
             {
-                OperationStatus status = Rune.DecodeFromUtf8(
-                    _source[checked(_position + bytesUsed)..],
+                ReadOnlySpan<byte> next = _segmented ? input.UnreadSpan : _source[checked(_position + bytesUsed)..];
+                OperationStatus status = Rune.DecodeFromUtf8(next,
                     out Rune rune,
                     out int consumed);
+                if (_segmented && status == OperationStatus.NeedMoreData && input.Remaining > next.Length)
+                {
+                    int count = (int)Math.Min(4, input.Remaining);
+                    input.TryCopyTo(utf8[..count]);
+                    status = Rune.DecodeFromUtf8(utf8[..count], out rune, out consumed);
+                }
                 if (status == OperationStatus.NeedMoreData)
                     throw new InvalidDataException("Binary string ended inside a UTF-8 sequence.");
                 if (status != OperationStatus.Done)
@@ -216,11 +287,13 @@ public ref struct BinaryDataReader
                     throw new InvalidOperationException("Rune UTF-16 length changed while decoding.");
                 bytesUsed = checked(bytesUsed + consumed);
                 charsUsed += runeChars;
+                if (_segmented) input.Advance(consumed);
             }
         }
 
         _budget.StringBytes(bytesUsed);
-        _position = checked(_position + bytesUsed);
+        if (_segmented) _sequence = input;
+        else _position = checked(_position + bytesUsed);
         return value;
     }
 
@@ -230,14 +303,20 @@ public ref struct BinaryDataReader
         if (length == -1)
             return null;
         _budget.BytePayloadLength(length, allocate: true);
-        return ReadBytes(length).ToArray();
+        RequireBytes(length);
+        byte[] result = GC.AllocateUninitializedArray<byte>(length);
+        ReadInto(result);
+        return result;
     }
 
     public byte[] ReadByteArray()
     {
         int length = ReadInt32();
         _budget.BytePayloadLength(length, allocate: true);
-        return ReadBytes(length).ToArray();
+        RequireBytes(length);
+        byte[] result = GC.AllocateUninitializedArray<byte>(length);
+        ReadInto(result);
+        return result;
     }
 
     public ReadOnlySpan<byte> ReadLengthPrefixedSpan()
@@ -247,18 +326,52 @@ public ref struct BinaryDataReader
         return ReadBytes(length);
     }
 
+    /// <summary>
+    /// Borrows a contiguous range. If the requested range spans segments, copies only that
+    /// range to a GC array and charges the allocation limit. Ordinary scalar reads never take this copy path.
+    /// </summary>
     public ReadOnlySpan<byte> ReadBytes(int length)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(length);
-        if (length > Remaining)
+        RequireBytes(length);
+        if (_segmented)
         {
-            throw new InvalidDataException(
-                $"Truncated binary payload at byte {_position}: requested {length} bytes, {Remaining} remain.");
+            ReadOnlySpan<byte> bytes = _sequence.UnreadSpan;
+            if (length <= bytes.Length)
+            {
+                _sequence.Advance(length);
+                return bytes[..length];
+            }
+            _budget.ReserveAllocation(24L + length, "contiguous byte range");
+            byte[] copy = GC.AllocateUninitializedArray<byte>(length);
+            ReadInto(copy);
+            return copy;
         }
 
         ReadOnlySpan<byte> result = _source.Slice(_position, length);
         _position += length;
         return result;
+    }
+
+    private void ReadInto(scoped Span<byte> destination)
+    {
+        RequireBytes(destination.Length);
+        if (_segmented)
+        {
+            _sequence.TryCopyTo(destination);
+            _sequence.Advance(destination.Length);
+        }
+        else
+        {
+            _source.Slice(_position, destination.Length).CopyTo(destination);
+            _position += destination.Length;
+        }
+    }
+
+    private void RequireBytes(int length)
+    {
+        if (length > Remaining)
+            throw new InvalidDataException($"Truncated binary payload at byte {Position}: requested {length} bytes, {Remaining} remain.");
     }
 
     /// <summary>
@@ -297,7 +410,14 @@ public ref struct BinaryDataReader
     }
 
     public BinaryDataReader ReadSubReader(int length)
-        => new(ReadBytes(length), _budget);
+    {
+        if (!_segmented) return new(ReadBytes(length), _budget);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        RequireBytes(length);
+        ReadOnlySequence<byte> bytes = _sequence.Sequence.Slice(_sequence.Position, length);
+        _sequence.Advance(length);
+        return new(bytes, _budget);
+    }
 
     public void EnterObject() => _budget.EnterObject();
     public void ExitObject() => _budget.ExitObject();

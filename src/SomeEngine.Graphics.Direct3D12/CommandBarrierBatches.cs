@@ -1,4 +1,5 @@
 using Silk.NET.Direct3D12;
+using System.Buffers;
 using NativeBufferBarrier = Silk.NET.Direct3D12.BufferBarrier;
 using NativeTextureBarrier = Silk.NET.Direct3D12.TextureBarrier;
 
@@ -10,6 +11,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public void Barrier(CommandContext context, in BarrierBatch barriers)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiBarriers);
         if (barriers.IsEmpty)
             return;
 
@@ -27,13 +29,6 @@ internal sealed unsafe partial class D3D12Backend
             barriers.MemoryBarriers.Length +
             (HasFoldableCommonTextureBarrier(command, barriers.TextureBarriers) ? 1 : 0));
         int maximumTextureBarrierCount = checked(textureCount * 3);
-        if (checked(globalCount + bufferCount + maximumTextureBarrierCount) >
-            MaximumStackBatchedBarrierCount)
-        {
-            EncodeBarrierBatchIndividually(context, barriers);
-            return;
-        }
-
         EncodeEnhancedBarrierBatch(
             command,
             barriers,
@@ -51,50 +46,71 @@ internal sealed unsafe partial class D3D12Backend
         int textureCount,
         int maximumTextureBarrierCount)
     {
-        int resourceCount = checked(bufferCount + textureCount);
+        int resourceCount = checked(barriers.BufferBarriers.Length + barriers.TextureBarriers.Length +
+            barriers.QueueAcquires.Length + barriers.QueueReleases.Length);
         command.PrepareCaptures(resourceCount, 0, resourceCount);
         command.PrepareSwapchainUses(textureCount);
-        GlobalBarrier* nativeGlobals = stackalloc GlobalBarrier[Math.Max(globalCount, 1)];
-        NativeBufferBarrier* nativeBuffers = stackalloc NativeBufferBarrier[Math.Max(bufferCount, 1)];
-        NativeTextureBarrier* nativeTextures =
-            stackalloc NativeTextureBarrier[Math.Max(maximumTextureBarrierCount, 1)];
-        int globalDestination = AppendMemoryBarriers(barriers.MemoryBarriers, nativeGlobals);
-        int bufferDestination = 0;
-        int textureDestination = 0;
-        AppendQueueAcquires(
-            command,
-            barriers.QueueAcquires,
-            nativeBuffers,
-            ref bufferDestination,
-            nativeTextures,
-            ref textureDestination);
-        AppendBufferBarriers(
-            command,
-            barriers.BufferBarriers,
-            nativeBuffers,
-            ref bufferDestination);
-        AppendTextureBarriersAndFoldCommon(
-            command,
-            barriers.TextureBarriers,
-            nativeGlobals,
-            ref globalDestination,
-            nativeTextures,
-            ref textureDestination);
-        AppendQueueReleases(
-            command,
-            barriers.QueueReleases,
-            nativeBuffers,
-            ref bufferDestination,
-            nativeTextures,
-            ref textureDestination);
-        EmitEnhancedBarrierGroups(
-            command,
-            nativeGlobals,
-            globalDestination,
-            nativeBuffers,
-            bufferDestination,
-            nativeTextures,
-            textureDestination);
+        GlobalBarrier[]? rentedGlobals = null;
+        NativeBufferBarrier[]? rentedBuffers = null;
+        NativeTextureBarrier[]? rentedTextures = null;
+        try
+        {
+            bool useStack = checked(globalCount + bufferCount + maximumTextureBarrierCount) <=
+                MaximumStackBatchedBarrierCount;
+            Span<GlobalBarrier> globals = useStack
+                ? stackalloc GlobalBarrier[Math.Max(globalCount, 1)]
+                : (rentedGlobals = ArrayPool<GlobalBarrier>.Shared.Rent(Math.Max(globalCount, 1)));
+            Span<NativeBufferBarrier> buffers = useStack
+                ? stackalloc NativeBufferBarrier[Math.Max(bufferCount, 1)]
+                : (rentedBuffers = ArrayPool<NativeBufferBarrier>.Shared.Rent(Math.Max(bufferCount, 1)));
+            Span<NativeTextureBarrier> textures = useStack
+                ? stackalloc NativeTextureBarrier[Math.Max(maximumTextureBarrierCount, 1)]
+                : (rentedTextures = ArrayPool<NativeTextureBarrier>.Shared.Rent(Math.Max(maximumTextureBarrierCount, 1)));
+            fixed (GlobalBarrier* nativeGlobals = globals)
+            fixed (NativeBufferBarrier* nativeBuffers = buffers)
+            fixed (NativeTextureBarrier* nativeTextures = textures)
+            {
+                int globalDestination = AppendMemoryBarriers(barriers.MemoryBarriers, nativeGlobals);
+                int bufferDestination = 0;
+                int textureDestination = 0;
+                AppendQueueAcquires(
+                    command,
+                    barriers.QueueAcquires,
+                    nativeTextures,
+                    ref textureDestination);
+                AppendBufferBarriers(
+                    command,
+                    barriers.BufferBarriers,
+                    nativeBuffers,
+                    ref bufferDestination);
+                AppendTextureBarriersAndFoldCommon(
+                    command,
+                    barriers.TextureBarriers,
+                    nativeGlobals,
+                    ref globalDestination,
+                    nativeTextures,
+                    ref textureDestination);
+                AppendQueueReleases(
+                    command,
+                    barriers.QueueReleases,
+                    nativeTextures,
+                    ref textureDestination);
+                EmitEnhancedBarrierGroups(
+                    command,
+                    nativeGlobals,
+                    globalDestination,
+                    nativeBuffers,
+                    bufferDestination,
+                    nativeTextures,
+                    textureDestination);
+            }
+        }
+        finally
+        {
+            if (rentedGlobals is not null) ArrayPool<GlobalBarrier>.Shared.Return(rentedGlobals);
+            if (rentedBuffers is not null) ArrayPool<NativeBufferBarrier>.Shared.Return(rentedBuffers);
+            if (rentedTextures is not null) ArrayPool<NativeTextureBarrier>.Shared.Return(rentedTextures);
+        }
     }
 
     private static int AppendMemoryBarriers(
@@ -129,6 +145,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             D3D12Buffer buffer = RequireBuffer(barrier.Buffer);
             command.Capture(buffer);
+            if (BufferBarrierIsImplicit(barrier)) continue;
             ResolveBarrierSyncs(
                 barrier.SyncBefore,
                 barrier.SyncAfter,
@@ -143,39 +160,6 @@ internal sealed unsafe partial class D3D12Backend
                 buffer.Native,
                 0,
                 buffer.Info.Size);
-        }
-    }
-
-    private void AppendTextureBarriers(
-        D3D12CommandContext command,
-        ReadOnlySpan<TextureBarrier> barriers,
-        NativeTextureBarrier* destination,
-        ref int count)
-    {
-        foreach (ref readonly TextureBarrier barrier in barriers)
-        {
-            D3D12TextureResource texture = RequireTexture(barrier.Texture);
-            command.Capture(texture);
-            ResolveBarrierSyncs(
-                barrier.SyncBefore,
-                barrier.SyncAfter,
-                barrier.Phase,
-                out BarrierSync syncBefore,
-                out BarrierSync syncAfter);
-            count = AppendEnhancedTextureBarriers(
-                command,
-                texture,
-                barrier.Range,
-                syncBefore,
-                syncAfter,
-                ToBarrierAccess(barrier.AccessBefore),
-                ToBarrierAccess(barrier.AccessAfter),
-                barrier.LayoutBefore,
-                barrier.LayoutAfter,
-                TextureBarrierFlags.None,
-                destination,
-                count);
-            command.RecordSwapchainState(texture, barrier.LayoutAfter, barrier.AccessAfter);
         }
     }
 
@@ -293,8 +277,6 @@ internal sealed unsafe partial class D3D12Backend
     private void AppendQueueAcquires(
         D3D12CommandContext command,
         ReadOnlySpan<QueueAcquire> barriers,
-        NativeBufferBarrier* bufferDestination,
-        ref int bufferCount,
         NativeTextureBarrier* textureDestination,
         ref int textureCount)
     {
@@ -302,16 +284,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (barrier.Resource is Buffer publicBuffer)
             {
-                D3D12Buffer buffer = RequireBuffer(publicBuffer);
-                command.Capture(buffer);
-                bufferDestination[bufferCount++] = new NativeBufferBarrier(
-                    BarrierSync.None,
-                    ToBarrierSync(barrier.Sync),
-                    BarrierAccess.NoAccess,
-                    ToBarrierAccess(barrier.Access),
-                    buffer.Native,
-                    0,
-                    buffer.Info.Size);
+                command.Capture(RequireBuffer(publicBuffer));
                 continue;
             }
 
@@ -345,8 +318,6 @@ internal sealed unsafe partial class D3D12Backend
     private void AppendQueueReleases(
         D3D12CommandContext command,
         ReadOnlySpan<QueueRelease> barriers,
-        NativeBufferBarrier* bufferDestination,
-        ref int bufferCount,
         NativeTextureBarrier* textureDestination,
         ref int textureCount)
     {
@@ -354,16 +325,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (barrier.Resource is Buffer publicBuffer)
             {
-                D3D12Buffer buffer = RequireBuffer(publicBuffer);
-                command.Capture(buffer);
-                bufferDestination[bufferCount++] = new NativeBufferBarrier(
-                    ToBarrierSync(barrier.Sync),
-                    BarrierSync.None,
-                    ToBarrierAccess(barrier.Access),
-                    BarrierAccess.NoAccess,
-                    buffer.Native,
-                    0,
-                    buffer.Info.Size);
+                command.Capture(RequireBuffer(publicBuffer));
                 continue;
             }
 
@@ -431,6 +393,7 @@ internal sealed unsafe partial class D3D12Backend
                 checked((uint)textureCount),
                 pTextureBarriers: textures);
         }
+        if (groupCount == 0) return;
         D3D12CommandListFastCalls.Barrier(
             command.List,
             checked((uint)groupCount),
@@ -446,20 +409,16 @@ internal sealed unsafe partial class D3D12Backend
         textureCount = barriers.TextureBarriers.Length;
         foreach (ref readonly QueueAcquire barrier in barriers.QueueAcquires)
         {
-            if (barrier.Resource is Buffer)
-                bufferCount++;
-            else if (barrier.Resource is Texture)
+            if (barrier.Resource is Texture)
                 textureCount++;
-            else
+            else if (barrier.Resource is not Buffer)
                 return false;
         }
         foreach (ref readonly QueueRelease barrier in barriers.QueueReleases)
         {
-            if (barrier.Resource is Buffer)
-                bufferCount++;
-            else if (barrier.Resource is Texture)
+            if (barrier.Resource is Texture)
                 textureCount++;
-            else
+            else if (barrier.Resource is not Buffer)
                 return false;
         }
         return true;

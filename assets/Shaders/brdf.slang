@@ -2,7 +2,7 @@
 #define BRDF_SLANG
 
 // ── Cook-Torrance Microfacet BRDF ──
-// Standard PBR direct lighting model:
+// Cook-Torrance direct lighting model:
 //   f(l,v) = D(h) * G(l,v) * F(v,h) / (4 * NdotL * NdotV) + (1-F) * diffuse/PI
 
 static const float PI = 3.14159265358979323846;
@@ -95,7 +95,9 @@ float EvaluateDistanceAttenuation(float distanceSq, float range)
     if (distanceSq >= rangeSq)
         return 0.0;
 
-    return 1.0 / max(distanceSq, MIN_DISTANCE_SQ);
+    float relativeDistanceSq = distanceSq / rangeSq;
+    float fade = 1.0 - relativeDistanceSq * relativeDistanceSq;
+    return fade * fade / max(distanceSq, MIN_DISTANCE_SQ);
 }
 
 /// Evaluate Cook-Torrance BRDF for a single point light.

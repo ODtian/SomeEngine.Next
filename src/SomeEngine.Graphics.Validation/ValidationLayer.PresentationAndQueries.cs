@@ -116,6 +116,16 @@ public sealed partial class ValidationLayer
         return Backend.Reconfigure(swapchain, config);
     }
 
+    private void ForgetQueryPool(GraphicsObject value)
+    {
+        var pool = (QueryPool)value;
+        lock (_gate)
+        {
+            for (uint index = 0; index < pool.Description.Count; index++)
+                _queryStates.Remove(new QuerySlot(pool, index));
+        }
+    }
+
     public QueryPool CreateQueryPool(Device device, in QueryPoolDesc desc)
     {
         RequireDevice(device);
@@ -136,6 +146,7 @@ public sealed partial class ValidationLayer
                 result = Backend.CreateQueryPool(device, createDesc);
                 _objects.Add(result, objectInfo);
                 objectAdded = true;
+                result.Disposed += ForgetQueryPool;
                 return result;
             }
             catch
@@ -145,6 +156,33 @@ public sealed partial class ValidationLayer
                 result?.Dispose();
                 throw;
             }
+        }
+    }
+
+    public void ResetQueries(CommandContext context, QueryPool pool, uint firstQuery, uint queryCount)
+    {
+        RequireOutsideRendering(context);
+        ContextValidationState state = GetContextState(context);
+        RequireOnDevice(context.Device, pool, "QueryPool");
+        if (queryCount == 0 || firstQuery >= pool.Description.Count ||
+            queryCount > pool.Description.Count - firstQuery)
+            Reject("Queries", "The query reset range is outside the pool.", pool.Label);
+        lock (state)
+        {
+            for (uint index = 0; index < queryCount; index++)
+                if (GetLocalQueryPhase(state, new QuerySlot(pool, firstQuery + index)) == QueryLocalPhase.Active)
+                    Reject("Queries", "An active query cannot be reset.", pool.Label);
+            CommandMutationCapacity capacity = new()
+            {
+                QueryEvents = checked((int)queryCount), QueryPhases = checked((int)queryCount)
+            };
+            PrepareCommandDependencyCore(state, pool, ref capacity);
+            ReserveCommandMutation(state, capacity);
+            Backend.ResetQueries(context, pool, firstQuery, queryCount);
+            for (uint index = 0; index < queryCount; index++)
+                RecordQueryEvent(state, new QuerySlot(pool, firstQuery + index),
+                    QueryValidationEventType.Reset, QueryLocalPhase.Reset);
+            RecordCommandDependencyCore(state, pool);
         }
     }
 

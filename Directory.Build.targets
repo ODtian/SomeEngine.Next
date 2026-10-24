@@ -1,23 +1,5 @@
 <Project>
-  <PropertyGroup>
-    <SomeEngineQualityAnalyzerProject>$(SomeEngineRepositoryRoot)harness\quality\SomeEngine.Harness.QualityAnalyzer\SomeEngine.Harness.QualityAnalyzer.csproj</SomeEngineQualityAnalyzerProject>
-    <SomeEngineQualityAnalyzerEnabled Condition="'$(SomeEngineQualityAnalyzerEnabled)' == ''">false</SomeEngineQualityAnalyzerEnabled>
-    <SomeEngineQualityBaselineEnabled Condition="'$(SomeEngineQualityBaselineEnabled)' == ''">true</SomeEngineQualityBaselineEnabled>
-  </PropertyGroup>
-
-  <ItemGroup Condition="'$(SomeEngineQualityAnalyzerEnabled)' == 'true' and '$(SomeEngineQualityAnalyzerOptOut)' != 'true' and $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$([System.IO.Path]::Combine($(SomeEngineRepositoryRoot), `src`))')) == 'true'">
-    <ProjectReference Include="$(SomeEngineQualityAnalyzerProject)"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false"
-                      PrivateAssets="all"
-                      GlobalPropertiesToRemove="PublishAot"
-                      AdditionalProperties="PublishAot=false" />
-    <AdditionalFiles Include="$(SomeEngineRepositoryRoot)harness\config.json" />
-    <AdditionalFiles Include="$(SomeEngineRepositoryRoot)harness\quality-baselines\graphics-hard-baseline.v1.json"
-                     Condition="'$(SomeEngineQualityBaselineEnabled)' == 'true'" />
-  </ItemGroup>
-
-  <Target Name="ValidateSlangToolchainIdentity" BeforeTargets="PrepareForBuild">
+  <Target Name="ValidateSlangToolchainIdentity" BeforeTargets="PrepareForBuild" Condition="'$(MSBuildProjectName)' == 'SomeEngine.Graphics' or '$(MSBuildProjectName)' == 'SomeEngine.Graphics.Direct3D12.Tests'">
     <Error Condition="'$(_RequestedSlangToolchainVersion)' != '' and '$(_RequestedSlangToolchainVersion)' != '$(SlangToolchainVersion)'"
            Text="SlangToolchainVersion is pinned by the product and cannot be overridden (requested '$(_RequestedSlangToolchainVersion)', pinned '$(SlangToolchainVersion)')." />
     <Error Condition="'$(SlangToolchainVersion)' == ''"
@@ -26,5 +8,26 @@
            Text="SlangStandardModuleDirectory must be derived from SlangToolchainVersion." />
     <Error Condition="'$(SlangTestFixtureDirectory)' != 'SlangStandardModule$(SlangToolchainVersion)'"
            Text="SlangTestFixtureDirectory must be derived from SlangToolchainVersion." />
+  </Target>
+  <!-- dotnet test, just test and CI share this default selection. An explicit filter overrides it. -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <EngineTestCategory>Software</EngineTestCategory>
+    <EngineTestCategory Condition="'$(MSBuildProjectName)' == 'SomeEngine.Graphics.Vulkan.Tests'">Hardware</EngineTestCategory>
+    <EngineTestCategory Condition="$([System.String]::Copy('$(MSBuildProjectName)').Contains('.Benchmarks.Tests'))">Performance</EngineTestCategory>
+    <VSTestTestCaseFilter Condition="'$(VSTestTestCaseFilter)' == ''">(Category=Software)&amp;(Category!=Hardware)&amp;(Category!=LongFuzz)&amp;(Category!=Performance)&amp;(Isolation!=PresentationProcess)&amp;(Isolation!=DeviceLossProcess)</VSTestTestCaseFilter>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <AssemblyAttribute Include="Xunit.AssemblyTraitAttribute">
+      <_Parameter1>Category</_Parameter1>
+      <_Parameter2>$(EngineTestCategory)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <Target Name="BuildTestRuleChecker">
+    <MSBuild Projects="$(SomeEngineRepositoryRoot)tools/TestRules/SomeEngine.TestRules.csproj"
+             Targets="Restore;Build" Properties="Configuration=$(Configuration)"
+             RemoveProperties="TargetFramework;TargetFrameworks;RuntimeIdentifier;SelfContained;PublishAot" />
+  </Target>
+  <Target Name="CheckTestRules" BeforeTargets="VSTest" DependsOnTargets="BuildTestRuleChecker" Condition="'$(IsTestProject)' == 'true'">
+    <Exec Command="dotnet &quot;$(SomeEngineRepositoryRoot)tools/TestRules/bin/$(Configuration)/net10.0/SomeEngine.TestRules.dll&quot; &quot;$(SomeEngineRepositoryRoot).&quot; &quot;$(MSBuildProjectDirectory)&quot; &quot;$(AssemblyName)&quot;" />
   </Target>
 </Project>

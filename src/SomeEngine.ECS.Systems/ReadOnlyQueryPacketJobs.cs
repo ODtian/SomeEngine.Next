@@ -109,9 +109,9 @@ public readonly ref struct ReadOnlyQueryPacket
     }
 
     /// <summary>
-    /// Tests the packet's coarse component-column version against one system version. The query
-    /// must declare read access to the component. This is an invalidation test, not a row identity:
-    /// one changed row deliberately invalidates the packet's borrowed column.
+    /// Tests whether any component row in this packet changed since the system version.
+    /// A sliced packet tests only its own rows. The coarse column version rejects
+    /// unchanged chunks before visiting row versions.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool ChangedSince<T>(uint lastSystemVersion) where T : struct
@@ -120,10 +120,32 @@ public readonly ref struct ReadOnlyQueryPacket
             _match,
             read: true,
             write: false);
-        return unchecked((int)(_chunk.ChangeVersions[column] - lastSystemVersion)) > 0;
+        return ColumnChangedSince(column, lastSystemVersion);
     }
 
-    /// <summary>Tests the dynamic-buffer header column against one system version.</summary>
+    /// <summary>
+    /// Tests whether every component row in this packet changed since the system version.
+    /// An empty packet returns false. The coarse column version rejects unchanged chunks before
+    /// visiting row versions.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool AllRowsChangedSince<T>(uint lastSystemVersion) where T : struct
+    {
+        if (Count == 0)
+            return false;
+        int column = QueryAccessGuards.RequireAccess<T>(
+            _match,
+            read: true,
+            write: false);
+        if (unchecked((int)(_chunk.ChangeVersions[column] - lastSystemVersion)) <= 0)
+            return false;
+        foreach (uint version in _chunk.WriteVersionRows(column).Slice(_rowStart, Count))
+            if (unchecked((int)(version - lastSystemVersion)) <= 0)
+                return false;
+        return true;
+    }
+
+    /// <summary>Tests this packet's dynamic-buffer header rows against one system version.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool BufferChangedSince<T>(uint lastSystemVersion)
         where T : struct, IBufferElement
@@ -134,7 +156,17 @@ public readonly ref struct ReadOnlyQueryPacket
             write: false,
             out int headerColumn,
             out _);
-        return unchecked((int)(_chunk.ChangeVersions[headerColumn] - lastSystemVersion)) > 0;
+        return ColumnChangedSince(headerColumn, lastSystemVersion);
+    }
+
+    private bool ColumnChangedSince(int column, uint lastSystemVersion)
+    {
+        if (unchecked((int)(_chunk.ChangeVersions[column] - lastSystemVersion)) <= 0)
+            return false;
+        foreach (uint version in _chunk.WriteVersionRows(column).Slice(_rowStart, Count))
+            if (unchecked((int)(version - lastSystemVersion)) > 0)
+                return true;
+        return false;
     }
 
     public BufferView<T> ReadBuffer<T>(int row)
@@ -240,6 +272,7 @@ public ref struct ReadOnlyQueryPacketPlan
         ReadOnlyPacketRange[] packets = _packets
             ?? throw new InvalidOperationException("A non-empty packet plan lost its packet storage.");
         return ReadOnlyQueryPacketJobs.ExecutePrepared(
+            _owner,
             packets.AsMemory(0, PacketCount),
             PacketCount,
             RowCount,
@@ -405,6 +438,7 @@ public static class ReadOnlyQueryPacketJobs
     }
 
     internal static int ExecutePrepared<TJob>(
+        World world,
         ReadOnlyMemory<ReadOnlyPacketRange> packets,
         int packetCount,
         int outputCount,
@@ -417,33 +451,12 @@ public static class ReadOnlyQueryPacketJobs
         if (packetCount == 0)
             return 0;
 
-        JobResourceAccess[]? accesses = null;
-        try
-        {
-            int accessCount = checked(externalAccesses.Length + 1);
-            accesses = ArrayPool<JobResourceAccess>.Shared.Rent(accessCount);
-            accesses[0] = JobResourceAccess.Read(packets);
-            externalAccesses.CopyTo(accesses.AsSpan(1, externalAccesses.Length));
-
-            var adapter = new PacketJob<TJob>(
-                packets,
-                lastSystemVersion,
-                job);
-            JobSystem.ScheduleParallel(
-                adapter,
-                packetCount,
-                batchSize: 1,
-                accesses.AsSpan(0, accessCount),
-                options).Complete();
-        }
-        finally
-        {
-            if (accesses is not null)
-            {
-                accesses.AsSpan().Clear();
-                ArrayPool<JobResourceAccess>.Shared.Return(accesses);
-            }
-        }
+        // Packet descriptors are immutable and private to this synchronous execution. The
+        // surrounding query already keeps their ECS columns alive; only external data need
+        // resource declarations. Do not register this private array in a global resource table.
+        var adapter = new PacketJob<TJob>(packets, lastSystemVersion, job);
+        WorldStorageJobResources.RequireJobs(world).Scheduler.ScheduleParallel(
+            adapter, packetCount, batchSize: 1, externalAccesses, options).Complete();
         return outputCount;
     }
 
@@ -487,31 +500,14 @@ public static class ReadOnlyQueryPacketJobs
                     "A non-empty packet plan lost its packet storage.");
             }
 
-            JobResourceAccess[]? accesses = null;
-            try
-            {
-                int accessCount = checked(externalAccesses.Length + 1);
-                accesses = ArrayPool<JobResourceAccess>.Shared.Rent(accessCount);
-                accesses[0] = JobResourceAccess.Read(packets);
-                externalAccesses.CopyTo(accesses.AsSpan(1, externalAccesses.Length));
-                var producer = new PacketCommandProducer<TJob>(
-                    packets,
-                    lastSystemVersion,
-                    job);
-                commands.ScheduleParallel(
-                    in producer,
-                    batchSize: 1,
-                    accesses.AsSpan(0, accessCount),
-                    options).Complete();
-            }
-            finally
-            {
-                if (accesses is not null)
-                {
-                    accesses.AsSpan().Clear();
-                    ArrayPool<JobResourceAccess>.Shared.Return(accesses);
-                }
-            }
+            // The synchronous query keeps these private immutable descriptors alive through
+            // recording, just as it does for ordinary packet execution.
+            var producer = new PacketCommandProducer<TJob>(packets, lastSystemVersion, job);
+            commands.ScheduleParallel(
+                in producer,
+                batchSize: 1,
+                externalAccesses,
+                options).Complete();
 
             return commands;
         }
@@ -670,8 +666,6 @@ public static class ReadOnlyQueryPacketJobs
 
         public void Execute(int index)
         {
-            JobSystem.RequireCurrentAccess(
-                JobResourceAccess.Read(_packets, index, 1));
             ReadOnlyPacketRange range = _packets.Span[index];
             var context = new ReadOnlyQueryPacketContext(
                 index,
@@ -696,8 +690,6 @@ public static class ReadOnlyQueryPacketJobs
     {
         public void Execute(int producerIndex, ref JobCommandWriter commands)
         {
-            JobSystem.RequireCurrentAccess(
-                JobResourceAccess.Read(packets, producerIndex, 1));
             ReadOnlyPacketRange range = packets.Span[producerIndex];
             var context = new ReadOnlyQueryPacketContext(
                 producerIndex,

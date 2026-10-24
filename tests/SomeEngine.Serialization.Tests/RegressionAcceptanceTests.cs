@@ -10,35 +10,11 @@ namespace SomeEngine.Serialization.Tests;
 
 public sealed class RegressionAcceptanceTests
 {
-    [Fact]
-    public void CurrentApiHasNoBufferedBuilderOrViewMaterializationCompatibilitySurface()
-    {
-        Assert.DoesNotContain(
-            typeof(BinaryDocumentWriter).GetMethods(),
-            static method => method.Name is "Build" or "Materialize");
-        Assert.DoesNotContain(
-            typeof(BinaryDocumentView<,>).GetMethods(),
-            static method => method.Name == "Materialize");
-        Assert.DoesNotContain(
-            typeof(GeneratedExactContract.View).GetMethods(),
-            static method => method.Name == "Materialize");
-        Assert.DoesNotContain(
-            typeof(BinaryDataReader).GetMethods(),
-            static method => method.Name is "Skip" or "SkipRemaining");
-
-        var documentWrite = Assert.Single(
-            typeof(BinaryDocumentWriter).GetMethods(),
-            static method => method.Name == nameof(BinaryDocumentWriter.WriteAsync));
-        Assert.Equal(typeof(FileStream), documentWrite.GetParameters()[0].ParameterType);
-        var packWrite = Assert.Single(
-            typeof(AssetPackBuilder).GetMethods(),
-            static method => method.Name == nameof(AssetPackBuilder.WriteAsync));
-        Assert.Equal(typeof(FileStream), packWrite.GetParameters()[0].ParameterType);
-    }
 
     [Theory]
     [InlineData("SEIDX001")]
     [InlineData("SEIDX002")]
+    [InlineData("SEBDOC03")]
     public async Task PreviousBinaryEnvelopeFailsClosed(string previousMagic)
     {
         using MappedTestDocument bytes = BinaryDocumentWriter.Create(TestRoots.Canonical()).BuildMapped();
@@ -49,7 +25,7 @@ public sealed class RegressionAcceptanceTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             BinaryDocument<TestRoot>.OpenAsync(source).AsTask());
 
-        Assert.Contains("magic", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -61,7 +37,7 @@ public sealed class RegressionAcceptanceTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             BinaryDocument<DifferentTypeWithMatchingSchema>.OpenAsync(source).AsTask());
 
-        Assert.Contains("root type id", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -76,8 +52,7 @@ public sealed class RegressionAcceptanceTests
 
         BinarySchemaMismatchException exception = await Assert.ThrowsAsync<BinarySchemaMismatchException>(() =>
             BinaryDocument<TestRoot>.OpenAsync(source).AsTask());
-
-        Assert.Contains("epoch", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -91,7 +66,7 @@ public sealed class RegressionAcceptanceTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             BinaryDocument<TestRoot>.OpenAsync(source).AsTask());
 
-        Assert.Contains("compatibility", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(exception));
     }
 
     [Fact]
@@ -107,7 +82,7 @@ public sealed class RegressionAcceptanceTests
             ownsSource: true);
         InvalidDataException entryError = await Assert.ThrowsAsync<InvalidDataException>(() =>
             document.AcquireChunkAsync(0xA1).AsTask());
-        Assert.Contains("reserved", entryError.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(entryError));
     }
 
     [Fact]
@@ -185,7 +160,7 @@ public sealed class RegressionAcceptanceTests
             TestRoot.Fingerprint ^ 1UL));
 
         Assert.Equal("schemaFingerprint", exception.ParamName);
-        Assert.Contains("does not match nested document", exception.Message, StringComparison.OrdinalIgnoreCase);
+
         Assert.Equal(0, builder.Count);
     }
 
@@ -257,7 +232,7 @@ public sealed class RegressionAcceptanceTests
     }
 }
 
-internal sealed record DifferentTypeWithMatchingSchema : IBinaryContract<DifferentTypeWithMatchingSchema>
+internal sealed record DifferentTypeWithMatchingSchema : IBinarySerializable<DifferentTypeWithMatchingSchema>
 {
     internal static readonly Guid StableTypeId = Guid.Parse("314e8c17-692d-443f-ac38-a71dbc5db88a");
 

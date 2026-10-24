@@ -17,18 +17,15 @@ namespace SomeEngine.ECS.Owners;
 
 internal sealed class Sparse
 {
-    private Entities _entities = null!;
-    private Iteration _iteration = null!;
+    private readonly WorldStructureRoot _structure;
+
+    internal Sparse(WorldStructureRoot structure) => _structure = structure;
+
+    private Entities _entities => _structure.Entities;
+    private Iteration _iteration => _structure.Iteration;
     private object?[] _stores = new object?[8];
     private readonly Lock _storesGate = new();
 
-    internal void Bind(
-        Entities entities,
-        Iteration iteration)
-    {
-        _entities = entities;
-        _iteration = iteration;
-    }
 
     internal void Add<T>(Entity entity, in T value)
         where T : struct, ISparseComponent
@@ -193,10 +190,10 @@ internal sealed class Sparse
     /// Creates a detached exact image of every typed sparse store. Runtime bindings are
     /// intentionally absent; the result is a transaction candidate, not another live owner.
     /// </summary>
-    internal Sparse CloneDetached()
+    internal Sparse CloneDetached(WorldStructureRoot structure)
     {
         object?[] stores = Volatile.Read(ref _stores);
-        var clone = new Sparse
+        var clone = new Sparse(structure)
         {
             _stores = new object?[stores.Length],
         };

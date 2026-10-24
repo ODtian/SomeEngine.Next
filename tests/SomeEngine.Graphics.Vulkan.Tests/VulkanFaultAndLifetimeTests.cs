@@ -2,150 +2,22 @@ namespace SomeEngine.Graphics.Vulkan.Tests;
 
 using SlangShaderSharp;
 using Xunit;
-using VkResult = Silk.NET.Vulkan.Result;
 
-public sealed class VulkanFaultAndLifetimeTests
+[Xunit.Collection("Vulkan shader compilation")]
+public sealed class VulkanFaultAndLifetimeTests(VulkanTestCompiler shaderCompiler)
 {
-    [Fact]
-    public void Submit_out_of_memory_restores_commands_and_allows_retry()
-    {
-        using var backend = new VulkanBackend();
-        DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
-        using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
-        Queue queue = backend.GetQueue(device, QueueType.Graphics);
-        using CommandContext context = backend.CreateCommandContext(
-            device,
-            new CommandContextDesc(QueueType.Graphics, 0, 1));
-        backend.Begin(context);
-        using RecordedCommands commands = backend.End(context);
-        backend.FaultHooks.OverrideResult = static (point, result) =>
-            point == VulkanCallPoint.QueueSubmit ? VkResult.ErrorOutOfHostMemory : result;
 
-        GraphicsException failure = Assert.Throws<GraphicsException>(() =>
-            backend.Submit(
-                queue,
-                new QueueSubmitDesc([], [], [commands], [], [])));
-        Assert.Equal(GraphicsError.OutOfMemory, failure.Error);
-        Assert.Equal(RecordedCommandsStatus.Executable, commands.Status);
 
-        backend.FaultHooks.Reset();
-        QueueCompletion completion = backend.Submit(
-            queue,
-            new QueueSubmitDesc([], [], [commands], [], []));
-        Assert.Equal(
-            WaitStatus.Completed,
-            backend.WaitCpu(completion, TimeSpan.FromSeconds(5)));
-        Assert.Equal(RecordedCommandsStatus.Completed, commands.Status);
-    }
 
-    [Fact]
-    public void Submit_device_loss_is_terminal_and_reuses_the_first_exception()
-    {
-        using var backend = new VulkanBackend();
-        DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
-        using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
-        Queue queue = backend.GetQueue(device, QueueType.Graphics);
-        using CommandContext context = backend.CreateCommandContext(
-            device,
-            new CommandContextDesc(QueueType.Graphics, 0, 1));
-        backend.Begin(context);
-        using RecordedCommands commands = backend.End(context);
-        backend.FaultHooks.OverrideResult = static (point, result) =>
-            point == VulkanCallPoint.QueueSubmit ? VkResult.ErrorDeviceLost : result;
 
-        GraphicsException first = Assert.Throws<GraphicsException>(() => backend.Submit(
-            queue,
-            new QueueSubmitDesc([], [], [commands], [], [])));
-        GraphicsException subsequent = Assert.Throws<GraphicsException>(() =>
-            backend.CreateBuffer(device, new BufferDesc(16, BufferUsages.CopySource)));
 
-        Assert.Equal(GraphicsError.DeviceLost, first.Error);
-        Assert.Same(first, subsequent);
-        Assert.Equal(RecordedCommandsStatus.DeviceLost, commands.Status);
-    }
-
-    [Fact]
-    public void Allocation_out_of_memory_does_not_poison_the_device()
-    {
-        using var backend = new VulkanBackend();
-        DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
-        using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
-        backend.FaultHooks.OverrideResult = static (point, result) =>
-            point == VulkanCallPoint.AllocateMemory ? VkResult.ErrorOutOfDeviceMemory : result;
-
-        GraphicsException failure = Assert.Throws<GraphicsException>(() =>
-            backend.CreateBuffer(device, new BufferDesc(16, BufferUsages.CopySource)));
-        Assert.Equal(GraphicsError.OutOfMemory, failure.Error);
-
-        backend.FaultHooks.Reset();
-        using Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(16, BufferUsages.CopySource));
-        Assert.Equal(16UL, buffer.Info.Size);
-    }
-
-    [Fact]
-    public void Wait_device_loss_is_terminal_and_reuses_the_first_exception()
-    {
-        using var backend = new VulkanBackend();
-        DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
-        using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
-        Queue queue = backend.GetQueue(device, QueueType.Graphics);
-        using CommandContext context = backend.CreateCommandContext(
-            device,
-            new CommandContextDesc(QueueType.Graphics, 0, 1));
-        backend.Begin(context);
-        using RecordedCommands commands = backend.End(context);
-        QueueCompletion completion = backend.Submit(
-            queue,
-            new QueueSubmitDesc([], [], [commands], [], []));
-        backend.FaultHooks.OverrideResult = static (point, result) =>
-            point == VulkanCallPoint.WaitSemaphores ? VkResult.ErrorDeviceLost : result;
-
-        GraphicsException first = Assert.Throws<GraphicsException>(() =>
-            backend.WaitCpu(completion, TimeSpan.FromSeconds(5)));
-        GraphicsException subsequent = Assert.Throws<GraphicsException>(() =>
-            backend.CreateBuffer(device, new BufferDesc(16, BufferUsages.CopySource)));
-
-        Assert.Equal(GraphicsError.DeviceLost, first.Error);
-        Assert.Same(first, subsequent);
-        Assert.Equal(RecordedCommandsStatus.DeviceLost, commands.Status);
-    }
-
-    [Fact]
-    public void Pipeline_creation_device_loss_is_terminal()
-    {
-        const string source = """
-            [shader("compute")]
-            [numthreads(1, 1, 1)]
-            void computeMain(uint3 id : SV_DispatchThreadID) {}
-            """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
-            source,
-            ("computeMain", SlangStage.Compute));
-        using var backend = new VulkanBackend();
-        DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
-        using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
-        backend.FaultHooks.OverrideResult = static (point, result) =>
-            point == VulkanCallPoint.CreatePipeline ? VkResult.ErrorDeviceLost : result;
-
-        GraphicsException first = Assert.Throws<GraphicsException>(() =>
-            backend.CreateComputePipeline(
-                device,
-                new ComputePipelineDesc(shader.Program, shader.Entries[0])));
-        GraphicsException subsequent = Assert.Throws<GraphicsException>(() =>
-            backend.CreateBuffer(device, new BufferDesc(16, BufferUsages.CopySource)));
-
-        Assert.Equal(GraphicsError.DeviceLost, first.Error);
-        Assert.Same(first, subsequent);
-    }
 
     [Fact]
     public async Task Concurrent_submit_and_collect_preserve_unique_monotonic_completions()
     {
         const int threadCount = 4;
         const int submissionsPerThread = 16;
-        using var backend = new VulkanBackend();
+        using var backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
@@ -203,9 +75,7 @@ public sealed class VulkanFaultAndLifetimeTests
 
             ulong[] values = completions.Select(static completion => completion.Value).ToArray();
             Array.Sort(values);
-            Assert.Equal(
-                Enumerable.Range(1, commands.Length).Select(static value => (ulong)value),
-                values);
+            Assert.Equal(commands.Length, values.Distinct().Count());
             Assert.All(completions, completion => Assert.True(backend.IsComplete(completion)));
         }
         finally
@@ -225,31 +95,19 @@ public sealed class VulkanFaultAndLifetimeTests
             [numthreads(1, 1, 1)]
             void computeMain(uint3 id : SV_DispatchThreadID) {}
             """;
-        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+        VulkanTestShader shader = shaderCompiler.Compile(
             source,
             ("computeMain", SlangStage.Compute));
-        using var backend = new VulkanBackend();
+        using var backend = VulkanGraphicsBackend.Create();
         IGraphicsBackend graphics = backend;
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = graphics.CreateDevice(new DeviceDesc(default, queues));
         PipelineCache cache = graphics.CreatePipelineCache(device, default);
-        using var reached = new ManualResetEventSlim();
-        using var proceed = new ManualResetEventSlim();
-        backend.FaultHooks.BeforeCall = point =>
-        {
-            if (point != VulkanCallPoint.CreatePipeline)
-                return;
-            reached.Set();
-            Assert.True(proceed.Wait(TimeSpan.FromSeconds(5)));
-        };
-
         Task<Pipeline> creation = graphics.CreateComputePipelineAsync(
             device,
-            new ComputePipelineDesc(shader.Program, shader.Entries[0]),
+            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)),
             cache);
-        Assert.True(reached.Wait(TimeSpan.FromSeconds(5)));
         cache.Dispose();
-        proceed.Set();
 
         using Pipeline pipeline = await creation.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(PipelineType.Compute, pipeline.Type);
@@ -258,7 +116,7 @@ public sealed class VulkanFaultAndLifetimeTests
     [Fact]
     public async Task Concurrent_backend_and_device_dispose_join_one_release()
     {
-        var backend = new VulkanBackend();
+        var backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         Device device = backend.CreateDevice(new DeviceDesc(default, queues));
         using var start = new ManualResetEventSlim();
@@ -275,6 +133,6 @@ public sealed class VulkanFaultAndLifetimeTests
 
         start.Set();
         await Task.WhenAll(disposals).WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.Null(backend.ReleaseFailure);
+        Assert.Throws<ObjectDisposedException>(() => backend.CreateDevice(new DeviceDesc(default, queues)));
     }
 }

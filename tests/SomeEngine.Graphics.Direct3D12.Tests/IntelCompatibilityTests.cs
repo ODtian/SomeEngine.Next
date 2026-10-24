@@ -8,7 +8,9 @@ using Xunit.Sdk;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class IntelCompatibilityTests
+[Trait("Category", "Hardware")]
+[Xunit.Collection("Direct3D12 shader compilation")]
+public sealed class IntelCompatibilityTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [IntelHardwareData]
@@ -46,12 +48,12 @@ public sealed class IntelCompatibilityTests
                 return input.Color * Tint;
             }
             """;
-        D3D12TestShaderEntry[] entries =
+        D3D12TestEntry[] entries =
         [
             new("vertexMain", SlangStage.Vertex),
             new("pixelMain", SlangStage.Fragment),
         ];
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+        D3D12TestShader shader = shaderCompiler.Compile(
             "intel_sm60_persistent_draw",
             source,
             entries,
@@ -61,7 +63,7 @@ public sealed class IntelCompatibilityTests
             DisableSynchronizedQueueValidation: true,
             DisableDred: true);
         using var backend = new ValidationLayer(
-            new D3D12Backend(new D3D12BackendOptions(validation)));
+            D3D12GraphicsBackend.Create(new D3D12BackendOptions(validation)));
         AdapterInfo adapter = SelectIntel(backend);
         DeviceQueueDesc[] queues = [new(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(adapter.Id, queues));
@@ -76,10 +78,7 @@ public sealed class IntelCompatibilityTests
         Assert.Throws<InvalidOperationException>(() =>
             backend.CreateGraphicsPipeline(
                 device,
-                new GraphicsPipelineDesc(
-                    shader.Program,
-                    shader.GetEntryPoint(0),
-                    shader.GetEntryPoint(1),
+                new GraphicsPipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0), shader.GetEntryPoint(1), shader.GetEntryCode(1),
                     [],
                     [],
                     PrimitiveTopology.TriangleList,
@@ -94,10 +93,7 @@ public sealed class IntelCompatibilityTests
                     DynamicStates.StripCut)));
         using Pipeline pipeline = backend.CreateGraphicsPipeline(
             device,
-            new GraphicsPipelineDesc(
-                shader.Program,
-                shader.GetEntryPoint(0),
-                shader.GetEntryPoint(1),
+            new GraphicsPipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0), shader.GetEntryPoint(1), shader.GetEntryCode(1),
                 [],
                 [],
                 PrimitiveTopology.TriangleList,
@@ -222,32 +218,32 @@ public sealed class IntelCompatibilityTests
 [AttributeUsage(AttributeTargets.Method)]
 internal sealed class IntelHardwareDataAttribute : DataAttribute
 {
-    public override IEnumerable<object[]> GetData(MethodInfo testMethod)
+    private readonly bool _hardwareAvailable;
+
+    public IntelHardwareDataAttribute()
     {
         try
         {
-            using IGraphicsBackend backend = new D3D12Backend();
+            using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
             AdapterEnumerationOptions options = new(
                 AdapterPreference.HighPerformance,
                 IncludeSoftware: false);
             _ = backend.TryEnumerateAdapters(options, [], out int count);
             var adapters = new AdapterInfo[count];
-            if (!backend.TryEnumerateAdapters(options, adapters, out int confirmed) ||
-                confirmed != adapters.Length ||
-                !adapters.Any(static adapter =>
+            _hardwareAvailable = backend.TryEnumerateAdapters(options, adapters, out int confirmed) &&
+                confirmed == adapters.Length &&
+                adapters.Any(static adapter =>
                     adapter.HardwareAccelerated &&
-                    adapter.Name.Contains("Intel", StringComparison.OrdinalIgnoreCase)))
-            {
+                    adapter.Name.Contains("Intel", StringComparison.OrdinalIgnoreCase));
+            if (!_hardwareAvailable)
                 Skip = "No Intel D3D12 hardware adapter is available.";
-                return [];
-            }
-            return [[true]];
         }
         catch (Exception exception) when (
             exception is NotSupportedException or PlatformNotSupportedException)
         {
             Skip = exception.Message;
-            return [];
         }
     }
+
+    public override IEnumerable<object[]> GetData(MethodInfo testMethod) => [[_hardwareAvailable]];
 }

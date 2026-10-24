@@ -59,9 +59,9 @@ public class QueryCursorIterationTests
 
         var query = world.Query(world.QueryDefinition().Read<Position>());
         const uint last = 7;
-        const uint current = 11;
+        uint current = world.CurrentTick;
 
-        world.ExecuteQuery(query, last, current, cursor =>
+        world.ExecuteQuery(query, last, cursor =>
         {
             foreach (var chunk in cursor.Chunks)
             {
@@ -75,7 +75,7 @@ public class QueryCursorIterationTests
     }
 
     [Fact]
-    public void QueryCursor_ChunkEarlyBreak_ReleasesGuard()
+    public void QueryCursorEarlyBreakAndFollowingMutationDoesNotThrow()
     {
         var world = new World();
         world.CreateEntity(new Position { X = 1, Y = 2 });
@@ -113,82 +113,50 @@ public class QueryCursorIterationTests
     }
 
     [Fact]
-    public void ReadWrite_Bumps_ChangeVersion()
+    public void WritableQueryMakesItsComponentVisibleToChangedFilter()
     {
-        var world = new World();
-        world.CreateEntity(new Position { X = 1, Y = 2 });
-
+        using var world = new World();
+        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
+        uint baseline = world.AcquireSystemTick();
         var query = world.Query(world.QueryDefinition().ReadWrite<Position>());
-        var archetype = Assert.Single(
-            world.AllArchetypes.ToArray(),
-            static candidate => candidate.HasComponent(ComponentMetadata<Position>.Id));
-        var chunk = archetype.Chunks[0];
-        int column = archetype.Column(ComponentMetadata<Position>.Id);
-
-        uint before = chunk.ChangeVersions[column];
         world.ExecuteQuery(query, cursor =>
         {
             foreach (var row in cursor.Rows)
                 row.ReadWrite<Position>().X += 1;
         });
-
-        Assert.True(chunk.ChangeVersions[column] > before);
+        Assert.Equal(1, CountChangedRows<Position>(world, baseline));
     }
 
     [Fact]
-    public void Read_DoesNotBump_ChangeVersion()
+    public void ReadOnlyQueryPreservesChangedFilterBaseline()
     {
-        var world = new World();
-        world.CreateEntity(new Position { X = 1, Y = 2 });
-
+        using var world = new World();
+        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
+        uint baseline = world.AcquireSystemTick();
         var query = world.Query(world.QueryDefinition().Read<Position>());
-        var archetype = Assert.Single(
-            world.AllArchetypes.ToArray(),
-            static candidate => candidate.HasComponent(ComponentMetadata<Position>.Id));
-        var chunk = archetype.Chunks[0];
-        int column = archetype.Column(ComponentMetadata<Position>.Id);
-
-        uint before = chunk.ChangeVersions[column];
         world.ExecuteQuery(query, cursor =>
         {
             foreach (var row in cursor.Rows)
-                _ = row.Read<Position>();
+                Assert.Equal(1, row.Read<Position>().X);
         });
-
-        Assert.Equal(before, chunk.ChangeVersions[column]);
+        Assert.Equal(0, CountChangedRows<Position>(world, baseline));
     }
 
     [Fact]
-    public void ReadWriteRead_SelectiveBump()
+    public void MixedQueryChangesOnlyItsWritableComponent()
     {
-        var world = new World();
-        world.Spawn(new PhysicsBundle { Position = new() { X = 1 }, Velocity = new() { X = 10 } });
-
-        var query = world.Query(
-            world.QueryDefinition()
-                .ReadWrite<Position>()
-                .Read<Velocity>());
-
-        var archetype = Assert.Single(
-            world.AllArchetypes.ToArray(),
-            static candidate =>
-                candidate.HasComponent(ComponentMetadata<Position>.Id) &&
-                candidate.HasComponent(ComponentMetadata<Velocity>.Id));
-        var chunk = archetype.Chunks[0];
-        int posColumn = archetype.Column(ComponentMetadata<Position>.Id);
-        int velColumn = archetype.Column(ComponentMetadata<Velocity>.Id);
-
-        uint posBefore = chunk.ChangeVersions[posColumn];
-        uint velBefore = chunk.ChangeVersions[velColumn];
-
+        using var world = new World();
+        var entity = world.Spawn(new PhysicsBundle { Position = new() { X = 1 }, Velocity = new() { X = 10 } });
+        uint baseline = world.AcquireSystemTick();
+        var query = world.Query(world.QueryDefinition().ReadWrite<Position>().Read<Velocity>());
         world.ExecuteQuery(query, cursor =>
         {
             foreach (var row in cursor.Rows)
                 row.ReadWrite<Position>().X += row.Read<Velocity>().X;
         });
-
-        Assert.True(chunk.ChangeVersions[posColumn] > posBefore);
-        Assert.Equal(velBefore, chunk.ChangeVersions[velColumn]);
+        Assert.Equal(11, world.Read<Position>(entity).X);
+        Assert.Equal(1, CountChangedRows<Position>(world, baseline));
+        Assert.Equal(0, CountChangedRows<Velocity>(world, baseline));
     }
 
     [Fact]
@@ -335,6 +303,18 @@ public class QueryCursorIterationTests
                 .None<Velocity>());
 
         Assert.Equal(1, CountRows(world, query));
+    }
+
+    private static int CountChangedRows<T>(World world, uint baseline) where T : struct, IComponent
+    {
+        var query = world.Query(world.QueryDefinition().Changed<T>());
+        int count = 0;
+        world.ExecuteQuery(query, baseline, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                count++;
+        });
+        return count;
     }
 
     private static int CountRows(World world, QueryHandle query)

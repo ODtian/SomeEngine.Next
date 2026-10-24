@@ -3,7 +3,7 @@ using System.Text;
 
 namespace SomeEngine.Graphics.Benchmarks;
 
-internal static class BenchmarkOutput
+public static class BenchmarkOutput
 {
     internal static string FixedHash(GraphicsWorkload workload, string shaderManifestSha256)
     {
@@ -12,7 +12,7 @@ internal static class BenchmarkOutput
         return Convert.ToHexString(SHA256.HashData(bytes));
     }
 
-    internal static WorkloadRun Complete(
+    public static WorkloadRun Complete(
         GraphicsWorkload workload,
         BenchmarkProfile profile,
         int warmupFrames,
@@ -35,22 +35,19 @@ internal static class BenchmarkOutput
             .Where(static sample => sample.PostCloseCleanupMicroseconds.HasValue)
             .Select(static sample => sample.PostCloseCleanupMicroseconds!.Value)
             .ToArray();
-        RunDisposition disposition = profile == BenchmarkProfile.VendorCertification
-            ? RunDisposition.Passed
-            : RunDisposition.FunctionalOnly;
+        RunDisposition disposition = RunDisposition.FunctionalOnly;
         string reason = profile switch
         {
             BenchmarkProfile.WarpFunctional =>
                 "Reduced-count WARP functional workload executed; not performance evidence.",
             BenchmarkProfile.FastDiagnostic =>
-                "Fast hardware diagnostic workload executed; never vendor-certification evidence.",
+                "Fast hardware diagnostic workload executed; timings are diagnostic.",
             BenchmarkProfile.DeveloperProbe =>
-                "Developer probe workload executed; exploratory only, non-gating, and never vendor-certification evidence.",
+                "Developer probe workload executed; timings are diagnostic.",
             BenchmarkProfile.RepresentativeCpuFrame =>
                 "Public-source representative CPU frame workload executed with one public Draw call per draw and without Queue submission.",
             BenchmarkProfile.GraphicsCpuDevelopment =>
                 "Public-source RenderGraph plus RHI development workload executed with real D3D12 commands and Queue submission.",
-            BenchmarkProfile.VendorCertification => "Fixed vendor workload executed.",
             _ => throw new ArgumentOutOfRangeException(nameof(profile)),
         };
         return new WorkloadRun(

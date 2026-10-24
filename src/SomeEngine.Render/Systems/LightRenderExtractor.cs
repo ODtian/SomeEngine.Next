@@ -1,3 +1,5 @@
+using SomeEngine.Resources;
+using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -6,7 +8,7 @@ using SomeEngine.Render.Components;
 namespace SomeEngine.Render.Systems;
 
 /// <summary>Extracts all light variants and their optional cookie semantics.</summary>
-internal sealed class LightRenderExtractor : IRenderExtractionSystem
+public sealed class LightRenderExtractor : IRenderExtractionSystem
 {
     private readonly List<DirectionalSnapshot> _directional = [];
     private readonly List<PointSnapshot> _points = [];
@@ -16,8 +18,14 @@ internal sealed class LightRenderExtractor : IRenderExtractionSystem
     private readonly HashSet<Entity> _spotSources = [];
     private readonly HashSet<Entity> _cookieSources = [];
 
+    public bool CanApplyChangesDirect => true;
+
     public void DeclareReads(RenderExtractionQuery query)
     {
+        query.Write<RenderDirectionalLight>();
+        query.Write<RenderPointLight>();
+        query.Write<RenderSpotLight>();
+        query.Write<RenderLightCookie>();
         query.ReadOptional<DirectionalLight>();
         query.ReadOptional<PointLight>();
         query.ReadOptional<SpotLight>();
@@ -47,7 +55,8 @@ internal sealed class LightRenderExtractor : IRenderExtractionSystem
         for (int row = 0; row < entities.Length; row++)
         {
             Entity source = entities[row];
-            RenderLightCookie cookie = hasCookies ? ExtractCookie(cookies[row]) : default;
+            RenderLightCookie cookie = hasCookies && (hasDirectional || hasPoints || hasSpots)
+                ? ExtractCookie(cookies[row]) : default;
             if (hasDirectional)
             {
                 _directional.Add(new DirectionalSnapshot(
@@ -86,7 +95,7 @@ internal sealed class LightRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    internal bool CollectChanges(QueryChunkView chunk)
+    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
         bool hasDirectional = chunk.TryRead<DirectionalLight>(
             out ReadOnlySpan<DirectionalLight> directional);
@@ -227,8 +236,8 @@ internal sealed class LightRenderExtractor : IRenderExtractionSystem
                 context.Upsert(entity, snapshot.Cookie);
         }
 
-        IReadOnlyList<RenderMirror> mirrors = context.Mirrors;
-        for (int index = 0; index < mirrors.Count; index++)
+        ReadOnlySpan<RenderMirror> mirrors = context.Mirrors;
+        for (int index = 0; index < mirrors.Length; index++)
         {
             RenderMirror mirror = mirrors[index];
             if (!_directionalSources.Contains(mirror.Source))
@@ -242,7 +251,7 @@ internal sealed class LightRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    internal void ApplyChanges(RenderExtractionContext context)
+    public void ApplyChanges(RenderExtractionContext context)
     {
         for (int index = 0; index < _directional.Count; index++)
         {
@@ -273,7 +282,7 @@ internal sealed class LightRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    internal void ValidateChanges(RenderExtractionContext context)
+    public void ValidateChanges(RenderExtractionContext context)
     {
         for (int index = 0; index < _directional.Count; index++)
         {

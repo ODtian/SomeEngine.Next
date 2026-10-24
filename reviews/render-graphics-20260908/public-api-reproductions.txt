@@ -1,0 +1,22 @@
+CHECK frame output failure recovery
+small destination rejected
+REPRODUCED: A CPU frame is already active.
+graph dispose blocked: A render graph edit or frame is active.
+CHECK copied edit after commit
+observed label=mutated through closed edit
+version unchanged=True
+CHECK old pass definition after frame reuse
+next frame accesses added by stale handle=1
+CHECK abandoned identity reuse
+REPRODUCED=True
+CHECK material upload cancel retry
+retry upload passes=0
+retry queue submissions=0
+CHECK texture upload failed execution retry
+first failed=InvalidOperationException
+retry pass=consumer
+retry pass=Finalize RenderDevice Texture 'RenderDevice missing texture'
+CHECK Vulkan duplicate command recovery
+duplicate rejected=RecordedCommands are not executable.
+command status after rejection=Submitting
+REPRODUCED: retry rejected=RecordedCommands are not executable.

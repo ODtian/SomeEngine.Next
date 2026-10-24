@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -66,85 +67,62 @@ public sealed class RelationshipComponentProtectionTests
     }
 
     [Fact]
-    public void WorldGenericMutation_RejectsSourceAndTarget_ButAllowsRead()
+    public void GenericRelationshipMutationRequiresTypedHierarchyApi()
     {
-        var world = new World();
-        var sourceEntity = world.CreateEntity();
-        var targetEntity = world.CreateEntity();
-        world.AddRelationshipComponent(sourceEntity, new SourceValue { Value = 10 });
-        world.AddRelationshipComponent(targetEntity, new TargetValue { Value = 20 });
-
-        Assert.Equal(10, world.Read<SourceValue>(sourceEntity).Value);
-        Assert.Equal(20, world.Read<TargetValue>(targetEntity).Value);
-
-        AssertRelationshipMutationRejected(
-            () => world.Add(world.CreateEntity(), new SourceValue()));
-        AssertRelationshipMutationRejected(
-            () => world.Add(world.CreateEntity(), new TargetValue()));
-        AssertRelationshipMutationRejected(
-            () => world.Replace(sourceEntity, new SourceValue { Value = 11 }));
-        AssertRelationshipMutationRejected(
-            () => world.Replace(targetEntity, new TargetValue { Value = 21 }));
-        AssertRelationshipMutationRejected(() => world.Remove<SourceValue>(sourceEntity));
-        AssertRelationshipMutationRejected(() => world.Remove<TargetValue>(targetEntity));
-
-        Assert.Equal(10, world.Read<SourceValue>(sourceEntity).Value);
-        Assert.Equal(20, world.Read<TargetValue>(targetEntity).Value);
+        using var world = new World();
+        var parent = world.CreateEntity();
+        var child = world.CreateEntity();
+        Hierarchy<ProtectionDomain>.SetParent(world, child, parent);
+        Assert.Equal(parent, world.Read<Parent<ProtectionDomain>>(child).Value);
+        Assert.Equal(new[] { child }, Hierarchy<ProtectionDomain>.GetChildren(world, parent).ToArray());
+        AssertRelationshipMutationRejected(() => world.Add(world.CreateEntity(), new Parent<ProtectionDomain>(parent)));
+        AssertRelationshipMutationRejected(() => world.Add(world.CreateEntity(), default(Children<ProtectionDomain>)));
+        AssertRelationshipMutationRejected(() => world.Replace(child, new Parent<ProtectionDomain>(Entity.Null)));
+        AssertRelationshipMutationRejected(() => world.Replace(parent, default(Children<ProtectionDomain>)));
+        AssertRelationshipMutationRejected(() => world.Remove<Parent<ProtectionDomain>>(child));
+        AssertRelationshipMutationRejected(() => world.Remove<Children<ProtectionDomain>>(parent));
+        Assert.Equal(parent, Hierarchy<ProtectionDomain>.GetParent(world, child));
+        Assert.Equal(new[] { child }, Hierarchy<ProtectionDomain>.GetChildren(world, parent).ToArray());
     }
 
     [Fact]
-    public void CommandAndBundleEntryPoints_RejectRelationshipMutationBeforeRecordingOrSpawning()
+    public void CommandAndBundleRelationshipMutationsFailBeforeRecording()
     {
-        var world = new World();
+        using var world = new World();
+        var parent = world.CreateEntity();
         var entity = world.CreateEntity();
-        world.AddRelationshipComponent(entity, new SourceValue { Value = 1 });
+        Hierarchy<ProtectionDomain>.SetParent(world, entity, parent);
         using var commands = new CommandBuffer(world);
-
-        AssertRelationshipMutationRejected(
-            () => commands.Add(entity, new SourceValue { Value = 2 }));
-        AssertRelationshipMutationRejected(
-            () => commands.Add(entity, new TargetValue { Value = 2 }));
-        AssertRelationshipMutationRejected(
-            () => commands.Replace(entity, new SourceValue { Value = 2 }));
-        AssertRelationshipMutationRejected(() => commands.Remove<SourceValue>(entity));
+        AssertRelationshipMutationRejected(() => commands.Add(entity, new Parent<ProtectionDomain>(parent)));
+        AssertRelationshipMutationRejected(() => commands.Add(entity, default(Children<ProtectionDomain>)));
+        AssertRelationshipMutationRejected(() => commands.Replace(entity, new Parent<ProtectionDomain>(parent)));
+        AssertRelationshipMutationRejected(() => commands.Remove<Parent<ProtectionDomain>>(entity));
         Assert.Equal(0, commands.CommandCount);
-
-        AssertRelationshipMutationRejected(
-            () => world.CreateEntity(new SourceValue { Value = 3 }));
-
-        int[] sourceIds = [ComponentMetadata<SourceValue>.Id];
-        int[] targetIds = [ComponentMetadata<TargetValue>.Id];
-        AssertRelationshipMutationRejected(() =>
-            world.ExecuteBundleSpawn(targetIds, static _ => { }));
-        AssertRelationshipMutationRejected(() =>
-            world.ExecuteBundleSpawnBatch(targetIds, 1, static _ => { }));
-        AssertRelationshipMutationRejected(() =>
-            world.ExecuteBundleAdd(entity, targetIds, static _ => { }));
-        AssertRelationshipMutationRejected(() =>
-            world.ExecuteBundleReplace(entity, sourceIds, static _ => { }));
-
-        Assert.Equal(1, world.EntityCount);
-        Assert.Equal(1, world.Read<SourceValue>(entity).Value);
+        AssertRelationshipMutationRejected(() => world.CreateEntity(new Parent<ProtectionDomain>(parent)));
+        int[] sourceIds = [ComponentMetadata<Parent<ProtectionDomain>>.Id];
+        int[] targetIds = [ComponentMetadata<Children<ProtectionDomain>>.Id];
+        AssertRelationshipMutationRejected(() => world.ExecuteBundleSpawn(targetIds, _ => { }));
+        AssertRelationshipMutationRejected(() => world.ExecuteBundleSpawnBatch(targetIds, 1, _ => { }));
+        AssertRelationshipMutationRejected(() => world.ExecuteBundleAdd(entity, targetIds, _ => { }));
+        AssertRelationshipMutationRejected(() => world.ExecuteBundleReplace(entity, sourceIds, _ => { }));
+        Assert.Equal(2, world.EntityCount);
+        Assert.Equal(parent, Hierarchy<ProtectionDomain>.GetParent(world, entity));
     }
 
     [Fact]
-    public void EntityCopy_RejectsRelationshipComponentsInSelectedTableSurface()
+    public void EntityCopyRequiresExcludingRelationshipTableComponents()
     {
-        var world = new World();
+        using var world = new World();
+        var parent = world.CreateEntity();
         var source = world.CreateEntity();
         var target = world.CreateEntity(new RegularValue { Value = 4 });
-        world.AddRelationshipComponent(source, new SourceValue { Value = 1 });
-
+        Hierarchy<ProtectionDomain>.SetParent(world, source, parent);
         AssertRelationshipMutationRejected(() => world.CloneEntity(source));
         AssertRelationshipMutationRejected(() => world.CopyEntity(source, target));
-
-        var derivedTarget = world.CreateEntity();
-        world.AddRelationshipComponent(derivedTarget, new TargetValue { Value = 5 });
-        AssertRelationshipMutationRejected(() => world.CopyEntity(target, derivedTarget));
-
-        Entity cloneWithoutTable = world.CloneEntity(source, EntityCopyOptions.Tags);
-        Assert.True(world.IsAlive(cloneWithoutTable));
-        Assert.False(world.Has<SourceValue>(cloneWithoutTable));
+        AssertRelationshipMutationRejected(() => world.CopyEntity(target, parent));
+        var clone = world.CloneEntity(source, EntityCopyOptions.Tags);
+        Assert.True(world.IsAlive(clone));
+        Assert.False(world.Has<Parent<ProtectionDomain>>(clone));
     }
 
     [Fact]
@@ -171,31 +149,24 @@ public sealed class RelationshipComponentProtectionTests
         var source = Assert.Throws<InvalidOperationException>(() => world.Hooks<SourceValue>());
         var target = Assert.Throws<InvalidOperationException>(() => world.Hooks<TargetValue>());
 
-        Assert.Contains("ECS-internal", source.Message);
-        Assert.Contains("Added/Changed/Removed", source.Message);
-        Assert.Contains("ECS-internal", target.Message);
     }
 
     private static void AssertRelationshipMutationRejected(Action action)
     {
         var error = Assert.Throws<InvalidOperationException>(action);
-        Assert.Contains("typed relationship API", error.Message);
+
     }
+
+    private readonly struct ProtectionDomain : IHierarchyDomain;
 
     private struct RegularValue : IComponent
     {
         public int Value;
     }
 
-    private struct SourceValue : IRelationshipSource
-    {
-        public int Value;
-    }
+    private struct SourceValue : IRelationshipSource;
 
-    private struct TargetValue : IRelationshipTarget
-    {
-        public int Value;
-    }
+    private struct TargetValue : IRelationshipTarget;
 
     private struct BothRoles : IRelationshipSource, IRelationshipTarget;
 

@@ -40,6 +40,8 @@ internal sealed unsafe partial class VulkanBackend
 
     QueryPool IGraphicsBackend.CreateQueryPool(RhiDevice device, in QueryPoolDesc desc) =>
         CreateQueryPoolCore(device, desc);
+    void IGraphicsBackend.ResetQueries(CommandContext context, QueryPool pool, uint firstQuery, uint queryCount) =>
+        ResetQueriesCore(context, pool, firstQuery, queryCount);
     void IGraphicsBackend.BeginQuery(CommandContext context, QueryPool pool, uint queryIndex) =>
         BeginQueryCore(context, pool, queryIndex);
     void IGraphicsBackend.EndQuery(CommandContext context, QueryPool pool, uint queryIndex) =>

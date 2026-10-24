@@ -15,8 +15,9 @@ public ref struct RasterPassCommandScope
     }
 
     public Buffer GetBuffer(GraphBufferId id) => _frame.GetBuffer(_passIndex, id);
+    public BufferRegion GetBufferRegion(GraphBufferInput input) => _frame.GetBufferRegion(_passIndex, input);
+    public Texture GetTexture(GraphTextureInput input) => _frame.GetTexture(_passIndex, input);
     public Texture GetTexture(GraphTextureId id) => _frame.GetTexture(_passIndex, id);
-    public BufferCbv GetBufferCbv(GraphBufferCbvId id) => _frame.GetBufferCbv(_passIndex, id);
     public BufferSrv GetBufferSrv(GraphBufferSrvId id) => _frame.GetBufferSrv(_passIndex, id);
     public BufferUav GetBufferUav(GraphBufferUavId id) => _frame.GetBufferUav(_passIndex, id);
     public TextureSrv GetTextureSrv(GraphTextureSrvId id) => _frame.GetTextureSrv(_passIndex, id);
@@ -32,7 +33,7 @@ public ref struct RasterPassCommandScope
         _frame.Executor.ValidateBindings(_passIndex, bindings.Resources);
         _frame.Backend.SetTransientParameterBindings(_context, bindings);
     }
-    public void SetVertexBuffers(uint firstSlot, ReadOnlySpan<VertexBufferBinding> bindings)
+    public void SetVertexBuffers(uint firstSlot, scoped ReadOnlySpan<VertexBufferBinding> bindings)
     {
         foreach (ref readonly VertexBufferBinding binding in bindings)
             _frame.Executor.ValidateBuffer(_passIndex, binding.Buffer,
@@ -98,11 +99,9 @@ public ref struct RasterPassCommandScope
     public void SetShadingRate(ShadingRate rate, ShadingRateCombiner primitiveCombiner,
         ShadingRateCombiner imageCombiner) =>
         _frame.Backend.SetShadingRate(_context, rate, primitiveCombiner, imageCombiner);
-    public void SetShadingRateImage(Texture? texture)
-    {
-        if (texture is not null) _frame.Executor.ValidateTexture(_passIndex, texture, null, false);
-        _frame.Backend.SetShadingRateImage(_context, texture);
-    }
+    /// <summary>The raster declaration selects this image before rendering begins.</summary>
+    public void SetShadingRateImage(Texture? texture) =>
+        _frame.Executor.ValidateShadingRateImage(_passIndex, texture);
     public void BeginEvent(ReadOnlySpan<byte> utf8Label)
     {
         _frame.Backend.BeginEvent(_context, utf8Label);
@@ -110,14 +109,14 @@ public ref struct RasterPassCommandScope
     }
     public void EndEvent()
     {
-        if (_eventDepth == 0) throw new InvalidOperationException("No event is active.");
+        DevelopmentCheck.Require(_eventDepth != 0, "No event is active.");
         _frame.Backend.EndEvent(_context);
         _eventDepth--;
     }
     public void SetMarker(ReadOnlySpan<byte> utf8Label) => _frame.Backend.SetMarker(_context, utf8Label);
     internal void Finish()
     {
-        if (_eventDepth != 0) throw new InvalidOperationException("Pass events are not balanced.");
+        DevelopmentCheck.Require(_eventDepth == 0, "Pass events are not balanced.");
     }
 }
 
@@ -136,8 +135,9 @@ public ref struct ComputePassCommandScope
     }
 
     public Buffer GetBuffer(GraphBufferId id) => _frame.GetBuffer(_passIndex, id);
+    public BufferRegion GetBufferRegion(GraphBufferInput input) => _frame.GetBufferRegion(_passIndex, input);
+    public Texture GetTexture(GraphTextureInput input) => _frame.GetTexture(_passIndex, input);
     public Texture GetTexture(GraphTextureId id) => _frame.GetTexture(_passIndex, id);
-    public BufferCbv GetBufferCbv(GraphBufferCbvId id) => _frame.GetBufferCbv(_passIndex, id);
     public BufferSrv GetBufferSrv(GraphBufferSrvId id) => _frame.GetBufferSrv(_passIndex, id);
     public BufferUav GetBufferUav(GraphBufferUavId id) => _frame.GetBufferUav(_passIndex, id);
     public TextureSrv GetTextureSrv(GraphTextureSrvId id) => _frame.GetTextureSrv(_passIndex, id);
@@ -305,14 +305,14 @@ public ref struct ComputePassCommandScope
     }
     public void EndEvent()
     {
-        if (_eventDepth == 0) throw new InvalidOperationException("No event is active.");
+        DevelopmentCheck.Require(_eventDepth != 0, "No event is active.");
         _frame.Backend.EndEvent(_context);
         _eventDepth--;
     }
     public void SetMarker(ReadOnlySpan<byte> utf8Label) => _frame.Backend.SetMarker(_context, utf8Label);
     internal void Finish()
     {
-        if (_eventDepth != 0) throw new InvalidOperationException("Pass events are not balanced.");
+        DevelopmentCheck.Require(_eventDepth == 0, "Pass events are not balanced.");
     }
 }
 
@@ -331,6 +331,8 @@ public ref struct CopyPassCommandScope
     }
 
     public Buffer GetBuffer(GraphBufferId id) => _frame.GetBuffer(_passIndex, id);
+    public BufferRegion GetBufferRegion(GraphBufferInput input) => _frame.GetBufferRegion(_passIndex, input);
+    public Texture GetTexture(GraphTextureInput input) => _frame.GetTexture(_passIndex, input);
     public Texture GetTexture(GraphTextureId id) => _frame.GetTexture(_passIndex, id);
     public void CopyBuffer(in BufferCopy copy)
     {
@@ -342,8 +344,7 @@ public ref struct CopyPassCommandScope
     }
     public void CopyBufferToTexture(in BufferTextureCopy copy)
     {
-        _frame.Executor.ValidateBuffer(_passIndex, copy.Buffer,
-            new BufferRange(copy.BufferOffset, EstimateBufferTextureBytes(copy)), false);
+        _frame.Executor.ValidateTextureCopyBuffer(_passIndex, copy, false);
         _frame.Executor.ValidateTexture(_passIndex, copy.Texture,
             new TextureSubresourceRange(copy.MipLevel, 1, copy.ArrayLayer, 1, copy.Aspect), true);
         _frame.Backend.CopyBufferToTexture(_context, copy);
@@ -352,8 +353,7 @@ public ref struct CopyPassCommandScope
     {
         _frame.Executor.ValidateTexture(_passIndex, copy.Texture,
             new TextureSubresourceRange(copy.MipLevel, 1, copy.ArrayLayer, 1, copy.Aspect), false);
-        _frame.Executor.ValidateBuffer(_passIndex, copy.Buffer,
-            new BufferRange(copy.BufferOffset, EstimateBufferTextureBytes(copy)), true);
+        _frame.Executor.ValidateTextureCopyBuffer(_passIndex, copy, true);
         _frame.Backend.CopyTextureToBuffer(_context, copy);
     }
     public void CopyTexture(in TextureCopy copy)
@@ -415,22 +415,16 @@ public ref struct CopyPassCommandScope
     }
     public void EndEvent()
     {
-        if (_eventDepth == 0) throw new InvalidOperationException("No event is active.");
+        DevelopmentCheck.Require(_eventDepth != 0, "No event is active.");
         _frame.Backend.EndEvent(_context);
         _eventDepth--;
     }
     public void SetMarker(ReadOnlySpan<byte> utf8Label) => _frame.Backend.SetMarker(_context, utf8Label);
     internal void Finish()
     {
-        if (_eventDepth != 0) throw new InvalidOperationException("Pass events are not balanced.");
+        DevelopmentCheck.Require(_eventDepth == 0, "Pass events are not balanced.");
     }
 
-    private static ulong EstimateBufferTextureBytes(in BufferTextureCopy copy)
-    {
-        uint rows = Math.Max(copy.Height, 1);
-        uint depth = Math.Max(copy.Depth, 1);
-        return checked((ulong)Math.Max(copy.BufferRowPitch, 1) * rows * depth);
-    }
 }
 
 public ref struct GeneralPassCommandScope
@@ -450,8 +444,9 @@ public ref struct GeneralPassCommandScope
     }
 
     public Buffer GetBuffer(GraphBufferId id) => _frame.GetBuffer(_passIndex, id);
+    public BufferRegion GetBufferRegion(GraphBufferInput input) => _frame.GetBufferRegion(_passIndex, input);
+    public Texture GetTexture(GraphTextureInput input) => _frame.GetTexture(_passIndex, input);
     public Texture GetTexture(GraphTextureId id) => _frame.GetTexture(_passIndex, id);
-    public BufferCbv GetBufferCbv(GraphBufferCbvId id) => _frame.GetBufferCbv(_passIndex, id);
     public BufferSrv GetBufferSrv(GraphBufferSrvId id) => _frame.GetBufferSrv(_passIndex, id);
     public BufferUav GetBufferUav(GraphBufferUavId id) => _frame.GetBufferUav(_passIndex, id);
     public TextureSrv GetTextureSrv(GraphTextureSrvId id) => _frame.GetTextureSrv(_passIndex, id);
@@ -463,13 +458,13 @@ public ref struct GeneralPassCommandScope
 
     public void BeginRendering(PassRenderingRegionId region)
     {
-        if (_rendering) throw new InvalidOperationException("A rendering region is already active.");
+        DevelopmentCheck.Require(!_rendering, "A rendering region is already active.");
         _frame.Executor.BeginRawRendering(_passIndex, region, _context, _nextRegion++);
         _rendering = true;
     }
     public void EndRendering()
     {
-        if (!_rendering) throw new InvalidOperationException("No rendering region is active.");
+        DevelopmentCheck.Require(_rendering, "No rendering region is active.");
         _frame.Backend.EndRendering(_context);
         _rendering = false;
     }
@@ -483,7 +478,7 @@ public ref struct GeneralPassCommandScope
         _frame.Executor.ValidateBindings(_passIndex, bindings.Resources);
         _frame.Backend.SetTransientParameterBindings(_context, bindings);
     }
-    public void SetVertexBuffers(uint firstSlot, ReadOnlySpan<VertexBufferBinding> bindings)
+    public void SetVertexBuffers(uint firstSlot, scoped ReadOnlySpan<VertexBufferBinding> bindings)
     {
         foreach (ref readonly VertexBufferBinding binding in bindings)
             _frame.Executor.ValidateBuffer(_passIndex, binding.Buffer,
@@ -540,8 +535,7 @@ public ref struct GeneralPassCommandScope
     }
     public void CopyBufferToTexture(in BufferTextureCopy copy)
     {
-        _frame.Executor.ValidateBuffer(_passIndex, copy.Buffer,
-            new BufferRange(copy.BufferOffset, EstimateBufferTextureBytes(copy)), write: false);
+        _frame.Executor.ValidateTextureCopyBuffer(_passIndex, copy, write: false);
         _frame.Executor.ValidateTexture(_passIndex, copy.Texture,
             new TextureSubresourceRange(copy.MipLevel, 1, copy.ArrayLayer, 1, copy.Aspect), write: true);
         _frame.Backend.CopyBufferToTexture(_context, copy);
@@ -550,8 +544,7 @@ public ref struct GeneralPassCommandScope
     {
         _frame.Executor.ValidateTexture(_passIndex, copy.Texture,
             new TextureSubresourceRange(copy.MipLevel, 1, copy.ArrayLayer, 1, copy.Aspect), write: false);
-        _frame.Executor.ValidateBuffer(_passIndex, copy.Buffer,
-            new BufferRange(copy.BufferOffset, EstimateBufferTextureBytes(copy)), write: true);
+        _frame.Executor.ValidateTextureCopyBuffer(_passIndex, copy, write: true);
         _frame.Backend.CopyTextureToBuffer(_context, copy);
     }
     public void CopyTexture(in TextureCopy copy)
@@ -731,23 +724,17 @@ public ref struct GeneralPassCommandScope
     }
     public void EndEvent()
     {
-        if (_eventDepth == 0) throw new InvalidOperationException("No event is active.");
+        DevelopmentCheck.Require(_eventDepth != 0, "No event is active.");
         _frame.Backend.EndEvent(_context);
         _eventDepth--;
     }
     public void SetMarker(ReadOnlySpan<byte> utf8Label) => _frame.Backend.SetMarker(_context, utf8Label);
     internal void Finish()
     {
-        if (_rendering) throw new InvalidOperationException("The Raw pass ended inside a rendering region.");
-        if (_eventDepth != 0) throw new InvalidOperationException("Pass events are not balanced.");
+        DevelopmentCheck.Require(!_rendering, "The Raw pass ended inside a rendering region.");
+        DevelopmentCheck.Require(_eventDepth == 0, "Pass events are not balanced.");
         _frame.Executor.ValidateRawRegionsCompleted(_passIndex, _nextRegion);
     }
 
-    private static ulong EstimateBufferTextureBytes(in BufferTextureCopy copy)
-    {
-        uint rows = Math.Max(copy.Height, 1);
-        uint depth = Math.Max(copy.Depth, 1);
-        return checked((ulong)Math.Max(copy.BufferRowPitch, 1) * rows * depth);
-    }
 }
 

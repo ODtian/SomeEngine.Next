@@ -1,3 +1,4 @@
+using SomeEngine.Serialization;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using SomeEngine.ECS;
@@ -206,7 +207,7 @@ public sealed partial class DurableSaveStore : IDisposable
                         retryInspection = true;
                         break;
                     case CandidateReadStatus.IntegrityFailure:
-                        slots = slots.Reject(candidate.Path, result.FailureReason!);
+                        slots = slots.Reject(candidate.Path, result.FailureReason!, result.Error);
                         continue;
                     default:
                         throw new InvalidOperationException("Unknown durable-save candidate read status.");
@@ -251,11 +252,11 @@ public sealed partial class DurableSaveStore : IDisposable
             }
             catch (InvalidDataException exception)
             {
-                return CandidateWorldRead.Integrity(exception.Message);
+                return CandidateWorldRead.Integrity(exception.Message, SerializationErrors.GetError(exception));
             }
             catch (EndOfStreamException exception)
             {
-                return CandidateWorldRead.Integrity(exception.Message);
+                return CandidateWorldRead.Integrity(exception.Message, SerializationError.IntegrityMismatch);
             }
 
             if (header.Generation != candidate.Generation)
@@ -286,7 +287,7 @@ public sealed partial class DurableSaveStore : IDisposable
             catch (EndOfStreamException exception)
             {
                 world?.Dispose();
-                return CandidateWorldRead.Integrity(exception.Message);
+                return CandidateWorldRead.Integrity(exception.Message, SerializationError.IntegrityMismatch);
             }
             catch (Exception verificationFailure)
             {
@@ -415,7 +416,8 @@ public sealed partial class DurableSaveStore : IDisposable
     }
 
     private static InvalidDataException CreateNoValidGenerationException(SlotSet slots) =>
-        new(
+        SerializationErrors.CreateDataException(
+            slots.Primary.Exists ? slots.Primary.Error : slots.Previous.Error,
             "No valid durable-save generation was found. " +
             $"Primary: {slots.Primary.FailureReason}; previous: {slots.Previous.FailureReason}.");
 
@@ -493,13 +495,14 @@ public sealed partial class DurableSaveStore : IDisposable
     private readonly record struct CandidateWorldRead(
         CandidateReadStatus Status,
         World? World,
-        string? FailureReason)
+        string? FailureReason,
+        SerializationError Error = SerializationError.Unspecified)
     {
         internal static CandidateWorldRead Success(World world) =>
             new(CandidateReadStatus.Success, world, null);
 
-        internal static CandidateWorldRead Integrity(string reason) =>
-            new(CandidateReadStatus.IntegrityFailure, null, reason);
+        internal static CandidateWorldRead Integrity(string reason, SerializationError error = SerializationError.IntegrityMismatch) =>
+            new(CandidateReadStatus.IntegrityFailure, null, reason, error);
 
         internal static CandidateWorldRead Retry =>
             new(CandidateReadStatus.RetryInspection, null, null);
@@ -511,13 +514,14 @@ public sealed partial class DurableSaveStore : IDisposable
         bool IsValid,
         ulong Generation,
         long PayloadLength,
-        string FailureReason)
+        string FailureReason,
+        SerializationError Error = SerializationError.Unspecified)
     {
         internal static SlotInspection Missing(string path) =>
             new(path, Exists: false, IsValid: false, 0, 0, "missing");
 
-        internal static SlotInspection Invalid(string path, string reason) =>
-            new(path, Exists: true, IsValid: false, 0, 0, reason);
+        internal static SlotInspection Invalid(string path, string reason, SerializationError error = SerializationError.IntegrityMismatch) =>
+            new(path, Exists: true, IsValid: false, 0, 0, reason, error);
 
         internal static SlotInspection Valid(string path, ulong generation, long payloadLength) =>
             new(path, Exists: true, IsValid: true, generation, payloadLength, "valid");
@@ -540,12 +544,12 @@ public sealed partial class DurableSaveStore : IDisposable
             }
         }
 
-        internal SlotSet Reject(string path, string reason)
+        internal SlotSet Reject(string path, string reason, SerializationError error)
         {
             if (PathEquals(path, Primary.Path))
-                return new SlotSet(SlotInspection.Invalid(Primary.Path, reason), Previous);
+                return new SlotSet(SlotInspection.Invalid(Primary.Path, reason, error), Previous);
             if (PathEquals(path, Previous.Path))
-                return new SlotSet(Primary, SlotInspection.Invalid(Previous.Path, reason));
+                return new SlotSet(Primary, SlotInspection.Invalid(Previous.Path, reason, error));
             throw new InvalidOperationException("The rejected durable-save path is not one of this store's slots.");
         }
     }

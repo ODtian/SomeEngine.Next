@@ -1,0 +1,68 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 29,
+  "input_hash": "7db51c0323bf4c8681605920df4a0a37f57b76a9b3e728fd0be5e88fe62dec5c",
+  "inputs": [
+    {
+      "relative_path": "../../assets/Shaders/cluster_bvh_cull_common.slang",
+      "content_hash": "c47abcca3bfcb4bb1289c169ceb81b3471ae8ccb42023682ca3270984de1c23a"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_instance_properties.slang",
+      "content_hash": "a881c699f3ae666c6d0cda6a391ac173605c29c5f87cb028185a5d57b4726a01"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_scene_bounds.slang",
+      "content_hash": "836062e3db062e29f5bc9cc348ff082c6ed487504aaa42bfaa9307c8d8b7b598"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_structures.slang",
+      "content_hash": "89677843803ec893351df7ca9e5652bdf398ba2803ae4167189a7836cf30cfd2"
+    },
+    {
+      "relative_path": "../../assets/Shaders/cluster_view.slang",
+      "content_hash": "7407665c428aa7c4008237ee119dca991b4389594cc8724442c2dedf50ec954f"
+    },
+    {
+      "relative_path": "../../assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "b3deb519f6691bbb7bbd28a7d6e5f162dc95b49212ad3bdcf4ff4d78eee5cc06"
+    },
+    {
+      "relative_path": "../../assets/Shaders/render_instance_properties.slang",
+      "content_hash": "d63867a87e179b0b11ab4cd4a06b5a8f937f1d219d2816853db156eef7c14b8a"
+    },
+    {
+      "relative_path": "../../assets/Shaders/render_instance_transform.slang",
+      "content_hash": "bee8de55a909be0fe22219acb566c9275974e7a7e2f42966b3452cbb5d979927"
+    },
+    {
+      "relative_path": "../../assets/Shaders/resource_effects.slang",
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+    },
+    {
+      "relative_path": "assets/Shaders/Pipeline/build_cluster_scene_bounds.slang",
+      "content_hash": "825d5dc261813fbcbc2baccb557d45f06f4cf0e984968020d88d97fafa226311"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_scene_bounds.shader",
+      "content_hash": "d504c310e80941798998962c6c3a38548b8ef5dd0f3f4eaa261c5e61ce36b2ad"
+    },
+    {
+      "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "0499ec0b-aaec-50d7-a8c5-9aca48ceb632",
+      "sub_asset_key": "",
+      "input_hash": "7db51c0323bf4c8681605920df4a0a37f57b76a9b3e728fd0be5e88fe62dec5c",
+      "dependencies": [],
+      "asset_path": "cluster_scene_bounds.shader.asset",
+      "version": "a82422f6-5c1e-c117-82ea-40c74ed26650",
+      "content_hash": "4751DD5BA11122A51DA3F7AB4B69D5DBDBA95C2404752C5B287D995196A8C65B",
+      "asset_dependencies": []
+    }
+  ]
+}
