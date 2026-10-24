@@ -28,6 +28,7 @@
 - GPU 状态机共享紧凑状态与过渡表，各实例独立推进播放时间和交叉过渡，实际播放结果随 G 一起读回，见 [GPU State Machines](GPU-State-Machines.md)。
 - GPU Blend Space 和逐骨层复用共享坐标、相位及遮罩资源，在 GPU 合成局部 TRS 后写入同一模型空间 G，见 [GPU Blending](GPU-Blending.md)。
 - GPU 解析双骨骼和 Aim 按共同模型空间目标调整来源 G，将骨盆平移、角度限制、权重与后代传播连接到相同历史和 Cluster 资源，见 [GPU IK](GPU-IK.md)。
+- CPU 同步需求展开祖先和模型算法依赖，在共同更新的 Completion 点取得关键骨骼，再经普通提取把所写 G 范围交给 GPU 完成剩余姿势；逐骨骼时间与显示依赖见 [CPU/GPU Pose Handoff](CPU-GPU-Pose-Handoff.md)。
 
 ## Non-goals
 - 不把每根骨骼表示为一条属性动画轨道。

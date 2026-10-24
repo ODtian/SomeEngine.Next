@@ -14,7 +14,7 @@
 
 `GpuBlendSpace` 在构造时按 `sampleRate` 对其来源片段进行均匀量化，保留 `BlendSpace` 的坐标、区间、三角形与相位偏移。`Clips` 提供这些就绪量化数据，可通过 `CreateClip` 取得相同编码的 CPU 采样入口。
 
-`GpuPoseBlend(skeleton, output)` 沿输出节点的基础与来源关系排列共享步骤，并将引用解析为步骤编号。同一个节点引用只保存一份步骤。每个安装实例拥有自己的控制数组；Game world 的共同 Composition 阶段将 `GraphParameters` 复制到该数组，提取窗口再复制到 Rendering world。
+`GpuPoseBlend(skeleton, output)` 沿输出节点的基础与来源关系排列共享步骤，并将引用解析为步骤编号。同一个节点引用只保存一份步骤。每个安装实例拥有自己的控制数组；Game world 的共同 Properties 阶段将 `GraphParameters` 复制到该数组，提取窗口再复制到 Rendering world。
 
 ## 选择、相位与逐骨合成
 
@@ -26,7 +26,7 @@ GPU 的输入推进 pass 为每个节点计算本帧贡献及相位。同一骨�
 
 ## 共同生命周期与使用
 
-`GpuBlendParameters.Duration` 使用共同叶节点的持续时间，默认持续运行。有限持续时间在共同完成阶段交付最终姿势。启动次数、输入编号与叶时钟沿用 [GPU State Machines](GPU-State-Machines.md) 的输入识别；每个新输入推进一次，重复消费保留同一份当前及上一份 G。区段重新排列时复制相位历史，替换组合定义或重新启动时从初始相位求值。
+`GpuBlendParameters.Duration` 使用共同叶节点的持续时间，默认持续运行。有限持续时间在共同完成阶段交付最终姿势。启动次数、输入编号与叶时钟沿用 [GPU State Machines](GPU-State-Machines.md) 的输入识别；每个新输入推进一次。相同来源及模型依赖的重复消费保留同一份 current/previous G；父显示版本变化时沿 [CPU/GPU Pose Handoff](CPU-GPU-Pose-Handoff.md) 的依赖规则重算 G。区段重新排列时复制相位历史，替换组合定义或重新启动时从初始相位求值。
 
 下面是用速度选择移动片段，再按上身遮罩叠加动作的调用示例。`walk`、`run` 是调用方加载的 `AnimationClip`，`gesture` 是就绪 `QuantizedClipData`，`skeleton` 是 `SkeletonInstance`，`upperBody` 是就绪遮罩。
 

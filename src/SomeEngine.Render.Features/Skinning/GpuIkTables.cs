@@ -10,10 +10,12 @@ public sealed partial class SkinningFeature
     private void WriteSolverWork(BinaryWriter writer)
     {
         var children = new List<int>[_boneCount];
+        var cpuBones = new bool[_boneCount];
         for (int bone = 0; bone < children.Length; bone++) children[bone] = [];
         int goals = 0;
         foreach (Section section in _sectionOrder)
         {
+            foreach (short bone in section.Data.CpuBones.Span) cpuBones[section.Range.Start + bone] = true;
             section.SolverEnd = -1; section.GoalStart = goals;
             goals += section.Data.Rig?.GoalCount ?? 0;
             for (int bone = 0; bone < section.Range.Count; bone++)
@@ -42,6 +44,7 @@ public sealed partial class SkinningFeature
                 {
                     int root = section.Range.Start + limb.Chain.Root, middle = section.Range.Start + limb.Chain.Middle,
                         tip = section.Range.Start + limb.Chain.Tip;
+                    if (cpuBones[root] && cpuBones[middle] && cpuBones[tip]) { level++; continue; }
                     var rootRange = Descendants(root); var middleRange = Descendants(middle); var tipRange = Descendants(tip);
                     Align(writer, 16);
                     uint definition = (uint)writer.BaseStream.Position;
@@ -100,6 +103,7 @@ public sealed partial class SkinningFeature
             var visit = new Stack<int>(); visit.Push(root);
             while (visit.TryPop(out int bone))
             {
+                if (cpuBones[bone]) continue;
                 bones.Add(bone);
                 foreach (int child in children[bone]) visit.Push(child);
             }

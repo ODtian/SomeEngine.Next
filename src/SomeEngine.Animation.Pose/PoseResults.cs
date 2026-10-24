@@ -76,6 +76,7 @@ public static partial class PoseAnimation
                     });
             });
         world.Add(target, new PoseTarget { Skeleton = skeleton, Output = Resolve(world, target, output) });
+        CpuBoneDemands.For(world).Changed = true;
         return target;
     }
 

@@ -17,7 +17,7 @@
 
 权重采用 `[0, 1]`。位置目标与关节位置相异，弯曲方向在根到目标方向的垂直平面内具有分量。调用方先将世界目标转换为角色共同模型空间，再写入这些输入。
 
-`GpuTwoBoneParameters` 和 `GpuAimParameters` 的 `Duration` 沿共同 `MotionBoundary`、`AnimationGraph.ReadTime` 与 `Submit` 处理，默认持续运行。`GraphParameters` 驱动来源中的 [GPU Blend Space](GPU-Blending.md)。目标与骨盆平移在当前输入的提取窗口就绪，同一输入编号的重复消费保留同一份调整结果。
+`GpuTwoBoneParameters` 和 `GpuAimParameters` 的 `Duration` 沿共同 `MotionBoundary`、`AnimationGraph.ReadTime` 与 `Submit` 处理，默认持续运行。`GraphParameters` 驱动来源中的 [GPU Blend Space](GPU-Blending.md)。目标与骨盆平移在当前输入的提取窗口就绪，相同来源及父模型依赖的重复消费保留同一份调整结果。同步 CPU 范围及父显示版本变化沿 [CPU/GPU Pose Handoff](CPU-GPU-Pose-Handoff.md) 的规则参与 G 求值。
 
 ## 解析双骨骼
 

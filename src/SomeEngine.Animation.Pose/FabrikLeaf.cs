@@ -41,7 +41,8 @@ public readonly struct FabrikLeaf : IAnimationLeaf<FabrikParameters>
             Target = skeleton.ModelPose.GetBone(skeleton.Skeleton.InheritedBoneCount + parameters.Chain.Bones[^1]).Transform.Translation,
             Samples = new(parameters.Chain, skeleton),
         };
-        instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement);
+        short[] bones = parameters.Chain.Bones.ToArray().Select(static bone => (short)bone).ToArray();
+        instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);
         world.ExecuteBufferWrite<FabrikInstance, FabrikInstance>(animation, ref instance,
             static (instances, ref instance) => instances.Add(instance));
     }

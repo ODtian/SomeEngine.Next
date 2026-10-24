@@ -68,7 +68,7 @@ PoseAnimation.AddSystems(systems, static composition =>
 });
 ```
 
-回调在创建执行组合时调用，保留各系统的具体类型和注册顺序。每帧依次执行 `PoseFrameSystem`、`ClipSystem`、调用方的每帧系统、依赖节点组和 `PoseCompositionSystem`。最终系统先将变化的局部结果交给对应骨架实例，再沿已绑定父实例完成父先子后的 FK；父结果版本变化也会更新保持原局部输入的子实例。随后共同图和时间线处理完成。
+回调在创建执行组合时调用，保留各系统的具体类型和注册顺序。每帧依次执行 `PoseFrameSystem`、`ClipSystem`、调用方的每帧系统、依赖节点组和 `PoseCompositionSystem`。节点安装时同时连接其局部结果与 `ModelBones` 所需的父模型来源；每个依赖层之前完成就绪的父 G，再执行本层具体节点。最终系统将变化的局部结果交给对应骨架实例，再沿已绑定父实例完成父先子后的 FK；父结果版本变化也会更新保持原局部输入的子实例。随后共同图和时间线处理完成。同步选骨与 GPU 剩余范围的完成点见 [CPU/GPU Pose Handoff](CPU-GPU-Pose-Handoff.md)。
 
 ## 按结果依赖求值
 
