@@ -10,6 +10,22 @@ internal static partial class CheckAnimation
 {
     public static int Main(string[] args)
     {
+        if (args.Contains("--pose-consumer-prepare"))
+        {
+            PoseExample.PoseConsumerContent.PrepareAsync(args[1], args[2], args[3], args.Contains("--reuse-shader"))
+                .GetAwaiter().GetResult();
+            return 0;
+        }
+        if (args.Contains("--pose-consumer"))
+        {
+            PoseExample.PoseConsumerApplication.RunAsync(args[1], args[2]).GetAwaiter().GetResult();
+            return 0;
+        }
+        if (args.Contains("--pose-consumer-cpu"))
+        {
+            PoseExample.PoseConsumerChecks.RunAsync(args[1]).GetAwaiter().GetResult();
+            return 0;
+        }
         if (args.Contains("--cpu-pose-benchmark"))
         {
             CpuPoseMeasurements.Run();
