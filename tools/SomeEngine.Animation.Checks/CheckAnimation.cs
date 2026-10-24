@@ -10,6 +10,11 @@ internal static partial class CheckAnimation
 {
     public static int Main(string[] args)
     {
+        if (args.Contains("--cpu-pose-benchmark"))
+        {
+            CpuPoseMeasurements.Run();
+            return 0;
+        }
         if (args.Contains("--pose-sampling-benchmark"))
         {
             PoseSamplingMeasurements.Run();

@@ -123,6 +123,7 @@ public sealed partial class Scheduler
                 handle,
                 callbacks.Continuations,
                 callbacks.ExternalContinuations,
+                callbacks.ExternalContinuationCount,
                 callbacks.ExternalContinuationLease,
                 callbacks.Parent,
                 callbacks.Fault);
@@ -133,6 +134,7 @@ public sealed partial class Scheduler
         JobHandle handle,
         DependencyContinuation[]? continuations,
         ExternalCompletionContinuation[]? externalContinuations,
+        int externalContinuationCount,
         CompletionLease externalContinuationLease,
         ScopeToken parent,
         ExceptionDispatchInfo? fault)
@@ -161,13 +163,12 @@ public sealed partial class Scheduler
         {
             try
             {
-                foreach (var continuation in externalContinuations)
-                {
-                    continuation.InvokeAndSuppressObserverExceptions();
-                }
+                for (int index = 0; index < externalContinuationCount; index++)
+                    externalContinuations[index].InvokeAndSuppressObserverExceptions();
             }
             finally
             {
+                System.Buffers.ArrayPool<ExternalCompletionContinuation>.Shared.Return(externalContinuations, clearArray: true);
                 _completion.EndWait(externalContinuationLease);
             }
         }

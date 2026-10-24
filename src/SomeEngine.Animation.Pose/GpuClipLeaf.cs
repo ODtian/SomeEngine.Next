@@ -159,7 +159,7 @@ internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
             foreach (QueryRow row in rows.Rows)
             foreach (ref GpuClipInstance instance in row.Buffer<GpuClipInstance>().AsSpan())
             {
-                AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in instance.Placement);
+                AnimationLeafTime time = AnimationGraph.ReadTime(in row, in instance.Placement);
                 if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; instance.Signals.Reset(); }
                 if (!time.Active || instance.Finished) continue;
                 GpuClipParameters parameters = instance.Definition.Parameters[instance.Index];
@@ -174,7 +174,7 @@ internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
                 instance.Signals.Update(world, row.Entity, in parameters, elapsed, ref output);
                 world.Replace(instance.Target, output);
                 instance.Finished = !parameters.Loop && elapsed >= parameters.Clip.Duration;
-                AnimationGraph.Submit(world, row.Entity, in instance.Placement, !instance.Finished);
+                AnimationGraph.Submit(in row, in instance.Placement, !instance.Finished);
             }
         });
     }

@@ -8,7 +8,7 @@
 
 | 构造方式 | CPU 局部来源 | 来源时间 |
 | --- | --- | --- |
-| `CpuBoneDemand(clip, bones)` | ready `AnimationClip`，复用 `ClipSampleBatch` 选骨采样 | 直接 GPU clip 的 `SampleTime`，或 GPU 组合的共同 `PlaybackTime`，限制到该 CPU clip 时长 |
+| `CpuBoneDemand(clip, bones)` | ready `AnimationClip`，批次解码已展开的自身骨骼 | 直接 GPU clip 的 `SampleTime`，或 GPU 组合的共同 `PlaybackTime`，限制到该 CPU clip 时长 |
 | `CpuBoneDemand(source, bones)` | 已安装 CPU 图的 `PoseResultReference`，读取其连续 `LocalPose` 输出 | 该 `PoseResult.Time` |
 
 所需自身祖先在安装或显式修改时展开。继承根继续要求实际父实例的对应模型骨骼；普通 GPU clip 父来源使用其量化数据的 ready CPU sampler。其它 GPU 父来源可通过空骨骼集合声明自己的 ready CPU clip 或 CPU result，供子需求展开使用。
@@ -35,6 +35,8 @@ CPU 图来源使用 `PoseAnimation.Resolve(world, cpuTarget, resultId)` 取得�
 属性最终合成后的共同 CompositionInputs 阶段形成 GPU 来源时钟与控制，Composition 阶段生成 CPU 局部结果。安装的节点依赖同时包含当前继承父模型来源。执行每个节点层之前，复制就绪的 CPU 局部输入，完成该层所需父 G，再执行具体求解器。父节点结果因此先于子 FABRIK/PBIK 的父矩阵读取。
 
 同步骨骼使用保留的选骨采样器、连续局部工作区和具体 Job。父结果完成后，Job 只写本实例展开集合内的 G。`GpuPoseAnimation.AddSystems` 注册的 Completion 系统完成最终 CPU 工作及其 CPU 后代传播；随后注册的 Completion 消费者在同次 Game 更新内读取 `BonePose`。提取读取这次完成后的数据。
+
+绑定时按 ready clip 和继承深度建立解码组，合并该组所需的自身骨骼；逐帧按父先子的深度收集变化实例，以 32 行具体采样块解码。当前深度的解码完成后，批次将各实例自己的局部结果和采样信息交给 `SkeletonInstance.WriteBones`，再处理下一深度。来源已经提供 CPU 结果时直接复制所需局部骨骼，继续经过同一批次写入和完成路径。
 
 GPU 剩余骨骼与 CPU 同步骨骼共享既有模型 G 范围。普通提取窗口复制 CPU 矩阵及逐骨骼计算信息；Rendering world 为实际变更范围声明当帧 copy，再接入持久 FK 顺序点。GPU FK 工作表只包含剩余骨骼，读取同次已复制的父 G。模型空间后处理在 CPU 写入骨骼处结束传播，其 GPU 后代以该 CPU G 为锚。完成的 G 继续供 Cluster 蒙皮、姿势包围盒和其它视图消费。
 
