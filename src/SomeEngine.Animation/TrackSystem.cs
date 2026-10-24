@@ -53,6 +53,8 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         bool weightChannels = _fields == TrackFields.LayerWeights;
+        if (!context.World.HasQueryMembers(_tracks)
+            && (weightChannels || !context.World.HasQueryMembers(_finishedTracks))) return;
         Evaluate(context.World, context.LastSystemVersion, _tracks, weightChannels, enabled: true);
         if (!weightChannels)
             Evaluate(context.World, context.LastSystemVersion, _finishedTracks, weightChannels, enabled: false);
