@@ -13,6 +13,8 @@ public sealed class ApplicationScene(string contentDirectory)
     public Action<ApplicationFrame>? UpdateFrame { get; init; }
     /// <summary>Receives this frame's Cluster results after GPU completion. Supplying this callback enables synchronous frame diagnostics.</summary>
     public Action<ClusterFrameMetrics>? FrameRendered { get; init; }
+    /// <summary>Receives complete CPU/GPU frame timing after GPU completion, preserving asynchronous frame scheduling.</summary>
+    public Action<ApplicationFrameTiming>? FrameMeasured { get; init; }
 }
 
 /// <summary>The game world and ordered systems available before the frame's extraction.</summary>

@@ -13,6 +13,7 @@ Compatibility entry for the RenderGraph domain. Current rules are atomic pages u
 - [[architecture/render-graph/Incremental-Scheduling|Incremental Scheduling]]
 - [[architecture/render-graph/Transient-Placement|Transient Placement]]
 - [[architecture/render-graph/Range-Completions|Range Completions]]
+- [[architecture/render-graph/GPU-Timing|GPU Timing]]
 
 ## History
 - [[history/Rendering/Immediate-Render-Graph-Wiki|Previous immediate-graph Wiki]]

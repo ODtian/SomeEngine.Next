@@ -141,6 +141,7 @@ internal sealed partial class FrameExecutor
         RefreshParameterBindings();
         ResolveSynchronization();
         PublishDiagnostics();
+        PrepareGpuTimes();
         return RecordAndSubmit(destination);
     }
 
