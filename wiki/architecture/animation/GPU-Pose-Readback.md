@@ -21,6 +21,8 @@ Rendering world 从共享骨骼缓冲中复制选定 current、previous 范围�
 
 结果持有只读内存，使用期独立于读回缓冲、后续播放与图形设备。Rendering world 释放完成的读回缓冲；feature 释放时排空已经提交的复制。播放重新开始后，先前请求继续持有其原执行身份，新请求记录新的启动标记。
 
+`Presentation` 保留视觉局部姿势的两端计算时钟、来源身份及呈现权重，`SourceSamples` 保留逐骨骼两端实际来源样本时间。`SampledBones` 给出范围内已解析的 GPU 来源采样骨骼。插值规则、LOD 与混合 CPU 当前结果的时间职责见 [GPU Pose Frequency](GPU-Pose-Frequency.md)。
+
 ## 在共同图中消费反馈
 
 具体叶节点照常通过 `IAnimationLeaf<TParameters>` 安装自己的逐实例请求与算法历史，系统使用 `AnimationGraph.ReadTime` 取得当前叶的实际启动标记。`GpuPoseTarget.Starts` 保留这一实际标记：顶层叶采用 Timeline 身份，嵌套叶采用对应 GraphMotion 身份。`AnimationStarts` 保存安装时 `AnimationLeafPlacement.Starts`，区分整图的各次播放。嵌套 motion 在新图播放时可以从局部 Starts 1 开始，两层标记共同识别该执行。内置 GPU 叶在安装时写入 `AnimationStarts`；自定义生产叶采用相同字段。

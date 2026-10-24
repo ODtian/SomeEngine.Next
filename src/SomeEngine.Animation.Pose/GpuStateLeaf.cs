@@ -52,6 +52,7 @@ public readonly struct GpuStateLeaf : IAnimationLeaf<GpuStateParameters>
         output.Playing = false;
         output.Starts = placement.Starts;
         output.AnimationStarts = placement.Starts;
+        output.ExtractRootMotion = false;
         world.Replace(target, output);
     }
 
@@ -90,6 +91,7 @@ internal struct GpuStateSystem : ISystem<ImmediateSystemContext>
                 output.PlaybackTime = elapsed;
                 output.Playing = true;
                 output.Starts = time.Starts;
+                output.ExtractRootMotion = false;
                 world.Replace(instance.Target, output);
                 instance.Finished = elapsed >= parameters.Duration;
                 AnimationGraph.Submit(world, row.Entity, in instance.Placement, !instance.Finished);
