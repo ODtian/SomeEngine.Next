@@ -1,6 +1,7 @@
 #ifndef CLUSTER_RASTER_SHARED_SLANG
 #define CLUSTER_RASTER_SHARED_SLANG
 
+#include "visbuffer_encoding.slang"
 #include "wave_queue.slang"
 #include "material_interfaces.slang"
 #include "cluster_view.slang"

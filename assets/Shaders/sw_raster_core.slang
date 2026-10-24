@@ -10,6 +10,7 @@
 #ifndef SW_RASTER_CORE_SLANG
 #define SW_RASTER_CORE_SLANG
 
+#include "cluster_common.slang"
 #include "cluster_structures.slang"
 #include "cluster_view_access.slang"
 #include "common.slang"

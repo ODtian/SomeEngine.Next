@@ -846,11 +846,18 @@ public sealed partial class ClusterRenderResources : IDisposable
             uint lastSystemVersion) =>
             packet.ChangedSince<RenderTransform>(lastSystemVersion)
             || packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)
-            || packet.ChangedSince<RenderClusterGeometry>(lastSystemVersion)
-            || packet.Has<RenderXray>() && packet.ChangedSince<RenderXray>(lastSystemVersion)
-            || packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastSystemVersion)
+            || MeshChanged(packet, lastSystemVersion)
+            || XrayChanged(packet, lastSystemVersion)
                 ? RenderInstanceChanges.Values
                 : RenderInstanceChanges.None;
+
+        internal static bool MeshChanged(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
+            packet.ChangedSince<RenderClusterGeometry>(lastSystemVersion)
+            || packet.Has<RenderMesh>() && packet.ChangedSince<RenderMesh>(lastSystemVersion)
+            || packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastSystemVersion);
+
+        internal static bool XrayChanged(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
+            packet.Has<RenderXray>() && packet.ChangedSince<RenderXray>(lastSystemVersion);
 
         public void Bind(RenderInstanceWriteSlice destination)
             => Bind(destination, true, true, true);

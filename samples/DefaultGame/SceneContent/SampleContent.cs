@@ -48,6 +48,8 @@ public static class SampleContent
         string engineShaders = Path.Combine(engineRoot, "assets", "Shaders");
         WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"),
             ClusterShaderSources.BuildInstanceLayout(ClusterRenderFeature.InstanceLayout));
+        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
+            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
             shaderIncludeDirectories: [engineShaders]);
         await BuildEngineShadersAsync(project, shaders, engineShaders, cancellationToken).ConfigureAwait(false);
