@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SomeEngine.Animation.Pose;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 
@@ -14,6 +15,9 @@ public sealed record GpuPoseReadback(uint Starts, ulong InputNumber, double Calc
     ReadOnlyMemory<Matrix4x4> Current, ReadOnlyMemory<Matrix4x4> Previous)
 {
     public GpuPosePlayback Playback { get; init; }
+    public ulong Version { get; init; }
+    public double SourceCalculationTime { get; init; }
+    public ReadOnlyMemory<PoseCalculation> Calculations { get; init; }
 }
 
 public sealed partial class SkinningFeature
@@ -29,6 +33,10 @@ public sealed partial class SkinningFeature
         foreach (Readback readback in _readbacks)
         {
             if (readback.Buffer is not null) continue;
+            Section section = _sectionOrder[readback.Section.PlaybackIndex];
+            readback.Calculations = new PoseCalculation[readback.Section.Range.Count];
+            if (!section.Data.IsGpu) section.Data.Calculations.CopyTo(readback.Calculations, 0);
+            else foreach (short bone in section.Data.CpuBones.Span) readback.Calculations[bone] = section.Data.Calculations[bone];
             ulong bytes = (ulong)readback.Section.Range.Count * 64;
             readback.Buffer = _backend.CreateBuffer(_device, new BufferDesc(bytes * 2 + 64, BufferUsages.CopyDestination), MemoryType.Readback);
             GraphBufferId output = frame.Import(readback.Buffer,
@@ -80,9 +88,15 @@ public sealed partial class SkinningFeature
             int count = readback.Section.Range.Count;
             ReadOnlySpan<Matrix4x4> matrices = MemoryMarshal.Cast<byte, Matrix4x4>(mapping.Bytes[..(count * 128)]);
             PlaybackData playback = MemoryMarshal.Read<PlaybackData>(mapping.Bytes[(count * 128)..]);
-            var result = new GpuPoseReadback(playback.Starts, playback.InputNumber, playback.CalculationTime,
+            for (int bone = 0; bone < count; bone++)
+                if (readback.Calculations[bone].Version == 0)
+                    readback.Calculations[bone] = new(readback.Section.Version, readback.Section.CalculationTime, playback.SampleTime);
+            var result = new GpuPoseReadback(playback.Starts, playback.InputNumber, readback.Section.CalculationTime,
                 playback.SampleTime, matrices[..count].ToArray(), matrices[count..].ToArray())
             {
+                Version = readback.Section.Version,
+                SourceCalculationTime = playback.CalculationTime,
+                Calculations = readback.Calculations,
                 Playback = new(unchecked((int)playback.State), unchecked((int)playback.SourceState), playback.Time,
                     playback.SourceTime, playback.SourceSampleTime, playback.Weight, playback.Finished != 0),
             };
@@ -105,5 +119,6 @@ public sealed partial class SkinningFeature
         internal SomeEngine.Graphics.Buffer? Buffer;
         internal GraphPassId Pass;
         internal QueueCompletion Completion;
+        internal PoseCalculation[] Calculations = [];
     }
 }

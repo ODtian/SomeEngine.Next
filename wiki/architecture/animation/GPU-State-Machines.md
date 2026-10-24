@@ -30,7 +30,8 @@
 | `Playback.SourceSampleTime` | 来源片段实际使用的循环或结束样本时间 |
 | `Playback.TransitionWeight` | 目标状态的混合权重，来源权重为其余部分 |
 | `Playback.Finished` | 目标有限片段已结束，且交叉过渡已完成 |
-| `Starts`、`InputNumber`、`CalculationTime` | 该 GPU 播放行实际消费的输入标记与计算时钟 |
+| `Starts`、`InputNumber`、`SourceCalculationTime` | 该 GPU 播放行实际消费的输入标记与计算时钟 |
+| `Version`、`CalculationTime` | 包含当前父模型依赖的显示 G 版本与计算时钟 |
 
 过渡完成后，来源状态和来源时间与目标一致，目标权重为 `1`。直接 GPU 片段、GPU 局部姿势组合及 CPU 姿势区段的状态编号为 `-1`。`RenderPoseSection.InputTime` 表示提取的控制时钟；实际片段时间由 GPU 结果提供。
 

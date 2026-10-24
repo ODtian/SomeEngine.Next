@@ -138,7 +138,8 @@ public readonly struct PhysicsPoseLeaf : IAnimationLeaf<PhysicsPoseParameters>
             ActorTransform = Matrix4x4.Identity,
             Samples = new(parameters.Map, parameters.Mask, world.Read<PoseTarget>(target).Skeleton),
         };
-        instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement);
+        short[] bones = parameters.Map.Bodies.ToArray().Select(static body => (short)body.Bone).ToArray();
+        instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);
         world.ExecuteBufferWrite<PhysicsPoseInstance, PhysicsPoseInstance>(animation, ref instance,
             static (instances, ref instance) => instances.Add(instance));
     }

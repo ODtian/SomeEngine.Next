@@ -163,7 +163,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         {
             RenderPoseSection pose = _world.Read<RenderPoseSection>(instance.Sections[index]);
             RenderBoneSectionData data = _world.Read<RenderBoneSectionData>(instance.Sections[index]);
-            var input = new PoseInput(pose.Starts, pose.InputNumber, data.IsGpu ? pose.InputNumber : data.Version, data.IsGpu);
+            var input = new PoseInput(pose.Starts, pose.InputNumber, pose.Version, data.IsGpu);
             PoseInput before = instance.Inputs[index];
             if (before == input) continue;
             instance.Inputs[index] = input;

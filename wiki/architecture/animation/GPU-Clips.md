@@ -45,6 +45,7 @@
 | `CalculationTime` | Game 更新累积的计算时间 |
 | `Starts` | 共同时间轴的开始次数 |
 | `InputNumber` | 每次 Game 更新递增的目标输入编号 |
+| `CpuBones` | 显式同步来源和所需自身骨骼集合 |
 
 以下是公共 API 接入示例，`data`、`instance`、`binding` 由调用者加载并保持有效：
 
@@ -70,8 +71,8 @@ GPU 先读取已提交的 current/previous 历史，再更新各区段的播放�
 并传播 G。每个自身骨骼读取已绑定的父 G；继承父结果和自身结果处于同一模型空间。
 各角色在同一层合并调度。最终 G 通过 [Skinning](Skinning.md) 的四个资源绑定供用户材质消费。
 
-每个区段按输入编号、开始次数及绑定版本识别新输入。新输入令 previous 接收上次 current；
-首次结果以 current 初始化 previous。重复渲染相同输入保留同一对矩阵。
+每个区段按输入编号和开始次数识别来源推进，并按绑定、CPU 写入和父区段显示版本识别模型求值。新的模型求值令 previous 接收上次 current；
+首次结果以 current 初始化 previous。重复消费相同来源及模型依赖保留同一对矩阵；保持的子来源按新的父 G 继续计算并推进模型历史。
 历史推进由 RG 中实际提交的写入确认，区段重排通过 GPU copy 保留已有历史。
 
 `RenderGpuPoseTarget.Section` 定位提取后的区段实体；该实体的 `RenderPoseSection` 给出
@@ -81,7 +82,7 @@ G 范围、GPU 播放行及 `InputTime` 控制时钟。图消费者使用 `Skinn
 ## 读取 GPU 结果
 
 `SkinningFeature.RequestReadback(section, receive)` 请求下一次提交的当前及上一份自身区段 G，以及同次 GPU 播放行。
-`CompleteReadbacks()` 等待对应 copy 完成并交付 `GpuPoseReadback`；返回矩阵独立于 GPU 资源，样本时间和输入标记来自实际 GPU 结果。
+`CompleteReadbacks()` 等待对应 copy 完成并交付 `GpuPoseReadback`；返回矩阵独立于 GPU 资源，样本时间和输入标记来自实际 GPU 结果。`Version` 与 `CalculationTime` 描述模型求值，`SourceCalculationTime` 描述来源输入时钟，逐骨骼 `Calculations` 保留各写入方的时间与版本。
 普通应用通过 `SceneEdit.ReadGpuPose(target, receive)` 使用这一入口，Runtime 在正常
 prepare 后解析提取映射，并在帧提交后交付结果。
 
@@ -90,6 +91,8 @@ prepare 后解析提取映射，并在帧提交后交付结果。
 1D/2D Blend Space、遮罩和参考姿势差叠加通过 `GpuBlendLeaf` 接入，实例参数及相位规则见 [GPU Blending](GPU-Blending.md)。
 
 解析双骨骼、末端朝向和带权重与角度限制的注视链通过具体叶节点接入，目标输入、骨盆平移与最终 G 历史见 [GPU IK](GPU-IK.md)。
+
+ready clip 或 CPU 图输出的同步需求、完成点及同次 G 范围交接见 [CPU/GPU Pose Handoff](CPU-GPU-Pose-Handoff.md)。
 
 公共应用示例位于 [SkinningRenderingTests](../../../tests/SomeEngine.Runtime.Tests/SkinningRenderingTests.cs)。
 示例使用共享父实例、两个播放速度及每顶点两个影响；数值读取和可见几何都经过普通 App、

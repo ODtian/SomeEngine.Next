@@ -8,6 +8,8 @@ public sealed class PoseStorage
 {
     private BoneTransform[] _local;
     private Matrix4x4[] _model;
+    private PoseCalculation[] _calculations;
+    private double[] _sampleTimes;
     private int _count;
     private readonly List<PoseRange> _available = [];
 
@@ -15,6 +17,8 @@ public sealed class PoseStorage
     {
         _local = new BoneTransform[boneCapacity];
         _model = new Matrix4x4[boneCapacity];
+        _calculations = new PoseCalculation[boneCapacity];
+        _sampleTimes = new double[boneCapacity];
     }
 
     /// <summary>Creates an instance, using the supplied parent or a private chain initialized from reference poses.</summary>
@@ -46,12 +50,16 @@ public sealed class PoseStorage
             int capacity = Math.Max(_count, Math.Max(256, _local.Length * 2));
             Array.Resize(ref _local, capacity);
             Array.Resize(ref _model, capacity);
+            Array.Resize(ref _calculations, capacity);
+            Array.Resize(ref _sampleTimes, capacity);
         }
         return range;
     }
 
     internal Span<BoneTransform> Local(PoseRange range) => _local.AsSpan(range.Start, range.Count);
     internal Span<Matrix4x4> Model(PoseRange range) => _model.AsSpan(range.Start, range.Count);
+    internal Span<PoseCalculation> Calculations(PoseRange range) => _calculations.AsSpan(range.Start, range.Count);
+    internal Span<double> SampleTimes(PoseRange range) => _sampleTimes.AsSpan(range.Start, range.Count);
 
     internal void Release(PoseRange range)
     {
