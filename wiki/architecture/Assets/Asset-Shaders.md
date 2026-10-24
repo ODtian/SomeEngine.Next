@@ -23,7 +23,7 @@ ShaderAsset
 
 ## 共享材质与入口准备
 
-`StandardMaterialInputs.Create()` 返回含引擎材质接口及 `StandardMaterial` 序列化 IR 的 `ShaderSourceBlock`。`ClusterMaterialEntriesBlock.Create()` 返回 Cluster 的入口 IR。业务入口沿 Slang 的 `import material_interfaces`、`import standard_material` 使用这些公开类型，并将自己 `IModule.Serialize` 的结果放入具体入口 Block。
+`StandardMaterialInputs.Create()` 返回含引擎材质接口及 `StandardMaterial` 序列化 IR 的 `ShaderSourceBlock`。`ClusterMaterialEntriesBlock.Create()` 返回 Cluster 材质入口及共享 `cluster_transparency` 内核的 IR。`CreateUnlit()` 同样携带该共享内核；选择整个入口 Block 后，动态透明材质组合从驻留输入取得内核与具体材质实现，并按模块名共用内核。业务入口沿 Slang 的 `import material_interfaces`、`import standard_material` 使用这些公开类型，并将自己 `IModule.Serialize` 的结果放入具体入口 Block。
 
 Unlit 使用 `UnlitMaterialInputs.Create()` 与 `ClusterMaterialEntriesBlock.CreateUnlit()`。DefaultGame 和游戏模板的准备代码显式选择各自的输入，然后保存固定入口集合的共同发布代码。通用 CLI 编译已经准备好的 ShaderAsset 输入；管线集合由业务准备代码选择。
 
