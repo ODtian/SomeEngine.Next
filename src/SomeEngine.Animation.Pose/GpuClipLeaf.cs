@@ -133,9 +133,9 @@ internal struct GpuPoseFrameSystem : ISystem<ImmediateSystemContext>
         _time += context.DeltaTime;
         context.World.ExecuteQuery(_targets, ref _time, static (QueryCursor rows, ref double time) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            foreach (QueryChunkView chunk in rows.Chunks)
+            foreach (ref GpuPoseTarget target in chunk.ReadWrite<GpuPoseTarget>())
             {
-                ref GpuPoseTarget target = ref row.ReadWrite<GpuPoseTarget>();
                 target.CalculationTime = time;
                 target.InputNumber++;
                 target.Playing = false;
