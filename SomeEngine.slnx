@@ -5,6 +5,9 @@
   <Project Path="tools\SomeEngine.Trace\SomeEngine.Trace.csproj" />
   <Project Path="tests\SomeEngine.Diagnostics.Tests\SomeEngine.Diagnostics.Tests.csproj" />
   <Project Path="src\SomeEngine.Core\SomeEngine.Core.csproj" />
+  <Project Path="src\SomeEngine.Typography\SomeEngine.Typography.csproj" />
+  <Project Path="tests\SomeEngine.Typography.Tests\SomeEngine.Typography.Tests.csproj" />
+  <Project Path="tools\SomeEngine.Typography.AotSmoke\SomeEngine.Typography.AotSmoke.csproj" />
   <Project Path="src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
   <Project Path="src\SomeEngine.Resources\SomeEngine.Resources.csproj" />
   <Project Path="tests\SomeEngine.Resources.Tests\SomeEngine.Resources.Tests.csproj" />
@@ -14,8 +17,23 @@
   <Project Path="tools\SomeEngine.Serialization.AotSmoke\SomeEngine.Serialization.AotSmoke.csproj" />
   <Project Path="tools\SomeEngine.Serialization.Benchmarks\SomeEngine.Serialization.Benchmarks.csproj" />
   <Project Path="tools\SomeEngine.ECS.AotSmoke\SomeEngine.ECS.AotSmoke.csproj" />
+  <Project Path="tools\SomeEngine.Views.AotSmoke\SomeEngine.Views.AotSmoke.csproj" />
   <Project Path="src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
   <Project Path="src\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
+  <Project Path="src/SomeEngine.Animation/SomeEngine.Animation.csproj" />
+  <Project Path="tests/SomeEngine.Animation.Tests/SomeEngine.Animation.Tests.csproj" />
+  <Project Path="src\SomeEngine.Views\SomeEngine.Views.csproj" />
+  <Project Path="src/SomeEngine.Layout/SomeEngine.Layout.csproj" />
+  <Project Path="tests/SomeEngine.Layout.Tests/SomeEngine.Layout.Tests.csproj" />
+  <Project Path="src/SomeEngine.Elements/SomeEngine.Elements.csproj" />
+  <Project Path="src/SomeEngine.Elements.Render/SomeEngine.Elements.Render.csproj" />
+  <Project Path="tests/SomeEngine.Elements.Render.Tests/SomeEngine.Elements.Render.Tests.csproj" />
+  <Project Path="tests/SomeEngine.Elements.Consumer.Tests/SomeEngine.Elements.Consumer.Tests.csproj" />
+  <Project Path="src\SomeEngine.Views.Compose\SomeEngine.Views.Compose.csproj" />
+  <Project Path="src\SomeEngine.Views.SwiftUI\SomeEngine.Views.SwiftUI.csproj" />
+  <Project Path="src\SomeEngine.Views.Solid\SomeEngine.Views.Solid.csproj" />
+  <Project Path="src\SomeEngine.Views.Generators\SomeEngine.Views.Generators.csproj" />
+  <Project Path="src/SomeEngine.Views.Compiler/SomeEngine.Views.Compiler.csproj" />
   <Project Path="src\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
   <Project Path="src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj" />
   <Project Path="src\SomeEngine.Job.Contracts\SomeEngine.Job.Contracts.csproj" />
@@ -31,6 +49,9 @@
   <Project Path="tests\SomeEngine.Runtime.Tests\SomeEngine.Runtime.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Tests\SomeEngine.ECS.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Systems.Tests\SomeEngine.ECS.Systems.Tests.csproj" />
+  <Project Path="tests\SomeEngine.Views.Tests\SomeEngine.Views.Tests.csproj" />
+  <Project Path="tests\SomeEngine.Views.Solid.Tests\SomeEngine.Views.Solid.Tests.csproj" />
+  <Project Path="tests\SomeEngine.Views.Generators.Tests\SomeEngine.Views.Generators.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Serialization.Tests\SomeEngine.ECS.Serialization.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Fuzz.Tests\SomeEngine.ECS.Fuzz.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.SourceGen.Tests\SomeEngine.ECS.SourceGen.Tests.csproj" />
@@ -80,6 +101,7 @@
     <Project Path="tools/SomeEngine.RenderScenarios/SomeEngine.RenderScenarios.csproj" />
     <Project Path="tools/RhiTypeGraph/RhiTypeGraph.csproj" />
     <Project Path="tools/SomeEngine.Assets.Benchmarks/SomeEngine.Assets.Benchmarks.csproj" />
+    <Project Path="tools/SomeEngine.Views.AotReference/SomeEngine.Views.AotReference.csproj" />
   </Folder>
   <Project Path="benchmarks\SomeEngine.ECS.Benchmarks\SomeEngine.ECS.Benchmarks.csproj" />
   <Project Path="src\SomeEngine.Graphics.Direct3D12.Validation\SomeEngine.Graphics.Direct3D12.Validation.csproj" />

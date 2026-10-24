@@ -11,6 +11,7 @@ public sealed class ApplicationScene(string contentDirectory)
     public uint GeometryMemoryBytes { get; set; } = 256u * 1024 * 1024;
     public string? StartupTraceOutput { get; set; }
     public bool DebugUiEnabled { get; set; } = true;
+    public bool MeasureInterface { get; set; }
     public Action<long>? SceneStarted { get; set; }
     public Action<ApplicationFrame>? UpdateFrame { get; set; }
     public Action? DrawDebugUi { get; set; }
@@ -44,4 +45,5 @@ public sealed class ApplicationFrame
     public ClusterRenderDiagnostics GetRenderingDiagnostics() => _rendering.CaptureDiagnostics();
 }
 
-public readonly record struct ApplicationFrameTimes(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs);
+public readonly record struct ApplicationFrameTimes(double ElapsedMs, double PrepareMs, double ReconcileMs, double ExecuteMs,
+    ViewTiming Views = default, double ExtractionMs = 0, long ExtractionAllocatedBytes = 0);

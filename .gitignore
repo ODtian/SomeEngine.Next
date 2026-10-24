@@ -45,7 +45,6 @@ worktrees/
 external/DiligentCore/
 external/Diligent-SharpGenTools/
 external/UnrealEnigne/
-src/SomeEngine.Animation/
 src/SomeEngine.Editor/
 src/SomeEngine.Physics/
 src/SomeEngine.Rhi/

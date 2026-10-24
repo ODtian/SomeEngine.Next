@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <SomeEngineViewsCompilerPath Condition="'$(SomeEngineViewsCompilerPath)' == ''">$(MSBuildThisFileDirectory)../tools/SomeEngine.Views.Compiler.dll</SomeEngineViewsCompilerPath>
+  </PropertyGroup>
+  <UsingTask TaskName="SomeEngine.Views.Compiler.CheckBuildAwaits" AssemblyFile="$(SomeEngineViewsCompilerPath)" />
+  <Target Name="CheckSomeEngineBuildAwaits" AfterTargets="CoreCompile"
+          Condition="'$(DesignTimeBuild)' != 'true' and Exists('@(IntermediateAssembly)')">
+    <ItemGroup>
+      <_SomeEngineViewsAssembly Include="@(ReferencePath)" Condition="'%(Filename)' == 'SomeEngine.Views'" />
+    </ItemGroup>
+    <SomeEngine.Views.Compiler.CheckBuildAwaits AssemblyPath="@(IntermediateAssembly)"
+        References="@(ReferencePath)"
+        Condition="'@(_SomeEngineViewsAssembly)' != '' or '$(MSBuildProjectName)' == 'SomeEngine.Views'" />
+  </Target>
+</Project>

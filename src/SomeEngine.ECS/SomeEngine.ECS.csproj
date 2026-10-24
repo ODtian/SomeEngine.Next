@@ -6,6 +6,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="SomeEngine.ECS.Serialization" />
     <InternalsVisibleTo Include="SomeEngine.ECS.Systems" />
+    <InternalsVisibleTo Include="SomeEngine.Views" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Job.Contracts/SomeEngine.Job.Contracts.csproj" />

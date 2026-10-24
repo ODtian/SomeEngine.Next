@@ -1,0 +1,168 @@
+using Microsoft.CodeAnalysis;
+
+namespace SomeEngine.Views.Generators.Tests;
+
+public sealed class CompilerDiagnosticTests
+{
+    [Fact]
+    public async Task EmptyPrimaryConstructorProducesAViewFunction()
+    {
+        var diagnostics = await CompilerChecks.Diagnostics("""
+            using SomeEngine.Views;
+            using SomeEngine.ECS;
+            public record struct Spacer() : IView, IComponent
+            {
+                public BuildTask Build() => default;
+            }
+            public record struct Panel(int Value) : IView, IComponent
+            {
+                public BuildTask Build() { SpacerFunctions.Spacer(); return default; }
+            }
+            """, true, new ViewAnalyzer());
+
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, value => value.Id == "CS8785");
+    }
+
+    [Fact]
+    public async Task ReferencedViewFunctionsPreserveBranchIdentities()
+    {
+        bool separate = await CompilerChecks.Run("""
+            using static SomeEngine.Views.Generators.Tests.CardFunctions;
+            using SomeEngine.Views.Generators.Tests;
+            using SomeEngine.Views.Tests;
+            using SomeEngine.Views;
+            using SomeEngine.ECS;
+            using SomeEngine.ECS.Entities;
+            using SomeEngine.ECS.Hierarchy;
+            using System.Linq;
+
+            public static class ReferenceChecks
+            {
+                public static bool Check()
+                {
+                    using var frames = new HeadlessFrameDriver();
+                    Entity root = Views.Spawn(frames.World, Entity.Null, new Group(false));
+                    frames.Frame();
+                    Entity first = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
+                    frames.World.Replace(first, new CardState(9));
+                    frames.World.Replace(root, new Group(true));
+                    frames.Frame();
+                    Entity second = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
+                    return first != second && frames.World.Read<CardState>(second).Value == 0;
+                }
+            }
+
+            public record struct Group(bool Alternate) : IView, IComponent
+            {
+                public BuildTask Build()
+                {
+                    if (Alternate)
+                        Card("same");
+                    else
+                        Card("same");
+                    return default;
+                }
+            }
+            """);
+
+        Assert.True(separate);
+    }
+
+    [Fact]
+    public async Task AnotherGeneratorsViewCallRequiresAnExplicitKey()
+    {
+        var diagnostics = await CompilerChecks.Diagnostics("""
+            using SomeEngine.Views;
+            using SomeEngine.ECS;
+            public record struct Label(string Text) : IView, IComponent
+            {
+                public BuildTask Build() => default;
+            }
+            """, true, new OtherViewGenerator().AsSourceGenerator(), new ViewAnalyzer());
+
+        Assert.Contains(diagnostics, value => value.Id == "SEV004" && value.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error && value.Id != "SEV004");
+    }
+
+    [Fact]
+    public async Task GenericDefaultStorageReportsItsChoiceAndPreservesConstructorNames()
+    {
+        var diagnostics = await CompilerChecks.Diagnostics("""
+            using SomeEngine.Views;
+            public readonly partial record struct Label<T>(T Value, int callKey = 7) : IView where T : notnull
+            {
+                public BuildTask Build() => default;
+            }
+            """, true, new ViewAnalyzer());
+
+        Assert.Contains(diagnostics, value => value.Id == "SEV002" && value.Severity == DiagnosticSeverity.Info);
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData("System.Func<string, SomeEngine.ECS.Entities.Entity> Create = LabelFunctions.Label;")]
+    [InlineData("public delegate SomeEngine.ECS.Entities.Entity CreateView(in Label value); CreateView Create = Scope.View<Label>;")]
+    public async Task MethodGroupsRequireDirectViewCalls(string declaration)
+    {
+        var diagnostics = await CompilerChecks.Diagnostics($$"""
+            using SomeEngine.Views;
+            using SomeEngine.ECS;
+            public record struct Label(string Text) : IView, IComponent
+            {
+                {{declaration}}
+                public BuildTask Build() => default;
+            }
+            """, true, new ViewAnalyzer());
+
+        Assert.Contains(diagnostics, value => value.Id == "SEV004" && value.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData("public async BuildTask Build()")]
+    [InlineData("async BuildTask IView.Build()")]
+    public async Task SynchronousAsyncBuildSuppressesItsWarningAndKeepsHelperWarnings(string build)
+    {
+        var diagnostics = await CompilerChecks.Diagnostics($$"""
+            using SomeEngine.Views;
+            using SomeEngine.ECS;
+            using System.Threading.Tasks;
+            public record struct Label(string Text) : IView, IComponent
+            {
+                {{build}} { }
+                public static async Task Helper() { }
+            }
+            """, true, new ViewAnalyzer(), new BuildWarningSuppressor());
+
+        Diagnostic warning = Assert.Single(diagnostics.Where(value => value.Id == "CS1998"));
+        Assert.Equal(7, warning.Location.GetLineSpan().StartLinePosition.Line + 1);
+        Assert.DoesNotContain(diagnostics, value => value.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public async Task ViewConsumerRequiresTheInterceptorNamespace()
+    {
+        var diagnostics = await CompilerChecks.Diagnostics("""
+            using SomeEngine.Views;
+            using SomeEngine.ECS;
+            public record struct Label(string Text) : IView, IComponent
+            {
+                public BuildTask Build() => default;
+            }
+            """, false, new ViewAnalyzer());
+
+        Assert.Contains(diagnostics, value => value.Id == "SEV001" && value.Severity == DiagnosticSeverity.Error);
+    }
+
+    private sealed class OtherViewGenerator : IIncrementalGenerator
+    {
+        public void Initialize(IncrementalGeneratorInitializationContext context) =>
+            context.RegisterSourceOutput(context.CompilationProvider, static (output, _) => output.AddSource("OtherViews.g.cs", """
+            // <auto-generated/>
+            public static class OtherViews
+            {
+                public static SomeEngine.ECS.Entities.Entity Create(string text) => SomeEngine.Views.Scope.View(new Label(text));
+            }
+            """));
+    }
+}

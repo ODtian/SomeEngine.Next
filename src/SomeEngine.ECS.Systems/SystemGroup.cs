@@ -42,6 +42,16 @@ public sealed class SystemGroup<TContext> : IDisposable
         return Add(default(TSystem));
     }
 
+    /// <summary>Describes the registered system types in their execution order.</summary>
+    public Type[] DescribeSystems()
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            return _nodes.Select(node => node.SystemType).ToArray();
+        }
+    }
+
     public int Add<TSystem>(TSystem system)
         where TSystem : ISystem<TContext>
     {

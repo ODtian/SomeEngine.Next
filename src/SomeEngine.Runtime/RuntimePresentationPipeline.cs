@@ -164,6 +164,8 @@ internal sealed class RuntimePresentationPipeline : IDisposable
     internal GraphTextureId Target => _target;
     internal GraphPassId DrawPass => _drawPass;
 
+    internal void OrderAfter(RenderGraphEdit edit, GraphPassId predecessor) => edit.OrderAfter(_drawPass, predecessor);
+
     internal void Bind(
         ref RenderGraphFrame frame,
         in SwapchainImage image,

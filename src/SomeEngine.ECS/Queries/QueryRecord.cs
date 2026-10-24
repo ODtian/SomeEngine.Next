@@ -1,15 +1,19 @@
+using SomeEngine.ECS.Entities;
+
 namespace SomeEngine.ECS.Queries;
 
 internal sealed class QueryRecord
 {
     private int _acquisitionCount;
+    private QueryMembership? _membership;
 
     public QueryRecord(
         QueryHandle handle,
         QueryDefinition definition,
         QueryState state,
         int acquisitionCount = 1,
-        bool hasGeneratedPin = false)
+        bool hasGeneratedPin = false,
+        QueryMembership? membership = null)
     {
         if (acquisitionCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(acquisitionCount));
@@ -18,6 +22,7 @@ internal sealed class QueryRecord
         State = state;
         _acquisitionCount = acquisitionCount;
         HasGeneratedPin = hasGeneratedPin;
+        _membership = membership;
     }
 
     private QueryRecord(QueryHandle nextHandle)
@@ -30,6 +35,26 @@ internal sealed class QueryRecord
     public QueryDefinition Definition { get; } = null!;
 
     public QueryState State { get; } = null!;
+
+    internal uint ReadMembershipVersion() => Membership.ReadVersion(State);
+
+    internal ReadOnlySpan<Entity> ReadMembershipEntities(out uint version) => Membership.ReadEntities(State, out version);
+
+    private QueryMembership Membership
+    {
+        get
+        {
+            QueryMembership? membership = Volatile.Read(ref _membership);
+            if (membership is null)
+            {
+                var created = new QueryMembership();
+                membership = Interlocked.CompareExchange(ref _membership, created, null) ?? created;
+            }
+            return membership;
+        }
+    }
+
+    internal QueryMembership? CopyMembership() => Volatile.Read(ref _membership)?.Clone();
 
     internal int AcquisitionCount => Volatile.Read(ref _acquisitionCount);
 

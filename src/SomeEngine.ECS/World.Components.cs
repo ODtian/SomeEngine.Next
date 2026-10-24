@@ -1,6 +1,7 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Registry;
+using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.ECS;
 
@@ -8,7 +9,9 @@ public partial class World
 {
     /// <summary>添加 Table 组件。已存在时抛异常。</summary>
     public void Add<T>(Entity entity, in T value)
-        where T : struct, IComponent
+        where T : struct, IComponent => AddTableComponentData(entity, in value);
+
+    private void AddTableComponentData<T>(Entity entity, in T value) where T : struct
     {
         using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
         PublicComponentMutationGuard.Structural<T>("World.Add");
@@ -48,9 +51,22 @@ public partial class World
         return _components.Read<T>(entity);
     }
 
+    /// <summary>读取实体上该表格组件最近一次写入的版本。</summary>
+    /// <remarks>
+    /// 取得写引用即记作写入。用 <c>!=</c> 比较前后版本，以支持版本回绕。
+    /// </remarks>
+    public uint WriteVersion<T>(Entity entity)
+        where T : struct, IComponent
+    {
+        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Read);
+        return _components.WriteVersion<T>(entity);
+    }
+
     /// <summary>整值替换组件（不触发迁移）。</summary>
     public void Replace<T>(Entity entity, in T value)
-        where T : struct, IComponent
+        where T : struct, IComponent => ReplaceTableComponentData(entity, in value);
+
+    private void ReplaceTableComponentData<T>(Entity entity, in T value) where T : struct
     {
         int componentId = ComponentMetadata<T>.Id;
         // OnReplace can observe the old value and OnInsert can observe the new value. Those are
@@ -59,7 +75,7 @@ public partial class World
         if (!HasValueReplaceHookCallbacks(componentId))
         {
             using WorldJobAdmissionScope componentAdmission =
-                EnterJobComponent<T>(WorldStorageAccess.Write);
+                EnterJobComponent(componentId, WorldStorageAccess.Write);
             // Hook registration is a topology writer. Rechecking after this topology-read owner
             // is admitted closes the false-fast-path TOCTOU without charging hook-free writes for
             // the global writer.

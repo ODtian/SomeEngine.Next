@@ -583,7 +583,7 @@ public sealed class WorldStreamingSerializationTests
     }
 
     [Fact]
-    public void RepeatedSnapshotAfterEquivalentWrites_RemainsByteDeterministic()
+    public void RepeatedWorldSerializationKeepsLatestClockAndBytes()
     {
         var registry = new SerializationRegistry()
             .Register<SerPosition>()
@@ -592,16 +592,31 @@ public sealed class WorldStreamingSerializationTests
         Entity first = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
         Entity second = world.CreateEntity(new SerPosition { X = 3, Y = 4 });
         world.AddSparse(second, new SerSparse { Value = 5 });
+        uint versionBefore = world.WriteVersion<SerPosition>(first);
+        uint tickBefore = world.CurrentTick;
 
         using var beforeMutation = new MemoryStream();
         WorldSerializer.WriteWorld(beforeMutation, world, registry);
 
         world.Replace(first, new SerPosition { X = 100, Y = 200 });
         world.Replace(first, new SerPosition { X = 1, Y = 2 });
+        uint versionAfter = world.WriteVersion<SerPosition>(first);
+        Assert.NotEqual(versionBefore, versionAfter);
 
         using var afterMutation = new MemoryStream();
         WorldSerializer.WriteWorld(afterMutation, world, registry);
-        Assert.Equal(beforeMutation.ToArray(), afterMutation.ToArray());
+        using var repeated = new MemoryStream();
+        WorldSerializer.WriteWorld(repeated, world, registry);
+        Assert.Equal(afterMutation.ToArray(), repeated.ToArray());
+
+        beforeMutation.Position = 0;
+        afterMutation.Position = 0;
+        using var earlier = WorldSerializer.ReadWorld(beforeMutation, registry);
+        using var later = WorldSerializer.ReadWorld(afterMutation, registry);
+        Assert.Equal(tickBefore, earlier.CurrentTick);
+        Assert.Equal(world.CurrentTick, later.CurrentTick);
+        Assert.Equal(1, later.Read<SerPosition>(first).X);
+        Assert.Equal(2, later.Read<SerPosition>(first).Y);
     }
 
     private static async Task AssertMutationCompletesAsync(World world)

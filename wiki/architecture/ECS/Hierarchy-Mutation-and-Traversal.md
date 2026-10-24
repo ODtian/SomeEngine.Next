@@ -2,6 +2,12 @@
 
 typed `SetParent<D>`、`Detach<D>`、placement/order operation、policy conversion和`DestroySubtree<D>`提供需要完整lifecycle/placement语义的mutation surface；default-domain facade转发到同一实现。`Detach<D>`只移除Parent；该Entity随后是否为root由各workload candidate query决定，没有Join/Leave副作用。core reparent始终transform-agnostic，只改变Parent并保留现有LocalTransform。
 
+`World.EntityDestroying` 在销毁入口取得结构写入访问后同步调用，随后清理实体组件与各层级域。
+回调接收 World 和被销毁实体，可以读取仍在存储中的组件与父链接，并通过公开 World API
+更新存活节点的数据。`DestroySubtree<D>` 的后序销毁为每个节点执行同一入口；整 World 释放时
+清理订阅引用。SomeUI 的焦点系统沿这一边界将焦点移交给当前父链中的可聚焦祖先，
+行为规则与公开验收见 [[architecture/someui/Input-and-Behaviors|Input and Behaviors]]。
+
 任一domain的Parent只表达组织、transform或继承，不表达lifetime ownership：
 
 - 普通 `Destroy(parent)` 以canonical Parent而不是可能stale的Children为准，把当时仍直接指向parent的surviving children detach，因此它们对相应workload成为roots；

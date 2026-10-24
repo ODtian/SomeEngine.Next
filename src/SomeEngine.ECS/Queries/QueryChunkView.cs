@@ -6,7 +6,7 @@ using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Queries;
 
-public readonly ref struct QueryChunkView
+public readonly ref partial struct QueryChunkView
 {
     private readonly World _world;
     private readonly QueryArchetypeMatch _match;

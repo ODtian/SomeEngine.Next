@@ -47,6 +47,16 @@ internal static class Program
 
     private static AotSmokeResult Run()
     {
+        ComponentBytesSmoke.Check();
+        AnimationSmoke.Check();
+        global::SomeEngine.ECS.Tests.ManagedComponentChecks.VerifyAll();
+        global::SomeEngine.Views.Tests.FirstBuildChecks.Verify();
+        global::SomeEngine.Views.Tests.BuildResumeChecks.VerifyAll();
+        global::SomeEngine.Views.Tests.ResourceResultChecks.Verify(false);
+        global::SomeEngine.Views.Tests.ResourceResultChecks.Verify(true);
+        global::SomeEngine.Views.Tests.AsyncPrimitiveChecks.VerifyConcurrentBuild();
+        global::SomeEngine.Views.Tests.AsyncPrimitiveChecks.VerifyResourceRecovery();
+
         var registry = new SerializationRegistry();
         GameSerializationModule.RegisterAll(registry);
         registry
@@ -198,7 +208,9 @@ internal static class Program
             durableBytes.Length,
             semanticChecksum,
             asyncJobRejected,
-            durableGeneration);
+            durableGeneration,
+            ManagedReferencesVerified: true,
+            ViewsVerified: true);
     }
 
     private static ulong ExerciseDurableStore(
@@ -287,7 +299,9 @@ internal sealed record AotSmokeResult(
     int DurableSaveBytes,
     long SemanticChecksum,
     bool AsyncJobRejected,
-    ulong DurableGeneration);
+    ulong DurableGeneration,
+    bool ManagedReferencesVerified,
+    bool ViewsVerified);
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace SomeEngine.Runtime;
 
@@ -41,6 +42,12 @@ internal sealed class NativeWindow : IDisposable
     private const uint MessageSystemKeyDown = 0x0104;
     private const uint MessageSystemKeyUp = 0x0105;
     private const uint MessageSystemCharacter = 0x0106;
+    private const uint MessageCompositionStart = 0x010D;
+    private const uint MessageCompositionEnd = 0x010E;
+    private const uint MessageCompositionChanged = 0x010F;
+    private const uint CompositionText = 0x0008;
+    private const uint CompositionCaretPosition = 0x0080;
+    private const uint CompositionResult = 0x0800;
     private const uint MessageMouseMove = 0x0200;
     private const uint MessageLeftButtonDown = 0x0201;
     private const uint MessageLeftButtonUp = 0x0202;
@@ -383,6 +390,13 @@ internal sealed class NativeWindow : IDisposable
             case MessageSystemCharacter:
                 _events.Enqueue(NativeWindowEvent.TextInput(checked((char)wParam)));
                 return 0;
+            case MessageCompositionStart:
+            case MessageCompositionEnd:
+                _events.Enqueue(NativeWindowEvent.CompositionChanged("", 0));
+                return DefWindowProcW(windowHandle, message, wParam, lParam);
+            case MessageCompositionChanged:
+                if (EnqueueComposition(windowHandle, unchecked((uint)lParam))) return 0;
+                return DefWindowProcW(windowHandle, message, wParam, lParam);
             case MessageMouseMove:
                 TrackMouseLeaveIfRequired(windowHandle);
                 _events.Enqueue(NativeWindowEvent.MouseMoved(SignedLowWord(lParam), SignedHighWord(lParam)));
@@ -438,6 +452,49 @@ internal sealed class NativeWindow : IDisposable
             default:
                 return DefWindowProcW(windowHandle, message, wParam, lParam);
         }
+    }
+
+    private bool EnqueueComposition(nint window, uint changes)
+    {
+        if (changes == 0)
+        {
+            _events.Enqueue(NativeWindowEvent.CompositionChanged("", 0));
+            return false;
+        }
+        nint context = ImmGetContext(window);
+        if (context == 0) return false;
+        try
+        {
+            if ((changes & CompositionResult) != 0)
+            {
+                string? text = ReadCompositionText(context, CompositionResult);
+                if (text is null) return false;
+                _events.Enqueue(NativeWindowEvent.TextCommitted(text));
+                _events.Enqueue(NativeWindowEvent.CompositionChanged("", 0));
+                return true;
+            }
+            if ((changes & (CompositionText | CompositionCaretPosition)) != 0)
+            {
+                string? text = ReadCompositionText(context, CompositionText);
+                if (text is not null)
+                {
+                    int caret = Math.Clamp(ImmGetCompositionStringW(context, CompositionCaretPosition, null, 0), 0, text.Length);
+                    _events.Enqueue(NativeWindowEvent.CompositionChanged(text, caret));
+                }
+            }
+            return false;
+        }
+        finally { _ = ImmReleaseContext(window, context); }
+    }
+
+    private static string? ReadCompositionText(nint context, uint kind)
+    {
+        int length = ImmGetCompositionStringW(context, kind, null, 0);
+        if (length < 0) return null;
+        if (length == 0) return "";
+        var bytes = new byte[length];
+        int copied = ImmGetCompositionStringW(context, kind, bytes, (uint)bytes.Length);
+        return copied < 0 ? null : Encoding.Unicode.GetString(bytes, 0, copied);
     }
 
     private void EnqueueKey(nuint wParam, nint lParam, bool isDown)
@@ -731,4 +788,14 @@ internal sealed class NativeWindow : IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool UpdateWindow(nint window);
+
+    [DllImport("imm32.dll")]
+    private static extern nint ImmGetContext(nint window);
+
+    [DllImport("imm32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ImmReleaseContext(nint window, nint context);
+
+    [DllImport("imm32.dll")]
+    private static extern int ImmGetCompositionStringW(nint context, uint kind, [Out] byte[]? bytes, uint length);
 }

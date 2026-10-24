@@ -118,7 +118,7 @@ public class Chunk
             ? masks
             : Span<UInt128>.Empty;
 
-    /// <summary>行序变更版本（swap-remove 时递增）。</summary>
+    /// <summary>实体行序版本，追加行与删除行时递增。</summary>
     internal uint OrderVersion;
 
     /// <summary>该 Chunk 在 Archetype.Chunks 列表中的索引。由 AllocateInChunk 设置，TryRecycleChunk swap 时更新。</summary>
@@ -315,6 +315,7 @@ public class Chunk
         int row = Count;
         storage.Entities[row] = entityId;
         Count++;
+        OrderVersion = unchecked(OrderVersion + 1);
         return row;
     }
 
@@ -328,6 +329,7 @@ public class Chunk
     {
         EnsureWritable();
         int lastRow = Count - 1;
+        OrderVersion = unchecked(OrderVersion + 1);
         MoveEnableBits(row, lastRow);
 
         if (row != lastRow)
@@ -350,7 +352,6 @@ public class Chunk
 
             MoveVersions(row, lastRow);
             Count--;
-            OrderVersion++;
             return Entities[row]; // 返回被移动到 row 位置的 entity
         }
         else

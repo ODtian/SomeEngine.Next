@@ -21,12 +21,14 @@
 | GameWorld/RenderWorld | [GameWorld-and-RenderWorld](../../wiki/architecture/rendering/GameWorld-and-RenderWorld.md)、[Extraction](../../wiki/architecture/rendering/Extraction.md)、[RenderDevice](../../wiki/architecture/rendering/RenderDevice.md) | `RenderExtractionSchedule.cs`、`RenderInstanceCompositionSystem.cs`、`RenderDevice.cs`；提取、实例准备及业务 GPU 完成跟踪 |
 | RHI | [RHI/Index](../../wiki/architecture/RHI/Index.md) | `SomeEngine.Graphics`、具体 backend、`Graphics.Validation`；当前公共入口包含 CommandContext、RecordedCommands、QueueCompletion、固定 DescriptorTable 与 ValidationLayer。具体 backend/capability/lifetime 规则按实现核对 |
 | Assets 与 Shader | [Asset-Objects](../../wiki/architecture/Assets/Asset-Objects.md)、[Asset-Byte-Cache](../../wiki/architecture/Assets/Asset-Byte-Cache.md)、[Asset-Shaders](../../wiki/architecture/Assets/Asset-Shaders.md) | `Asset.cs`、`Asset.Blocks.cs`、`AssetByteCache.cs`、`Shader.cs`、`Shader.Slang.cs`；身份、Block、缓存与直接 Slang 数据持有 |
-| SomeUI | ADR 0008–0014、[SomeUI](../../wiki/architecture/SomeUI.md) 与 `someui/` 原子页、`docs/SomeUI-Requirements.md` | 当前尚无实现；以 Wiki 原子页为目标设计。实现后核对 `SomeEngine.Views` 的作用域、重建调度与 ECS 写版本接口 |
-| 动画 | ADR 0014、[Animation](../../wiki/architecture/Animation.md) 与 `animation/` 原子页、`docs/Pose-Animation-Spec.md` | 当前尚无实现；属性动画与姿势动画均为目标设计 |
+| SomeUI | ADR 0008–0014、[SomeUI](../../wiki/architecture/SomeUI.md) 与 `someui/` 原子页、`docs/SomeUI-Requirements.md` | `SomeEngine.Views` 已实现首次构建、参数比较、读取依赖登记及按层级深度重跑，子树按 key 加出现次数匹配、重排与释放，核对 `Scope`、`ViewRebuildSystem`、`World.ComponentData.cs`、`FirstBuildTests`、`ParameterBuildTests`、`ReadDependencyTests` 与 `NodeIdentityTests`；`ChildSource`、`ContentExtensions`、`ParentScope` 与 `Group` 支持构建与调用方两种子节点来源，核对 `ChildSourceTests`；`SomeEngine.Views.Generators` 提供同名函数、调用位置身份、存储选择诊断与 Build 警告屏蔽，核对 `ViewFunctionTests`、`CompilerDiagnosticTests` 与 Views NativeAOT 冒烟；环境数据通过 `Entity.Provide` 写入、`Scope.ReadUp` 沿 `ElementTree` 读取最近组件，核对 `EnvironmentExtensions`、`EnvironmentLookup` 与 `EnvironmentTests`；`SomeEngine.Typography` 的 `Font.Load`、`Shaper.Shape`、`ShapeBuffer` 提供公开字形与行结果，`GlyphAtlas` 提供动态 SDF 页、提取区域与预烘焙保存加载，核对 `GlyphAtlasTests` 与 Text 页。后续行为按对应 Wiki 页和任务票继续实现 |
+| 动画 | ADR 0014、[Animation](../../wiki/architecture/Animation.md) 与 `animation/` 原子页、`docs/Pose-Animation-Spec.md` | `SomeEngine.Animation` 的时间线、值运算、曲线、属性通道、轨道、层合成与图编译；核对启用位、阶段运行位、按偏移写版本、播放控制、实体复用及 `TrackSystem` / `ComposeSystem` 的权重与字段阶段。调用方通过 `PropertyAnimation.SetBase` 持有基准值，字段贡献按层与来源编号确定顺序。图行为继续核对 `GraphCompiler`、`GraphPlayback` 与 `AnimationGraphTests`；姿势动画按目标设计读取 |
 | 资产导入扩展与 Block 划分 | ADR 0015–0017、`Assets/Importer-Discovery`、`Importer-Sets`、`Block-Division`、`Gltf-Mesh-Import` | `GltfSourceImporter`、`ImportContext`、`AssetCapabilitiesGenerator`、`ClusterGltfMeshImporter`、`ClusterBuilder`；页面中"当前代码与目标的差异"列出待迁移项 |
 | 验证与验收 | `wiki/architecture/validation/`、当前 harness 原子页 | Core.DevelopmentCheck、业务输入处理与 ValidationLayer；验收沿用根 AGENTS 的公共行为和统一渲染场景规则 |
 
 ## 已识别的文档差异
+
+- SomeUI 的构建恢复、对象与计算依赖、诊断和视图存档入口已经实现。对应阅读范围为 `ChildChanges`、`Scope`、`Computations`、`ObjectDependencies`、`RebuildDiagnostics`、`ViewSerialization`、`ViewGenerator`，以及 `BuildErrorTests`、`RebuildDiagnosticsTests`、`CheckpointTests` 和跨程序集 Views NativeAOT 场景。
 
 - ADR 0006 标记为 `superseded`，当前入口为 Render-Graph 及其原子页。该 ADR 和 `wiki/history/` 用于解释历史取舍。
 - ADR 0001 的“渲染执行随后实现”属于早期阶段。当前执行入口为 `RenderFrameCoordinator` 与 `ClusterPipelineSystem`。

@@ -1,0 +1,103 @@
+# External element examples
+
+This consumer assembly references the public Views, Layout, and Elements packages
+through their repository projects. Animation, Typography, Compose, and SwiftUI
+are also referenced to check assembly access across the available SomeUI layers.
+It uses public ECS, view, and layout APIs to
+build views, advance frames, and observe node data.
+
+Add each built-in control's user equivalent under `Rewrites/`. Run both versions
+through the same behavior cases with independently specified expected data. The
+first example rewrites `Background`, `Corner`, and `Border` with
+`Scope.Write<Surface>`.
+
+`SurfaceTests` observes node identity, Surface values, layout rectangles, write
+versions, and development errors. `SurfaceChecks` is compiled by these tests and
+the Views NativeAOT smoke executable to share the Column behavior checks.
+`ValueTests` and the shared `ValueChecks` exercise caller-controlled Toggle
+activation, Slider and user Knob keyboard steps, accumulated drag quantization,
+range endpoints, and ordered inputs. `ValueVolumeChecks` runs a game system's
+ref write to AudioSettings, accepts a slider edit back into that same component,
+and observes both controls and formatted text. Matching display strings retain
+the public text, content, shaping, and layout versions. The checks and the
+external Toggle and Knob are also compiled into the Views NativeAOT executable.
+
+`AssemblyBoundaryTests` checks the public assembly access rule owned by Wiki
+`architecture/someui/Assemblies`.
+
+`AccessibilityTests` reads `AccessibleRole` and `AccessibleName` after public
+World builds and frames. It covers every built-in control, the existing external
+rewrites, user modifiers, formatted names, placeholder updates, input edits,
+equal-value write versions, and development errors that retain earlier data.
+`ButtonChecks`, `LocalizationChecks`, and `TextFieldChecks` share role and name
+assertions with the Views NativeAOT executable. The defaults and writing rules
+live in Wiki `architecture/someui/Accessibility`.
+
+`TextTests` exercises text declarations, Column placement, Row reflow, theme
+changes, explicit style fields, line heights, text/shape/layout write versions,
+long numeric formats, zero-allocation numeric writes, and development errors.
+The linked font fixtures and their reference values come from the Typography
+tests. `TextChecks` shares public string, integer, and culture-specific generic
+formatting checks with the Views NativeAOT executable, including 10,000 equal
+integer writes measured with `GC.GetAllocatedBytesForCurrentThread`.
+
+`PointerTests` injects input through `Pointer`, advances the hit-test, game input,
+view, and layout stages, and observes public node data. It covers click-dependent
+display, draw order, transparent compositions, previous-frame layout, per-button
+presses, canvas isolation, and development errors. `PointerChecks` runs the same
+caller consumption example for the built-in and user-written `Pressable` and
+`Clicked` functions and shares those cases with the NativeAOT executable.
+
+`BehaviorTests` injects pointer input and observes drag fields, selection,
+scroll ranges, and layout rectangles. It covers event order, held and completed
+drags, button handling, transparent compositions, nested viewports, clickable
+content, content and viewport changes, repeated layout, and development errors.
+`ScrollTextTests` verifies natural text measurements inside a scroll viewport.
+`BehaviorChecks` runs the same composition for built-in declarations and the
+three public user equivalents under `Rewrites/`, in these tests and NativeAOT.
+
+`ScrollViewTests` checks caller content, scrolling ranges, content coordinates,
+and redeclarations. `VirtualListTests` checks 10,000 items, buffered ranges,
+keyed entity lifetimes, retained row data, item and viewport changes, padding,
+partial rows, and development errors. `ListChecks` shares row data updates and
+the built-in and public user ScrollView and VirtualList with the Views NativeAOT
+executable. Surface viewport clipping is checked by `ScrollClippingTests` in
+the Elements Render tests.
+
+`Rewrites/Button.cs` and `Rewrites/IconButton.cs` compose controls from public
+behavior, environment, layout, text, and surface APIs. `ButtonTests` applies
+the same appearance, pointer, subtree-theme, nearest-theme, and development
+scope cases to the library Button, user Button, and user IconButton. The glyph
+and label use the same text theme and color, with four layout units between them.
+`ButtonChecks` shares click consumption, held presses, label changes, and
+provided appearance updates with the Views NativeAOT executable.
+
+`DialogTests` verifies caller part order, inserted views, title omission,
+right-aligned actions, TitledDialog equivalence and scope disposal, default
+surface and shadow data, nearest themes, explicit transparent and zero values,
+and development scope checks. `Rewrites/Dialog.cs`, `DialogTitle.cs`, and
+`DialogFooter.cs` use public view, theme, surface, text, and layout APIs.
+`DialogChecks` applies the same specified theme and layout results to all eight
+combinations of built-in and user parts. It also supplies the shared NativeAOT
+checks for built-in, user, and mixed composition.
+
+`PointerRoutingChecks` shares child-to-card click bubbling, `StopsPointer`
+changes, subtree entry and exit, sibling hover changes, held presses, and caller
+output updates across the built-in and user-written behaviors. `PointerTests`
+also verifies stopping at the target or an ancestor and keeping nested canvas
+clicks and subtree hover inside their own tree.
+
+`FocusTests` injects keyboard and gamepad input and observes focus-dependent
+display and click consumption. `FocusChecks` shares the Grid and transparent
+composition cases, node-release behavior, and a scheduled user navigation
+system with the NativeAOT executable. The Grid runs with both the built-in
+focus functions and the public user equivalent under `Rewrites/`.
+
+`TextEditingTests` injects committed characters, IME candidates, and editor keys
+through `Keyboard`, then observes editable text and caller-produced display data.
+It covers whole-character movement and deletion, both selection directions,
+multiline positions, composition presentation and confirmation, inactive input,
+event order, repeated declarations, World isolation, and development errors.
+The shared `TextEditingChecks` partial files run all behavior cases with both
+the built-in functions and `Rewrites/TextEditingFunctions.cs`, and compile into
+the Views NativeAOT executable.

@@ -12,10 +12,11 @@ using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Sparse;
 using SomeEngine.ECS.Registry;
+using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.ECS.Owners;
 
-internal sealed class Sparse
+internal sealed partial class Sparse
 {
     private readonly WorldStructureRoot _structure;
 
@@ -28,26 +29,60 @@ internal sealed class Sparse
 
 
     internal void Add<T>(Entity entity, in T value)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _iteration.Throw();
         _entities.ThrowDead(entity);
-        Set<T>().Add(entity, value);
+        Set<T>().Add(entity, value, unchecked(_structure.Clock.Acquire() + 1));
     }
 
     internal void Replace<T>(Entity entity, in T value)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _iteration.Throw();
         _entities.ThrowDead(entity);
         if (!TrySet<T>(out SparseSet<T> sparseSet))
             throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
 
-        sparseSet.Replace(entity, value);
+        sparseSet.Replace(entity, value, unchecked(_structure.Clock.Acquire() + 1));
+    }
+
+    internal uint WriteVersion<T>(Entity entity)
+        where T : struct
+    {
+        _entities.ThrowDead(entity);
+        bool hasSet = TrySet<T>(out SparseSet<T> sparseSet);
+        DevelopmentCheck.Require(hasSet,
+            $"Entity {entity} requires sparse component {typeof(T).Name} to read its write version.");
+
+        return sparseSet.WriteVersion(entity);
+    }
+
+    internal void Overwrite<T>(Entity entity, in T value) where T : struct
+    {
+        _entities.ThrowDead(entity);
+        Set<T>().Overwrite(entity, in value);
+    }
+
+    internal uint WriteVersion(Entity entity, int componentId)
+    {
+        _entities.ThrowDead(entity);
+        object?[] stores = Volatile.Read(ref _stores);
+        DevelopmentCheck.Require((uint)componentId < (uint)stores.Length && stores[componentId] is ISparseSet,
+            $"Entity {entity} requires sparse component {componentId} to read its write version.");
+        return ((ISparseSet)stores[componentId]!).WriteVersion(entity);
+    }
+
+    internal uint ComponentWriteVersion(int componentId)
+    {
+        object?[] stores = Volatile.Read(ref _stores);
+        return componentId < stores.Length && stores[componentId] is ISparseSet sparseSet
+            ? sparseSet.ComponentWriteVersion
+            : 0;
     }
 
     internal void Remove<T>(Entity entity)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _iteration.Throw();
         _entities.ThrowDead(entity);
@@ -58,7 +93,7 @@ internal sealed class Sparse
     }
 
     internal T Read<T>(Entity entity)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _entities.ThrowDead(entity);
         if (!TrySet<T>(out SparseSet<T> sparseSet))
@@ -68,12 +103,12 @@ internal sealed class Sparse
     }
 
     internal ref readonly T ReadRef<T>(Entity entity)
-        where T : struct, ISparseComponent
+        where T : struct
     {
         _entities.ThrowDead(entity);
-        if (!TrySet<T>(out SparseSet<T> sparseSet))
-            throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
-
+        bool hasSet = TrySet<T>(out SparseSet<T> sparseSet);
+        DevelopmentCheck.Require(hasSet,
+            $"Entity {entity} requires sparse component {typeof(T).Name} to read its reference.");
         return ref sparseSet.ReadRef(entity);
     }
 
@@ -150,9 +185,9 @@ internal sealed class Sparse
             {
                 bool targetHadValue = sparseSet.Has(target);
                 if (targetHadValue)
-                    sparseSet.ReplaceCopy(source, target);
+                    sparseSet.ReplaceCopy(source, target, _structure.Clock.Tick);
                 else
-                    sparseSet.AddCopy(source, target);
+                    sparseSet.AddCopy(source, target, _structure.Clock.Tick);
 
                 continue;
             }

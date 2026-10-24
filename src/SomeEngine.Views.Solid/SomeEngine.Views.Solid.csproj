@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Solid calculations, control flow, lists, inserted content, exported components, and reactive element properties through shared view APIs.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SomeEngine.Views/SomeEngine.Views.csproj" />
+    <ProjectReference Include="../SomeEngine.Elements/SomeEngine.Elements.csproj" />
+    <None Update="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

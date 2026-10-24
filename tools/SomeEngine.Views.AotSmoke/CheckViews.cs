@@ -1,0 +1,191 @@
+global using static SomeEngine.Views.AotSmoke.CardFunctions;
+
+using SomeEngine.ECS;
+using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hierarchy;
+using SomeEngine.Views;
+using SomeEngine.Views.AotSmoke;
+using SomeEngine.Views.Tests;
+
+if (args is ["write-checkpoint", string writePath])
+{
+    CheckViewCheckpoint.Write(writePath);
+    return;
+}
+if (args is ["read-checkpoint", string readPath])
+{
+    CheckViewCheckpoint.Read(readPath);
+    return;
+}
+
+foreach (bool jobs in new[] { false, true })
+{
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckStruct(jobs);
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckCompose(jobs);
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckSwiftUI(jobs);
+    SomeEngine.Elements.Consumer.Tests.InterfaceChecks.CheckSolid(jobs);
+}
+
+using var frames = new HeadlessFrameDriver();
+BuildResumeChecks.VerifyAll();
+ResourceResultChecks.Verify(false);
+ResourceResultChecks.Verify(true);
+Console.WriteLine("Synchronous resource results and changed sources passed in both Worlds under NativeAOT.");
+Console.WriteLine("Canceled awaits, asynchronous cleanup, cancellation callbacks, and child computation error recovery passed under NativeAOT.");
+Entity root = Views.Spawn(frames.World, Entity.Null, new Cards(false));
+frames.Frame();
+Entity[] first = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+Require(first.Length == 3, "The first frame declares three cards.");
+Require(frames.World.ReadSparse<Card>(first[0]).Title == "same", "The named function stores the card parameters.");
+Require(frames.World.Read<ElementKey>(first[1]).Key != frames.World.Read<ElementKey>(first[2]).Key,
+    "Columns distinguish the two calls on one line.");
+frames.World.Replace(first[0], new Selection(9));
+frames.World.Replace(first[2], new Selection(7));
+frames.World.ReplaceSparse(root, new Cards(true));
+frames.Frame();
+Entity[] second = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+Require(first[0] != second[0], "Switching branches gives each call its own entity.");
+Require(frames.World.Read<Selection>(second[0]).Value == 0, "The second branch starts with its own state.");
+Require(first[2] == second[2] && frames.World.Read<Selection>(second[2]).Value == 7,
+    "The call on the same column preserves its local state.");
+LayoutChecks.Run();
+FlexChecks.Run();
+StackGridChecks.Run();
+ComposeChecks.Run(frames);
+SwiftUIChecks.Run(frames);
+RememberChecks.Run(frames);
+SomeEngine.Elements.Consumer.Tests.SurfaceChecks.Run(false);
+SomeEngine.Elements.Consumer.Tests.SurfaceChecks.Run(true);
+SomeEngine.Elements.Consumer.Tests.InterfaceAnimationChecks.Run();
+AsyncAnimationChecks.Run();
+Console.WriteLine("Suspended and resumed animation targets, nested calculation recovery, and continuous presentation passed under NativeAOT.");
+Console.WriteLine("Interface color and user value animation, equal-target rebuilds, interrupted FLIP, and caller transforms passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.TextChecks.Run();
+SomeEngine.Elements.Consumer.Tests.LocalizationChecks.Run();
+Console.WriteLine("Localized keys, arguments, language changes, English and Chinese plurals, number and date cultures, and ordinary text versions passed under NativeAOT.");
+SomeEngine.Views.Solid.Tests.SolidChecks.Run();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckInsert();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckInsertedBranches();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckInsertionRecovery();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckComponent();
+SomeEngine.Views.Solid.Tests.FrontendChecks.CheckBuild();
+Console.WriteLine("Solid Insert parameters, exported Once views, inline component calls, and retained state and computations passed under NativeAOT.");
+Console.WriteLine("Solid text bindings, Memo getters, Effect, Untrack, reactive surfaces, and zero-allocation state changes passed under NativeAOT.");
+SomeEngine.Views.Solid.Tests.ControlFlowChecks.Run();
+Console.WriteLine("Solid Show, keyed values, nullable numbers, Switch/Match, Dynamic, and branch release passed under NativeAOT.");
+SomeEngine.Views.Solid.Tests.ListChecks.Run();
+Console.WriteLine("Solid For and Index row identities, index and item getters, Each queries, and row release passed under NativeAOT.");
+Console.WriteLine("Text shaping, Column measurements, style modifiers, formatted numbers, write versions, and zero-allocation integer writes passed under NativeAOT.");
+Console.WriteLine("Column surface values, layout sizes, write versions, and public user modifiers passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(false);
+SomeEngine.Elements.Consumer.Tests.PointerChecks.Run(true);
+SomeEngine.Elements.Consumer.Tests.PointerChecks.RunRouting(false);
+SomeEngine.Elements.Consumer.Tests.PointerChecks.RunRouting(true);
+Console.WriteLine("Canvas pointer input, click bubbling, StopsPointer, subtree hover, held presses, capture, and public user behaviors passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunGrid(false);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunGrid(true);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunRelease(false, false);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunRelease(false, true);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunRelease(true, false);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunRelease(true, true);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunCustomNavigation();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunCompositions();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunFocusabilityRemoval();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunInputOrder();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunMovingLayout();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunCanvasNavigation();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunBranchRelease(false);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunBranchRelease(true);
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunReparentedRelease();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunWorlds();
+SomeEngine.Elements.Consumer.Tests.FocusChecks.RunMixedInputs();
+Console.WriteLine("Keyboard and gamepad focus, confirmation, capture, ancestor transfer, layout geometry, public user behaviors, and scheduled navigation passed under NativeAOT.");
+foreach (bool rewritten in new[] { false, true })
+{
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunInsertion(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunMovement(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunSelection(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunDeletion(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunComposition(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunCompositionKeys(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunInputOrder(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunVerticalMovement(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunJoinedCharacters(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunEmptyInput(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunInactive(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunRepeatedDeclaration(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunWorlds(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextEditingChecks.RunFocusabilityRemoval(rewritten);
+}
+Console.WriteLine("Text editing, selections, whole-character movement and deletion, IME composition, focused input order, World isolation, and public user text behaviors passed under NativeAOT.");
+foreach (bool rewritten in new[] { false, true })
+{
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunFeedback(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunSelection(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunPlaceholder(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunComposition(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunSingleLine(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunParameters(rewritten);
+    SomeEngine.Elements.Consumer.Tests.TextFieldChecks.RunTheme(rewritten);
+}
+Console.WriteLine("TextField feedback, parameter replacement, caret and selection, placeholders, IME display, single-line input, themes, and public user rewrites passed under NativeAOT.");
+TextFieldViewportChecks.Run();
+Console.WriteLine("TextField long-input scrolling, caret navigation, selection, IME updates, parameter feedback, placeholders, accessibility, and public rewrites passed under NativeAOT.");
+
+
+SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(false);
+SomeEngine.Elements.Consumer.Tests.BehaviorChecks.Run(true);
+Console.WriteLine("Drag, scroll, selection and external behavior declarations passed.");
+SomeEngine.Elements.Consumer.Tests.ListChecks.Run(false);
+SomeEngine.Elements.Consumer.Tests.ListChecks.Run(true);
+Console.WriteLine("ScrollView content, buffered VirtualList ranges, keyed row lifetimes, row data changes, and public user controls passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.BuiltIn);
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Rewritten);
+SomeEngine.Elements.Consumer.Tests.ButtonChecks.Run(SomeEngine.Elements.Consumer.Tests.ButtonKind.Icon);
+Console.WriteLine("Button themes, held presses, click consumption, label updates, and public user Button and IconButton passed under NativeAOT.");
+SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(false, false, false);
+SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(true, true, true);
+SomeEngine.Elements.Consumer.Tests.DialogChecks.Run(false, false, true);
+Console.WriteLine("Dialog themes, title styles, caller geometry, and built-in and user Dialog, DialogTitle, and DialogFooter composition passed under NativeAOT.");
+
+SomeEngine.Elements.Consumer.Tests.ValueChecks.Run();
+Console.WriteLine("Toggle activation, Slider and user Knob range editing, keyboard steps, quantized dragging, and audio volume with equal text versions passed under NativeAOT.");
+ComposeGroupChecks.Run(frames);
+Console.WriteLine("View functions, Compose content and inline groups, Remember, SwiftUI state and bindings, parameter comparisons, identities, sparse storage, scaled canvases, Flex, Stack, Grid, and user layouts passed under NativeAOT.");
+
+static void Require(bool value, string message)
+{
+    if (!value)
+        throw new InvalidOperationException(message);
+}
+
+namespace SomeEngine.Views.AotSmoke
+{
+    public readonly partial record struct Card(string Title) : IView
+    {
+        public async BuildTask Build()
+        {
+            if (!Scope.World.Has<Selection>(Scope.Entity))
+            {
+                Scope.World.Add(Scope.Entity, new Selection(0));
+                Scope.World.AddTag<LocalState>(Scope.Entity);
+            }
+        }
+    }
+
+    public readonly record struct Cards(bool Alternate) : IView, ISparseComponent
+    {
+        public BuildTask Build()
+        {
+            if (Alternate)
+                Scope.View(new Card("same"));
+            else
+                Card("same");
+            Card("left"); Card("right");
+            return default;
+        }
+    }
+
+    public readonly record struct Selection(int Value) : IComponent;
+}

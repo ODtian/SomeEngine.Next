@@ -8,6 +8,8 @@
 - [[architecture/RHI/Index|RHI]]
 - [[architecture/ECS-Architecture|ECS]]
 - [[architecture/Product-Boundary|Product Boundary]]
+- [[architecture/SomeUI|SomeUI]]
+- [[architecture/Animation|Animation]]
 - [[architecture/Profiler-Bridge-Only|Profiler Bridge Only]]
 - [[architecture/Tracy-Toolchain|Tracy Toolchain]]
 
