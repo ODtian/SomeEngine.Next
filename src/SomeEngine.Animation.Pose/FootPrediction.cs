@@ -19,7 +19,7 @@ public sealed class FootPrediction
     public double EndTime { get; }
     public int FootCount => _contacts.Length;
 
-    public FootPrediction(PosePredictionRequest request, float lookAhead)
+    public FootPrediction(PosePredictionRequest request, float lookAhead, ModelPose? parentPose = null)
     {
         Request = request;
         FootMotion definition = request.Path.FindFootMotion()!;
@@ -37,7 +37,7 @@ public sealed class FootPrediction
             feet[foot] = definition.Bones(foot);
             bones[1 + foot * 2] = feet[foot].Heel;
             bones[2 + foot * 2] = feet[foot].Toe;
-            _poses[foot] = new([new(request, [definition.RootBone, feet[foot].Heel, feet[foot].Toe])]);
+            _poses[foot] = new([new(request, [definition.RootBone, feet[foot].Heel, feet[foot].Toe], parentPose)]);
         }
 
         var times = new List<float> { _pathStart, pathEnd };
@@ -69,7 +69,7 @@ public sealed class FootPrediction
         var relativeTimes = new float[pathTimes.Length];
         for (int sample = 0; sample < pathTimes.Length; sample++)
         {
-            selections[sample] = new(request, bones);
+            selections[sample] = new(request, bones, parentPose);
             clocks[sample] = request.Origin.GetTime(pathTimes[sample]);
             relativeTimes[sample] = pathTimes[sample] - _pathStart;
         }

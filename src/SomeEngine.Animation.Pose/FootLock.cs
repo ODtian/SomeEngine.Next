@@ -36,7 +36,7 @@ public sealed class FootLockRig
 
 public readonly record struct FootLockParameters(FootLockRig Rig, PosePredictionRequest Source,
     ICollisionQueries Scene, FootSupportSettings Support, float ContactWindow = 1,
-    float Duration = float.PositiveInfinity);
+    float Duration = float.PositiveInfinity, FootPlacementSettings? Prediction = null);
 
 [BufferCapacity(1)]
 public struct FootLockInstance : IBufferElement
@@ -47,7 +47,11 @@ public struct FootLockInstance : IBufferElement
     public Entity Target;
     /// <summary>The movement stage's entity providing the current WorldTransform; initially the target.</summary>
     public Entity Actor;
+    public PosePredictionRequest Source;
+    public FootMovementInput Movement;
     public ReadOnlySpan<FootContactTarget> Contacts => Samples.Contacts;
+    public ReadOnlySpan<FootLandingPrediction> Landings => Samples.Future is { } future ? future.Landings : [];
+    public FootPlacementCosts Costs => Samples.Costs;
     internal FootLockSamples Samples;
     internal uint Starts;
 }
@@ -64,6 +68,7 @@ public readonly struct FootLockLeaf : IAnimationLeaf<FootLockParameters>
         var instance = new FootLockInstance
         {
             Definition = definitions, Index = index, Placement = placement, Target = target, Actor = target, Starts = placement.Starts,
+            Source = definitions.Parameters[index].Source,
             Samples = new(definitions.Parameters[index], world.Read<GpuPoseTarget>(target).Skeleton),
         };
         world.ExecuteBufferWrite<FootLockInstance, FootLockInstance>(animation, ref instance,
