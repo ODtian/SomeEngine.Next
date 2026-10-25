@@ -14,6 +14,9 @@ public interface IJobExternalFence
     /// callbacks outside provider locks, and must not throw after accepting or invoking a continuation.
     /// </summary>
     void OnSignaled(Action<object?> continuation, object? state);
+
+    /// <summary>Consumes the signaled source's result and propagates its failure or cancellation.</summary>
+    void GetResult() { }
 }
 
 

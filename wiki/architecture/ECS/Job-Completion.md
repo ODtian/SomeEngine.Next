@@ -36,6 +36,38 @@ Created
 公开行为检查：[CompletionStateTests](../../../tests/SomeEngine.Job.Tests/CompletionStateTests.cs)、
 [JobHandleAwaitTests](../../../tests/SomeEngine.Job.Tests/JobHandleAwaitTests.cs)。
 
+## 外部来源与异步等待
+
+本节记录已实现的公共接口与使用方法。`Scheduler` 的入口为：
+
+```csharp
+JobHandle CreateExternalFenceHandle(Task task, ReadOnlySpan<JobResourceAccess> accesses = default);
+JobHandle CreateExternalFenceHandle(ValueTask task, ReadOnlySpan<JobResourceAccess> accesses = default);
+```
+
+`JobSystem` 提供绑定默认 Scheduler 的同名入口。`Task<T>` 可直接交给 Task 入口，
+其返回值继续由原 Task 持有。`ValueTask` 入口调用 `AsTask()` 消费来源一次；
+带返回值的 `ValueTask<T>` 由调用方先转成 Task，再保留该 Task 读取返回值。
+
+来源进入终态后，桥接先调用 `IJobExternalFence.GetResult()`，再结束对应 Job 的外部工作。
+Task 提供者通过自己的 awaiter 取得来源结果，失败或取消沿 Job 原有的父子工作和显式依赖
+传播关系交付。普通 fence 的默认 `GetResult()` 表示成功，提供者可实现该方法交付具体终态。
+`accesses` 沿原 fence 入口保留资源，Job 完成点覆盖来源结果消费和正常资源释放。
+
+`JobHandle.WaitAsync()` 返回可重复和并发等待的 `ValueTask`，转换成 Task 后同样保留共享
+结果；取消终态交付为取消任务。`WaitAsync(CancellationToken)` 在共享结果上建立一次独立
+等待，令牌取消时结束这次等待。共享工作、其他等待者及资源继续保持到原工作完成。
+普通 Task 消费者沿 .NET 的异步恢复规则继续执行，`await handle` 沿既有完成通知线程恢复。
+SomeUI 的恢复由 [[architecture/someui/Async-Build|BuildTaskBuilder 与重建阶段]] 接管。
+
+源码入口：[外部完成提供者](../../../src/SomeEngine.Job/IJobExternalFence.cs)、
+[来源桥接](../../../src/SomeEngine.Job/Scheduler.Fence.cs)、
+[默认入口](../../../src/SomeEngine.Job/JobSystem.cs) 与
+[异步等待](../../../src/SomeEngine.Job/JobHandle.cs)。
+公共行为检查：[ExternalCompletionTests](../../../tests/SomeEngine.Job.Tests/ExternalCompletionTests.cs)、
+[ExternalFenceBridgeTests](../../../tests/SomeEngine.Job.Tests/ExternalFenceBridgeTests.cs) 与
+[SomeUI Job 消费](../../../tests/SomeEngine.Views.Tests/JobBuildTests.cs)。
+
 
 ## 同步范围执行
 
