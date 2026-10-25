@@ -99,3 +99,5 @@ public struct PairList(List<(Entity, Entity)> pairs) : IRelationOutput<(Entity, 
 候选分区到静态检测类型的 count、prefix、write 及用户检测入口见 [碰撞类型分桶](Collision-Pair-Bins.md)。
 
 均匀网格与分层网格的配置、单元维护、跨层枚举和关系入口见 [碰撞网格](Collision-Grids.md)。
+
+SAP 与分区 SAP 的显式选轴、共享区间扫描、跨区配对和类型归并见 [SAP 区间索引](Collision-Intervals.md)。
