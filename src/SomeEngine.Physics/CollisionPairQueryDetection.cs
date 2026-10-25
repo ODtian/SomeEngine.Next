@@ -2,6 +2,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
+using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Physics;
 
@@ -16,19 +17,55 @@ public static partial class CollisionPairQueries
 {
     public static void DetectPairsWithQuery<TEnumerable, TPartition, TDetection>(
         this RelationQuery<TEnumerable, (Entity, Entity)> query, CollisionPairBins<TPartition> bins,
-        int bin, TDetection detection)
+        int bin, TDetection detection, QueryReadResources? resources = null)
         where TEnumerable : struct, IQueryRelationEnumerable<(Entity, Entity)>
         where TPartition : struct
         where TDetection : struct, ICollisionPairQueryDetection
     {
         var detect = new RelationQuery<QueryBinDetection<TEnumerable, TPartition, TDetection>, (Entity, Entity)>(
-            new(query.Enumerable, bins, bin, detection));
+            new(query.Enumerable, bins, bin, detection, resources));
         var output = new PairCount();
         detect.Enumerate(ref output);
     }
 
+    /// <summary>Consumes a type bin in an already registered query borrow, including declared referenced resources.</summary>
+    public static void DetectBinWithQuery<TPartition, TDetection>(scoped QueryCursor access,
+        CollisionPairBins<TPartition> bins, int bin, TDetection detection, QueryReadResources? resources = null)
+        where TPartition : struct
+        where TDetection : struct, ICollisionPairQueryDetection
+    {
+        var work = new BinDetectionWork<TPartition, TDetection>(bins, bin, detection);
+        if (resources is null) work.Execute(access);
+        else resources.ExecuteEntities(access, new BinEntities(bins.ReadBin(bin)), ref work,
+            static (scoped QueryCursor query, ref BinDetectionWork<TPartition, TDetection> state) => state.Execute(query));
+    }
+
+    private readonly ref struct BinEntities(ReadOnlySpan<CollisionGeometryPair> pairs) : IQueryReadEntities
+    {
+        private readonly ReadOnlySpan<CollisionGeometryPair> _pairs = pairs;
+        public int Count => _pairs.Length * 2;
+        public Entity GetEntity(int index) => (index & 1) == 0 ? _pairs[index / 2].First : _pairs[index / 2].Second;
+    }
+
+    private readonly struct BinDetectionWork<TPartition, TDetection>(CollisionPairBins<TPartition> bins,
+        int bin, TDetection detection)
+        where TPartition : struct
+        where TDetection : struct, ICollisionPairQueryDetection
+    {
+        public void Execute(scoped QueryCursor access)
+        {
+            TDetection kernel = detection;
+            foreach (ref readonly CollisionGeometryPair pair in bins.ReadBin(bin))
+            {
+                access.TryGetRow(pair.First, out QueryRow first);
+                access.TryGetRow(pair.Second, out QueryRow second);
+                kernel.Execute(in pair, access, first, second);
+            }
+        }
+    }
+
     private readonly struct QueryBinDetection<TEnumerable, TPartition, TDetection>(TEnumerable source,
-        CollisionPairBins<TPartition> bins, int bin, TDetection detection)
+        CollisionPairBins<TPartition> bins, int bin, TDetection detection, QueryReadResources? resources)
         : IQueryRelationEnumerable<(Entity, Entity)>
         where TEnumerable : struct, IQueryRelationEnumerable<(Entity, Entity)>
         where TPartition : struct
@@ -44,13 +81,7 @@ public static partial class CollisionPairQueries
         public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
             where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
         {
-            TDetection kernel = detection;
-            foreach (ref readonly CollisionGeometryPair pair in bins.ReadBin(bin))
-            {
-                queries.Access.TryGetRow(pair.First, out QueryRow first);
-                queries.Access.TryGetRow(pair.Second, out QueryRow second);
-                kernel.Execute(in pair, queries.Access, first, second);
-            }
+            DetectBinWithQuery(queries.Access, bins, bin, detection, resources);
             return true;
         }
     }

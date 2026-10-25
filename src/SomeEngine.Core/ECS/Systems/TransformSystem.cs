@@ -18,6 +18,7 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
     private readonly List<EntityId> _staleParentScratch = [];
     private readonly HashSet<EntityId> _seenParentSet = [];
     private readonly Dictionary<EntityId, EntityId> _knownParents = [];
+    private QueryHandle _membersQuery;
     private QueryHandle _transformQuery;
     private QueryHandle _parentedTopologyQuery;
     private QueryDefinition _flatTransformFilter = null!;
@@ -28,6 +29,7 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
     public void OnCreate(ref ImmediateSystemContext context)
     {
         World world = context.World;
+        _membersQuery = world.Query(new QueryDefinitionBuilder().All<LocalTransform>().All<WorldTransform>());
         _transformQuery = world.Query(
             new QueryDefinitionBuilder()
                 .Read<LocalTransform>()
@@ -60,6 +62,7 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
     {
         using var scope = SomeEngine.Diagnostics.EngineTrace.Begin(OnUpdateTrace);
         World world = context.World;
+        if (!world.HasQueryMembers(_membersQuery)) return;
         HierarchyMaintenanceDependency<DefaultHierarchyDomain> maintenance =
             HierarchyMaintenanceSystem<DefaultHierarchyDomain>.ScheduleDependency(world);
         maintenance.Handle.Complete();
@@ -206,4 +209,14 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
     }
 
     private void AddDirtyTransform(EntityId entity) => _dirtyTransforms.Add(entity);
+
+    public void OnDestroy(ref ImmediateSystemContext context)
+    {
+        World world = context.World;
+        world.ReleaseQuery(_membersQuery);
+        world.ReleaseQuery(_transformQuery);
+        world.ReleaseQuery(_parentedTopologyQuery);
+        world.ReleaseQuery(_changedLocalQuery);
+        world.ReleaseQuery(_changedParentQuery);
+    }
 }
