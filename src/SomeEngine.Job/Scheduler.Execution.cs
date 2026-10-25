@@ -60,8 +60,9 @@ public sealed partial class Scheduler
 
         if (result.Retire)
             TItem.Release(ref item);
-        if (result.CompletedWorkItems > 0)
-            CompleteStreamItems(handle, result.CompletedWorkItems, result.Fault);
+        int completionCount = result.CompletedWorkItems + (result.Retire ? TItem.CompletionCountOnRetire : 0);
+        if (completionCount > 0)
+            CompleteStreamItems(handle, completionCount, result.Fault);
         return result;
     }
 

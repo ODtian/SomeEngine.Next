@@ -49,5 +49,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Compile Include="../SomeEngine.Render.Tests/RenderTestDevice.cs" Link="RenderTestDevice.cs" />
   </ItemGroup>
 </Project>

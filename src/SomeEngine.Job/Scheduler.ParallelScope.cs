@@ -31,7 +31,7 @@ public sealed partial class Scheduler
             var source = new ScheduledParallelTokenSource<T>(group, state);
             storedWorkItems = stream.PrepareMany(workIndices.AsSpan(0, tokenCount), ref source);
             work = WorkBatch.CreateArray(stream, workIndices, storedWorkItems, length, pooledSlotsArray: true, options.Priority);
-            _execution.AddWorkItems(state, length);
+            _execution.AddWorkItems(state, length + tokenCount);
             added = true;
             _workQueue.Enqueue(work);
             _counters.Scheduled(lane);
@@ -47,7 +47,7 @@ public sealed partial class Scheduler
                 ArrayPool<int>.Shared.Return(workIndices);
             }
             if (added)
-                CompleteStreamItems(state, length, itemFault: null);
+                CompleteStreamItems(state, length + tokenCount, itemFault: null);
             throw;
         }
         finally
