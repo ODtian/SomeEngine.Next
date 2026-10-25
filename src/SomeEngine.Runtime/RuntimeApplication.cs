@@ -726,6 +726,7 @@ internal static class RuntimeApplication
         {
             geometry.UpdateGame(deltaSeconds);
             yield return geometry.CompleteGameAsync();
+            geometry.ScheduleTerrainBuilds();
             simulationSeconds += deltaSeconds;
             long allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
             long started = measure ? Stopwatch.GetTimestamp() : 0;
