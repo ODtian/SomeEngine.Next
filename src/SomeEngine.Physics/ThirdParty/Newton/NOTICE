@@ -2,9 +2,11 @@ Newton v1.7.0
 Copyright (c) 2025 The Newton Developers
 https://github.com/newton-physics/newton/tree/v1.7.0/newton/_src/solvers/vbd
 
-AvbdMaterialTerms.cs, AvbdBodyEquation.cs, AvbdElasticConnectionMath.cs and
+AvbdMaterialTerms.cs, AvbdBodyEquation.cs, AvbdElasticConnectionMath.cs,
+AvbdJointMath.cs, JointMath.cs, BodyRotation in PredictBodies.cs and
 ApplyGyroscopicTorque.cs adapt the compliant ALM coefficients, force rows,
-rotation derivatives, angular inertia and gyroscopic prediction from Newton.
+joint coordinates, rotation derivatives, angular inertia and gyroscopic
+prediction from Newton.
 The mathematical migration follows the project's research NewtonRigid.cpp.
 
 The C# implementation stores body equations and constraint multipliers in ECS
