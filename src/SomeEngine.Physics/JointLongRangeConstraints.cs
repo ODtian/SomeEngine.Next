@@ -44,20 +44,20 @@ public readonly struct JointLongRangeConstraints(QueryHandle joints, JointLongRa
     {
         private readonly PhysicsBodies _bodies = bodies;
         private readonly PhysicsStepContext _context = context;
-        public void Execute(scoped QueryCursor query) => data.Initialize(query, _bodies, in _context);
+        public void Execute(scoped QueryCursor query) => data.Initialize(new PhysicsQueryRows(query), _bodies, in _context);
     }
 
     private ref struct AccumulateBounds(JointLongRangeData data, Entity body, PhysicsBodies bodies, ref AvbdBodyEquation equation) : IQueryExecution
     {
         private readonly PhysicsBodies _bodies = bodies;
         private ref AvbdBodyEquation _equation = ref equation;
-        public void Execute(scoped QueryCursor query) => data.Accumulate(query, body, _bodies, ref _equation);
+        public void Execute(scoped QueryCursor query) => data.Accumulate(new PhysicsQueryRows(query), body, _bodies, ref _equation);
     }
 
     private readonly ref struct UpdateBounds(JointLongRangeData data, PhysicsBodies bodies) : IQueryExecution
     {
         private readonly PhysicsBodies _bodies = bodies;
-        public void Execute(scoped QueryCursor query) => data.Update(query, _bodies);
+        public void Execute(scoped QueryCursor query) => data.Update(new PhysicsQueryRows(query), _bodies);
     }
 }
 
@@ -67,7 +67,7 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
     private readonly Dictionary<Entity, List<JointBoundReference>> _byBody = [];
     private readonly Stack<List<JointBoundReference>> _unused = [];
 
-    internal void Initialize(scoped QueryCursor joints, scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    internal void Initialize(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {
         _graph.Refresh(joints, bodies, in context, settings.Levels);
         foreach (List<JointBoundReference> references in _byBody.Values) { references.Clear(); _unused.Push(references); }
@@ -106,7 +106,7 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
         references.Add(reference);
     }
 
-    internal void Accumulate(scoped QueryCursor joints, Entity body, scoped PhysicsBodies bodies, ref AvbdBodyEquation equation)
+    internal void Accumulate(scoped PhysicsQueryRows joints, Entity body, scoped PhysicsBodies bodies, ref AvbdBodyEquation equation)
     {
         if (!_byBody.TryGetValue(body, out List<JointBoundReference>? references)) return;
         foreach (JointBoundReference reference in CollectionsMarshal.AsSpan(references))
@@ -136,7 +136,7 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
         }
     }
 
-    internal void Update(scoped QueryCursor joints, scoped PhysicsBodies bodies)
+    internal void Update(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies)
     {
         foreach (QueryRow row in joints.Rows)
         {
@@ -171,7 +171,7 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
         multiplier = new(upper, lower);
     }
 
-    private static JointBoundGeometry GetGeometry(scoped QueryCursor joints, Entity firstJoint,
+    private static JointBoundGeometry GetGeometry(scoped PhysicsQueryRows joints, Entity firstJoint,
         in LongRangeJointBound bound, scoped PhysicsBodies bodies, bool start)
     {
         var first = new JointGraphAnchor(firstJoint, bound.FirstEnd);

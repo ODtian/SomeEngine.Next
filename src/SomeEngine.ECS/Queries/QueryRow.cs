@@ -63,6 +63,13 @@ public readonly ref partial struct QueryRow
         return ref _chunk.ComponentRows<T>(column)[_row];
     }
 
+    /// <summary>Reads the current component write version from this declared row.</summary>
+    public uint WriteVersion<T>() where T : struct
+    {
+        int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
+        return _chunk.WriteVersionRows(column)[_row];
+    }
+
     /// <summary>Finds one present readable component and borrows its value without copying it.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryReadRef<T>(out ComponentReference<T> component) where T : struct
