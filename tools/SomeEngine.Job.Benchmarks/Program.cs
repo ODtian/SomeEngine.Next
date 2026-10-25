@@ -16,6 +16,7 @@ bool counters = args.Contains("--counters", StringComparer.OrdinalIgnoreCase);
 bool synchronous = args.Contains("--synchronous", StringComparer.OrdinalIgnoreCase);
 bool dependencies = args.Contains("--dependencies", StringComparer.OrdinalIgnoreCase);
 bool categories = args.Contains("--categories", StringComparer.OrdinalIgnoreCase);
+bool storage = args.Contains("--storage", StringComparer.OrdinalIgnoreCase);
 
 JobSystem.Initialize(new JobRuntimeConfig
 {
@@ -32,6 +33,13 @@ try
         (dependencies ? "predecessors=1,16,256,4096,16384 | input-copies=1,2 | "
             : $"length={parallelLength} | batch={(automatic ? "auto" : "explicit")} | ") +
         $"spin={spinCount}/{busySpinCount} | counters={counters}");
+
+    if (storage)
+    {
+        RunStorage(JobSystem.Default, parallelLength, workerCount, warmups, samples,
+            ReadIntArgument(args, "--calls", 128));
+        return;
+    }
 
     if (dependencies)
     {
@@ -200,6 +208,46 @@ static void RunCalls(string name, int warmups, int samples, int calls, Action ac
         $"p95={Percentile(microseconds, 0.95):F3} us/call allocated-p50={Percentile(allocatedBytes, 0.50):F2} B/call");
 }
 
+static void RunStorage(Scheduler scheduler, int length, int workers, int warmups, int samples, int calls)
+{
+    int[] values = new int[length];
+    var job = new LightParallelJob(values);
+    int batchSize = Math.Max(1, length / Math.Max(1, workers * 4));
+    RunCalls("empty-complete", warmups, samples, calls,
+        () => scheduler.Schedule(new EmptyJob()).Complete());
+    RunCalls("parallel-complete", warmups, samples, calls,
+        () => scheduler.ScheduleParallel(job, length, batchSize).Complete());
+    using var started = new ManualResetEventSlim();
+    using var release = new ManualResetEventSlim();
+    var blocker = new WaitForRelease(started, release);
+    foreach (int count in new[] { 1, 4, 16, 64 })
+    {
+        var accesses = new JobResourceAccess[count];
+        for (int index = 0; index < count; index++)
+        {
+            int start = index * length / count;
+            int end = (index + 1) * length / count;
+            accesses[index] = JobResourceAccess.Write(scheduler, values, start, end - start);
+        }
+        RunCalls($"ready-accesses-{count}", warmups, samples, calls,
+            () => scheduler.ScheduleParallel(job, length, batchSize, accesses).Complete());
+        RunCalls($"waiting-accesses-{count}", warmups, samples, calls, () =>
+        {
+            started.Reset();
+            release.Reset();
+            JobHandle dependency = scheduler.Schedule(blocker);
+            started.Wait();
+            JobHandle handle = scheduler.ScheduleParallel(job, length, batchSize, accesses, dependency);
+            release.Set();
+            handle.Complete();
+            dependency.Complete();
+        });
+    }
+    int expected = (warmups + samples) * calls * 9;
+    if (values.Any(value => value != expected))
+        throw new InvalidOperationException("The storage workloads must complete every array update.");
+}
+
 static void RunDependencies(Scheduler scheduler, int count, int copies, int warmups, int samples)
 {
     var inputs = new JobHandle[count * copies];
@@ -238,6 +286,15 @@ readonly struct EmptyJob : IJob
 {
     public void Execute()
     {
+    }
+}
+
+readonly struct WaitForRelease(ManualResetEventSlim started, ManualResetEventSlim release) : IJob
+{
+    public void Execute()
+    {
+        started.Set();
+        release.Wait();
     }
 }
 

@@ -13,6 +13,7 @@ internal sealed partial class ResourceManager
     private readonly List<ResourceState?> _states = [null];
     private readonly Stack<int> _freeStates = new();
     private readonly Stack<ResourceAccessRegistrationData> _freeRegistrations = new();
+    private readonly Stack<ResourceAccessReservationData> _freeReservations = new();
     private readonly Stack<Dictionary<ResourceState, int>> _freeResourceStateMaps = new();
     private readonly Stack<HashSet<ResourceDependencyKey>> _freeResourceDependencySets = new();
     private JobSafetyMode _safetyMode = JobSafetyMode.Checked;
