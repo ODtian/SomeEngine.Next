@@ -21,6 +21,21 @@ namespace DefaultGame.Content;
 /// <summary>Asset definitions for the sphere scene and its rendering settings.</summary>
 public static class SampleContent
 {
+    /// <summary>Offline Cluster material variants for the sample's shading modes and selected depth behavior.</summary>
+    public static ShaderSpecialization[] CreateMaterialSpecializations(int depth)
+    {
+        string depthArgument = depth.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var specializations = new List<ShaderSpecialization>();
+        foreach (string mode in new[] { "0", "8" })
+        {
+            specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = [mode] });
+            specializations.Add(new() { EntryPoint = "ClusterShadowReceiver", Arguments = [depthArgument, mode] });
+            foreach (string export in new[] { "false", "true" })
+                specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = [depthArgument, mode, export] });
+        }
+        return [.. specializations];
+    }
+
     /// <summary>Writes the default Cluster configuration against the project's existing shader assets.</summary>
     public static Guid BuildClusterShaders(string projectRoot) =>
         BuildClusterShaders(new AssetProject(Path.GetFullPath(projectRoot), []));
