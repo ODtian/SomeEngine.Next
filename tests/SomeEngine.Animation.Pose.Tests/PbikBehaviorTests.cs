@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose.Tests;
 
@@ -10,7 +11,8 @@ public sealed class PbikBehaviorTests
     [Fact]
     public void WholeBodyTargetsMoveThePelvisAndLimbsWithinJointLimitsWhileAnimationAndTargetsAdvance()
     {
-        using var world = new World();
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Skeleton skeleton = CreateBody();
         var raw = new RawClipData(1,
         [

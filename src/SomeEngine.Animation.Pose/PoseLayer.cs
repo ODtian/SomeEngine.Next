@@ -29,16 +29,16 @@ internal sealed class PoseLayerSamples
     internal readonly BoneMask Mask;
     internal readonly JobResourceAccess[] Accesses;
 
-    internal PoseLayerSamples(Skeleton skeleton, BoneMask mask)
+    internal PoseLayerSamples(Scheduler scheduler, Skeleton skeleton, BoneMask mask)
     {
         Skeleton = skeleton;
         Mask = mask;
         Base = new BoneTransform[skeleton.BoneCount];
         Source = new BoneTransform[skeleton.BoneCount];
         Output = new BoneTransform[skeleton.BoneCount];
-        Accesses = [JobResourceAccess.Read(Base), JobResourceAccess.Read(Source), JobResourceAccess.Write(Output),
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(skeleton)),
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(mask))];
+        Accesses = [JobResourceAccess.Read(scheduler, Base), JobResourceAccess.Read(scheduler, Source), JobResourceAccess.Write(scheduler, Output),
+            JobResourceAccess.Read(scheduler.GetResourceToken(skeleton)),
+            JobResourceAccess.Read(scheduler.GetResourceToken(mask))];
     }
 }
 
@@ -57,7 +57,7 @@ public readonly struct PoseLayerLeaf : IAnimationLeaf<PoseLayerParameters>
             Base = PoseAnimation.Resolve(world, target, parameters.Base),
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
-            Samples = new(world.Read<PoseTarget>(target).Skeleton.Skeleton, parameters.Mask),
+            Samples = new(PoseAnimation.GetScheduler(world), world.Read<PoseTarget>(target).Skeleton.Skeleton, parameters.Mask),
         };
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Base, instance.Source], in placement);
         world.ExecuteBufferWrite<PoseLayerInstance, PoseLayerInstance>(animation, ref instance,

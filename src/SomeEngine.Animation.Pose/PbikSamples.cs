@@ -14,7 +14,7 @@ internal sealed class PbikSamples
     private readonly Vector3[] _positions, _anchors, _goals, _forwardPositions;
     private readonly Quaternion[] _rotations;
 
-    internal PbikSamples(PbikRig rig, SkeletonInstance skeleton)
+    internal PbikSamples(Scheduler scheduler, PbikRig rig, SkeletonInstance skeleton)
     {
         _rig = rig;
         Transforms = new BoneTransform[rig.Skeleton.BoneCount];
@@ -32,9 +32,9 @@ internal sealed class PbikSamples
                 _parents[bone] = skeleton.ModelPose.GetBone(rig.Skeleton.InheritedParents[bone]);
         Accesses =
         [
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(rig)),
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(rig.Skeleton)),
-            JobResourceAccess.Write(JobSystem.Default.GetResourceToken(this)),
+            JobResourceAccess.Read(scheduler.GetResourceToken(rig)),
+            JobResourceAccess.Read(scheduler.GetResourceToken(rig.Skeleton)),
+            JobResourceAccess.Write(scheduler.GetResourceToken(this)),
         ];
     }
 

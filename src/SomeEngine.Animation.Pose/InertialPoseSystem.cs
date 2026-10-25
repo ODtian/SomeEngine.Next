@@ -66,7 +66,7 @@ public struct InertialPoseSystem : ISystem<PoseNodeContext>
                 .CopyTo(source.Values));
         InertialPoseParameters parameters = instance.Definition.Parameters[instance.Index];
         float delta = world.Read<Timeline>(animation).Paused ? 0 : frame.Delta;
-        frame.Jobs.Add(JobSystem.Schedule(new InertializeBones(instance.Samples, parameters.DecayRate, parameters.Tolerance,
+        frame.Jobs.Add(PoseAnimation.GetScheduler(world).Schedule(new InertializeBones(instance.Samples, parameters.DecayRate, parameters.Tolerance,
             delta, !instance.Initialized, instance.Action != instance.PreviousAction), instance.Samples.Accesses));
         instance.Sampled = true;
     }
