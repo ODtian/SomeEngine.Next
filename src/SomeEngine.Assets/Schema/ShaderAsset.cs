@@ -62,12 +62,13 @@ public sealed partial class ShaderAsset : Asset
         ReadOnlyMemory<SpecializationArg> specializations = default,
         CancellationToken cancellationToken = default)
     {
+        SomeEngine.Job.Scheduler scheduler = SomeEngine.Job.JobSystem.Current;
         using ShaderAsset copy = Duplicate();
         ShaderSourceBlock source = await copy.GetBlockAsync<ShaderSourceBlock>(cancellationToken).ConfigureAwait(false);
         if (source.Inputs.Count == 0 && !source.HasSerializedSources)
         {
             return await source.CreateAsync(slang, sessionDescription, copy.Name,
-                specializations, cancellationToken).ConfigureAwait(false);
+                specializations, cancellationToken, scheduler).ConfigureAwait(false);
         }
         ShaderInputSource[] inputs = await copy.ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
         ShaderBlock? savedCode = null;
@@ -78,7 +79,7 @@ public sealed partial class ShaderAsset : Asset
         }
         using ShaderSourceBlock selected = source.FromInputs(inputs);
         return savedCode is null
-            ? await selected.CreateAsync(slang, sessionDescription, copy.Name, specializations, cancellationToken).ConfigureAwait(false)
+            ? await selected.CreateAsync(slang, sessionDescription, copy.Name, specializations, cancellationToken, scheduler).ConfigureAwait(false)
             : await savedCode.CreateAsync(selected, slang, sessionDescription, copy.Name,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -87,13 +88,14 @@ public sealed partial class ShaderAsset : Asset
     public async ValueTask<ShaderCompilation> CompileAsync(
         IGlobalSession slang, SessionDesc sessionDescription, CancellationToken cancellationToken = default)
     {
+        SomeEngine.Job.Scheduler scheduler = SomeEngine.Job.JobSystem.Current;
         using ShaderAsset copy = Duplicate();
         ShaderSourceBlock source = await copy.GetBlockAsync<ShaderSourceBlock>(cancellationToken).ConfigureAwait(false);
         ShaderCompilation compiled;
         ShaderInputSource[] inputs;
         if (source.Inputs.Count == 0 && !source.HasSerializedSources)
         {
-            compiled = await source.CompileAsync(slang, sessionDescription, copy.Name, cancellationToken).ConfigureAwait(false);
+            compiled = await source.CompileAsync(slang, sessionDescription, copy.Name, cancellationToken, scheduler).ConfigureAwait(false);
             for (int index = 0; index < compiled.SerializedSources.Count; index++)
                 source.SetSerializedSource(index, compiled.SerializedSources[index].Span);
             inputs = await copy.ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
@@ -102,7 +104,7 @@ public sealed partial class ShaderAsset : Asset
         {
             inputs = await copy.ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
             compiled = await source.CompileSelectedAsync(inputs, slang, sessionDescription, copy.Name,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken, scheduler).ConfigureAwait(false);
         }
         using var code = new ShaderBlock();
         code.InputVersions = inputs.Select(static input => input.Version).ToList();
@@ -115,7 +117,7 @@ public sealed partial class ShaderAsset : Asset
         {
             // Code generation belongs to asset preparation, alongside the common entries.
             ShaderCompilation cooked = await selected.CompileSelectedEntryAsync(slang, sessionDescription, copy.Name,
-                variant.EntryPoint, variant.ToSlangArguments(), cancellationToken).ConfigureAwait(false);
+                variant.EntryPoint, variant.ToSlangArguments(), cancellationToken, scheduler).ConfigureAwait(false);
             SaveCode(cooked.Shader, variant.Arguments.ToArray(), variant.EntryPoint);
         }
 
@@ -152,10 +154,11 @@ public sealed partial class ShaderAsset : Asset
         ReadOnlyMemory<SpecializationArg> specializations, bool generateCode,
         CancellationToken cancellationToken)
     {
+        SomeEngine.Job.Scheduler scheduler = SomeEngine.Job.JobSystem.Current;
         ShaderSourceBlock source = await GetBlockAsync<ShaderSourceBlock>(cancellationToken).ConfigureAwait(false);
         ShaderInputSource[] inputs = await ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
         return await source.CreateSelectedAsync(inputs, slang, sessionDescription, Name,
-            specializations, generateCode, cancellationToken).ConfigureAwait(false);
+            specializations, generateCode, cancellationToken, scheduler).ConfigureAwait(false);
     }
 
     private async ValueTask<ShaderInputSource[]> ReadInputsAsync(ShaderSourceBlock source, CancellationToken cancellationToken)
