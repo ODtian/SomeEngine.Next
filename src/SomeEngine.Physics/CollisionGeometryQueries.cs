@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Physics;
 
@@ -11,18 +12,28 @@ public readonly record struct GeometryVersion(ulong Value) : IComponent;
 public static partial class Collision
 {
     public static CollisionGeometryQueries<TGeometry> Query<TGeometry>(World world, QueryHandle members,
-        CollisionTree tree, CollisionQuerySettings settings)
-        where TGeometry : struct, ICollisionGeometry<TGeometry> => new(world, members, tree, settings);
+        CollisionTree tree, CollisionQuerySettings settings, QueryReadResources? resources = null)
+        where TGeometry : struct, ICollisionGeometry<TGeometry> => new(world, members, tree, settings, resources);
+
+    public static CollisionGeometryQueries<TGeometry> QueryWithResources<TGeometry, TResources>(World world,
+        QueryHandle members, CollisionTree tree, CollisionQuerySettings settings)
+        where TGeometry : struct, IComponent, ICollisionGeometry<TGeometry>
+        where TResources : struct, IJobComponentResources<TGeometry>
+    {
+        var resources = new QueryReadResources();
+        resources.Add<TGeometry, TResources>();
+        return new(world, members, tree, settings, resources);
+    }
 
     public static CollisionGeometryQueries<TGeometry, TReader> Query<TGeometry, TReader>(World world,
-        QueryHandle members, CollisionTree tree, TReader reader, CollisionQuerySettings settings)
+        QueryHandle members, CollisionTree tree, TReader reader, CollisionQuerySettings settings, QueryReadResources? resources = null)
         where TGeometry : struct, ICollisionGeometry<TGeometry>
-        where TReader : struct, ICollisionGeometryReader<TGeometry> => new(world, members, tree, reader, settings);
+        where TReader : struct, ICollisionGeometryReader<TGeometry> => new(world, members, tree, reader, settings, resources);
 }
 
 public sealed class CollisionGeometryQueries<TGeometry>(World world, QueryHandle members, CollisionTree tree,
-    CollisionQuerySettings settings)
-    : CollisionGeometryQueries<TGeometry, ComponentGeometry<TGeometry>>(world, members, tree, default, settings)
+    CollisionQuerySettings settings, QueryReadResources? resources = null)
+    : CollisionGeometryQueries<TGeometry, ComponentGeometry<TGeometry>>(world, members, tree, default, settings, resources)
     where TGeometry : struct, ICollisionGeometry<TGeometry>;
 
 /// <summary>Queries current concrete geometry readers through a maintained collision tree.</summary>
@@ -34,18 +45,20 @@ public partial class CollisionGeometryQueries<TGeometry, TReader> : ICollisionQu
     private readonly QueryHandle _query;
     private readonly QueryHandle _members;
     private readonly TReader _reader;
+    private readonly QueryReadResources? _resources;
     private readonly CollisionQuerySettings _settings;
     public CollisionTree Tree { get; }
 
     public CollisionGeometryQueries(World world, QueryHandle members, CollisionTree tree, TReader reader,
-        CollisionQuerySettings settings)
+        CollisionQuerySettings settings, QueryReadResources? resources = null)
     {
         _world = world;
         QueryDefinition membership = world.GetQueryDefinition(members);
-        _members = world.Query(membership);
+        _members = world.Query(reader.AddReads(membership).WithOptionalRead<GeometryVersion>());
         _query = world.Query(reader.AddReads(QueryDefinition.Empty).WithOptionalRead<GeometryVersion>()
-            .WithAccessFrom(membership));
+            .WithAccessFrom(world.GetQueryDefinition(_members)));
         _reader = reader;
+        _resources = resources;
         Tree = tree;
         _settings = settings;
     }
@@ -106,8 +119,8 @@ public partial class CollisionGeometryQueries<TGeometry, TReader> : ICollisionQu
     private void ExecuteQueries<TExecution>(ref TExecution execution)
         where TExecution : IGeometryQueryExecution, allows ref struct
     {
-        var read = new ReadAccess<TExecution>(_world, _members, _reader, new(ref execution));
-        _world.ExecuteQuery(_query, ref read);
+        var read = new ReadAccess<TExecution>(_world, _members, _reader, _resources, new(ref execution));
+        _world.ExecuteReadQuery(_query, ref read, static (scoped QueryCursor query, ref ReadAccess<TExecution> state) => state.Execute(query));
     }
 
     private interface IGeometryQueryExecution
@@ -123,7 +136,7 @@ public partial class CollisionGeometryQueries<TGeometry, TReader> : ICollisionQu
         public ref TExecution Value => ref Unsafe.As<byte, TExecution>(ref _value);
     }
 
-    private ref struct ReadAccess<TExecution>(World world, QueryHandle members, TReader reader,
+    private ref struct ReadAccess<TExecution>(World world, QueryHandle members, TReader reader, QueryReadResources? resources,
         QueryExecutionReference<TExecution> work)
         : IQueryExecution where TExecution : IGeometryQueryExecution, allows ref struct
     {
@@ -131,17 +144,25 @@ public partial class CollisionGeometryQueries<TGeometry, TReader> : ICollisionQu
 
         public void Execute(scoped QueryCursor access)
         {
-            var read = new ReadMembers<TExecution>(access, reader, _work);
+            var read = new ReadMembers<TExecution>(access, reader, resources, _work);
             world.ExecuteQuery(members, ref read);
         }
     }
 
-    private ref struct ReadMembers<TExecution>(QueryCursor access, TReader reader, QueryExecutionReference<TExecution> work)
+    private ref struct ReadMembers<TExecution>(QueryCursor access, TReader reader, QueryReadResources? resources,
+        QueryExecutionReference<TExecution> work)
         : IQueryExecution where TExecution : IGeometryQueryExecution, allows ref struct
     {
         private readonly QueryCursor _access = access;
         private readonly QueryExecutionReference<TExecution> _work = work;
-        public void Execute(scoped QueryCursor members) => _work.Value.Execute(members, _access, reader);
+        public void Execute(scoped QueryCursor members)
+        {
+            if (resources is null) ExecuteGeometry(members);
+            else resources.Execute(members, ref this,
+                static (scoped QueryCursor query, ref ReadMembers<TExecution> state) => state.ExecuteGeometry(query));
+        }
+
+        private void ExecuteGeometry(scoped QueryCursor members) => _work.Value.Execute(members, _access, reader);
     }
 
     private static Matrix4x4 Transform(in BodyPose pose)
