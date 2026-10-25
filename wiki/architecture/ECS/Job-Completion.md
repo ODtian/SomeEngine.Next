@@ -122,6 +122,9 @@ Job 完成路径记录。清理可以通过正常调度创建子工作，返回�
 接受相同的工作、长度、批大小和 `JobScheduleOptions`。显式批大小沿用每批一份工作值副本；
 `AutomaticBatchSize` 使用现有类型化批大小选择器。
 
+`JobSystem.ExecuteParallel` 提供对应的普通入口与资源集合入口，参数与显式 Scheduler 入口一致。
+它沿既有便利调度入口解析当前 Job 的 Scheduler，协调调用使用默认 Scheduler。
+
 调用线程保留首批并继续动态领取，其余参与者进入 Scheduler 的共享就绪队列。同步批次持有
 领取位置、首个失败和参与者完成数；队列完成本次 drainer 的清理后才登记参与者退出。
 调用方等全部参与者退出，再归还类型化批次并取得结果；范围执行失败同样在这个完成点抛出。
@@ -142,6 +145,7 @@ ECS 的 `ReadOnlyQueryPacketJobs.ExecutePrepared` 将其借用的范围数组交
 
 本节属于已实现的公共接口与使用方法。源码入口：
 [同步范围](../../../src/SomeEngine.Job/Scheduler.SynchronousParallel.cs)、
+[便利入口](../../../src/SomeEngine.Job/JobSystem.cs)、
 [共享队列](../../../src/SomeEngine.Job/WorkQueue.cs)、
 [只读查询分区](../../../src/SomeEngine.ECS.Systems/ReadOnlyQueryPacketJobs.cs)。
 公共行为检查：[同步结果和完成点](../../../tests/SomeEngine.Job.Tests/SynchronousParallelTests.cs)、
@@ -197,3 +201,28 @@ await handle;
 更新。源码入口：[工作流与批次](../../../src/SomeEngine.Job/JobWorkStreams.cs)、
 [执行完成](../../../src/SomeEngine.Job/Scheduler.Execution.cs)；公共检查为
 [回调数据使用期](../../../tests/SomeEngine.Job.Tests/ResourceLifetimeTests.cs)。
+
+## 自动批次与统计
+
+本节属于已实现的算法与公共配置。Scheduler 按工作类型持有独立的自动批次代价，
+每个类型按两倍工作规模区间分别保存单位元素时间的移动平均值。选批以
+`max(1, WorkerCount)` 作为密度基数。每个样本以四分之一
+权重更新已有代价。冷启动在配置密度上限内采用每 worker 最多四块；学习后的批大小
+按 `AutoBatchTargetMicroseconds` 选择，并保持在冷启动密度与
+`AutoBatchMaxTilesPerWorker` 之间。显式批大小沿用调用方指定值。
+
+异步范围按每次领取量子汇总实际回调代价，同步范围按每位参与者汇总，调用线程也参与
+同步采样。两种入口读写所属 Scheduler 的同一类型与规模代价。批次返回时清空该代价引用，
+类型化批次池继续复用。
+
+`EnableCounters` 控制诊断计数及就绪票时延采样。关闭时，自动批次保留其选批所需的
+回调代价反馈；显式批大小直接执行。开启时，还更新线程计数与就绪票时间。
+同步调用的 `ScheduledJobs`、`ExecutedWorkItems` 和 `FaultedWorkItems` 包含调用线程
+实际完成的范围；`CompletedHandles` 对应实际完成记录。`QueuedWorkItems` 对应各入口
+占用的队列工作容量，同步入口按入队参与者计数。
+
+源码入口：[自动批次代价](../../../src/SomeEngine.Job/ParallelBatchSizer.cs)、
+[同步范围](../../../src/SomeEngine.Job/Scheduler.SynchronousParallel.cs)、
+[统计](../../../src/SomeEngine.Job/RuntimeCounters.cs)。公共检查：
+[类型、规模与统计配置](../../../tests/SomeEngine.Job.Tests/AutomaticBatchTests.cs)；
+完整调用测量：[Job benchmark](../../../tools/SomeEngine.Job.Benchmarks/README.md)。

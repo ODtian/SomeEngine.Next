@@ -44,7 +44,7 @@ public sealed class TerrainCacheTests
                 StandardClusterVertexEncoder.Instance, ClusterBuildStrategy.Realtime);
             var scene = new TerrainScene(adapter, grid);
             Assert.Equal(2, scene.UseCache(restored, cached, identity));
-            using var material = new UnlitMaterial();
+            var material = new UnlitMaterial();
             int placement = scene.Add(new TerrainPlacement(restored, new(0, 0, 0, 2, 1, 1), [material]));
             using var world = new World();
             using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
