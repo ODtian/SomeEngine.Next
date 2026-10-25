@@ -1,5 +1,4 @@
 using SomeEngine.Core.Diagnostics;
-using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster.Pipeline;
 
 
@@ -24,7 +23,6 @@ public sealed record RuntimeStartupOptions(
     bool AsyncCompute,
     ProfilerOptions Profiler)
 {
-    public DeviceFeatures RequiredDeviceFeatures { get; init; }
     public bool HideWindow { get; init; }
     public bool ForceHardwareRaster { get; init; }
     public bool UseInstanceGroups { get; init; }
