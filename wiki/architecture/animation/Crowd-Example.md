@@ -37,36 +37,40 @@ LBS 的矩阵、位置和法线中间值使用 `precise`，统一 inline 与缓�
 
 在现有 checkout 的 Release 开发组合中生成项目内容，再构建游戏组合复制素材。
 重复构建沿用已生成角色网格的资产 GUID；两条材质路径使用同一个网格身份。
-将 `$queue` 指向主 checkout 的共享队列入口：
+准备测量的构建、内容生成与测量使用共享队列的默认独占模式；同一 `--session` 按 FIFO 执行。
+将 `$queue` 指向主 checkout 的共享队列入口，带冒号的原生命令参数保持完整字符串：
 
 ```powershell
 $queue = '<primary checkout>/tools/Invoke-Benchmark.ps1'
 $env:DOTNET_PROCESSOR_COUNT = '4'
-& $queue --cpu --session crowd dotnet build samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEngineDevelopment=true -p:PublishAot=false -p:RuntimeIdentifier= --disable-build-servers /m:1 /nodeReuse:false /p:UseSharedCompilation=false
+& $queue --session crowd dotnet build samples/DefaultGame/DefaultGame.csproj -c Release '-p:SomeEngineDevelopment=true' '-p:PublishAot=false' '-p:RuntimeIdentifier=' --disable-build-servers '-m:1' '-nodeReuse:false' '-p:UseSharedCompilation=false'
 & $queue --session crowd samples/DefaultGame/bin/development/Release/net10.0/DefaultGame.exe sample-crowd
-& $queue --cpu --session crowd dotnet build samples/DefaultGame/DefaultGame.csproj -c Release -p:PublishAot=false -p:RuntimeIdentifier= --disable-build-servers /m:1 /nodeReuse:false /p:UseSharedCompilation=false
+& $queue --session crowd dotnet build samples/DefaultGame/DefaultGame.csproj -c Release '-p:PublishAot=false' '-p:RuntimeIdentifier=' --disable-build-servers '-m:1' '-nodeReuse:false' '-p:UseSharedCompilation=false'
 ```
 
 修改示例材质后，开发组合的 `sample-crowd-materials` 命令更新两条材质及主项目已经构建的共同 Shader 资产，继续使用现有角色网格。
 
-`DefaultGame --crowd-cache` 是选定的 1000 人场景入口，使用缓存材质路径。
-`DefaultGame --crowd-inline` 单独选择 inline 材质路径。
+`DefaultGame --crowd-inline` 单独选择 inline 材质路径；
+`DefaultGame --crowd-cache` 单独选择缓存材质路径。两者各测量对应的 1000 人场景。
 `DefaultGame --crowd` 显示两个角色场景，供同一配置下的双路径比较；
 普通启动的选择器同时包含三个已有场景和两个角色场景。
 `--regression` 选择 `1024 spheres`、`Sponza`、`Amazon Bistro`，供 `tools/Measure-Scenes.ps1` 使用。
 `--measure` 在启动时测量所选集合并结束应用。
 
-以下命令是两条变形路径采用同一配置的测量例子：
+以下命令是两条变形路径采用同一 D3D12 配置的测量例子。应用运行在当前输入桌面，
+窗口保持可见并完成真实呈现。窗口显示与启动呈现完成点分别见
+[NativeWindow](../../../src/SomeEngine.Runtime/NativeWindow.cs) 和
+[ApplicationStartupTiming](../../../src/SomeEngine.Runtime/ApplicationStartupTiming.cs)。
 
 ```powershell
 $env:DOTNET_PROCESSOR_COUNT = '4'
 $env:DOTNET_TieredCompilation = '0'
 $env:DOTNET_ReadyToRun = '0'
-& $queue --session crowd samples/DefaultGame/bin/game/Release/net10.0/DefaultGame.exe --crowd --measure --hardware-adapter --hidden-window --no-vsync --no-debug-ui --no-taa --no-vsm --async-compute --fixed-step 0.016666667
+& $queue --session crowd samples/DefaultGame/bin/game/Release/net10.0/DefaultGame.exe --crowd --measure --hardware-adapter --graphics-backend d3d12 --no-vsync --no-debug-ui --no-taa --no-vsm --async-compute --fixed-step 0.016666667
 ```
 
-将同一命令的 `--crowd` 选择为 `--crowd-cache`，可单独运行所选缓存场景；
-其余渲染参数、固定模拟窗口和完整 CPU/GPU 采集方式相同。
+将同一命令的 `--crowd` 分别替换为 `--crowd-inline` 或 `--crowd-cache`，
+可单独测量 inline 或缓存路径；其余渲染参数、固定模拟窗口和完整 CPU/GPU 采集方式保持相同。
 
 角色场景的启动内容固定为 1920×1080，相机位于 `(0,30,-35)`，观察 `(0,.8,20)`，
 垂直视角为 `.8` 弧度，近远面为 `40/90`，覆盖角色区域并保持关节相接表面的深度精度；
