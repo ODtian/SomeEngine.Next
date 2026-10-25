@@ -174,15 +174,28 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                 gpu.Controls!.AsSpan().CopyTo(section.ControlCapture);
             }
             section.Copied = copied;
-            section.Data = new(source.Skeleton, section.Data.Parents, section.Data.Current,
-                model.Version, source.BindingVersion, gpu.Clip, gpu.Starts,
-                isGpu ? gpu.InputNumber : _input,
-                isGpu ? gpu.CalculationTime : model.Time,
-                isGpu ? gpu.SampleTime : (float)model.SampleTime,
-                gpu.StateMachine, gpu.Blend, section.ControlValues, gpu.PlaybackTime, gpu.Playing,
-                gpu.Rig, section.GoalValues, gpu.ModelOffset, gpu.Movement, gpu.ModelToWorld, source.CpuBones, section.CalculationValues,
-                new(section.Target, source, gpu.Starts, gpu.InputNumber, gpu.AnimationStarts), gpu.Readbacks,
-                gpu.Evaluation, gpu.ExtractRootMotion, gpu.RootCorrection);
+            ref RenderBoneSectionData data = ref section.Data;
+            data.Version = model.Version;
+            data.BindingVersion = source.BindingVersion;
+            data.Clip = gpu.Clip;
+            data.Starts = gpu.Starts;
+            data.InputNumber = isGpu ? gpu.InputNumber : _input;
+            data.CalculationTime = isGpu ? gpu.CalculationTime : model.Time;
+            data.SampleTime = isGpu ? gpu.SampleTime : (float)model.SampleTime;
+            data.StateMachine = gpu.StateMachine;
+            data.Blend = gpu.Blend;
+            data.PlaybackTime = gpu.PlaybackTime;
+            data.Playing = gpu.Playing;
+            data.Rig = gpu.Rig;
+            data.ModelOffset = gpu.ModelOffset;
+            data.Movement = gpu.Movement;
+            data.ModelToWorld = gpu.ModelToWorld;
+            data.CpuBones = source.CpuBones;
+            data.Identity = new(section.Target, source, gpu.Starts, gpu.InputNumber, gpu.AnimationStarts);
+            data.Readbacks = gpu.Readbacks;
+            data.Evaluation = gpu.Evaluation;
+            data.ExtractRootMotion = gpu.ExtractRootMotion;
+            data.RootCorrection = gpu.RootCorrection;
         }
         _removedMeshes.Clear();
         if (fullCollection)
@@ -357,7 +370,7 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
         internal Entity Entity;
         internal SourceSection? Parent;
         internal SourceJoint[] Links = [];
-        internal RenderBoneSectionData Data;
+        internal RenderBoneSectionData Data = new() { Skeleton = source.Skeleton };
         internal Matrix4x4[] Current = [];
         internal Matrix4x4[] Capture = [];
         internal PoseCalculation[] CalculationValues = [], CalculationCapture = [];
