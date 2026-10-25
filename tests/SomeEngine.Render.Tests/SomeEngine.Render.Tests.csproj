@@ -19,6 +19,7 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
     <ProjectReference Include="../../tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Render\SomeEngine.Render.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />

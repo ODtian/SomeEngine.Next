@@ -49,6 +49,8 @@ public partial class World
                 "The active read-snapshot callback cannot mutate or change control state on its " +
                 "source World. Read through the declared query or another read-only World API.");
         }
+        if (s_queryReadCallbacks?.ContainsKey((this, JobExecutionContext.Depth)) == true)
+            throw new InvalidOperationException("The current read-only query callback cannot mutate its source World.");
     }
 
     private void ExitReadSnapshotCallback(int ownerThreadId)
