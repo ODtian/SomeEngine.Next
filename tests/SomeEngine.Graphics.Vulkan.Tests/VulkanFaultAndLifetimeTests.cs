@@ -1,6 +1,7 @@
 namespace SomeEngine.Graphics.Vulkan.Tests;
 
 using SlangShaderSharp;
+using SomeEngine.Job;
 using Xunit;
 
 [Xunit.Collection("Vulkan shader compilation")]
@@ -103,14 +104,53 @@ public sealed class VulkanFaultAndLifetimeTests(VulkanTestCompiler shaderCompile
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = graphics.CreateDevice(new DeviceDesc(default, queues));
         PipelineCache cache = graphics.CreatePipelineCache(device, default);
-        Task<Pipeline> creation = graphics.CreateComputePipelineAsync(
-            device,
-            new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)),
-            cache);
-        cache.Dispose();
-
-        using Pipeline pipeline = await creation.WaitAsync(TimeSpan.FromSeconds(5));
+        using var scheduler = new Scheduler(new() { WorkerCount = 1 });
+        var requested = new Task<Pipeline>[1];
+        ComputePipelineDesc description = new(shader.SlangCode, shader.Reflection,
+            shader.Entries[0], shader.GetEntryCode(0));
+        await scheduler.Schedule(new CreatePipelineAndDisposeCache(graphics, device, description, cache, requested)).WaitAsync();
+        using Pipeline pipeline = await requested[0].WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(PipelineType.Compute, pipeline.Type);
+        Assert.True(scheduler.GetStats().ScheduledJobs > 1);
+    }
+
+    private readonly record struct CreatePipelineAndDisposeCache(IGraphicsBackend Backend, Device Device,
+        ComputePipelineDesc Description, PipelineCache Cache, Task<Pipeline>[] Result) : IJob
+    {
+        public void Execute()
+        {
+            Result[0] = Backend.CreateComputePipelineAsync(Device, Description, Cache);
+            Cache.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task DeviceClosureEndsAcceptedPipelineRequestBeforeSharedExecution()
+    {
+        VulkanTestShader shader = shaderCompiler.Compile("""
+            [shader("compute")][numthreads(1,1,1)] void computeMain() { }
+            """, ("computeMain", SlangStage.Compute));
+        using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+        using Device device = backend.CreateDevice(new DeviceDesc(default, [new(QueueType.Graphics)]));
+        using PipelineCache cache = backend.CreatePipelineCache(device, default);
+        using var scheduler = new Scheduler(new() { WorkerCount = 1 });
+        var requested = new Task<Pipeline>[1];
+        ComputePipelineDesc description = new(shader.SlangCode, shader.Reflection,
+            shader.Entries[0], shader.GetEntryCode(0));
+        await scheduler.Schedule(new CreatePipelineAndCloseDevice(backend, device, description, cache, requested)).WaitAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => requested[0]);
+        Assert.Equal(DeviceStatus.Disposed, device.Status);
+    }
+
+    private readonly record struct CreatePipelineAndCloseDevice(IGraphicsBackend Backend, Device Device,
+        ComputePipelineDesc Description, PipelineCache Cache, Task<Pipeline>[] Result) : IJob
+    {
+        public void Execute()
+        {
+            Result[0] = Backend.CreateComputePipelineAsync(Device, Description, Cache);
+            Device.Dispose();
+            Assert.True(Result[0].IsCompleted);
+        }
     }
 
     [Fact]
