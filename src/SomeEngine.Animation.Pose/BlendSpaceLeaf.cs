@@ -28,17 +28,17 @@ internal sealed class BlendSpaceSamples
     internal readonly JobResourceAccess[] Accesses;
     internal double Phase;
 
-    internal BlendSpaceSamples(BlendSpace space, int bones)
+    internal BlendSpaceSamples(Scheduler scheduler, BlendSpace space, int bones)
     {
         Weights = new float[space.Samples.Length];
         Inputs = new BoneTransform[bones * space.Samples.Length];
         Output = new BoneTransform[bones];
         Accesses = new JobResourceAccess[space.Samples.Length + 3];
-        Accesses[0] = JobResourceAccess.Read(Weights);
-        Accesses[1] = JobResourceAccess.Write(Inputs);
-        Accesses[2] = JobResourceAccess.Write(Output);
+        Accesses[0] = JobResourceAccess.Read(scheduler, Weights);
+        Accesses[1] = JobResourceAccess.Write(scheduler, Inputs);
+        Accesses[2] = JobResourceAccess.Write(scheduler, Output);
         for (int sample = 0; sample < space.Samples.Length; sample++)
-            Accesses[sample + 3] = JobResourceAccess.Read(JobSystem.Default.GetResourceToken(space.Samples[sample].Clip));
+            Accesses[sample + 3] = JobResourceAccess.Read(scheduler.GetResourceToken(space.Samples[sample].Clip));
     }
 }
 
@@ -56,7 +56,7 @@ public readonly struct BlendSpaceLeaf : IAnimationLeaf<BlendSpaceParameters>
         var instance = new BlendSpaceInstance
         {
             Definition = definitions, Index = index, Placement = placement, Output = output,
-            Samples = new BlendSpaceSamples(parameters.Space, output.Range.Count),
+            Samples = new BlendSpaceSamples(PoseAnimation.GetScheduler(world), parameters.Space, output.Range.Count),
         };
         world.ExecuteBufferWrite<BlendSpaceInstance, BlendSpaceInstance>(animation, ref instance,
             static (instances, ref instance) => instances.Add(instance));

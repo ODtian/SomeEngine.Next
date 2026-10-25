@@ -39,13 +39,14 @@ internal sealed class PoseBlendSamples
     internal readonly BoneTransform[] Inputs, Output;
     internal readonly float[] Weights;
     internal readonly JobResourceAccess[] Accesses;
-    internal PoseBlendSamples(int bones, int inputs)
+    internal PoseBlendSamples(Scheduler scheduler, int bones, int inputs)
     {
         Stride = bones + 1;
         Inputs = new BoneTransform[Stride * inputs];
         Output = new BoneTransform[Stride];
         Weights = new float[inputs];
-        Accesses = [JobResourceAccess.Read(Inputs), JobResourceAccess.Read(Weights), JobResourceAccess.Write(Output)];
+        Accesses = [JobResourceAccess.Read(scheduler, Inputs), JobResourceAccess.Read(scheduler, Weights),
+            JobResourceAccess.Write(scheduler, Output)];
     }
 }
 
@@ -67,7 +68,7 @@ public readonly struct PoseBlendLeaf : IAnimationLeaf<PoseBlendParameters>
         {
             Definition = definitions, Index = index, Placement = placement, Output = output, Inputs = inputs,
             Node = PoseAnimation.RegisterNode(world, animation, output, inputs, in placement),
-            Samples = new PoseBlendSamples(output.Range.Count, inputs.Length),
+            Samples = new PoseBlendSamples(PoseAnimation.GetScheduler(world), output.Range.Count, inputs.Length),
         };
         world.ExecuteBufferWrite<PoseBlendInstance, PoseBlendInstance>(animation, ref instance,
             static (instances, ref instance) => instances.Add(instance));
