@@ -131,10 +131,12 @@ internal sealed partial class ResourceManager
         {
             Access = access;
             State = state;
+            Container = state.ContainerReference?.Target;
         }
 
         internal JobResourceAccess Access { get; }
 
         internal ResourceState State { get; }
+        internal object? Container { get; }
     }
 }
