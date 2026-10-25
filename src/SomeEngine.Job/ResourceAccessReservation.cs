@@ -18,21 +18,12 @@ internal readonly struct ResourceAccessReservation
 
 internal sealed class ResourceAccessReservationData
 {
-    internal ResourceAccessReservationData(
-        ResourceManager.ReservedResourceAccess[] accesses,
-        int count,
-        Type jobType)
-    {
-        Accesses = accesses;
-        Count = count;
-        JobType = jobType;
-    }
-
-    internal ResourceManager.ReservedResourceAccess[] Accesses { get; }
+    internal ResourceManager.ReservedResourceAccess[] Accesses = [];
+    internal int References;
 
     internal int Count { get; set; }
 
-    internal Type JobType { get; }
+    internal Type JobType { get; set; } = null!;
 
     internal ResourceReservationStatus Status { get; set; }
 }
