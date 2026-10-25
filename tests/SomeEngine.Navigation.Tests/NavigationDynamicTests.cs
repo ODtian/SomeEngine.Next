@@ -109,6 +109,41 @@ public sealed class NavigationDynamicTests
         Assert.Same(unrelatedPath, world.Read<NavigationPathResult>(unrelated).Path);
     }
 
+    [Fact]
+    public void ManySourcesMergeMovedAndRemovedTileVersionsIntoOrderedInput()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var scene = new NavigationScene(new(default, default, default));
+        var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
+        var region = new NavigationRegionSources(scene, 7, new(new(0, -1, 0), new(64, 4, 8)),
+            profile, new NavigationPolicy(), new() { CellSize = 0.25f, TileSize = 32 });
+        NavigationGeometry geometry = Floor(2, 2, 3, 3);
+        Entity[] entities = new Entity[260];
+        for (int index = 0; index < entities.Length; index++)
+        {
+            entities[index] = world.CreateEntity(new NavigationSource(geometry, (ulong)index + 1));
+            world.Add(entities[index], new SourcePlacement(Matrix4x4.Identity));
+        }
+        world.Replace(entities[^1], new SourcePlacement(Matrix4x4.CreateTranslation(48, 0, 0)));
+        var sources = new NavigationSourceSystem<SourcePlacement, SourcePlacementReader>(world, region);
+        NavigationSourceInput first = sources.Schedule().Complete().Input;
+        world.Replace(entities[0], new SourcePlacement(Matrix4x4.CreateTranslation(32, 0, 0)));
+        world.DestroyEntity(entities[^1]);
+
+        NavigationSourceChanges changes = sources.Schedule().Complete();
+
+        Assert.Equal([new NavigationTileCoordinate(0, 0), new(4, 0), new(6, 0)], changes.ChangedTiles.ToArray());
+        Assert.Equal(first.Version + 1, changes.Input.Version);
+        Assert.Equal(259, changes.Input.Geometry.Sources.Length);
+        Assert.Equal(Matrix4x4.CreateTranslation(32, 0, 0), changes.Input.Geometry.Sources.Span[0].Transform);
+        Assert.Equal(Enumerable.Range(1, 259).Select(value => (ulong)value),
+            changes.Input.Geometry.Sources.ToArray().Select(source => source.Version));
+        foreach (int tile in new[] { 0, 4, 6 }) Assert.Equal(changes.Input.Version, changes.Input.TileVersions.Span[tile]);
+        Assert.Equal(first.TileVersions.Span[2], changes.Input.TileVersions.Span[2]);
+        Assert.Same(changes.Input, sources.Schedule().Complete().Input);
+    }
+
     // The floor rectangle is an example input supplied through NavigationGeometry.
     private static NavigationGeometry Floor(float left, float back, float right, float front) => new(
         [new(left, 0, back), new(left, 0, front), new(right, 0, front), new(right, 0, back)],
