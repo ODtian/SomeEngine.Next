@@ -88,6 +88,7 @@ public readonly struct SolveAvbd<TConstraints> : IPhysicsStage where TConstraint
                         equation.Factorize();
                         equation.SolveResponse(-equation.LinearGradient, -equation.AngularGradient,
                             out var translation, out var rotation);
+                        constraints.AdjustBodyChange(in context, row.Entity, bodies, in equation, ref translation, ref rotation);
                         var center = pose.GetCenterOfMass(in mass) + translation;
                         pose.Rotation = BodyRotation.ApplyChange(pose.Rotation, rotation);
                         pose.SetCenterOfMass(center, in mass);
