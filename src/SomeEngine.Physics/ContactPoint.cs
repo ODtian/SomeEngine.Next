@@ -21,6 +21,7 @@ public struct ContactPoint : IComponent
     public Vector3 BodyAnchorDelta;
     public int FirstBodyCount;
     public bool WarmStart;
+    public ContactPrediction Prediction;
 }
 
 /// <summary>A protected point-to-simulated-body relationship for one weighted anchor occurrence.</summary>
