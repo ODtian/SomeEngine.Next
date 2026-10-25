@@ -44,18 +44,59 @@ public sealed class NavigationStreaming(NavigationScene scene, Scheduler? schedu
         if (!Applied.IsCompleted) return;
         Applied.Complete();
         NavigationSceneContent content = scene.Content;
+        NavigationInterestData[] interests = NavigationStreamingRanges.CaptureInterests(Interests);
+        NavigationSceneRegion[] regions = content.Regions.ToArray();
+        var nearby = NavigationStreamingRanges.CollectTiles(_scheduler,
+            regions.Select(region => region.Graph.Tiles).ToArray(), interests);
+        var routes = new List<NavigationSceneTileId>[interests.Length];
+        _scheduler.ExecuteParallel(new CollectRoutes(interests, routes), interests.Length,
+            JobScheduleOptions.AutomaticBatchSize, NavigationStreamingRanges.CollectPathReads(_scheduler, interests).ToArray());
         var demanded = new HashSet<NavigationSceneTileId>();
-        foreach (NavigationInterest interest in Interests)
+        for (int interest = 0; interest < interests.Length; interest++)
         {
-            Vector3 forward = interest.Position + interest.Direction * interest.LookAheadDistance;
-            foreach (NavigationSceneRegion region in content.Regions.Span)
-            foreach (NavigationRegionTile tile in region.Graph.Tiles.Span)
-                if (Distance(interest.Position, tile.Bounds) <= interest.Radius ||
-                    Distance(forward, tile.Bounds) <= interest.Radius)
-                    demanded.Add(new(region.Id, tile.Tile));
-            if (interest.Path is not { } path) continue;
+            foreach (NavigationInterestTileRange range in nearby)
+                foreach (NavigationTileCoordinate tile in range.TilesByInterest[interest]) demanded.Add(new(regions[range.DirectoryIndex].Id, tile));
+            foreach (NavigationSceneTileId tile in routes[interest]) demanded.Add(tile);
+        }
+        NavigationSceneTileId[] candidates = demanded.Concat(content.Tiles.ToArray().Select(tile => tile.Id))
+            .Concat(_reads.Keys).Distinct().ToArray();
+        var distances = NavigationStreamingRanges.CalculateDistances(_scheduler, candidates, interests, new SceneTileBounds(content));
+        var selected = demanded.OrderBy(tile => distances[tile]).Take(ResidentTileBudget).ToHashSet();
+        _update++;
+        foreach (NavigationSceneTileId tile in selected)
+        {
+            _lastUsed[tile] = _update;
+            if (!content.TryGetTile(tile, out _) && !_reads.ContainsKey(tile) && _sources.TryGetValue(tile.Region, out var source))
+                _reads.Add(tile, source.ScheduleRead(tile.Tile, _scheduler));
+        }
+
+        var completed = new List<NavigationSceneTile>();
+        foreach (var pair in _reads.ToArray())
+        {
+            if (!pair.Value.Completion.IsCompleted) continue;
+            _reads.Remove(pair.Key);
+            completed.Add(new(pair.Key.Region, pair.Key.Tile, pair.Value.Complete()));
+        }
+        HashSet<NavigationSceneTileId> keep = content.Tiles.ToArray().Select(tile => tile.Id).Concat(completed.Select(tile => tile.Id))
+            .Distinct().OrderByDescending(selected.Contains).ThenBy(tile => distances[tile])
+            .ThenByDescending(tile => _lastUsed.GetValueOrDefault(tile)).Take(ResidentTileBudget).ToHashSet();
+        NavigationSceneTileId[] removed = content.Tiles.ToArray().Where(tile => !keep.Contains(tile.Id)).Select(tile => tile.Id).ToArray();
+        completed.RemoveAll(tile => !keep.Contains(tile.Id));
+        foreach (NavigationSceneTileId tile in removed) _lastUsed.Remove(tile);
+        if (completed.Count == 0 && removed.Length == 0) return;
+        Applied = _scheduler.Schedule(new ScheduleApplyTiles(scene, completed.ToArray(), removed, _scheduler),
+            JobResourceAccess.Write(_scheduler.GetResourceToken(scene)));
+    }
+
+    private readonly struct CollectRoutes(NavigationInterestData[] interests, List<NavigationSceneTileId>[] output) : IJobParallelFor
+    {
+        public void Execute(int item)
+        {
+            NavigationInterestData interest = interests[item];
+            List<NavigationSceneTileId> demanded = output[item] = [];
+            if (interest.Path is not { } path) return;
             if (!path.RequiredTiles.IsEmpty) demanded.Add(path.RequiredTiles.Span[0]);
-            if (path.RegionRoute is not { } route) continue;
+            if (path.RegionRoute is not { } route) return;
             ReadOnlySpan<NavigationRouteEntrance> entrances = route.Entrances.Span;
             int closest = 0;
             float closestDistance = float.PositiveInfinity;
@@ -74,45 +115,23 @@ public sealed class NavigationStreaming(NavigationScene scene, Scheduler? schedu
                 previous = entrances[index].Position;
             }
         }
-        var selected = demanded.OrderBy(tile => DemandDistance(content, tile)).Take(ResidentTileBudget).ToHashSet();
-        _update++;
-        foreach (NavigationSceneTileId tile in selected)
-        {
-            _lastUsed[tile] = _update;
-            if (!content.TryGetTile(tile, out _) && !_reads.ContainsKey(tile) && _sources.TryGetValue(tile.Region, out var source))
-                _reads.Add(tile, source.ScheduleRead(tile.Tile, _scheduler));
-        }
-
-        var completed = new List<NavigationSceneTile>();
-        foreach (var pair in _reads.ToArray())
-        {
-            if (!pair.Value.Completion.IsCompleted) continue;
-            _reads.Remove(pair.Key);
-            completed.Add(new(pair.Key.Region, pair.Key.Tile, pair.Value.Complete()));
-        }
-        HashSet<NavigationSceneTileId> keep = content.Tiles.ToArray().Select(tile => tile.Id).Concat(completed.Select(tile => tile.Id))
-            .Distinct().OrderByDescending(selected.Contains).ThenBy(tile => DemandDistance(content, tile))
-            .ThenByDescending(tile => _lastUsed.GetValueOrDefault(tile)).Take(ResidentTileBudget).ToHashSet();
-        NavigationSceneTileId[] removed = content.Tiles.ToArray().Where(tile => !keep.Contains(tile.Id)).Select(tile => tile.Id).ToArray();
-        completed.RemoveAll(tile => !keep.Contains(tile.Id));
-        foreach (NavigationSceneTileId tile in removed) _lastUsed.Remove(tile);
-        if (completed.Count == 0 && removed.Length == 0) return;
-        Applied = _scheduler.Schedule(new ScheduleApplyTiles(scene, completed.ToArray(), removed, _scheduler),
-            JobResourceAccess.Write(_scheduler.GetResourceToken(scene)));
     }
 
-    private float DemandDistance(NavigationSceneContent content, NavigationSceneTileId id)
+    private readonly struct SceneTileBounds(NavigationSceneContent content) : INavigationTileBounds<NavigationSceneTileId>
     {
-        NavigationBounds bounds = default;
-        foreach (NavigationRegionTile tile in content.GetRegion(id.Region).Graph.Tiles.Span)
-            if (tile.Tile == id.Tile) { bounds = tile.Bounds; break; }
-        float distance = float.PositiveInfinity;
-        foreach (NavigationInterest interest in Interests) distance = MathF.Min(distance, Distance(interest.Position, bounds));
-        return distance;
+        public NavigationBounds GetBounds(NavigationSceneTileId id)
+        {
+            foreach (NavigationRegionTile tile in content.GetRegion(id.Region).Graph.Tiles.Span)
+                if (tile.Tile == id.Tile) return tile.Bounds;
+            return default;
+        }
+        public void AddReadAccesses(Scheduler scheduler, List<JobResourceAccess> accesses)
+        {
+            accesses.Add(NavigationJobAccess.Read(scheduler, content.Regions));
+            foreach (NavigationSceneRegion region in content.Regions.Span)
+                accesses.Add(NavigationJobAccess.Read(scheduler, region.Graph.Tiles));
+        }
     }
-
-    private static float Distance(Vector3 point, NavigationBounds bounds) => Vector3.Distance(point,
-        Vector3.Clamp(point, bounds.Minimum, bounds.Maximum));
 
     public void Dispose()
     {
