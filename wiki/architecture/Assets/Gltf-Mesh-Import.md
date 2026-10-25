@@ -73,6 +73,8 @@ public sealed partial class VertexStreamsBlock : AssetBlock
 
 ## Cluster geometry and attributes
 
+`GltfMeshImporter` 取得共享位置流后，在导入协调阶段固定各图元的 `ReadOnlyMemory<double>`、分量数和顶点范围；每段最多 4096 个顶点，由 `JobSystem.ExecuteParallel` 计算独立的局部最小值和最大值。同步范围完成后，导入方归约为 `MeshBlock.Bounds`，中心取整体范围中点，半径保持最大轴长度的一半。区域名称、来源图元和材质对应关系也由导入方集中写入。共享位置流和各范围的数组引用覆盖整个计算期，完成后才安装 `MeshBlock`。
+
 中立组合包含 `GltfVertexStreamsImporter`；Cluster 组合包含 `ClusterGeometryImporter`、`ClusterVertexAttributesImporter`、`ClusterSkinInfluencesImporter` 与 `ClusterMorphDeltasImporter`。Importer 通过无参构造与生成的能力描述注册，算法由 Importer 的实现持有。
 
 几何焊接逐位比较 double 中保存的全部基础属性、来源切线、各形变目标及来源形变切线，同时区分材质、属性名称与分量数、形变目标数量和 Deform 类别。只为被三角形引用的行建立顶点身份。三角形的材质与区域来源独立于焊接顶点持有；现有 Cluster/LOD 流程使用区域对应的工作拓扑保护区段边界，持久顶点身份继续共享。`Vertices` 中每一项包含来源图元号、准备流的行号和原 accessor 行号，所有逐顶点 Importer 可使用这份映射。
