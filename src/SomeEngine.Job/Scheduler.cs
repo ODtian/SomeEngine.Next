@@ -185,9 +185,19 @@ public sealed partial class Scheduler : IDisposable
         JobHandle dependency)
         where T : struct, IJob
     {
+        return ScheduleFinally(job, ReadOnlySpan<JobResourceAccess>.Empty, options, dependency);
+    }
+
+    public JobHandle ScheduleFinally<T>(
+        in T job,
+        ReadOnlySpan<JobResourceAccess> accesses,
+        JobScheduleOptions options,
+        JobHandle dependency)
+        where T : struct, IJob
+    {
         return ScheduleCore(
             job,
-            ReadOnlySpan<JobResourceAccess>.Empty,
+            accesses,
             options,
             dependency,
             ignoreExplicitDependencyFault: true);
@@ -317,7 +327,8 @@ public sealed partial class Scheduler : IDisposable
                 state,
                 dependency,
                 reservation,
-                work);
+                work,
+                ignoreExplicitDependencyFault);
         }
         else if (RegisterScheduleDependencies(
                      state,

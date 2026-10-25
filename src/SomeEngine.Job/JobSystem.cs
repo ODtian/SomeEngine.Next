@@ -338,9 +338,8 @@ public static partial class JobSystem
     }
 
     /// <summary>
-    /// Schedules an internal cleanup job after <paramref name="dependency"/> reaches a terminal
-    /// state, even when that dependency faulted. The cleanup job is responsible for observing and
-    /// propagating the dependency fault after it has restored its owner's invariants.
+    /// Schedules cleanup after <paramref name="dependency"/> reaches success, failure, or cancellation.
+    /// The cleanup job observes its retained completion result after restoring its data.
     /// </summary>
     public static JobHandle ScheduleFinally<T>(
         in T job,
@@ -349,6 +348,17 @@ public static partial class JobSystem
         where T : struct, IJob
     {
         return Current.ScheduleFinally(job, options, dependency);
+    }
+
+    /// <summary>Schedules terminal cleanup with its actual resource accesses.</summary>
+    public static JobHandle ScheduleFinally<T>(
+        in T job,
+        ReadOnlySpan<JobResourceAccess> accesses,
+        JobScheduleOptions options,
+        JobHandle dependency)
+        where T : struct, IJob
+    {
+        return Current.ScheduleFinally(job, accesses, options, dependency);
     }
 
     internal static SynchronousResourceOwner AcquireSynchronousAccess(

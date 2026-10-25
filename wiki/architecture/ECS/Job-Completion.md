@@ -68,6 +68,36 @@ SomeUI 的恢复由 [[architecture/someui/Async-Build|BuildTaskBuilder 与重建
 [ExternalFenceBridgeTests](../../../tests/SomeEngine.Job.Tests/ExternalFenceBridgeTests.cs) 与
 [SomeUI Job 消费](../../../tests/SomeEngine.Views.Tests/JobBuildTests.cs)。
 
+## 带资源的终态清理
+
+本节记录已实现的公共接口与使用方法。`Scheduler` 和默认 Scheduler 的 `JobSystem`
+都提供以下入口，原有三参数入口使用空访问集合：
+
+```csharp
+JobHandle ScheduleFinally<T>(in T job, ReadOnlySpan<JobResourceAccess> accesses,
+    JobScheduleOptions options, JobHandle dependency) where T : struct, IJob;
+```
+
+调用方在提交清理时取得 `dependency.GetAwaiter()`，将这份结果与待归还的输入、缓冲区
+一起保存到清理 `IJob` 的字段中。前置工作成功、失败或取消后，清理进入正常资源激活与冲突
+等待。`accesses` 表达清理实际读写的资源和范围，其保留、访问与释放沿普通调度路径处理。
+
+清理回调先恢复数据或归还缓冲，再调用保存结果的 `GetResult()`。该调用读取前置终态，
+原完成记录在清理等待资源期间复用后，保存的结果继续交付原失败。清理自身的异常沿同一
+Job 完成路径记录。清理可以通过正常调度创建子工作，返回的完成句柄覆盖清理本体和全部
+子工作结束；消费者在这个完成点之后读取结果或回收输入。
+
+实现链路为 `ScheduleFinally` → `ScheduleCore` 的终态依赖策略 → 前置完成 → 资源激活
+及冲突等待 → `IJob.Execute()` → 工作释放与子工作汇合 → 最终完成结果。终态依赖策略沿
+已有依赖通知传递，前置状态与资源数据继续由各自原持有者维护。
+
+源码入口：[清理调度](../../../src/SomeEngine.Job/Scheduler.cs)、
+[依赖与资源激活](../../../src/SomeEngine.Job/Scheduler.Dependency.cs)、
+[结果持有](../../../src/SomeEngine.Job/JobHandleAwaitExtensions.cs)。
+公共行为检查：[CleanupResourceTests](../../../tests/SomeEngine.Job.Tests/CleanupResourceTests.cs)、
+[DependencyTests](../../../tests/SomeEngine.Job.Tests/DependencyTests.cs) 与
+[ResourceLifetimeTests](../../../tests/SomeEngine.Job.Tests/ResourceLifetimeTests.cs)。
+
 
 ## 合并依赖结果
 
