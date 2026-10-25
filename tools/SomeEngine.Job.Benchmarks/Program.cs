@@ -4,7 +4,7 @@ using SomeEngine.Job;
 
 int samples = ReadIntArgument(args, "--samples", 12);
 int warmups = ReadIntArgument(args, "--warmups", 3);
-int workerCount = ReadIntArgument(
+int workerCount = ReadNonNegativeArgument(
     args,
     "--workers",
     Math.Max(1, Environment.ProcessorCount - 1));
@@ -14,6 +14,7 @@ int busySpinCount = ReadNonNegativeArgument(args, "--busy-spin", Math.Max(spinCo
 bool automatic = args.Contains("--auto", StringComparer.OrdinalIgnoreCase);
 bool counters = args.Contains("--counters", StringComparer.OrdinalIgnoreCase);
 bool synchronous = args.Contains("--synchronous", StringComparer.OrdinalIgnoreCase);
+bool dependencies = args.Contains("--dependencies", StringComparer.OrdinalIgnoreCase);
 
 JobSystem.Initialize(new JobRuntimeConfig
 {
@@ -26,9 +27,20 @@ JobSystem.Initialize(new JobRuntimeConfig
 try
 {
     Console.WriteLine(
-        $"SomeEngine.Job benchmark | workers={workerCount} | samples={samples} | " +
-        $"length={parallelLength} | batch={(automatic ? "auto" : "explicit")} | " +
+        $"SomeEngine.Job benchmark | workers={workerCount} | samples={samples} | warmups={warmups} | " +
+        (dependencies ? "predecessors=1,16,256,4096,16384 | input-copies=1,2 | "
+            : $"length={parallelLength} | batch={(automatic ? "auto" : "explicit")} | ") +
         $"spin={spinCount}/{busySpinCount} | counters={counters}");
+
+    if (dependencies)
+    {
+        foreach (int count in new[] { 1, 16, 256, 4_096, 16_384 })
+        {
+            RunDependencies(JobSystem.Default, count, copies: 1, warmups, samples);
+            RunDependencies(JobSystem.Default, count, copies: 2, warmups, samples);
+        }
+        return;
+    }
 
     if (synchronous)
     {
@@ -178,6 +190,40 @@ static void RunCalls(string name, int warmups, int samples, int calls, Action ac
     Array.Sort(allocatedBytes);
     Console.WriteLine($"{name,-24} calls={calls} p50={Percentile(microseconds, 0.50):F3} us/call " +
         $"p95={Percentile(microseconds, 0.95):F3} us/call allocated-p50={Percentile(allocatedBytes, 0.50):F2} B/call");
+}
+
+static void RunDependencies(Scheduler scheduler, int count, int copies, int warmups, int samples)
+{
+    var inputs = new JobHandle[count * copies];
+    (double Microseconds, double AllocatedBytes) Measure()
+    {
+        for (int index = 0; index < count; index++)
+        {
+            JobHandle handle = scheduler.Schedule(new EmptyJob());
+            for (int copy = 0; copy < copies; copy++)
+                inputs[copy * count + count - index - 1] = handle;
+        }
+        long before = GC.GetTotalAllocatedBytes(precise: true);
+        long started = Stopwatch.GetTimestamp();
+        scheduler.CombineDependencies(inputs).Complete();
+        double elapsed = Stopwatch.GetElapsedTime(started).TotalMicroseconds;
+        return (elapsed, GC.GetTotalAllocatedBytes(precise: true) - before);
+    }
+
+    for (int warmup = 0; warmup < warmups; warmup++)
+        Measure();
+    var microseconds = new double[samples];
+    var allocatedBytes = new double[samples];
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+    for (int sample = 0; sample < samples; sample++)
+        (microseconds[sample], allocatedBytes[sample]) = Measure();
+    Array.Sort(microseconds);
+    Array.Sort(allocatedBytes);
+    Console.WriteLine($"combine-complete unique={count,5} inputs={inputs.Length,5} " +
+        $"p50={Percentile(microseconds, 0.50):F3} us p95={Percentile(microseconds, 0.95):F3} us " +
+        $"allocated-p50={Percentile(allocatedBytes, 0.50):F0} B");
 }
 
 readonly struct EmptyJob : IJob
