@@ -7,7 +7,7 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Physics;
 
-public static class CollisionPairQueries
+public static partial class CollisionPairQueries
 {
     public static void FillPairs<TEnumerable>(this RelationQuery<TEnumerable, (Entity, Entity)> query,
         CollisionPairBuffer pairs)
@@ -76,11 +76,6 @@ public sealed class CollisionPairBuffer : IDisposable
     private readonly int[] _counts;
     private readonly int[] _offsets;
     private readonly int[] _fillPartitions;
-    private readonly JobResourceAccess[] _countAccesses;
-    private readonly JobResourceAccess[] _fillAccesses;
-    private readonly JobResourceToken _pairRangesResource;
-    private readonly JobResourceToken _countResource;
-    private readonly JobResourceToken _offsetResource;
     private readonly JobResourceToken _pairResource;
     private (Entity, Entity)[] _pairs = [];
 
@@ -91,11 +86,6 @@ public sealed class CollisionPairBuffer : IDisposable
         _counts = new int[partitionCapacity];
         _offsets = new int[partitionCapacity + 1];
         _fillPartitions = new int[partitionCapacity];
-        _countAccesses = new JobResourceAccess[partitionCapacity];
-        _fillAccesses = new JobResourceAccess[2 * partitionCapacity];
-        _pairRangesResource = scheduler.CreateResourceToken("Collision pair write ranges");
-        _countResource = scheduler.CreateResourceToken("Collision partition counts");
-        _offsetResource = scheduler.CreateResourceToken("Collision output offsets");
         _pairResource = scheduler.CreateResourceToken("Collision pair output");
     }
 
@@ -112,14 +102,12 @@ public sealed class CollisionPairBuffer : IDisposable
         where TEnumerable : struct, ICollisionPartitionEnumerable
     {
         source.Prepare(queries);
-        int partitionCount = source.Tree.CreatePartitions(_partitions);
+        int partitionCount = source.CreatePartitions(_partitions);
         PartitionCount = partitionCount;
-        for (int index = 0; index < partitionCount; index++)
-            _countAccesses[index] = JobResourceAccess.Write(_countResource, index, 1);
         var countJob = new CountJob<TEnumerable>(source, this);
         if (parallel)
             ReadOnlyQueryPairJobs.ExecuteParallel(queries.Access, queries.First, in countJob,
-                partitionCount, _countAccesses.AsSpan(0, partitionCount), 1);
+                partitionCount);
         else
             ReadOnlyQueryPairJobs.ExecuteInline(queries.Access, queries.First, in countJob, partitionCount);
 
@@ -132,15 +120,13 @@ public sealed class CollisionPairBuffer : IDisposable
             if (count == 0)
                 continue;
             _fillPartitions[fillCount] = index;
-            _fillAccesses[2 * fillCount] = JobResourceAccess.Read(_offsetResource, index, 2);
-            _fillAccesses[2 * fillCount + 1] = JobResourceAccess.Write(_pairRangesResource, _offsets[index], count);
             fillCount++;
         }
         var fillJob = new FillJob<TEnumerable>(source, this);
         FilledPartitionCount = fillCount;
         if (parallel)
             ReadOnlyQueryPairJobs.ExecuteParallel(queries.Access, queries.First, in fillJob,
-                fillCount, _fillAccesses.AsSpan(0, 2 * fillCount), 2);
+                fillCount);
         else
             ReadOnlyQueryPairJobs.ExecuteInline(queries.Access, queries.First, in fillJob, fillCount);
     }
@@ -195,9 +181,6 @@ public sealed class CollisionPairBuffer : IDisposable
 
     public void Dispose()
     {
-        _scheduler.ReleaseResourceToken(_pairRangesResource);
-        _scheduler.ReleaseResourceToken(_countResource);
-        _scheduler.ReleaseResourceToken(_offsetResource);
         _scheduler.ReleaseResourceToken(_pairResource);
     }
 }

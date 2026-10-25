@@ -1,20 +1,66 @@
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Relations;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Physics;
 
 /// <summary>A disjoint part of the tree's unordered pair space.</summary>
 public readonly record struct CollisionNodePair(int First, int Second);
 
-/// <summary>A single-input collision source with typed output over disjoint node pairs.</summary>
-public interface ICollisionPartitionEnumerable : IQueryRelationEnumerable<(Entity, Entity)>
+/// <summary>A candidate source with concrete, disjoint partitions of its entity pair output.</summary>
+public interface ICollisionPartitionEnumerable<TPartition> : IQueryRelationEnumerable<(Entity, Entity)>
+    where TPartition : struct
+{
+    void Prepare(scoped RelationQueryViews queries);
+
+    int CreatePartitions(Span<TPartition> partitions);
+
+    bool Enumerate<TOutput>(TPartition partition, scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct;
+}
+
+/// <summary>BVH candidate partitions retain their node-pair representation at the tree boundary.</summary>
+public interface ICollisionPartitionEnumerable : ICollisionPartitionEnumerable<CollisionNodePair>
 {
     CollisionTree Tree { get; }
 
-    void Prepare(scoped RelationQueryViews queries);
+    int ICollisionPartitionEnumerable<CollisionNodePair>.CreatePartitions(Span<CollisionNodePair> partitions) =>
+        Tree.CreatePartitions(partitions);
+}
 
-    bool Enumerate<TOutput>(CollisionNodePair partition, scoped RelationQueryViews queries, ref TOutput output)
-        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct;
+/// <summary>The complete pair range of a general relation query.</summary>
+public readonly struct RelationPairPartition;
+
+public static class CollisionPartitionQueries
+{
+    public static RelationQuery<RelationPairPartitions<TEnumerable>, (Entity, Entity)> PartitionPairs<TEnumerable>(
+        this RelationQuery<TEnumerable, (Entity, Entity)> query)
+        where TEnumerable : struct, IQueryRelationEnumerable<(Entity, Entity)> => new(new(query.Enumerable));
+}
+
+/// <summary>Preserves a general relation's pair semantics as one concrete candidate partition.</summary>
+public readonly struct RelationPairPartitions<TEnumerable>(TEnumerable source)
+    : ICollisionPartitionEnumerable<RelationPairPartition>
+    where TEnumerable : struct, IQueryRelationEnumerable<(Entity, Entity)>
+{
+    public World World => source.World;
+    public int QueryCount => source.QueryCount;
+    public static bool ReadsFromSingleQuery => TEnumerable.ReadsFromSingleQuery;
+    public QueryHandle GetQuery(int position) => source.GetQuery(position);
+    public QueryDefinition AddReads(QueryDefinition definition, int position) => source.AddReads(definition, position);
+    public void Prepare(scoped RelationQueryViews queries) { }
+    public int CreatePartitions(Span<RelationPairPartition> partitions)
+    {
+        partitions[0] = default;
+        return 1;
+    }
+    public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct =>
+        source.Enumerate(queries, ref output);
+    public bool Enumerate<TOutput>(RelationPairPartition partition, scoped RelationQueryViews queries, ref TOutput output)
+        where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct =>
+        source.Enumerate(queries, ref output);
 }
 
 public sealed partial class CollisionTree
