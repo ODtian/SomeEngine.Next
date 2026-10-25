@@ -724,6 +724,7 @@ internal static class RuntimeApplication
 
         IEnumerable<ValueTask> UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds, long gameUpdateStarted)
         {
+            if (!synchronousGame) elementSystems.Physics?.AdvanceTime(deltaSeconds);
             geometry.UpdateGame(deltaSeconds);
             yield return geometry.CompleteGameAsync();
             geometry.ScheduleTerrainBuilds();
@@ -1002,6 +1003,7 @@ internal static class RuntimeApplication
                     ? frameIndex * options.FixedFrameSeconds
                     : (float)Stopwatch.GetElapsedTime(runtimeStarted).TotalSeconds;
                 previousFrameTimestamp = currentFrameTimestamp;
+                if (synchronousGame) elementSystems.Physics?.AdvanceTime(deltaSeconds);
                 if (synchronousGame) gameStarted = Stopwatch.GetTimestamp();
                 sceneEdit.Begin();
                 try
@@ -1315,6 +1317,7 @@ internal static class RuntimeApplication
                     prepareMs, reconcileMs, executeMs);
                 bool hasFutureFrame = (options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit)
                     && application?.ReloadRequested != true && application?.ExitRequested != true;
+                if (hasFutureFrame) elementSystems.Physics?.SubmitDueSteps();
                 if (hasFutureFrame && !synchronousGame)
                 {
                     bool updateScene = animateScene;
@@ -1448,6 +1451,8 @@ internal static class RuntimeApplication
             linearVerifier?.Dispose();
             coordinator.WaitForTrackedSubmissions();
             renderGraph.CollectCompleted();
+            if (elementSystems.Physics is { } physics)
+                RuntimeWait.Job(physics.Completion.WaitAsync(), window, FrameTimeout);
             application?.Shutdown?.Invoke(applicationFrame);
             geometry.FinishGame();
             ui?.Dispose();

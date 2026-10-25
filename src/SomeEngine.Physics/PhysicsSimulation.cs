@@ -6,6 +6,13 @@ namespace SomeEngine.Physics;
 
 public static class PhysicsSimulation
 {
+    public static PhysicsFrame<TStage, TConsumer> CreateFrame<TStage, TConsumer>(
+        this PhysicsSimulation<TStage> simulation, TConsumer consumer, double stepDuration, double maximumDelay,
+        long firstStepNumber, double startTime)
+        where TStage : struct, IPhysicsStage
+        where TConsumer : struct, IPhysicsStage =>
+        new(simulation, consumer, stepDuration, maximumDelay, firstStepNumber, startTime);
+
     public static PhysicsSimulation<TStage> Create<TStage>(World world, QueryDefinition bodies, TStage stage, int substeps)
         where TStage : struct, IPhysicsStage => new(world, bodies, stage, substeps);
 }
@@ -14,6 +21,14 @@ public static class PhysicsSimulation
 public readonly struct PhysicsSimulation<TStage>(World world, QueryDefinition bodies, TStage stage, int substeps)
     where TStage : struct, IPhysicsStage
 {
+    internal JobHandle ScheduleConsumption<TConsumer>(TConsumer consumer, in PhysicsStepResult result)
+        where TConsumer : struct, IPhysicsStage
+    {
+        var context = new PhysicsStepContext(world, bodies, result.Number, 0, 1, result.StartTime,
+            result.EndTime - result.StartTime);
+        return consumer.Schedule(in context, result.Completion);
+    }
+
     public PhysicsStepResult Schedule(long number, double startTime, double duration, JobHandle dependency = default)
     {
         double substepDuration = duration / substeps;

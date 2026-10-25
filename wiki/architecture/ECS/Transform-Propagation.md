@@ -3,9 +3,12 @@
 ## GameWorld updates
 
 `GameWorld` 默认通过 `WorldJobs` 使用共同调度器，显式传入的 `WorldExecution` 继续提供该 World 的执行关系。
-`GameWorld.Update` 先完成游戏系统与结构回放，再完成变换更新，后继提取在这个返回边界读取结果。
+`GameWorld.Update` 先完成游戏系统与结构回放，再消费所选物理结果并完成变换更新，
+后继提取在读取回调或更新返回边界读取结果。物理完成步的职责见
+[[architecture/physics/Physics-Frames|Physics frames]]。
 
 [`TransformSystem`](../../../src/SomeEngine.Core/ECS/Systems/TransformSystem.cs) 先完成显式层级维护，
+其工作由实际同时含 `LocalTransform` 与 `WorldTransform` 的成员启用；
 再通过生成式实体作业将变化的平坦实体按有效行范围写入 `WorldTransform`。
 层级变换候选交给 [`ParallelTransformPropagation`](../../../src/SomeEngine.Core/ECS/ParallelTransformPropagation.cs)
 统一归一化为互斥脏子树；传播沿同一维护令牌保持父先于子与组织节点透传规则。
