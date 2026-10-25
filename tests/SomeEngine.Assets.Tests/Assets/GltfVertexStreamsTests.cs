@@ -374,6 +374,43 @@ public sealed class GltfVertexStreamsTests
                 Assert.Equal(original[(int)result.SourceVertices.Span[vertex] * stream.ComponentCount + component], stream.Values.Span[vertex * stream.ComponentCount + component]);
     }
 
+    [Fact]
+    public async Task BoundsFromPrimitivesSurviveReopenAndGeometryConsumption()
+    {
+        using var file = new GltfFile();
+        float[] CreatePositions(Vector3 origin)
+        {
+            List<float> values = [];
+            for (int triangle = 0; triangle < 2048; triangle++)
+            {
+                Vector3 position = origin + new Vector3(triangle % 32 * 2, triangle / 32 * 2, 0);
+                values.AddRange([position.X, position.Y, position.Z,
+                    position.X + 1, position.Y, position.Z, position.X, position.Y + 1, position.Z]);
+            }
+            return values.ToArray();
+        }
+        JsonObject first = file.CreatePrimitive(new()
+        { ["POSITION"] = file.AddFloats("VEC3", CreatePositions(new(-10, -20, 0)), position: true) });
+        JsonObject second = file.CreatePrimitive(new()
+        { ["POSITION"] = file.AddFloats("VEC3", CreatePositions(new(20, 0, 5)), position: true) });
+        await using ImportResult result = await ImportAsync(file.WriteFile(first, second), renderable: true);
+        string path = Path.Combine(file.Directory, "bounds.mesh.asset");
+        await result.Asset.SaveAsync(path);
+        using MeshAsset reopened = await MeshAsset.OpenAsync(path);
+        MeshBlock shape = reopened.GetBlock<MeshBlock>();
+        Assert.Equal(36.5f, shape.Bounds!.Center.X);
+        Assert.Equal(53.5f, shape.Bounds.Center.Y);
+        Assert.Equal(2.5f, shape.Bounds.Center.Z);
+        Assert.Equal(73.5f, shape.Bounds.Radius);
+        Assert.Equal([0, 1], shape.RegionSources.Select(region => region.PrimitiveIndex));
+        Assert.Equal(["region_0", "region_1"], shape.Regions.Select(region => region.Name));
+        ClusterGeometryBlock geometry = await reopened.GetBlockAsync<ClusterGeometryBlock>();
+        ClusterVertexAttributesBlock attributes = await reopened.GetBlockAsync<ClusterVertexAttributesBlock>();
+        var mesh = await geometry.CreateAsync(shape, attributes, "bounds grid");
+        Assert.Equal(shape.Bounds, mesh.Bounds);
+        Assert.Equal(shape.Regions.ToArray(), mesh.Regions.ToArray());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

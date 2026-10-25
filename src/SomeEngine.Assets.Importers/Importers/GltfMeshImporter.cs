@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
+using SomeEngine.Job;
 using GltfMesh = SharpGLTF.Schema2.Mesh;
 
 namespace SomeEngine.Assets.Importers;
@@ -32,8 +33,6 @@ public sealed class GltfMeshImporter : IAssetImporter<GltfMesh, GltfMeshSettings
         var geometry = new MeshBlock();
         try
         {
-            Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
-            bool hasPositions = false;
             for (int index = 0; index < source.Primitives.Count; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -42,21 +41,25 @@ public sealed class GltfMeshImporter : IAssetImporter<GltfMesh, GltfMeshSettings
                 geometry.RegionSources.Add(new(source.LogicalIndex, index, primitive.Material?.LogicalIndex ?? -1,
                     primitive.Material?.Name ?? $"{source.Name ?? "Mesh"} / primitive {index}"));
             }
+            var ranges = new List<PositionRange>();
             foreach (VertexPrimitive primitive in streams.Primitives)
             {
                 if (!primitive.Attributes.TryGetValue("POSITION", out VertexStream? positions)) continue;
-                ReadOnlySpan<double> values = positions.Values.Span;
-                for (int vertex = 0; vertex < primitive.SourceVertices.Length; vertex++)
-                {
-                    int row = vertex * positions.ComponentCount;
-                    Vector3 position = new((float)values[row], (float)values[row + 1], (float)values[row + 2]);
-                    minimum = Vector3.Min(minimum, position);
-                    maximum = Vector3.Max(maximum, position);
-                    hasPositions = true;
-                }
+                for (int start = 0; start < primitive.SourceVertices.Length; start += VertexBatchSize)
+                    ranges.Add(new(positions.Values, positions.ComponentCount, start,
+                        Math.Min(VertexBatchSize, primitive.SourceVertices.Length - start)));
             }
-            if (hasPositions)
+            if (ranges.Count > 0)
             {
+                PositionRange[] positionRanges = ranges.ToArray();
+                var bounds = new VertexBounds[positionRanges.Length];
+                JobSystem.ExecuteParallel(new ReducePositions(positionRanges, bounds), positionRanges.Length);
+                Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
+                foreach (VertexBounds range in bounds)
+                {
+                    minimum = Vector3.Min(minimum, range.Minimum);
+                    maximum = Vector3.Max(maximum, range.Maximum);
+                }
                 Vector3 center = (minimum + maximum) * 0.5f;
                 Vector3 extent = maximum - minimum;
                 geometry.Bounds = new Bounds { Center = new() { X = center.X, Y = center.Y, Z = center.Z },
@@ -66,5 +69,28 @@ public sealed class GltfMeshImporter : IAssetImporter<GltfMesh, GltfMeshSettings
             return;
         }
         catch { geometry.Dispose(); throw; }
+    }
+
+    private const int VertexBatchSize = 4096;
+
+    private readonly record struct PositionRange(ReadOnlyMemory<double> Values, int ComponentCount, int Start, int Count);
+    private readonly record struct VertexBounds(Vector3 Minimum, Vector3 Maximum);
+
+    private readonly struct ReducePositions(PositionRange[] ranges, VertexBounds[] bounds) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            PositionRange range = ranges[index];
+            ReadOnlySpan<double> values = range.Values.Span;
+            Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
+            for (int vertex = range.Start; vertex < range.Start + range.Count; vertex++)
+            {
+                int row = vertex * range.ComponentCount;
+                Vector3 position = new((float)values[row], (float)values[row + 1], (float)values[row + 2]);
+                minimum = Vector3.Min(minimum, position);
+                maximum = Vector3.Max(maximum, position);
+            }
+            bounds[index] = new(minimum, maximum);
+        }
     }
 }
