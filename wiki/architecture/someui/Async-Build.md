@@ -96,6 +96,11 @@ public readonly struct JobHandleAwaiter : ICriticalNotifyCompletion
 该 World 的重建队列，重建阶段设置原构建作用域后继续读取 Job 写入的数据，并提交界面输出。
 已完成的 Job 沿同步 await 路径在当前重建阶段继续执行。
 
+Task、ValueTask 或外部 fence 可通过 `CreateExternalFenceHandle` 接入同一等待链。
+`Build` 也可等待 `handle.WaitAsync(Scope.Cancel)`，其恢复继续由方法构建器交给重建阶段；
+该令牌结束当前等待，原工作与资源沿自己的完成期继续。来源终态与共享等待规则由
+[[architecture/ECS/Job-Completion|Job 完成语义]] 维护。
+
 实现：[JobHandleAwaitExtensions](../../../src/SomeEngine.Job/JobHandleAwaitExtensions.cs)。
 公开行为验收：[JobHandleAwaitTests](../../../tests/SomeEngine.Job.Tests/JobHandleAwaitTests.cs)
 覆盖已完成与挂起 Job 的结果读取、完成线程上的异步恢复、默认句柄、Job 错误传播，以及
