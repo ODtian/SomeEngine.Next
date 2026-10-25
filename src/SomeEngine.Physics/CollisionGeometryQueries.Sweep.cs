@@ -3,7 +3,9 @@ using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Physics;
 
-public sealed partial class CollisionGeometryQueries<TGeometry> where TGeometry : struct, ICollisionGeometry<TGeometry>
+public partial class CollisionGeometryQueries<TGeometry, TReader>
+    where TGeometry : struct, ICollisionGeometry<TGeometry>
+    where TReader : struct, ICollisionGeometryReader<TGeometry>
 {
     public bool Sweep<TQuery, TSweep>(in TQuery geometry, in BodyPose pose, Vector3 direction, float length,
         TSweep sweep, out CollisionHit hit)
@@ -12,7 +14,7 @@ public sealed partial class CollisionGeometryQueries<TGeometry> where TGeometry 
     {
         var work = new SweepGeometry<TQuery, TSweep>(geometry, pose, direction, length, sweep);
         var execution = new ReadGeometry<SweepGeometry<TQuery, TSweep>>(Tree, work);
-        _world.ExecuteQuery(_query, ref execution);
+        ExecuteQueries(ref execution);
         hit = execution.Work.Hit;
         return execution.Work.Found;
     }
