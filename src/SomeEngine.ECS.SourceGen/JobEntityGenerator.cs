@@ -209,17 +209,21 @@ public sealed class JobEntityGenerator : IIncrementalGenerator
                 type.ContainingNamespace.ToDisplayString() == SystemsNamespace);
             ITypeSymbol? resourceType = resources?.AttributeClass?.TypeArguments.FirstOrDefault();
             if (resourceType is null && resources?.ConstructorArguments.Length == 1)
-                resourceType = resources.ConstructorArguments[0].Value as ITypeSymbol;
+                resourceType = resources.ConstructorArguments[0].Value is string typeParameter
+                    ? job.TypeParameters.FirstOrDefault(candidate => candidate.Name == typeParameter)
+                    : resources.ConstructorArguments[0].Value as ITypeSymbol;
             if (resourceType is INamedTypeSymbol { IsUnboundGenericType: true } openResources &&
                 model.ValueType is INamedTypeSymbol component &&
                 openResources.Arity == component.TypeArguments.Length)
                 resourceType = openResources.ConstructedFrom.Construct(component.TypeArguments.ToArray());
-            if (resourceType is not null)
+            if (resources is not null)
             {
-                bool matchingComponent = resourceType is INamedTypeSymbol namedResources &&
-                    namedResources.AllInterfaces.Any(iface =>
+                IEnumerable<ITypeSymbol> descriptions = resourceType is ITypeParameterSymbol parameterResources
+                    ? parameterResources.ConstraintTypes : resourceType is null ? [] : [resourceType];
+                bool matchingComponent = descriptions.OfType<INamedTypeSymbol>().Any(description =>
+                    description.AllInterfaces.Prepend(description).Any(iface =>
                         IsType(iface.OriginalDefinition, SystemsNamespace, "IJobComponentResources") &&
-                        SymbolEqualityComparer.Default.Equals(iface.TypeArguments[0], model.ValueType));
+                        SymbolEqualityComparer.Default.Equals(iface.TypeArguments[0], model.ValueType)));
                 if (model.Kind is not (ParameterKind.TableRead or ParameterKind.TableReadWrite) ||
                     !matchingComponent)
                 {

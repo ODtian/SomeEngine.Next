@@ -8,6 +8,9 @@
 
 实体组件 `DeviceCollisionBody(Grid, Index)` 持有实际设备资源引用和该实体在批次中的索引。原始几何与运动数据继续由对应实体组件或设备表示持有。具体 `IDeviceCollisionReader<TComponent>` 从所选原组件形成 `DeviceCollisionInput`：派生范围、具体形状类型与几何索引、键、类别位图、允许类别位图及用户数值。
 
+原几何与位姿的具体转换也可通过 `BeginInputs`、`WriteGeometryInputs`、`Build` 接入相同网格。
+设备几何绑定、窄阶段、无序类型路由及共同接触消费由 [设备检测](Device-Collision-Detection.md) 维护。
+
 `grid.Candidates<TComponent,TReader>(pairs, reader, rowsPerPacket, rules, transfer, readback)` 返回一个具体 `IPhysicsStage`，由现有 `PhysicsSimulation` 和 `Then` 组织。`pairs` 接受项目已经选择的 `world.Within(members)`、`world.Between(first,second)` 或 `world.Product(first,second)`。输入写入阶段按本次物理步的 `Bodies` 选中原组件，并在原参与查询回调中调用 `Contains` 判断 First、Second 角色，保留原查询的行筛选。实体身份和角色由这一阶段写入设备输入，配对模式由所选关系来源转成内部设备参数。
 
 集合内与集合间输出互不相同实体的无序对，交叠集合按相同无序语义去重。位置积保留 First、Second 位置及自身配对。这组语义与 [CPU 网格](../ECS/Collision-Grids.md) 使用的原关系来源一致。
