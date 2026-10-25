@@ -79,10 +79,8 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using GpuHeightTerrainExample ground = await GpuHeightTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
-        var material = new UnlitMaterial();
         Shader voxelShader = await TerrainGpuEditingTests.LoadNeighborhoodShaderAsync("terrain_voxel_delta.slang");
         VoxelField voxels = ground.Heights.Terrain.CreateVoxelField("detail", new VoxelGrid(4), 4f);
-        ground.AddPlacements(material, material);
         TerrainEdit heightEdit = default, voxelEdit = default;
         Task<HeightFieldRead>? canceledHeights = null, preservedHeights = null;
         Task<VoxelFieldRead>? canceledVoxels = null, preservedVoxels = null;
@@ -99,7 +97,14 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         application.UpdateFrame = frame =>
         {
             if (frame.Index == 0)
+            {
+                if (runs == 1)
+                {
+                    Material material = frame.Scene.GetMaterial(frame.Scene.MeshEntities.First());
+                    ground.AddPlacements(material, material);
+                }
                 foreach (var entity in frame.Scene.MeshEntities) frame.Scene.DeleteEntity(entity);
+            }
             if (runs == 1)
             {
                 if (frame.Index == 0)
