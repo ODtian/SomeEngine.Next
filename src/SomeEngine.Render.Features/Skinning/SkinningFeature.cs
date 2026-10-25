@@ -213,7 +213,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         foreach (Section section in _sectionOrder)
         {
             ref readonly RenderBoneSectionData data = ref section.Data;
-            uint flags = (section.Evaluate ? 1u : 0u) | (!section.HasResult ? 2u : 0u) | (data.IsGpu ? 4u : 0u)
+            // Held XPBD keeps GPU output while CPU copies and presented-frame history advance.
+            uint evaluation = section.HoldXpbdPose ? 1024u : 1u;
+            uint flags = (section.Evaluate ? evaluation : 0u) | (!section.HasResult ? 2u : 0u) | (data.IsGpu ? 4u : 0u)
                 | (data.StateMachine is not null ? 8u : 0u) | (data.Playing ? 16u : 0u)
                 | (section.AcceptedInput.AnimationStarts != data.Identity.AnimationStarts
                     || !ReferenceEquals(section.AcceptedInput.StateMachine, data.StateMachine)
@@ -285,7 +287,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             section.Evaluate = changed;
             section.FrameVersion = section.Version + (changed ? 1ul : 0ul);
             section.FrameTime = changed ? time : section.Time;
-            PrepareSampling(section, time);
+            if (section.HoldXpbdPose) section.SampleSource = false;
+            else PrepareSampling(section, time);
         }
     }
 
@@ -733,6 +736,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         internal XpbdBinding AcceptedXpbd, XpbdBinding;
         internal double XpbdTime;
         internal bool ResetXpbd;
+        internal bool HoldXpbdPose => XpbdCount != 0 && HasResult && !Data.Playing && !ResetXpbd;
         internal GpuPoseBlend? StoredBlend;
         internal int[] Depths = [];
         internal uint ClipOffset, MachineOffset, BlendOffset;
