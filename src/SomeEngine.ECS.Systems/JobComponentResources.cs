@@ -12,9 +12,13 @@ public sealed class JobResourcesAttribute<TResources> : Attribute
 /// with the component's type arguments, allowing generic jobs to keep typed static dispatch.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter)]
-public sealed class JobResourcesAttribute(Type resourceType) : Attribute
+public sealed class JobResourcesAttribute : Attribute
 {
-    public Type ResourceType { get; } = resourceType;
+    public JobResourcesAttribute(Type resourceType) => ResourceType = resourceType;
+    /// <summary>Names a resource descriptor type parameter of the containing generic Job.</summary>
+    public JobResourcesAttribute(string typeParameter) => TypeParameter = typeParameter;
+    public Type? ResourceType { get; }
+    public string? TypeParameter { get; }
 }
 
 /// <summary>
