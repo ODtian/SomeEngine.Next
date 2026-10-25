@@ -256,21 +256,9 @@ public static partial class JobEntityRuntime
         }
 
         private static void AddRange(JobResourceAccess access, int row,
-            Dictionary<ComponentResourceIdentity, List<ComponentResourceRange>> buckets)
-        {
-            var identity = new ComponentResourceIdentity(access.Kind, access.Id, access.Version, access.Generation);
-            if (!buckets.TryGetValue(identity, out List<ComponentResourceRange>? ranges))
-                buckets.Add(identity, ranges = []);
-            ranges.Add(new ComponentResourceRange(row,
-                access.HasRange ? access.RangeStart : 0,
-                access.HasRange ? access.RangeStart + access.RangeLength : long.MaxValue,
-                access.Mode != JobAccessMode.Read));
-        }
+            Dictionary<ComponentResourceIdentity, List<ComponentResourceRange>> buckets) =>
+            ComponentResourceGroups.AddAccess(access, row, buckets);
     }
-
-    private readonly record struct ComponentResourceIdentity(ResourceKind Kind, int Id, int Version, long Generation);
-    private readonly record struct ComponentResourceRange(int Row, long Start, long End, bool Writes);
-
     private sealed class ComponentResourceGrouping<TJob, TAdapter>(
         ComponentResourceRequest<TJob, TAdapter> request,
         ComponentResourceQueryData data,
@@ -279,44 +267,13 @@ public static partial class JobEntityRuntime
         where TAdapter : unmanaged, IGeneratedJobEntityAdapter<TJob>
     {
         internal List<ComponentResourceRange>[] Buckets { get; } = buckets;
-        private readonly int[] _parents = Enumerable.Range(0, data.Rows.Length).ToArray();
+        internal readonly ComponentResourceGroups Groups = new(data.Rows.Length);
         internal int Remaining = buckets.Length;
         internal int Failed;
 
-        private int Root(int row)
-        {
-            int parent;
-            while ((parent = Volatile.Read(ref _parents[row])) != row)
-                row = parent;
-            return row;
-        }
-
-        internal void Join(int left, int right)
-        {
-            while (true)
-            {
-                left = Root(left);
-                right = Root(right);
-                if (left == right)
-                    return;
-                int lower = Math.Min(left, right);
-                int higher = Math.Max(left, right);
-                if (Interlocked.CompareExchange(ref _parents[higher], lower, higher) == higher)
-                    return;
-            }
-        }
-
         internal void Finish()
         {
-            var groups = new Dictionary<int, List<int>>();
-            for (int row = 0; row < data.Rows.Length; row++)
-            {
-                int root = Root(row);
-                if (!groups.TryGetValue(root, out List<int>? group))
-                    groups.Add(root, group = []);
-                group.Add(row);
-            }
-            data.Groups = groups.Values.Select(static group => group.ToArray()).ToArray();
+            data.Groups = Groups.Build();
             Volatile.Write(ref request.Descriptor.ResourceCache(request.World).Data, data);
             request.Execute(data);
         }
@@ -331,25 +288,7 @@ public static partial class JobEntityRuntime
         {
             try
             {
-                List<ComponentResourceRange> ranges = grouping.Buckets[index];
-                ranges.Sort(static (left, right) => left.Start.CompareTo(right.Start));
-                int first = 0;
-                while (first < ranges.Count)
-                {
-                    long end = ranges[first].End;
-                    bool writes = ranges[first].Writes;
-                    int next = first + 1;
-                    while (next < ranges.Count && ranges[next].Start < end)
-                    {
-                        end = Math.Max(end, ranges[next].End);
-                        writes |= ranges[next].Writes;
-                        next++;
-                    }
-                    if (writes)
-                        for (int i = first + 1; i < next; i++)
-                            grouping.Join(ranges[first].Row, ranges[i].Row);
-                    first = next;
-                }
+                grouping.Groups.JoinRanges(grouping.Buckets[index]);
             }
             catch
             {
@@ -364,23 +303,8 @@ public static partial class JobEntityRuntime
         }
     }
 
-    private static bool SameExternalAccesses(JobResourceAccess[] accesses, JobResourceAccess[] captureAccesses)
-    {
-        if (accesses.Length != captureAccesses.Length)
-            return false;
-        for (int i = 0; i < captureAccesses.Length; i++)
-            if (accesses[i].Kind != captureAccesses[i].Kind ||
-                accesses[i].Id != captureAccesses[i].Id ||
-                accesses[i].Version != captureAccesses[i].Version ||
-                accesses[i].Generation != captureAccesses[i].Generation ||
-                accesses[i].Mode != captureAccesses[i].Mode ||
-                accesses[i].HasRange != captureAccesses[i].HasRange ||
-                accesses[i].RangeStart != captureAccesses[i].RangeStart ||
-                accesses[i].RangeLength != captureAccesses[i].RangeLength)
-                return false;
-        return true;
-    }
-
+    private static bool SameExternalAccesses(JobResourceAccess[] accesses, JobResourceAccess[] captureAccesses) =>
+        ComponentResourceGroups.AccessesMatch(accesses, captureAccesses);
     private static bool ResourceInputsMatch(ComponentResourceQueryData data)
     {
         World world = data.Packets.World;

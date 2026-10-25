@@ -9,6 +9,28 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class DisplacementBoundsTextureTests
 {
     [Fact]
+    public async Task DisplacementMipRangesSurviveSaveAndOpen()
+    {
+        float[] samples = Enumerable.Range(0, 8192).Select(static value => (float)value).ToArray();
+        using TextureAsset asset = DisplacementBoundsTexture.Create(Guid.NewGuid(), "displacement mips",
+            128, 64, samples, out Vector2 sourceRange);
+        Assert.Equal(new Vector2(0, 8191), sourceRange);
+        using var directory = new TemporaryDirectory();
+        string path = directory.File("displacement.texture.asset");
+        await asset.SaveAsync(path);
+        using TextureAsset reopened = await TextureAsset.OpenAsync(path);
+        TextureBlock pixels = reopened.GetBlock<TextureBlock>();
+        Texture texture = await pixels.CreateAsync(firstMip: 0);
+        float[] maxima = [0, 129, 387, 903, 1935, 3999, 8127, 8191];
+        Assert.Equal((uint)maxima.Length, texture.MipLevelCount);
+        foreach (TextureMipTile tile in texture.MipTiles)
+        {
+            Assert.True(texture.TryGetTile(tile.ChunkKey, out ReadOnlyMemory<byte> bytes));
+            Assert.Equal(new Vector2(0, maxima[tile.MipLevel]), MemoryMarshal.Read<Vector2>(bytes.Span));
+        }
+    }
+
+    [Fact]
     public void CreatesExactConservativeHierarchyForOddDimensions()
     {
         float[] samples = Enumerable.Range(0, 15).Select(static value => (float)value).ToArray();
@@ -66,5 +88,11 @@ public sealed class DisplacementBoundsTextureTests
     {
         var bytes = texture.GetBlock<TextureBlock>().Chunks[tile.ChunkKey];
         return MemoryMarshal.Cast<byte, Vector2>(bytes.ToArray()).ToArray();
+    }
+    private sealed class TemporaryDirectory : IDisposable
+    {
+        private readonly DirectoryInfo _directory = Directory.CreateTempSubdirectory("SomeEngine-Displacement-");
+        public string File(string name) => Path.Combine(_directory.FullName, name);
+        public void Dispose() => _directory.Delete(recursive: true);
     }
 }

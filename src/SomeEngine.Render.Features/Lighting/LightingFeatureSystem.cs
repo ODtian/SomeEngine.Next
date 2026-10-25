@@ -49,10 +49,11 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
         }
         _collector.CopyTo(_views);
         RenderGraphFrame graph = context.Graph;
+        WorldJobs.TryGetScheduler(context.World, out var scheduler);
         _feature.Record(
             ref graph,
             _lights.RequireCurrent(),
-            _views.AsSpan(0, _collector.Count));
+            _views.AsSpan(0, _collector.Count), enabled: true, scheduler: scheduler);
     }
 
     public void OnDestroy(ref RenderFrameSystemContext context)
