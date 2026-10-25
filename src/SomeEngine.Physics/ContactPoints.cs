@@ -222,8 +222,18 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
                 {
                     ref readonly ContactBody body = ref bodies[index];
                     query.TryGetRow(body.Body, out QueryRow row);
-                    ref readonly BodyPose pose = ref row.ReadRef<BodyPose>();
-                    Vector3 position = pose.Position + Vector3.Transform(body.LocalPoint, pose.Rotation);
+                    Vector3 position;
+                    if (range.Contact.Prediction.Enabled)
+                    {
+                        ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
+                        ref readonly BodyStepState step = ref row.ReadRef<BodyStepState>();
+                        position = step.StartCenterOfMass + Vector3.Transform(body.LocalPoint - mass.CenterOfMass, step.StartRotation);
+                    }
+                    else
+                    {
+                        ref readonly BodyPose pose = ref row.ReadRef<BodyPose>();
+                        position = pose.Position + Vector3.Transform(body.LocalPoint, pose.Rotation);
+                    }
                     delta += position * (body.Weight * (index < range.Contact.FirstBodyCount ? -1 : 1));
                 }
                 match.BodyAnchorDelta = delta;
@@ -267,6 +277,7 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         FirstLocalPoint = contact.FirstLocalPoint, SecondLocalPoint = contact.SecondLocalPoint,
         WorldPoint = contact.WorldPoint, Normal = contact.Normal, Separation = contact.Separation,
         FirstBodyCount = contact.FirstBodyCount, WarmStart = _settings.WarmStart,
+        Prediction = contact.Prediction,
     };
 
     private readonly struct MatchPoints(ContactPoints<TCombine, TComponents> points) : IJobParallelCommandProducer
