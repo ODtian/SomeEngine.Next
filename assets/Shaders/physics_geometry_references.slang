@@ -15,8 +15,24 @@ struct DeviceContactBody
 RWStructuredBuffer<DeviceContactBody> CollisionContactBodies;
 RWStructuredBuffer<uint> CollisionContactBodyCounts;
 
-struct DeviceTriangle : IDeviceConvex
+struct DeviceTriangle : IDevicePointGeometry
 {
+    DeviceGeometryPointDistance distanceToPoint(DeviceGeometryInput geometry, float3 point)
+    {
+        uint start = geometry.geometryIndex*3;
+        float3 a=DeviceGeometryPoints[start], b=DeviceGeometryPoints[start+1], c=DeviceGeometryPoints[start+2];
+        float3 normal = normalize(cross(b-a,c-a));
+        float height = dot(normal,point-a);
+        float3 weights;
+        float3 delta = closestDeviceTriangle(a-point,b-point,c-point,weights);
+        float size = length(delta);
+        float3 direction = size > 0 ? -delta/size : (height>=0?normal:-normal);
+        int feature = weights.x>=1?2:weights.y>=1?3:weights.z>=1?4:weights.x<=0?5:weights.y<=0?6:weights.z<=0?7:height>=0?0:1;
+        DeviceGeometryPointDistance result;
+        result.point = point+delta+direction*geometry.convexRadius;
+        result.normal = direction; result.distance = size-geometry.convexRadius; result.feature = feature;
+        return result;
+    }
     DeviceFeaturePoint support(DeviceGeometryInput geometry, float3 direction)
     {
         uint first = geometry.geometryIndex * 3;

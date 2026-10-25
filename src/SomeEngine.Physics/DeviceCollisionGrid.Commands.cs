@@ -22,6 +22,14 @@ public sealed partial class DeviceCollisionGrid
             mapping.Flush(new(0, (ulong)Marshal.SizeOf<GridParameters>()));
         }
         _backend.Begin(_commands, new CommandRecordingDesc(512, 8, 512));
+        if (!_buffersInitialized)
+        {
+            foreach (var buffer in _gpuBuffers)
+                if (!ReferenceEquals(buffer, Bodies))
+                    _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
+                        buffer.InitialAccess, ResourceAccess.UnorderedAccess));
+            _buffersInitialized = true;
+        }
         UploadInputs(_commands, transfer);
         Dispatch(0, (Capacity.Buckets + ScanWidth - 1) / ScanWidth);
         Dispatch(1, BlockCount);
@@ -44,12 +52,11 @@ public sealed partial class DeviceCollisionGrid
 
     internal void UploadInputs(CommandContext commands, DeviceInputTransfer transfer)
     {
-        if (!_buffersInitialized)
+        if (!_inputInitialized)
         {
-            foreach (var buffer in _gpuBuffers)
-                _backend.Barrier(commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
-                    buffer.InitialAccess, ResourceAccess.UnorderedAccess));
-            _buffersInitialized = true;
+            _backend.Barrier(commands, new BufferBarrier(Bodies, Bodies.InitialSync, PipelineSync.ComputeShading,
+                Bodies.InitialAccess, ResourceAccess.UnorderedAccess));
+            _inputInitialized = true;
         }
         if (transfer == DeviceInputTransfer.Upload)
         {

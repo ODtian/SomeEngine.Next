@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -30,6 +31,7 @@ public struct DeviceGeometryInput
     public Vector3 PlaneNormal;
     public float PlaneOffset;
     public uint GeometryType;
+    public Vector3 BoundsCenter;
 }
 
 public interface IDeviceGeometryReader<TGeometry> : IJobComponentResources<TGeometry>
@@ -37,7 +39,7 @@ public interface IDeviceGeometryReader<TGeometry> : IJobComponentResources<TGeom
 {
     DeviceGeometryInput Read(in TGeometry geometry, in BodyPose pose, DeviceCollisionGeometry destination);
     CollisionBounds GetBounds(in TGeometry geometry, in BodyPose pose) => TGeometry.Bounds(in geometry, in pose);
-    JobHandle Prepare(in PhysicsStepContext context, int rowsPerPacket, JobHandle dependency) => dependency;
+    JobHandle Prepare(in PhysicsStepContext context, QueryDefinition geometries, int rowsPerPacket, JobHandle dependency) => dependency;
 }
 
 public readonly struct DeviceSphereReader : IDeviceGeometryReader<SphereGeometry>
@@ -73,7 +75,8 @@ public readonly struct DevicePlaneReader(CollisionBounds candidateRegion) : IDev
     public static void Collect(in PlaneGeometry component, ref JobResourceAccessBuilder resources) { }
     public CollisionBounds GetBounds(in PlaneGeometry geometry, in BodyPose pose) => candidateRegion;
     public DeviceGeometryInput Read(in PlaneGeometry geometry, in BodyPose pose, DeviceCollisionGeometry destination) =>
-        new() { Position = pose.Position, Rotation = pose.Rotation, PlaneNormal = geometry.Normal, PlaneOffset = geometry.Offset };
+        new() { Position = pose.Position, Rotation = pose.Rotation, PlaneNormal = geometry.Normal, PlaneOffset = geometry.Offset,
+            BoundsCenter = (candidateRegion.Min + candidateRegion.Max) * .5f, HalfExtents = (candidateRegion.Max - candidateRegion.Min) * .5f };
 }
 
 public readonly struct DeviceGeometryUploadResources : IJobComponentResources<DeviceGeometryBinding>
@@ -88,9 +91,9 @@ public readonly struct DeviceHullReader : IDeviceGeometryReader<ConvexHullGeomet
     public static void Collect(in ConvexHullGeometry component, ref JobResourceAccessBuilder resources) =>
         ConvexHullResources.Collect(in component, ref resources);
 
-    public JobHandle Prepare(in PhysicsStepContext context, int rowsPerPacket, JobHandle dependency) =>
+    public JobHandle Prepare(in PhysicsStepContext context, QueryDefinition geometries, int rowsPerPacket, JobHandle dependency) =>
         new PrepareDeviceHullData().ScheduleParallel(context.World,
-            new JobEntityScheduleOptions(rowsPerPacket: rowsPerPacket, filter: context.Bodies), dependency);
+            new JobEntityScheduleOptions(rowsPerPacket: rowsPerPacket, filter: geometries), dependency);
 
     public DeviceGeometryInput Read(in ConvexHullGeometry geometry, in BodyPose pose, DeviceCollisionGeometry destination)
     {
