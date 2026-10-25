@@ -62,3 +62,5 @@ world.ReleaseQuery(bodyQuery);
 ```
 
 共同阶段依次预测、求解并重建速度；返回的完成句柄覆盖本步的全部作业。调用方保持查询有效至关联步骤完成，再沿 World 生命周期释放查询。
+
+项目可沿[长程约束](Long-Range-Constraints.md)为选定理想刚性关节构造路径距离界，继续在同一 AVBD Body 方程与主轮 dual 中求解。

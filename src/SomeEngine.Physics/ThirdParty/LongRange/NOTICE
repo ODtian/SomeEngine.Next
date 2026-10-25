@@ -1,0 +1,20 @@
+Long-range constraints and contact supports
+
+The C# joint graph, distance bounds, support footprints, active height solve
+and load transfer adapt the project's research implementations from
+codex/job331-380:
+
+  tools/SomeEngine.Physics.Research/JointDistances.cs
+  tools/SomeEngine.Physics.Research/Native/LongRange.cpp
+  tools/SomeEngine.Physics.Research/Native/ContactSupports.cpp
+
+The distance and contact support construction follows Long Range Constraints
+for Rigid Body Simulations (SCA 2017), including the contact support polygon
+and load propagation in section 3.6:
+https://matthias-research.github.io/pages/publications/LongRangeConstraintsSCA.pdf
+
+The current C# implementation retains auxiliary forces in joint/contact ECS
+components, keeps local response work on body entities, and reuses the selected
+Newton compliant ALM body's existing six-dimensional factorization.
+Newton's copyright, upstream source and Apache license attribution are in
+../Newton/NOTICE. The migrated portions use the repository Apache 2.0 LICENSE.
