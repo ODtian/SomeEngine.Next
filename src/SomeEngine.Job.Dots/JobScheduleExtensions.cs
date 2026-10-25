@@ -57,5 +57,54 @@ public static class JobScheduleExtensions
     {
         return JobSystem.ScheduleParallel(job, length, batchSize, accesses, dependency);
     }
+
+    public static JobHandle Schedule<T>(
+        this T job,
+        Scheduler scheduler,
+        JobHandle dependency = default)
+        where T : struct, IJob => scheduler.Schedule(job, dependency);
+
+    public static JobHandle ScheduleParallel<T>(
+        this T job,
+        Scheduler scheduler,
+        int length,
+        int batchSize,
+        JobHandle dependency = default)
+        where T : struct, IJobParallelFor =>
+        scheduler.ScheduleParallel(job, length, batchSize, dependency);
+
+    public static JobHandle Schedule<T>(
+        this T job,
+        Scheduler scheduler,
+        JobResourceAccess access,
+        JobHandle dependency = default)
+        where T : struct, IJob => scheduler.Schedule(job, access, dependency);
+
+    public static JobHandle ScheduleParallel<T>(
+        this T job,
+        Scheduler scheduler,
+        int length,
+        int batchSize,
+        JobResourceAccess access,
+        JobHandle dependency = default)
+        where T : struct, IJobParallelFor =>
+        scheduler.ScheduleParallel(job, length, batchSize, access, dependency);
+
+    public static JobHandle Schedule<T>(
+        this T job,
+        Scheduler scheduler,
+        ReadOnlySpan<JobResourceAccess> accesses,
+        JobHandle dependency = default)
+        where T : struct, IJob => scheduler.Schedule(job, accesses, dependency);
+
+    public static JobHandle ScheduleParallel<T>(
+        this T job,
+        Scheduler scheduler,
+        int length,
+        int batchSize,
+        ReadOnlySpan<JobResourceAccess> accesses,
+        JobHandle dependency = default)
+        where T : struct, IJobParallelFor =>
+        scheduler.ScheduleParallel(job, length, batchSize, accesses, dependency);
 }
 

@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace SomeEngine.Job;
 
-public readonly struct JobResourceAccess
+public readonly partial struct JobResourceAccess
 {
     private const string SpanSliceMessage = "Span must be a slice of the supplied array.";
     private const string UnsupportedMemoryOwnerMessage = "Only array-backed Memory<T> and ReadOnlyMemory<T> can be bound automatically. Use a custom job resource provider for other memory owners.";
@@ -199,13 +199,13 @@ public readonly struct JobResourceAccess
     public static JobResourceAccess Read<TContainer, TProvider>(ref TContainer container)
         where TProvider : struct, IJobResourceProvider<TContainer, WholeAccess>
     {
-        return TProvider.Read(ref container, default);
+        return TProvider.Read(JobSystem.Current, ref container, default);
     }
 
     public static JobResourceAccess Read<TContainer, TProvider, TAccess>(ref TContainer container, TAccess access)
         where TProvider : struct, IJobResourceProvider<TContainer, TAccess>
     {
-        return TProvider.Read(ref container, access);
+        return TProvider.Read(JobSystem.Current, ref container, access);
     }
 
     public static JobResourceAccess Write(JobResource resource)
@@ -313,13 +313,13 @@ public readonly struct JobResourceAccess
     public static JobResourceAccess Write<TContainer, TProvider>(ref TContainer container)
         where TProvider : struct, IJobResourceProvider<TContainer, WholeAccess>
     {
-        return TProvider.Write(ref container, default);
+        return TProvider.Write(JobSystem.Current, ref container, default);
     }
 
     public static JobResourceAccess Write<TContainer, TProvider, TAccess>(ref TContainer container, TAccess access)
         where TProvider : struct, IJobResourceProvider<TContainer, TAccess>
     {
-        return TProvider.Write(ref container, access);
+        return TProvider.Write(JobSystem.Current, ref container, access);
     }
 
     public static JobResourceAccess Exclusive(JobResource resource)
@@ -380,13 +380,13 @@ public readonly struct JobResourceAccess
     public static JobResourceAccess Exclusive<TContainer, TProvider>(ref TContainer container)
         where TProvider : struct, IJobResourceProvider<TContainer, WholeAccess>
     {
-        return TProvider.Exclusive(ref container, default);
+        return TProvider.Exclusive(JobSystem.Current, ref container, default);
     }
 
     public static JobResourceAccess Exclusive<TContainer, TProvider, TAccess>(ref TContainer container, TAccess access)
         where TProvider : struct, IJobResourceProvider<TContainer, TAccess>
     {
-        return TProvider.Exclusive(ref container, access);
+        return TProvider.Exclusive(JobSystem.Current, ref container, access);
     }
 
     private static JobResourceAccess Create(
@@ -407,10 +407,11 @@ public readonly struct JobResourceAccess
             rangeLength: 0);
     }
 
-    private static JobResourceAccess CreateContainerAccess(object container, JobAccessMode mode)
+    private static JobResourceAccess CreateContainerAccess(
+        object container, JobAccessMode mode, Scheduler? scheduler = null)
     {
         ArgumentNullException.ThrowIfNull(container);
-        JobResourceToken token = JobSystem.GetContainerResourceToken(container);
+        JobResourceToken token = (scheduler ?? JobSystem.Current).GetContainerResourceToken(container);
         return Create(ResourceKind.Token, token.Id, token.Version, token.Generation, mode);
     }
 
@@ -418,23 +419,25 @@ public readonly struct JobResourceAccess
         object container,
         long count,
         IndexRange range,
-        JobAccessMode mode)
+        JobAccessMode mode,
+        Scheduler? scheduler = null)
     {
         ArgumentNullException.ThrowIfNull(container);
         ValidateContainerRange(range, count);
-        JobResourceToken token = JobSystem.GetContainerResourceToken(container);
+        JobResourceToken token = (scheduler ?? JobSystem.Current).GetContainerResourceToken(container);
         return CreateRange(ResourceKind.Token, token.Id, token.Version, token.Generation, mode, range);
     }
 
     private static JobResourceAccess CreateArraySpanRangeAccess<T>(
         T[] array,
         ReadOnlySpan<T> span,
-        JobAccessMode mode)
+        JobAccessMode mode,
+        Scheduler? scheduler = null)
     {
         ArgumentNullException.ThrowIfNull(array);
         if (span.Length == 0)
         {
-            return CreateContainerAccess(array, mode);
+            return CreateContainerAccess(array, mode, scheduler);
         }
 
         Span<T> ownerSpan = array.AsSpan();
@@ -449,13 +452,15 @@ public readonly struct JobResourceAccess
             array,
             array.LongLength,
             new IndexRange(elementOffset, span.Length),
-            mode);
+            mode,
+            scheduler);
     }
 
-    private static JobResourceAccess CreateMemoryAccess<T>(ReadOnlyMemory<T> memory, JobAccessMode mode)
+    private static JobResourceAccess CreateMemoryAccess<T>(
+        ReadOnlyMemory<T> memory, JobAccessMode mode, Scheduler? scheduler = null)
     {
         ArraySegment<T> segment = GetArraySegment(memory);
-        JobResourceToken token = JobSystem.GetContainerResourceToken(segment.Array!);
+        JobResourceToken token = (scheduler ?? JobSystem.Current).GetContainerResourceToken(segment.Array!);
         return segment.Count == 0
             ? Create(ResourceKind.Token, token.Id, token.Version, token.Generation, mode)
             : CreateRange(
@@ -470,11 +475,12 @@ public readonly struct JobResourceAccess
     private static JobResourceAccess CreateMemoryRangeAccess<T>(
         ReadOnlyMemory<T> memory,
         IndexRange range,
-        JobAccessMode mode)
+        JobAccessMode mode,
+        Scheduler? scheduler = null)
     {
         ArraySegment<T> segment = GetArraySegment(memory);
         ValidateContainerRange(range, segment.Count);
-        JobResourceToken token = JobSystem.GetContainerResourceToken(segment.Array!);
+        JobResourceToken token = (scheduler ?? JobSystem.Current).GetContainerResourceToken(segment.Array!);
         return CreateRange(
             ResourceKind.Token,
             token.Id,
