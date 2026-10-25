@@ -752,7 +752,7 @@ internal static class RuntimeApplication
         void RunInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds, long gameUpdateStarted)
         {
             foreach (ValueTask completion in UpdateInterface(frameNumber, canvasWidth, canvasHeight, deltaSeconds, gameUpdateStarted))
-                RuntimeWait.Job(completion, window, FrameTimeout);
+                RuntimeWait.WaitForCompletion(completion, window, FrameTimeout);
         }
 
         void AdvanceGameUpdate(bool wait)
@@ -1504,7 +1504,7 @@ internal static class RuntimeApplication
             if (reportMilestones)
                 Console.WriteLine("First frame: publishing prepare systems.");
             using (EngineTrace.Begin(ApplicationTrace.PrepareSystems))
-                systems.Update(scope, work => RuntimeWait.Job(work, window, FrameTimeout));
+                systems.Update(scope, work => RuntimeWait.WaitForCompletion(work, window, FrameTimeout));
             using (EngineTrace.Begin(ApplicationTrace.PrepareCommit))
                 scope.Commit();
         }
@@ -1580,7 +1580,7 @@ internal static class RuntimeApplication
                         Console.WriteLine("First frame: recording render systems.");
                     if (image is { } acquired) presentation.Bind(ref graphFrame, acquired, graphicsQueue);
                     using (EngineTrace.Begin(ApplicationTrace.RenderSystems))
-                        systems.Update(frame, graphFrame, work => RuntimeWait.Job(work, window, FrameTimeout));
+                        systems.Update(frame, graphFrame, work => RuntimeWait.WaitForCompletion(work, window, FrameTimeout));
                     renderDevice.OrderTextureUploadsBefore(ref graphFrame, presentation.DrawPass);
                     var motion = new MotionFeatureOutput(
                         clusterOutputs.MotionVectors,
