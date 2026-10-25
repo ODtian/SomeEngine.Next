@@ -43,6 +43,13 @@ public sealed partial class QueryReadResources
     internal bool ContainsComponent(int componentId) =>
         _components.Exists(component => component.ComponentId == componentId);
 
+    private static bool DeclaresRead(scoped QueryCursor query, int componentId)
+    {
+        foreach (QueryDataAccess access in query.State.Definition.DataAccesses)
+            if (access.ComponentId == componentId && access.Access.CanRead()) return true;
+        return false;
+    }
+
     public void Execute<TState>(scoped QueryCursor query, ref TState state, QueryExecution<TState> execute)
         where TState : allows ref struct =>
         ExecuteCore(query, new SpanEntities(default), selectEntities: false, ref state, execute);
@@ -77,8 +84,11 @@ public sealed partial class QueryReadResources
             _references.Clear();
             var resources = new JobResourceAccessBuilder(scheduler, _uses, _references);
             foreach (IComponentReadResources component in _components)
+            {
+                if (!DeclaresRead(query, component.ComponentId)) continue;
                 if (selectEntities) component.CollectEntities(query, entities, ref resources);
                 else component.Collect(query, ref resources);
+            }
             foreach (ComponentResourceUse use in _uses) _accesses.Add(use.Access);
             SynchronousResourceOwner access = default;
             try
@@ -90,7 +100,10 @@ public sealed partial class QueryReadResources
                     access = scheduler.AcquireSynchronousAccess(CollectionsMarshal.AsSpan(_accesses));
                 bool current = true;
                 foreach (IComponentReadResources component in _components)
+                {
+                    if (!DeclaresRead(query, component.ComponentId)) continue;
                     current &= selectEntities ? component.EntityVersionsMatch(query, entities) : component.VersionsMatch(query);
+                }
                 if (!current)
                     continue;
                 execute(query, ref state);

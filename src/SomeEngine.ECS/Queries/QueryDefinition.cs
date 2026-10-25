@@ -61,6 +61,20 @@ public sealed class QueryDefinition
 
     public QueryKey Key { get; }
 
+    /// <summary>Preserves members and filters while lowering writable component and buffer terms to reads.</summary>
+    public QueryDefinition AsReadOnly()
+    {
+        if (!CanWrite) return this;
+        var terms = (QueryTerm[])_terms.Clone();
+        for (int index = 0; index < terms.Length; index++)
+        {
+            QueryTerm term = terms[index];
+            if (term.Access.CanWrite())
+                terms[index] = new(term.ComponentId, term.Kind, QueryAccess.Read, term.Filters);
+        }
+        return CreateNormalized(terms);
+    }
+
     /// <summary>Reports whether All or the sole Any term requires this component for every member.</summary>
     public bool Requires<T>() where T : struct
     {

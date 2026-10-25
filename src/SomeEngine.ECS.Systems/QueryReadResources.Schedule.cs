@@ -20,11 +20,7 @@ public sealed partial class QueryReadResources
         int count = QueryJobAccess.CopyAccesses(world, definition, reads, this);
         accesses.CopyTo(reads.AsSpan(count));
         Scheduler scheduler = WorldJobs.GetScheduler(world);
-        ReadWorkspace workspace;
-        lock (_scheduledReadsGate)
-            workspace = _scheduledReads.Count == 0 ? new ReadWorkspace() : _scheduledReads.Pop();
-        if (workspace.Components.Length != _components.Count)
-            workspace.Components = _components.Select(static component => component.Create()).ToArray();
+        ReadWorkspace workspace = TakeReadWorkspace();
         var request = new ReadRequest<TJob, TEntities>(this, workspace, world, query, entities, job, reads);
         try
         {
@@ -37,6 +33,23 @@ public sealed partial class QueryReadResources
             request.Release();
             throw;
         }
+    }
+
+    private ReadWorkspace TakeReadWorkspace()
+    {
+        ReadWorkspace workspace;
+        lock (_scheduledReadsGate) workspace = _scheduledReads.Count == 0 ? new() : _scheduledReads.Pop();
+        if (workspace.Components.Length != _components.Count)
+            workspace.Components = _components.Select(static component => component.Create()).ToArray();
+        return workspace;
+    }
+
+    private void ReturnReadWorkspace(ReadWorkspace workspace)
+    {
+        workspace.Uses.Clear();
+        workspace.References.Clear();
+        workspace.Accesses.Clear();
+        lock (_scheduledReadsGate) _scheduledReads.Push(workspace);
     }
 
     private sealed class ReadWorkspace
@@ -53,7 +66,7 @@ public sealed partial class QueryReadResources
             Accesses.Clear();
             var resources = new JobResourceAccessBuilder(scheduler, Uses, References);
             foreach (IComponentReadResources component in Components)
-                component.CollectEntities(query, entities, ref resources);
+                if (DeclaresRead(query, component.ComponentId)) component.CollectEntities(query, entities, ref resources);
             foreach (ComponentResourceUse use in Uses)
             {
                 Accesses.Add(use.Access);
@@ -65,7 +78,7 @@ public sealed partial class QueryReadResources
             where TEntities : IQueryReadEntities
         {
             foreach (IComponentReadResources component in Components)
-                if (!component.EntityVersionsMatch(query, entities)) return false;
+                if (DeclaresRead(query, component.ComponentId) && !component.EntityVersionsMatch(query, entities)) return false;
             return true;
         }
     }
@@ -108,10 +121,7 @@ public sealed partial class QueryReadResources
 
         internal void Release()
         {
-            workspace.Uses.Clear();
-            workspace.References.Clear();
-            workspace.Accesses.Clear();
-            lock (resources._scheduledReadsGate) resources._scheduledReads.Push(workspace);
+            resources.ReturnReadWorkspace(workspace);
         }
     }
 
