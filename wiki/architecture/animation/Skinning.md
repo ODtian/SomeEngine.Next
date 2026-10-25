@@ -17,7 +17,7 @@ Rendering world 的网格组件保存 source joint 到区段实体及区段内�
 并在 GPU 插值片段、传播层级 G。GPU 历史按每个区段的新输入推进；首次出现的区段以当前矩阵
 初始化上一份矩阵，重复渲染同一输入保持原有矩阵对。
 
-提取直接从同一 `QueryChunkView` 读取 `MeshSkin` 与 `GpuPoseTarget` 列，来源成员在完整
+提取从只读查询范围读取 `MeshSkin` 与 `GpuPoseTarget` 列，范围结果汇合后由原提取器更新网格绑定与目标映射；旧 chunk 入口共用此算法。来源成员在完整
 结构协调时核对。网格的 joint 映射与 distinct 依赖区段一起保存在绑定持有者中，普通帧按
 依赖区段标记模型来源。目标持有者保存已发布的区段映射，实际重绑时更新 Rendering 组件。
 已有区段的逐帧值更新通过 `IRenderExtractionSystem.CanApplyChangesDirect` 进入共同值更新

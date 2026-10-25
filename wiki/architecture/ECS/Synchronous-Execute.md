@@ -1,5 +1,6 @@
 # 同步 Execute  [[architecture/ECS-Architecture|ECS Architecture]]
 
+公共同步范围批次与便利入口见 [Job 状态与完成语义：同步范围执行](Job-Completion.md#同步范围执行)。
 
 `Execute` 不是“先 Complete conflicts，再裸调用 body”。它自己是 owner：
 
