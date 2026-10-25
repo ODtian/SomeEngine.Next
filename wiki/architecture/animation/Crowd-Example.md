@@ -49,7 +49,8 @@ $env:DOTNET_PROCESSOR_COUNT = '4'
 
 修改示例材质后，开发组合的 `sample-crowd-materials` 命令更新两条材质及主项目已经构建的共同 Shader 资产，继续使用现有角色网格。
 
-`DefaultGame --crowd-inline` 是选定的 1000 人场景入口，使用 inline 材质路径。
+`DefaultGame --crowd-cache` 是选定的 1000 人场景入口，使用缓存材质路径。
+`DefaultGame --crowd-inline` 单独选择 inline 材质路径。
 `DefaultGame --crowd` 显示两个角色场景，供同一配置下的双路径比较；
 普通启动的选择器同时包含三个已有场景和两个角色场景。
 `--regression` 选择 `1024 spheres`、`Sponza`、`Amazon Bistro`，供 `tools/Measure-Scenes.ps1` 使用。
@@ -64,7 +65,7 @@ $env:DOTNET_ReadyToRun = '0'
 & $queue --session crowd samples/DefaultGame/bin/game/Release/net10.0/DefaultGame.exe --crowd --measure --hardware-adapter --hidden-window --no-vsync --no-debug-ui --no-taa --no-vsm --async-compute --fixed-step 0.016666667
 ```
 
-将同一命令的 `--crowd` 选择为 `--crowd-inline`，可单独运行所选 inline 场景；
+将同一命令的 `--crowd` 选择为 `--crowd-cache`，可单独运行所选缓存场景；
 其余渲染参数、固定模拟窗口和完整 CPU/GPU 采集方式相同。
 
 角色场景的启动内容固定为 1920×1080，相机位于 `(0,30,-35)`，观察 `(0,.8,20)`，
