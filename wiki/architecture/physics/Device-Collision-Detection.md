@@ -8,6 +8,8 @@
 [共同接触输出](../../../src/SomeEngine.Physics/DeviceCollisionDetection.Contacts.cs)。
 公开行为入口为 [DeviceCollisionDetectionTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceCollisionDetectionTests.cs)。
 
+原 Body 组件的主体设备表示、端点引用范围和多端输出见[设备主体与引用几何](Device-Bodies.md)。
+
 ## 实体与设备表示
 
 `DeviceGeometryBinding` 在实体组件中持有 `DeviceCollisionGeometry` 和该几何资源内的索引。

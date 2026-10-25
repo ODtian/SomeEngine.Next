@@ -38,6 +38,7 @@ public sealed partial class DeviceCollisionGeometry : IDisposable
         bindings.Add("DeviceGeometries", [ResourceBinding.WritableBuffer(InputView)]);
         foreach (HullTransfer transfer in _hullTransfers)
             bindings.Add(transfer.Name, [ResourceBinding.WritableBuffer(transfer.View)]);
+        AddReferenceBindings(bindings);
     }
 
     internal void WriteInput(int index, in DeviceGeometryInput input) =>
@@ -52,6 +53,7 @@ public sealed partial class DeviceCollisionGeometry : IDisposable
         }
         else resources.Read(Inputs, 0, (long)Inputs.Info.Size);
         CollectHullAccesses(transfer, ref resources);
+        CollectReferenceAccesses(transfer, ref resources);
     }
 
     internal void UploadInputs(CommandContext commands, DeviceInputTransfer transfer)
@@ -72,6 +74,7 @@ public sealed partial class DeviceCollisionGeometry : IDisposable
                 ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
         }
         UploadHullInputs(commands, transfer);
+        UploadReferences(commands, transfer);
     }
 
     private T Keep<T>(T value) where T : IDisposable
@@ -83,6 +86,7 @@ public sealed partial class DeviceCollisionGeometry : IDisposable
     public void Dispose()
     {
         _mapping.Dispose();
+        if (Bodies is not null) _referenceMapping.Dispose();
         foreach (HullTransfer transfer in _hullTransfers) transfer.Mapping.Dispose();
         for (int index = _objects.Count - 1; index >= 0; index--) _objects[index].Dispose();
     }
