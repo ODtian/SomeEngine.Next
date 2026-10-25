@@ -1,14 +1,13 @@
 using SomeEngine.ECS.Systems;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Views;
 
 /// <summary>Runs requested view builds and changed calculations in the World's interface phase.</summary>
-public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
+public sealed partial class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 {
     private readonly List<Entity> _views = new();
     private readonly List<ViewDepth> _changedViews = new();
@@ -79,62 +78,10 @@ public sealed class ViewRebuildSystem : ISystem<ImmediateSystemContext>
                 $"view {_changedViews[0].Entity} still has changed dependencies or parameters.");
     }
 
-    private void CollectChangedViews(World world)
-    {
-        _dependencyChanges.Record(world, _frame);
-        _views.Clear();
-        _changedViews.Clear();
-        List<Entity> views = _views;
-        world.ExecuteQuery(_viewQuery, ref views, static (rows, ref viewEntities) =>
-        {
-            foreach (var row in rows.Rows)
-                viewEntities.Add(row.Entity);
-        });
-
-        foreach (Entity entity in _views)
-        {
-            if (world.Has<BuildRequest>(entity) || HasChanges(world, entity))
-            {
-                int depth = 0;
-                Entity ancestor = Hierarchy<ElementTree>.GetParent(world, entity);
-                while (ancestor != Entity.Null)
-                {
-                    depth++;
-                    ancestor = Hierarchy<ElementTree>.GetParent(world, ancestor);
-                }
-                _changedViews.Add(new ViewDepth(entity, depth));
-            }
-        }
-        _changedViews.Sort(static (left, right) => left.Depth.CompareTo(right.Depth));
-    }
-
     public void OnDestroy(ref ImmediateSystemContext context)
     {
         _builds.Close(context.World, _frame);
         context.World.ReleaseQuery(_viewQuery);
-    }
-
-    private bool HasChanges(World world, Entity entity)
-    {
-        if (HasBuildChanges(world, entity))
-            return true;
-        if (world.HasSparse<Computations>(entity))
-        {
-            CollectComputations(world, entity);
-            bool changed = false;
-            foreach (Computation computation in _computations)
-            {
-                if (!computation.Released && !computation.EvaluatesOnRead &&
-                    computation.HasChanges(_dependencyChanges))
-                {
-                    changed = true;
-                    break;
-                }
-            }
-            _computations.Clear();
-            return changed;
-        }
-        return false;
     }
 
     private bool HasBuildChanges(World world, Entity entity, bool recheck = false) =>
