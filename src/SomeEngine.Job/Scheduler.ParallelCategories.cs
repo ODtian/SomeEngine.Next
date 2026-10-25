@@ -50,7 +50,7 @@ public sealed partial class Scheduler
         int prepared = 0;
         try
         {
-            state = CreateState(batchCount, pendingDependencies: 0);
+            state = CreateState(batchCount + tokenCount, pendingDependencies: 0);
             reservation = ReserveAccesses<T>(accesses);
             AttachToCurrentScope(state);
             submission.Bind(state);
@@ -78,6 +78,7 @@ public sealed partial class Scheduler
             if (state.Index != 0)
                 CancelUnscheduledState(state);
             submission.Rollback();
+            _resources.ReleaseReservationReference(reservation);
             submission.Release();
             throw;
         }

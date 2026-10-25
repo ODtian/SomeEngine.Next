@@ -128,7 +128,7 @@ public sealed partial class Scheduler
                 return false;
             }
 
-            // PendingWork accounts for every published logical work item. A state cannot be
+            // PendingWork accounts for callback batches and each parallel token's exit. A state cannot be
             // completed or recycled while one of those items still owns its count, so the hot
             // completion path needs no state monitor. The last finisher alone enters the locked
             // resource/continuation dispatch path through CompleteStreamItems.
