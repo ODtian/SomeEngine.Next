@@ -139,7 +139,11 @@ internal sealed partial class WorkQueue : IWorkQueue
     public void EnqueueSynchronous(QueuedWork stream, int participants, JobScheduleOptions options)
     {
         ReserveQueuedCapacity(participants);
-        PublishDrainers(stream, participants, JobPriorityOrder.PriorityIndex(options.Priority), CurrentWorkerIndex);
+        int workerIndex = CurrentWorkerIndex;
+        PublishDrainers(stream, participants, JobPriorityOrder.PriorityIndex(options.Priority), workerIndex);
+        bool useLocalQueue = stream.Category is null && workerIndex != NoWorkerThread && workerIndex < _workers.Length;
+        _counters.Queued(participants, useLocalQueue);
+        _counters.QueueHighWater(Volatile.Read(ref _queuedWorkItemCount));
     }
 
     public void EnsureItemCapacity(int workItemCount)
@@ -156,7 +160,7 @@ internal sealed partial class WorkQueue : IWorkQueue
         try
         {
             int workerIndex = CurrentWorkerIndex;
-            bool useLocalQueue = workerIndex != NoWorkerThread && workerIndex < _workers.Length;
+            bool useLocalQueue = work.Stream.Category is null && workerIndex != NoWorkerThread && workerIndex < _workers.Length;
             int priorityIndex = work.PriorityIndex;
             int drainerCount = work.MakeReady(StreamDrainerLimit(work.Stream), priorityIndex);
             PublishDrainers(work.Stream, drainerCount, priorityIndex, workerIndex);
@@ -179,7 +183,7 @@ internal sealed partial class WorkQueue : IWorkQueue
         try
         {
             int workerIndex = CurrentWorkerIndex;
-            bool useLocalQueue = workerIndex != NoWorkerThread && workerIndex < _workers.Length;
+            bool useLocalQueue = stream.Category is null && workerIndex != NoWorkerThread && workerIndex < _workers.Length;
             int priorityIndex = JobPriorityOrder.PriorityIndex(priority);
             int drainerCount = stream.PrepareReady(item, StreamDrainerLimit(stream), priorityIndex);
             PublishDrainers(stream, drainerCount, priorityIndex, workerIndex);
@@ -209,7 +213,7 @@ internal sealed partial class WorkQueue : IWorkQueue
         try
         {
             int workerIndex = CurrentWorkerIndex;
-            bool useLocalQueue = workerIndex != NoWorkerThread && workerIndex < _workers.Length;
+            bool useLocalQueue = stream.Category is null && workerIndex != NoWorkerThread && workerIndex < _workers.Length;
             int priorityIndex = JobPriorityOrder.PriorityIndex(priority);
             int drainerCount = stream.PrepareManyReady(count, ref source, StreamDrainerLimit(stream), priorityIndex);
             PublishDrainers(stream, drainerCount, priorityIndex, workerIndex);
