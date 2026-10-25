@@ -42,7 +42,8 @@ public sealed class JobCategory
 
     internal WorkStream<TItem> GetWorkStream<TItem>()
         where TItem : struct, IWorkStreamItem<TItem> =>
-        (WorkStream<TItem>)_streams.GetOrAdd(typeof(TItem), _ => new WorkStream<TItem> { Category = this });
+        (WorkStream<TItem>)_streams.GetOrAdd(typeof(TItem),
+            static (_, category) => new WorkStream<TItem> { Category = category }, this);
 
     internal bool TryStartRequest()
     {
