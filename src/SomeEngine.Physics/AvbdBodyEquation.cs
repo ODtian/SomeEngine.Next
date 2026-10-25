@@ -25,7 +25,7 @@ public struct AvbdBodyEquation : IComponent
         float inverseStepSquared = 1 / (duration * duration);
         float linearWeight = inverseStepSquared / mass.InverseMass;
         LinearGradient = (pose.GetCenterOfMass(in mass) - state.PredictedCenterOfMass) * linearWeight;
-        Vector3 rotationError = AvbdRotation.GetRotationVector(Quaternion.Conjugate(pose.Rotation) * state.PredictedRotation);
+        Vector3 rotationError = BodyRotation.GetRotationVector(Quaternion.Conjugate(pose.Rotation) * state.PredictedRotation);
         AngularGradient = -Vector3.Transform(Vector3.TransformNormal(rotationError, _bodyInertia), pose.Rotation)
             * inverseStepSquared;
         for (int axis = 0; axis < 3; axis++)
@@ -110,18 +110,4 @@ internal static class BodyInertia
 
     internal static Vector3 Apply(Quaternion rotation, Matrix4x4 inertia, Vector3 value) =>
         Vector3.Transform(Vector3.TransformNormal(Vector3.Transform(value, Quaternion.Conjugate(rotation)), inertia), rotation);
-}
-
-internal static class AvbdRotation
-{
-    internal static Vector3 GetRotationVector(Quaternion rotation)
-    {
-        if (rotation.W < 0) rotation = -rotation;
-        var vector = new Vector3(rotation.X, rotation.Y, rotation.Z);
-        float magnitude = vector.Length();
-        return magnitude == 0 ? Vector3.Zero : vector * (2 * MathF.Atan2(magnitude, rotation.W) / magnitude);
-    }
-
-    internal static Quaternion Advance(Quaternion rotation, Vector3 change) =>
-        Quaternion.Normalize(rotation + (new Quaternion(change, 0) * rotation) * 0.5f);
 }
