@@ -51,6 +51,8 @@ Game world 更新、异步 compute 与多帧调度。`Gpu` 是上述 GPU 结果�
 
 `CpuMs` 从帧入口与该帧异步 Game update 的调度起点中较早者计到 `Present` 返回，
 因此包含该帧游戏回调、动画、提取、资源等待、渲染准备与提交。
+应用等待短 Game 任务时，`RuntimeWait` 先在同一超时预算内主动检查至多 1 ms，
+随后按原完成事件与窗口消息等待；该段等待完整计入 `CpuMs` 与 `TaskCompletion` trace。
 `GameMs`、`AnimationMs`、`ExtractionMs`、`PrepareMs`、`ReconcileMs`、`ExecuteMs` 描述各 CPU 阶段；
 `ExecuteMs` 包含图分析、命令录制和提交。CPU、GPU 与 `Geometry` 结果通过 `FrameIdentity` 配对，
 在 GPU 完成后交付给应用。`RenderGraphFrameResult.FrameIdentity` 将执行观察与同一帧关联。
