@@ -26,4 +26,4 @@
 
 `CollisionComponentFilter`、`CollisionKeyFilter`、`CollisionBitmapFilter` 分别调用既有组件关系、键关系与位图关系绑定，读取当前原组件行。筛选在所选候选来源的枚举中执行，规则变化随下一批次读取生效。公共包装同样供其他具体分区来源使用。源码为 [具体筛选](../../../src/SomeEngine.Physics/CollisionPairFilters.cs) 与 [生成入口](../../../src/SomeEngine.ECS.SourceGen/SpatialRelationGenerator.cs)。
 
-异步使用时，外层 Job 将 `grid.UpdateAccess(scheduler)`、类型批次 `FillAccess` 及查询组件读取加入实际访问声明。网格访问使用已有成员字典的对象资源身份，覆盖所属成员与派生单元更新；生产、检测、求解和后续消费通过现有 JobHandle 接续。
+异步使用时，外层 Job 将 `grid.GetWriteAccess(scheduler)`、类型批次 `FillAccess` 及查询组件读取加入实际访问声明。网格访问使用已有成员字典的对象资源身份，覆盖所属成员与派生单元更新；生产、检测、求解和后续消费通过现有 JobHandle 接续。

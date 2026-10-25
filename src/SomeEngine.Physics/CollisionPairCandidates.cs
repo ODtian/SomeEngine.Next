@@ -65,6 +65,7 @@ public struct CollisionPairCandidates<TSource, TPartition, TFilter>(TSource sour
 
     private readonly ref struct PairOutputReference<TOutput> where TOutput : allows ref struct
     {
+        // Preserve the caller's managed output address across callback-local query borrows.
         private readonly ref byte _value;
         internal PairOutputReference(ref TOutput output) => _value = ref Unsafe.As<TOutput, byte>(ref output);
         internal ref TOutput Value => ref Unsafe.As<byte, TOutput>(ref _value);

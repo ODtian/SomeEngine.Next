@@ -20,7 +20,7 @@ public sealed partial class CollisionGrid<TSettings>(TSettings settings)
     public TSettings Settings => settings;
 
     /// <summary>Declares the grid's member and derived-cell update through the existing object resource table.</summary>
-    public JobResourceAccess UpdateAccess(Scheduler scheduler) => JobResourceAccess.Write(scheduler, _members);
+    public JobResourceAccess GetWriteAccess(Scheduler scheduler) => JobResourceAccess.Write(scheduler, _members);
 
     internal void BeginUpdate() => _update++;
 
