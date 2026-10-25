@@ -7,11 +7,13 @@ namespace SomeEngine.Physics;
 
 internal static class PhysicsQueryAccess
 {
-    internal static void AddAccesses(World world, QueryHandle query, List<JobResourceAccess> accesses)
+    internal static void AddAccesses(World world, QueryHandle query, List<JobResourceAccess> accesses,
+        QueryReadResources? resources = null)
     {
         QueryDefinition definition = world.GetQueryDefinition(query);
         var queryAccesses = new JobResourceAccess[QueryJobAccess.Count(definition)];
-        QueryJobAccess.CopyAccesses(world, definition, queryAccesses);
+        if (resources is null) QueryJobAccess.CopyAccesses(world, definition, queryAccesses);
+        else QueryJobAccess.CopyAccesses(world, definition, queryAccesses, resources);
         accesses.AddRange(queryAccesses);
     }
 }
