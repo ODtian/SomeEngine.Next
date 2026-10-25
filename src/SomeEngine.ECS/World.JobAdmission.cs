@@ -161,6 +161,10 @@ internal readonly struct WorldJobAdmissionRequest
             canWrite: canWrite,
             requiresUnboundMutationGate: canWrite,
             bumpsTopologyRevision: topology == WorldTopologyAccess.Write);
+
+    internal static WorldJobAdmissionRequest ForReadQuery(ReadOnlyMemory<WorldJobStorageAccess> accesses) =>
+        new(WorldTopologyAccess.Read, WorldStorageKind.Buffer, -1, WorldStorageAccess.None, accesses,
+            canWrite: false, requiresUnboundMutationGate: true, bumpsTopologyRevision: false);
 }
 
 internal readonly struct WorldJobAdmissionScope : IDisposable

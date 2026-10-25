@@ -30,7 +30,7 @@ Extraction 把 GameWorld 的渲染相关变化转换成下一次 RenderWorld 更
 内置提取器的旧 chunk 入口通过 `ReadOnlyQueryPacketJobs.Borrow(QueryChunkView)`
 进入相同收集算法。查询回调保持来源列有效，`ReadOnlyQueryPacketPlan.ExecuteParallel`
 在返回前完成全部范围工作；汇合与 `CompleteSourceCollection` 继续处于外层
-`World.ExecuteReadSnapshot` 的读取期内。绑定 `WorldJobs` 的来源使用对应 Scheduler，
+`World.ExecuteReadQuery` 声明的拓扑、列和 Buffer 读取期内。绑定 `WorldJobs` 的来源使用对应 Scheduler，
 普通 World 来源使用共同 Job Scheduler。
 
 范围输出由各收集器保持到汇合结束，随后 Reset 供后续提取复用。
@@ -42,12 +42,18 @@ Extraction 把 GameWorld 的渲染相关变化转换成下一次 RenderWorld 更
 ## 同一读取窗口内的补充收集
 
 `IRenderExtractionSystem.CompleteSourceCollection(World sourceWorld, bool fullCollection)`
-在 chunk 收集完成后、`World.ExecuteReadSnapshot` 回调结束前执行。
+在 chunk 收集完成后、`World.ExecuteReadQuery` 回调结束前执行。
 提取系统可在这一窗口中使用公开的只读 World 与层级 API，完成有序子节点等数据的收集。
 来源组件在 `DeclareReads` 中声明，收集系统按对应写版本筛选变化。
 回调返回的变化参与同一次 RenderPrepare 更新；默认实现返回 false。
 
-该回调与 chunk 收集共用 Game world 的一致读取窗口。
+该回调与 chunk 收集共用 Game world 的实际声明读取窗口。
+`RenderExtractionQuery.ReadOptional<T,TResources>()` 用已有 `IJobComponentResources<T>`
+登记引用资源，`QueryReadResources` 持有它们到补充收集与资源值收集结束。
+骨骼提取声明 SkeletonInstance、继承父区段、Controls 数组与读回请求范围，
+并通过绑定版本复核保持当前引用关系。Canvas 与 Glyph 的层级、布局及绘制输入继续由
+各自 `DeclareReads` 声明。实现入口为 `MeshSkin.Resources.cs` 与
+[声明资源的查询读取](../ECS/Query-Reads.md)。
 `Apply` 与 `ApplyChanges` 使用收集值。首次收集和结构变化在 RenderWorld 的现有结构事务中更新；
 已有实体的值更新通过 `CanApplyChangesDirect` 及已声明写入组件的 hook 条件选择直接写入路径。
 

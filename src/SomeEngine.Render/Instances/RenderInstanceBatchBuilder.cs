@@ -266,7 +266,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 composer,
                 membership,
                 forcedChanges);
-            context.World.ExecuteReadSnapshot(
+            context.World.ExecuteReadQuery(
                 query,
                 context.LastSystemVersion,
                 ref snapshot,

@@ -54,9 +54,9 @@ public sealed partial class SkinRenderExtractor : IRenderExtractionSystem
 
     public void DeclareReads(RenderExtractionQuery query)
     {
-        query.ReadOptional<MeshSkin>();
-        query.ReadOptional<PoseTarget>();
-        query.ReadOptional<GpuPoseTarget>();
+        query.ReadOptional<MeshSkin, MeshSkinReads>();
+        query.ReadOptional<PoseTarget, PoseTargetReads>();
+        query.ReadOptional<GpuPoseTarget, GpuPoseTargetReads>();
         query.ReadOptionalBuffer<GpuPoseGoal>();
         query.Write<RenderMeshSkin>();
         query.Write<RenderSkinBinding>();
