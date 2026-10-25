@@ -12,6 +12,18 @@ public interface IReadOnlyQueryPairJob
 
 public static class ReadOnlyQueryPairJobs
 {
+    /// <summary>Joins indexed work on the surrounding queries before either borrow returns.</summary>
+    public static void ExecuteParallel<TJob>(scoped QueryCursor first, scoped QueryCursor second,
+        in TJob job, int count, int batchSize = 1)
+        where TJob : struct, IReadOnlyQueryPairJob
+    {
+        if (first.State.Definition.CanWrite || second.State.Definition.CanWrite)
+            throw new InvalidOperationException("Parallel query-pair work requires read-only queries.");
+        Scheduler scheduler = WorldJobs.TryGetScheduler(first.Owner, out Scheduler? jobs) ? jobs : JobSystem.Current;
+        var data = new PairJobData<TJob>(first.Data, second.Data, job);
+        scheduler.ExecuteParallel(new PairRangeJob<TJob>(data), count, batchSize);
+    }
+
     /// <summary>Runs partitions inside the two surrounding query callbacks.</summary>
     public static void ExecuteInline<TJob>(scoped QueryCursor first, scoped QueryCursor second, in TJob job, int count)
         where TJob : struct, IReadOnlyQueryPairJob
@@ -87,5 +99,11 @@ public static class ReadOnlyQueryPairJobs
         where TJob : struct, IReadOnlyQueryPairJob
     {
         public void Execute() => data.Execute(index);
+    }
+
+    private readonly struct PairRangeJob<TJob>(PairJobData<TJob> data) : IJobParallelFor
+        where TJob : struct, IReadOnlyQueryPairJob
+    {
+        public void Execute(int index) => data.Execute(index);
     }
 }

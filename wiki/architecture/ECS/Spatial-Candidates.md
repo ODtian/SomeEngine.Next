@@ -12,6 +12,10 @@
 
 `CollisionTree` 集中持有节点数组。节点记录范围、完整 Entity、父节点、两个子节点、子树成员数和高度；叶子按最长中心轴的中位数分割，分支范围由两个子节点合并。节点编号同时用于读取这棵树的附加摘要，父子编号为成员插入、移除和祖先范围更新提供连接。`Nodes` 公开已建树的只读节点范围，读取放在构建完成与下一次修改之间。
 
+初建先集中保存参与实体身份，再由 `ReadOnlyQueryPairJobs.ExecuteParallel` 在原 Query 读取范围内按实体取得组件，调用具体 `ICollisionBoundsReader<TComponent>` 产生叶 Bounds。节点数组保存实体与派生范围；原几何继续由 World 的组件列持有。范围工作使用所属 World 的 Scheduler，并在借用返回前完成。
+
+`CollectBranchRanges` 先按中心轴分割上层，把下层子树分配到预留的节点区段。各 `BuildSubtreesJob` 独立排序自己的叶范围并建立子树，全部完成后从下向上合并上层节点，最后更新实体到叶的对应关系。叶范围读取、子树建立和上层合并依次完成后，公开构建入口返回可继续维护的树。实现位于 [CollisionTree.Building](../../../src/SomeEngine.Physics/CollisionTree.Building.cs)，公开行为由 [CollisionCandidatesTests](../../../tests/SomeEngine.Physics.Tests/CollisionCandidatesTests.cs) 覆盖。
+
 遍历使用值类型节点对的栈，从 `(root, root)` 开始。同一分支展开两个子树内部和两个子树之间的组合；不同分支先比较 AABB，再按树高细分，叶子对调用 `EntityOrder.OrderPair`。每个无序实体对访问一次，输出携带完整身份。`QueryCount` 为一个输入查询，其二元行使用 `(Entity, Entity)`。
 
 类别与键摘要、逐条件组证明及显式摘要构建见 [空间筛选下推](Spatial-Filtering.md)。普通语义和具体实现入口均可继续组合为同一个空间遍历。
