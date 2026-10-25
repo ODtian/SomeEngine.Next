@@ -58,6 +58,8 @@ public sealed class CollisionPairBins<TPartition> : IDisposable where TPartition
     public ReadOnlySpan<CollisionGeometryPair> ReadBin(int bin) =>
         _pairs.AsSpan(_binOffsets[bin], _binOffsets[bin + 1] - _binOffsets[bin]);
 
+    internal ReadOnlySpan<CollisionGeometryPair> ReadPairs() => _pairs.AsSpan(0, Count);
+
     internal void Fill<TEnumerable, TClassifier>(TEnumerable source, TClassifier classifier,
         scoped RelationQueryViews queries, bool parallel)
         where TEnumerable : struct, ICollisionPartitionEnumerable<TPartition>
