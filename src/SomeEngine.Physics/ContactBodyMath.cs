@@ -8,11 +8,24 @@ internal static class ContactBodyMath
     internal static Entity GetBody(in ContactBodyLink link, in PhysicsStepContext context) =>
         context.World.GetDirectedRelationEndpoints(link.Participant).Target;
 
+    internal static Entity GetBody(in ContactBodyLink link, scoped PhysicsBodies bodies, in PhysicsStepContext context) =>
+        bodies.TryReadReference<SomeEngine.ECS.Relations.DirectedRelationEndpoints<ContactParticipant>>(
+            link.Participant.Entity, out var endpoints) ? endpoints.Value.Target : GetBody(in link, in context);
+
     internal static bool IsFirstOccurrence(ReadOnlySpan<ContactBodyLink> links, int index, in PhysicsStepContext context)
     {
         Entity body = GetBody(in links[index], in context);
         for (int earlier = 0; earlier < index; earlier++)
             if (GetBody(in links[earlier], in context) == body) return false;
+        return true;
+    }
+
+    internal static bool IsFirstOccurrence(ReadOnlySpan<ContactBodyLink> links, int index, scoped PhysicsBodies bodies,
+        in PhysicsStepContext context)
+    {
+        Entity body = GetBody(in links[index], bodies, in context);
+        for (int earlier = 0; earlier < index; earlier++)
+            if (GetBody(in links[earlier], bodies, in context) == body) return false;
         return true;
     }
 
@@ -22,8 +35,8 @@ internal static class ContactBodyMath
         float speed = 0;
         for (int index = 0; index < links.Length; index++)
         {
-            if (!IsFirstOccurrence(links, index, in context)) continue;
-            Entity body = GetBody(in links[index], in context);
+            if (!IsFirstOccurrence(links, index, bodies, in context)) continue;
+            Entity body = GetBody(in links[index], bodies, in context);
             BodyVelocity velocity = bodies.GetRow(body).Read<BodyVelocity>();
             if (stepInput && bodies.ReadMass(body).Motion == BodyMotion.Kinematic)
             {
@@ -44,7 +57,7 @@ internal static class ContactBodyMath
         for (int index = 0; index < links.Length; index++)
         {
             ref readonly ContactBodyLink link = ref links[index];
-            Entity body = GetBody(in link, in context);
+            Entity body = GetBody(in link, bodies, in context);
             BodyPose pose;
             if (start)
             {
@@ -68,7 +81,7 @@ internal static class ContactBodyMath
         for (int index = 0; index < links.Length; index++)
         {
             ref readonly ContactBodyLink link = ref links[index];
-            if (GetBody(in link, in context) != body) continue;
+            if (GetBody(in link, bodies, in context) != body) continue;
             float weight = link.Weight * (index < point.FirstBodyCount ? -1 : 1);
             Vector3 offset = pose.Position + Vector3.Transform(link.LocalPoint, pose.Rotation) - center;
             linear += direction * weight;
