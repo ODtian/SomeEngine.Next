@@ -22,19 +22,7 @@ public sealed partial class DeviceCollisionGrid
             mapping.Flush(new(0, (ulong)Marshal.SizeOf<GridParameters>()));
         }
         _backend.Begin(_commands, new CommandRecordingDesc(512, 8, 512));
-        if (!_hasRun)
-            foreach (var buffer in _gpuBuffers)
-                _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
-                    buffer.InitialAccess, ResourceAccess.UnorderedAccess));
-        if (transfer == DeviceInputTransfer.Upload)
-        {
-            _inputMapping.Flush(_inputMapping.Range);
-            _backend.Barrier(_commands, new BufferBarrier(Bodies, PipelineSync.ComputeShading, PipelineSync.Copy,
-                ResourceAccess.UnorderedAccess, ResourceAccess.CopyDestination));
-            _backend.CopyBuffer(_commands, new BufferCopy(Upload, 0, Bodies, 0, (ulong)Capacity.Bodies * InputStride));
-            _backend.Barrier(_commands, new BufferBarrier(Bodies, PipelineSync.Copy, PipelineSync.ComputeShading,
-                ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
-        }
+        UploadInputs(_commands, transfer);
         Dispatch(0, (Capacity.Buckets + ScanWidth - 1) / ScanWidth);
         Dispatch(1, BlockCount);
         Dispatch(2, BlockCount);
@@ -50,11 +38,29 @@ public sealed partial class DeviceCollisionGrid
         using RecordedCommands commands = _backend.End(_commands);
         QueueCompletion completion = _backend.Submit(_backend.GetQueue(_device, QueueType.Compute),
             new([], [], [commands], [], []));
-        _hasRun = true;
-        if (transfer == DeviceInputTransfer.Upload)
-            _deviceRevision = revision;
         Completion = completion;
         return completion;
+    }
+
+    internal void UploadInputs(CommandContext commands, DeviceInputTransfer transfer)
+    {
+        if (!_buffersInitialized)
+        {
+            foreach (var buffer in _gpuBuffers)
+                _backend.Barrier(commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
+                    buffer.InitialAccess, ResourceAccess.UnorderedAccess));
+            _buffersInitialized = true;
+        }
+        if (transfer == DeviceInputTransfer.Upload)
+        {
+            _inputMapping.Flush(_inputMapping.Range);
+            _backend.Barrier(commands, new BufferBarrier(Bodies, PipelineSync.ComputeShading, PipelineSync.Copy,
+                ResourceAccess.UnorderedAccess, ResourceAccess.CopyDestination));
+            _backend.CopyBuffer(commands, new BufferCopy(Upload, 0, Bodies, 0, (ulong)Capacity.Bodies * InputStride));
+            _backend.Barrier(commands, new BufferBarrier(Bodies, PipelineSync.Copy, PipelineSync.ComputeShading,
+                ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
+            _deviceRevision = _uploadRevision;
+        }
     }
 
     private void Dispatch(int kernel, int x, int y = 1)
