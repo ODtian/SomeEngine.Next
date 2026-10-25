@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
@@ -18,13 +19,15 @@ public sealed partial class Scheduler
         where T : struct, IJobParallelFor
     {
         using Submission submission = EnterSubmission();
-        BeginParallelSchedule<T>(options, batchSize);
+        JobPayloadLane lane = BeginParallelSchedule<T>(options, batchSize);
         if (length <= 0)
             return;
         options = ResolveCategoryOptions(options);
         using CategoryRequest categoryRequest = EnterSynchronousCategoryRequest(options.Category);
-        int resolvedSize = batchSize == JobScheduleOptions.AutomaticBatchSize
-            ? ParallelBatchSizer<T>.Resolve(length, _config.WorkerCount,
+        ParallelBatchSizer<T>? batchSizer = batchSize == JobScheduleOptions.AutomaticBatchSize
+            ? GetParallelBatchSizer<T>() : null;
+        int resolvedSize = batchSizer is not null
+            ? batchSizer.Resolve(length, _config.WorkerCount,
                 _config.AutoBatchTargetMicroseconds, _config.AutoBatchMaxTilesPerWorker)
             : batchSize;
         int batchCount = CalculateParallelBatchCount(length, resolvedSize);
@@ -43,13 +46,14 @@ public sealed partial class Scheduler
             resources = accesses.IsEmpty ? default : AcquireSynchronousAccess(accesses);
             scope = ScopeToken.FromHandle(resources.Handle);
         }
-        SynchronousBatch<T> batch = SynchronousBatch<T>.Rent(this, job, length, resolvedSize, helpers, scope);
+        SynchronousBatch<T> batch = SynchronousBatch<T>.Rent(this, job, length, resolvedSize, helpers, scope, batchSizer);
         batch.Category = options.Category;
         ExceptionDispatchInfo? failure = null;
         try
         {
             if (helpers != 0)
                 _workQueue.EnqueueSynchronous(batch, helpers, options);
+            _counters.Scheduled(lane);
             batch.RunCaller();
             SpinWait spin = new();
             while (!batch.IsFinished)
@@ -93,9 +97,10 @@ public sealed partial class Scheduler
         private int _nextBatch;
         private int _remaining;
         private ExceptionDispatchInfo? _failure;
+        private ParallelBatchSizer<T>? _batchSizer;
 
         internal static SynchronousBatch<T> Rent(Scheduler scheduler, in T job, int length, int batchSize, int helpers,
-            ScopeToken scope)
+            ScopeToken scope, ParallelBatchSizer<T>? batchSizer)
         {
             SynchronousBatch<T> batch = s_available ?? new SynchronousBatch<T>();
             s_available = batch._next;
@@ -107,6 +112,7 @@ public sealed partial class Scheduler
             batch._batchSize = batchSize;
             batch._nextBatch = 1;
             batch._remaining = helpers + 1;
+            batch._batchSizer = batchSizer;
             return batch;
         }
 
@@ -119,6 +125,7 @@ public sealed partial class Scheduler
             _scheduler = null!;
             _scope = default;
             _failure = null;
+            _batchSizer = null;
             Category = null;
             _next = s_available;
             s_available = this;
@@ -144,14 +151,25 @@ public sealed partial class Scheduler
             s_currentScope = _scope;
             s_synchronousParallelDepth++;
             JobExecutionContext.Enter();
+            long startedAt = _batchSizer is not null ? Stopwatch.GetTimestamp() : 0;
+            int processedItems = 0;
+            int faultedBatches = 0;
             try
             {
                 if (callingThread)
-                    RunBatch(0);
-                Drain();
+                    processedItems += RunBatch(0, ref faultedBatches);
+                processedItems += Drain(ref faultedBatches);
             }
             finally
             {
+                if (_batchSizer is not null && processedItems > 0)
+                    _batchSizer.Record(_length, Stopwatch.GetTimestamp() - startedAt, processedItems);
+                if (_scheduler._counters.Enabled && processedItems > 0)
+                {
+                    // A participant claims full batches and at most one partial final batch.
+                    _scheduler._counters.Executed(CalculateParallelBatchCount(processedItems, _batchSize));
+                    _scheduler._counters.Faulted(faultedBatches);
+                }
                 JobExecutionContext.Exit();
                 s_currentScope = previousScope;
                 s_synchronousParallelDepth = previousParallelDepth;
@@ -159,18 +177,19 @@ public sealed partial class Scheduler
             }
         }
 
-        private void Drain()
+        private int Drain(ref int faultedBatches)
         {
+            int processedItems = 0;
             while (true)
             {
                 int index = Interlocked.Increment(ref _nextBatch) - 1;
                 if ((long)index * _batchSize >= _length)
-                    return;
-                RunBatch(index);
+                    return processedItems;
+                processedItems += RunBatch(index, ref faultedBatches);
             }
         }
 
-        private void RunBatch(int batchIndex)
+        private int RunBatch(int batchIndex, ref int faultedBatches)
         {
             T job = _job;
             int start = batchIndex * _batchSize;
@@ -182,8 +201,10 @@ public sealed partial class Scheduler
             }
             catch (Exception error)
             {
+                faultedBatches++;
                 Interlocked.CompareExchange(ref _failure, ExceptionDispatchInfo.Capture(error), null);
             }
+            return end - start;
         }
 
         internal override int DrainAndFinish(Scheduler scheduler, int maxItems, int priorityIndex,

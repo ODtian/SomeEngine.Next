@@ -50,7 +50,7 @@ public static partial class ClusterMeshBuilder
         }
 
         return BuildCore(groupedPositions.ToArray(),
-            new TypedVertexData<TAttributes>(groupedAttributes.ToArray(), vertexEncoder),
+            new TypedVertexData<TAttributes>(groupedAttributes.ToArray(), vertexEncoder, new object()),
             groupedIndices.ToArray(), groupedMaterialIndices.ToArray(), name, strategy);
     }
 
@@ -65,7 +65,7 @@ public static partial class ClusterMeshBuilder
             if (attribute.Data.Length < positions.Length * attribute.Dimension)
                 throw new ArgumentException("Attribute data must cover every input vertex.", nameof(attributes));
         }
-        return BuildCore(positions, new RawVertexData(vertexAttributes, vertexEncoder), indices,
+        return BuildCore(positions, new RawVertexData(vertexAttributes, vertexEncoder, new object()), indices,
             materialIndices?.Data.Select(static value => checked((uint)value)).ToArray() ?? new uint[positions.Length], name, strategy, materialCount);
     }
 
@@ -73,7 +73,7 @@ public static partial class ClusterMeshBuilder
     public static Mesh Build(Vector3[] positions, IReadOnlyList<RawAttribute> attributes, uint[] indices,
         uint[] materialIndices, IClusterVertexEncoder vertexEncoder, ClusterBuildStrategy strategy, string name)
         => BuildCore(positions, new RawVertexData(attributes.Where(static attribute => attribute.Name != "_MATERIAL_INDEX").ToArray(),
-            vertexEncoder), indices, materialIndices, name, strategy);
+            vertexEncoder, new object()), indices, materialIndices, name, strategy);
 
     private static T[] RemapValues<T>(T[] source, ReadOnlySpan<uint> remap, int vertexCount)
     {
@@ -91,21 +91,35 @@ public static partial class ClusterMeshBuilder
         public virtual IReadOnlyList<RawAttribute> RawAttributes => [];
         public abstract VertexStream[] Streams { get; }
         public abstract VertexData Remap(ReadOnlySpan<uint> remap, int vertexCount);
+        public abstract VertexData CreateBatch();
         public abstract EncodedClusterVertices Encode(ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> vertices);
     }
 
-    private sealed class TypedVertexData<T>(T[] attributes, IClusterVertexEncoder<T> encoder) : VertexData
+    private sealed class TypedVertexData<T>(T[] attributes, IClusterVertexEncoder<T> encoder, object? gate) : VertexData
         where T : unmanaged
     {
         public override string Compatibility => encoder.Compatibility;
         public override VertexStream[] Streams => [new(attributes, Unsafe.SizeOf<T>())];
         public override VertexData Remap(ReadOnlySpan<uint> remap, int vertexCount)
-            => new TypedVertexData<T>(RemapValues(attributes, remap, vertexCount), encoder);
+            => new TypedVertexData<T>(RemapValues(attributes, remap, vertexCount), encoder, gate);
+        public override VertexData CreateBatch()
+        {
+            IClusterVertexEncoder<T>? batch = encoder.CreateBatchEncoder();
+            return batch is null ? new TypedVertexData<T>(attributes, encoder, gate)
+                : new TypedVertexData<T>(attributes, batch, null);
+        }
         public override EncodedClusterVertices Encode(ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> vertices)
-            => encoder.Encode(positions, attributes, vertices);
+        {
+            if (gate is null) return encoder.Encode(positions, attributes, vertices);
+            lock (gate)
+            {
+                EncodedClusterVertices encoded = encoder.Encode(positions, attributes, vertices);
+                return encoded with { Blob = encoded.Blob.ToArray() };
+            }
+        }
     }
 
-    private sealed class RawVertexData(IReadOnlyList<RawAttribute> attributes, IClusterVertexEncoder encoder) : VertexData
+    private sealed class RawVertexData(IReadOnlyList<RawAttribute> attributes, IClusterVertexEncoder encoder, object? gate) : VertexData
     {
         public override IReadOnlyList<RawAttribute> RawAttributes => attributes;
         public override string Compatibility => encoder.Compatibility;
@@ -125,10 +139,23 @@ public static partial class ClusterMeshBuilder
                 result.Add(new(attribute.Name, data, attribute.Dimension, attribute.TargetType,
                     attribute.NumComponents, attribute.Normalized));
             }
-            return new RawVertexData(result, encoder);
+            return new RawVertexData(result, encoder, gate);
         }
 
+        public override VertexData CreateBatch()
+        {
+            IClusterVertexEncoder? batch = encoder.CreateBatchEncoder();
+            return batch is null ? new RawVertexData(attributes, encoder, gate)
+                : new RawVertexData(attributes, batch, null);
+        }
         public override EncodedClusterVertices Encode(ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> vertices)
-            => encoder.Encode(positions, attributes, vertices);
+        {
+            if (gate is null) return encoder.Encode(positions, attributes, vertices);
+            lock (gate)
+            {
+                EncodedClusterVertices encoded = encoder.Encode(positions, attributes, vertices);
+                return encoded with { Blob = encoded.Blob.ToArray() };
+            }
+        }
     }
 }
