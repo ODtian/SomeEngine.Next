@@ -1,3 +1,4 @@
+using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Registry;
 
@@ -6,10 +7,15 @@ namespace SomeEngine.ECS.Queries;
 public readonly ref partial struct QueryChunkView
 {
     /// <summary>Binds component read/write access once; indexed writes publish each accessed row's version.</summary>
-    public ComponentWriteColumn<T> ReadWriteColumn<T>() where T : struct
+    public ComponentWriteColumn<T> ReadWriteColumn<T>() where T : struct =>
+        ReadWriteColumn<T>(_world, CurrentSystemVersion);
+
+    internal ComponentWriteColumn<T> ReadWriteColumn<T>(World world, uint version) where T : struct
     {
+        DevelopmentCheck.Require(ReferenceEquals(_world, world),
+            "Component batches and query columns must belong to the same World.");
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: true);
-        return new(_world.Components, _chunk, column, CurrentSystemVersion);
+        return new(_world.Components, _chunk, column, version);
     }
 
     /// <summary>Binds buffer read access once; row selection remains available through RowIndices.</summary>

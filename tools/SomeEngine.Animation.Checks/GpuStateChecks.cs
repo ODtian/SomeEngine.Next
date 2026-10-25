@@ -62,7 +62,7 @@ internal static class GpuStateChecks
         PropertyAnimation.Resume(world, animation);
         Tick();
         RequireTimes(.75f, 2, 1);
-        Console.WriteLine("GPU_STATE_CLOCKS_PASSED nested-targets independent-speed pause-resume shared-clip-blend");
+        Console.WriteLine("GPU_STATE_CLOCKS_PASSED nested-targets independent-speed pause-resume shared-clip-blend batch-versions");
 
         void Tick()
         {
@@ -76,6 +76,9 @@ internal static class GpuStateChecks
                 || !a.Playing || !b.Playing || !c.Playing
                 || a.StateMachine != machine || b.StateMachine != machine || c.StateMachine != machine)
                 throw new InvalidOperationException("GPU-state leaves must keep their nested clocks, independent targets and pause state.");
+            uint version = world.WriteVersion<GpuPoseTarget>(first);
+            if (world.WriteVersion<GpuPoseTarget>(second) != version || world.WriteVersion<GpuPoseTarget>(direct) != version)
+                throw new InvalidOperationException("GPU-state targets must share their output batch's write version.");
             GpuPoseTarget d = world.Read<GpuPoseTarget>(clipTarget), e = world.Read<GpuPoseTarget>(blendTarget);
             if (d.SampleTime != mixedTime || e.PlaybackTime != mixedTime
                 || d.Clip != quantized || e.Blend != blend || !e.Playing)
