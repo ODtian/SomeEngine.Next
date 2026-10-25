@@ -106,6 +106,8 @@ public sealed partial class RenderGraph
                 next = null!;
                 return false;
             }
+            // Retire completed command payloads before this frame reuses their recording contexts.
+            if (storage.Completions.Count != 0) _backend.CollectCompleted(_device);
             storage.Reset(_backend);
             _ = storage.GetBufferTransfers(this);
             _preferredFrameIndex = storage.Index;
