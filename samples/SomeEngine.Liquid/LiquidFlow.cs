@@ -129,6 +129,10 @@ public sealed partial class LiquidFlow
         Emit(Seconds, Seconds + seconds); Seconds += seconds;
     }
 
+    /// <summary>Steps distinct flows and returns after every flow has finished.</summary>
+    public static void Step(ReadOnlyMemory<LiquidFlow> flows, float seconds = StepSeconds) =>
+        throw new NotImplementedException();
+
     private double IntegrateInletVolume(double from, double to)
     {
         if (!Pouring || from >= Source.Duration) return 0;
