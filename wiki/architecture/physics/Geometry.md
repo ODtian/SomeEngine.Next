@@ -8,6 +8,8 @@
 
 项目提供共享顶点及面索引的 `ConvexHullGeometry` 也使用共同的 support、流形和查询入口，数据与资源职责见 [凸包](Convex-Hulls.md)。
 
+相同实体、特征、见证点和接触语义的设备实现见 [设备几何与检测](Device-Collision-Detection.md)。
+
 模拟实体采样点驱动的胶囊、连续边及面域通过具体 reader 接入同一路径，当前状态、跨实体访问和多端权重职责见 [动态几何](Dynamic-Geometry.md)。
 
 具体有符号距离场及共享网格通过相同的几何、类型检测和查询入口使用，数据、采样精度与支持组合见 [有符号距离场](Signed-Distance-Fields.md)。
