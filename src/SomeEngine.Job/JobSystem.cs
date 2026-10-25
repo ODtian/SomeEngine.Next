@@ -358,5 +358,5 @@ public static partial class JobSystem
         return Current.AcquireSynchronousAccess(accesses);
     }
 
-    private static Scheduler Current => Scheduler.Executing ?? Default;
+    internal static Scheduler Current => Scheduler.Executing ?? Default;
 }

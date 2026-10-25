@@ -62,12 +62,12 @@ public readonly ref struct JobResourceAccessBuilder
         Add(data, JobResourceAccess.Read(_scheduler.GetResourceToken(data), start, length));
 
     public void Read<T>(ReadOnlyMemory<T> data) =>
-        Add(JobResourceAccess.GetArraySegment(data).Array!, JobResourceAccess.Read(data));
+        Add(JobResourceAccess.GetArraySegment(data).Array!, JobResourceAccess.Read(_scheduler, data));
 
     public void Read<T>(Memory<T> data) => Read((ReadOnlyMemory<T>)data);
 
     public void Read<T>(ReadOnlyMemory<T> data, long start, long length) =>
-        Add(JobResourceAccess.GetArraySegment(data).Array!, JobResourceAccess.Read(data, start, length));
+        Add(JobResourceAccess.GetArraySegment(data).Array!, JobResourceAccess.Read(_scheduler, data, start, length));
 
     public void Read<T>(Memory<T> data, long start, long length) =>
         Read((ReadOnlyMemory<T>)data, start, length);
@@ -79,10 +79,10 @@ public readonly ref struct JobResourceAccessBuilder
         Add(data, JobResourceAccess.Write(_scheduler.GetResourceToken(data), start, length));
 
     public void Write<T>(Memory<T> data) =>
-        Add(JobResourceAccess.GetArraySegment<T>(data).Array!, JobResourceAccess.Write(data));
+        Add(JobResourceAccess.GetArraySegment<T>(data).Array!, JobResourceAccess.Write(_scheduler, data));
 
     public void Write<T>(Memory<T> data, long start, long length) =>
-        Add(JobResourceAccess.GetArraySegment<T>(data).Array!, JobResourceAccess.Write(data, start, length));
+        Add(JobResourceAccess.GetArraySegment<T>(data).Array!, JobResourceAccess.Write(_scheduler, data, start, length));
 
     public void Exclusive(object data) =>
         Add(data, JobResourceAccess.Exclusive(_scheduler.GetResourceToken(data)));
@@ -91,24 +91,17 @@ public readonly ref struct JobResourceAccessBuilder
         Add(data, JobResourceAccess.Exclusive(_scheduler.GetResourceToken(data), start, length));
 
     public void Exclusive<T>(Memory<T> data) =>
-        Add(JobResourceAccess.GetArraySegment<T>(data).Array!, JobResourceAccess.Exclusive(data));
+        Add(JobResourceAccess.GetArraySegment<T>(data).Array!, JobResourceAccess.Exclusive(_scheduler, data));
 
     public void Exclusive<T>(Memory<T> data, long start, long length) =>
-        Add(JobResourceAccess.GetArraySegment<T>(data).Array!, JobResourceAccess.Exclusive(data, start, length));
+        Add(JobResourceAccess.GetArraySegment<T>(data).Array!, JobResourceAccess.Exclusive(_scheduler, data, start, length));
 
     private void Add(object data, JobResourceAccess access)
     {
         if (_jobAccesses is { } jobs)
-        {
-            JobResourceToken token = _scheduler.GetResourceToken(data);
-            jobs.Add(access.Mode switch
-            {
-                JobAccessMode.Read => access.HasRange ? JobResourceAccess.Read(token, access.RangeStart, access.RangeLength) : JobResourceAccess.Read(token),
-                JobAccessMode.Write => access.HasRange ? JobResourceAccess.Write(token, access.RangeStart, access.RangeLength) : JobResourceAccess.Write(token),
-                _ => access.HasRange ? JobResourceAccess.Exclusive(token, access.RangeStart, access.RangeLength) : JobResourceAccess.Exclusive(token),
-            });
-        }
-        else _accesses!.Add(new ComponentResourceUse(data, access));
+            jobs.Add(access);
+        else
+            _accesses!.Add(new ComponentResourceUse(data, access));
     }
 
     internal void Retain<T>(in T component) where T : struct => _references!.Add(component);
