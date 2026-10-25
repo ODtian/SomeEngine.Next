@@ -1,4 +1,5 @@
 using System.Numerics;
+using SomeEngine.Job;
 
 namespace SomeEngine.Liquid;
 
@@ -116,7 +117,9 @@ public sealed partial class LiquidFlow
         return index;
     }
 
-    public void Step(float seconds = StepSeconds)
+    public void Step(float seconds = StepSeconds) => JobSystem.ExecuteParallel(new StepFlowJob(this, seconds), 1);
+
+    private void StepCore(float seconds)
     {
         UpdateObstacles(); MergeSurfaceLiquid(); ExchangeStrandMomentum(seconds);
         for (int index = 0; index < Count; index++)
@@ -131,7 +134,17 @@ public sealed partial class LiquidFlow
 
     /// <summary>Steps distinct flows and returns after every flow has finished.</summary>
     public static void Step(ReadOnlyMemory<LiquidFlow> flows, float seconds = StepSeconds) =>
-        throw new NotImplementedException();
+        JobSystem.ExecuteParallel(new StepFlowsJob(flows, seconds), flows.Length, JobScheduleOptions.AutomaticBatchSize);
+
+    private readonly struct StepFlowJob(LiquidFlow flow, float seconds) : IJobParallelFor
+    {
+        public void Execute(int index) => flow.StepCore(seconds);
+    }
+
+    private readonly struct StepFlowsJob(ReadOnlyMemory<LiquidFlow> flows, float seconds) : IJobParallelFor
+    {
+        public void Execute(int index) => flows.Span[index].StepCore(seconds);
+    }
 
     private double IntegrateInletVolume(double from, double to)
     {
