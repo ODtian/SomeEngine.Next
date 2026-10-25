@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
+using SomeEngine.Job;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
@@ -55,9 +56,12 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
 
     public void OnDestroy(ref RenderPrepareSystemContext context)
     {
-        Task.WhenAll(_completions).GetAwaiter().GetResult();
-        foreach (TerrainGpuRequest request in _requests) request.Cancel();
-        context.World.ReleaseQuery(_query);
+        try { Task.WhenAll(_completions).GetAwaiter().GetResult(); }
+        finally
+        {
+            try { foreach (TerrainGpuRequest request in _requests) request.Cancel(); }
+            finally { context.World.ReleaseQuery(_query); }
+        }
     }
 
     public void OnUpdate(ref RenderFrameSystemContext context)
@@ -91,6 +95,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
             catch (Exception failure)
             {
                 request.AcceptSubmission();
+                if (_readbacks.Remove(request, out ReadbackData? readback)) readback.Buffer.Dispose();
                 request.Completion.Fail(failure);
                 throw;
             }
@@ -226,28 +231,33 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
             TerrainGpuRequest request = work.Request;
             if (request.IsSubmitted || !result.TryGetPassCompletion(work.Pass, out QueueCompletion completion)) continue;
             request.AcceptSubmission();
-            _readbacks.TryGetValue(request, out ReadbackData? readback);
-            _completions.Add(Task.Run(() => Complete(request, completion, readback)));
+            _readbacks.Remove(request, out ReadbackData? readback);
+            request.Completion.SetCompletionWork(() => CopyReadback(request, readback), readback is null ? null : readback.Buffer.Dispose);
+            _ = Task.Run(() => WaitForGpu(request, completion));
+            _completions.Add(request.Completion.Handle.WaitAsync().AsTask());
         }
     }
 
-    private void Complete(TerrainGpuRequest request, QueueCompletion completion, ReadbackData? readback)
+    private void WaitForGpu(TerrainGpuRequest request, QueueCompletion completion)
     {
         try
         {
             WaitStatus status = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);
             if (status != WaitStatus.Completed) throw new InvalidOperationException($"Terrain GPU work ended with {status}.");
-            if (readback is not null)
-            {
-                using MappedBuffer mapping = _backend.Map(readback.Buffer, MapType.Read, BufferRange.Whole);
-                mapping.Invalidate(mapping.Range);
-                MemoryMarshal.Cast<byte, float>(mapping.Bytes).CopyTo(readback.Samples);
-            }
-            request.CheckResult();
             request.Completion.Complete();
         }
         catch (Exception failure) { request.Completion.Fail(failure); }
-        finally { readback?.Buffer.Dispose(); }
+    }
+
+    private void CopyReadback(TerrainGpuRequest request, ReadbackData? readback)
+    {
+        if (readback is not null)
+        {
+            using MappedBuffer mapping = _backend.Map(readback.Buffer, MapType.Read, BufferRange.Whole);
+            mapping.Invalidate(mapping.Range);
+            MemoryMarshal.Cast<byte, float>(mapping.Bytes).CopyTo(readback.Samples);
+        }
+        request.CheckResult();
     }
 
     public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
@@ -264,9 +274,12 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
 
     public void Dispose()
     {
-        Task.WhenAll(_completions).GetAwaiter().GetResult();
-        foreach (TerrainGpuRequest request in _requests) request.Cancel();
-        try { PreserveCpuContents(); }
+        try
+        {
+            try { Task.WhenAll(_completions).GetAwaiter().GetResult(); }
+            finally { foreach (TerrainGpuRequest request in _requests) request.Cancel(); }
+            PreserveCpuContents();
+        }
         finally
         {
             foreach (ReadbackData readback in _readbacks.Values) readback.Buffer.Dispose();

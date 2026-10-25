@@ -29,6 +29,7 @@ public sealed class ApplicationGeometryContext
     private readonly List<IRenderGraphFrameExecutionObserver> _observers = [];
     private readonly List<IDisposable> _resources = [];
     private readonly List<Action> _gameShutdown = [];
+    private readonly List<Action> _terrainBuilds = [];
     private RenderTerrainData? _terrainData;
 
     internal ApplicationGeometryContext(IGraphicsBackend backend, Device device, RenderDevice renderDevice,
@@ -76,6 +77,13 @@ public sealed class ApplicationGeometryContext
 
     /// <summary>Runs after submitted GPU work finishes and before game-system jobs are drained.</summary>
     public void AddGameShutdown(Action shutdown) => _gameShutdown.Add(shutdown);
+
+    internal void AddTerrainBuild(Action build) => _terrainBuilds.Add(build);
+
+    internal void ScheduleTerrainBuilds()
+    {
+        foreach (Action build in _terrainBuilds) build();
+    }
 
     internal RenderTerrainData GetTerrainData()
     {

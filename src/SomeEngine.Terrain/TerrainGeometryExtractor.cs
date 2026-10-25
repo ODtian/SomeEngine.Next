@@ -80,6 +80,20 @@ internal sealed partial class TerrainGeometryExtractor(object scene) : IRenderEx
         return true;
     }
 
+    public void CollectResources(scoped QueryCursor source, RenderExtractionResources resources)
+    {
+        foreach (QueryChunkView chunk in source.Chunks)
+        {
+            if (!chunk.TryRead<TerrainGpuSource>(out var sources)) continue;
+            for (int row = 0; row < sources.Length; row++)
+            {
+                if (!ReferenceEquals(sources[row].Scene, scene)) continue;
+                foreach (MeshMaterialBinding binding in chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan())
+                    resources.Add(binding.Material);
+            }
+        }
+    }
+
     public void Apply(RenderExtractionContext context)
     {
         foreach (ChunkData chunk in _chunks)
