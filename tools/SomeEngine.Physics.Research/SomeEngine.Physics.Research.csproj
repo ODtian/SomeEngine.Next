@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Optimize>true</Optimize>
+    <TieredCompilation>false</TieredCompilation>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="References/**/*.cs" />
+    <Content Include="Viewer.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="References/Sources.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="References/Newton-LICENSE.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="References/Jitter-LICENSE.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="References/Newton.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildDemoLibraries" BeforeTargets="Build">
+    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/Native&quot; -B &quot;$(MSBuildProjectDirectory)/obj/native&quot; -A x64" />
+    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/obj/native&quot; --config Release --parallel 4 -- /nodeReuse:false" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/obj/native/Release/Avbd2D.dll;$(MSBuildProjectDirectory)/obj/native/Release/Avbd3D.dll" DestinationFolder="$(TargetDir)" />
+  </Target>
+</Project>

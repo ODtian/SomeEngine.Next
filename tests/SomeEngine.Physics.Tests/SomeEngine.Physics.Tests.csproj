@@ -30,8 +30,12 @@
     <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialBitmap.cs"
              Link="HandwrittenSpatialBitmap.cs" />
     <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
+    <ProjectReference Include="../../tools/SomeEngine.Physics.Research/SomeEngine.Physics.Research.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="../../src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Target Name="CopyPhysicsLibraries" AfterTargets="Build">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../../tools/SomeEngine.Physics.Research/bin/$(Configuration)/net10.0/Avbd2D.dll;$(MSBuildProjectDirectory)/../../tools/SomeEngine.Physics.Research/bin/$(Configuration)/net10.0/Avbd3D.dll" DestinationFolder="$(TargetDir)" />
+  </Target>
 </Project>

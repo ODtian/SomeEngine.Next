@@ -1,0 +1,101 @@
+[
+  {
+    "dimension": "2d/3d",
+    "repository": "https://github.com/newton-physics/newton",
+    "revision": "v1.7.0",
+    "files": [
+      "LICENSE.md",
+      "newton/_src/solvers/vbd/solver_vbd.py",
+      "newton/_src/solvers/vbd/rigid_vbd_kernels.py",
+      "newton/_src/math/spatial.py",
+      "newton/_src/sim/builder.py",
+      "docs/concepts/simulation_tuning_solvers.rst",
+      "newton/_src/geometry/contact_match.py",
+      "newton/_src/sim/collide.py",
+      "newton/_src/geometry/collision_convex.py",
+      "newton/_src/geometry/multicontact.py",
+      "newton/_src/geometry/narrow_phase.py",
+      "newton/_src/sim/graph_coloring.py"
+    ],
+    "adaptation": "Newton v1.7.0 finite ALM and legacy hard-contact equations. Three-dimensional hard contacts use fresh surface anchors, midpoint matching and force transport. Joint-adjacent contacts retain numerical patch rho separately from point-force correspondence. Structured components use Newton color assembly/commit with project contact and LRC conflict edges; free components keep Giles descending GS. Free hard contacts retain Newton legacy alpha 0.95, shared rho, projected Coulomb duals and its positive tangent metric. Project CPU assembly expands simultaneous normal/tangent metrics as rho I and isotropic world inertia as its diagonal. Four-point reduction applies to structured and zero-gravity patches; gravity free patches retain the Giles boundary. Geometry gap choices, interior witnesses, SCA release and CPU adjacency ownership are mapped in References/Newton.md."
+  },
+  {
+    "dimension": "2d",
+    "repository": "https://github.com/savant117/avbd-demo2d",
+    "revision": "74699a11f8586d3ac34474c92b1ef8feb5f587de",
+    "files": [
+      "LICENSE",
+      "README.md",
+      "source/collide.cpp",
+      "source/force.cpp",
+      "source/joint.cpp",
+      "source/main.cpp",
+      "source/manifold.cpp",
+      "source/maths.h",
+      "source/motor.cpp",
+      "source/rigid.cpp",
+      "source/scenes.h",
+      "source/shell.html",
+      "source/solver.cpp",
+      "source/solver.h",
+      "source/spring.cpp"
+    ],
+    "adaptation": "Original AVBD hard-row laws and step scheduling with project collision pruning, positive angular curvature bounds, current-point residuals and LRC hooks. Planar hard-contact blocks and duals use the Newton shared-rho policy; project pressure conditioning, world-plane normal bounds, batched assembly and support-geometry cache remain inside the original body-block iteration. Ownership: References/Newton.md."
+  },
+  {
+    "dimension": "3d",
+    "repository": "https://github.com/savant117/avbd-demo3d",
+    "revision": "7701bd427d55ca5d03ea1fdf331912ded9169f4b",
+    "files": [
+      "LICENSE",
+      "README.md",
+      "source/collide.cpp",
+      "source/force.cpp",
+      "source/joint.cpp",
+      "source/main.cpp",
+      "source/manifold.cpp",
+      "source/maths.h",
+      "source/rigid.cpp",
+      "source/scenes.h",
+      "source/shell.html",
+      "source/solver.cpp",
+      "source/solver.h",
+      "source/spring.cpp"
+    ],
+    "adaptation": "Giles AVBD hard joints and their paired contact discretization, inertia and velocity. Newton geometry, history and structured color scheduling enter the same primal/dual loop. Project numerical patch-rho retention, 1 cm structural shape gaps and source-attributed C0 bias enter contact initialization. Batched joint/contact equations, lower-triangle assembly, typed adjacency and single-copy support data are CPU implementation choices. Stage ownership: References/Newton.md."
+  },
+  {
+    "dimension": "3d",
+    "repository": "https://github.com/bepu/bepuphysics2",
+    "revision": "29ed466870534c413aba9eeccd813cf15d135d0b",
+    "files": [
+      "LICENSE.md",
+      "Demos/Demos/PyramidDemo.cs",
+      "Demos/Demos/FrictionDemo.cs"
+    ],
+    "adaptation": "Y-up to Z-up; PyramidDemo retains 20 rows and uses 2 of 40 copies; FrictionDemo keeps all 100 boxes and maps product material coefficients to geometric-mean coefficients."
+  },
+  {
+    "dimension": "3d",
+    "repository": "https://github.com/jrouwe/JoltPhysics",
+    "revision": "6d7ba5d8af603648ccc0c639f54ad282d185e1b6",
+    "files": [
+      "LICENSE",
+      "Samples/Tests/General/IslandTest.cpp",
+      "Samples/Tests/General/HeavyOnLightTest.cpp",
+      "Samples/Tests/General/StackTest.cpp",
+      "Samples/Tests/General/FrictionTest.cpp"
+    ],
+    "adaptation": "Y-up to Z-up; original dimensions, density, arrangement and counts; sharp AVBD boxes and hard contacts; floor 400 x 400 m. FrictionTest includes the 11-box 45-degree ramp and 11-box continuous-impulse cases; the shared continuous-impulse input uses the initial yaw's world direction for 360 steps."
+  },
+  {
+    "files": [
+      "LICENSE.md",
+      "avbd_standalone/avbd_solver.cpp"
+    ],
+    "repository": "https://github.com/Aniysk/PhysX_AVBD",
+    "adaptation": "Depth-adaptive normal C0 stabilization from Solver::computeC0 in this open-source research fork. Upstream fade thresholds are 50 and 200 mm; the project selects 1 and 5 mm for its contact accuracy. The bias is formed at contact initialization and enters the existing AVBD contact residual. BSD-3-Clause attribution: PhysX-AVBD-LICENSE.md. Stage ownership: References/Newton.md.",
+    "dimension": "3d",
+    "revision": "b46e2eed8d463dde833d9f348e7fdf2d39e7b3f9"
+  }
+]

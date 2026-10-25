@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AVBD 长程约束同步对比</title>
+<style>
+:root{color-scheme:dark;--bg:#101419;--panel:#171d25;--line:#303945;--text:#e4eaf0;--muted:#9aa8b7;--base:#efa45b;--long:#5ad4b6;--ref:#8dabed}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1680px;margin:auto;padding:26px 30px}header{display:flex;align-items:baseline;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:20px}h1{font-size:25px;font-weight:550;letter-spacing:.02em;margin:0}h1 span{color:var(--muted);font-weight:400}.description{color:var(--muted);margin-top:5px}.tag{font:12px ui-monospace,monospace;color:var(--muted);letter-spacing:.12em}.controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}button,select{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:8px 12px}button:hover{border-color:var(--muted)}button{cursor:pointer}select{min-width:100px}#scene{min-width:240px}label{display:flex;gap:7px;align-items:center;color:var(--muted)}input[type=checkbox]{accent-color:var(--long)}.play{min-width:88px;background:#253c36;border-color:#416457}.right{margin-left:auto;color:var(--muted)}.views{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.view{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--accent);border-radius:6px;overflow:hidden}.view h2{min-height:44px;font-size:15px;font-weight:500;margin:12px 15px 2px}.timing{margin:0 15px;color:var(--muted);font-size:12px}.scene-canvas{display:block;width:100%;height:420px;touch-action:none;cursor:grab}.scene-canvas:active{cursor:grabbing}.readout{display:flex;justify-content:space-between;gap:8px;padding:10px 15px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted)}.readout strong{color:var(--text);font-weight:500}.transport{display:flex;align-items:center;gap:18px;margin:20px 0 6px}#timeline{flex:1;min-width:100px;accent-color:var(--long)}#clock{font-variant-numeric:tabular-nums;min-width:164px;text-align:right}.hint{color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.details{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:26px}.details h2{font-size:14px;font-weight:500;margin:0 0 12px}.chart{width:100%;height:230px;display:block}.legend{display:flex;gap:18px;color:var(--muted);font-size:12px}.legend i{display:inline-block;width:18px;height:2px;background:var(--color);vertical-align:middle;margin-right:5px}table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}th,td{text-align:right;padding:10px 8px;border-bottom:1px solid var(--line);font-weight:400}th:first-child,td:first-child{text-align:left}th{color:var(--muted)}.notes{color:var(--muted);font-size:12px;margin-top:16px}.notes p{margin:7px 0}a{color:var(--ref)}footer{margin-top:22px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}@media(max-width:900px){main{padding:18px 14px}.views{gap:8px}.scene-canvas{height:330px}.details{grid-template-columns:1fr}.view h2,.timing{margin-left:9px}.readout{padding:9px;display:block}}@media(max-width:600px){.scene-canvas{height:300px}.view h2{font-size:11px;min-height:68px;margin:8px 6px 2px}.timing{font-size:9px;margin:0 6px;min-height:42px}.readout{padding:7px 5px;font-size:9px}.readout span,.readout strong{display:block}.controls{gap:8px}.controls button,.controls select{font-size:12px;padding:7px 9px}#scene{min-width:180px}.right{margin-left:0}.transport{gap:8px}#clock{min-width:120px}}
+.timing{min-height:72px}.readout{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.readout>span:last-child{grid-column:1/-1}.readout>span>strong{display:block}@media(max-width:900px){.timing{min-height:90px}}
+</style>
+</head>
+<body>
+<main>
+<header><div><h1>AVBD <span>/</span> 长程传播与关节树</h1><div class="description">同一场景输入与事件 · 完整物理步预算 · 独立离线轨迹</div><div class="description" id="coverage"></div></div><div class="tag">PHYSICS RESEARCH / SYNCHRONIZED REPLAY</div></header>
+<div class="controls"><label>场景 <select id="scene"></select></label><label>基准 <select id="comparison"><option value="budget">统一迭代对照</option><option value="baseline">AVBD 固定基准</option></select></label><button id="play" class="play">播放</button><button id="previous" aria-label="前一帧">−1 帧</button><button id="next" aria-label="后一帧">+1 帧</button><label>速度 <select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option></select></label><label><input id="ghost" type="checkbox">叠加参考轮廓</label><button id="camera">复位视角</button><button id="fit">聚焦当前物体</button><label>曲线 <select id="metric"><option value="penetration">几何穿透</option><option value="positionRms">相对参考的位置</option><option value="jointError">关节约束误差</option></select></label><span class="right" id="scene-info"></span></div>
+<div class="views" id="views"></div>
+<div class="transport"><input id="timeline" type="range" min="0" value="0" step="1" aria-label="所有求解器的共同帧号"><span id="clock"></span></div>
+<div class="hint"><span>拖动时间轴逐帧对比。三维场景拖动画面旋转共同视角，滚轮缩放。</span><span id="convergence"></span></div>
+<div class="details"><section><h2 id="metric-title">几何穿透（mm，对数刻度）</h2><svg id="error-chart" class="chart" role="img" aria-label="逐帧误差，纵轴为毫米对数刻度"></svg><div class="legend"><span><i style="--color:var(--base)"></i><span id="baseline-legend">AVBD 预算对照</span></span><span><i style="--color:var(--long)"></i><span id="enhanced-legend">增强求解</span></span><span><i style="--color:var(--ref)"></i><span id="reference-legend">独立离线</span></span></div></section><section><h2>整段几何接触与完整物理步耗时</h2><table><thead><tr><th>方法</th><th>平均 ms</th><th>中位 ms</th><th>P95 ms</th><th>最大穿透 mm</th><th>穿透 P95 mm</th><th>峰值步号</th><th>末帧穿透 mm</th><th id="position-header">离线位置 RMS mm</th><th>末帧地面接触 N</th></tr></thead><tbody id="metrics"></tbody></table><div class="notes"><p id="model-description"></p><p id="budget"></p><p id="reference-info"></p><p>整步计时包含事件、全部子步预测、碰撞检测、主变量与对偶更新、LRC 图和反力交接、速度重建及互操作。回放读取保存的刚体轨迹，画面绘制在计时之外。</p><p id="solver-settings"></p><p>几何穿透取有效盒体对的分离轴最小平移深度。当前碰撞对照的关节项为平移锚点误差；各历史记录沿用其原坐标定义。位置 RMS 使用当前场景的参考轨迹，证书描述参考的方程与求解误差。各方法的迭代配置对全部场景生效，平均耗时包含全部补充迭代。</p></div></section></div>
+<footer><span id="machine"></span> · <a href="https://github.com/savant117/avbd-demo2d" target="_blank" rel="noreferrer">官方 2D 源码</a> · <a href="https://github.com/savant117/avbd-demo3d" target="_blank" rel="noreferrer">官方 3D 源码</a> · <a href="https://github.com/bepu/bepuphysics2" target="_blank" rel="noreferrer">BEPU 场景来源</a> · <a href="https://github.com/jrouwe/JoltPhysics" target="_blank" rel="noreferrer">Jolt 场景来源</a></footer>
+</main>
+<script type="module">
+const compressedReport=/*COMPARISON_DATA*/null;
+const report=JSON.parse(await new Response(new Blob([Uint8Array.from(atob(compressedReport),value=>value.charCodeAt(0))]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+const colors=['#efa45b','#5ad4b6','#8dabed'];
+const $=id=>document.getElementById(id);
+let scene,methods,motions,frame=0,playing=false,lastTime=0,carry=0,yaw=.68,pitch=.25,zoom=1,center=[0,0,0],extent=[20,20,20];
+const faces=[[0,2,3,1],[4,5,7,6],[0,1,5,4],[2,6,7,3],[0,4,6,2],[1,3,7,5]];
+const panels=[];
+for(let i=0;i<3;i++){
+ const view=document.createElement('section');view.className='view';view.style.setProperty('--accent',colors[i]);
+ view.innerHTML='<h2></h2><p class="timing"></p><canvas class="scene-canvas" aria-label="同步物理回放"></canvas><div class="readout"><span>几何穿透 <strong class="penetration"></strong></span><span><span class="position-label">离线位置 RMS</span> <strong class="position"></strong></span><span>本帧轮数 <strong class="iterations"></strong></span></div>';
+ view.querySelector('.readout').insertAdjacentHTML('beforeend','<span>物理岛 / 休眠 <strong class="activity"></strong></span>');
+ $('views').append(view);panels.push({view,canvas:view.querySelector('canvas'),ctx:view.querySelector('canvas').getContext('2d')});
+}
+function decode(text){const raw=atob(text),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);return new Float32Array(bytes.buffer);}
+function ratio(value){return value<.01?value.toExponential(2):value.toFixed(2);}
+function iterationSummary(counts){const minimum=Math.min(...counts),maximum=Math.max(...counts);return `${minimum===maximum?minimum:`${minimum}–${maximum}`} 轮，均值 ${(counts.reduce((sum,n)=>sum+n,0)/counts.length).toFixed(2)}`;}
+function chooseScene(index){
+ scene=report.scenes[index];history.replaceState(null,'','#'+scene.id);
+ const byId=id=>scene.methods.find(method=>method.id===id),reference=byId('offline')||byId('reference-check')||byId('reference')||byId('avbd');
+ methods=[$('comparison').value==='budget'?(byId('avbd-budget')||byId('avbd')):byId('avbd'),byId('lrc'),reference];motions=methods.map(method=>decode(method.motion));frame=0;carry=0;zoom=1;yaw=.68;pitch=.25;
+ $('timeline').max=scene.frames;$('scene-info').textContent=`${scene.bodies.length} 个刚体 · ${(scene.frames*report.stepSeconds).toFixed(1)} s`;
+ const low=[Infinity,Infinity,Infinity],high=[-Infinity,-Infinity,-Infinity],motion=motions[2];
+ for(let f=0;f<=scene.frames;f+=Math.max(1,Math.floor(scene.frames/30)))for(let b=0;b<scene.bodies.length;b++){
+  if(scene.bodies[b].mass===0)continue;const offset=(f*scene.bodies.length+b)*7,r=Math.hypot(...scene.bodies[b].size)/2;
+  for(let axis=0;axis<3;axis++){low[axis]=Math.min(low[axis],motion[offset+axis]-r);high[axis]=Math.max(high[axis],motion[offset+axis]+r);}
+ }
+ extent=low.map((v,i)=>high[i]-v);center=low.map((v,i)=>(v+high[i])/2);
+ methods.forEach((method,i)=>{panels[i].view.querySelector('h2').textContent=method.name;if(method.id==='offline'){panels[i].view.querySelector('.timing').textContent='独立双精度参考；逐步证书、参考模型和时间离散数据见下方记录。';return;}const main=method.localIterations||[method.iterations],tree=method.treeIterations||[0],stabilization=method.stabilizationIterations||[method.positionStabilization?1:0];panels[i].view.querySelector('.timing').textContent=`完整物理步平均 ${method.meanMs.toFixed(4)} ms · 中位 ${method.medianMs.toFixed(4)} ms · P95 ${method.p95Ms.toFixed(4)} ms；帧总主迭代 ${iterationSummary(main)}；几何阶段 ${iterationSummary(method.collisionPasses||[0])}；关节树 ${iterationSummary(tree)}；位置稳定化 ${iterationSummary(stabilization)}`;});
+ const info=scene.reference||{status:'iteration-diagnostic',model:'高迭代 AVBD 轨迹接近程度'},independent=reference.id==='offline';
+ if(info.precomputationMs!==undefined)panels[2].view.querySelector('.timing').textContent='独立压力平衡证书认证静止解；本段轨迹复用该平衡结果。';
+ $('metric').value='penetration';
+ const material=scene.input?.materialModel;
+ $('model-description').textContent=(material==='RigidConstraints'?'刚性约束采用 Giles AVBD 的硬行、局部块与罚参数更新。':material==='CompliantMaterials'?'有限材料采用 Newton compliant ALM 的世界惯性、材料行与投影对偶。':'模型与来源按本报告的 sources 和 input 记录。')+' LRC 的距离界与接触支撑界接入同一刚体块。';
+ panels.forEach(panel=>panel.view.querySelector('.position-label').textContent=independent?'离线位置 RMS':'对照轨迹位置差');
+ $('position-header').textContent=independent?'离线位置 RMS mm':'对照轨迹差 mm';
+ const status={converged:'独立离线证书通过',certified:'独立离线证书通过','iteration-diagnostic':'AVBD 迭代诊断',pairwise:'AVBD / LRC 轨迹差异'}[info.status]||`独立离线状态：${info.status}`;
+ $('convergence').textContent=status+(scene.iterationAgreement==null?'':` · 加倍迭代轨迹${scene.iterationAgreement?'接近':'存在差异'}`);
+ const events=(scene.input?.events||[]).map(input=>`回放帧 ${input.frame} → ${input.frame+1}：${input.removedJoint!==undefined?`移除关节 ${input.removedJoint}`:input.position?`把刚体 ${input.body} 移到 [${input.position.join(', ')}] m`:`给刚体 ${input.body} 增加速度 [${input.velocity.join(', ')}] m/s`}`).join('；');
+ $('solver-settings').textContent=`帧步长 ${report.stepSeconds.toPrecision(7)} s；子步 ${scene.input?.substeps||1}，物理步长 ${(report.stepSeconds/(scene.input?.substeps||1)).toPrecision(7)} s；${methods.filter(method=>method.id!=='offline').map(method=>`${method.name}：帧总主迭代 ${iterationSummary(method.localIterations||[method.iterations])}，几何阶段 ${iterationSummary(method.collisionPasses||[0])}，关节树 ${iterationSummary(method.treeIterations||[0])}，位置稳定化 ${iterationSummary(method.stabilizationIterations||[method.positionStabilization?1:0])}`).join('；')}。${events?'共同输入：'+events+'。':''}`;
+ $('solver-settings').textContent+=report.sleepingEnabled===false?' 当前为持续活动模式。':' 全场景统一休眠判据：表面速度 0.03 m/s，连续 0.5 s，几何残差 1 mm；碰撞、速度输入、重力与连接变化触发唤醒。';
+ $('solver-settings').textContent+=' 物理岛按接触与关节连通性组织休眠和唤醒；各阶段预算按所选方法及逐帧计数展示。';
+ const labels={constraintMaximumM:'关节约束 m',stationarityMaximumN:'力平衡残差 N',angularStationarityMaximumNm:'力矩平衡残差 N·m',primalViolationM:'接触违反 m',dualViolationN:'负反力 N',complementarityMaximumNm:'互补残差 N·m',quaternionNormMaximum:'四元数范数残差',activeContacts:'活动接触数',sqpIterations:'最大离线迭代数',forceBalanceMaximumN:'力平衡残差 N',torqueBalanceMaximumNm:'力矩残差 N·m',frictionConeViolationN:'摩擦锥违反 N',maximumDissipationResidualW:'最大耗散残差 W'};
+ labels.pressureCenterViolationM='压力中心违反 m';
+ labels.forceAndTorqueBalanceMaximum='力与力矩平衡残差';
+ labels.geometryIterations='几何迭代数';labels.geometryChangeMaximum='几何迭代位姿变化';
+ labels.contactGeometryClosures='接触点集合闭合次数';labels.substeps='最大子步数';labels.minimumStepSeconds='最小参考步长 s';
+ const certificate=Object.entries(info.certificate||{}).filter(([,value])=>typeof value==='number').map(([key,value])=>`${labels[key]||key}=${value.toExponential(3)}`).join('；');
+ const refinement=info.localStepRefinement;
+ $('reference-info').textContent=`${info.model}${certificate?'；'+certificate:''}。${independent?'证书使用双精度求解状态，轨迹比较使用 float32 编码。':''}${info.totalSubsteps?`参考共 ${info.totalSubsteps} 子步，${info.subdividedFrames} 帧采用步长细分。`:''}${refinement?`第 ${refinement.frame} 帧从同一状态计算一整步与两个半步，位置 RMS 变化 ${(refinement.positionRmsM*1000).toFixed(4)} mm，表示时间离散变化。`:''}`;
+ const base=byId('avbd'),nativeMethods=scene.methods.filter(method=>method.id!=='offline');
+ $('budget').textContent=`增强求解从 ${methods[1].iterations} 轮起 / AVBD ${base.iterations} 轮完整步耗时 ${ratio(methods[1].meanMs/base.meanMs)}×；增强求解 / 当前 AVBD ${methods[0].iterations} 轮的实际平均耗时 ${ratio(methods[1].meanMs/methods[0].meanMs)}×。前 ${report.warmupFrames} 帧预热，预算统计后 ${scene.frames-report.warmupFrames} 帧的完整步总耗时。${independent?'位置误差逐帧对照独立离线轨迹。':''}`;
+ const firstEventFrame=Math.min(...(scene.input?.events||[]).map(input=>input.frame));
+ if(firstEventFrame<scene.frames){
+  const eventErrors=nativeMethods.map(method=>{const errors=method.errors.slice(firstEventFrame),rms=Math.sqrt(errors.reduce((sum,error)=>sum+error.positionRms**2,0)/errors.length)*1000,times=method.stepTimesMs.slice(Math.max(firstEventFrame,report.warmupFrames)),mean=times.reduce((sum,time)=>sum+time,0)/times.length;return `${method.name}：RMS ${rms.toFixed(4)} mm，预热后完整步均值 ${mean.toFixed(4)} ms`;}).join('；');
+  $('budget').textContent+=` 第 ${firstEventFrame} 帧事件起，相对${independent?'独立 GT':'参考轨迹'}的位置误差与完整步耗时：${eventErrors}。`;
+ }
+ if(methods[0].id==='avbd-budget'&&methods[0].iterations===1&&methods[1].meanMs<methods[0].meanMs*.8)$('budget').textContent+=' AVBD 已达到每步 1 轮的最小预算；此处展示两者实际耗时。';
+ $('metrics').replaceChildren();nativeMethods.forEach(method=>{const tr=document.createElement('tr');[method.name,method.meanMs.toFixed(4),method.medianMs.toFixed(4),method.p95Ms.toFixed(4),(method.penetration*1000).toFixed(4),((method.penetrationP95??method.errors.map(error=>error.penetration).sort((a,b)=>a-b)[Math.floor(method.errors.length*.95)])*1000).toFixed(4),method.penetrationStep??(method.errors.findIndex(error=>error.penetration===method.penetration)+1),(method.errors.at(-1).penetration*1000).toFixed(4),(method.positionRms*1000).toFixed(4),method.endGroundReaction==null?'—':method.endGroundReaction.toFixed(2)].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.append(td);});$('metrics').append(tr);});
+ render();drawChart();
+}
+function transformPoint(point,pose){
+ const [x,y,z]=point,[qx,qy,qz,qw]=pose.slice(3),tx=2*(qy*z-qz*y),ty=2*(qz*x-qx*z),tz=2*(qx*y-qy*x);
+ return [x+qw*tx+qy*tz-qz*ty+pose[0],y+qw*ty+qz*tx-qx*tz+pose[1],z+qw*tz+qx*ty-qy*tx+pose[2]];
+}
+function cameraPoint(point){
+ let x=point[0]-center[0],y=point[1]-center[1],z=point[2]-center[2];
+ if(scene.dimension===2)return[x,y,z];
+ let xx=Math.cos(yaw)*x-Math.sin(yaw)*y,depth=Math.sin(yaw)*x+Math.cos(yaw)*y;
+ return[xx,Math.cos(pitch)*z-Math.sin(pitch)*depth,Math.sin(pitch)*z+Math.cos(pitch)*depth];
+}
+function renderPanel(index,ghost=false){
+ const panel=panels[index],canvas=panel.canvas,ctx=panel.ctx,w=canvas.clientWidth,h=canvas.clientHeight,dpr=devicePixelRatio||1;
+ if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
+ ctx.setTransform(dpr,0,0,dpr,0,0);if(!ghost){ctx.clearRect(0,0,w,h);ctx.fillStyle='#171d25';ctx.fillRect(0,0,w,h);}
+ const projectedWidth=scene.dimension===2?extent[0]:Math.abs(Math.cos(yaw))*extent[0]+Math.abs(Math.sin(yaw))*extent[1],projectedHeight=scene.dimension===2?extent[1]:Math.abs(Math.cos(pitch))*extent[2]+Math.abs(Math.sin(pitch))*(Math.abs(Math.sin(yaw))*extent[0]+Math.abs(Math.cos(yaw))*extent[1]);
+ const scale=Math.min(w/projectedWidth,h/projectedHeight)/1.16*zoom,polygons=[],motion=ghost?motions[2]:motions[index];
+ for(let body=0;body<scene.bodies.length;body++){
+  const meta=scene.bodies[body],offset=(frame*scene.bodies.length+body)*7,pose=motion.subarray(offset,offset+7),points=[];
+  for(let corner=0;corner<8;corner++)points.push(cameraPoint(transformPoint([((corner&1)?1:-1)*meta.size[0]/2,((corner&2)?1:-1)*meta.size[1]/2,((corner&4)?1:-1)*meta.size[2]/2],pose)));
+  const visible=scene.dimension===2?[[0,1,3,2]]:faces;
+  for(let face=0;face<visible.length;face++){
+   const vertices=visible[face].map(corner=>points[corner]);
+   polygons.push({vertices,depth:vertices.reduce((sum,p)=>sum+p[2],0)/vertices.length,shade:face,ground:meta.mass===0});
+  }
+ }
+ polygons.sort((a,b)=>a.depth-b.depth);
+ for(const polygon of polygons){
+  ctx.beginPath();polygon.vertices.forEach((point,i)=>{const x=w/2+point[0]*scale,y=h/2-point[1]*scale;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.closePath();
+  if(ghost){ctx.strokeStyle='#8dabed88';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);}
+  else{ctx.fillStyle=polygon.ground?'#3a4452':colors[index];ctx.globalAlpha=1;if(!polygon.ground&&scene.dimension===3){const hex=colors[index].slice(1),brightness=[.7,.94,.78,.86,.62,1][polygon.shade];ctx.fillStyle='rgb('+[0,2,4].map(k=>Math.round(parseInt(hex.slice(k,k+2),16)*brightness)).join(',')+')';}ctx.fill();ctx.globalAlpha=1;ctx.strokeStyle=polygon.ground?'#697789':'#111820';ctx.lineWidth=.8;ctx.stroke();}
+ }
+ if(!ghost){const method=methods[index],e=frame===0?null:method.errors[frame-1];panel.view.querySelector('.position').textContent=e?`${(e.positionRms*1000).toFixed(3)} mm`:'0.000 mm';panel.view.querySelector('.penetration').textContent=e?`${(e.penetration*1000).toFixed(4)} mm`:'0.0000 mm';const main=frame===0?0:(method.localIterations?.[frame-1]??method.iterations),tree=frame===0?0:(method.treeIterations?.[frame-1]??0),stabilization=frame===0?0:(method.stabilizationIterations?.[frame-1]??(method.positionStabilization?1:0));panel.view.querySelector('.iterations').textContent=`${main} 局部 + ${tree} 树 + ${stabilization} 恢复`;}
+}
+function render(){if(!scene)return;panels.forEach((panel,i)=>{renderPanel(i);if($('ghost').checked&&i<2)renderPanel(i,true);const method=methods[i];panel.view.querySelector('.activity').textContent=method.activeIslands&&frame>0?`${method.activeIslands[frame-1]} 活动岛 · ${method.sleepingBodies[frame-1]} 休眠刚体 · ${method.bodyUpdates[frame-1]} 次局部更新 · ${method.contactSolves?.[frame-1]??0} 个接触直解刚体`:'—';});$('timeline').value=frame;$('clock').textContent=`${(frame*report.stepSeconds).toFixed(3)} s · ${frame} / ${scene.frames} 帧`;const marker=$('chart-frame');if(marker){const w=$('error-chart').clientWidth;marker.setAttribute('x1',54+(w-70)*frame/scene.frames);marker.setAttribute('x2',54+(w-70)*frame/scene.frames);}}
+function drawChart(){
+ const metric=$('metric').value;$('metric-title').textContent={penetration:'几何穿透（mm，对数刻度）',positionRms:`相对${methods[2].id==='offline'?'独立离线':'对照'}的位置 RMS（mm，对数刻度）`,jointError:'关节约束误差（mm，对数刻度）'}[metric];$('reference-legend').textContent=methods[2].name;$('baseline-legend').textContent=methods[0].name;$('enhanced-legend').textContent=methods[1].name;
+ const svg=$('error-chart'),w=svg.clientWidth,h=230,left=54,right=16,top=16,bottom=32,series=methods;
+ const maximum=Math.max(.001,...series.flatMap(method=>method.errors.map(error=>error[metric]*1000))),logTop=Math.ceil(Math.log10(maximum)),logBottom=Math.min(logTop-3,-3);
+ const px=f=>left+(w-left-right)*f/scene.frames,py=v=>top+(h-top-bottom)*(logTop-Math.max(logBottom,Math.log10(Math.max(1e-12,v))))/(logTop-logBottom);
+ let content='';for(let e=logBottom;e<=logTop;e++){const y=py(10**e);content+=`<line x1="${left}" y1="${y}" x2="${w-right}" y2="${y}" stroke="#303945"/><text x="${left-9}" y="${y+4}" text-anchor="end" fill="#9aa8b7" font-size="11">${(10**e).toLocaleString('en-US',{maximumFractionDigits:4})}</text>`;}
+ for(let i=0;i<=4;i++){const f=scene.frames*i/4;content+=`<text x="${px(f)}" y="${h-8}" text-anchor="middle" fill="#9aa8b7" font-size="11">${(f*report.stepSeconds).toFixed(1)} s</text>`;}
+ series.forEach((method,index)=>{let path='';method.errors.forEach((error,i)=>path+=`${i?'L':'M'}${px(i+1).toFixed(2)},${py(error[metric]*1000).toFixed(2)}`);content+=`<path d="${path}" fill="none" stroke="${colors[index]}" stroke-width="1.6"/>`;});
+ content+=`<line id="chart-frame" x1="${px(frame)}" x2="${px(frame)}" y1="${top}" y2="${h-bottom}" stroke="#e4eaf088" stroke-dasharray="3 4"/>`;
+ svg.setAttribute('viewBox',`0 0 ${w} ${h}`);svg.innerHTML=content;
+}
+function setPlaying(value){if(value&&frame===scene.frames){frame=0;render();}playing=value;$('play').textContent=value?'暂停':'播放';lastTime=0;carry=0;}
+$('play').onclick=()=>setPlaying(!playing);$('previous').onclick=()=>{setPlaying(false);frame=Math.max(0,frame-1);render();};$('next').onclick=()=>{setPlaying(false);frame=Math.min(scene.frames,frame+1);render();};$('timeline').oninput=event=>{setPlaying(false);frame=Number(event.target.value);render();};$('ghost').onchange=render;$('comparison').onchange=()=>{const at=frame;chooseScene(Number($('scene').value));frame=at;render();};$('metric').onchange=drawChart;$('camera').onclick=()=>{yaw=.68;pitch=.25;zoom=1;render();};
+$('fit').onclick=()=>{const low=[Infinity,Infinity,Infinity],high=[-Infinity,-Infinity,-Infinity];for(let body=0;body<scene.bodies.length;body++){const meta=scene.bodies[body];if(meta.mass===0)continue;const offset=(frame*scene.bodies.length+body)*7,r=Math.hypot(...meta.size)/2;for(let axis=0;axis<3;axis++){low[axis]=Math.min(low[axis],motions[2][offset+axis]-r);high[axis]=Math.max(high[axis],motions[2][offset+axis]+r);}}extent=low.map((value,i)=>high[i]-value);center=low.map((value,i)=>(value+high[i])/2);zoom=1;render();};
+for(const panel of panels){let dragging=false,previous=[0,0];panel.canvas.onpointerdown=event=>{dragging=true;previous=[event.clientX,event.clientY];panel.canvas.setPointerCapture(event.pointerId);};panel.canvas.onpointerup=()=>dragging=false;panel.canvas.onpointermove=event=>{if(!dragging||scene.dimension!==3)return;yaw+=(event.clientX-previous[0])*.008;pitch=Math.max(-1.2,Math.min(1.2,pitch+(event.clientY-previous[1])*.008));previous=[event.clientX,event.clientY];render();};panel.canvas.addEventListener('wheel',event=>{event.preventDefault();zoom=Math.max(.25,Math.min(6,zoom*Math.exp(-event.deltaY*.001)));render();},{passive:false});}
+function tick(time){if(playing){if(lastTime){carry+=(time-lastTime)/1000/report.stepSeconds*Number($('speed').value);if(carry>=1){frame=(frame+Math.floor(carry))%(scene.frames+1);carry%=1;render();}}lastTime=time;}requestAnimationFrame(tick);}
+if(report){
+ const referenceCount=report.scenes.filter(item=>item.reference.status==='converged').length;
+ const frameCount=report.scenes.reduce((sum,item)=>sum+item.frames,0);
+ $('coverage').textContent=`${report.scenes.length} 个场景 · 独立 GT ${referenceCount}/${report.scenes.length} · 场景帧数 ${frameCount}`;
+ report.scenes.forEach((item,index)=>{
+  const option=document.createElement('option');
+  option.value=index;option.textContent=item.name;$('scene').append(option);
+ });
+ $('scene').onchange=event=>chooseScene(Number(event.target.value));
+ $('machine').textContent=`${report.framework} · ${report.processor} · ${report.created.slice(0,10)}`;
+ const initial=Math.max(0,report.scenes.findIndex(item=>item.id===location.hash.slice(1)));
+ $('scene').value=initial;chooseScene(initial);
+ new ResizeObserver(()=>{render();drawChart();}).observe($('views'));
+ requestAnimationFrame(tick);
+}
+</script>
+</body>
+</html>
+
