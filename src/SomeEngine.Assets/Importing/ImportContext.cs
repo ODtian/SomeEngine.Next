@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json.Serialization.Metadata;
+using SomeEngine.Job;
 
 namespace SomeEngine.Assets.Importing;
 
@@ -20,20 +21,25 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
     private TaskCompletionSource? _closed;
     private bool _started;
 
-    public ImportContext(CancellationToken cancellationToken = default)
-        : this(Directory.GetCurrentDirectory(), "", new SourceMeta { SourceGuid = SourceGuid.New() }, cancellationToken) { }
+    public ImportContext(CancellationToken cancellationToken = default, Scheduler? scheduler = null)
+        : this(Directory.GetCurrentDirectory(), "", new SourceMeta { SourceGuid = SourceGuid.New() }, cancellationToken, scheduler) { }
 
     public ImportContext(string projectRoot, string sourcePath, SourceMeta sourceMeta,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, Scheduler? scheduler = null)
     {
         ArgumentNullException.ThrowIfNull(sourceMeta);
         ProjectRoot = Path.GetFullPath(projectRoot);
         SourcePath = sourcePath;
         _sourceMeta = sourceMeta;
+        Scheduler = scheduler ?? JobSystem.Current;
         _cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     }
 
     public string ProjectRoot { get; }
+    /// <summary>The executor captured when this import begins, also used after asynchronous source reads.</summary>
+    public Scheduler Scheduler { get; }
+    /// <summary>The background decode category shared by imports and asset reads on this executor.</summary>
+    public JobCategory DecodingCategory => AssetDecodeJobs.GetCategory(Scheduler);
     public string SourcePath { get; }
     public SourceGuid SourceGuid => _sourceMeta.SourceGuid;
     public IReadOnlyList<SourceImporterSettings> Selections => _sourceMeta.Importers;
