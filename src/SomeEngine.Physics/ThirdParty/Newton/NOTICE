@@ -18,6 +18,11 @@ disk friction curvature and approach damping). Contact multipliers are world
 forces stored on persistent ECS contact entities; material combination and
 normal restitution impulses use explicit C# stages and project parameters.
 
+AvbdSupportedContactMath.cs reuses the same contact equations with the explicit
+LRC auxiliary force in the total Coulomb projection, following the research
+contactEquation extra-force handoff. LRC graph and support sources are listed
+in ../LongRange/NOTICE.
+
 The C# implementation stores body equations and constraint multipliers in ECS
 components, binds concrete constraint types through borrowed query rows and
 uses the existing Job scheduler for its execution and completion.
