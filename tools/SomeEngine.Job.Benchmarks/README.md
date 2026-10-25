@@ -25,3 +25,11 @@ Options:
 
 Run benchmark processes serially. Concurrent runs compete for the same CPU workers and make tail
 latency comparisons meaningless.
+
+`--categories --workers 8 --calls 16` measures a complete mixed batch of 256 foreground
+jobs and 64 background jobs. Foreground uses in-flight/execution/share limits 32/4/4,
+High priority and 256 square-root iterations; background uses 8/2/1, Low priority and
+4,096 iterations. Public callback events report completed counts and maximum simultaneous
+execution for both categories. Timing and process-wide allocation include asynchronous
+quota waits, resource declarations, submission and combined completion. Run through the
+same exclusive queue command above, adding `--categories` after `--`.

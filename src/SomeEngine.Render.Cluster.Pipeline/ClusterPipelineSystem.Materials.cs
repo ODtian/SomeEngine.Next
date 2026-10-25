@@ -1282,7 +1282,7 @@ public sealed partial class ClusterPipelineSystem
     {
         ClusterDispatchParameters binDispatch = new(new DispatchArguments(
             Math.Max(1u, (stages.BinCount + 127u) / 128u), 1, 1));
-        foreach (ClusterLayerDispatch dispatch in GraphData.ShadeBinDispatches) graph.SetPassData(dispatch.Pass, binDispatch);
+        foreach (ClusterLayerDispatch dispatch in GraphData.ShadeBinDispatches) graph.SetPassDataIfChanged(dispatch.Pass, binDispatch);
         graph.SetBufferInput(GraphData.ShadeScalarOffsets, new GraphBufferSlice(GraphData.ScalarOffsets,
             new BufferRange(0, checked((ulong)_materialScalars.Offsets.Length))));
         graph.SetBufferInput(GraphData.ShadeScalars, new GraphBufferSlice(GraphData.ScalarBytes,

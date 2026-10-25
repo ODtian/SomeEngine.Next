@@ -103,6 +103,11 @@ public readonly ref struct QueryCursor
         where TFirst : struct
         where TSecond : struct => new(Rows);
 
+    /// <summary>Visits the same member rows with writable component and buffer columns bound per chunk.</summary>
+    public ComponentBufferRowEnumerator<TComponent, TBuffer> ReadWriteRows<TComponent, TBuffer>()
+        where TComponent : struct
+        where TBuffer : struct, IBufferElement => new(_data.World, Rows);
+
     public QueryRowEnumerator<SingleSharedFilter> RowsWithShared<T>(in T value)
         where T : struct, ISharedComponent
     {

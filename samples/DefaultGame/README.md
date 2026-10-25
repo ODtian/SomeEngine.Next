@@ -2,6 +2,10 @@
 
 DefaultGame 是引擎的统一渲染样例。1024 小球场景、Sponza、Amazon Bistro 的导入配置、测试面板和内容生成代码由本目录持有。
 
+`CrowdExample`、`CrowdScene` 和 `Content/CrowdContent` 展示通用骨架、动作和材质 API 的程序生成角色夹具。
+开发组合的 `sample-crowd` 命令生成内容；`--crowd` 选择 1000 个独立角色的 inline/cache 两个场景，
+`--measure` 采集同一模拟帧窗口并结束应用。素材、配置和完整帧数据入口见 [Crowd Example](../../wiki/architecture/animation/Crowd-Example.md)。
+
 游戏项目编译引擎运行能力；开发构建同时编译 `Content` 中的样例资产生成与自定义导入。标准材质、标准导入和 Shader 构建使用引擎实现。
 
 项目 Shader 定义和顶层组合入口位于 `assets/Shaders`。各管线入口封装自己的资源和执行依赖，材质使用阶段输入完成求值。

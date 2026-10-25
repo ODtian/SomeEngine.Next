@@ -204,6 +204,33 @@ public sealed partial class ClusterPipelineSystem
             static (scoped QueryCursor query, ref CasterEntities data) => data.Collect(query));
     }
 
+    /// <summary>Appends rows whose model bounds changed after the caller's completed source revision.</summary>
+    public ulong CollectDeformedCasters(ulong afterRevision, List<uint> rows)
+    {
+        ulong revision = _deformBounds?.Revision ?? 0;
+        if (revision == afterRevision) return revision;
+        var changes = new DeformedCasters(_instances.Current!, _deformBounds!, afterRevision, rows);
+        _resources.World.ExecuteQuery(_sceneQuery, ref changes,
+            static (scoped QueryCursor query, ref DeformedCasters data) => data.Collect(query));
+        return revision;
+    }
+
+    private readonly struct DeformedCasters(RenderInstanceBatches<RenderInstanceSingleGroup> batches,
+        IClusterBoundsSource source, ulong afterRevision, List<uint> rows)
+    {
+        internal void Collect(scoped QueryCursor query)
+        {
+            int entityIndex = 0;
+            foreach (QueryChunkView chunk in query.Chunks)
+                foreach (Entity entity in chunk.Entities)
+                {
+                    if (source.HasChangedSince(entity, afterRevision))
+                        foreach (var address in batches.RowsForEntity(entityIndex)) rows.Add((uint)address.Row);
+                    entityIndex++;
+                }
+        }
+    }
+
     private ref struct CasterEntities(RenderInstanceBatches<RenderInstanceSingleGroup> batches,
         Span<Entity> entities, List<uint> changedRows)
     {

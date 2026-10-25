@@ -73,6 +73,16 @@ AnimationSystems.Add(schedule, Spec.Spring<float, FloatOps>());
 
 `AnimationLeafBatch<TParameters>.Parameters` 和 `Data` 属于编译定义，多实例共享。`AnimationLeafPlacement` 给出 Stage、Start、Motion、Group、MotionStage、Starts、Layer、Output 和本具体组合 Capacity。用户叶通过公开 World 接口持有自己的类型化状态，查询通过 `AnimationGraph.WithTimeAccess(query)` 声明共同时间和完成数据访问，系统通过 `AnimationGraph.ReadTime` 读取本叶阶段时间、权重与启动次数，再通过 `AnimationGraph.Submit` 汇总运行结果。
 
+`ReadTime(in QueryRow, in placement)` 和 `Submit(in QueryRow, in placement, running)` 直接消费上述声明下借用的查询行。`ReadTime` 使用当前 Timeline 的启用位、暂停状态和阶段；嵌套叶沿本行 `GraphMotion` 的时钟、权重和 Starts 读取对应阶段定义。查询行入口和 `ReadTime(World, entity, ...)` 共享 `LeafPhase.Select` 与 `GraphTimes.Project`。查询行提交在当前查询写版本下更新顶层 Timeline 或对应 GraphMotion 的 running；World 入口继续服务查询外的调用方。源码为 [AnimationGraph](../../../src/SomeEngine.Animation/AnimationGraph.cs)，行访问见 [QueryRow](../../../src/SomeEngine.ECS/Queries/QueryRow.cs)。
+
+已借用 Timeline 的系统使用 `ReadTime(in row, in timeline, in placement)` 与 `Submit(in row, ref timeline, in placement, running)`。
+同一行的具体叶共享该 Timeline 引用，阶段数学仍由上述 `LeafPhase` 持有；嵌套叶沿本行 GraphMotion 完成时间读取与 running 提交。
+
+按 chunk 处理叶实例时，`AnimationGraph.ReadTimeColumn(chunk)` 返回当前回调中的 `LeafTimeColumn`。
+调用方沿原 `RowIndices` 借用 Timeline，再调用 `Read(row, in timeline, in placement)` 与 `Submit(row, ref timeline, in placement, running)`。
+该列在块边界绑定当前启用位、可选 TimelineStage 和 GraphMotion 的列；各 placement 继续通过同一 `CreatePhase`、`SelectMotion` 和 `LeafPhase.Select` 取得顶层或嵌套的时间、权重与启动次数。
+GpuState、GpuClip 和 GpuBlend 共同使用这一入口。源码：[叶时钟列](../../../src/SomeEngine.Animation/AnimationGraph.Columns.cs)。
+
 属性叶的共享参数保存在定义数组，实际 `MotionInstance<T,TOps,TParameters,TState,TEvaluator>` 缓冲持有实例状态、值、时间与输出。`AnimationGraph.UpdateParameters(world, animation, channel, in spec)` 更新指定实例的公式参数，并调用 `TEvaluator.UpdateParameters` 保留算法历史；首次显式修改将该具体组合的参数复制到实例缓冲。固定时长和阶段类型保持编译值，时间或结构变更通过重编译并播放新定义提交。
 
 `PropertyAnimation.Retarget` 从本实例当前来源值重定目标并延续算法状态。图中固定叶在剩余编译区间到达新目标，后续区间按原时间开始。停止调用具体算法及公开叶的释放入口，图重用时清理旧目标关系并安装新目标。

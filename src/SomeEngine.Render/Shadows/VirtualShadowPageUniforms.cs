@@ -13,6 +13,7 @@ public struct VirtualShadowReceiverProjection
     public float ScreenPixelRadius;
     public Vector4 WorldToViewDepth;
     public CameraDepthOfField DepthOfField;
+    public uint DepthOfFieldPadding;
     public Vector3 CameraPosition;
     public float CotanHalfFieldOfView;
 }

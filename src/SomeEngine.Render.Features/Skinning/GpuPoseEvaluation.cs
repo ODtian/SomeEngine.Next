@@ -25,6 +25,21 @@ public sealed partial class SkinningFeature
                         section.SelectedBones[limb.Chain.Middle] = true;
                         section.SelectedBones[limb.Chain.Tip] = true;
                     }
+                    else if (operation is GpuXpbdPose xpbd)
+                    {
+                        foreach (GpuXpbdBone bone in xpbd.Chain.Bones) section.SelectedBones[bone.Bone] = true;
+                    }
+                    else if (operation is GpuStridePose stride)
+                    {
+                        section.SelectedBones[stride.Rig.PelvisBone] = true;
+                        foreach (GpuStrideLeg leg in stride.Rig.Legs)
+                        {
+                            section.SelectedBones[leg.Chain.Root] = true;
+                            section.SelectedBones[leg.Chain.Middle] = true;
+                            section.SelectedBones[leg.Chain.Tip] = true;
+                        }
+                        foreach (GpuStrideSpine bone in stride.Rig.Spine) section.SelectedBones[bone.Bone] = true;
+                    }
                     else foreach (GpuAimBone bone in ((GpuAimPose)operation).Chain.Bones) section.SelectedBones[bone.Bone] = true;
             }
         }
@@ -62,7 +77,7 @@ public sealed partial class SkinningFeature
 
     private static void PrepareSampling(Section section, double time)
     {
-        RenderBoneSectionData data = section.Data;
+        ref readonly RenderBoneSectionData data = ref section.Data;
         if (!data.IsGpu)
         {
             section.Presentation = new(data.CalculationTime, data.CalculationTime, data.CalculationTime, 1);

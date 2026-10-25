@@ -1,9 +1,54 @@
+using System.Buffers.Binary;
 using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 public sealed class RepeatCommandsTests
 {
+    [Fact]
+    public void RepeatingTimestampCommandsProducesNewValuesForEachSubmission()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using QueryPool pool = backend.CreateQueryPool(device, new(QueryType.Timestamp, QueueType.Graphics, 1));
+        using Buffer destination = backend.CreateBuffer(device,
+            new BufferDesc(pool.ResultInfo.ResultStride, BufferUsages.QueryResolve), MemoryType.Readback);
+        using CommandContext timestamp = backend.CreateCommandContext(device, new(QueueType.Graphics, 0, 1));
+        using CommandContext resolve = backend.CreateCommandContext(device, new(QueueType.Graphics, 0, 1));
+        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        ulong previous = 0;
+        for (int frame = 0; frame < 2; frame++)
+        {
+            RecordedCommands writes;
+            if (frame == 0)
+            {
+                backend.Begin(timestamp);
+                backend.ResetQueries(timestamp, pool, 0, 1);
+                backend.WriteTimestamp(timestamp, pool, 0);
+                writes = backend.End(timestamp);
+            }
+            else Assert.True(backend.TryRepeatCommands(timestamp, out writes));
+            using (writes)
+            {
+                QueueCompletion written = backend.Submit(queue, new([], [], [writes], [], []));
+                Assert.Equal(WaitStatus.Completed, backend.WaitCpu(written, TimeSpan.FromSeconds(10)));
+            }
+            backend.Begin(resolve);
+            backend.ResolveQueries(resolve, pool, 0, 1, destination, BufferRange.Whole);
+            using (RecordedCommands reads = backend.End(resolve))
+            {
+                QueueCompletion resolved = backend.Submit(queue, new([], [], [reads], [], []));
+                Assert.Equal(WaitStatus.Completed, backend.WaitCpu(resolved, TimeSpan.FromSeconds(10)));
+            }
+            backend.CollectCompleted(device);
+            using MappedBuffer result = backend.Map(destination, MapType.Read, BufferRange.Whole);
+            result.Invalidate(result.Range);
+            ulong current = BinaryPrimitives.ReadUInt64LittleEndian(result.Bytes);
+            Assert.True(current > previous, $"Submission {frame}: previous timestamp {previous}, current {current}.");
+            previous = current;
+        }
+    }
+
     [Fact]
     public void RepeatingCopiesUsesCurrentBufferContentsAndNewSubmissionTickets()
     {

@@ -57,6 +57,7 @@ public sealed partial class Scheduler
             }
             throw;
         }
+        finally { submission.Release(); }
     }
 
     internal void OnCompleted(

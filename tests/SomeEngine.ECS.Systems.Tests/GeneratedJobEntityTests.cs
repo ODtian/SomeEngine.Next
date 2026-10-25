@@ -17,7 +17,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [InlineData(7)]
     public void ParallelSparseJobAdvancesComponentWriteVersionForEveryRow(int rowsPerPacket)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4 });
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = CreateMovingWorld(32, out Entity[] entities);
         foreach (Entity entity in entities)
             world.AddSparse(entity, new GeneratedSparse { Value = 3 });
@@ -37,7 +37,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [InlineData(7)]
     public void ParallelTableJobAdvancesComponentWriteVersionForEveryRow(int rowsPerPacket)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4 });
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = CreateMovingWorld(128, out Entity[] entities);
         uint positionVersion = world.ComponentWriteVersion<GeneratedPosition>();
         uint velocityVersion = world.ComponentWriteVersion<GeneratedVelocity>();

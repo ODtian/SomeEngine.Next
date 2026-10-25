@@ -155,3 +155,38 @@ ECS 的 `ReadOnlyQueryPacketJobs.ExecutePrepared` 将其借用的范围数组交
 
 - [[Job-Work-Released|WorkReleased]]
 - [[Job-Scope-Completed|ScopeCompleted]]
+
+## 工作类别与配额
+
+`Scheduler.CreateCategory(JobCategoryConfig)` 创建属于该 Scheduler 的工作类别，
+`JobScheduleOptions.Category` 随提交选择类别。`MaxInFlight` 限制在途根请求，
+`MaxExecuting` 限制实际执行的队列 drainer 和同步调用线程，`ServiceShare` 指定类别之间
+轮转取得就绪票的份额。每个类别内部继续按 `Priority` 选择就绪票；普通工作作为份额为 1
+的默认类别参与轮转。
+
+同步提交在在途额度用满时抛出 `InvalidOperationException`。`ScheduleAsync` 与
+`ScheduleParallelAsync` 返回 `ValueTask<JobHandle>`，取得额度后交付实际工作的完成句柄。
+等待期间，既有 Job 记录保持提交作用域、显式依赖和资源保留；取消令牌取消尚在等待额度的提交。
+工作及其挂接子工作全部结束后，完成回调将额度交给下一位等待者。失败和 Scheduler 关闭
+沿相同完成路径结束请求。同类别子工作复用其根请求额度，类别执行额度覆盖实际回调。
+
+下面是使用示例，`job` 和 `access` 由调用方提供：
+
+```csharp
+JobCategory category = scheduler.CreateCategory(new JobCategoryConfig
+{
+    Name = "decode", MaxInFlight = 32, MaxExecuting = 2, ServiceShare = 1
+});
+var options = new JobScheduleOptions { Category = category, Priority = JobPriority.Low };
+JobHandle handle = await scheduler.ScheduleAsync(job, access, options, cancellationToken: token);
+await handle;
+```
+
+`ExecuteParallel` 同样接受该类别，调用线程参与执行并计入执行额度；同类别嵌套范围复用当前
+执行许可。类别受限的并行提交按执行上限发布参与者，所有参与者继续使用共享就绪队列。
+
+本节属于已实现的公共接口与行为。源码入口：
+[类别配置](../../../src/SomeEngine.Job/JobCategoryConfig.cs)、
+[类别等待与提交](../../../src/SomeEngine.Job/Scheduler.Categories.cs)、
+[类别服务份额](../../../src/SomeEngine.Job/WorkQueue.Categories.cs)。
+公共行为检查：[工作类别](../../../tests/SomeEngine.Job.Tests/JobCategoryTests.cs)。

@@ -541,6 +541,7 @@ internal struct ClusterFrameMetricsReadbackParameters
     internal GraphBufferId Phase2CandidateArgs;
     internal GraphBufferId Phase2DrawArgs;
     internal GraphBufferId RasterReserve;
+    internal GraphBufferId DeformAllocation;
     internal GraphBufferId ShadeCount;
     internal GraphBufferId ShadeReserve;
     internal GraphBufferId SoftwareDebug;
@@ -563,6 +564,8 @@ internal struct ClusterFrameMetricsReadbackParameters
         Copy(ref commands, parameters.RasterReserve, 2 * sizeof(uint),
             parameters.Destination, ClusterPipelineSystem.RasterReserveReadbackOffset,
             2 * sizeof(uint));
+        Copy(ref commands, parameters.DeformAllocation, 0,
+            parameters.Destination, ClusterPipelineSystem.DeformAllocationReadbackOffset, sizeof(uint));
         Copy(ref commands, parameters.ShadeCount, 0,
             parameters.Destination, ClusterPipelineSystem.ShadeBinCountReadbackOffset,
             sizeof(uint));

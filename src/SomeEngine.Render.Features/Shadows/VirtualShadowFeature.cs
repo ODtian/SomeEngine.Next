@@ -137,6 +137,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private ulong _committedInstanceRevision;
     private ulong _committedCasterRevision;
     private ulong _frameCasterRevision;
+    private ulong _committedDeformRevision, _frameDeformRevision;
     private readonly List<uint> _streamingChangedInstances = [];
     private readonly List<uint> _rasterChangedInstances = [];
     private ulong _frameInstanceRevision;
@@ -864,48 +865,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         int instanceCount = _geometry.CurrentInstanceCount;
         _frameInstances = _geometry.CurrentInstances;
         _frameInstanceRevision = _frameInstances!.ContentRevision;
-        _forceStateReset |= !ReferenceEquals(_frameInstances, _committedInstances) || _invalidateAllCasters;
         _changedInstances.Clear();
         _streamingChangedInstances.Clear();
         _rasterChangedInstances.Clear();
-        _frameInstances.CollectChangedInstances(_committedInstanceRevision, _changedInstances);
-        _forceStateReset |= !_geometry.CollectChangedCasters(_committedCasterRevision,
-            _rasterChangedInstances, _streamingChangedInstances, out _frameCasterRevision);
-        _changedInstances.AddRange(_rasterChangedInstances);
-        _rasterChangedInstances.AddRange(_deformedInstances);
-        _rasterChangedInstances.Sort();
-        // Batch changes already arrive in increasing row order. Raster and
-        // deformation notices can add unordered or duplicate rows.
-        if (_rasterChangedInstances.Count != 0)
-        {
-            _changedInstances.AddRange(_deformedInstances);
-            _changedInstances.Sort();
-            int unique = 0;
-            for (int index = 0; index < _changedInstances.Count; index++)
-                if (unique == 0 || _changedInstances[index] != _changedInstances[unique - 1])
-                    _changedInstances[unique++] = _changedInstances[index];
-            _changedInstances.RemoveRange(unique, _changedInstances.Count - unique);
-        }
-        UpdateCasterCacheClasses(ref graph, instanceCount);
-        int immediateCount = _changedInstances.Count;
-        _streamingChangedInstances.Sort();
-        int streamingCount = 0;
-        for (int index = 0; index < _streamingChangedInstances.Count; index++)
-        {
-            uint row = _streamingChangedInstances[index];
-            if (_changedInstances.BinarySearch(0, immediateCount, row, null) >= 0 ||
-                streamingCount != 0 && row == _streamingChangedInstances[streamingCount - 1]) continue;
-            _streamingChangedInstances[streamingCount++] = row;
-        }
-        _streamingChangedInstances.RemoveRange(streamingCount, _streamingChangedInstances.Count - streamingCount);
-        if (_rasterChangedInstances.Count != 0)
-            for (int index = 0; index < immediateCount; index++)
-                if (_rasterChangedInstances.BinarySearch(_changedInstances[index]) >= 0)
-                    _changedInstances[index] |= 0x40000000u;
-        _changedInstances.AddRange(_streamingChangedInstances);
-        for (uint index = 0; index < _lodCasterBounds.Count / 2; index++)
-            _changedInstances.Add(0x80000000u | index);
-        _forceStateReset |= _changedInstances.Count != 0 && !_geometry.HasFiniteGeometryBounds;
         _shadowMap.BeginFrame();
         _shadowFrameActive = true;
         try
@@ -917,8 +879,60 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 receiverView,
                 0,
                 0,
-                instanceCount, _geometry.HasFirstPersonWorldMeshes(), ReceiverMaskColumns);
+                instanceCount, _shadowMap.Settings.Enabled && _geometry.HasFirstPersonWorldMeshes(), ReceiverMaskColumns);
             _viewCount = views.Length;
+            if (_viewCount != 0)
+            {
+                _forceStateReset |= !ReferenceEquals(_frameInstances, _committedInstances) || _invalidateAllCasters;
+                _frameInstances.CollectChangedInstances(_committedInstanceRevision, _changedInstances);
+                _forceStateReset |= !_geometry.CollectChangedCasters(_committedCasterRevision,
+                    _rasterChangedInstances, _streamingChangedInstances, out _frameCasterRevision);
+                _frameDeformRevision = _geometry.CollectDeformedCasters(_committedDeformRevision, _rasterChangedInstances);
+                _changedInstances.AddRange(_rasterChangedInstances);
+                _rasterChangedInstances.AddRange(_deformedInstances);
+                _rasterChangedInstances.Sort();
+                // Batch changes already arrive in increasing row order. Raster and
+                // deformation notices can add unordered or duplicate rows.
+                if (_rasterChangedInstances.Count != 0)
+                {
+                    _changedInstances.AddRange(_deformedInstances);
+                    _changedInstances.Sort();
+                    int unique = 0;
+                    for (int index = 0; index < _changedInstances.Count; index++)
+                        if (unique == 0 || _changedInstances[index] != _changedInstances[unique - 1])
+                            _changedInstances[unique++] = _changedInstances[index];
+                    _changedInstances.RemoveRange(unique, _changedInstances.Count - unique);
+                }
+                UpdateCasterCacheClasses(ref graph, instanceCount);
+                int immediateCount = _changedInstances.Count;
+                _streamingChangedInstances.Sort();
+                int streamingCount = 0;
+                for (int index = 0; index < _streamingChangedInstances.Count; index++)
+                {
+                    uint row = _streamingChangedInstances[index];
+                    if (_changedInstances.BinarySearch(0, immediateCount, row, null) >= 0 ||
+                        streamingCount != 0 && row == _streamingChangedInstances[streamingCount - 1]) continue;
+                    _streamingChangedInstances[streamingCount++] = row;
+                }
+                _streamingChangedInstances.RemoveRange(streamingCount, _streamingChangedInstances.Count - streamingCount);
+                if (_rasterChangedInstances.Count != 0)
+                    for (int index = 0; index < immediateCount; index++)
+                        if (_rasterChangedInstances.BinarySearch(_changedInstances[index]) >= 0)
+                            _changedInstances[index] |= 0x40000000u;
+                _changedInstances.AddRange(_streamingChangedInstances);
+                for (uint index = 0; index < _lodCasterBounds.Count / 2; index++)
+                    _changedInstances.Add(0x80000000u | index);
+                _forceStateReset |= _changedInstances.Count != 0 && !_geometry.HasFiniteGeometryBounds;
+            }
+            else
+            {
+                _lodCasterBounds.Clear();
+                GraphBufferSlice emptyCasters = graph.Upload<Vector4>([Vector4.Zero], BufferUsages.ShaderRead,
+                    "Inactive virtual shadow caster data");
+                graph.SetBufferInput(_frameDepthCacheClasses, emptyCasters);
+                graph.SetBufferInput(_framePreviousDepthCacheClasses, emptyCasters);
+                graph.SetBufferInput(_frameLodBounds, emptyCasters);
+            }
             _frameBaseShadowBias = new float[views.Length];
             for (int index = 0; index < views.Length; index++) _frameBaseShadowBias[index] = views[index].ResolutionLodBias;
             VirtualShadowMapFrameResources resources =
@@ -1096,12 +1110,16 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         CommitWorkFeedback();
         CommitPrefilter();
         CommitDistantBias();
-        CommitCasterCacheClasses();
-        _committedInstances = _frameInstances;
-        _committedInstanceRevision = _frameInstanceRevision;
-        _committedCasterRevision = _frameCasterRevision;
-        _deformedInstances.Clear();
-        _invalidateAllCasters = false;
+        if (_viewCount != 0)
+        {
+            CommitCasterCacheClasses();
+            _committedInstances = _frameInstances;
+            _committedInstanceRevision = _frameInstanceRevision;
+            _committedCasterRevision = _frameCasterRevision;
+            _committedDeformRevision = _frameDeformRevision;
+            _deformedInstances.Clear();
+            _invalidateAllCasters = false;
+        }
         _forceStateReset = false;
         ClearFrame();
     }

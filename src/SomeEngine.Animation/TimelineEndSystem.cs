@@ -20,18 +20,20 @@ public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
         {
             foreach (QueryChunkView chunk in rows.Chunks)
             {
+                var timelines = chunk.ReadWriteColumn<Timeline>();
                 bool hasStages = chunk.HasBuffer<TimelineStage>();
-                foreach (QueryRow row in chunk.Rows)
+                var stages = hasStages ? chunk.ReadBufferColumn<TimelineStage>() : default;
+                foreach (int row in chunk.RowIndices)
                 {
-                    ref Timeline timeline = ref row.ReadWrite<Timeline>();
+                    ref Timeline timeline = ref timelines[row];
                     if (timeline.Paused)
                         continue;
-                    if (hasStages && ContinueStages(ref timeline, row.ReadBuffer<TimelineStage>().AsSpan()))
+                    if (hasStages && ContinueStages(ref timeline, stages[row].AsSpan()))
                         continue;
                     if (timeline.Running != 0)
                         continue;
                     timeline.Completions++;
-                    row.SetComponentEnabled<Timeline>(false);
+                    chunk.SetComponentEnabled<Timeline>(row, false);
                 }
             }
         });
