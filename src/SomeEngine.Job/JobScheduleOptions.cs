@@ -16,6 +16,8 @@ public readonly struct JobScheduleOptions
     }
 
     public JobPriority Priority { get; init; }
+
+    public JobCategory? Category { get; init; }
 }
 
 

@@ -7,6 +7,7 @@ namespace SomeEngine.Job;
 
 internal abstract class QueuedWork
 {
+    internal JobCategory? Category { get; set; }
     internal virtual void DrainExited() { }
 
     internal abstract int DrainAndFinish(

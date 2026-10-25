@@ -21,12 +21,16 @@ public sealed partial class Scheduler
         BeginParallelSchedule<T>(options, batchSize);
         if (length <= 0)
             return;
+        options = ResolveCategoryOptions(options);
+        using CategoryRequest categoryRequest = EnterSynchronousCategoryRequest(options.Category);
         int resolvedSize = batchSize == JobScheduleOptions.AutomaticBatchSize
             ? ParallelBatchSizer<T>.Resolve(length, _config.WorkerCount,
                 _config.AutoBatchTargetMicroseconds, _config.AutoBatchMaxTilesPerWorker)
             : batchSize;
         int batchCount = CalculateParallelBatchCount(length, resolvedSize);
         int helpers = Math.Min(_config.WorkerCount, batchCount - 1);
+        if (options.Category is { } category)
+            helpers = Math.Min(helpers, category.Config.MaxExecuting - 1);
         SynchronousResourceOwner resources = default;
         ScopeToken scope = s_currentScope;
         if (JobExecutionContext.IsActive)
@@ -40,6 +44,7 @@ public sealed partial class Scheduler
             scope = ScopeToken.FromHandle(resources.Handle);
         }
         SynchronousBatch<T> batch = SynchronousBatch<T>.Rent(this, job, length, resolvedSize, helpers, scope);
+        batch.Category = options.Category;
         ExceptionDispatchInfo? failure = null;
         try
         {
@@ -114,14 +119,20 @@ public sealed partial class Scheduler
             _scheduler = null!;
             _scope = default;
             _failure = null;
+            Category = null;
             _next = s_available;
             s_available = this;
         }
 
         internal void RunCaller()
         {
-            RunParticipant(callingThread: true);
-            DrainExited();
+            CategoryExecution execution = _scheduler.EnterCategoryExecution(Category);
+            try { RunParticipant(callingThread: true); }
+            finally
+            {
+                execution.Dispose();
+                DrainExited();
+            }
         }
 
         private void RunParticipant(bool callingThread)
