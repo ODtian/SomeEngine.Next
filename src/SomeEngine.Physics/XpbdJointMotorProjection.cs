@@ -1,10 +1,47 @@
+using System.Numerics;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 
 namespace SomeEngine.Physics;
 
-public readonly struct XpbdJointMotorProjection : IXpbdConstraint<JointConstraint>
+public readonly struct XpbdJointMotorProjection : IXpbdConstraint<JointConstraint>, IXpbdConstraintForces<JointConstraint>
 {
+    public static int GetBodyCount(in JointConstraint constraint, scoped QueryRow row, in PhysicsStepContext context) =>
+        row.ReadRef<JointMotor>().Response == JointMotorResponse.Both ? 2 : 1;
+
+    public static Entity GetBody(in JointConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context)
+    {
+        ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
+        return index == 0 ? endpoints.Target : endpoints.Source;
+    }
+
+    public static void GetBodyForce(in JointConstraint constraint, scoped QueryRow row, Entity body,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context, out Vector3 force, out Vector3 torque)
+    {
+        ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
+        ref readonly XpbdMotorState state = ref row.ReadRef<XpbdMotorState>();
+        bool react = row.ReadRef<JointMotor>().Response == JointMotorResponse.Both;
+        float duration = (float)context.Duration;
+        force = torque = Vector3.Zero;
+        for (int dof = 0; dof < 6; dof++)
+        {
+            float multiplier = (dof < 3 ? state.LinearMultiplier[dof] : state.AngularMultiplier[dof - 3]) / (duration * duration);
+            if (multiplier == 0) continue;
+            JointEquationRow derivative = JointMotorMath.GetRow(in constraint, row, bodies, in context, dof).Derivative;
+            if (body == endpoints.Target)
+            {
+                force += derivative.TargetLinear * multiplier;
+                torque += derivative.TargetAngular * multiplier;
+            }
+            if (react && body == endpoints.Source)
+            {
+                force += derivative.SourceLinear * multiplier;
+                torque += derivative.SourceAngular * multiplier;
+            }
+        }
+    }
+
     public static void Initialize(in JointConstraint constraint, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadWrite<XpbdMotorState>() = default;
 

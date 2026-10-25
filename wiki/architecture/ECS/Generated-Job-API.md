@@ -69,6 +69,11 @@ new SampleComponentHeight().ScheduleParallel(world, dependency).Complete();
 
 泛型 Job 使用 `[JobResources(typeof(Resources<>))]` 指定开放泛型描述器。生成器将组件类型的实参填入描述器，再生成闭合的静态接口调用。例如 `Source<T>` 配合 `Resources<>` 会得到 `Resources<T>`；这是开放泛型描述器的参数匹配规则。
 
+描述器本身由 Job 类型参数提供时，使用 `[JobResources(nameof(TResources))]`。
+生成器在该 Job 的类型参数中解析名称，并核对其 `IJobComponentResources<TComponent>` 约束，
+随后生成同一 `Table<TComponent,TResources>` 静态资源路径。
+具体使用见 `WriteDeviceGeometryInputsJob<TGeometry,TReader>`，原组件与引用数据在依赖就绪后读取。
+
 Builder 接受普通对象、数组及范围。`Memory<T>` / `ReadOnlyMemory<T>` 的重载沿用 `JobResourceAccess` 的数组底层与切片规则：两个指向同一数组的视图使用相同身份，范围按数组偏移协调，实际数组随工作保留。描述器的 `GetVersion(in component)` 默认为零；引用对象内部重新选择数据时，实现该方法返回随数据绑定变化的版本，并将其可变映射数据纳入访问声明。替换整个组件引用由 ECS 列写入序号追踪。
 
 组件资源查询按既有 Scheduler 的固定访问集合执行：语义依赖完成后，在 ECS 列读取权限下按查询分区发现引用、数据版本与范围；按实际资源身份和重叠范围合并冲突行；取得完整 ECS 与资源集合后再次核对列写入序号、启用序号、拓扑代次及描述器版本。发生变化时，将重新发现作为子工作提交。校验成功后，分组工作计入同一 JobHandle 的工作数量，完整权限持续到所有分组执行结束。

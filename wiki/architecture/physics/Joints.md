@@ -25,7 +25,9 @@
 
 `AvbdJointState` 保存逐轴 ALM 乘子、罚系数与步起点误差；`XpbdJointState` 保存当前子步的逐轴位移乘子。两种状态都与物理参数存于同一关系实体。AVBD 的材料刚度与罚系数分别进入 compliant ALM 系数；XPBD 将材料刚度 K 转换为柔度 `1/K`，以 `1/(K*h²)` 进入投影。各端从原位 `BodyPose` 和 `BodyMass` 取得质心、完整体惯量与当前旋转，再写回动态实体的位姿。
 
-[`SolveAvbd`](../../../src/SomeEngine.Physics/SolveAvbd.cs) 显式接收外层 `iterations`，带 `bodyIterations` 的重载允许每体在固定本轮乘子下重复装配、分解与原位更新。原入口每体更新一次。每轮依次更新动态实体，随后统一更新全部约束乘子；每个动态实体的六维局部块次数为 `iterations * bodyIterations`。较大角度的限位运动可通过这一显式预算提高局部非线性求解精度。
+[`SolveAvbd`](../../../src/SomeEngine.Physics/SolveAvbd.cs) 显式接收外层 `iterations`，带 `bodyIterations` 的重载允许每体在固定本轮乘子下重复装配、分解与原位更新。原入口每体更新一次。每轮依次更新动态实体，随后统一更新全部约束乘子；每个动态实体的有效局部块次数为 `iterations * bodyIterations`。较大角度的限位运动可通过这一显式预算提高局部非线性求解精度。
+
+两类算法的独立初始化、继续迭代、XPBD 关节当前力与力矩进入 AVBD 方程，以及实际 Body 自由度见[求解阶段](Solver-Steps.md)。
 
 AVBD 通过 `AvbdConstraints<JointConstraint, AvbdJointMath>` 接入，XPBD 通过 `XpbdConstraints<JointConstraint, XpbdJointProjection>` 接入。用户关节适配同样实现 `IAvbdConstraint<T>` 或 `IXpbdConstraint<T>`，从原 `QueryRow` 读取端点及其他参数，再经 `PhysicsBodies` 原位访问参与实体；集合组合、作业依赖、查询有效期沿对应求解阶段维护。接口说明见 [XPBD](XPBD.md) 与源文件。
 
