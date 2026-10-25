@@ -69,6 +69,22 @@ SomeUI 的恢复由 [[architecture/someui/Async-Build|BuildTaskBuilder 与重建
 [SomeUI Job 消费](../../../tests/SomeEngine.Views.Tests/JobBuildTests.cs)。
 
 
+## 合并依赖结果
+
+`Scheduler.CombineDependencies` 从输入收集尚待完成的前置工作和已经完成的失败。小输入使用
+内联句柄数组；较大输入租用句柄数组，按所属 Scheduler 内的记录编号和版本排序，再线性
+压缩重复项，去重工作量为 `O(N log N)`。临时数组归还时清理实际收集范围。
+
+结果只由一个尚待完成的前置提供时，直接返回其 `JobHandle`。多个前置或额外的已完成失败
+继续由合并完成记录交付；后续消费者等待全部实际前置，并取得合并结果中的失败。完整依赖
+登记沿既有完成关系维护祖先和循环约束。
+
+本节属于已实现的公共接口行为。源码入口：
+[依赖合并](../../../src/SomeEngine.Job/Scheduler.Dependency.cs)；公共行为检查：
+[合并结果与消费者](../../../tests/SomeEngine.Job.Tests/DependencyMergeTests.cs)、
+[依赖完成](../../../tests/SomeEngine.Job.Tests/DependencyTests.cs)。固定递增规模的完整合并与
+完成测量见 [Job benchmark](../../../tools/SomeEngine.Job.Benchmarks/README.md) 的 `--dependencies`。
+
 ## 同步范围执行
 
 `Scheduler.ExecuteParallel(in job, length, batchSize, accesses, options)` 消费具体的

@@ -24,14 +24,19 @@ public sealed partial class Scheduler
         Span<JobHandle> liveDependencies = handles.Length <= InlineDependencyCapacity
             ? ((Span<JobHandle>)inline)[..handles.Length]
             : (rentedHandles = ArrayPool<JobHandle>.Shared.Rent(handles.Length)).AsSpan(0, handles.Length);
-        int liveDependencyCount = 0;
+        int collectedDependencyCount = 0;
 
         try
         {
-            var completedFault = CollectLiveDependencies(handles, liveDependencies, out liveDependencyCount);
+            var completedFault = CollectLiveDependencies(handles, liveDependencies, out collectedDependencyCount);
+            int liveDependencyCount = handles.Length <= InlineDependencyCapacity
+                ? collectedDependencyCount
+                : DeduplicateDependencies(liveDependencies[..collectedDependencyCount]);
 
             if (liveDependencyCount == 0)
                 return CreateResolvedDependency(completedFault);
+            if (liveDependencyCount == 1 && completedFault is null)
+                return liveDependencies[0];
 
             JobHandle combined = CreateState(pendingWork: 0, liveDependencyCount);
             if (completedFault is not null)
@@ -44,7 +49,7 @@ public sealed partial class Scheduler
         {
             if (rentedHandles is not null)
             {
-                Array.Clear(rentedHandles, 0, liveDependencyCount);
+                Array.Clear(rentedHandles, 0, collectedDependencyCount);
                 ArrayPool<JobHandle>.Shared.Return(rentedHandles);
             }
         }
@@ -59,13 +64,37 @@ public sealed partial class Scheduler
         ExceptionDispatchInfo? completedFault = null;
         foreach (JobHandle handle in handles)
         {
-            if (!TryAddLiveDependency(handle, liveDependencies[..liveDependencyCount], ref completedFault))
+            ReadOnlySpan<JobHandle> existing = handles.Length <= InlineDependencyCapacity
+                ? liveDependencies[..liveDependencyCount]
+                : default;
+            if (!TryAddLiveDependency(handle, existing, ref completedFault))
                 continue;
 
             liveDependencies[liveDependencyCount++] = handle;
         }
 
         return completedFault;
+    }
+
+    private static int DeduplicateDependencies(Span<JobHandle> handles)
+    {
+        handles.Sort(static (left, right) =>
+        {
+            int order = left.Index.CompareTo(right.Index);
+            return order != 0 ? order : left.Version.CompareTo(right.Version);
+        });
+        int distinctCount = 0;
+        foreach (JobHandle handle in handles)
+        {
+            if (distinctCount != 0)
+            {
+                JobHandle previous = handles[distinctCount - 1];
+                if (handle.Index == previous.Index && handle.Version == previous.Version)
+                    continue;
+            }
+            handles[distinctCount++] = handle;
+        }
+        return distinctCount;
     }
 
     private bool TryAddLiveDependency(
