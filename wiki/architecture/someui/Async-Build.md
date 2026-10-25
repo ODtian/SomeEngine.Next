@@ -87,10 +87,10 @@ public readonly struct JobHandleAwaiter : ICriticalNotifyCompletion
 }
 ```
 
-`IsCompleted` 读取 `JobHandle.IsCompleted`，已完成的 Job 和默认句柄在当前调用位置继续。
-挂起等待通过 `JobSystem.OnCompleted` 登记回调，回调按已有语义在登记、完成或外部信号线程
-内联执行。`GetResult` 调用 `JobHandle.Complete()`，沿其既有的首次错误观察语义取得结果。
-调度、依赖、资源访问和句柄完成状态继续由 Job 系统持有。
+`GetAwaiter()` 取得本次等待的完成结果，`IsCompleted` 读取其就绪状态；已完成的 Job 和默认
+句柄在当前调用位置继续。挂起等待通过 `JobSystem.OnCompleted` 取得终态，再在登记、完成
+或外部信号线程内联通知消费者。`GetResult` 读取这次等待保留的结果，支持重建阶段延后恢复。
+完成结果的观察期、重复读取和底层记录回收规则见 [[architecture/ECS/Job-Completion|Job 状态与完成语义]]。
 
 `Build` 中的 `await handle` 由 `BuildTaskBuilder` 接管恢复：Job 完成回调将状态机放入
 该 World 的重建队列，重建阶段设置原构建作用域后继续读取 Job 写入的数据，并提交界面输出。
