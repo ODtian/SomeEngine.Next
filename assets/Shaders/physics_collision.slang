@@ -1,28 +1,7 @@
 #ifndef PHYSICS_COLLISION
 #define PHYSICS_COLLISION
 
-struct DeviceGeometryInput
-{
-    float3 position;
-    float convexRadius;
-    float4 rotation;
-    float3 halfExtents;
-    float halfHeight;
-    uint vertexStart;
-    uint vertexCount;
-    uint faceStart;
-    uint faceCount;
-    uint faceIndexStart;
-    uint maximumFaceVertices;
-    float radius;
-    uint geometryIndex;
-    float3 planeNormal;
-    float planeOffset;
-    uint geometryType;
-    uint padding0;
-    uint padding1;
-    uint padding2;
-};
+#include "physics_geometry_types.slang"
 
 struct DeviceCollisionPair
 {
@@ -149,12 +128,6 @@ struct DeviceSphere : IDeviceConvex
         return 1;
     }
 };
-
-float3 rotateDeviceDirection(float4 rotation, float3 direction)
-{
-    float3 crossProduct = 2 * cross(rotation.xyz, direction);
-    return direction + rotation.w * crossProduct + cross(rotation.xyz, crossProduct);
-}
 
 struct DeviceBox : IDeviceConvex
 {

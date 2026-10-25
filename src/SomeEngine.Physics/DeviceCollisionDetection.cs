@@ -56,6 +56,7 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         Distances = CreateWorkBuffer("CollisionDistances", (ulong)capacity.Pairs * 64, 64, bindings);
         Contacts = CreateWorkBuffer("CollisionContacts", (ulong)capacity.Pairs * 4 * ContactStride, ContactStride, bindings);
         ContactCounts = CreateWorkBuffer("CollisionContactCounts", (ulong)capacity.Pairs * 4, 4, bindings);
+        CreateContactBodies(bindings);
         ulong vertices = (ulong)(4 + settings.PenetrationIterations);
         CreateWorkBuffer("PenetrationVertices", (ulong)capacity.WorkItems * vertices * 32, 32, bindings);
         CreateWorkBuffer("PenetrationFaces", (ulong)capacity.WorkItems * vertices * 2 * 28, 28, bindings);
@@ -73,8 +74,7 @@ public sealed partial class DeviceCollisionDetection : IDisposable
             "Device collision parameters"), MemoryType.Upload));
         BufferCbv parametersView = Keep(backend.CreateBufferCbv(device, new(_parameters, new(0, 256))));
         _readbackBuffer = readback == DeviceCollisionReadback.None ? null :
-            Keep(backend.CreateBuffer(device, new(ContactReadbackOffset +
-                ((readback & DeviceCollisionReadback.Contacts) != 0 ? Contacts.Info.Size : 0),
+            Keep(backend.CreateBuffer(device, new(ResultReadbackSize,
                 BufferUsages.CopyDestination, "Device collision result readback"), MemoryType.Readback));
         bindings.Add("DetectionParameters", [ResourceBinding.ConstantBuffer(parametersView)]);
         bindings.Add("DetectionPairs", [ResourceBinding.WritableBuffer(pairsView)]);
@@ -117,6 +117,11 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         {
             accesses.Add(JobResourceAccess.Read(scheduler, _contacts));
             accesses.Add(JobResourceAccess.Read(scheduler, _contactCounts));
+            if (_geometry.Bodies is not null)
+            {
+                accesses.Add(JobResourceAccess.Read(scheduler, _contactBodies));
+                accesses.Add(JobResourceAccess.Read(scheduler, _contactBodyCounts));
+            }
         }
         return [.. accesses];
     }
@@ -171,6 +176,11 @@ public sealed partial class DeviceCollisionDetection : IDisposable
             {
                 CopyResults(ContactCounts, 0, CountReadbackOffset, ContactCounts.Info.Size);
                 CopyResults(Contacts, 0, ContactReadbackOffset, Contacts.Info.Size);
+                if (_geometry.Bodies is not null)
+                {
+                    CopyResults(ContactBodyCounts!, 0, ContactBodyCountReadbackOffset, ContactBodyCounts!.Info.Size);
+                    CopyResults(ContactBodies!, 0, ContactBodyReadbackOffset, ContactBodies!.Info.Size);
+                }
             }
         }
         using RecordedCommands commands = _backend.End(_commands);
@@ -202,6 +212,7 @@ public sealed partial class DeviceCollisionDetection : IDisposable
                 MemoryMarshal.Cast<byte, int>(mapping.Bytes.Slice((int)CountReadbackOffset, Count * 4)).CopyTo(_contactCounts);
                 MemoryMarshal.Cast<byte, CollisionContact>(mapping.Bytes.Slice((int)ContactReadbackOffset, Count * 4 * ContactStride))
                     .CopyTo(_contacts);
+                AcceptContactBodies(mapping.Bytes);
             }
         }
         Number = context.Number;
@@ -229,6 +240,11 @@ public sealed partial class DeviceCollisionDetection : IDisposable
             {
                 resources.Write(detection._contacts.AsMemory());
                 resources.Write(detection._contactCounts.AsMemory());
+                if (detection._geometry.Bodies is not null)
+                {
+                    resources.Write(detection._contactBodies.AsMemory());
+                    resources.Write(detection._contactBodyCounts.AsMemory());
+                }
             }
             JobHandle consumed = scheduler.Schedule(new AcceptDetection(detection, context),
                 CollectionsMarshal.AsSpan(accesses), ready);
