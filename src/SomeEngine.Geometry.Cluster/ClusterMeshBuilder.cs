@@ -125,11 +125,15 @@ public static partial class ClusterMeshBuilder
         float Radius,
         float Error);
 
-    private sealed class LodWorkspace
+    private sealed class LodGroupData
     {
-        public List<int> GroupOffsets { get; } = [];
         public List<uint> MergedIndices { get; } = [];
         public List<uint> SimplifiedIndices { get; } = [];
+        public List<ClusterMeshlet> Clusters { get; } = [];
+        public List<uint> Indices { get; } = [];
+        public ClusterLodBounds Bounds;
+        public float Error;
+        public bool Reduced;
     }
 
     // Morton Code Helpers
@@ -337,6 +341,7 @@ public static partial class ClusterMeshBuilder
         try
         {
             if (!vertexLocks.IsEmpty) vertexLocks.CopyTo(locks);
+            else locks.AsSpan(0, positions.Length).Clear();
             GeneratePositionRemap(positions, remap.AsSpan(0, positions.Length));
             Clusterize(
                 config,
@@ -420,7 +425,7 @@ public static partial class ClusterMeshBuilder
         int nextGroupId, bool sourceLocks)
     {
         List<int> pending = CreateLeafClusterIndices(clusters.Count);
-        var workspace = new LodWorkspace();
+        List<int> groupOffsets = [];
         int depth = 0;
         while (pending.Count > 1)
         {
@@ -433,7 +438,7 @@ public static partial class ClusterMeshBuilder
                 locks,
                 remap,
                 pending,
-                workspace,
+                groupOffsets,
                 ref nextGroupId,
                 depth++, sourceLocks);
         }
@@ -452,7 +457,7 @@ public static partial class ClusterMeshBuilder
         return levelClusters;
     }
 
-    private static List<int> ReduceClusterLodDepth(
+    private static unsafe List<int> ReduceClusterLodDepth(
         ClusterLodConfig config,
         ReadOnlySpan<Vector3> positions,
         float[] materialIndicesArray,
@@ -461,29 +466,45 @@ public static partial class ClusterMeshBuilder
         Span<byte> locks,
         ReadOnlySpan<uint> remap,
         List<int> pending,
-        LodWorkspace workspace,
+        List<int> groupOffsets,
         ref int nextGroupId,
         int depth, bool sourceLocks)
     {
-        Partition(config, positions, clusters, globalIndices, pending, remap, workspace.GroupOffsets);
-        LockBoundary(locks, clusters, globalIndices, pending, workspace.GroupOffsets, remap, sourceLocks);
-        var nextPending = new List<int>();
-        Span<int> pendingSpan = CollectionsMarshal.AsSpan(pending);
-        for (int groupIndex = 0; groupIndex < workspace.GroupOffsets.Count - 1; groupIndex++)
+        Partition(config, positions, clusters, globalIndices, pending, remap, groupOffsets);
+        LockBoundary(locks, clusters, globalIndices, pending, groupOffsets, remap, sourceLocks);
+        LodGroupData[] groups = new LodGroupData[groupOffsets.Count - 1];
+        for (int index = 0; index < groups.Length; index++) groups[index] = new();
+        // ExecuteParallel returns after all users of these borrowed spans have exited.
+        fixed (Vector3* positionData = positions)
+        fixed (byte* lockData = locks)
         {
-            Span<int> group = GetClusterGroup(pendingSpan, workspace.GroupOffsets, groupIndex);
-            ReduceClusterGroup(
-                config,
-                positions,
-                materialIndicesArray,
-                clusters,
-                globalIndices,
-                locks,
-                group,
-                workspace,
-                nextPending,
-                ref nextGroupId,
-                depth);
+            JobSystem.ExecuteParallel(new ReduceLodGroups(config, positionData, positions.Length,
+                materialIndicesArray, clusters, globalIndices, lockData, locks.Length,
+                pending, groupOffsets, groups, depth), groups.Length);
+        }
+        List<int> nextPending = [];
+        Span<int> pendingSpan = CollectionsMarshal.AsSpan(pending);
+        for (int groupIndex = 0; groupIndex < groups.Length; groupIndex++)
+        {
+            Span<int> group = GetClusterGroup(pendingSpan, groupOffsets, groupIndex);
+            LodGroupData data = groups[groupIndex];
+            if (!data.Reduced)
+            {
+                MarkUnmergedGroup(clusters, group);
+                continue;
+            }
+            int groupId = nextGroupId++;
+            AssignGroupParent(clusters, group, data.Bounds, data.Error, groupId);
+            int indexOffset = globalIndices.Count;
+            globalIndices.AddRange(data.Indices);
+            foreach (ClusterMeshlet parent in data.Clusters)
+            {
+                ClusterMeshlet cluster = parent;
+                cluster.IndicesOffset += indexOffset;
+                cluster.GroupId = groupId;
+                nextPending.Add(clusters.Count);
+                clusters.Add(cluster);
+            }
         }
 
         return nextPending;
@@ -499,44 +520,31 @@ public static partial class ClusterMeshBuilder
         return levelClusters.Slice(start, count);
     }
 
-    private static void ReduceClusterGroup(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        float[] materialIndicesArray,
-        List<ClusterMeshlet> clusters,
-        List<uint> globalIndices,
-        Span<byte> locks,
-        Span<int> group,
-        LodWorkspace workspace,
-        List<int> nextLevelClusters,
-        ref int nextGroupId,
-        int depth)
+    private readonly unsafe struct ReduceLodGroups(
+        ClusterLodConfig config, Vector3* positions, int vertexCount,
+        float[] materialIndices, List<ClusterMeshlet> clusters, List<uint> indices,
+        byte* locks, int lockCount, List<int> levelClusters, List<int> groupOffsets,
+        LodGroupData[] groups, int depth) : IJobParallelFor
     {
-        MergeGroupIndices(globalIndices, clusters, group, workspace.MergedIndices);
-        int targetSize = (int)((workspace.MergedIndices.Count / 3) * config.SimplifyRatio) * 3;
-        ClusterLodBounds groupBounds = BoundsMerge(clusters, group);
-        Simplify(config, positions, CollectionsMarshal.AsSpan(workspace.MergedIndices), locks, targetSize, out float error, workspace.SimplifiedIndices);
-        if (workspace.SimplifiedIndices.Count > workspace.MergedIndices.Count * config.SimplifyThreshold)
+        public void Execute(int index)
         {
-            MarkUnmergedGroup(clusters, group);
-            return;
-        }
+            Span<int> group = GetClusterGroup(CollectionsMarshal.AsSpan(levelClusters), groupOffsets, index);
+            LodGroupData data = groups[index];
+            MergeGroupIndices(indices, clusters, group, data.MergedIndices);
+            int targetSize = (int)((data.MergedIndices.Count / 3) * config.SimplifyRatio) * 3;
+            ClusterLodBounds bounds = BoundsMerge(clusters, group);
+            ReadOnlySpan<Vector3> vertices = new(positions, vertexCount);
+            Simplify(config, vertices, CollectionsMarshal.AsSpan(data.MergedIndices),
+                new ReadOnlySpan<byte>(locks, lockCount), targetSize, out float error, data.SimplifiedIndices);
+            if (data.SimplifiedIndices.Count > data.MergedIndices.Count * config.SimplifyThreshold)
+                return;
 
-        float groupError = groupBounds.Error + error;
-        int groupId = nextGroupId++;
-        AssignGroupParent(clusters, group, groupBounds, groupError, groupId);
-        BuildParentClusters(
-            config,
-            positions,
-            materialIndicesArray,
-            clusters,
-            globalIndices,
-            workspace.SimplifiedIndices,
-            groupBounds,
-            groupError,
-            groupId,
-            depth,
-            nextLevelClusters);
+            data.Reduced = true;
+            data.Bounds = bounds;
+            data.Error = bounds.Error + error;
+            BuildParentClusters(config, vertices, materialIndices, data.Clusters, data.Indices,
+                data.SimplifiedIndices, bounds, data.Error, depth);
+        }
     }
 
     private static void MergeGroupIndices(
@@ -595,9 +603,7 @@ public static partial class ClusterMeshBuilder
         List<uint> simplifiedIndices,
         ClusterLodBounds bounds,
         float error,
-        int groupId,
-        int depth,
-        List<int> nextLevelClusters)
+        int depth)
     {
         int start = clusters.Count;
         Clusterize(
@@ -615,9 +621,7 @@ public static partial class ClusterMeshBuilder
                 globalIndices,
                 bounds,
                 error,
-                groupId,
                 depth + 1);
-            nextLevelClusters.Add(index);
         }
     }
 
@@ -627,7 +631,6 @@ public static partial class ClusterMeshBuilder
         List<uint> globalIndices,
         ClusterLodBounds bounds,
         float error,
-        int groupId,
         int level)
     {
         ReadOnlySpan<uint> clusterIndices = CollectionsMarshal
@@ -638,7 +641,6 @@ public static partial class ClusterMeshBuilder
         cluster.Center = selfBounds.Center;
         cluster.Radius = selfBounds.Radius;
         cluster.Error = error;
-        cluster.GroupId = groupId;
         cluster.LodCenter = bounds.Center;
         cluster.LodRadius = bounds.Radius;
         cluster.SelfLodCenter = bounds.Center;
