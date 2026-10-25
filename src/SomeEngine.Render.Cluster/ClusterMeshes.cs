@@ -209,18 +209,6 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
-    internal void CollectPageDependencies(Dictionary<uint, uint> priorities)
-    {
-        lock (_gate)
-        {
-            var pages = priorities.Keys.Where(page => _pages.TrySource(page, out _, out _)).ToHashSet();
-            uint priority = priorities.Count == 0 ? 0u : priorities.Values.Max();
-            _bvh.CollectPageDependencies(pages);
-            foreach (uint page in pages)
-                priorities.TryAdd(page, priority);
-        }
-    }
-
     internal void ResolvePages(Dictionary<uint, uint> priorities, List<KeyValuePair<uint, uint>> unresolved)
     {
         lock (_gate)
