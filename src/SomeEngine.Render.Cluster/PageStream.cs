@@ -255,10 +255,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         ClusterStreamingDemand? demand = null;
         if (demandComplete.HasValue)
         {
-            foreach (ClusterPageDemand request in demands)
-                if (!_pagePriorities.TryGetValue(request.PageId, out uint priority) || request.Priority > priority)
-                    _pagePriorities[request.PageId] = request.Priority;
-            _resources.CollectPageDependencies(_pagePriorities);
+            _resources.CollectPageDemands(demands, _pagePriorities);
             demand = _resources.SetReferencedPages(_pagePriorities.Keys, demandComplete.Value);
             _queuedPages.Clear();
             QueueResolvedPages();
@@ -268,24 +265,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         // Fault packets may be older than the latest view. They still contribute
         // diagnostics and reads, but never replace that view's protection or quality.
         _uniqueFaultLeafCount = checked((uint)_pendingRequests.Count);
-        foreach (ClusterPageRequest request in _pendingRequests.Values)
-        {
-            PageFaultResolution resolution = _resources.ResolvePageFault(request.LeafNodeIndex);
-            if (resolution.Kind == PageFaultResolutionKind.Unknown)
-                continue;
-            _knownFaultLeafCount++;
-            // A resident part can still fault while another page in its group is missing.
-            // Expand the complete demand before deciding which individual pages need reads.
-            for (uint index = 0u; index < request.PageCount; index++)
-            {
-                uint page = request.FirstPageId + index;
-                if (!_pagePriorities.TryGetValue(page, out uint previous) || request.Priority > previous)
-                    _pagePriorities[page] = request.Priority;
-            }
-            if (!_pagePriorities.TryGetValue(resolution.PageId, out uint existing) || request.Priority > existing)
-                _pagePriorities[resolution.PageId] = request.Priority;
-        }
-        _resources.CollectPageDependencies(_pagePriorities);
+        _knownFaultLeafCount = _resources.CollectPageRequests(_pendingRequests.Values.ToArray(), _pagePriorities);
         QueueResolvedPages();
         _pendingRequests.Clear();
         _pagePriorities.Clear();
