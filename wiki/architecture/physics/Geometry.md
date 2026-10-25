@@ -39,7 +39,7 @@ pairs.DetectPairsWithQuery(bins, bin,
     CollisionGeometry<BoxGeometry, CylinderGeometry>.Detect(kernel, writer, contactDistance: .01f));
 ```
 
-`ICollisionContactOutput.Add` 接收 `CollisionContact` 及双方 `ContactBody` 跨度。接触头保存双方几何实体、特征、流形点序号、几何局部接触点、法向与间距。`ContactBody` 保存实际模拟实体、该实体局部接触点及插值权重。双方作用端连续写入同一个接触实体缓冲时，`FirstBodyCount` 保存双方分界。输出缓冲由调用方持有，后续接触维护将物理参数与数值历史保存到相应接触实体。
+`ICollisionContactOutput.Add` 接收 `CollisionContact` 及双方 `ContactBody` 跨度。接触头保存双方几何实体、特征、流形点序号、几何局部接触点、世界见证中点 `WorldPoint`、法向与间距。`ContactBody` 保存实际模拟实体、该实体局部接触点及插值权重。双方作用端连续写入同一个接触实体缓冲时，`FirstBodyCount` 保存双方分界。输出缓冲由调用方持有，[持久接触](Contacts.md)沿原生关系将身份、作用端、物理参数与数值历史保存到相应接触实体。
 
 ## 独立查询与完成结果消费
 

@@ -11,8 +11,8 @@ namespace SomeEngine.Physics;
 
 public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>
 {
-    public static int GetBodyCount(in JointConstraint constraint, scoped QueryRow row) => 2;
-    public static Entity GetBody(in JointConstraint constraint, scoped QueryRow row, int index)
+    public static int GetBodyCount(in JointConstraint constraint, scoped QueryRow row, in PhysicsStepContext context) => 2;
+    public static Entity GetBody(in JointConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context)
     {
         ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
         return index == 0 ? endpoints.Source : endpoints.Target;

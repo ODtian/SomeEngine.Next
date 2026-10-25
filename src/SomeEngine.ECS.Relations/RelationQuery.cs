@@ -56,39 +56,40 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
     private bool EnumerateQueries<TOutput>(World world, int queryCount, ref TOutput output, uint? lastSystemVersion)
         where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
     {
+        using RelationQueryReads reads = ReadQueries(QueryDefinition.Empty);
+        var execution = new ReadViews<TOutput>(_enumerable, new(ref output));
+        reads.Execute(ref execution, lastSystemVersion);
+        return execution.Completed;
+    }
+
+    /// <summary>Registers the relation's member queries and a complete component access query for repeated borrowed execution.</summary>
+    public RelationQueryReads ReadQueries(QueryDefinition additionalReads)
+    {
+        World world = _enumerable.World;
+        int queryCount = _enumerable.QueryCount;
         RelationQueryHandles queries = default;
-        int acquired = 0;
-        var execution = new RelationExecution<TOutput>(Enumerable, queries, queryCount,
-            -1, default, lastSystemVersion, new(ref output));
-        try
+        QueryDefinition access = QueryDefinition.Empty.WithAccessFrom(additionalReads);
+        if (queryCount == 0)
+            access = _enumerable.AddReads(access, 0);
+        for (int position = 0; position < queryCount; position++)
         {
-            QueryDefinition access = QueryDefinition.Empty;
-            if (queryCount == 0)
-                access = Enumerable.AddReads(access, 0);
-            for (int position = 0; position < queryCount; position++)
-            {
-                QueryDefinition definition = world.GetQueryDefinition(Enumerable.GetQuery(position));
-                if (queryCount == 1 && TEnumerable.ReadsFromSingleQuery)
-                    definition = Enumerable.AddReads(definition, position);
-                queries[acquired++] = world.Query(definition);
-                access = access.WithAccessFrom(definition);
-                access = Enumerable.AddReads(access, position);
-            }
-            QueryHandle query = world.Query(access);
-            queries[acquired++] = query;
-            execution = new RelationExecution<TOutput>(Enumerable, queries, queryCount,
-                -1, default, lastSystemVersion, new(ref output));
-            if (lastSystemVersion is { } baseline)
-                world.ExecuteQuery(query, baseline, ref execution);
-            else
-                world.ExecuteQuery(query, ref execution);
-            return execution.Completed;
+            QueryDefinition definition = world.GetQueryDefinition(_enumerable.GetQuery(position));
+            if (queryCount == 1 && TEnumerable.ReadsFromSingleQuery)
+                definition = _enumerable.AddReads(definition, position);
+            queries[position] = world.Query(definition);
+            access = access.WithAccessFrom(definition);
+            access = _enumerable.AddReads(access, position);
         }
-        finally
-        {
-            for (int index = acquired - 1; index >= 0; index--)
-                world.ReleaseQuery(queries[index]);
-        }
+        queries[queryCount] = world.Query(access);
+        return new RelationQueryReads(world, queries, queryCount);
+    }
+
+    private ref struct ReadViews<TOutput>(TEnumerable enumerable, RelationOutputReference<TOutput> output) : IRelationQueryExecution
+        where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
+    {
+        private readonly RelationOutputReference<TOutput> _output = output;
+        internal bool Completed;
+        public void Execute(scoped RelationQueryViews views) => Completed = enumerable.Enumerate(views, ref _output.Value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -150,54 +151,6 @@ public struct RelationQuery<TEnumerable, TRow> : IRelationEnumerable<TRow>
         return output.Found;
     }
 
-    private ref struct RelationExecution<TOutput> : IQueryExecution
-        where TOutput : struct, IQueryRelationOutput<TRow>, allows ref struct
-    {
-        private TEnumerable _enumerable;
-        private readonly RelationQueryHandles _queries;
-        private readonly int _queryCount;
-        private readonly int _position;
-        private readonly RelationQueryViews _views;
-        private readonly uint? _lastSystemVersion;
-
-        public RelationExecution(TEnumerable enumerable, RelationQueryHandles queries,
-            int queryCount, int position, RelationQueryViews views, uint? lastSystemVersion, RelationOutputReference<TOutput> output)
-        {
-            _enumerable = enumerable;
-            _queries = queries;
-            _queryCount = queryCount;
-            _position = position;
-            _views = views;
-            _lastSystemVersion = lastSystemVersion;
-            Output = output;
-            Completed = false;
-        }
-
-        public bool Completed { get; private set; }
-
-        public RelationOutputReference<TOutput> Output;
-
-        public void Execute(scoped QueryCursor query)
-        {
-            RelationQueryViews views = _position < 0
-                ? new RelationQueryViews(query, default, default)
-                : _views.WithQuery(_position, query);
-            int nextPosition = _position + 1;
-            if (nextPosition == _queryCount)
-            {
-                Completed = _enumerable.Enumerate(views, ref Output.Value);
-                return;
-            }
-
-            var execution = new RelationExecution<TOutput>(_enumerable, _queries, _queryCount,
-                nextPosition, views, _lastSystemVersion, Output);
-            if (_lastSystemVersion is { } baseline)
-                _enumerable.World.ExecuteQuery(_queries[nextPosition], baseline, ref execution);
-            else
-                _enumerable.World.ExecuteQuery(_queries[nextPosition], ref execution);
-            Completed = execution.Completed;
-        }
-    }
 }
 
 // Eight participant queries and their encompassing access query.
