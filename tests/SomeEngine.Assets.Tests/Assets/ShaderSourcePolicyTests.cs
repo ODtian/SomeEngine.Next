@@ -44,6 +44,9 @@ public class ShaderSourcePolicyTests
             ? Path.Combine(TestProjectPaths.ProjectRoot(), "templates", "DefaultProject", "assets", "Shaders", shaderFile)
             : TestProjectPaths.ShaderPath(shaderFile);
         using var definition = await ShaderAsset.OpenSourceAsync(path);
+        if (shaderFile is "standard.shader" or "unlit.shader")
+            definition.GetBlock<ShaderSourceBlock>().SourceNames[0] = Path.GetRelativePath(
+                Path.GetDirectoryName(path)!, TestProjectPaths.ShaderPath("cluster_transparency.slang"));
         using var asset = SlangShaderImporter.CompileDefinition(definition, path,
             includeDirectories: [TestProjectPaths.ShaderDirectory()]);
 
