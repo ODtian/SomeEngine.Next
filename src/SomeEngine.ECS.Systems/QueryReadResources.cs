@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Registry;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems;
@@ -13,15 +14,34 @@ public interface IQueryReadEntities
 }
 
 /// <summary>Concrete component-resource descriptions held through a callback-scoped query read.</summary>
-public sealed class QueryReadResources
+public sealed partial class QueryReadResources
 {
     private readonly List<IComponentReadResources> _components = [];
     private readonly List<JobResourceAccess> _accesses = [];
+    private readonly List<ComponentResourceUse> _uses = [];
+    private readonly List<object> _references = [];
 
     public void Add<TComponent, TResources>()
         where TComponent : struct, IComponent
         where TResources : struct, IJobComponentResources<TComponent> =>
-        _components.Add(new ComponentReadResources<TComponent, TResources>());
+        AddComponent(new ComponentReadResources<TComponent, TResources>());
+
+    /// <summary>Combines cold component-resource registrations for one consumer.</summary>
+    public void AddFrom(QueryReadResources resources)
+    {
+        foreach (IComponentReadResources component in resources._components)
+            AddComponent(component.Create());
+    }
+
+    private void AddComponent(IComponentReadResources component)
+    {
+        foreach (IComponentReadResources registered in _components)
+            if (registered.GetType() == component.GetType()) return;
+        _components.Add(component);
+    }
+
+    internal bool ContainsComponent(int componentId) =>
+        _components.Exists(component => component.ComponentId == componentId);
 
     public void Execute<TState>(scoped QueryCursor query, ref TState state, QueryExecution<TState> execute)
         where TState : allows ref struct =>
@@ -53,10 +73,13 @@ public sealed class QueryReadResources
         while (true)
         {
             _accesses.Clear();
-            var resources = new JobResourceAccessBuilder(scheduler, _accesses);
+            _uses.Clear();
+            _references.Clear();
+            var resources = new JobResourceAccessBuilder(scheduler, _uses, _references);
             foreach (IComponentReadResources component in _components)
                 if (selectEntities) component.CollectEntities(query, entities, ref resources);
                 else component.Collect(query, ref resources);
+            foreach (ComponentResourceUse use in _uses) _accesses.Add(use.Access);
             SynchronousResourceOwner access = default;
             try
             {
@@ -73,12 +96,19 @@ public sealed class QueryReadResources
                 execute(query, ref state);
                 return;
             }
-            finally { access.Dispose(); }
+            finally
+            {
+                access.Dispose();
+                _uses.Clear();
+                _references.Clear();
+            }
         }
     }
 
     private interface IComponentReadResources
     {
+        int ComponentId { get; }
+        IComponentReadResources Create();
         void Collect(scoped QueryCursor query, ref JobResourceAccessBuilder resources);
         bool VersionsMatch(scoped QueryCursor query);
         void CollectEntities<TEntities>(scoped QueryCursor query, scoped TEntities entities,
@@ -92,6 +122,8 @@ public sealed class QueryReadResources
         where TResources : struct, IJobComponentResources<TComponent>
     {
         private readonly List<long> _versions = [];
+        public int ComponentId => ComponentMetadata<TComponent>.Id;
+        public IComponentReadResources Create() => new ComponentReadResources<TComponent, TResources>();
 
         public void CollectEntities<TEntities>(scoped QueryCursor query, scoped TEntities entities,
             ref JobResourceAccessBuilder resources) where TEntities : IQueryReadEntities, allows ref struct
@@ -101,6 +133,7 @@ public sealed class QueryReadResources
             {
                 if (!query.TryReadRef<TComponent>(entities.GetEntity(index), out var component)) continue;
                 _versions.Add(TResources.GetVersion(in component.Value));
+                resources.Retain(in component.Value);
                 TResources.Collect(in component.Value, ref resources);
             }
         }
@@ -110,10 +143,12 @@ public sealed class QueryReadResources
         {
             int index = 0;
             for (int entityIndex = 0; entityIndex < entities.Count; entityIndex++)
-                if (query.TryReadRef<TComponent>(entities.GetEntity(entityIndex), out var component) &&
-                    _versions[index++] != TResources.GetVersion(in component.Value))
-                    return false;
-            return true;
+                if (query.TryReadRef<TComponent>(entities.GetEntity(entityIndex), out var component))
+                {
+                    if (index == _versions.Count || _versions[index++] != TResources.GetVersion(in component.Value))
+                        return false;
+                }
+            return index == _versions.Count;
         }
 
         public void Collect(scoped QueryCursor query, ref JobResourceAccessBuilder resources)
@@ -126,6 +161,7 @@ public sealed class QueryReadResources
                 foreach (int row in chunk.RowIndices)
                 {
                     _versions.Add(TResources.GetVersion(in values[row]));
+                    resources.Retain(in values[row]);
                     TResources.Collect(in values[row], ref resources);
                 }
             }
@@ -139,10 +175,10 @@ public sealed class QueryReadResources
                 if (!chunk.TryRead<TComponent>(out ReadOnlySpan<TComponent> values))
                     continue;
                 foreach (int row in chunk.RowIndices)
-                    if (_versions[index++] != TResources.GetVersion(in values[row]))
+                    if (index == _versions.Count || _versions[index++] != TResources.GetVersion(in values[row]))
                         return false;
             }
-            return true;
+            return index == _versions.Count;
         }
     }
 

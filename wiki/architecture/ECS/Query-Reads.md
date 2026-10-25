@@ -22,6 +22,25 @@
 
 描述器按原组件读取实际引用，版本列表和访问列表由所属 `QueryReadResources` 复用。持有者串行使用同一个读取描述，实际工作、等待及归还由现有 Job 资源机制承担。`GetVersion` 的含义沿用组件资源描述器的绑定变化规则，见 [资源访问与就绪](Readiness-Admission.md)。
 
+## 引用资源的异步工作
+
+`ScheduleEntities(world, query, entities, in job, accesses, dependency)` 接受可保存的
+`IQueryReadEntities` 具体投影和具体 `IJob`。先等待显式输入依赖，再在查询读取范围中
+收集本次参与实体的原组件引用及实际对象、数组访问。实际工作取得列与引用数据访问后
+重开读取范围，复核描述器版本和实际访问集合；绑定变化时沿同一个 Job 子工作链重新收集，
+消费 Job 在有效绑定上执行一次。返回句柄覆盖收集、重试、消费和消费产生的子工作。
+源码入口为 [QueryReadResources.Schedule](../../../src/SomeEngine.ECS.Systems/QueryReadResources.Schedule.cs)，
+公开使用见 [QueryReadResourceTests](../../../tests/SomeEngine.ECS.Systems.Tests/QueryReadResourceTests.cs)。
+
+收集与执行的每个查询视图都在所属回调内取得和使用。资源描述、版本列表、实际引用和工作容量
+由本次请求独立持有，完成后归还读取持有者复用。实际对象及数组访问沿现有
+`JobResourceAccessBuilder`、组件资源使用记录与 Scheduler 就绪规则执行。
+
+`AddFrom(resources)` 在冷路径合并具体描述器。带资源参数的
+`QueryJobAccess.CopyAccesses(world, definition, destination, resources)` 映射这些描述器
+覆盖的托管组件只读列；其余列继续采用原 alias-free 声明规则。查询本身仍沿
+`World.ExecuteReadQuery` 的只读访问规则执行。
+
 ## 渲染提取
 
 `RenderExtractionQuery.ReadOptional<T,TResources>()` 同时登记组件读取和引用资源描述。提取的范围收集、`CompleteSourceCollection` 及资源值收集处于同一实际读取范围。具体入口与骨骼引用数据职责见 [Extraction](../rendering/Extraction.md)。
