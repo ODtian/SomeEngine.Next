@@ -190,3 +190,10 @@ await handle;
 [类别等待与提交](../../../src/SomeEngine.Job/Scheduler.Categories.cs)、
 [类别服务份额](../../../src/SomeEngine.Job/WorkQueue.Categories.cs)。
 公共行为检查：[工作类别](../../../tests/SomeEngine.Job.Tests/JobCategoryTests.cs)。
+
+并行提交的完成记录同时计入实际范围批次和参与 token 的退出。每个 token 先释放其批次组
+引用，再归还退出计数；最后一位退出者归还类型化批次存储，随后既有完成记录交付结果。
+因此 `Complete` 返回覆盖回调数据清理和批次归还。队列容量及执行统计继续按实际范围批次
+更新。源码入口：[工作流与批次](../../../src/SomeEngine.Job/JobWorkStreams.cs)、
+[执行完成](../../../src/SomeEngine.Job/Scheduler.Execution.cs)；公共检查为
+[回调数据使用期](../../../tests/SomeEngine.Job.Tests/ResourceLifetimeTests.cs)。

@@ -62,6 +62,8 @@ public sealed partial class Scheduler
             if (state.Index != 0)
                 CleanupUnscheduled(state, ResourceAccessRegistration.Empty, work);
             submission.Rollback();
+            _resources.ReleaseReservationReference(reservation);
+            submission.Release();
             throw;
         }
     }
@@ -172,13 +174,26 @@ public sealed partial class Scheduler
             request.Category.CompleteRequest();
             request.Fail(exception);
         }
+        finally
+        {
+            _resources.ReleaseReservationReference(request.Resources);
+            request.Submission.Release();
+        }
     }
 
     private void CancelCategoryWork(CategoryWork request)
     {
-        CancelReservation(request.Resources);
-        CleanupUnscheduled(request.Handle, ResourceAccessRegistration.Empty, request.Work);
-        request.Submission.Rollback();
+        try
+        {
+            CancelReservation(request.Resources);
+            CleanupUnscheduled(request.Handle, ResourceAccessRegistration.Empty, request.Work);
+            request.Submission.Rollback();
+        }
+        finally
+        {
+            _resources.ReleaseReservationReference(request.Resources);
+            request.Submission.Release();
+        }
     }
 
     internal sealed class CategoryWork(

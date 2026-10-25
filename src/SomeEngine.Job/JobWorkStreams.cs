@@ -58,6 +58,8 @@ internal interface IWorkStreamItem<TSelf>
 
     static abstract bool AllowBatchDrain { get; }
 
+    static abstract int CompletionCountOnRetire { get; }
+
     static abstract WorkItemExecutionResult Execute(ref TSelf item);
 
     static abstract int Abandon(ref TSelf item);
@@ -438,6 +440,8 @@ internal struct ScheduledJob<T> : IWorkStreamItem<ScheduledJob<T>>
 
     public static bool AllowBatchDrain => true;
 
+    public static int CompletionCountOnRetire => 0;
+
     public static WorkItemExecutionResult Execute(ref ScheduledJob<T> item)
     {
         item._job.Execute();
@@ -496,6 +500,8 @@ internal struct ScheduledParallelToken<T> : IWorkStreamItem<ScheduledParallelTok
     // large low-priority parallel dispatch. Generic WorkStream batching is disabled because a
     // single drainer must not capture every token for the same parallel group.
     public static bool AllowBatchDrain => false;
+
+    public static int CompletionCountOnRetire => 1;
 
     public static WorkItemExecutionResult Execute(ref ScheduledParallelToken<T> item)
     {
