@@ -68,4 +68,7 @@ public readonly record struct CollisionSphereSweep(Vector3 Center, float Radius,
 
 /// <summary>A scene hit in world coordinates, retaining the support's current transform and revision.</summary>
 public readonly record struct CollisionHit(Entity Entity, Vector3 Point, Vector3 Normal, float Distance,
-    Matrix4x4 Transform, ulong SurfaceVersion);
+    Matrix4x4 Transform, ulong SurfaceVersion)
+{
+    public int Feature { get; init; }
+}

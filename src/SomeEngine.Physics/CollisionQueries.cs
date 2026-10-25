@@ -207,7 +207,7 @@ public sealed partial class CollisionQueries<TComponent, TReader> : ICollisionQu
                     if (!cast.Intersect(a, b, c, nearest, out float distance, out Vector3 point, out Vector3 normal)) continue;
                     nearest = distance;
                     Hit = new(node.Entity, point, normal, distance,
-                        surface.Transform, surface.Version);
+                        surface.Transform, surface.Version) { Feature = index / 3 };
                     Found = true;
                 }
             }
