@@ -97,12 +97,13 @@ public sealed class LiquidDemo
         {
             WindowTitle = $"SomeEngine / {demo._fluid} / liquid sections and curved contacts",
             Options = options,
-            InitializeWorlds = demo.Initialize,
+            Initialize = demo.Initialize,
             UpdateFrame = frame => { demo.ClearSample(frame); demo.Update(frame); },
             DrawDebugUi = demo.DrawControls,
             CreateColorFeature = rendering => demo._renderer = new LiquidRendering(rendering, demo._render, demo._extraction),
             FrameCompleted = demo.Measure,
         };
+        application.InstallGeometry(new LiquidGeometry(demo));
         demo._application = application;
         int result = await Application.RunAsync(args, application: application);
         if (result == 0 && demo._measurePath is not null) demo.SaveMeasurements();
@@ -123,7 +124,8 @@ public sealed class LiquidDemo
             RequiredDeviceFeatures = application.Options.RequiredDeviceFeatures | SomeEngine.Graphics.DeviceFeatures.CalibratedTimestamps,
         };
         var demo = new LiquidDemo(false, 0, pointLimit, null, 0, null) { _application = application };
-        application.InitializeWorlds += demo.Initialize;
+        application.InstallGeometry(new LiquidGeometry(demo));
+        application.Initialize += demo.Initialize;
         application.UpdateFrame += demo.Update;
         application.DrawDebugUi += demo.DrawControls;
         application.CreateColorFeature = rendering => demo._renderer = new LiquidRendering(rendering, demo._render, demo._extraction);
@@ -173,16 +175,25 @@ public sealed class LiquidDemo
         return Process.Start(start)!;
     }
 
-    private void Initialize(World game, RenderWorld render, RenderExtractionSystems extraction)
+    private sealed class LiquidGeometry(LiquidDemo demo) : IApplicationGeometryFeature
     {
-        (_game, _render) = (game, render);
+        public IDisposable? Install(ApplicationGeometryContext context)
+        {
+            demo._render = context.RenderingWorld;
+            demo._extraction = new LiquidExtraction();
+            context.AddExtractor(demo._extraction);
+            return null;
+        }
+    }
+
+    private void Initialize(ApplicationFrame frame)
+    {
+        _game = frame.World;
         var flow = new LiquidFlow(_pointLimit, _scene, _extent, _fluid, _emission);
         _emission = flow.Emission;
         var view = new LiquidView { Display = _display };
         if (_closeUp) { view.Target = _scene == "curved" ? new(-.28f, .9f, -.08f) : new(-.55f, 1.3f, 0); view.Distance = .65f; view.Pitch = 1.15f; }
-        _liquid = game.CreateEntity(new LiquidBody(flow, view, 0));
-        _extraction = new LiquidExtraction();
-        extraction.Add(_extraction);
+        _liquid = _game.CreateEntity(new LiquidBody(flow, view, 0));
         _previous = Stopwatch.GetTimestamp();
     }
 
