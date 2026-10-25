@@ -35,15 +35,27 @@ public readonly struct WriteDeviceCollisionContacts<TOutput> : IPhysicsStage
     {
         public void Execute()
         {
-            Span<ContactBody> first = stackalloc ContactBody[1];
-            Span<ContactBody> second = stackalloc ContactBody[1];
+            Span<ContactBody> first = stackalloc ContactBody[3];
+            Span<ContactBody> second = stackalloc ContactBody[3];
             for (int pair = 0; pair < detection.Count; pair++)
+            {
+                int point = 0;
                 foreach (ref readonly CollisionContact contact in detection.ReadContacts(pair))
                 {
+                    if (detection.ContactBodies is not null)
+                    {
+                        ReadOnlySpan<DeviceContactBody> bodies = detection.ReadContactBodies(pair, point++);
+                        for (int index = 0; index < contact.FirstBodyCount; index++) first[index] = bodies[index].Body;
+                        int secondCount = bodies.Length - contact.FirstBodyCount;
+                        for (int index = 0; index < secondCount; index++) second[index] = bodies[index + contact.FirstBodyCount].Body;
+                        output.Add(in contact, first[..contact.FirstBodyCount], second[..secondCount]);
+                        continue;
+                    }
                     first[0] = new(contact.First, contact.FirstLocalPoint, 1);
                     second[0] = new(contact.Second, contact.SecondLocalPoint, 1);
-                    output.Add(in contact, first, second);
+                    output.Add(in contact, first[..1], second[..1]);
                 }
+            }
         }
     }
 }

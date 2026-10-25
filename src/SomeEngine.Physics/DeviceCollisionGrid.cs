@@ -29,7 +29,7 @@ public sealed partial class DeviceCollisionGrid : IDisposable
     private MappedBuffer _inputMapping;
     private uint _uploadRevision;
     private uint _deviceRevision;
-    private bool _hasRun;
+    private bool _buffersInitialized;
 
     public DeviceCollisionGrid(IGraphicsBackend backend, Device device, in DeviceGridKernels kernels,
         DeviceGridSettings settings, DeviceGridCapacity capacity,
