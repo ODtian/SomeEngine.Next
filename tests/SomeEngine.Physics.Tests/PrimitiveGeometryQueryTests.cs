@@ -10,6 +10,25 @@ namespace SomeEngine.Physics.Tests;
 public sealed class PrimitiveGeometryQueryTests
 {
     [Fact]
+    public void ComponentQuerySelectsItsGeometryFromAMixedCollisionTree()
+    {
+        using var world = new World();
+        Entity sphere = AddGeometry(world, new SphereGeometry(1), new BodyPose { Rotation = Quaternion.Identity });
+        AddGeometry(world, new BoxGeometry(new Vector3(.5f)),
+            new BodyPose { Position = new Vector3(3, 0, 0), Rotation = Quaternion.Identity });
+        QueryHandle members = world.Query(new QueryDefinitionBuilder().Any<SphereGeometry>().Any<BoxGeometry>());
+        CollisionTree tree = Collision.Build(world, members);
+        using var queries = Collision.Query<SphereGeometry>(world, members, tree, new(1e-5f, 64));
+
+        Assert.True(queries.Raycast(new(new Vector3(4, 0, 0), -Vector3.UnitX, 6), out CollisionHit hit));
+
+        Assert.Equal(sphere, hit.Entity);
+        Near(Vector3.UnitX, hit.Point);
+        Near(3, hit.Distance);
+        world.ReleaseQuery(members);
+    }
+
+    [Fact]
     public void CylinderRaysAndSphereSweepsMeetTheSameAnalyticSurface()
     {
         using var world = new World();

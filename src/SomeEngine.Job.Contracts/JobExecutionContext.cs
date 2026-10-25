@@ -11,6 +11,7 @@ internal static class JobExecutionContext
     private static int s_depth;
 
     internal static bool IsActive => s_depth != 0;
+    internal static int Depth => s_depth;
 
     internal static void Enter()
     {

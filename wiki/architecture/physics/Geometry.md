@@ -6,6 +6,10 @@
 
 `SphereGeometry`、`BoxGeometry`、`CapsuleGeometry` 和 `CylinderGeometry` 表达有界形状，`PlaneGeometry` 表达单位法向及偏移定义的实心半空间。球的参数为半径；盒的参数为三轴半宽；胶囊和圆柱的轴向为局部 Y，分别提供半线段长度和半高度。`BodyPose` 提供几何原点的世界位置与旋转。
 
+项目提供共享顶点及面索引的 `ConvexHullGeometry` 也使用共同的 support、流形和查询入口，数据与资源职责见 [凸包](Convex-Hulls.md)。
+
+模拟实体采样点驱动的胶囊、连续边及面域通过具体 reader 接入同一路径，当前状态、跨实体访问和多端权重职责见 [动态几何](Dynamic-Geometry.md)。
+
 `ICollisionGeometry<TGeometry>` 提供范围、点的带符号距离、支持特征面和球扫描。`ICollisionConvex<TGeometry>` 提供具体类型的核心支持点与球形外扩半径。球的核心是点，胶囊的核心是线段；盒和圆柱的核心包含完整实体形状。具体类型通过静态调用解释自己的几何数据。
 
 `UpdateGeometryBounds<TGeometry>` 在共同物理步中从原几何和 `BodyPose` 列计算派生 `CollisionBounds`。预测、范围更新、碰撞树维护及检测通过已有 Job 完成依赖连接。独立查询在同一个 World 读取作用域中消费当前组件，树及范围由调用方沿这一顺序维护。
