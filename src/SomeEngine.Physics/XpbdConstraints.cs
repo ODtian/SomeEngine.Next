@@ -13,11 +13,27 @@ public interface IXpbdConstraint<TConstraint> where TConstraint : struct, ICompo
 }
 
 /// <summary>Concrete constraint sets participating in every iteration of one XPBD solve.</summary>
-public interface IXpbdConstraints
+public interface IXpbdConstraintIterations
 {
-    void AddAccesses(World world, List<JobResourceAccess> accesses);
     void Initialize(in PhysicsStepContext context);
     void Project(in PhysicsStepContext context, scoped PhysicsBodies bodies);
+}
+
+public interface IXpbdConstraints : IXpbdConstraintIterations
+{
+    void AddAccesses(World world, List<JobResourceAccess> accesses);
+}
+
+internal static class XpbdIterationLoop
+{
+    internal static void Initialize<TConstraints>(in PhysicsStepContext context, TConstraints constraints)
+        where TConstraints : IXpbdConstraintIterations, allows ref struct => constraints.Initialize(in context);
+
+    internal static void Iterate<TConstraints>(in PhysicsStepContext context, scoped PhysicsBodies bodies,
+        TConstraints constraints, int iterations) where TConstraints : IXpbdConstraintIterations, allows ref struct
+    {
+        for (int iteration = 0; iteration < iterations; iteration++) constraints.Project(in context, bodies);
+    }
 }
 
 public readonly struct XpbdConstraints<TConstraint, TProjection>(QueryHandle constraints) : IXpbdConstraints
@@ -45,8 +61,7 @@ public readonly struct XpbdConstraints<TConstraint, TProjection>(QueryHandle con
 
         public void Execute(scoped QueryCursor query)
         {
-            foreach (QueryRow row in query.Rows)
-                TProjection.Initialize(in row.ReadRef<TConstraint>(), row, in _context);
+            XpbdConstraintRows<TConstraint, TProjection>.Initialize(new(query), in _context);
         }
     }
 
@@ -57,8 +72,7 @@ public readonly struct XpbdConstraints<TConstraint, TProjection>(QueryHandle con
 
         public void Execute(scoped QueryCursor query)
         {
-            foreach (QueryRow row in query.Rows)
-                TProjection.Project(in row.ReadRef<TConstraint>(), row, _bodies, in _context);
+            XpbdConstraintRows<TConstraint, TProjection>.Project(new(query), _bodies, in _context);
         }
     }
 }

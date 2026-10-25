@@ -8,10 +8,8 @@ using SomeEngine.Job;
 namespace SomeEngine.Physics;
 
 /// <summary>Current world force and torque from the concrete XPBD multiplier and Jacobian.</summary>
-public interface IXpbdConstraintForces<TConstraint> where TConstraint : struct, IComponent
+public interface IXpbdConstraintForces<TConstraint> : IPhysicsConstraintBodies<TConstraint> where TConstraint : struct, IComponent
 {
-    static abstract int GetBodyCount(in TConstraint constraint, scoped QueryRow row, in PhysicsStepContext context);
-    static abstract Entity GetBody(in TConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context);
     static abstract void GetBodyForce(in TConstraint constraint, scoped QueryRow row, Entity body,
         scoped PhysicsBodies bodies, in PhysicsStepContext context, out Vector3 force, out Vector3 torque);
 }
