@@ -102,21 +102,21 @@ internal sealed class MeshPages
     private uint _registeredPages;
 
     public uint Count => (uint)_offsets.Count;
+    internal int RegistrationCount => _registrations.Count;
     public uint RegisteredCount => _registeredPages;
     public uint ResidentCount => (uint)_residentPages.Count;
     public uint MissingCount => RegisteredCount - ResidentCount;
     public int PendingLoadCount => _pendingLoads.Count;
     public int PendingEvictionCount => _pendingEvictions.Count;
 
-    public PreparedMeshPages PrepareStreamedRegistration(
+    public static PreparedMeshPages PrepareStreamedRegistration(
         Mesh mesh,
         MeshPayloadSource streamedSource,
-        bool ownsSource = true)
+        uint firstPageId,
+        int registrationIndex)
     {
         ArgumentNullException.ThrowIfNull(streamedSource);
         IReadOnlyList<MeshPayloadPage> payloadPages = streamedSource.Pages;
-        EnsureCanRegister(mesh, payloadPages.Count);
-        uint firstPageId = Count;
         var lruNodes = new LinkedListNode<uint>[payloadPages.Count];
         var lowestDetailPageIds = new uint[streamedSource.LowestDetailPageIndices.Length];
         long pageRegionLength = checked(streamedSource.Length - streamedSource.BvhLength);
@@ -151,9 +151,9 @@ internal sealed class MeshPages
         return new PreparedMeshPages(
             mesh,
             firstPageId,
-            _registrations.Count,
+            registrationIndex,
             streamedSource,
-            ownsSource,
+            true,
             lruNodes,
             payloadPages.Count,
             lowestDetailPageIds);
@@ -210,16 +210,6 @@ internal sealed class MeshPages
         firstPageId = 0;
         pageCount = 0;
         return false;
-    }
-
-    private void EnsureCanRegister(Mesh mesh, int pageCount)
-    {
-        ArgumentNullException.ThrowIfNull(mesh);
-        if (_registrationByMesh.ContainsKey(mesh))
-            throw new InvalidOperationException($"Mesh '{mesh}' is already registered in this cluster epoch.");
-        if (pageCount <= 0)
-            throw new InvalidDataException("A cluster mesh must contain at least one page.");
-        _ = checked(_offsets.Count + pageCount);
     }
 
     private void ValidatePreparedRegistration(PreparedMeshPages registration)
