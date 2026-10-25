@@ -66,12 +66,24 @@ public static partial class NavigationCostSystem
 
     private static void Fill(NavigationGrid grid, NavigationPolicy policy, float[] cells, float[] edges)
     {
-        for (int cell = 0; cell < grid.Cells.Length; cell++)
+        JobSystem.ExecuteParallel(new FillCellCosts(grid, policy, cells), grid.Cells.Length,
+            batchSize: JobScheduleOptions.AutomaticBatchSize);
+        JobSystem.ExecuteParallel(new FillEdgeCosts(grid, policy, cells, edges), grid.Cells.Length,
+            batchSize: JobScheduleOptions.AutomaticBatchSize);
+    }
+
+    private readonly struct FillCellCosts(NavigationGrid grid, NavigationPolicy policy, float[] cells) : IJobParallelFor
+    {
+        public void Execute(int cell)
         {
             NavigationGridCell from = grid.Cells.Span[cell];
             cells[cell] = from.BaseCost * policy.GetAreaCost(from.Area);
         }
-        for (int cell = 0; cell < grid.Cells.Length; cell++)
+    }
+
+    private readonly struct FillEdgeCosts(NavigationGrid grid, NavigationPolicy policy, float[] cells, float[] edges) : IJobParallelFor
+    {
+        public void Execute(int cell)
         {
             NavigationGridCell from = grid.Cells.Span[cell];
             for (int edge = from.EdgeStart; edge < from.EdgeStart + from.EdgeCount; edge++)
